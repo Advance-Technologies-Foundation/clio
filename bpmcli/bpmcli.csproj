@@ -9,4 +9,17 @@
     <PackageReference Include="CommandLineParser" Version="2.3.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="cmd\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="cmd\bpmcli.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="cmd\register.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
