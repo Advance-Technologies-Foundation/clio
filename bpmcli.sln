@@ -1,0 +1,25 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27703.2047
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bpmcli", "bpmcli\bpmcli.csproj", "{CE8FEF29-6FCA-44BD-96A4-19778B44989A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CE8FEF29-6FCA-44BD-96A4-19778B44989A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE8FEF29-6FCA-44BD-96A4-19778B44989A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE8FEF29-6FCA-44BD-96A4-19778B44989A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE8FEF29-6FCA-44BD-96A4-19778B44989A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2DEC7203-A0AA-4F2B-AEF8-20E88BA5C006}
+	EndGlobalSection
+EndGlobal
