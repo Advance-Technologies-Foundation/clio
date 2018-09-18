@@ -1,49 +1,49 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Net;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using CommandLine;
-using Microsoft.Extensions.Configuration;
 
 namespace bpmcli
 {
 
 	class Program
 	{
-	    private static string UserName;
-	    private static string UserPassword;
-        private static string Url; // Необходимо получить из конфига
-        private static string LoginUrl => Url + @"/ServiceModel/AuthService.svc/Login";
-        private static string ExecutorUrl => Url + @"/0/IDE/ExecuteScript";
-        private static string UnloadAppDomainUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-        private static string DownloadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
-        private static string UploadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
-        public static CookieContainer AuthCookie = new CookieContainer();
+		private static string _userName;
+		private static string _userPassword;
+		private static string _url; // Необходимо получить из конфига
+		private static string LoginUrl => _url + @"/ServiceModel/AuthService.svc/Login";
+		private static string ExecutorUrl => _url + @"/0/IDE/ExecuteScript";
+		private static string UnloadAppDomainUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+		private static string DownloadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
+		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
+		public static CookieContainer AuthCookie = new CookieContainer();
 
-	    [Verb("Execute", HelpText = "Execute assembly.")]
-	    class ExecuteOptions {
+		[Verb("Execute", HelpText = "Execute assembly.")]
+		class ExecuteOptions
+		{
 			[Option("FilePath", Required = true)]
 			public string FilePath { get; set; }
 			[Option("ExecutorType", Required = true)]
 			public string ExecutorType { get; set; }
-	    }
+		}
 		[Verb("Restart", HelpText = "Restart application.")]
-	    class RestartOptions {
+		class RestartOptions
+		{
 
-	    }
-	    [Verb("Download", HelpText = "Download assembly.")]
-	    class DownloadOptions {
+		}
+		[Verb("Download", HelpText = "Download assembly.")]
+		class DownloadOptions
+		{
 			[Option("PackageName", Required = true)]
 			public string PackageName { get; set; }
-	    }
+		}
 		[Verb("Upload", HelpText = "Upload assembly.")]
-	    class UploadOptions {
+		class UploadOptions
+		{
 			[Option("PackageName", Required = true)]
 			public string PackageName { get; set; }
-	    }
-	    
+		}
+
 
 		public static void Login() {
 			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
@@ -53,8 +53,8 @@ namespace bpmcli
 			using (var requestStream = authRequest.GetRequestStream()) {
 				using (var writer = new StreamWriter(requestStream)) {
 					writer.Write(@"{
-						""UserName"":""" + UserName + @""",
-						""UserPassword"":""" + UserPassword + @"""
+						""UserName"":""" + _userName + @""",
+						""UserPassword"":""" + _userPassword + @"""
 					}");
 				}
 			}
@@ -62,7 +62,7 @@ namespace bpmcli
 				string authName = ".ASPXAUTH";
 				string headerCookies = response.Headers["Set-Cookie"];
 				string authCookeValue = GetCookieValueByName(headerCookies, authName);
-				AuthCookie.Add(new Uri(Url), new Cookie(authName, authCookeValue));
+				AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
 			}
 		}
 
@@ -78,7 +78,7 @@ namespace bpmcli
 		}
 
 		private static void AddCsrfToken(HttpWebRequest request) {
-			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(Url))["BPMCSRF"];
+			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(_url))["BPMCSRF"];
 			if (bpmcsrf != null) {
 				request.Headers.Add("BPMCSRF", bpmcsrf.Value);
 			}
@@ -198,20 +198,19 @@ namespace bpmcli
 			return 0;
 		}
 
-		private static int Main(string[] args)
-		{
-		    var settingsRepository = new SettingsRepository();
-		    var settings = settingsRepository.GetEnvironment();
-		    Url = settings.Uri;
-		    UserName = settings.Login;
-		    UserPassword = settings.Password;
-	        return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions>(args)
-			    .MapResult(
-				    (ExecuteOptions opts) => Execute(opts),
-				    (RestartOptions opts) => Restart(opts),
-				    (DownloadOptions opts) => Download(opts),
-				    (UploadOptions opts) => Upload(opts),
+		private static int Main(string[] args) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment();
+			_url = settings.Uri;
+			_userName = settings.Login;
+			_userPassword = settings.Password;
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions>(args)
+				.MapResult(
+					(ExecuteOptions opts) => Execute(opts),
+					(RestartOptions opts) => Restart(opts),
+					(DownloadOptions opts) => Download(opts),
+					(UploadOptions opts) => Upload(opts),
 					errs => 1);
-	    }
-    }
+		}
+	}
 }
