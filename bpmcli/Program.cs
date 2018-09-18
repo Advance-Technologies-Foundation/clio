@@ -8,13 +8,13 @@ namespace bpmcli
 
 	class Program
     {
-		private static string Url; // Необходимо получить из конфига
-		private static string LoginUrl => Url + @"/ServiceModel/AuthService.svc/Login";
-	    private static string ExecutorUrl => Url + @"/0/IDE/ExecuteScript";
-	    private static string UnloadAppDomainUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-	    private static string DownloadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
-	    private static string UploadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
-	    public static CookieContainer AuthCookie = new CookieContainer();
+        private static string Url; // Необходимо получить из конфига
+        private static string LoginUrl => Url + @"/ServiceModel/AuthService.svc/Login";
+        private static string ExecutorUrl => Url + @"/0/IDE/ExecuteScript";
+        private static string UnloadAppDomainUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+        private static string DownloadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
+        private static string UploadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
+        public static CookieContainer AuthCookie = new CookieContainer();
 
 	    //   public class Options {
 		//    [Option("Uri", Required = true)]
