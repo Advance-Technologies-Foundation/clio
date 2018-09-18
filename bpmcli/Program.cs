@@ -1,13 +1,19 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using CommandLine;
+using Microsoft.Extensions.Configuration;
 
 namespace bpmcli
 {
 
 	class Program
-    {
+	{
+	    private static string UserName;
+	    private static string UserPassword;
         private static string Url; // Необходимо получить из конфига
         private static string LoginUrl => Url + @"/ServiceModel/AuthService.svc/Login";
         private static string ExecutorUrl => Url + @"/0/IDE/ExecuteScript";
@@ -15,23 +21,6 @@ namespace bpmcli
         private static string DownloadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
         private static string UploadPackageUrl => Url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
         public static CookieContainer AuthCookie = new CookieContainer();
-
-	    //   public class Options {
-		//    [Option("Uri", Required = true)]
-		//    public string Uri  { get; set; }
-		//	[Option("Login", Required = true)]
-		//	public string Login { get; set; }
-		//    [Option("Password", Required = true)]
-		//	public string Password { get; set; }
-		//    [Option("Operation", Required = true)]
-		//	public string Operation { get; set; }
-		//    [Option("PackageName", Required = true)]
-		//	public string PackageName { get; set; }
-		//	[Option("FilePath", Required = true)]
-		//	public string FilePath { get; set; }
-		//	[Option("ExecutorType", Required = true)]
-		//	public string ExecutorType { get; set; }
-		//}
 
 	    [Verb("Execute", HelpText = "Execute assembly.")]
 	    class ExecuteOptions {
@@ -57,8 +46,6 @@ namespace bpmcli
 	    
 
 		public static void Login() {
-			string userName = "Supervisor"; // Получить логин из конфига
-			string userPassword = "Supervisor"; // Получить пароль из конфига
 			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
 			authRequest.Method = "POST";
 			authRequest.ContentType = "application/json";
@@ -66,8 +53,8 @@ namespace bpmcli
 			using (var requestStream = authRequest.GetRequestStream()) {
 				using (var writer = new StreamWriter(requestStream)) {
 					writer.Write(@"{
-						""UserName"":""" + userName + @""",
-						""UserPassword"":""" + userPassword + @"""
+						""UserName"":""" + UserName + @""",
+						""UserPassword"":""" + UserPassword + @"""
 					}");
 				}
 			}
@@ -221,19 +208,13 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args)
-	    {
-			// For Example
-			//var options = new Options {
-			//	Uri = "http://tscore-dev-01:88/StudioENU_2090688_0914",
-			//	Login = "Supervisor",
-			//	Password = "Supervisor",
-			//	Operation = "UnloadAppDomain",
-			//	PackageName = "BpmonlinePkg"
-			//};
-		    Url = "http://tscore-dev-01:88/StudioENU_2099879_0919";
-
-
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions>(args)
+		{
+		    var settingsRepository = new SettingsRepository();
+		    var settings = settingsRepository.GetEnvironment();
+		    Url = settings.Uri;
+		    UserName = settings.Login;
+		    UserPassword = settings.Password;
+	        return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions>(args)
 			    .MapResult(
 				    (ExecuteOptions opts) => Execute(opts),
 				    (RestartOptions opts) => Restart(opts),
