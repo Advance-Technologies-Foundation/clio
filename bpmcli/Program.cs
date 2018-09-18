@@ -18,29 +18,29 @@ namespace bpmcli
 		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
-		[Verb("Execute", HelpText = "Execute assembly.")]
+		[Verb("exec", HelpText = "Execute assembly.")]
 		class ExecuteOptions
 		{
-			[Option("FilePath", Required = true)]
+			[Option('f', "FilePath", Required = true)]
 			public string FilePath { get; set; }
-			[Option("ExecutorType", Required = true)]
+			[Option('e', "ExecutorType", Required = true)]
 			public string ExecutorType { get; set; }
 		}
-		[Verb("Restart", HelpText = "Restart application.")]
+		[Verb("restart", HelpText = "Restart application.")]
 		class RestartOptions
 		{
 
 		}
-		[Verb("Download", HelpText = "Download assembly.")]
+		[Verb("download", HelpText = "Download assembly.")]
 		class DownloadOptions
 		{
-			[Option("PackageName", Required = true)]
+			[Option('p', "PackageName", Required = true)]
 			public string PackageName { get; set; }
 		}
-		[Verb("Upload", HelpText = "Upload assembly.")]
+		[Verb("upload", HelpText = "Upload assembly.")]
 		class UploadOptions
 		{
-			[Option("PackageName", Required = true)]
+			[Option('p', "PackageName", Required = true)]
 			public string PackageName { get; set; }
 		}
 
