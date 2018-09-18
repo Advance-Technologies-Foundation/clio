@@ -29,7 +29,7 @@ namespace bpmcli
             IConfigurationRoot configuration = builder.Build();
             var settings = new Settings();
             configuration.Bind(settings);
-            var environment = !String.IsNullOrEmpty(name) ? settings.Environments[name] : settings.Environments.First().Value; 
+            var environment = String.IsNullOrEmpty(name) ? settings.Environments.First().Value : settings.Environments[name];
             if (settings.Environments.Count == 0) {
                 throw new Exception("Could not find enviroment settings in file ");
             }
