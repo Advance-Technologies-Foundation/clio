@@ -34,6 +34,18 @@ namespace bpmcli
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
 		}
+
+		public string ActiveEnvironmentKey { get; set; }
+
+		public EnvironmentSettings GetActiveEnviroment() {
+			if (String.IsNullOrEmpty(ActiveEnvironmentKey)
+				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
+				ActiveEnvironmentKey = Environments.First().Key;
+				return Environments.First().Value;
+			} else {
+				return Environments[ActiveEnvironmentKey];
+			}
+		}
 		public Dictionary<string, EnvironmentSettings> Environments { get; set; }
 	}
 
@@ -90,6 +102,7 @@ namespace bpmcli
 				Password = "Supervisor",
 				Uri = "http://localhost"
 			});
+			_settings.ActiveEnvironmentKey = "dev";
 		}
 
 		private void Save() {
@@ -104,7 +117,7 @@ namespace bpmcli
 		public EnvironmentSettings GetEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			if (String.IsNullOrEmpty(name)) {
-				environment = _settings.Environments.First().Value;
+				environment = _settings.GetActiveEnviroment();
 			} else {
 				environment = _settings.Environments[name];
 			}
@@ -115,7 +128,7 @@ namespace bpmcli
 
 		internal void ConfigureEnvironment(string name, EnvironmentSettings environment) {
 			if (String.IsNullOrEmpty(name)) {
-				GetEnvironment().Merge(environment);
+				_settings.GetActiveEnviroment().Merge(environment);
 			} else if (_settings.Environments.ContainsKey(name)) {
 				_settings.Environments[name].Merge(environment);
 			} else {
@@ -123,5 +136,11 @@ namespace bpmcli
 			}
 			Save();
 		}
+
+		internal void SetActiveEnvironment(string activeEnvironment) {
+			_settings.ActiveEnvironmentKey = activeEnvironment;
+			Save();
+		}
 	}
+
 }

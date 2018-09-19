@@ -57,6 +57,8 @@ namespace bpmcli
 			public string Login { get; set; }
 			[Option('p', "Password", Required = false)]
 			public string Password { get; set; }
+			[Option('a', "Active environments", Required = false)]
+			public string ActiveEnvironment { get; set; }
 		}
 
 		private static void Configure(BaseOptions options) {
@@ -157,6 +159,9 @@ namespace bpmcli
 				Password = options.Password,
 				Uri = options.Uri
 			};
+			if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
+				repository.SetActiveEnvironment(options.ActiveEnvironment);
+			}
 			repository.ConfigureEnvironment(options.Environment, environment);
 			return 0;
 		}
