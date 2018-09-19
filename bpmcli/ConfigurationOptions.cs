@@ -15,6 +15,18 @@ namespace bpmcli
 		public string Uri { get; set; }
 		public string Login { get; set; }
 		public string Password { get; set; }
+
+		internal void Merge(EnvironmentSettings environment) {
+			if (!String.IsNullOrEmpty(environment.Login)) {
+				Login = environment.Login;
+			}
+			if (!String.IsNullOrEmpty(environment.Uri)) {
+				Uri = environment.Uri;
+			}
+			if (!String.IsNullOrEmpty(environment.Password)) {
+				Password = environment.Password;
+			}
+		}
 	}
 
 	public class Settings
@@ -29,9 +41,20 @@ namespace bpmcli
 	{
 		public SettingsRepository() {
 			InitializeSettingsFile();
+			InitSettings();
 		}
 
-		private string fileName = "appsettings.json";
+		private void InitSettings() {
+			var builder = new ConfigurationBuilder()
+				.SetBasePath(Directory.GetCurrentDirectory())
+				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
+				.AddEnvironmentVariables();
+			IConfigurationRoot configuration = builder.Build();
+			_settings = new Settings();
+			configuration.Bind(_settings);
+		}
+
+		private readonly string fileName = "appsettings.json";
 
 		public string AppSettingsFolderPath {
 			get {
@@ -46,8 +69,8 @@ namespace bpmcli
 				return $"{userPath}\\{companyName.Company}\\{product.Product}";
 			}
 		}
-		public string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{fileName}";
 
+		public string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{fileName}";
 
 		public void InitializeSettingsFile() {
 			if (File.Exists(AppSettingsFilePath)) {
@@ -56,42 +79,47 @@ namespace bpmcli
 			if (!Directory.Exists(AppSettingsFolderPath)) {
 				Directory.CreateDirectory(AppSettingsFolderPath);
 			}
-			var settings = GetDefaultSettings();
-			Save(settings);
+			InitDefaultSettings();
+			Save();
 		}
 
-		private Settings GetDefaultSettings() {
-			var settings = new Settings();
-			settings.Environments.Add("dev", new EnvironmentSettings() {
+		private void InitDefaultSettings() {
+			_settings = new Settings();
+			_settings.Environments.Add("dev", new EnvironmentSettings() {
 				Login = "Supervisor",
 				Password = "Supervisor",
 				Uri = "http://localhost"
 			});
-			return settings;
 		}
 
-		public void Save(Settings settings) {
+		private void Save() {
 			using (StreamWriter file = File.CreateText(AppSettingsFilePath)) {
 				JsonSerializer serializer = new JsonSerializer() {
 					Formatting = Formatting.Indented
 				};
-				serializer.Serialize(file, settings);
+				serializer.Serialize(file, _settings);
 			}
 		}
 
 		public EnvironmentSettings GetEnvironment(string name = null) {
-			var builder = new ConfigurationBuilder()
-				.SetBasePath(Directory.GetCurrentDirectory())
-				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
-				.AddEnvironmentVariables();
-			IConfigurationRoot configuration = builder.Build();
-			var settings = new Settings();
-			configuration.Bind(settings);
-			var environment = String.IsNullOrEmpty(name) ? settings.Environments.First().Value : settings.Environments[name];
-			if (settings.Environments.Count == 0) {
-				throw new Exception("Could not find enviroment settings in file ");
+			EnvironmentSettings environment;
+			if (String.IsNullOrEmpty(name)) {
+				environment = _settings.Environments.First().Value;
+			} else {
+				environment = _settings.Environments[name];
 			}
 			return environment;
+		}
+
+		Settings _settings;
+
+		internal void ConfigureEnvironment(string name, EnvironmentSettings environment) {
+			if (_settings.Environments.ContainsKey(name)) {
+				_settings.Environments[name].Merge(environment);
+			} else {
+				_settings.Environments.Add(name, environment);
+			}
+			Save();
 		}
 	}
 }

@@ -43,6 +43,18 @@ namespace bpmcli
 			[Option('p', "PackageName", Required = true)]
 			public string PackageName { get; set; }
 		}
+		[Verb("cfg", HelpText = "Configure environment settings.")]
+		class ConfigureOptions
+		{
+			[Option('n', "Name", Required = true)]
+			public string Name { get; set; }
+			[Option('u', "Uri", Required = false)]
+			public string Uri { get; set; }
+			[Option('l', "Login", Required = false)]
+			public string Login { get; set; }
+			[Option('p', "Password", Required = false)]
+			public string Password { get; set; }
+		}
 
 
 		public static void Login() {
@@ -128,6 +140,17 @@ namespace bpmcli
 			request.GetResponse();
 		}
 
+		private static int ConfigureEnvironment(ConfigureOptions options) {
+			var repository = new SettingsRepository();
+			var environment = new EnvironmentSettings() {
+				Login = options.Login,
+				Password = options.Password,
+				Uri = options.Uri
+			};
+			repository.ConfigureEnvironment(options.Name, environment);
+			return 0;
+		}
+
 		private static void DownloadPackages(string packageName) {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(DownloadPackageUrl);
 			request.Method = "POST";
@@ -204,12 +227,13 @@ namespace bpmcli
 			_url = settings.Uri;
 			_userName = settings.Login;
 			_userPassword = settings.Password;
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
 					(DownloadOptions opts) => Download(opts),
 					(UploadOptions opts) => Upload(opts),
+					(ConfigureOptions opts) => ConfigureEnvironment(opts),
 					errs => 1);
 		}
 	}
