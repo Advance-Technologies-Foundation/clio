@@ -114,7 +114,9 @@ namespace bpmcli
 		Settings _settings;
 
 		internal void ConfigureEnvironment(string name, EnvironmentSettings environment) {
-			if (_settings.Environments.ContainsKey(name)) {
+			if (String.IsNullOrEmpty(name)) {
+				GetEnvironment().Merge(environment);
+			} else if (_settings.Environments.ContainsKey(name)) {
 				_settings.Environments[name].Merge(environment);
 			} else {
 				_settings.Environments.Add(name, environment);

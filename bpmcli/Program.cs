@@ -18,36 +18,39 @@ namespace bpmcli
 		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
+		class BaseOptions {
+			[Option('e', "Environment", Required = false)]
+			public string Environment { get; set; }
+		}
+
 		[Verb("exec", HelpText = "Execute assembly.")]
-		class ExecuteOptions
+		class ExecuteOptions: BaseOptions
 		{
 			[Option('f', "FilePath", Required = true)]
 			public string FilePath { get; set; }
-			[Option('e', "ExecutorType", Required = true)]
+			[Option('t', "ExecutorType", Required = true)]
 			public string ExecutorType { get; set; }
 		}
 		[Verb("restart", HelpText = "Restart application.")]
-		class RestartOptions
+		class RestartOptions:BaseOptions
 		{
-
+			
 		}
 		[Verb("download", HelpText = "Download assembly.")]
-		class DownloadOptions
+		class DownloadOptions:BaseOptions
 		{
 			[Option('p', "PackageName", Required = true)]
 			public string PackageName { get; set; }
 		}
 		[Verb("upload", HelpText = "Upload assembly.")]
-		class UploadOptions
+		class UploadOptions: BaseOptions
 		{
 			[Option('p', "PackageName", Required = true)]
 			public string PackageName { get; set; }
 		}
 		[Verb("cfg", HelpText = "Configure environment settings.")]
-		class ConfigureOptions
+		class ConfigureOptions:BaseOptions
 		{
-			[Option('n', "Name", Required = true)]
-			public string Name { get; set; }
 			[Option('u', "Uri", Required = false)]
 			public string Uri { get; set; }
 			[Option('l', "Login", Required = false)]
@@ -56,6 +59,13 @@ namespace bpmcli
 			public string Password { get; set; }
 		}
 
+		private static void Configure(BaseOptions options) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options.Environment);
+			_url = settings.Uri;
+			_userName = settings.Login;
+			_userPassword = settings.Password;
+		}
 
 		public static void Login() {
 			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
@@ -147,7 +157,7 @@ namespace bpmcli
 				Password = options.Password,
 				Uri = options.Uri
 			};
-			repository.ConfigureEnvironment(options.Name, environment);
+			repository.ConfigureEnvironment(options.Environment, environment);
 			return 0;
 		}
 
@@ -198,35 +208,34 @@ namespace bpmcli
 		}
 
 		private static int Execute(ExecuteOptions options) {
+			Configure(options);
 			Login();
 			ExecuteScript(options);
 			return 0;
 		}
 
 		private static int Restart(RestartOptions options) {
+			Configure(options);
 			Login();
 			UnloadAppDomain();
 			return 0;
 		}
 
 		private static int Download(DownloadOptions options) {
+			Configure(options);
 			Login();
 			DownloadPackages(options.PackageName);
 			return 0;
 		}
 
 		private static int Upload(UploadOptions options) {
+			Configure(options);
 			Login();
 			Uploadpackages(options.PackageName);
 			return 0;
 		}
 
 		private static int Main(string[] args) {
-			var settingsRepository = new SettingsRepository();
-			var settings = settingsRepository.GetEnvironment();
-			_url = settings.Uri;
-			_userName = settings.Login;
-			_userPassword = settings.Password;
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
