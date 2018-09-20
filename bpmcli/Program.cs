@@ -125,6 +125,12 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int RemoveEnvironment(RemoveOptions options) {
+			var repository = new SettingsRepository();
+			repository.RemoveEnvironment(options.Environment);
+			return 0;
+		}
+
 		private static void DownloadPackages(string packageName) {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(DownloadPackageUrl);
 			request.Method = "POST";
@@ -200,13 +206,14 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions, RemoveOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
 					(DownloadOptions opts) => Download(opts),
 					(UploadOptions opts) => Upload(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
+					(RemoveOptions opts) => RemoveEnvironment(opts),
 					errs => 1);
 		}
 	}

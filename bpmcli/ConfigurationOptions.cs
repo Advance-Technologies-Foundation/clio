@@ -140,6 +140,11 @@ namespace bpmcli
 			_settings.ActiveEnvironmentKey = activeEnvironment;
 			Save();
 		}
+
+		internal void RemoveEnvironment(string environment) {
+			_settings.Environments.Remove(environment);
+			Save();
+		}
 	}
 
 }
