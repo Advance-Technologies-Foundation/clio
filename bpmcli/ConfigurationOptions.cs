@@ -15,7 +15,6 @@ namespace bpmcli
 		public string Uri { get; set; }
 		public string Login { get; set; }
 		public string Password { get; set; }
-
 		internal void Merge(EnvironmentSettings environment) {
 			if (!String.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
@@ -114,7 +113,7 @@ namespace bpmcli
 			}
 		}
 
-		public EnvironmentSettings GetEnvironment(string name = null) {
+		internal EnvironmentSettings GetEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			if (String.IsNullOrEmpty(name)) {
 				environment = _settings.GetActiveEnviroment();
