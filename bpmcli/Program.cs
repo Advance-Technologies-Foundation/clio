@@ -18,55 +18,14 @@ namespace bpmcli
 		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
-		class BaseOptions {
-			[Option('e', "Environment", Required = false)]
-			public string Environment { get; set; }
-		}
 
-		[Verb("exec", HelpText = "Execute assembly.")]
-		class ExecuteOptions: BaseOptions
-		{
-			[Option('f', "FilePath", Required = true)]
-			public string FilePath { get; set; }
-			[Option('t', "ExecutorType", Required = true)]
-			public string ExecutorType { get; set; }
-		}
-		[Verb("restart", HelpText = "Restart application.")]
-		class RestartOptions:BaseOptions
-		{
-			
-		}
-		[Verb("download", HelpText = "Download assembly.")]
-		class DownloadOptions:BaseOptions
-		{
-			[Option('p', "PackageName", Required = true)]
-			public string PackageName { get; set; }
-		}
-		[Verb("upload", HelpText = "Upload assembly.")]
-		class UploadOptions: BaseOptions
-		{
-			[Option('p', "PackageName", Required = true)]
-			public string PackageName { get; set; }
-		}
-		[Verb("cfg", HelpText = "Configure environment settings.")]
-		class ConfigureOptions:BaseOptions
-		{
-			[Option('u', "Uri", Required = false)]
-			public string Uri { get; set; }
-			[Option('l', "Login", Required = false)]
-			public string Login { get; set; }
-			[Option('p', "Password", Required = false)]
-			public string Password { get; set; }
-			[Option('a', "Active environments", Required = false)]
-			public string ActiveEnvironment { get; set; }
-		}
 
 		private static void Configure(BaseOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options.Environment);
-			_url = settings.Uri;
-			_userName = settings.Login;
-			_userPassword = settings.Password;
+			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
+			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
+			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
 		}
 
 		public static void Login() {
@@ -166,6 +125,12 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int RemoveEnvironment(RemoveOptions options) {
+			var repository = new SettingsRepository();
+			repository.RemoveEnvironment(options.Environment);
+			return 0;
+		}
+
 		private static void DownloadPackages(string packageName) {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(DownloadPackageUrl);
 			request.Method = "POST";
@@ -241,13 +206,14 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions, RemoveOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
 					(DownloadOptions opts) => Download(opts),
 					(UploadOptions opts) => Upload(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
+					(RemoveOptions opts) => RemoveEnvironment(opts),
 					errs => 1);
 		}
 	}
