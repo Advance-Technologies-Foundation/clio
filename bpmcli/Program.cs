@@ -205,6 +205,7 @@ namespace bpmcli
 				return;
 			}
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(InstallUrl);
+			request.Timeout = 1800000;
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
 			AddCsrfToken(request);
