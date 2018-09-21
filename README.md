@@ -67,3 +67,8 @@ bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
 ```powershell
 bpmcli install -f путь_к_файлу\SalesEnterprise.zip
 ```
+
+### Сжатие проекта в пакет
+```powershell
+bpmcli compress -s путь_к_папке_проекта\ -d путь_к_файлу\file.gz
+```
