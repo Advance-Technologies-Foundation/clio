@@ -59,7 +59,13 @@ namespace bpmcli
 	[Verb("cfg", HelpText = "Configure environment settings.")]
 	internal class ConfigureOptions : BaseOptions
 	{
-		[Option('a', "ActiveEnvironment", Required = true)]
+		[Option('a', "ActiveEnvironment", Required = false)]
 		public string ActiveEnvironment { get; set; }
+	}
+	[Verb("remove", HelpText = "Remove environment settings.")]
+	internal class RemoveOptions : BaseOptions
+	{
+		[Option('e', "ActiveEnvironment", Required = true)]
+		public new string Environment { get; set; }
 	}
 }
