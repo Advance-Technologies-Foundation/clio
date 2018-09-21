@@ -197,9 +197,10 @@ namespace bpmcli
 
 		}
 
-		private static void InstallPackage(string fileName) {
+		private static void InstallPackage(string filePath) {
+			string fileName = string.Empty;
 			try {
-				UploadPackage(fileName);
+				fileName = UploadPackage(filePath);
 			}
 			catch (Exception) {
 				return;
@@ -227,7 +228,9 @@ namespace bpmcli
 			response.Close();
 		}
 
-		private static void UploadPackage(string fileName) {
+		private static string UploadPackage(string filePath) {
+			FileInfo fileInfo = new FileInfo(filePath);
+			string fileName = fileInfo.Name;
 			string boundary = DateTime.Now.Ticks.ToString("x");
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UploadUrl);
 			request.ContentType = "multipart/form-data; boundary=" + boundary;
@@ -271,6 +274,7 @@ namespace bpmcli
 			reader.Close();
 			dataStream.Close();
 			response.Close();
+			return fileName;
 		}
 
 		private static int Execute(ExecuteOptions options) {
