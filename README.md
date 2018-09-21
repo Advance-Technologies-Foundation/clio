@@ -30,7 +30,7 @@ bpmcli restart
 
 Создание нового окружения: имя , путь к сайту, логин и пароль для подключения
 ```powershell
-bpmcli cfg -e dev -u http://mysite.bpmonline.com -l user -p password
+bpmcli cfg -e dev -u http://mysite.bpmonline.com -l user -p pa$$word
 ```
 Установка окружения по умолчанию
 ```powershell
@@ -38,10 +38,19 @@ bpmcli cfg -a dev
 ```
 Измененение параметра существущего окружения
 ```powershell
-bpmcli cfg -e dev -p NewPa$$word
+bpmcli cfg -e dev -p pa$$word
 ```
 
 Удаление окружения
 ```powershell
 bpmcli remove -e dev
+```
+
+### Передача параметров окружения в команду для CI\CD
+
+В системах CI\CD можно не использовать файл конфигурации и передавать параметры
+напрямую при каждом вызове команды
+
+```powershell
+bpmcli restart -u http://mysite.bpmonline.com -l Administrator -p pa$$word
 ```
