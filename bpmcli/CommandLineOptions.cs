@@ -1,4 +1,5 @@
 ﻿using CommandLine;
+using CommandLine.Text;
 
 namespace bpmcli
 {
@@ -44,6 +45,15 @@ namespace bpmcli
 	{
 		[Option('p', "PackageName", Required = true)]
 		public string PackageName { get; set; }
+	}
+
+	[Verb("compress", HelpText = "Compression project")]
+	internal class CompressionOptions : BaseOptions
+	{
+		[Option('s', "SourcePath", Required = true)]
+		public string SourcePath { get; set; }
+		[Option('d', "DestinationPath", Required = true)]
+		public string DestinationPath { get; set; }
 	}
 
 	[Verb("cfg", HelpText = "Configure environment settings.")]

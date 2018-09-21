@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using CommandLine;
 
@@ -171,6 +172,24 @@ namespace bpmcli
 			response.Close();
 		}
 
+		private static void CompressionProject(string sourcePath, string destinationPath) {
+			if (File.Exists(destinationPath)) {
+				File.Delete(destinationPath);
+			}
+
+			string[] files = Directory.GetFiles(sourcePath, "*.*", SearchOption.AllDirectories);
+			int directoryPathLength = sourcePath.Length;
+			using (Stream fileStream =
+				File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None)) {
+				using (var zipStream = new GZipStream(fileStream, CompressionMode.Compress)) {
+					foreach (string filePath in files) {
+						CompressionUtilities.ZipFile(filePath, directoryPathLength, zipStream);
+					}
+				}
+			}
+
+		}
+
 		private static int Execute(ExecuteOptions options) {
 			Configure(options);
 			Login();
@@ -199,14 +218,20 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int Compression(CompressionOptions options) {
+			CompressionProject(options.SourcePath, options.DestinationPath);
+			return 0;
+		}
+
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions, CompressionOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
 					(DownloadOptions opts) => Download(opts),
 					(UploadOptions opts) => Upload(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
+					(CompressionOptions opts) => Compression(opts),
 					errs => 1);
 		}
 	}
