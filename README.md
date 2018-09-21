@@ -63,13 +63,13 @@ bpmcli restart -e dev
 bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
 ```
 
+### Сжатие проекта в пакет
+```powershell
+bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
+```
+
 ### Установка пакета из архива
 
 ```powershell
-bpmcli install -f путь_к_файлу\SalesEnterprise.zip
-```
-
-### Сжатие проекта в пакет
-```powershell
-bpmcli compress -s путь_к_папке_проекта\ -d путь_к_файлу\file.gz
+bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 ```
