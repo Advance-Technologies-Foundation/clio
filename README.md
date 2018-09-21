@@ -10,6 +10,7 @@ c платформой bpmonline версии 7.13.0 и выше
 * Установка пакета в приложение
 * Загрузка/выгрузка контента пакета в приложение при работе в РФС
 * Выполнение кода сборки в приложении
+* Установка пакета из архива
 
 INSTALLATION
 ---------------------
@@ -59,4 +60,10 @@ bpmcli restart -e dev
 
 ```powershell
 bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
+```
+
+### Установка пакета из архива
+
+```powershell
+bpmcli install -f путь_к_файлу\SalesEnterprise.zip
 ```

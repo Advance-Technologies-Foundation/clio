@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Text;
 using CommandLine;
 
 namespace bpmcli
@@ -17,9 +18,9 @@ namespace bpmcli
 		private static string UnloadAppDomainUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 		private static string DownloadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
 		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
+		private static string UploadUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/UploadPackage";
+		private static string InstallUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/InstallPackage";
 		public static CookieContainer AuthCookie = new CookieContainer();
-
-
 
 		private static void Configure(BaseOptions options) {
 			var settingsRepository = new SettingsRepository();
@@ -196,6 +197,81 @@ namespace bpmcli
 
 		}
 
+		private static void InstallPackage(string fileName) {
+			try {
+				UploadPackage(fileName);
+			}
+			catch (Exception) {
+				return;
+			}
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(InstallUrl);
+			request.Method = "POST";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			request.ContentType = "application/json";
+			using (var requestStream = request.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write("\"" + fileName + "\"");
+				}
+			}
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			Console.WriteLine(responseFromServer);
+			reader.Close();
+			dataStream.Close();
+			response.Close();
+		}
+
+		private static void UploadPackage(string fileName) {
+			string boundary = DateTime.Now.Ticks.ToString("x");
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UploadUrl);
+			request.ContentType = "multipart/form-data; boundary=" + boundary;
+			request.Method = "POST";
+			request.KeepAlive = true;
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			Stream memStream = new MemoryStream();
+			var boundarybytes = Encoding.ASCII.GetBytes("\r\n--" + boundary + "\r\n");
+			var endBoundaryBytes = Encoding.ASCII.GetBytes("\r\n--" + boundary + "--");
+			string headerTemplate =
+				"Content-Disposition: form-data; name=\"{0}\"; filename=\"{1}\"\r\n" +
+				"Content-Type: application/octet-stream\r\n\r\n";
+			memStream.Write(boundarybytes, 0, boundarybytes.Length);
+			var header = string.Format(headerTemplate, "files", fileName);
+			var headerbytes = Encoding.UTF8.GetBytes(header);
+			memStream.Write(headerbytes, 0, headerbytes.Length);
+			using (var fileStream = new FileStream(fileName, FileMode.Open, FileAccess.Read)) {
+				var buffer = new byte[1024];
+				var bytesRead = 0;
+				while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) != 0) {
+					memStream.Write(buffer, 0, bytesRead);
+				}
+			}
+			memStream.Write(endBoundaryBytes, 0, endBoundaryBytes.Length);
+			request.ContentLength = memStream.Length;
+			using (Stream requestStream = request.GetRequestStream()) {
+				memStream.Position = 0;
+				byte[] tempBuffer = new byte[memStream.Length];
+				memStream.Read(tempBuffer, 0, tempBuffer.Length);
+				memStream.Close();
+				requestStream.Write(tempBuffer, 0, tempBuffer.Length);
+			}
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			Console.WriteLine(responseFromServer);
+			reader.Close();
+			dataStream.Close();
+			response.Close();
+		}
+
 		private static int Execute(ExecuteOptions options) {
 			Configure(options);
 			Login();
@@ -229,8 +305,16 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int Install(InstallOptions options) {
+			Configure(options);
+			Login();
+			InstallPackage(options.FilePath);
+			return 0;
+		}
+
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, UploadOptions, ConfigureOptions, RemoveOptions, CompressionOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, 
+				UploadOptions, ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -239,6 +323,7 @@ namespace bpmcli
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
 					(RemoveOptions opts) => RemoveEnvironment(opts),
 					(CompressionOptions opts) => Compression(opts),
+					(InstallOptions opts) => Install(opts),
 					errs => 1);
 		}
 	}

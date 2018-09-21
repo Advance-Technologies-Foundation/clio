@@ -68,4 +68,10 @@ namespace bpmcli
 		[Option('e', "ActiveEnvironment", Required = true)]
 		public new string Environment { get; set; }
 	}
+	[Verb("install", HelpText = "Install package.")]
+	class InstallOptions : BaseOptions
+	{
+		[Option('f', "FilePath", Required = true)]
+		public string FilePath { get; set; }
+	}
 }
