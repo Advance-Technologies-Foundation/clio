@@ -63,7 +63,7 @@ bpmcli restart -e dev
 bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
 ```
 
-### Сжатие проекта в пакет
+### Сжатие проекта в архив пакета
 ```powershell
 bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
 ```
