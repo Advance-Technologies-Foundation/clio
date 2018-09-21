@@ -52,5 +52,5 @@ bpmcli remove -e dev
 напрямую при каждом вызове команды
 
 ```powershell
-bpmcli restart -u http://mysite.bpmonline.com -l Administrator -p pa$$word
+bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
 ```
