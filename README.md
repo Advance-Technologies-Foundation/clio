@@ -12,8 +12,12 @@ INSTALLATION
 ### Setup
 
 
-### bpmcli commands
+COMMANDS
+---------------------
+
+Команды вызываются из терминала
 
 Перезапуск приложения с выгрузкой домена
+
 ```powershell
 bpmcli restart
