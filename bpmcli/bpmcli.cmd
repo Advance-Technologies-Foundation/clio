@@ -1,1 +1,1 @@
-dotnet %~dp0bpmcli.dll %1 %2 %3
+dotnet %~dp0bpmcli.dll %*
