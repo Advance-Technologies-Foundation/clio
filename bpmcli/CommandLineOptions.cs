@@ -44,7 +44,7 @@ namespace bpmcli
 	}
 
 	[Verb("compress", HelpText = "Compression project")]
-	internal class CompressionOptions : BaseOptions
+	internal class CompressionOptions
 	{
 		[Option('s', "SourcePath", Required = true)]
 		public string SourcePath { get; set; }
