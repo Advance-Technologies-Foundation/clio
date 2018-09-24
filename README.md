@@ -8,12 +8,10 @@ c платформой bpmonline версии 7.13.0 и выше
 * Перезапуск приложения
 * Формирование пакета из файловой системы
 * Установка пакета в приложение
-* Загрузка/выгрузка контента пакета в приложение при работе в РФС
+* Загрузка/выгрузка пакета в приложение при работе в РФС
 * Выполнение кода сборки в приложении
 * Установка пакета из архива
 * Сжатие проекта в пакет
-* Загрузка сборки
-* Выгрузка сборки
 
 INSTALLATION
 ---------------------
@@ -76,14 +74,14 @@ bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
 bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 ```
 
-### Загрузка сборки
+### Загрузка пакета в приложение из файловой системы
 
 ```powershell
-bpmcli download -p PackageName
+bpmcli fetch -o upload -p PackageName
 ```
 
-### Выгрузка сборки
+### Выгрузка пакета из приложения в фйаловую систему
 
 ```powershell
-bpmcli upload -p PackageName
+bpmcli fetch -o download -p PackageName
 ```
