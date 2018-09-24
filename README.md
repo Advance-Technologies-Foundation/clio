@@ -64,15 +64,23 @@ bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
 ```
 
 ### Сжатие проекта в архив пакета
+
+Для подготовки пакета в формате gz для установки в целевую среду, необходимо
+выполнить операцию compress, параметры  -s путь к папке пакета, -d имя файла
+результирующего архива
+
 ```powershell
 bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
 ```
 
 ### Установка пакета из архива
 
+Для уcтановки пакета в формате gz необходимо воспользоваться командой install
+
 ```powershell
 bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 ```
+Для загрузки контента пакета из файловой системы в приложение
 
 ### Загрузка пакета в приложение из файловой системы
 
@@ -81,6 +89,8 @@ bpmcli fetch -o upload -p PackageName
 ```
 
 ### Выгрузка пакета из приложения в фйаловую систему
+
+Для выгрузки контента пакета из приложения в файловую систему
 
 ```powershell
 bpmcli fetch -o download -p PackageName
