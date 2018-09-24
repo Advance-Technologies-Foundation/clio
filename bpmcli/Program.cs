@@ -242,13 +242,14 @@ namespace bpmcli
 
 		private static void InstallPackage(string filePath) {
 			string fileName = string.Empty;
-			try {
+			try {				
 				fileName = UploadPackage(filePath);
 			}
 			catch (Exception e) {
 				Console.WriteLine(e.Message);
 				return;
 			}
+			Console.WriteLine("Installing...");
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(InstallUrl);
 			request.Timeout = 1800000;
 			request.Method = "POST";
@@ -270,9 +271,11 @@ namespace bpmcli
 			reader.Close();
 			dataStream.Close();
 			response.Close();
+			Console.WriteLine("Installed");
 		}
 
 		private static string UploadPackage(string filePath) {
+			Console.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string fileName = fileInfo.Name;
 			string boundary = DateTime.Now.Ticks.ToString("x");
@@ -318,6 +321,7 @@ namespace bpmcli
 			reader.Close();
 			dataStream.Close();
 			response.Close();
+			Console.WriteLine("Uploaded");
 			return fileName;
 		}
 
