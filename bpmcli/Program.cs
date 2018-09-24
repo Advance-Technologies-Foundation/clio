@@ -245,7 +245,8 @@ namespace bpmcli
 			try {
 				fileName = UploadPackage(filePath);
 			}
-			catch (Exception) {
+			catch (Exception e) {
+				Console.WriteLine(e.Message);
 				return;
 			}
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(InstallUrl);
@@ -291,7 +292,7 @@ namespace bpmcli
 			var header = string.Format(headerTemplate, "files", fileName);
 			var headerbytes = Encoding.UTF8.GetBytes(header);
 			memStream.Write(headerbytes, 0, headerbytes.Length);
-			using (var fileStream = new FileStream(fileName, FileMode.Open, FileAccess.Read)) {
+			using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read)) {
 				var buffer = new byte[1024];
 				var bytesRead = 0;
 				while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) != 0) {
@@ -334,20 +335,6 @@ namespace bpmcli
 			return 0;
 		}
 
-		private static int Download(DownloadOptions options) {
-			Configure(options);
-			Login();
-			DownloadPackages(options.PackageName);
-			return 0;
-		}
-
-		private static int Upload(UploadOptions options) {
-			Configure(options);
-			Login();
-			Uploadpackages(options.PackageName);
-			return 0;
-		}
-
 		private static int Compression(CompressionOptions options) {
 			CompressionProject(options.SourcePath, options.DestinationPath);
 			return 0;
@@ -361,18 +348,28 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, DownloadOptions, 
-				UploadOptions, ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions,
+				FetchOptions, ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
-					(DownloadOptions opts) => Download(opts),
-					(UploadOptions opts) => Upload(opts),
+					(FetchOptions opts) => Fetch(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
 					(RemoveOptions opts) => RemoveEnvironment(opts),
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
 					errs => 1);
+		}
+
+		private static int Fetch(FetchOptions opts) {
+			Configure(opts);
+			Login();
+			if (opts.Operation == "load") {
+				DownloadPackages(opts.PackageName);
+			} else {
+				Uploadpackages(opts.PackageName);
+			}
+			return 0;
 		}
 	}
 }

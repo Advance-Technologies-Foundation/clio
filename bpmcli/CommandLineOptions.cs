@@ -33,18 +33,14 @@ namespace bpmcli
 	{
 	}
 
-	[Verb("download", HelpText = "Download assembly.")]
-	internal class DownloadOptions : BaseOptions
+	[Verb("fetch", HelpText = "Download assembly.")]
+	internal class FetchOptions : BaseOptions
 	{
-		[Option('p', "PackageName", Required = true)]
+		[Option('p', "Package name", Required = true)]
 		public string PackageName { get; set; }
-	}
 
-	[Verb("upload", HelpText = "Upload assembly.")]
-	internal class UploadOptions : BaseOptions
-	{
-		[Option('p', "PackageName", Required = true)]
-		public string PackageName { get; set; }
+		[Option('o', "Operation", Required = false)]
+		public string Operation { get; set; }
 	}
 
 	[Verb("compress", HelpText = "Compression project")]
