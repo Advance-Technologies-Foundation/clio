@@ -73,3 +73,15 @@ bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
 ```powershell
 bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 ```
+
+### Загрузка сборки
+
+```powershell
+bpmcli download -p PackageName
+```
+
+### Выгрузка сборки
+
+```powershell
+bpmcli upload -p PackageName
+```
