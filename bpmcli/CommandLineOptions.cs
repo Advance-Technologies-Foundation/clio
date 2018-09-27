@@ -69,5 +69,7 @@ namespace bpmcli
 	{
 		[Option('f', "FilePath", Required = true)]
 		public string FilePath { get; set; }
+		[Option('r', "ReportPath", Required = false)]
+		public string ReportPath { get; set; }
 	}
 }

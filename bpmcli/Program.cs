@@ -20,6 +20,7 @@ namespace bpmcli
 		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
 		private static string UploadUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private static string InstallUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/InstallPackage";
+		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static void Configure(BaseOptions options) {
@@ -272,6 +273,7 @@ namespace bpmcli
 			dataStream.Close();
 			response.Close();
 			Console.WriteLine("Installed");
+
 		}
 
 		private static string UploadPackage(string filePath) {
@@ -348,7 +350,33 @@ namespace bpmcli
 			Configure(options);
 			Login();
 			InstallPackage(options.FilePath);
+			if (options.ReportPath != null) {
+				SaveLogFile(options.ReportPath);
+			}
 			return 0;
+		}
+
+		private static void SaveLogFile(string reportPath) {
+			if (File.Exists(reportPath)) {
+				File.Delete(reportPath);
+			}
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(LogUrl);
+			request.Timeout = 100000;
+			request.Method = "GET";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			request.ContentType = "application/json";
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			File.WriteAllText(reportPath, responseFromServer, Encoding.UTF8);
+			Console.WriteLine("Logs downloaded");
+			reader.Close();
+			dataStream.Close();
+			response.Close();
 		}
 
 		private static int Main(string[] args) {
