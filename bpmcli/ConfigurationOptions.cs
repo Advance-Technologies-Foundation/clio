@@ -67,7 +67,7 @@ namespace bpmcli
 
 		private readonly string fileName = "appsettings.json";
 
-		public string AppSettingsFolderPath {
+		private string AppSettingsFolderPath {
 			get {
 				var userPath = Environment.GetEnvironmentVariable(
 				   RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
@@ -81,9 +81,9 @@ namespace bpmcli
 			}
 		}
 
-		public string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{fileName}";
+		private string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{fileName}";
 
-		public void InitializeSettingsFile() {
+		private void InitializeSettingsFile() {
 			if (File.Exists(AppSettingsFilePath)) {
 				return;
 			}
