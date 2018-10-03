@@ -46,10 +46,12 @@ namespace bpmcli
 	[Verb("compress", HelpText = "Compression project")]
 	internal class CompressionOptions
 	{
-		[Option('s', "SourcePath", Required = true, HelpText = "Path to source package folder")]
+		[Option('s', "SourcePath", Required = true)]
 		public string SourcePath { get; set; }
-		[Option('d', "DestinationPath", Required = true, HelpText = "Compressed package file path")]
+		[Option('d', "DestinationPath", Required = true)]
 		public string DestinationPath { get; set; }
+		[Option('p', "Packages", Required = false)]
+		public string Packages  { get; set; }
 	}
 
 	[Verb("cfg", HelpText = "Configure environment settings")]
