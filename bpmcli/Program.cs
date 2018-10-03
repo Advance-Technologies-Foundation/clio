@@ -357,10 +357,15 @@ namespace bpmcli
 		}
 
 		private static int Restart(RestartOptions options) {
-			Configure(options);
-			Login();
-			UnloadAppDomain();
-			return 0;
+			try {
+				Configure(options);
+				Login();
+				UnloadAppDomain();
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
 		}
 
 		private static int Compression(CompressionOptions options) {
