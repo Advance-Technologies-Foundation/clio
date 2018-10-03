@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net;
 using System.Text;
 using CommandLine;
@@ -180,6 +182,26 @@ namespace bpmcli
 			response.Close();
 		}
 
+		private static void CompressionProjects(string sourcePath, string destinationPath, List<string> names) {
+			string tempPath = Path.Combine(Path.GetTempPath(), "Application_");// + DateTime.Now.ToShortDateString());
+			if (Directory.Exists(tempPath)) {
+				Directory.Delete(tempPath, true);
+			}
+			Directory.CreateDirectory(tempPath);
+			foreach (var name in names) {
+				var currentSourcePath = Path.Combine(sourcePath, name);
+				var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
+				CompressionProject(currentSourcePath, currentDestinationPath);
+			}
+			ZipFile.CreateFromDirectory(tempPath, destinationPath);
+		}
+
+		private static List<string> GetPackages(string inputline)
+		{
+			var result = inputline.Replace(" ", string.Empty).Split(',').ToList();
+			return result;
+		}		
+		
 		private static void CompressionProject(string sourcePath, string destinationPath) {
 			if (File.Exists(destinationPath)) {
 				File.Delete(destinationPath);
@@ -342,7 +364,12 @@ namespace bpmcli
 		}
 
 		private static int Compression(CompressionOptions options) {
-			CompressionProject(options.SourcePath, options.DestinationPath);
+			if (options.Packages == null) {
+				CompressionProject(options.SourcePath, options.DestinationPath);
+			} else {
+				var packages = GetPackages(options.Packages);
+				CompressionProjects(options.SourcePath, options.DestinationPath, packages);
+			}
 			return 0;
 		}
 
