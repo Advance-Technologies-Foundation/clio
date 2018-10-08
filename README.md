@@ -91,11 +91,11 @@ bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 
 
 ```powershell
-bpmcli fetch -o upload -p PackageName
+bpmcli fetch -o upload -n PackageName
 ```
 
 Для выгрузки контента пакета из приложения в файловую систему
 
 ```powershell
-bpmcli fetch -o download -p PackageName
+bpmcli fetch -o download -n PackageName
 ```
