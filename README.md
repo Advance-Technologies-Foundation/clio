@@ -57,6 +57,12 @@ bpmcli remove -e dev
 bpmcli restart -e dev
 ```
 
+Просмотр настроек окружения
+
+```powershell
+bpmcli сfg -m view
+```
+
 ### Использование в CI\CD
 
 В системах CI\CD можно не использовать файл конфигурации и передавать параметры
