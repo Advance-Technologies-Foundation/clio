@@ -118,6 +118,9 @@ namespace bpmcli
 
 		private static int ConfigureEnvironment(ConfigureOptions options) {
 			var repository = new SettingsRepository();
+			if (options.Mode == "view") {
+				repository.ShowSettingsTo(Console.Out);
+			}
 			var environment = new EnvironmentSettings() {
 				Login = options.Login,
 				Password = options.Password,

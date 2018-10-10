@@ -105,12 +105,19 @@ namespace bpmcli
 		}
 
 		private void Save() {
-			using (StreamWriter file = File.CreateText(AppSettingsFilePath)) {
+			using (StreamWriter fileWriter = File.CreateText(AppSettingsFilePath)) {
 				JsonSerializer serializer = new JsonSerializer() {
 					Formatting = Formatting.Indented
 				};
-				serializer.Serialize(file, _settings);
+				serializer.Serialize(fileWriter, _settings);
 			}
+		}
+
+		internal void ShowSettingsTo(TextWriter streamWriter) {
+			JsonSerializer serializer = new JsonSerializer() {
+				Formatting = Formatting.Indented
+			};
+			serializer.Serialize(streamWriter, _settings);
 		}
 
 		internal EnvironmentSettings GetEnvironment(string name = null) {
@@ -145,6 +152,7 @@ namespace bpmcli
 			_settings.Environments.Remove(environment);
 			Save();
 		}
+
 	}
 
 }

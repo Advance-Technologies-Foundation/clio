@@ -59,7 +59,10 @@ namespace bpmcli
 	{
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set environment by default")]
 		public string ActiveEnvironment { get; set; }
+		[Option('m', "Mode", Required =false, HelpText = "Configuration mode (edit by default|view for display settings)")]
+		public string Mode { get; set; }
 	}
+
 	[Verb("remove", HelpText = "Remove environment settings")]
 	internal class RemoveOptions : BaseOptions
 	{
