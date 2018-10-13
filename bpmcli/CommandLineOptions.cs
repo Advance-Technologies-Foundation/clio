@@ -77,4 +77,10 @@ namespace bpmcli
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
 	}
+	[Verb("delete", HelpText = "Delete package")]
+	class DeleteOptions : BaseOptions
+	{
+		[Option('c', "Code", Required = true, HelpText = "Package code")]
+		public string Code { get; set; }
+	}
 }
