@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using CommandLine;
 
 namespace bpmcli
@@ -23,6 +24,8 @@ namespace bpmcli
 		private static string UploadUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private static string InstallUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/InstallPackage";
 		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
+		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
+		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UninstallApp";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static void Configure(BaseOptions options) {
@@ -300,6 +303,71 @@ namespace bpmcli
 			Console.WriteLine("Installed");
 
 		}
+		
+		private static void Deletepackage(string code) {
+			string appId = GetAppId(code);
+			DeleteAppById(appId);
+		}
+
+		private static string GetAppId(string code) {
+			string result;
+			string query = "{\"rootSchemaName\":\"SysInstalledApp\",\"operationType\":0,\"filters\":{\"items\":{\"4eacef8f-252a-4054-9711-ded84c911dc7\":{\"items\":{\"CustomFilters\":{\"items\":{\"customFilterCode_SysInstalledApp\":{\"filterType\":1,\"comparisonType\":3,\"isEnabled\":true,\"trimDateTimeParameterToDate\":false,\"leftExpression\":{\"expressionType\":0,\"columnPath\":\"Code\"},\"rightExpression\":{\"expressionType\":2,\"parameter\":{\"dataValueType\":1,\"value\":\""
+			               + code + "\"}}}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6},\"columns\":{\"items\":{\"Id\":{\"caption\":\"\",\"orderDirection\":0,\"orderPosition\":-1,\"isVisible\":true,\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}},\"isDistinct\":false,\"rowCount\":30,\"rowsOffset\":0,\"isPageable\":true,\"allColumns\":false,\"useLocalization\":true,\"useRecordDeactivation\":false,\"serverESQCacheParameters\":{\"cacheLevel\":0,\"cacheGroup\":\"\",\"cacheItemName\":\"\"},\"queryOptimize\":false,\"useMetrics\":false,\"querySource\":0,\"ignoreDisplayValues\":false,\"conditionalValues\":null,\"isHierarchical\":false}";
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(SelectQueryUrl);
+			request.Method = "POST";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			using (var requestStream = request.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write(query);
+				}
+			}
+			request.ContentType = "application/json";
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			Regex regex = new Regex("\"Id\":\"(.+?)\"");
+			Match match = regex.Match(responseFromServer);
+			if (match.Success) {
+				result = match.Groups[1].Value;
+			} else {
+				const string message = "This code not exists.";
+				Console.WriteLine(message);
+				throw new Exception(message);
+			}
+			reader.Close();
+			dataStream.Close();
+			response.Close();
+			return result;
+		}
+
+		private static void DeleteAppById(string id) {
+			Console.WriteLine("Deleting...");
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UninstallAppUrl);
+			request.Method = "POST";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			using (var requestStream = request.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write("\"" + id + "\"");
+				}
+			}
+			request.ContentType = "application/json";
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			Console.WriteLine(responseFromServer);
+			reader.Close();
+			dataStream.Close();
+			response.Close();
+			Console.WriteLine("Deleted.");
+		}
 
 		private static string UploadPackage(string filePath) {
 			Console.WriteLine("Uploading...");
@@ -391,6 +459,13 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int Delete(DeleteOptions options) {
+			Configure(options);
+			Login();
+			Deletepackage(options.Code);
+			return 0;
+		}
+
 		private static void SaveLogFile(string reportPath) {
 			if (File.Exists(reportPath)) {
 				File.Delete(reportPath);
@@ -415,8 +490,8 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions,
-				FetchOptions, ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions>(args)
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
+					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions, DeleteOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -425,6 +500,7 @@ namespace bpmcli
 					(RemoveOptions opts) => RemoveEnvironment(opts),
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
+					(DeleteOptions opts) => Delete(opts),
 					errs => 1);
 		}
 
