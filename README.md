@@ -1,107 +1,117 @@
-Bpmonline Command Line Interface (bpmcli)
-=============================
+# Introduction
 
-Проект предназначен для интеграции систем разработки и CI/CD
-c платформой bpmonline версии 7.13.0 и выше
+Bpmonline Command Line Interface bpmcli is the utility for integration bpm'online platform with development and CI/CD tools.
 
-Возможности
----------------------
-* Перезапуск приложения
-* Формирование пакета из файловой системы
-* Установка пакета в приложение
-* Загрузка/выгрузка пакета в приложение при работе в РФС
-* Установка пакета из архива
-* Сжатие проекта в пакет
+With aid of bpmcli you can:
+- Restart the bpm'online application
+- Create bpm'online packages in file system
+- Install package to bpm'online application
+- Upload (download) package to (from) bpm'online database when developing in file system mode
+- Install package from zip archive
+- Compress Visual Studio project to the bpm'online package
 
-INSTALLATION
----------------------
+# Installation
 
-Для установки bpmcli необходимо выполнить регистрационный файл register.cmd
-входящий в пакет поставки. Если нет необходимости получить глобальную команду
-bpmcli можно пользоваться командой для запуска dotnet #Path to cli#bpmcli.dll и 
-передать необходимые аргументы
+Todo: where to download bpmcli binaries?
 
-COMMANDS
----------------------
+# Registering as the global command
 
-### Перезапуск приложения
+To register bpmcli as the global command, run the register.cmd file. You can find the register.cmd in the bpmcli package directory.
 
-Перезапуск приложения с выгрузкой домена
+Also, you can run the bpmcli with aid of the dotnet command line interface. For example:
 
-```powershell
+```
+dotnet path/to/the/bpmcli/directory/bpmcli.dll
+```
+or
+
+```
+cd /path/to/the/bpmcli/directory/
+dotnet bpmcli.dll
+```
+# Commands
+
+## Restarting bpm'online application
+
+To restart bpm'online, use the next command:
+
+```
 bpmcli restart
 ```
-### Настройка окружения
+## Working with the environment
 
-Создание нового окружения: имя , путь к сайту, логин и пароль для подключения
-```powershell
-bpmcli cfg -e dev -u http://mysite.bpmonline.com -l user -p pa$$word
+Environment is the set of configuration options. It consist of name, bpm'online URL, login and password.
+
+### Creating a new environment with custom options
+
 ```
-Установка окружения по умолчанию
-```powershell
-bpmcli cfg -a dev
+bpmcli cfg -e dev -u http://myapp.bpmonline.com -l user -p password
 ```
-Измененение параметра существущего окружения
-```powershell
-bpmcli cfg -e dev -p pa$$word
+The command above creates a new environment with the next options:
+- name is "dev"
+- bpm'online URL is "http://myapp.bpmonline.com"
+- bpm'online login is "user"
+- bpm'online password is "password"
+
+### Creating a new environment with default options
+
+```
+bpmcli cfg -e dev
 ```
 
-Удаление окружения
-```powershell
+### Changing the option of the existing environment
+
+```
+bpmcli cfg -e dev -p newpassword
+```
+
+### Deleting the existing environment
+
+```
 bpmcli remove -e dev
 ```
 
-Использование неосновного окружения при вызове команд
+### Viewing the current environment options
 
-```powershell
-bpmcli restart -e dev
 ```
-
-Просмотр настроек окружения
-
-```powershell
 bpmcli сfg -m view
 ```
 
-### Использование в CI\CD
+### Using bpmcli commands for noncurrent environment
 
-В системах CI\CD можно не использовать файл конфигурации и передавать параметры
-напрямую при каждом вызове команды
-
-```powershell
-bpmcli restart -u http://mysite.bpmonline.com -l administrator -p pa$$word
+```
+bpmcli restart -e dev
+```
+### Using for CI\DI systems
+In CI\CD systems, you can specify configuration options directly when calling command:
+```
+bpmcli restart -u http://mysite.bpmonline.com -l administrator -p password
 ```
 
-### Сжатие проекта в архив пакета
+## Working with packages
 
-Для подготовки пакета в формате gz для установки в целевую среду, необходимо
-выполнить операцию compress, параметры  -s путь к папке пакета, -d имя файла
-результирующего архива
+### Compressing package
 
-```powershell
+Before installing the package into bpm'online, you need to compress it into *.gz archive first.
+```
 bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
 ```
+The command above uses the next options:
+- -s is the path to the source folder, which contains the package directories.
+- -d is the destination path to the resulting *.gz archive.
 
-### Установка пакета из архива
+### Installing package
 
-Для уcтановки пакета в формате gz необходимо воспользоваться командой install
-
-```powershell
+To install package, which is zipped into *.gz archive, use the next command:
+```
 bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 ```
-Для загрузки контента пакета из файловой системы в приложение
-
-### Загрузка/выгрузка конента пакета в приложение
-
-Для загрузки контента пакета в приложения из файловой системы
-
-
-```powershell
+### Uploading package content from the file system into bpm'online database
+```
 bpmcli fetch -o upload -n PackageName
 ```
+### Downloading package content from the bpm'online database into the file system
 
-Для выгрузки контента пакета из приложения в файловую систему
-
-```powershell
+```
 bpmcli fetch -o download -n PackageName
 ```
