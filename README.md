@@ -107,7 +107,7 @@ To install package, which is zipped into *.gz archive, use the next command:
 bpmcli install -f C:\bpmonline\pkg\mypackage.gz
 ```
 
-### Deleted package
+### Deleting package
 
 To delete package, use the next command:
 ```
