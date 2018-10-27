@@ -36,8 +36,8 @@ namespace bpmcli
 	[Verb("fetch", HelpText = "Download assembly")]
 	internal class FetchOptions : BaseOptions
 	{
-		[Option('n', "Package name", Required = true, HelpText = "Package name")]
-		public string PackageName { get; set; }
+		[Option('n', "Package names", Required = true, HelpText = "Package names")]
+		public string PackageNames { get; set; }
 
 		[Option('o', "Operation", Required = false, HelpText = "Operation: load - from file system to app, download - from app to file system)")]
 		public string Operation { get; set; }
