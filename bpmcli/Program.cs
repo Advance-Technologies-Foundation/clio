@@ -155,11 +155,11 @@ namespace bpmcli
 			request.ContentType = "application/json";
 			Stream dataStream;
 			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			//Console.WriteLine(((HttpWebResponse)response).StatusDescription);
 			dataStream = response.GetResponseStream();
 			StreamReader reader = new StreamReader(dataStream);
 			string responseFromServer = reader.ReadToEnd();
-			Console.WriteLine(responseFromServer);
+			Console.WriteLine(packageName + " - " + responseFromServer);
 			reader.Close();
 			dataStream.Close();
 			response.Close();
@@ -178,11 +178,11 @@ namespace bpmcli
 			request.ContentType = "application/json";
 			Stream dataStream;
 			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+			//Console.WriteLine(((HttpWebResponse)response).StatusDescription);
 			dataStream = response.GetResponseStream();
 			StreamReader reader = new StreamReader(dataStream);
 			string responseFromServer = reader.ReadToEnd();
-			Console.WriteLine(responseFromServer);
+			Console.WriteLine(packageName + " - " + responseFromServer);
 			reader.Close();
 			dataStream.Close();
 			response.Close();
@@ -507,10 +507,13 @@ namespace bpmcli
 		private static int Fetch(FetchOptions opts) {
 			Configure(opts);
 			Login();
-			if (opts.Operation == "load") {
-				DownloadPackages(opts.PackageName);
-			} else {
-				Uploadpackages(opts.PackageName);
+			var packages = GetPackages(opts.PackageNames);
+			foreach (var package in packages) {
+				if (opts.Operation == "load") {
+					DownloadPackages(package);
+				} else {
+					Uploadpackages(package);
+				}
 			}
 			return 0;
 		}
