@@ -34,7 +34,7 @@ namespace bpmdcli
 			return element;
 		}
 
-		public XElement Rebase(XElement testProj) {
+		public XElement ChangeCorePathToDebug(XElement testProj) {
 			List<XElement> rebaseElements = new List<XElement>();
 			foreach (var el in testProj.Elements(_xNamespace + "ItemGroup")) {
 				rebaseElements.AddRange(el.Elements(_xNamespace + "Reference")

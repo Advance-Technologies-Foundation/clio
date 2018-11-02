@@ -18,13 +18,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="SourcePkgProj.xml">
+    <None Update="ExpectPkgProj.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="SourceReferenceHint.xml">
+    <None Update="OriginPkgProj.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="TargetReferenceHint.xml">
+    <None Update="OriginReferenceHint.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExpectReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
