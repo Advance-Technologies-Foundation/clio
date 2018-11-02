@@ -1,0 +1,3 @@
+﻿<Reference Include="Terrasoft.Common, Version=7.12.4.588, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <HintPath>packages\BpmonlineSDK.7.12.4-rc\lib\net40\Terrasoft.Common.dll</HintPath>
+</Reference>

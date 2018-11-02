@@ -1,0 +1,3 @@
+﻿<Reference Include="Terrasoft.Common" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <HintPath>..\..\..\..\..\..\..\Bin\Debug\Terrasoft.Common.dll</HintPath>
+</Reference>
