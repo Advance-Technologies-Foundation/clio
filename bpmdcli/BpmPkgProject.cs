@@ -8,19 +8,34 @@ using System.Xml.Linq;
 
 namespace bpmdcli
 {
-	public class BpmDevTool
+	public class BpmPkgProject
 	{
 		private static XNamespace _xNamespace = "http://schemas.microsoft.com/developer/msbuild/2003";
+		private const string IncludeAttributeName = "Include";
 
 		private const string PathToBinDebug = @"..\..\..\..\..\..\..\Bin\Debug\";
 
-		public XElement ChangeHint(XElement element) {
-			var value = element.Attribute("Include")?.Value;
+
+		private BpmPkgProject(string path) {
+			LoadPath = path;
+			Document = XElement.Load(path, LoadOptions.PreserveWhitespace);
+		}
+
+		public XElement Document { get; }
+
+		public string LoadPath { get; }
+
+		public static BpmPkgProject LoadFromFile(string path) {
+			return new BpmPkgProject(path);
+		}
+
+		private void ChangeHint(XElement element) {
+			var value = element.Attribute(IncludeAttributeName)?.Value;
 			if (value != null) {
 				int index = value.IndexOf(",", StringComparison.Ordinal);
 				if (index > 0) {
 					value = value.Substring(0, index);
-					element.SetAttributeValue("Include", value);
+					element.SetAttributeValue(IncludeAttributeName, value);
 				}
 			}
 			var hintValue = element.Element(_xNamespace + "HintPath")?.Value;
@@ -31,25 +46,22 @@ namespace bpmdcli
 					element.SetElementValue(_xNamespace + "HintPath", hintValue);
 				}
 			}
-			return element;
 		}
 
-		public XElement ChangeCorePathToDebug(XElement testProj) {
+		public BpmPkgProject RebaseToCoreDebug() {
 			List<XElement> rebaseElements = new List<XElement>();
-			foreach (var el in testProj.Elements(_xNamespace + "ItemGroup")) {
+			foreach (var el in Document.Elements(_xNamespace + "ItemGroup")) {
 				rebaseElements.AddRange(el.Elements(_xNamespace + "Reference")
 					.Where(elem => (
 						elem.Element(_xNamespace + "HintPath") != null &&
 						((string)elem.Element(_xNamespace + "HintPath")).Contains("BpmonlineSDK"))));
 			}
+			rebaseElements.ForEach(ChangeHint);
+			return this;
+		}
 
-			//var rebaseElements =
-			//	from el in testProj.Elements(ad + "ItemGroup")
-			//	where ((string)el.Element(ad + "Reference").Attribute("Include")).StartsWith("Terrasoft.")
-			//	select el;
-
-			return rebaseElements.FirstOrDefault();
-
+		public void SaveChanges() {
+			Document.Save(LoadPath);
 		}
 	}
 }

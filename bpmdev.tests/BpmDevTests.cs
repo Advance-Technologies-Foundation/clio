@@ -13,21 +13,21 @@ namespace bpmdev.tests
 		}
 
 		[Test]
-		public void RebasePkgProj_TestMethod() {
-			var originProj = XElement.Load("OriginPkgProj.xml");
+		public void BpmPkgProject_RebaseToCoreDebug_RealProjCase() {
 			var expectProj = XElement.Load("ExpectPkgProj.xml");
-			var devTool = new BpmDevTool();
-			var changedProj = devTool.ChangeCorePathToDebug(originProj);
-			changedProj.Should().BeEquivalentTo(expectProj);
+			var proj = BpmPkgProject.LoadFromFile("OriginPkgProj.xml");
+			proj.RebaseToCoreDebug()
+				.Document
+				.Should().BeEquivalentTo(expectProj);
 		}
 
 		[Test]
-		public void ChangeHint_TestMethod() {
-			var originElement = XElement.Load("OriginReferenceHint.xml");
+		public void BpmPkgProject_RebaseToCoreDebug_SimpleCase() {
 			var expectElement = XElement.Load("ExpectReferenceHint.xml");
-			var devTool = new BpmDevTool();
-			var changedElement = devTool.ChangeHint(originElement);
-			changedElement.Should().BeEquivalentTo(expectElement);
+			var proj = BpmPkgProject.LoadFromFile("OriginReferenceHint.xml");
+			proj.RebaseToCoreDebug()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
 		}
 	}
 }

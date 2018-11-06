@@ -50,7 +50,7 @@
     <Reference Include="Terrasoft.Core">
       <HintPath>..\..\..\..\..\..\..\Bin\Debug\Terrasoft.Core.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core.ConfigurationBuild, Version=0.0.0.0, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+    <Reference Include="Terrasoft.Core.ConfigurationBuild">
       <HintPath>..\..\..\..\..\..\..\Bin\Debug\Terrasoft.Core.ConfigurationBuild.dll</HintPath>
     </Reference>
     <Reference Include="Terrasoft.Core.Packages">
