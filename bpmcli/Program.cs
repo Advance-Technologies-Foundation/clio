@@ -501,6 +501,7 @@ namespace bpmcli
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
 					(DeleteOptions opts) => Delete(opts),
+					(RebaseOptions opts) => Rebase(opts),
 					errs => 1);
 		}
 
@@ -516,6 +517,29 @@ namespace bpmcli
 				}
 			}
 			return 0;
+		}
+
+		private static int Rebase(RebaseOptions options) {
+			try {
+				switch (options.ProjectType) {
+					case "sln": {
+						throw new NotSupportedException("option sln temporaly not supported");
+					}
+					case "pkg": {
+						BpmPkgProject.LoadFromFile(options.FilePath)
+							.RebaseToCoreDebug()
+							.SaveChanges();
+					}
+						break;
+					default: {
+						throw new NotSupportedException($"You use not supported option type {options.ProjectType}");
+					}
+				}
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
 		}
 	}
 }

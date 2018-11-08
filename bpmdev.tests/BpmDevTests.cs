@@ -1,10 +1,8 @@
-using System.Xml;
 using System.Xml.Linq;
-using bpmdcli;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace bpmdev.tests
+namespace bpmcli.tests
 {
 	public class BpmDevTests
 	{
@@ -14,7 +12,7 @@ namespace bpmdev.tests
 
 		[Test]
 		public void BpmPkgProject_RebaseToCoreDebug_RealProjCase() {
-			var expectProj = XElement.Load("ExpectPkgProj.xml");
+			var expectProj = XElement.Load("ExpectPkgProj.xml", LoadOptions.PreserveWhitespace);
 			var proj = BpmPkgProject.LoadFromFile("OriginPkgProj.xml");
 			proj.RebaseToCoreDebug()
 				.Document
@@ -23,7 +21,7 @@ namespace bpmdev.tests
 
 		[Test]
 		public void BpmPkgProject_RebaseToCoreDebug_SimpleCase() {
-			var expectElement = XElement.Load("ExpectReferenceHint.xml");
+			var expectElement = XElement.Load("ExpectReferenceHint.xml", LoadOptions.PreserveWhitespace);
 			var proj = BpmPkgProject.LoadFromFile("OriginReferenceHint.xml");
 			proj.RebaseToCoreDebug()
 				.Document

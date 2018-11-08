@@ -5,9 +5,7 @@ VisualStudioVersion = 15.0.27703.2047
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmcli", "bpmcli\bpmcli.csproj", "{CE8FEF29-6FCA-44BD-96A4-19778B44989A}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmdcli.tests", "bpmdev.tests\bpmdcli.tests.csproj", "{718FE94B-0CB7-4977-B2D7-E661C8E57555}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bpmdcli", "bpmdcli\bpmdcli.csproj", "{D2FE82D4-35F3-4313-8E07-957CED54E158}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmcli.tests", "bpmdev.tests\bpmcli.tests.csproj", "{718FE94B-0CB7-4977-B2D7-E661C8E57555}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,10 +21,6 @@ Global
 		{718FE94B-0CB7-4977-B2D7-E661C8E57555}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{718FE94B-0CB7-4977-B2D7-E661C8E57555}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{718FE94B-0CB7-4977-B2D7-E661C8E57555}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D2FE82D4-35F3-4313-8E07-957CED54E158}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D2FE82D4-35F3-4313-8E07-957CED54E158}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D2FE82D4-35F3-4313-8E07-957CED54E158}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D2FE82D4-35F3-4313-8E07-957CED54E158}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\bpmdcli\bpmdcli.csproj" />
+    <ProjectReference Include="..\bpmcli\bpmcli.csproj" />
   </ItemGroup>
 
   <ItemGroup>

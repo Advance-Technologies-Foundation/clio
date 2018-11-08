@@ -69,18 +69,31 @@ namespace bpmcli
 		[Option('e', "ActiveEnvironment", Required = true, HelpText = "Environment name")]
 		public new string Environment { get; set; }
 	}
+
 	[Verb("install", HelpText = "Install package")]
-	class InstallOptions : BaseOptions
+	internal class InstallOptions : BaseOptions
 	{
 		[Option('f', "FilePath", Required = true, HelpText = "Package file path")]
 		public string FilePath { get; set; }
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
 	}
+
 	[Verb("delete", HelpText = "Delete package")]
-	class DeleteOptions : BaseOptions
+	internal class DeleteOptions : BaseOptions
 	{
 		[Option('c', "Code", Required = true, HelpText = "Package code")]
 		public string Code { get; set; }
+	}
+
+	[Verb("rebase", HelpText = "Change bpm package project core pathes")]
+	internal class RebaseOptions
+	{
+		[Option('f', "FilePath", Required = true, HelpText = "Path to the project file")]
+		public string FilePath { get; set; }
+
+		[Option('t', "ProjectType", Required = false, HelpText = "Type of the bpm project file. Can be 'pkg' or 'sln'",
+			Default = "pkg")]
+		public string ProjectType { get; set; }
 	}
 }
