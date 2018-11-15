@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Text;
+using Newtonsoft.Json;
 
 namespace bpmcli
 {
@@ -33,15 +34,25 @@ namespace bpmcli
 
 		public string Directory { get; protected set; }
 
+		public DateTime CreatedOn { get; protected set; }
+
 		protected BpmPkg(string packageName, string maintainer) {
 			PackageName = packageName;
 			Maintainer = maintainer;
+			CreatedOn = DateTime.UtcNow;
 		}
 
 		private string ReplaceMacro(string text) {
+			JsonSerializerSettings microsoftDateFormatSettings = new JsonSerializerSettings {
+				DateFormatHandling = DateFormatHandling.MicrosoftDateFormat
+			};
+			string microsoftJson = JsonConvert.SerializeObject(CreatedOn, microsoftDateFormatSettings);
+
 			return text.Replace("$safeprojectname$", PackageName)
 				.Replace("$userdomain$", Maintainer)
-				.Replace("$guid1$", ProjectId.ToString());
+				.Replace("$guid1$", ProjectId.ToString())
+				.Replace("$year$", CreatedOn.Year.ToString())
+				.Replace("$modifiedon$", microsoftJson);
 		}
 
 		private bool CreateFromTpl(string tplPath, string filePath) {

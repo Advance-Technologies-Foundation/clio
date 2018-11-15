@@ -18,7 +18,7 @@ namespace bpmcli.tests
 		private const string ResultDir = "TestResult";
 		private const string ExpectFilesDir = "samplefiles";
 
-		private readonly DateTime _testCreatedOn = new DateTime(2018, 1, 1, 1, 0, 0, 0);
+		private static readonly DateTime TestCreatedOn = new DateTime(2018, 1, 1, 1, 12, 10, 200, DateTimeKind.Utc);
 
 		private class BpmPkgMock : BpmPkg
 		{
@@ -26,6 +26,7 @@ namespace bpmcli.tests
 			public BpmPkgMock() : base(BpmPkgTests.PackageName, BpmPkgTests.Maintainer) {
 				ProjectId = Guid.Parse(PackageUId);
 				Directory = Path.Combine(Environment.CurrentDirectory, ResultDir);
+				CreatedOn = TestCreatedOn;
 			}
 
 			public void CreateDescriptor() {
