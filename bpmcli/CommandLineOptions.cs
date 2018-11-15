@@ -1,4 +1,5 @@
-﻿using CommandLine;
+﻿using System;
+using CommandLine;
 using CommandLine.Text;
 
 namespace bpmcli
@@ -89,11 +90,13 @@ namespace bpmcli
 	[Verb("rebase", HelpText = "Change bpm package project core pathes")]
 	internal class RebaseOptions
 	{
-		[Option('f', "FilePath", Required = true, HelpText = "Path to the project file")]
+		[Option('f', "FilePath", Required = false, HelpText = "Path to the project file",
+			Default = null)]
 		public string FilePath { get; set; }
 
 		[Option('t', "ProjectType", Required = false, HelpText = "Type of the bpm project file. Can be 'pkg' or 'sln'",
 			Default = "pkg")]
 		public string ProjectType { get; set; }
+
 	}
 }

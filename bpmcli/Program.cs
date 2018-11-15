@@ -28,6 +28,9 @@ namespace bpmcli
 		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UninstallApp";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
+		private static string CurrentProj => 
+			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
+
 		private static void Configure(BaseOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options.Environment);
@@ -491,7 +494,8 @@ namespace bpmcli
 
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
-					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions, DeleteOptions>(args)
+					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions,
+					DeleteOptions, RebaseOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -520,6 +524,10 @@ namespace bpmcli
 		}
 
 		private static int Rebase(RebaseOptions options) {
+			options.FilePath = options.FilePath ?? CurrentProj;
+			if (string.IsNullOrEmpty(options.FilePath)) {
+				throw new ArgumentNullException(nameof(options.FilePath));
+			}
 			try {
 				switch (options.ProjectType) {
 					case "sln": {

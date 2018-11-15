@@ -1,10 +1,11 @@
+using System.IO;
 using System.Xml.Linq;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace bpmcli.tests
 {
-	public class BpmDevTests
+	public class BpmPkgProjectTests
 	{
 		[SetUp]
 		public void Setup() {
@@ -27,5 +28,6 @@ namespace bpmcli.tests
 				.Document
 				.Should().BeEquivalentTo(expectElement);
 		}
+
 	}
 }
