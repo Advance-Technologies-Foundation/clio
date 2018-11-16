@@ -34,7 +34,11 @@ namespace bpmcli
 
 		public string Directory { get; protected set; }
 
-		public DateTime CreatedOn { get; protected set; }
+		private DateTime _createdOn;
+		public DateTime CreatedOn {
+			get => _createdOn;
+			protected set => _createdOn = GetDateTimeTillSeconds(value);
+		}
 
 		protected BpmPkg(string packageName, string maintainer) {
 			PackageName = packageName;
@@ -42,17 +46,23 @@ namespace bpmcli
 			CreatedOn = DateTime.UtcNow;
 		}
 
-		private string ReplaceMacro(string text) {
+		private static DateTime GetDateTimeTillSeconds(DateTime dateTime) {
+			return dateTime.AddTicks(-(dateTime.Ticks % TimeSpan.TicksPerSecond));
+		}
+
+		private static string ToJsonMsDate(DateTime date) {
 			JsonSerializerSettings microsoftDateFormatSettings = new JsonSerializerSettings {
 				DateFormatHandling = DateFormatHandling.MicrosoftDateFormat
 			};
-			string microsoftJson = JsonConvert.SerializeObject(CreatedOn, microsoftDateFormatSettings);
+			return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", "").Replace("\\", "");
+		}
 
+		private string ReplaceMacro(string text) {
 			return text.Replace("$safeprojectname$", PackageName)
 				.Replace("$userdomain$", Maintainer)
 				.Replace("$guid1$", ProjectId.ToString())
 				.Replace("$year$", CreatedOn.Year.ToString())
-				.Replace("$modifiedon$", microsoftJson);
+				.Replace("$modifiedon$", ToJsonMsDate(CreatedOn));
 		}
 
 		private bool CreateFromTpl(string tplPath, string filePath) {

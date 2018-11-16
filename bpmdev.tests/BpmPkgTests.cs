@@ -56,8 +56,10 @@ namespace bpmcli.tests
 
 		[Test, Category("Integration")]
 		[TestCase(BpmPkg.DesriptorName, BpmPkg.DesriptorName, "CreateDescriptor", TestName = "Check Correct Descriptor")]
-		[TestCase(PackageName + "." + BpmPkg.CsprojExtension, "Proj.csproj", "CreateProjFile", TestName = "Check Correct ProjectFile")]
-		[TestCase(BpmPkg.PackageConfigName, BpmPkg.PackageConfigName, "CreateNugetPackageConfig", TestName = "Check Correct PackageConfig")]
+		[TestCase(PackageName + "." + BpmPkg.CsprojExtension, "Proj.csproj", "CreateProjFile",
+			TestName = "Check Correct ProjectFile")]
+		[TestCase(BpmPkg.PackageConfigName, BpmPkg.PackageConfigName, "CreateNugetPackageConfig",
+			TestName = "Check Correct PackageConfig")]
 		[TestCase(BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName, BpmPkg.AssemblyInfoName,
 			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo")]
 		public void BpmPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
