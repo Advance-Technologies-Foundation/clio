@@ -23,10 +23,12 @@ namespace bpmcli.tests
 		private class BpmPkgMock : BpmPkg
 		{
 
-			public BpmPkgMock() : base(BpmPkgTests.PackageName, BpmPkgTests.Maintainer) {
+			public BpmPkgMock(bool setDirectory = true) : base(BpmPkgTests.PackageName, BpmPkgTests.Maintainer) {
 				ProjectId = Guid.Parse(PackageUId);
-				Directory = Path.Combine(Environment.CurrentDirectory, ResultDir);
 				CreatedOn = TestCreatedOn;
+				if (setDirectory) {
+					Directory = Path.Combine(Environment.CurrentDirectory, ResultDir);
+				}
 			}
 
 			public void CreateDescriptor() {
@@ -49,8 +51,8 @@ namespace bpmcli.tests
 
 		[OneTimeSetUp]
 		public void SetupOneTime() {
-			if (!Directory.Exists(ResultDir)) {
-				Directory.CreateDirectory(ResultDir);
+			if (!System.IO.Directory.Exists(ResultDir)) {
+				System.IO.Directory.CreateDirectory(ResultDir);
 			}
 		}
 
@@ -71,13 +73,50 @@ namespace bpmcli.tests
 			File.ReadAllText(resultPath).Should().BeEquivalentTo(File.ReadAllText(samplePath));
 		}
 
+		[Test, Category("Integration")]
+		public void BpmPkg_Create_CheckPackageStructure() {
+			var oldEnvironment = Environment.CurrentDirectory;
+			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
+			var pkg = BpmPkg.CreatePackage(PackageName, Maintainer);
+			Environment.CurrentDirectory = oldEnvironment;
+			pkg.Create();
+			File(Path.Combine(pkg.Directory, BpmPkg.DesriptorName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, PackageName + "." + BpmPkg.CsprojExtension)).Should().Exist();
+			File(Path.Combine(pkg.Directory, BpmPkg.PackageConfigName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName))
+				.Should().Exist();
+			File(Path.Combine(pkg.Directory, "Files\\cs", "EmptyClass.cs")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "Assemblies")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "Data")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "Resources")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "Schemas")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "SqlScripts")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "Files")).Should().Exist();
+			Directory(Path.Combine(pkg.Directory, "Files\\cs")).Should().Exist();
+		}
+
+		[Test, Category("Integration")]
+		public void BpmPkg_Create_CheckCorrectTplFilePathGettingFromPath() {
+			var oldCD = Environment.CurrentDirectory;
+			var oldPath = Environment.GetEnvironmentVariable("PATH");
+			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
+			Environment.SetEnvironmentVariable("PATH", oldCD + ";C:\\Program Files");
+			var pkg = new BpmPkgMock(false);
+			pkg.CreateNugetPackageConfig();
+			Environment.CurrentDirectory = oldCD;
+			Environment.SetEnvironmentVariable("PATH", oldPath);
+			var resultPath = Path.Combine(pkg.Directory, BpmPkg.PackageConfigName);
+			var samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, BpmPkg.PackageConfigName);
+			File(resultPath).Should().Exist();
+			File.ReadAllText(resultPath).Should().BeEquivalentTo(File.ReadAllText(samplePath));
+		}
+
 
 		[OneTimeTearDown]
 		public void TearodwnOneTime() {
-			if (Directory.Exists(ResultDir)) {
-				Directory.Delete(ResultDir, true);
+			if (System.IO.Directory.Exists(ResultDir)) {
+				System.IO.Directory.Delete(ResultDir, true);
 			}
-			;
 		}
 
 	}

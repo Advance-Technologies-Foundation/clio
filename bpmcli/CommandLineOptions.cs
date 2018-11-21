@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using CommandLine;
 using CommandLine.Text;
 
@@ -98,5 +99,24 @@ namespace bpmcli
 			Default = "pkg")]
 		public string ProjectType { get; set; }
 
+	}
+
+	[Verb("new", HelpText = "Create new instance in bpmonline")]
+	internal class NewOptions
+	{
+		[Value(0, MetaName = "<TEMPLATE NAME>", Required = true, HelpText = "Template of the created instance. Can be (pkg)")]
+		public string Template { get; set; }
+		[Option('n', Required = false, Default = "DefaultName", HelpText = "Name of the created instance")]
+		public string Name { get; set; }
+		[Option('d', "DestinationPath", Required = false,
+			HelpText = "Path to the directory where new instance will be created", Default = null)]
+		public string DestPath { get; set; }
+		[Usage(ApplicationAlias = "bpmcli")]
+		public static IEnumerable<Example> Examples => 
+			new List<Example> {
+				new Example("Create new package with name 'ContactPkg'",
+					new NewOptions { Name = "ContactPkg" , Template = "pkg"}
+					)
+		};
 	}
 }

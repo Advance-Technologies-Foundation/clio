@@ -495,7 +495,7 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
 					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions>(args)
+					DeleteOptions, RebaseOptions, NewOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -506,6 +506,7 @@ namespace bpmcli
 					(InstallOptions opts) => Install(opts),
 					(DeleteOptions opts) => Delete(opts),
 					(RebaseOptions opts) => Rebase(opts),
+					(NewOptions opts) => New(opts),
 					errs => 1);
 		}
 
@@ -521,6 +522,26 @@ namespace bpmcli
 				}
 			}
 			return 0;
+		}
+
+		private static int New(NewOptions options) {
+			var settings = new SettingsRepository().GetEnvironment();
+			try {
+				switch (options.Template) {
+					case "pkg": {
+						BpmPkg.CreatePackage(options.Name, settings.Maintainer)
+							.Create();
+					}
+						break;
+					default: {
+						throw new NotSupportedException($"You use not supported option type {options.Template}");
+					}
+				}
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
 		}
 
 		private static int Rebase(RebaseOptions options) {

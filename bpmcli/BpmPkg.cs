@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.IO;
-using System.Text;
+using System.Linq;
 using Newtonsoft.Json;
 
 namespace bpmcli
@@ -16,10 +14,7 @@ namespace bpmcli
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 
-
-		private readonly Stack<string> _createdFiles = new Stack<string>(5);
-
-		private Stack<string> _createdDirs = new Stack<string>(7);
+		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources" };
 
 		private static string DescriptorTpl => $"tpl\\{DesriptorName}.tpl";
 		private static string ProjTpl => $"tpl\\Proj.{CsprojExtension}.tpl";
@@ -44,6 +39,7 @@ namespace bpmcli
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
+			Directory = Environment.CurrentDirectory;
 		}
 
 		private static DateTime GetDateTimeTillSeconds(DateTime dateTime) {
@@ -65,14 +61,32 @@ namespace bpmcli
 				.Replace("$modifiedon$", ToJsonMsDate(CreatedOn));
 		}
 
-		private bool CreateFromTpl(string tplPath, string filePath) {
+		private string GetPathFromEnvironment() {
+			string[] cliPath = (Environment.GetEnvironmentVariable("PATH")?.Split(';'));
+			return cliPath?.First(p => p.Contains("bpmcli"));
+		}
+
+		private bool GetTplPath(string tplPath, out string fullPath) {
 			if (File.Exists(tplPath)) {
-				var text = ReplaceMacro(File.ReadAllText(tplPath));
+				fullPath = tplPath;
+				return true;
+			}
+			var envPath = GetPathFromEnvironment();
+			if (!string.IsNullOrEmpty(envPath)) {
+				fullPath = Path.Combine(envPath, tplPath);
+				return true;
+			}
+			fullPath = null;
+			return false;
+		}
+
+		private bool CreateFromTpl(string tplPath, string filePath) {
+			if (GetTplPath(tplPath, out string fullTplPath)) {
+				var text = ReplaceMacro(File.ReadAllText(fullTplPath));
 				FileInfo file = new FileInfo(filePath);
 				using (StreamWriter sw = file.CreateText()) {
 					sw.Write(text);
 				}
-				_createdFiles.Push(file.FullName);
 				return true;
 			}
 			return false;
@@ -103,20 +117,37 @@ namespace bpmcli
 			return this;
 		}
 
-		public static BpmPkg CreatePackage(string name) {
-			return new BpmPkg(name, "Terrasoft") {
+		protected BpmPkg CreateEmptyClass() {
+			System.IO.Directory.CreateDirectory(Path.Combine(Directory, "Files\\cs"));
+			File.CreateText(Path.Combine(Directory, "Files\\cs", "EmptyClass.cs")).Dispose();
+			return this;
+		}
+
+		protected BpmPkg CreatePackageDirectories() {
+			foreach (var directory in _pkgDirectories) {
+				System.IO.Directory.CreateDirectory(Path.Combine(Directory, directory));
+			}
+			return this;
+		}
+
+		protected BpmPkg CreatePackageFiles() {
+			CreatePkgDescriptor()
+				.CreateProj()
+				.CreatePackageConfig()
+				.CreateAssemblyInfo()
+				.CreateEmptyClass();
+			return this;
+		}
+
+		public static BpmPkg CreatePackage(string name, string maintainer) {
+			return new BpmPkg(name, maintainer) {
 				ProjectId = Guid.NewGuid(),
-				Directory = Environment.CurrentDirectory
 			};
 		}
 
 		public void Create() {
-			CreatePkgDescriptor()
-				.CreateProj()
-				.CreatePackageConfig()
-				.CreateAssemblyInfo();
+			CreatePackageFiles().CreatePackageDirectories();
 		}
-
 
 	}
 }
