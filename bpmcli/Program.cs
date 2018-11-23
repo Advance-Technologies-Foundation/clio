@@ -130,7 +130,8 @@ namespace bpmcli
 			var environment = new EnvironmentSettings() {
 				Login = options.Login,
 				Password = options.Password,
-				Uri = options.Uri
+				Uri = options.Uri,
+				Maintainer = options.Maintainer
 			};
 			if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
 				repository.SetActiveEnvironment(options.ActiveEnvironment);
@@ -531,6 +532,9 @@ namespace bpmcli
 					case "pkg": {
 						BpmPkg.CreatePackage(options.Name, settings.Maintainer)
 							.Create();
+						if (bool.Parse(options.Rebase)) {
+							Rebase(new RebaseOptions {ProjectType = options.Template});
+						}
 					}
 						break;
 					default: {

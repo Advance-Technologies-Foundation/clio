@@ -26,6 +26,9 @@ namespace bpmcli
 			if (!String.IsNullOrEmpty(environment.Password)) {
 				Password = environment.Password;
 			}
+			if (!String.IsNullOrEmpty(environment.Maintainer)) {
+				Maintainer = environment.Maintainer;
+			}
 		}
 	}
 

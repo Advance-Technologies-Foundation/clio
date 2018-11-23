@@ -18,6 +18,9 @@ namespace bpmcli
 
 		[Option('e', "Environment", Required = false, HelpText = "Environment name")]
 		public string Environment { get; set; }
+
+		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
+		public string Maintainer { get; set; }
 	}
 
 	[Verb("exec", HelpText = "Execute assembly")]
@@ -111,6 +114,8 @@ namespace bpmcli
 		[Option('d', "DestinationPath", Required = false,
 			HelpText = "Path to the directory where new instance will be created", Default = null)]
 		public string DestPath { get; set; }
+		[Option('r', Required = false, Default = "true", HelpText = "Execute rebase command after create")]
+		public string Rebase { get; set; }
 		[Usage(ApplicationAlias = "bpmcli")]
 		public static IEnumerable<Example> Examples => 
 			new List<Example> {

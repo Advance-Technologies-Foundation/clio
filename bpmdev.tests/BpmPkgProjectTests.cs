@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Xml.Linq;
 using FluentAssertions;
@@ -12,7 +13,7 @@ namespace bpmcli.tests
 		}
 
 		[Test]
-		public void BpmPkgProject_RebaseToCoreDebug_RealProjCase() {
+		public void BpmPkgProject_RebaseToCoreDebug_LoadFromFileRealProjCase() {
 			var expectProj = XElement.Load("ExpectPkgProj.xml", LoadOptions.PreserveWhitespace);
 			var proj = BpmPkgProject.LoadFromFile("OriginPkgProj.xml");
 			proj.RebaseToCoreDebug()
@@ -21,7 +22,7 @@ namespace bpmcli.tests
 		}
 
 		[Test]
-		public void BpmPkgProject_RebaseToCoreDebug_SimpleCase() {
+		public void BpmPkgProject_RebaseToCoreDebug_LoadFromFileSimpleCase() {
 			var expectElement = XElement.Load("ExpectReferenceHint.xml", LoadOptions.PreserveWhitespace);
 			var proj = BpmPkgProject.LoadFromFile("OriginReferenceHint.xml");
 			proj.RebaseToCoreDebug()
