@@ -28,6 +28,9 @@ namespace bpmcli
 		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UninstallApp";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
+		private static string CurrentProj => 
+			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
+
 		private static void Configure(BaseOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options.Environment);
@@ -127,7 +130,8 @@ namespace bpmcli
 			var environment = new EnvironmentSettings() {
 				Login = options.Login,
 				Password = options.Password,
-				Uri = options.Uri
+				Uri = options.Uri,
+				Maintainer = options.Maintainer
 			};
 			if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
 				repository.SetActiveEnvironment(options.ActiveEnvironment);
@@ -491,7 +495,8 @@ namespace bpmcli
 
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
-					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions, DeleteOptions>(args)
+					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions,
+					DeleteOptions, RebaseOptions, NewOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -501,6 +506,8 @@ namespace bpmcli
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
 					(DeleteOptions opts) => Delete(opts),
+					(RebaseOptions opts) => Rebase(opts),
+					(NewOptions opts) => New(opts),
 					errs => 1);
 		}
 
@@ -516,6 +523,56 @@ namespace bpmcli
 				}
 			}
 			return 0;
+		}
+
+		private static int New(NewOptions options) {
+			var settings = new SettingsRepository().GetEnvironment();
+			try {
+				switch (options.Template) {
+					case "pkg": {
+						BpmPkg.CreatePackage(options.Name, settings.Maintainer)
+							.Create();
+						if (bool.Parse(options.Rebase)) {
+							Rebase(new RebaseOptions {ProjectType = options.Template});
+						}
+					}
+						break;
+					default: {
+						throw new NotSupportedException($"You use not supported option type {options.Template}");
+					}
+				}
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
+		}
+
+		private static int Rebase(RebaseOptions options) {
+			options.FilePath = options.FilePath ?? CurrentProj;
+			if (string.IsNullOrEmpty(options.FilePath)) {
+				throw new ArgumentNullException(nameof(options.FilePath));
+			}
+			try {
+				switch (options.ProjectType) {
+					case "sln": {
+						throw new NotSupportedException("option sln temporaly not supported");
+					}
+					case "pkg": {
+						BpmPkgProject.LoadFromFile(options.FilePath)
+							.RebaseToCoreDebug()
+							.SaveChanges();
+					}
+						break;
+					default: {
+						throw new NotSupportedException($"You use not supported option type {options.ProjectType}");
+					}
+				}
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
 		}
 	}
 }

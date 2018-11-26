@@ -1,0 +1,10 @@
+﻿{
+  "Descriptor": {
+    "UId": "7133B6CF-E7AB-488E-8E03-80BBF38FD12A",
+    "PackageVersion": "7.8.0",
+    "Name": "TestPackage",
+    "ModifiedOnUtc": "/Date(1514769130000)/",
+    "Maintainer": "TestCompany",
+    "DependsOn": []
+  }
+}

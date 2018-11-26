@@ -1,4 +1,6 @@
-﻿using CommandLine;
+﻿using System;
+using System.Collections.Generic;
+using CommandLine;
 using CommandLine.Text;
 
 namespace bpmcli
@@ -16,6 +18,9 @@ namespace bpmcli
 
 		[Option('e', "Environment", Required = false, HelpText = "Environment name")]
 		public string Environment { get; set; }
+
+		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
+		public string Maintainer { get; set; }
 	}
 
 	[Verb("exec", HelpText = "Execute assembly")]
@@ -69,18 +74,54 @@ namespace bpmcli
 		[Option('e', "ActiveEnvironment", Required = true, HelpText = "Environment name")]
 		public new string Environment { get; set; }
 	}
+
 	[Verb("install", HelpText = "Install package")]
-	class InstallOptions : BaseOptions
+	internal class InstallOptions : BaseOptions
 	{
 		[Option('f', "FilePath", Required = true, HelpText = "Package file path")]
 		public string FilePath { get; set; }
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
 	}
+
 	[Verb("delete", HelpText = "Delete package")]
-	class DeleteOptions : BaseOptions
+	internal class DeleteOptions : BaseOptions
 	{
 		[Option('c', "Code", Required = true, HelpText = "Package code")]
 		public string Code { get; set; }
+	}
+
+	[Verb("rebase", HelpText = "Change bpm package project core pathes")]
+	internal class RebaseOptions
+	{
+		[Option('f', "FilePath", Required = false, HelpText = "Path to the project file",
+			Default = null)]
+		public string FilePath { get; set; }
+
+		[Option('t', "ProjectType", Required = false, HelpText = "Type of the bpm project file. Can be 'pkg' or 'sln'",
+			Default = "pkg")]
+		public string ProjectType { get; set; }
+
+	}
+
+	[Verb("new", HelpText = "Create new instance in bpmonline")]
+	internal class NewOptions
+	{
+		[Value(0, MetaName = "<TEMPLATE NAME>", Required = true, HelpText = "Template of the created instance. Can be (pkg)")]
+		public string Template { get; set; }
+		[Option('n', Required = false, Default = "DefaultName", HelpText = "Name of the created instance")]
+		public string Name { get; set; }
+		[Option('d', "DestinationPath", Required = false,
+			HelpText = "Path to the directory where new instance will be created", Default = null)]
+		public string DestPath { get; set; }
+		[Option('r', Required = false, Default = "true", HelpText = "Execute rebase command after create")]
+		public string Rebase { get; set; }
+		[Usage(ApplicationAlias = "bpmcli")]
+		public static IEnumerable<Example> Examples => 
+			new List<Example> {
+				new Example("Create new package with name 'ContactPkg'",
+					new NewOptions { Name = "ContactPkg" , Template = "pkg"}
+					)
+		};
 	}
 }
