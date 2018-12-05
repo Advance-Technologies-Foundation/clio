@@ -60,7 +60,7 @@ bpmcli restart -e dev
 Просмотр настроек окружения
 
 ```powershell
-bpmcli сfg -m view
+bpmcli cfg -m view
 ```
 
 ### Использование в CI\CD
