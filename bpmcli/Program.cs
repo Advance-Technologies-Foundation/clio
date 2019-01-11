@@ -124,9 +124,6 @@ namespace bpmcli
 
 		private static int ConfigureEnvironment(ConfigureOptions options) {
 			var repository = new SettingsRepository();
-			if (options.Mode == "view") {
-				repository.ShowSettingsTo(Console.Out);
-			}
 			var environment = new EnvironmentSettings() {
 				Login = options.Login,
 				Password = options.Password,
@@ -139,6 +136,13 @@ namespace bpmcli
 			repository.ConfigureEnvironment(options.Environment, environment);
 			return 0;
 		}
+
+		private static int ViewEnvironments() {
+			var repository = new SettingsRepository();
+			repository.ShowSettingsTo(Console.Out);
+			return 0;
+		}
+
 
 		private static int RemoveEnvironment(RemoveOptions options) {
 			var repository = new SettingsRepository();
@@ -495,13 +499,14 @@ namespace bpmcli
 
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
-					ConfigureOptions, RemoveOptions, CompressionOptions, InstallOptions,
+					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
 					DeleteOptions, RebaseOptions, NewOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
+					(ViewOptions opts) => ViewEnvironments(),
 					(RemoveOptions opts) => RemoveEnvironment(opts),
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
