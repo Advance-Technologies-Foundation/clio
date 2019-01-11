@@ -74,7 +74,7 @@ bpmcli remove -e dev
 ### Viewing the current environment options
 
 ```
-bpmcli cfg -m view
+bpmcli view
 ```
 
 ### Using bpmcli commands for noncurrent environment

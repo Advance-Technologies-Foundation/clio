@@ -1,4 +1,4 @@
-Bpmonline Command Line Interface (bpmcli)
+﻿Bpmonline Command Line Interface (bpmcli)
 =============================
 
 Проект предназначен для интеграции систем разработки и CI/CD
@@ -60,7 +60,7 @@ bpmcli restart -e dev
 Просмотр настроек окружения
 
 ```powershell
-bpmcli cfg -m view
+bpmcli view
 ```
 
 ### Использование в CI\CD
