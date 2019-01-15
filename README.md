@@ -123,3 +123,15 @@ bpmcli fetch -o upload -n PackageName
 ```
 bpmcli fetch -o download -n PackageName
 ```
+
+### Convert existing package to project
+
+Convert package with name MyApp and MyIntegration, located in directory C:\Pkg
+```
+bpmcli convert -p C:\Pkg -n MyApp,MyIntegration
+```
+
+Convert all packages in directory C:\Pkg
+```
+bpmcli convert -p C:\Pkg
+```
