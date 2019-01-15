@@ -126,4 +126,34 @@ namespace bpmcli
 					)
 		};
 	}
+
+
+	[Verb("convert", HelpText = "Convert package to project")]
+	internal class ConvertOptions
+	{
+		[Value(0, MetaName = "<TEMPLATE NAME>", Required = false, HelpText = "Template of the created instance. Can be (pkg)")]
+		public string Template {
+			get; set;
+		}
+		[Option('p', "Path", Required = true,
+			HelpText = "Path to package directory", Default = null)]
+		public string Path {
+			get; set;
+		}
+		[Option('n', Required = false, HelpText = "Name of the convert instance (or comma sparated names)")]
+		public string Name {
+			get; set;
+		}
+
+		[Usage(ApplicationAlias = "bpmcli")]
+		public static IEnumerable<Example> Examples =>
+			new List<Example> {
+				new Example("Convert existing packages",
+					new ConvertOptions { Path = "C:\\Pkg\\" , Name = "MyApp,MyIntegration"}
+				),
+				new Example("Convert all packages in folder",
+					new ConvertOptions { Path = "C:\\Pkg\\"}
+				)
+			};
+	}
 }

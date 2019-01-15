@@ -13,13 +13,15 @@ namespace bpmcli
 		public const string CsprojExtension = "csproj";
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
+		public static string EditProjTpl => $"tpl\\EditProj.{CsprojExtension}.tpl";
+		public static string PackageConfigTpl => $"tpl\\{PackageConfigName}.tpl";
+		public static string AssemblyInfoTpl => $"tpl\\{AssemblyInfoName}.tpl";
 
 		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources" };
 
 		private static string DescriptorTpl => $"tpl\\{DesriptorName}.tpl";
 		private static string ProjTpl => $"tpl\\Proj.{CsprojExtension}.tpl";
-		private static string PackageConfigTpl => $"tpl\\{PackageConfigName}.tpl";
-		private static string AssemblyInfoTpl => $"tpl\\{AssemblyInfoName}.tpl";
+
 
 		public string PackageName { get; }
 

@@ -500,7 +500,7 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions, NewOptions>(args)
+					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -513,7 +513,12 @@ namespace bpmcli
 					(DeleteOptions opts) => Delete(opts),
 					(RebaseOptions opts) => Rebase(opts),
 					(NewOptions opts) => New(opts),
+					(ConvertOptions opts) => ConvertPackage(opts),
 					errs => 1);
+		}
+
+		private static int ConvertPackage(ConvertOptions opts) {
+			return PackageConverter.Convert(opts);
 		}
 
 		private static int Fetch(FetchOptions opts) {
