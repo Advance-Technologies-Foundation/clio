@@ -173,7 +173,7 @@ namespace bpmcli
 			response.Close();
 		}
 
-		private static void Uploadpackages(string packageName) {
+		private static void UploadPackages(string packageName) {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UploadPackageUrl);
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
@@ -312,7 +312,7 @@ namespace bpmcli
 
 		}
 		
-		private static void Deletepackage(string code) {
+		private static void DeletePackage(string code) {
 			string appId = GetAppId(code);
 			DeleteAppById(appId);
 		}
@@ -470,7 +470,7 @@ namespace bpmcli
 		private static int Delete(DeleteOptions options) {
 			Configure(options);
 			Login();
-			Deletepackage(options.Code);
+			DeletePackage(options.Code);
 			return 0;
 		}
 
@@ -529,7 +529,7 @@ namespace bpmcli
 				if (opts.Operation == "load") {
 					DownloadPackages(package);
 				} else {
-					Uploadpackages(package);
+					UploadPackages(package);
 				}
 			}
 			return 0;
