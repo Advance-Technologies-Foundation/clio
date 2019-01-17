@@ -135,3 +135,10 @@ Convert all packages in directory C:\Pkg
 ```
 bpmcli convert -p C:\Pkg
 ```
+
+### Execute assembly
+
+Execute assembly with name libName and type LibType
+```
+bpmcli exec -f libName -t LibType
+```
