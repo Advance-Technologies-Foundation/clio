@@ -313,8 +313,7 @@ namespace bpmcli
 		}
 		
 		private static void DeletePackage(string code) {
-			string appId = GetAppId(code);
-			DeleteAppById(appId);
+			DeleteAppById(code);
 		}
 
 		private static string GetAppId(string code) {
