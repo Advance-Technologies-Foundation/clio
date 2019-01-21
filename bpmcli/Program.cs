@@ -25,7 +25,7 @@ namespace bpmcli
 		private static string InstallUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/InstallPackage";
 		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
-		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UninstallApp";
+		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static string CurrentProj => 
