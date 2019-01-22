@@ -7,8 +7,8 @@
     <Authors>bpmonline rnd team</Authors>
     <PackageTags>cli</PackageTags>
     <NeutralLanguage>en</NeutralLanguage>
-    <AssemblyVersion>1.0.0.3</AssemblyVersion>
-    <FileVersion>1.0.0.3</FileVersion>
+    <AssemblyVersion>1.0.0.4</AssemblyVersion>
+    <FileVersion>1.0.0.4</FileVersion>
     <Version>1.0.0.3</Version>
   </PropertyGroup>
 
