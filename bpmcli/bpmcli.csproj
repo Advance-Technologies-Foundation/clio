@@ -12,6 +12,12 @@
     <Version>1.0.0.3</Version>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <ErrorReport>prompt</ErrorReport>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.4.3" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.0.0-preview.18572.1" />
