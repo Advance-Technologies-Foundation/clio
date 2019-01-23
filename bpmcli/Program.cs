@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using bpmcli.environment;
 using CommandLine;
 
 namespace bpmcli
@@ -434,6 +435,16 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int Register(RegisterOptions options) {
+			var bpmcliEnv = new BpmcliEnvironment();
+			string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
+			IResult result = options.Target == "m" 
+				? bpmcliEnv.MachineRegisterPath(path) 
+				: bpmcliEnv.UserRegisterPath(path);
+			result.ShowMessagesTo(Console.Out);
+			return 1;
+		}
+
 		private static int Restart(RestartOptions options) {
 			try {
 				Configure(options);
@@ -499,7 +510,7 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions>(args)
+					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions, RegisterOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -513,6 +524,7 @@ namespace bpmcli
 					(RebaseOptions opts) => Rebase(opts),
 					(NewOptions opts) => New(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
+					(RegisterOptions opts) => Register(opts),
 					errs => 1);
 		}
 

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.IO;
-using System.Linq;
+using bpmcli.environment;
 using Newtonsoft.Json;
 
 namespace bpmcli
@@ -22,6 +22,8 @@ namespace bpmcli
 		private static string DescriptorTpl => $"tpl\\{DesriptorName}.tpl";
 		private static string ProjTpl => $"tpl\\Proj.{CsprojExtension}.tpl";
 
+		private readonly IBpmcliEnvironment _bpmcliEnvironment;
+
 
 		public string PackageName { get; }
 
@@ -38,6 +40,7 @@ namespace bpmcli
 		}
 
 		protected BpmPkg(string packageName, string maintainer) {
+			_bpmcliEnvironment = new BpmcliEnvironment();
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
@@ -63,17 +66,12 @@ namespace bpmcli
 				.Replace("$modifiedon$", ToJsonMsDate(CreatedOn));
 		}
 
-		private string GetPathFromEnvironment() {
-			string[] cliPath = (Environment.GetEnvironmentVariable("PATH")?.Split(';'));
-			return cliPath?.First(p => p.Contains("bpmcli"));
-		}
-
 		private bool GetTplPath(string tplPath, out string fullPath) {
 			if (File.Exists(tplPath)) {
 				fullPath = tplPath;
 				return true;
 			}
-			var envPath = GetPathFromEnvironment();
+			var envPath = _bpmcliEnvironment.GetRegisteredPath();
 			if (!string.IsNullOrEmpty(envPath)) {
 				fullPath = Path.Combine(envPath, tplPath);
 				return true;

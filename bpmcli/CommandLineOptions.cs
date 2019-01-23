@@ -38,6 +38,18 @@ namespace bpmcli
 	{
 	}
 
+	[Verb("register", HelpText = "Restart application")]
+	internal class RegisterOptions
+	{
+		[Option('t', "Target", Required = true, HelpText = "Target enviromnment location. Could be user location or" +
+			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
+		public string Target { get; set; }
+
+		[Option('p', "Path", Required = true, HelpText = "Path where bpmcli is stored.")]
+		public string Path { get; set; }
+
+	}
+
 	[Verb("fetch", HelpText = "Download assembly")]
 	internal class FetchOptions : BaseOptions
 	{
