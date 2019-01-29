@@ -12,11 +12,11 @@ With aid of bpmcli you can:
 
 # Installation
 
-Todo: where to download bpmcli binaries?
+You can dowload release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/bpmcli/releases). Unpack the archive with bpmcli.
 
 # Registering as the global command
 
-To register bpmcli as the global command, run the register.cmd file. You can find the register.cmd in the bpmcli package directory.
+To register bpmcli as the global command, run the **register.cmd** file. You can find the **register.cmd** in the bpmcli package directory.
 
 Also, you can run the bpmcli with aid of the dotnet command line interface. For example:
 
