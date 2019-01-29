@@ -5,8 +5,7 @@ using CommandLine.Text;
 
 namespace bpmcli
 {
-	internal class BaseOptions
-	{
+	internal class BaseOptions {
 		[Option('u', "uri", Required = false, HelpText = "bpm`online site uri")]
 		public string Uri { get; set; }
 
@@ -23,7 +22,7 @@ namespace bpmcli
 		public string Maintainer { get; set; }
 	}
 
-	[Verb("exec", HelpText = "Execute assembly")]
+	[Verb("exec", Aliases = new string[] { "execute-assembly-code" }, HelpText = "Execute assembly")]
 	internal class ExecuteOptions : BaseOptions
 	{
 		[Option('f', "FilePath", Required = true, HelpText = "Assembly file path")]
@@ -33,7 +32,7 @@ namespace bpmcli
 		public string ExecutorType { get; set; }
 	}
 
-	[Verb("restart", HelpText = "Restart application")]
+	[Verb("restart", Aliases = new string[] { "restart-web-app" }, HelpText = "Restart application")]
 	internal class RestartOptions : BaseOptions
 	{
 	}
@@ -60,7 +59,7 @@ namespace bpmcli
 		public string Operation { get; set; }
 	}
 
-	[Verb("compress", HelpText = "Compression project")]
+	[Verb("compress", Aliases = new string[] { "generate-pkg-zip" }, HelpText = "Compression project")]
 	internal class CompressionOptions
 	{
 		[Option('s', "SourcePath", Required = true)]
@@ -78,18 +77,18 @@ namespace bpmcli
 		public string ActiveEnvironment { get; set; }
 	}
 
-	[Verb("view", HelpText = "Show environments")]
+	[Verb("view", Aliases = new string[] { "show-web-app-list" },HelpText = "Show environments")]
 	internal class ViewOptions {
 	}
 
-	[Verb("remove", HelpText = "Remove environment settings")]
+	[Verb("remove", Aliases = new string[] { "unreg-web-app", "unregister" }, HelpText = "Remove environment settings")]
 	internal class RemoveOptions : BaseOptions
 	{
 		[Option('e', "ActiveEnvironment", Required = true, HelpText = "Environment name")]
 		public new string Environment { get; set; }
 	}
 
-	[Verb("install", HelpText = "Install package")]
+	[Verb("install", Aliases = new string[] { "push-pkg" }, HelpText = "Install package")]
 	internal class InstallOptions : BaseOptions
 	{
 		[Option('f', "FilePath", Required = true, HelpText = "Package file path")]
@@ -98,7 +97,7 @@ namespace bpmcli
 		public string ReportPath { get; set; }
 	}
 
-	[Verb("delete", HelpText = "Delete package")]
+	[Verb("delete", Aliases = new string[] { "delete-pkg-remote" }, HelpText = "Delete package")]
 	internal class DeleteOptions : BaseOptions
 	{
 		[Option('c', "Code", Required = true, HelpText = "Package code")]
@@ -118,7 +117,7 @@ namespace bpmcli
 
 	}
 
-	[Verb("new", HelpText = "Create new instance in bpmonline")]
+	[Verb("new", Aliases = new string[] { "new-pkg" }, HelpText = "Create new instance in bpmonline")]
 	internal class NewOptions
 	{
 		[Value(0, MetaName = "<TEMPLATE NAME>", Required = true, HelpText = "Template of the created instance. Can be (pkg)")]
