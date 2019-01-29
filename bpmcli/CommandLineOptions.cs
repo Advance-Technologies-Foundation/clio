@@ -22,7 +22,7 @@ namespace bpmcli
 		public string Maintainer { get; set; }
 	}
 
-	[Verb("exec", Aliases = new string[] { "execute-assembly-code" }, HelpText = "Execute assembly")]
+	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute assembly")]
 	internal class ExecuteOptions : BaseOptions
 	{
 		[Option('f', "FilePath", Required = true, HelpText = "Assembly file path")]
@@ -32,12 +32,12 @@ namespace bpmcli
 		public string ExecutorType { get; set; }
 	}
 
-	[Verb("restart", Aliases = new string[] { "restart-web-app" }, HelpText = "Restart application")]
+	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart application")]
 	internal class RestartOptions : BaseOptions
 	{
 	}
 
-	[Verb("register", HelpText = "Restart application")]
+	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden =true)]
 	internal class RegisterOptions
 	{
 		[Option('t', "Target", Required = true, HelpText = "Target enviromnment location. Could be user location or" +
@@ -59,7 +59,7 @@ namespace bpmcli
 		public string Operation { get; set; }
 	}
 
-	[Verb("compress", Aliases = new string[] { "generate-pkg-zip" }, HelpText = "Compression project")]
+	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Compression project")]
 	internal class CompressionOptions
 	{
 		[Option('s', "SourcePath", Required = true)]
@@ -77,18 +77,18 @@ namespace bpmcli
 		public string ActiveEnvironment { get; set; }
 	}
 
-	[Verb("view", Aliases = new string[] { "show-web-app-list" },HelpText = "Show environments")]
+	[Verb("show-web-app-list", Aliases = new string[] { "view" },HelpText = "Show environments")]
 	internal class ViewOptions {
 	}
 
-	[Verb("remove", Aliases = new string[] { "unreg-web-app", "unregister" }, HelpText = "Remove environment settings")]
+	[Verb("unreg-web-app", Aliases = new string[] { "remove", "unregister" }, HelpText = "Remove environment settings")]
 	internal class RemoveOptions : BaseOptions
 	{
 		[Option('e', "ActiveEnvironment", Required = true, HelpText = "Environment name")]
 		public new string Environment { get; set; }
 	}
 
-	[Verb("install", Aliases = new string[] { "push-pkg" }, HelpText = "Install package")]
+	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package")]
 	internal class InstallOptions : BaseOptions
 	{
 		[Option('f', "FilePath", Required = true, HelpText = "Package file path")]
@@ -97,14 +97,14 @@ namespace bpmcli
 		public string ReportPath { get; set; }
 	}
 
-	[Verb("delete", Aliases = new string[] { "delete-pkg-remote" }, HelpText = "Delete package")]
+	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package")]
 	internal class DeleteOptions : BaseOptions
 	{
 		[Option('c', "Code", Required = true, HelpText = "Package code")]
 		public string Code { get; set; }
 	}
 
-	[Verb("rebase", HelpText = "Change bpm package project core pathes")]
+	[Verb("rebase", HelpText = "Change bpm package project core pathes", Hidden = true)]
 	internal class RebaseOptions
 	{
 		[Option('f', "FilePath", Required = false, HelpText = "Path to the project file",
@@ -117,7 +117,7 @@ namespace bpmcli
 
 	}
 
-	[Verb("new", Aliases = new string[] { "new-pkg" }, HelpText = "Create new instance in bpmonline")]
+	[Verb("new-pkg", Aliases = new string[] { "new" }, HelpText = "Create new instance in bpmonline")]
 	internal class NewOptions
 	{
 		[Value(0, MetaName = "<TEMPLATE NAME>", Required = true, HelpText = "Template of the created instance. Can be (pkg)")]
@@ -139,7 +139,7 @@ namespace bpmcli
 	}
 
 
-	[Verb("convert", HelpText = "Convert package to project")]
+	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions
 	{
 		[Value(0, MetaName = "<TEMPLATE NAME>", Required = false, HelpText = "Template of the created instance. Can be (pkg)")]
