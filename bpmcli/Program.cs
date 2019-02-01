@@ -14,9 +14,7 @@ namespace bpmcli
 
 	public class StringParser {
 		public static IEnumerable<string> ParseArray(string input) {
-			return input.Replace(" ", string.Empty)
-					.Split(',').Select(p => p.Trim())
-					.ToList();
+			return input.Split(',').Select(p => p.Trim()).ToList();
 		}
 	}
 

@@ -1,15 +1,8 @@
-﻿using System;
-using System.IO;
-using System.Xml.Linq;
-using FluentAssertions;
-using NUnit.Framework;
-using static bpmcli.tests.AssertionExtensions;
-using File = System.IO.File;
-
+﻿using NUnit.Framework;
 
 namespace bpmcli.tests
 {
-	class CommonTests
+	internal class CommonTests
 	{
 		[Test, Category("Unit")]
 		public void BpmPkg_Create_CheckCorrectTplFilePathGettingFromPath() {
