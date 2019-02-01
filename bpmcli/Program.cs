@@ -12,6 +12,14 @@ using CommandLine;
 namespace bpmcli
 {
 
+	public class StringParser {
+		public static IEnumerable<string> ParseArray(string input) {
+			return input.Replace(" ", string.Empty)
+					.Split(',').Select(p => p.Trim())
+					.ToList();
+		}
+	}
+
 	class Program
 	{
 		private static string _userName;
@@ -197,7 +205,7 @@ namespace bpmcli
 			response.Close();
 		}
 
-		private static void CompressionProjects(string sourcePath, string destinationPath, List<string> names) {
+		private static void CompressionProjects(string sourcePath, string destinationPath, IEnumerable<string> names) {
 			string tempPath = Path.Combine(Path.GetTempPath(), "Application_");// + DateTime.Now.ToShortDateString());
 			if (Directory.Exists(tempPath)) {
 				Directory.Delete(tempPath, true);
@@ -211,10 +219,8 @@ namespace bpmcli
 			ZipFile.CreateFromDirectory(tempPath, destinationPath);
 		}
 
-		private static List<string> GetPackages(string inputline)
-		{
-			var result = inputline.Replace(" ", string.Empty).Split(',').ToList();
-			return result;
+		internal static IEnumerable<string> GetPackages(string inputline) {
+			return StringParser.ParseArray(inputline);
 		}		
 		
 		private static void CompressionProject(string sourcePath, string destinationPath) {
