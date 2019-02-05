@@ -114,6 +114,24 @@ To delete package, use the next command:
 bpmcli delete -c <package code>
 ```
 
+### Creating new package
+
+To create new package project, use the next command:
+```
+ bpmcli new pkg -n <package_name> -r false -d <package_path>
+```
+you can use shortest command, in this case -r (rebase) will be true and -d (package_path) will be current working directory:
+```
+ bpmcli new pkg -n <package_name>
+```
+
+### Rebase package reference libs path
+
+To change reference path for Terrasoft's libs from SDK links to local links, use the next command:
+```
+ bpmcli rebase -t pkg -f <proj_file_path>
+```
+
 ### Uploading package content from the file system into bpm'online database
 ```
 bpmcli fetch -o upload -n PackageName
