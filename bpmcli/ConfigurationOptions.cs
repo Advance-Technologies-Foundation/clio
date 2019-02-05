@@ -17,16 +17,16 @@ namespace bpmcli
 		public string Password { get; set; }
 		public string Maintainer { get; set; }
 		internal void Merge(EnvironmentSettings environment) {
-			if (!String.IsNullOrEmpty(environment.Login)) {
+			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
 			}
-			if (!String.IsNullOrEmpty(environment.Uri)) {
+			if (!string.IsNullOrEmpty(environment.Uri)) {
 				Uri = environment.Uri;
 			}
-			if (!String.IsNullOrEmpty(environment.Password)) {
+			if (!string.IsNullOrEmpty(environment.Password)) {
 				Password = environment.Password;
 			}
-			if (!String.IsNullOrEmpty(environment.Maintainer)) {
+			if (!string.IsNullOrEmpty(environment.Maintainer)) {
 				Maintainer = environment.Maintainer;
 			}
 		}
@@ -69,7 +69,7 @@ namespace bpmcli
 			configuration.Bind(_settings);
 		}
 
-		private readonly string fileName = "appsettings.json";
+		private const string FileName = "appsettings.json";
 
 		private string AppSettingsFolderPath {
 			get {
@@ -85,7 +85,7 @@ namespace bpmcli
 			}
 		}
 
-		private string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{fileName}";
+		private string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{FileName}";
 
 		private void InitializeSettingsFile() {
 			if (File.Exists(AppSettingsFilePath)) {
@@ -121,12 +121,14 @@ namespace bpmcli
 			JsonSerializer serializer = new JsonSerializer() {
 				Formatting = Formatting.Indented
 			};
+			serializer.Serialize(streamWriter, $"appsetting file path: {AppSettingsFilePath}");
+			streamWriter.WriteLine();
 			serializer.Serialize(streamWriter, _settings);
 		}
 
 		internal EnvironmentSettings GetEnvironment(string name = null) {
 			EnvironmentSettings environment;
-			if (String.IsNullOrEmpty(name)) {
+			if (string.IsNullOrEmpty(name)) {
 				environment = _settings.GetActiveEnviroment();
 			} else {
 				environment = _settings.Environments[name];
@@ -137,7 +139,7 @@ namespace bpmcli
 		Settings _settings;
 
 		internal void ConfigureEnvironment(string name, EnvironmentSettings environment) {
-			if (String.IsNullOrEmpty(name)) {
+			if (string.IsNullOrEmpty(name)) {
 				_settings.GetActiveEnviroment().Merge(environment);
 			} else if (_settings.Environments.ContainsKey(name)) {
 				_settings.Environments[name].Merge(environment);
