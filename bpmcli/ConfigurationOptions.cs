@@ -81,11 +81,11 @@ namespace bpmcli
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
-				return $"{userPath}\\{companyName.Company}\\{product.Product}";
+				return Path.Combine(userPath, companyName?.Company, product?.Product);
 			}
 		}
 
-		private string AppSettingsFilePath => $"{AppSettingsFolderPath}\\{FileName}";
+		private string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
 
 		private void InitializeSettingsFile() {
 			if (File.Exists(AppSettingsFilePath)) {
@@ -121,8 +121,7 @@ namespace bpmcli
 			JsonSerializer serializer = new JsonSerializer() {
 				Formatting = Formatting.Indented
 			};
-			serializer.Serialize(streamWriter, $"appsetting file path: {AppSettingsFilePath}");
-			streamWriter.WriteLine();
+			streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 			serializer.Serialize(streamWriter, _settings);
 		}
 
