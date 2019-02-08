@@ -125,13 +125,6 @@ you can use shortest command, in this case -r (rebase) will be true and -d (pack
  bpmcli new pkg -n <package_name>
 ```
 
-### Rebase package reference libs path
-
-To change reference path for Terrasoft's libs from SDK links to local links, use the next command:
-```
- bpmcli rebase -t pkg -f <proj_file_path>
-```
-
 ### Uploading package content from the file system into bpm'online database
 ```
 bpmcli fetch -o upload -n PackageName
