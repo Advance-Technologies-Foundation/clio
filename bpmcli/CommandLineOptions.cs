@@ -172,4 +172,21 @@ namespace bpmcli
 				)
 			};
 	}
+
+	[Verb("download", HelpText = "Download zip packages.", Hidden = true)]
+	internal class DownloadZipPackagesOptions : BaseOptions
+	{
+		[Option('n', "Packages", Required = true,
+			HelpText = "Packages names.", Default = null)]
+		public string Packages {
+			get; set;
+		}
+		[Option('d', "DestinationPath", Required = false,
+			HelpText = "Path to the directory where Zip created.", Default = null)]
+		public string DestPath {
+			get; set;
+		}
+
+	}
+
 }

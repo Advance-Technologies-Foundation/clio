@@ -34,6 +34,7 @@ namespace bpmcli
 		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
 		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
 		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
+		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static string CurrentProj => 
@@ -278,6 +279,29 @@ namespace bpmcli
 			File.Copy(Path.Combine(sourcePath, "descriptor.json"), Path.Combine(destinationPath, "descriptor.json"));
 		}
 
+		private static void DownloadZipPackagesInternal(string packageName, string destinationPath) {
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(GetZipPackageUrl);
+			request.Method = "POST";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			using (var requestStream = request.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write("[\"" + packageName + "\"]");
+				}
+			}
+			request.ContentType = "application/json";
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			File.WriteAllText(destinationPath, responseFromServer, Encoding.ASCII);
+			Console.WriteLine(("Download packages ({0}) completed.", packageName));
+			reader.Close();
+			dataStream.Close();
+			response.Close();
+		}
+
 		internal static void CopyProjectElement(string sourcePath, string destinationPath, string name) {
 			string fromAssembliesPath = Path.Combine(sourcePath, name);
 			if (Directory.Exists(fromAssembliesPath)) {
@@ -485,6 +509,18 @@ namespace bpmcli
 				return 0;
 			}
 			catch (Exception e) {
+        Console.WriteLine(e);
+				return 1;
+			}
+		}
+
+		private static int DownloadZipPackages(DownloadZipPackagesOptions options) {
+			try {
+				Configure(options);
+				Login();
+				DownloadZipPackagesInternal(options.Packages, options.DestPath);
+				return 0;
+			} catch (Exception e) {
 				Console.WriteLine(e);
 				return 1;
 			}
@@ -543,7 +579,8 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions, RegisterOptions>(args)
+					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions, RegisterOptions,
+					DownloadZipPackagesOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -559,6 +596,7 @@ namespace bpmcli
 					(NewOptions opts) => New(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
+					(DownloadZipPackagesOptions opts) => DownloadZipPackages(opts),
 					errs => 1);
 		}
 
