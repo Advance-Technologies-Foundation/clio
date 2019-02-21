@@ -277,12 +277,15 @@ namespace bpmcli
 			Stream dataStream;
 			WebResponse response = request.GetResponse();
 			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			File.WriteAllText(destinationPath, responseFromServer, Encoding.ASCII);
-			Console.WriteLine(("Download packages ({0}) completed.", packageName));
-			reader.Close();
-			dataStream.Close();
+			if (dataStream != null) {
+				var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write);
+				dataStream.CopyTo(fileStream);
+				fileStream.Dispose();
+				dataStream.Close();
+				Console.WriteLine("Download packages ({0}) completed.", packageName);
+			} else {
+				Console.WriteLine("Download packages ({0}) not completed.", packageName);
+			}
 			response.Close();
 		}
 
