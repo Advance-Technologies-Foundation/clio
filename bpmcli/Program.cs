@@ -264,6 +264,7 @@ namespace bpmcli
 		}
 
 		private static void DownloadZipPackagesInternal(string packageName, string destinationPath) {
+			Console.WriteLine("Start download packages ({0}).", packageName);
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(GetZipPackageUrl);
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
