@@ -33,6 +33,7 @@ namespace bpmcli
 		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
 		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
+		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
@@ -128,6 +129,21 @@ namespace bpmcli
 				}
 			}
 			request.GetResponse();
+		}
+
+		private static void ClearRedisDbInternal() {
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ClearRedisDbUrl);
+			request.Method = "POST";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			request.ContentType = "application/json";
+			using (var requestStream = request.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write(@"{}");
+				}
+			}
+			request.GetResponse();
+			Console.WriteLine("Done");
 		}
 
 		private static int ConfigureEnvironment(ConfigureOptions options) {
@@ -490,6 +506,19 @@ namespace bpmcli
 			}
 		}
 
+		private static int ClearRedisDb(RedisOptions options) {
+			try {
+				Configure(options);
+				Login();
+				ClearRedisDbInternal();
+				return 0;
+			}
+			catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
+		}
+
 		private static int DownloadZipPackages(DownloadZipPackagesOptions options) {
 			try {
 				Configure(options);
@@ -553,13 +582,14 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, FetchOptions,
+			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
 					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions, RegisterOptions,
 					DownloadZipPackagesOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
+					(RedisOptions opts) => ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
 					(ViewOptions opts) => ViewEnvironments(),

@@ -37,6 +37,11 @@ namespace bpmcli
 	{
 	}
 
+	[Verb("clear-redis-db", HelpText = "Clear redis database")]
+	internal class RedisOptions : BaseOptions
+	{
+	}
+
 	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden =true)]
 	internal class RegisterOptions
 	{

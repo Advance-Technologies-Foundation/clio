@@ -77,6 +77,12 @@ bpmcli remove -e dev
 bpmcli view
 ```
 
+### Clear redis database
+
+```
+bpmcli clear-redis-db
+```
+
 ### Using bpmcli commands for noncurrent environment
 
 ```
