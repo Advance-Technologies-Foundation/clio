@@ -268,9 +268,10 @@ namespace bpmcli
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
 			AddCsrfToken(request);
+			var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 			using (var requestStream = request.GetRequestStream()) {
 				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("[\"" + packageName + "\"]");
+					writer.Write("[" + packageNames + "]");
 				}
 			}
 			request.ContentType = "application/json";
