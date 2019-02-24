@@ -181,12 +181,18 @@ namespace bpmcli
 		public string Packages {
 			get; set;
 		}
-		[Option('d', "DestinationPath", Required = false,
+		[Option('d', "DestinationPath", Required = true,
 			HelpText = "Path to the directory where Zip created.", Default = null)]
 		public string DestPath {
 			get; set;
 		}
 
+		[Option('z', "NeedUnZip", Required = false,
+			HelpText = "Need UnZip packages?", Default = false)]
+		public bool NeedUnZip {
+			get; set; 
+
+		}
 	}
 
 }

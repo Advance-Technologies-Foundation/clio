@@ -307,6 +307,36 @@ namespace bpmcli
 			response.Close();
 		}
 
+		private static void UnZipPackages(string zipFilePath) {
+			var fileInfo = new FileInfo(zipFilePath);
+			if (fileInfo.Length == 0) {
+				throw new Exception("CompressionUtilities.Exception.FileIsEmpty");
+			}
+			string targetDirectoryPath = GetPackagePathFromZipFile(zipFilePath, ".zip");
+			if (Directory.Exists(targetDirectoryPath)) {
+				Directory.Delete(targetDirectoryPath, true);
+			}
+			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
+			foreach (var filePath in Directory.GetFiles(targetDirectoryPath)){
+				string packageName = GetPackagePathFromZipFile(new FileInfo(filePath).Name, ".gz");
+				string currentDirectoryPath = Path.Combine(Environment.CurrentDirectory, packageName);
+				Console.WriteLine("Start unzip package ({0}).", packageName);
+				using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.None)) {
+					using (var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true)) {
+						while (CompressionUtilities.UnzipFile(currentDirectoryPath, zipStream)) {
+						}
+					}
+				}
+				Console.WriteLine("Unzip package ({0}) completed.", packageName);
+			}
+		}
+
+		private static string GetPackagePathFromZipFile(string filePath, string zipFileExtention) {
+			string targetDirectoryPath = filePath.Remove(filePath.IndexOf(zipFileExtention,
+				StringComparison.Ordinal), zipFileExtention.Length);
+			return targetDirectoryPath;
+		}
+
 		internal static void CopyProjectElement(string sourcePath, string destinationPath, string name) {
 			string fromAssembliesPath = Path.Combine(sourcePath, name);
 			if (Directory.Exists(fromAssembliesPath)) {
@@ -524,6 +554,9 @@ namespace bpmcli
 				Configure(options);
 				Login();
 				DownloadZipPackagesInternal(options.Packages, options.DestPath);
+				if (options.NeedUnZip) {
+					UnZipPackages(options.DestPath);
+				}
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
