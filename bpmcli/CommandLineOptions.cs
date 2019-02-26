@@ -12,7 +12,7 @@ namespace bpmcli
 		[Option('p', "Password", Required = false, HelpText = "User password")]
 		public string Password { get; set; }
 
-		[Option('l', "Login", Required = false, HelpText = "User login (administrator permisssion required)")]
+		[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
 		public string Login { get; set; }
 
 		[Option('e', "Environment", Required = false, HelpText = "Environment name")]
