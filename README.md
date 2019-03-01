@@ -78,7 +78,7 @@ bpmcli view
 ```
 
 ### Clear redis database
-
+To clear application redis database, use the next command:
 ```
 bpmcli clear-redis-db
 ```
