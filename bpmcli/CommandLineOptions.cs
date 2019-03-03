@@ -173,7 +173,7 @@ namespace bpmcli
 			};
 	}
 
-	[Verb("download", HelpText = "Download zip packages.", Hidden = true)]
+	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download zip package.")]
 	internal class DownloadZipPackagesOptions : BaseOptions
 	{
 		[Option('n', "Packages", Required = true,
@@ -181,17 +181,10 @@ namespace bpmcli
 		public string Packages {
 			get; set;
 		}
-		[Option('d', "DestinationPath", Required = true,
+		[Option('d', "DestinationPath", Required = false,
 			HelpText = "Path to the directory where Zip created.", Default = null)]
 		public string DestPath {
 			get; set;
-		}
-
-		[Option('z', "NeedUnZip", Required = false,
-			HelpText = "Need UnZip packages?", Default = false)]
-		public bool NeedUnZip {
-			get; set; 
-
 		}
 	}
 

@@ -553,10 +553,11 @@ namespace bpmcli
 			try {
 				Configure(options);
 				Login();
-				DownloadZipPackagesInternal(options.Packages, options.DestPath);
-				if (options.NeedUnZip) {
-					UnZipPackages(options.DestPath);
-				}
+				string destPath = options.DestPath != null
+					? options.DestPath
+					: Path.Combine(Path.GetTempPath(), "packages.zip");
+				DownloadZipPackagesInternal(options.Packages, destPath);
+					UnZipPackages(destPath);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
