@@ -1,7 +1,8 @@
 {
   "profiles": {
     "bpmcli": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "help"
     }
   }
 }
