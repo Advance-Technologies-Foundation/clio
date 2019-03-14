@@ -27,7 +27,7 @@ namespace bpmcli.tests
 				ProjectId = Guid.Parse(PackageUId);
 				CreatedOn = TestCreatedOn;
 				if (setDirectory) {
-					Directory = Path.Combine(Environment.CurrentDirectory, ResultDir);
+					FullPath = Path.Combine(Environment.CurrentDirectory, ResultDir);
 				}
 			}
 
@@ -67,7 +67,7 @@ namespace bpmcli.tests
 		public void BpmPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
 			var pkg = new BpmPkgMock();
 			pkg.GetType().GetMethod(methodName).Invoke(pkg, null);
-			var resultPath = Path.Combine(pkg.Directory, resultFileName);
+			var resultPath = Path.Combine(pkg.FullPath, resultFileName);
 			var samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, sampleFileName);
 			File(resultPath).Should().Exist();
 			File.ReadAllText(resultPath).Should().BeEquivalentTo(File.ReadAllText(samplePath));
@@ -80,24 +80,24 @@ namespace bpmcli.tests
 			var pkg = BpmPkg.CreatePackage(PackageName, Maintainer);
 			Environment.CurrentDirectory = oldEnvironment;
 			pkg.Create();
-			File(Path.Combine(pkg.Directory, BpmPkg.DescriptorName)).Should().Exist();
-			File(Path.Combine(pkg.Directory, PackageName + "." + BpmPkg.CsprojExtension)).Should().Exist();
-			File(Path.Combine(pkg.Directory, BpmPkg.PackageConfigName)).Should().Exist();
-			File(Path.Combine(pkg.Directory, BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName))
+			File(Path.Combine(pkg.FullPath, BpmPkg.DescriptorName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, PackageName + "." + BpmPkg.CsprojExtension)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, BpmPkg.PackageConfigName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName))
 				.Should().Exist();
-			File(Path.Combine(pkg.Directory, "Files\\cs", "EmptyClass.cs")).Should().Exist();
-			File(Path.Combine(pkg.Directory, "Assemblies"+ "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.Directory, "Data" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.Directory, "Resources" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.Directory, "Schemas" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.Directory, "SqlScripts" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "Assemblies")).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "Data")).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "Resources")).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "Schemas")).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "SqlScripts")).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "Files")).Should().Exist();
-			Directory(Path.Combine(pkg.Directory, "Files\\cs")).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Files\\cs", "EmptyClass.cs")).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Assemblies"+ "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Data" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Resources" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Schemas" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "SqlScripts" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "Assemblies")).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "Data")).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "Resources")).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "Schemas")).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "SqlScripts")).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "Files")).Should().Exist();
+			Directory(Path.Combine(pkg.FullPath, "Files\\cs")).Should().Exist();
 		}
 
 		[Test, Category("Integration")]
@@ -110,7 +110,7 @@ namespace bpmcli.tests
 			pkg.CreateNugetPackageConfig();
 			Environment.CurrentDirectory = oldCD;
 			Environment.SetEnvironmentVariable("PATH", oldPath);
-			var resultPath = Path.Combine(pkg.Directory, BpmPkg.PackageConfigName);
+			var resultPath = Path.Combine(pkg.FullPath, BpmPkg.PackageConfigName);
 			var samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, BpmPkg.PackageConfigName);
 			File(resultPath).Should().Exist();
 			File.ReadAllText(resultPath).Should().BeEquivalentTo(File.ReadAllText(samplePath));

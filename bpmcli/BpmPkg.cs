@@ -32,7 +32,7 @@ namespace bpmcli
 
 		public Guid ProjectId { get; protected set; }
 
-		public string Directory { get; protected set; }
+		public string FullPath { get; protected set; }
 
 		private DateTime _createdOn;
 		public DateTime CreatedOn {
@@ -45,7 +45,7 @@ namespace bpmcli
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
-			Directory = Environment.CurrentDirectory;
+			FullPath = Environment.CurrentDirectory;
 		}
 
 		private static DateTime GetDateTimeTillSeconds(DateTime dateTime) {
@@ -99,39 +99,39 @@ namespace bpmcli
 		}
 
 		protected BpmPkg CreatePkgDescriptor() {
-			var filePath = Path.Combine(Directory, DescriptorName);
+			var filePath = Path.Combine(FullPath, DescriptorName);
 			CreateFromTpl(DescriptorTpl, filePath);
 			return this;
 		}
 
 		protected BpmPkg CreateProj() {
-			var filePath = Path.Combine(Directory, PackageName + "." + CsprojExtension);
+			var filePath = Path.Combine(FullPath, PackageName + "." + CsprojExtension);
 			CreateFromTpl(ProjTpl, filePath);
 			return this;
 		}
 
 		protected BpmPkg CreatePackageConfig() {
-			var filePath = Path.Combine(Directory, PackageConfigName);
+			var filePath = Path.Combine(FullPath, PackageConfigName);
 			CreateFromTpl(PackageConfigTpl, filePath);
 			return this;
 		}
 
 		protected BpmPkg CreateAssemblyInfo() {
-			System.IO.Directory.CreateDirectory(Path.Combine(Directory, PropertiesDirName));
-			var filePath = Path.Combine(Directory, PropertiesDirName, AssemblyInfoName);
+			System.IO.Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
+			var filePath = Path.Combine(FullPath, PropertiesDirName, AssemblyInfoName);
 			CreateFromTpl(AssemblyInfoTpl, filePath);
 			return this;
 		}
 
 		protected BpmPkg CreateEmptyClass() {
-			System.IO.Directory.CreateDirectory(Path.Combine(Directory, "Files\\cs"));
-			File.CreateText(Path.Combine(Directory, "Files\\cs", "EmptyClass.cs")).Dispose();
+			System.IO.Directory.CreateDirectory(Path.Combine(FullPath, "Files\\cs"));
+			File.CreateText(Path.Combine(FullPath, "Files\\cs", "EmptyClass.cs")).Dispose();
 			return this;
 		}
 
 		protected BpmPkg CreatePackageDirectories() {
 			foreach (var directory in _pkgDirectories) {
-				var dInfo = System.IO.Directory.CreateDirectory(Path.Combine(Directory, directory));
+				var dInfo = System.IO.Directory.CreateDirectory(Path.Combine(FullPath, directory));
 				AddPlaceholderFile(dInfo.FullName);
 			}
 			return this;
