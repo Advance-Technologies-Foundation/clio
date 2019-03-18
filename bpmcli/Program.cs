@@ -630,7 +630,7 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions, NewOptions, ConvertOptions, RegisterOptions,
+					DeleteOptions, RebaseOptions, NewOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
 					DownloadZipPackagesOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
@@ -645,6 +645,7 @@ namespace bpmcli
 					(DeleteOptions opts) => Delete(opts),
 					(RebaseOptions opts) => Rebase(opts),
 					(NewOptions opts) => New(opts),
+					(NewPkgOptions opts) => NewPkg(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(DownloadZipPackagesOptions opts) => DownloadZipPackages(opts),
@@ -692,6 +693,20 @@ namespace bpmcli
 			}
 		}
 
+		private static int NewPkg(NewPkgOptions options) {
+			var settings = new SettingsRepository().GetEnvironment();
+			try {
+				BpmPkg.CreatePackage(options.Name, settings.Maintainer).Create();
+				if (bool.Parse(options.Rebase)) {
+					Rebase(new RebaseOptions { ProjectType = "pkg" });
+				}
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
+		}
+
 		private static int Rebase(RebaseOptions options) {
 			options.FilePath = options.FilePath ?? CurrentProj;
 			if (string.IsNullOrEmpty(options.FilePath)) {
@@ -700,7 +715,7 @@ namespace bpmcli
 			try {
 				switch (options.ProjectType) {
 					case "sln": {
-						throw new NotSupportedException("option sln temporaly not supported");
+						throw new NotSupportedException("option sln temporary not supported");
 					}
 					case "pkg": {
 						BpmPkgProject.LoadFromFile(options.FilePath)

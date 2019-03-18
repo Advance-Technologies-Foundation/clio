@@ -122,7 +122,30 @@ namespace bpmcli
 
 	}
 
-	[Verb("new-pkg", Aliases = new string[] { "new" }, HelpText = "Create a new bpm'online package in local file system")]
+	[Verb("new-pkg", HelpText = "Create a new bpm'online package in local file system")]
+	internal class NewPkgOptions
+	{
+		[Option('n', "Name", Required = false, Default = "DefaultName",
+			HelpText = "Name of the created instance")]
+		public string Name { get; set; }
+		[Option('d', "DestinationPath", Required = false,
+			HelpText = "Path to the directory where new instance will be created", Default = null)]
+		public string DestPath { get; set; }
+		[Option('r', "Rebase", Required = false, Default = "true", HelpText = "Execute rebase command after create")]
+		public string Rebase { get; set; }
+		[Usage(ApplicationAlias = "bpmcli")]
+		public static IEnumerable<Example> Examples =>
+			new List<Example> {
+				new Example("Create new package with name 'ContactPkg'",
+					new NewOptions { Name = "ContactPkg" }
+				),
+				new Example("Create new package with name 'CorePkg' and with links on bpm'online SDK",
+					new NewOptions { Name = "ContactPkg", Rebase = "false"}
+				)
+			};
+	}
+
+	[Verb("new", HelpText = "Create a new items of bpm'online in local file system", Hidden = true)]
 	internal class NewOptions
 	{
 		[Value(0, MetaName = "<TEMPLATE NAME>", Required = true, HelpText = "Template of the created instance. Can be (pkg)")]
@@ -139,7 +162,10 @@ namespace bpmcli
 			new List<Example> {
 				new Example("Create new package with name 'ContactPkg'",
 					new NewOptions { Name = "ContactPkg" , Template = "pkg"}
-					)
+				),
+				new Example("Create new package with name 'CorePkg' and with links on bpm'online SDK",
+					new NewOptions { Name = "ContactPkg", Rebase = "false"}
+				)
 		};
 	}
 
