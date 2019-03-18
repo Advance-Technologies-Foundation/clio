@@ -578,10 +578,22 @@ namespace bpmcli
 		private static int Install(InstallOptions options) {
 			Configure(options);
 			Login();
-			InstallPackage(options.FilePath);
+			if (File.Exists(options.FilePath)) {
+				InstallPackage(options.FilePath);
+			} else {
+				if (Directory.Exists(options.FilePath)) {
+					var folderPath = options.FilePath;
+					var filePath = options.FilePath + ".gz";
+					CompressionProject(folderPath, filePath);
+					InstallPackage(filePath);
+					File.Delete(filePath);
+				}
+			}
+
 			if (options.ReportPath != null) {
 				SaveLogFile(options.ReportPath);
 			}
+			Console.WriteLine("Done");
 			return 0;
 		}
 
