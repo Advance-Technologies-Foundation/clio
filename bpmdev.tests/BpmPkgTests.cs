@@ -57,7 +57,7 @@ namespace bpmcli.tests
 		}
 
 		[Test, Category("Integration")]
-		[TestCase(BpmPkg.DesriptorName, BpmPkg.DesriptorName, "CreateDescriptor", TestName = "Check Correct Descriptor")]
+		[TestCase(BpmPkg.DescriptorName, BpmPkg.DescriptorName, "CreateDescriptor", TestName = "Check Correct Descriptor")]
 		[TestCase(PackageName + "." + BpmPkg.CsprojExtension, "Proj.csproj", "CreateProjFile",
 			TestName = "Check Correct ProjectFile")]
 		[TestCase(BpmPkg.PackageConfigName, BpmPkg.PackageConfigName, "CreateNugetPackageConfig",
@@ -80,12 +80,17 @@ namespace bpmcli.tests
 			var pkg = BpmPkg.CreatePackage(PackageName, Maintainer);
 			Environment.CurrentDirectory = oldEnvironment;
 			pkg.Create();
-			File(Path.Combine(pkg.Directory, BpmPkg.DesriptorName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, BpmPkg.DescriptorName)).Should().Exist();
 			File(Path.Combine(pkg.Directory, PackageName + "." + BpmPkg.CsprojExtension)).Should().Exist();
 			File(Path.Combine(pkg.Directory, BpmPkg.PackageConfigName)).Should().Exist();
 			File(Path.Combine(pkg.Directory, BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName))
 				.Should().Exist();
 			File(Path.Combine(pkg.Directory, "Files\\cs", "EmptyClass.cs")).Should().Exist();
+			File(Path.Combine(pkg.Directory, "Assemblies"+ "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, "Data" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, "Resources" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, "Schemas" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.Directory, "SqlScripts" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
 			Directory(Path.Combine(pkg.Directory, "Assemblies")).Should().Exist();
 			Directory(Path.Combine(pkg.Directory, "Data")).Should().Exist();
 			Directory(Path.Combine(pkg.Directory, "Resources")).Should().Exist();
@@ -113,7 +118,7 @@ namespace bpmcli.tests
 
 
 		[OneTimeTearDown]
-		public void TearodwnOneTime() {
+		public void TeardownOneTime() {
 			if (System.IO.Directory.Exists(ResultDir)) {
 				System.IO.Directory.Delete(ResultDir, true);
 			}

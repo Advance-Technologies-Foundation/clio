@@ -8,18 +8,19 @@ namespace bpmcli
 	public class BpmPkg
 	{
 
-		public const string DesriptorName = "descriptor.json";
+		public const string DescriptorName = "descriptor.json";
 		public const string PropertiesDirName = "Properties";
 		public const string CsprojExtension = "csproj";
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
+		public const string PlaceholderFileName = "placeholder.txt";
 		public static string EditProjTpl => $"tpl\\EditProj.{CsprojExtension}.tpl";
 		public static string PackageConfigTpl => $"tpl\\{PackageConfigName}.tpl";
 		public static string AssemblyInfoTpl => $"tpl\\{AssemblyInfoName}.tpl";
 
 		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources" };
 
-		private static string DescriptorTpl => $"tpl\\{DesriptorName}.tpl";
+		private static string DescriptorTpl => $"tpl\\{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl\\Proj.{CsprojExtension}.tpl";
 
 		private readonly IBpmcliEnvironment _bpmcliEnvironment;
@@ -92,8 +93,13 @@ namespace bpmcli
 			return false;
 		}
 
+		private void AddPlaceholderFile(string dirPath) {
+			var placeholderPath = Path.Combine(dirPath, PlaceholderFileName);
+			File.Create(placeholderPath).Dispose();
+		}
+
 		protected BpmPkg CreatePkgDescriptor() {
-			var filePath = Path.Combine(Directory, DesriptorName);
+			var filePath = Path.Combine(Directory, DescriptorName);
 			CreateFromTpl(DescriptorTpl, filePath);
 			return this;
 		}
@@ -125,7 +131,8 @@ namespace bpmcli
 
 		protected BpmPkg CreatePackageDirectories() {
 			foreach (var directory in _pkgDirectories) {
-				System.IO.Directory.CreateDirectory(Path.Combine(Directory, directory));
+				var dInfo = System.IO.Directory.CreateDirectory(Path.Combine(Directory, directory));
+				AddPlaceholderFile(dInfo.FullName);
 			}
 			return this;
 		}
