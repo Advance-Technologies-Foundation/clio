@@ -539,6 +539,7 @@ namespace bpmcli
 				Configure(options);
 				Login();
 				UnloadAppDomain();
+				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
