@@ -158,6 +158,15 @@ namespace bpmcli
 				repository.SetActiveEnvironment(options.ActiveEnvironment);
 			}
 			repository.ConfigureEnvironment(options.Environment, environment);
+			Configure(options);
+			Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
+			try
+			{
+				Login();
+				Console.WriteLine($"Done");
+			} catch (Exception e) {
+				Console.WriteLine($"Login operation failed with error: {e.Message}");
+			}
 			return 0;
 		}
 
@@ -171,6 +180,7 @@ namespace bpmcli
 		private static int RemoveEnvironment(RemoveOptions options) {
 			var repository = new SettingsRepository();
 			repository.RemoveEnvironment(options.Environment);
+			Console.WriteLine("Done");
 			return 0;
 		}
 

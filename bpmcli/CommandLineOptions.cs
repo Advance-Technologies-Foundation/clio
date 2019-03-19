@@ -5,7 +5,8 @@ using CommandLine.Text;
 
 namespace bpmcli
 {
-	internal class BaseOptions {
+	internal class BaseOptions
+	{
 		[Option('u', "uri", Required = false, HelpText = "bpm`online site uri")]
 		public string Uri { get; set; }
 
@@ -37,12 +38,12 @@ namespace bpmcli
 	{
 	}
 
-	[Verb("clear-redis-db", HelpText = "Clear redis database")]
+	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
 	internal class RedisOptions : BaseOptions
 	{
 	}
 
-	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden =true)]
+	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden = true)]
 	internal class RegisterOptions
 	{
 		[Option('t', "Target", Required = true, HelpText = "Target enviromnment location. Could be user location or" +
@@ -54,7 +55,7 @@ namespace bpmcli
 
 	}
 
-	[Verb("fetch", HelpText = "Download assembly")]
+	[Verb("fetch", HelpText = "Download assembly", Hidden = true)]
 	internal class FetchOptions : BaseOptions
 	{
 		[Option('n', "Package names", Required = true, HelpText = "Package names")]
@@ -72,21 +73,22 @@ namespace bpmcli
 		[Option('d', "DestinationPath", Required = true)]
 		public string DestinationPath { get; set; }
 		[Option('p', "Packages", Required = false)]
-		public string Packages  { get; set; }
+		public string Packages { get; set; }
 	}
 
-	[Verb("cfg", HelpText = "Configure a web application settings")]
+	[Verb("reg-web-app", Aliases = new string[] { "reg" }, HelpText = "Configure a web application settings")]
 	internal class ConfigureOptions : BaseOptions
 	{
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
 	}
 
-	[Verb("show-web-app-list", Aliases = new string[] { "view" },HelpText = "Show the list of web applications and their settings")]
-	internal class ViewOptions {
+	[Verb("show-web-app-list", Aliases = new string[] { "apps" }, HelpText = "Show the list of web applications and their settings")]
+	internal class ViewOptions
+	{
 	}
 
-	[Verb("unreg-web-app", Aliases = new string[] { "remove", "unregister" }, HelpText = "Remove a web application's settings from the list")]
+	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Remove a web application's settings from the list")]
 	internal class RemoveOptions : BaseOptions
 	{
 		[Option('e', "ActiveEnvironment", Required = true, HelpText = "Environment name")]
@@ -122,7 +124,7 @@ namespace bpmcli
 
 	}
 
-	[Verb("new-pkg", HelpText = "Create a new bpm'online package in local file system")]
+	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new bpm'online package in local file system")]
 	internal class NewPkgOptions
 	{
 		[Option('n', "Name", Required = false, Default = "DefaultName",
@@ -158,7 +160,7 @@ namespace bpmcli
 		[Option('r', Required = false, Default = "true", HelpText = "Execute rebase command after create")]
 		public string Rebase { get; set; }
 		[Usage(ApplicationAlias = "bpmcli")]
-		public static IEnumerable<Example> Examples => 
+		public static IEnumerable<Example> Examples =>
 			new List<Example> {
 				new Example("Create new package with name 'ContactPkg'",
 					new NewOptions { Name = "ContactPkg" , Template = "pkg"}
@@ -199,7 +201,7 @@ namespace bpmcli
 			};
 	}
 
-	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download zip package.")]
+	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
 	internal class DownloadZipPackagesOptions : BaseOptions
 	{
 		[Option('n', "Packages", Required = true,
