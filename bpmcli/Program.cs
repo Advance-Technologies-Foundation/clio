@@ -613,7 +613,6 @@ namespace bpmcli
 				if (options.ReportPath != null) {
 					SaveLogFile(options.ReportPath);
 				}
-				Console.WriteLine("Done");
 			} catch (FileNotFoundException ) {
 				Console.WriteLine("Project not found.");
 			}
@@ -680,15 +679,25 @@ namespace bpmcli
 		}
 
 		private static int Fetch(FetchOptions opts) {
-			Configure(opts);
-			Login();
-			var packages = GetPackages(opts.PackageNames);
-			foreach (var package in packages) {
-				if (opts.Operation == "load") {
-					DownloadPackages(package);
-				} else {
-					UploadPackages(package);
+			try
+			{
+				Configure(opts);
+				Login();
+				var packages = GetPackages(opts.PackageNames);
+				foreach (var package in packages)
+				{
+					if (opts.Operation == "load")
+					{
+						DownloadPackages(package);
+					}
+					else
+					{
+						UploadPackages(package);
+					}
 				}
+				Console.WriteLine("Done");
+			} catch (Exception e) {
+				Console.WriteLine(e);
 			}
 			return 0;
 		}
@@ -709,6 +718,7 @@ namespace bpmcli
 						throw new NotSupportedException($"You use not supported option type {options.Template}");
 					}
 				}
+				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
@@ -723,6 +733,7 @@ namespace bpmcli
 				if (bool.Parse(options.Rebase)) {
 					Rebase(new RebaseOptions { ProjectType = "pkg" });
 				}
+				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
