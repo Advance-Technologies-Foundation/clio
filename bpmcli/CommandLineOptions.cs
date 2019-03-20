@@ -184,7 +184,7 @@ namespace bpmcli
 		public string Path {
 			get; set;
 		}
-		[Option('n', Required = false, HelpText = "Name of the convert instance (or comma sparated names)")]
+		[Option('n', Required = false, HelpText = "Name of the convert instance (or comma separated names)")]
 		public string Name {
 			get; set;
 		}
