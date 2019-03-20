@@ -20,6 +20,9 @@ namespace bpmcli
 			try {
 				var names = new List<string>();
 				if (String.IsNullOrEmpty(options.Name)) {
+					if (options.Path == null) {
+						options.Path = Directory.GetCurrentDirectory();
+					}
 					DirectoryInfo info = new DirectoryInfo(options.Path);
 					foreach (var directory in info.GetDirectories()) {
 						if (File.Exists(Path.Combine(directory.FullName, prefix, "descriptor.json"))) {

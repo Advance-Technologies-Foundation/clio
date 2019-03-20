@@ -235,6 +235,9 @@ namespace bpmcli
 			if (Directory.Exists(tempPath)) {
 				Directory.Delete(tempPath, true);
 			}
+			if (sourcePath == null) {
+				sourcePath = Directory.GetCurrentDirectory();
+			}
 			Directory.CreateDirectory(tempPath);
 			foreach (var name in names) {
 				var currentSourcePath = Path.Combine(sourcePath, name);
@@ -589,22 +592,28 @@ namespace bpmcli
 		private static int Install(InstallOptions options) {
 			Configure(options);
 			Login();
-			if (File.Exists(options.FilePath)) {
-				InstallPackage(options.FilePath);
-			} else {
-				if (Directory.Exists(options.FilePath)) {
-					var folderPath = options.FilePath;
-					var filePath = options.FilePath + ".gz";
-					CompressionProject(folderPath, filePath);
-					InstallPackage(filePath);
-					File.Delete(filePath);
+			if (options.FilePath == null) {
+				options.FilePath = Directory.GetCurrentDirectory();
+			}
+			try {
+				if (File.Exists(options.FilePath)) {
+					InstallPackage(options.FilePath);
+				} else {
+					if (Directory.Exists(options.FilePath)) {
+						var folderPath = options.FilePath;
+						var filePath = options.FilePath + ".gz";
+						CompressionProject(folderPath, filePath);
+						InstallPackage(filePath);
+						File.Delete(filePath);
+					}
 				}
+				if (options.ReportPath != null) {
+					SaveLogFile(options.ReportPath);
+				}
+				Console.WriteLine("Done");
+			} catch (FileNotFoundException ) {
+				Console.WriteLine("Project not found.");
 			}
-
-			if (options.ReportPath != null) {
-				SaveLogFile(options.ReportPath);
-			}
-			Console.WriteLine("Done");
 			return 0;
 		}
 

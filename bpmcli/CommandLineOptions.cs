@@ -68,7 +68,7 @@ namespace bpmcli
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of bpm'online package")]
 	internal class CompressionOptions
 	{
-		[Option('s', "SourcePath", Required = true)]
+		[Option('s', "SourcePath", Required = false)]
 		public string SourcePath { get; set; }
 		[Option('d', "DestinationPath", Required = true)]
 		public string DestinationPath { get; set; }
@@ -98,7 +98,7 @@ namespace bpmcli
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
 	internal class InstallOptions : BaseOptions
 	{
-		[Option('f', "FilePath", Required = true, HelpText = "Package file path")]
+		[Option('f', "FilePath", Required = false, HelpText = "Package file path")]
 		public string FilePath { get; set; }
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
@@ -179,7 +179,7 @@ namespace bpmcli
 		public string Template {
 			get; set;
 		}
-		[Option('p', "Path", Required = true,
+		[Option('p', "Path", Required = false,
 			HelpText = "Path to package directory", Default = null)]
 		public string Path {
 			get; set;
