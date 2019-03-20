@@ -391,18 +391,21 @@ namespace bpmcli
 					writer.Write("\"" + fileName + "\"");
 				}
 			}
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			Console.WriteLine(responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
-			Console.WriteLine("Installed");
-
+			try {
+				Stream dataStream;
+				WebResponse response = request.GetResponse();
+				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+				dataStream = response.GetResponseStream();
+				StreamReader reader = new StreamReader(dataStream);
+				string responseFromServer = reader.ReadToEnd();
+				Console.WriteLine(responseFromServer);
+				reader.Close();
+				dataStream.Close();
+				response.Close();
+				Console.WriteLine("Installed");
+			} catch (Exception) {
+				Console.WriteLine("Not installed");
+			}
 		}
 		
 		private static void DeletePackage(string code) {
