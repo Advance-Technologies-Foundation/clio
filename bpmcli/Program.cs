@@ -583,13 +583,24 @@ namespace bpmcli
 		}
 
 		private static int Compression(CompressionOptions options) {
-			if (options.Packages == null) {
-				CompressionProject(options.SourcePath, options.DestinationPath);
-			} else {
-				var packages = GetPackages(options.Packages);
-				CompressionProjects(options.SourcePath, options.DestinationPath, packages);
+			try
+			{
+				if (options.Packages == null)
+				{
+					CompressionProject(options.SourcePath, options.DestinationPath);
+				}
+				else
+				{
+					var packages = GetPackages(options.Packages);
+					CompressionProjects(options.SourcePath, options.DestinationPath, packages);
+				}
+				Console.WriteLine("Done");
+				return 0;
 			}
-			return 0;
+			catch (Exception e) {
+				Console.WriteLine(e.Message);
+				return 1;
+			}
 		}
 
 		private static int Install(InstallOptions options) {
