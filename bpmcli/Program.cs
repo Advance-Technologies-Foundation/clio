@@ -604,16 +604,17 @@ namespace bpmcli
 		}
 
 		private static int Install(InstallOptions options) {
-			Configure(options);
-			Login();
-			if (options.FilePath == null) {
-				options.FilePath = Directory.GetCurrentDirectory();
-			}
-			try {
+			try	{
+				Configure(options);
+				Login();
+				if (options.FilePath == null) {
+					options.FilePath = Directory.GetCurrentDirectory();
+				}
 				if (File.Exists(options.FilePath)) {
 					InstallPackage(options.FilePath);
 				} else {
-					if (Directory.Exists(options.FilePath)) {
+					if (Directory.Exists(options.FilePath))
+					{
 						var folderPath = options.FilePath;
 						var filePath = options.FilePath + ".gz";
 						CompressionProject(folderPath, filePath);
@@ -621,13 +622,15 @@ namespace bpmcli
 						File.Delete(filePath);
 					}
 				}
-				if (options.ReportPath != null) {
+				if (options.ReportPath != null)	{
 					SaveLogFile(options.ReportPath);
 				}
-			} catch (FileNotFoundException ) {
-				Console.WriteLine("Project not found.");
+				Console.WriteLine("Done");
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e.Message);
+				return 1;
 			}
-			return 0;
 		}
 
 		private static int Delete(DeleteOptions options) {
