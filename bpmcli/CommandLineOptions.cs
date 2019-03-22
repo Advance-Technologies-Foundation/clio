@@ -127,14 +127,12 @@ namespace bpmcli
 	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new bpm'online package in local file system")]
 	internal class NewPkgOptions
 	{
-		[Option('n', "Name", Required = false, Default = "DefaultName",
-			HelpText = "Name of the created instance")]
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
 		public string Name { get; set; }
-		[Option('d', "DestinationPath", Required = false,
-			HelpText = "Path to the directory where new instance will be created", Default = null)]
-		public string DestPath { get; set; }
+
 		[Option('r', "Rebase", Required = false, Default = "true", HelpText = "Execute rebase command after create")]
 		public string Rebase { get; set; }
+
 		[Usage(ApplicationAlias = "bpmcli")]
 		public static IEnumerable<Example> Examples =>
 			new List<Example> {

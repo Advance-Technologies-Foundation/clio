@@ -743,6 +743,9 @@ namespace bpmcli
 		private static int NewPkg(NewPkgOptions options) {
 			var settings = new SettingsRepository().GetEnvironment();
 			try {
+				var packageName = options.Name;
+				var packageDirectory = Directory.CreateDirectory(packageName);
+				Directory.SetCurrentDirectory(packageDirectory.FullName);
 				BpmPkg.CreatePackage(options.Name, settings.Maintainer).Create();
 				if (bool.Parse(options.Rebase)) {
 					Rebase(new RebaseOptions { ProjectType = "pkg" });
