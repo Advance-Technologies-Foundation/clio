@@ -156,5 +156,10 @@ namespace bpmcli
 			CreatePackageFiles().CreatePackageDirectories();
 		}
 
+		internal void RemovePackageConfig()
+		{
+			var filePath = Path.Combine(FullPath, PackageConfigName);
+			File.Delete(filePath);
+		}
 	}
 }

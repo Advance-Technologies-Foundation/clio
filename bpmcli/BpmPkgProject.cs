@@ -14,7 +14,11 @@ namespace bpmcli
 		private const string ItemGroupElemetName = "ItemGroup";
 		private const string ReferenceElementName = "Reference";
 
-		private const string PathToBinDebug = @"..\..\..\..\..\..\..\Bin\Debug\";
+		private const string PathToCoreDebug = @"..\..\..\..\..\..\..\Bin\Debug\";
+
+		private const string PathToBinDebug = @"..\..\..\Bin\";
+
+		private string _activeHint;
 
 
 		private BpmPkgProject(string path) {
@@ -54,21 +58,37 @@ namespace bpmcli
 			if (hintValue != null) {
 				int index = hintValue.LastIndexOf("\\", StringComparison.Ordinal);
 				if (index > 0) {
-					hintValue = string.Concat(PathToBinDebug, hintValue.Substring(index).TrimStart('\\'));
+					hintValue = string.Concat(_activeHint, hintValue.Substring(index).TrimStart('\\'));
 					element.SetElementValue(HintPath, hintValue);
 				}
 			}
 		}
 
-		public BpmPkgProject RebaseToCoreDebug() {
+		public BpmPkgProject RebaseToBinDebug()
+		{
+			_activeHint = PathToBinDebug;
+			Rebase();
+			return this;
+		}
+
+		private void Rebase() {
 			List<XElement> rebaseElements = new List<XElement>();
-			foreach (var el in Document.Elements(ItemGroup)) {
+			foreach (var el in Document.Elements(ItemGroup))
+			{
 				rebaseElements.AddRange(el.Elements(Reference)
 					.Where(elem => (
 						elem.Element(HintPath) != null &&
 						((string)elem.Element(HintPath)).Contains("BpmonlineSDK"))));
 			}
 			rebaseElements.ForEach(ChangeHint);
+			var package = Document.Elements(ItemGroup).Descendants()
+				.Where(x => (string)x.Attribute("Include") == "packages.config").FirstOrDefault();
+			package.Remove();
+		}
+
+		public BpmPkgProject RebaseToCoreDebug() {
+			_activeHint = PathToCoreDebug;
+			Rebase();
 			return this;
 		}
 

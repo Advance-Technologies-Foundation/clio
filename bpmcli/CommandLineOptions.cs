@@ -130,45 +130,20 @@ namespace bpmcli
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
 		public string Name { get; set; }
 
-		[Option('r', "Rebase", Required = false, Default = "true", HelpText = "Execute rebase command after create")]
+		[Option('r', "References", Required = false, HelpText = "Set references to local bin assemblies for development")]
 		public string Rebase { get; set; }
 
 		[Usage(ApplicationAlias = "bpmcli")]
 		public static IEnumerable<Example> Examples =>
 			new List<Example> {
-				new Example("Create new package with name 'ContactPkg'",
-					new NewOptions { Name = "ContactPkg" }
+				new Example("Create new package with name 'ATF'",
+					new NewPkgOptions { Name = "ATF" }
 				),
-				new Example("Create new package with name 'CorePkg' and with links on bpm'online SDK",
-					new NewOptions { Name = "ContactPkg", Rebase = "false"}
+				new Example("Create new package with name 'ATF' and with links on local insatllation bpm'online with file design mode",
+					new NewPkgOptions { Name = "ATF", Rebase = "bin"}
 				)
 			};
 	}
-
-	[Verb("new", HelpText = "Create a new items of bpm'online in local file system", Hidden = true)]
-	internal class NewOptions
-	{
-		[Value(0, MetaName = "<TEMPLATE NAME>", Required = true, HelpText = "Template of the created instance. Can be (pkg)")]
-		public string Template { get; set; }
-		[Option('n', Required = false, Default = "DefaultName", HelpText = "Name of the created instance")]
-		public string Name { get; set; }
-		[Option('d', "DestinationPath", Required = false,
-			HelpText = "Path to the directory where new instance will be created", Default = null)]
-		public string DestPath { get; set; }
-		[Option('r', Required = false, Default = "true", HelpText = "Execute rebase command after create")]
-		public string Rebase { get; set; }
-		[Usage(ApplicationAlias = "bpmcli")]
-		public static IEnumerable<Example> Examples =>
-			new List<Example> {
-				new Example("Create new package with name 'ContactPkg'",
-					new NewOptions { Name = "ContactPkg" , Template = "pkg"}
-				),
-				new Example("Create new package with name 'CorePkg' and with links on bpm'online SDK",
-					new NewOptions { Name = "ContactPkg", Rebase = "false"}
-				)
-		};
-	}
-
 
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions

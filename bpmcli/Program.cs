@@ -37,7 +37,7 @@ namespace bpmcli
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
-		private static string CurrentProj => 
+		private static string CurrentProj =>
 			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
 		private static void Configure(BaseOptions options) {
@@ -249,8 +249,8 @@ namespace bpmcli
 
 		internal static IEnumerable<string> GetPackages(string inputline) {
 			return StringParser.ParseArray(inputline);
-		}		
-		
+		}
+
 		private static void CompressionProject(string sourcePath, string destinationPath) {
 			if (File.Exists(destinationPath)) {
 				File.Delete(destinationPath);
@@ -372,7 +372,7 @@ namespace bpmcli
 
 		private static void InstallPackage(string filePath) {
 			string fileName = string.Empty;
-			try {				
+			try {
 				fileName = UploadPackage(filePath);
 			}
 			catch (Exception e) {
@@ -407,7 +407,7 @@ namespace bpmcli
 				Console.WriteLine("Not installed");
 			}
 		}
-		
+
 		private static void DeletePackage(string code) {
 			DeleteAppById(code);
 		}
@@ -533,8 +533,8 @@ namespace bpmcli
 		private static int Register(RegisterOptions options) {
 			var bpmcliEnv = new BpmcliEnvironment();
 			string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
-			IResult result = options.Target == "m" 
-				? bpmcliEnv.MachineRegisterPath(path) 
+			IResult result = options.Target == "m"
+				? bpmcliEnv.MachineRegisterPath(path)
 				: bpmcliEnv.UserRegisterPath(path);
 			result.ShowMessagesTo(Console.Out);
 			return 1;
@@ -666,7 +666,7 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions, NewOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
+					DeleteOptions, RebaseOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
 					DownloadZipPackagesOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
@@ -680,7 +680,6 @@ namespace bpmcli
 					(InstallOptions opts) => Install(opts),
 					(DeleteOptions opts) => Delete(opts),
 					(RebaseOptions opts) => Rebase(opts),
-					(NewOptions opts) => New(opts),
 					(NewPkgOptions opts) => NewPkg(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
@@ -716,39 +715,17 @@ namespace bpmcli
 			return 0;
 		}
 
-		private static int New(NewOptions options) {
-			var settings = new SettingsRepository().GetEnvironment();
-			try {
-				switch (options.Template) {
-					case "pkg": {
-						BpmPkg.CreatePackage(options.Name, settings.Maintainer)
-							.Create();
-						if (bool.Parse(options.Rebase)) {
-							Rebase(new RebaseOptions {ProjectType = options.Template});
-						}
-					}
-						break;
-					default: {
-						throw new NotSupportedException($"You use not supported option type {options.Template}");
-					}
-				}
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
-
 		private static int NewPkg(NewPkgOptions options) {
 			var settings = new SettingsRepository().GetEnvironment();
 			try {
 				var packageName = options.Name;
 				var packageDirectory = Directory.CreateDirectory(packageName);
 				Directory.SetCurrentDirectory(packageDirectory.FullName);
-				BpmPkg.CreatePackage(options.Name, settings.Maintainer).Create();
-				if (bool.Parse(options.Rebase)) {
-					Rebase(new RebaseOptions { ProjectType = "pkg" });
+				var pkg = BpmPkg.CreatePackage(options.Name, settings.Maintainer);
+				pkg.Create();
+				if (!String.IsNullOrEmpty(options.Rebase)) {
+					Rebase(new RebaseOptions { ProjectType = options.Rebase });
+					pkg.RemovePackageConfig();
 				}
 				Console.WriteLine("Done");
 				return 0;
@@ -765,13 +742,16 @@ namespace bpmcli
 			}
 			try {
 				switch (options.ProjectType) {
-					case "sln": {
-						throw new NotSupportedException("option sln temporary not supported");
-					}
-					case "pkg": {
+					case "bin": {
 						BpmPkgProject.LoadFromFile(options.FilePath)
-							.RebaseToCoreDebug()
-							.SaveChanges();
+						.RebaseToBinDebug()
+						.SaveChanges();
+					}
+						break;
+					case "src": {
+						BpmPkgProject.LoadFromFile(options.FilePath)
+						.RebaseToCoreDebug()
+						.SaveChanges();
 					}
 						break;
 					default: {
