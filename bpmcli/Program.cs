@@ -236,7 +236,7 @@ namespace bpmcli
 				Directory.Delete(tempPath, true);
 			}
 			if (sourcePath == null) {
-				sourcePath = Directory.GetCurrentDirectory();
+				sourcePath = Environment.CurrentDirectory;
 			}
 			Directory.CreateDirectory(tempPath);
 			foreach (var name in names) {
@@ -608,7 +608,7 @@ namespace bpmcli
 				Configure(options);
 				Login();
 				if (options.FilePath == null) {
-					options.FilePath = Directory.GetCurrentDirectory();
+					options.FilePath = Environment.CurrentDirectory;
 				}
 				if (File.Exists(options.FilePath)) {
 					InstallPackage(options.FilePath);

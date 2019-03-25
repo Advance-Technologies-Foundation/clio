@@ -21,7 +21,7 @@ namespace bpmcli
 				var names = new List<string>();
 				if (String.IsNullOrEmpty(options.Name)) {
 					if (options.Path == null) {
-						options.Path = Directory.GetCurrentDirectory();
+						options.Path = Environment.CurrentDirectory;
 					}
 					DirectoryInfo info = new DirectoryInfo(options.Path);
 					foreach (var directory in info.GetDirectories()) {

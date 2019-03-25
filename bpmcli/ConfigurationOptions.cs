@@ -61,7 +61,7 @@ namespace bpmcli
 
 		private void InitSettings() {
 			var builder = new ConfigurationBuilder()
-				.SetBasePath(Directory.GetCurrentDirectory())
+				.SetBasePath(Environment.CurrentDirectory)
 				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
 				.AddEnvironmentVariables();
 			IConfigurationRoot configuration = builder.Build();
