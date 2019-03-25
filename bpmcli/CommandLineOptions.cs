@@ -26,8 +26,8 @@ namespace bpmcli
 	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute an assembly code which implements the IExecutor interface")]
 	internal class ExecuteOptions : BaseOptions
 	{
-		[Option('f', "FilePath", Required = true, HelpText = "Assembly file path")]
-		public string FilePath { get; set; }
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
+		public string Name { get; set; }
 
 		[Option('t', "ExecutorType", Required = true, HelpText = "Assembly type name for proceed")]
 		public string ExecutorType { get; set; }
@@ -58,8 +58,8 @@ namespace bpmcli
 	[Verb("fetch", HelpText = "Download assembly", Hidden = true)]
 	internal class FetchOptions : BaseOptions
 	{
-		[Option('n', "Package names", Required = true, HelpText = "Package names")]
-		public string PackageNames { get; set; }
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to downloaded assembly")]
+		public string Name { get; set; }
 
 		[Option('o', "Operation", Required = false, HelpText = "Operation: load - from file system to app, download - from app to file system)")]
 		public string Operation { get; set; }
@@ -68,9 +68,9 @@ namespace bpmcli
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of bpm'online package")]
 	internal class CompressionOptions
 	{
-		[Option('s', "SourcePath", Required = false)]
-		public string SourcePath { get; set; }
-		[Option('d', "DestinationPath", Required = true)]
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
+		public string Name { get; set; }
+		[Option('d', "DestinationPath", Required = false)]
 		public string DestinationPath { get; set; }
 		[Option('p', "Packages", Required = false)]
 		public string Packages { get; set; }
@@ -79,6 +79,9 @@ namespace bpmcli
 	[Verb("reg-web-app", Aliases = new string[] { "reg" }, HelpText = "Configure a web application settings")]
 	internal class ConfigureOptions : BaseOptions
 	{
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of configured application")]
+		public string Name { get; set; }
+
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
 	}
@@ -91,15 +94,15 @@ namespace bpmcli
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Remove a web application's settings from the list")]
 	internal class RemoveOptions : BaseOptions
 	{
-		[Option('e', "ActiveEnvironment", Required = true, HelpText = "Environment name")]
-		public new string Environment { get; set; }
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Name application for delete")]
+		public string Name { get; set; }
 	}
 
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
 	internal class InstallOptions : BaseOptions
 	{
-		[Option('f', "FilePath", Required = false, HelpText = "Package file path")]
-		public string FilePath { get; set; }
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
+		public string Name { get; set; }
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
 	}
@@ -177,9 +180,8 @@ namespace bpmcli
 	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
 	internal class DownloadZipPackagesOptions : BaseOptions
 	{
-		[Option('n', "Packages", Required = true,
-			HelpText = "Packages names.", Default = null)]
-		public string Packages {
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+		public string Name {
 			get; set;
 		}
 		[Option('d', "DestinationPath", Required = false,

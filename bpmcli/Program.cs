@@ -110,7 +110,7 @@ namespace bpmcli
 		}
 
 		private static void ExecuteScript(ExecuteOptions options) {
-			string filePath = options.FilePath;
+			string filePath = options.Name;
 			string executorType = options.ExecutorType;
 			var fileContent = File.ReadAllBytes(filePath);
 			string body = Convert.ToBase64String(fileContent);
@@ -169,41 +169,57 @@ namespace bpmcli
 		}
 
 		private static int ConfigureEnvironment(ConfigureOptions options) {
-			var repository = new SettingsRepository();
-			var environment = new EnvironmentSettings() {
-				Login = options.Login,
-				Password = options.Password,
-				Uri = options.Uri,
-				Maintainer = options.Maintainer
-			};
-			if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
-				repository.SetActiveEnvironment(options.ActiveEnvironment);
-			}
-			repository.ConfigureEnvironment(options.Environment, environment);
-			Configure(options);
-			Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
-			try
-			{
+			try {
+				var repository = new SettingsRepository();
+				var environment = new EnvironmentSettings()	{
+					Login = options.Login,
+					Password = options.Password,
+					Uri = options.Uri,
+					Maintainer = options.Maintainer
+				};
+				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
+					repository.SetActiveEnvironment(options.ActiveEnvironment);
+				}
+				repository.ConfigureEnvironment(options.Name, environment);
+				options.Environment = options.Name;
+				Configure(options);
+				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
 				Login();
 				Console.WriteLine($"Done");
+				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"Login operation failed with error: {e.Message}");
+				return 1;
 			}
-			return 0;
 		}
 
 		private static int ViewEnvironments() {
-			var repository = new SettingsRepository();
-			repository.ShowSettingsTo(Console.Out);
-			return 0;
+			try
+			{
+				var repository = new SettingsRepository();
+				repository.ShowSettingsTo(Console.Out);
+				return 0;
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine(e.Message);
+				return 1;
+			}
 		}
 
 
 		private static int RemoveEnvironment(RemoveOptions options) {
-			var repository = new SettingsRepository();
-			repository.RemoveEnvironment(options.Environment);
-			Console.WriteLine("Done");
-			return 0;
+			try
+			{
+				var repository = new SettingsRepository();
+				repository.RemoveEnvironment(options.Name);
+				Console.WriteLine("Done");
+				return 0;
+			}
+			catch (Exception e) {
+				Console.WriteLine(e.Message);
+				return 1;
+			}
 		}
 
 		private static void DownloadPackages(string packageName) {
@@ -595,8 +611,9 @@ namespace bpmcli
 				string destPath = options.DestPath != null
 					? options.DestPath
 					: Path.Combine(Path.GetTempPath(), "packages.zip");
-				DownloadZipPackagesInternal(options.Packages, destPath);
+				DownloadZipPackagesInternal(options.Name, destPath);
 					UnZipPackages(destPath);
+				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
@@ -607,14 +624,13 @@ namespace bpmcli
 		private static int Compression(CompressionOptions options) {
 			try
 			{
-				if (options.Packages == null)
-				{
-					CompressionProject(options.SourcePath, options.DestinationPath);
-				}
-				else
-				{
+				if (options.Packages == null) {
+					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
+					CompressionProject(options.Name, destinationPath);
+				} else {
 					var packages = GetPackages(options.Packages);
-					CompressionProjects(options.SourcePath, options.DestinationPath, packages);
+					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"Pkg{DateTime.Now}.zip" : options.DestinationPath;
+					CompressionProjects(options.Name, destinationPath, packages);
 				}
 				Console.WriteLine("Done");
 				return 0;
@@ -629,16 +645,16 @@ namespace bpmcli
 			try	{
 				Configure(options);
 				Login();
-				if (options.FilePath == null) {
-					options.FilePath = Environment.CurrentDirectory;
+				if (options.Name == null) {
+					options.Name = Environment.CurrentDirectory;
 				}
-				if (File.Exists(options.FilePath)) {
-					InstallPackage(options.FilePath);
+				if (File.Exists(options.Name)) {
+					InstallPackage(options.Name);
 				} else {
-					if (Directory.Exists(options.FilePath))
+					if (Directory.Exists(options.Name))
 					{
-						var folderPath = options.FilePath;
-						var filePath = options.FilePath + ".gz";
+						var folderPath = options.Name;
+						var filePath = options.Name + ".gz";
 						CompressionProject(folderPath, filePath);
 						InstallPackage(filePath);
 						File.Delete(filePath);
@@ -656,10 +672,18 @@ namespace bpmcli
 		}
 
 		private static int Delete(DeleteOptions options) {
-			Configure(options);
-			Login();
-			DeletePackage(options.Code);
-			return 0;
+			try
+			{
+				Configure(options);
+				Login();
+				DeletePackage(options.Code);
+				Console.WriteLine("Done");
+				return 0;
+			}
+			catch (Exception e) {
+				Console.WriteLine(e.Message);
+				return 1;
+			}
 		}
 
 		private static void SaveLogFile(string reportPath) {
@@ -718,7 +742,7 @@ namespace bpmcli
 			{
 				Configure(opts);
 				Login();
-				var packages = GetPackages(opts.PackageNames);
+				var packages = GetPackages(opts.Name);
 				foreach (var package in packages)
 				{
 					if (opts.Operation == "load")
