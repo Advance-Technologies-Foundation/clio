@@ -35,6 +35,7 @@ namespace bpmcli
 		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
 		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
+		private static string PingUrl => _url + @"/0/ping";
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static string CurrentProj =>
@@ -49,6 +50,7 @@ namespace bpmcli
 		}
 
 		public static void Login() {
+			Ping();
 			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
 			authRequest.Method = "POST";
 			authRequest.ContentType = "application/json";
@@ -66,6 +68,26 @@ namespace bpmcli
 				string headerCookies = response.Headers["Set-Cookie"];
 				string authCookeValue = GetCookieValueByName(headerCookies, authName);
 				AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
+			}
+		}
+
+		private static void Ping() {
+			var pingRequest = HttpWebRequest.Create(PingUrl) as HttpWebRequest;
+			pingRequest.Method = "POST";
+			pingRequest.ContentType = "application/json";
+			pingRequest.CookieContainer = AuthCookie;
+			pingRequest.Timeout = 60000;
+			using (var requestStream = pingRequest.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write(@"{}");
+				}
+			}
+			try {
+				using (var response = (HttpWebResponse)pingRequest.GetResponse()) {
+				}
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				throw;
 			}
 		}
 
