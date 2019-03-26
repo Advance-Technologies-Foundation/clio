@@ -2,6 +2,7 @@
   <ItemGroup>
     <Reference Include="Terrasoft.Common">
       <HintPath>..\..\..\..\..\..\..\Bin\Debug\Terrasoft.Common.dll</HintPath>
+      <Private>False</Private>
     </Reference>
   </ItemGroup>
 </Project>

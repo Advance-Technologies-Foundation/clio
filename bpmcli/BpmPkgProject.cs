@@ -23,7 +23,7 @@ namespace bpmcli
 
 		private BpmPkgProject(string path) {
 			LoadPath = path;
-			Document = XElement.Load(path, LoadOptions.PreserveWhitespace);
+			Document = XElement.Load(path, LoadOptions.SetBaseUri);
 			Namespace = Document.Name.Namespace;
 		}
 
@@ -83,7 +83,7 @@ namespace bpmcli
 			rebaseElements.ForEach(ChangeHint);
 			var package = Document.Elements(ItemGroup).Descendants()
 				.Where(x => (string)x.Attribute("Include") == "packages.config").FirstOrDefault();
-			package.Remove();
+			package?.Remove();
 		}
 
 		public BpmPkgProject RebaseToCoreDebug() {
