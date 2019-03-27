@@ -580,6 +580,7 @@ namespace bpmcli
 
 		private static int Restart(RestartOptions options) {
 			try {
+				options.Environment = options.Name;
 				Configure(options);
 				Login();
 				UnloadAppDomain();
@@ -593,9 +594,11 @@ namespace bpmcli
 
 		private static int ClearRedisDb(RedisOptions options) {
 			try {
+				options.Environment = options.Name;
 				Configure(options);
 				Login();
 				ClearRedisDbInternal();
+				Console.WriteLine("Done");
 				return 0;
 			}
 			catch (Exception e) {
@@ -676,7 +679,7 @@ namespace bpmcli
 			{
 				Configure(options);
 				Login();
-				DeletePackage(options.Code);
+				DeletePackage(options.Name);
 				Console.WriteLine("Done");
 				return 0;
 			}
@@ -804,6 +807,7 @@ namespace bpmcli
 						throw new NotSupportedException($"You use not supported option type {options.ProjectType}");
 					}
 				}
+				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);

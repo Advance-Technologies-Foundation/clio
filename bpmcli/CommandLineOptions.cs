@@ -36,21 +36,25 @@ namespace bpmcli
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
 	internal class RestartOptions : BaseOptions
 	{
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
+		public string Name { get; set; }
 	}
 
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
 	internal class RedisOptions : BaseOptions
 	{
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
+		public string Name { get; set; }
 	}
 
 	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden = true)]
 	internal class RegisterOptions
 	{
-		[Option('t', "Target", Required = true, HelpText = "Target enviromnment location. Could be user location or" +
+		[Option('t', "Target", Default = "u", HelpText = "Target enviromnment location. Could be user location or" +
 			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
 		public string Target { get; set; }
 
-		[Option('p', "Path", Required = true, HelpText = "Path where bpmcli is stored.")]
+		[Option('p', "Path", HelpText = "Path where bpmcli is stored.")]
 		public string Path { get; set; }
 
 	}
@@ -110,8 +114,8 @@ namespace bpmcli
 	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
 	internal class DeleteOptions : BaseOptions
 	{
-		[Option('c', "Code", Required = true, HelpText = "Package code")]
-		public string Code { get; set; }
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+		public string Name { get; set; }
 	}
 
 	[Verb("rebase", HelpText = "Change bpm package project core pathes", Hidden = true)]

@@ -3,159 +3,176 @@
 Bpmonline Command Line Interface bpmcli is the utility for integration bpm'online platform with development and CI/CD tools.
 
 With aid of bpmcli you can:
-- Restart the bpm'online application
-- Create bpm'online packages in file system
-- Install package to bpm'online application
-- Upload (download) package to (from) bpm'online database when developing in file system mode
-- Install package from zip archive
-- Compress Visual Studio project to the bpm'online package
+- Maintanance bpmonline packages
+  - Create new packages in local file system
+  - Push package from local file system to cloud application
+  - Pull package from cloud application to local file system
+  - Compress package to .gz file
+- Maintanance bpmonline application
+  - Restart application
+  - Clear session and cache storage (redisdb)
+- Build CI\CD pipelines
+- Convert existing bpmonline package to project
 
-# Installation
+# Installation and features
 
 You can dowload release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/bpmcli/releases). Unpack the archive with bpmcli.
 
-# Registering as the global command
+## Register
 
-To register bpmcli as the global command, run the **register.cmd** file. You can find the **register.cmd** in the bpmcli package directory.
-
-Also, you can run the bpmcli with aid of the dotnet command line interface. For example:
+To register bpmcli as the global command, run the command in CLI directory:
 
 ```
-dotnet path/to/the/bpmcli/directory/bpmcli.dll
+dotnet bpmcli.dll register
 ```
-or
-
+you can register bpmcli for all users
 ```
-cd /path/to/the/bpmcli/directory/
-dotnet bpmcli.dll
+dotnet bpmcli.dll register -t m
 ```
-# Commands
+## Help and examples
 
-## Restarting bpm'online application
-
-To restart bpm'online, use the next command:
-
+For display available commands use:
 ```
-bpmcli restart
+bpmcli help
 ```
-## Working with the environment
-
-Environment is the set of configuration options. It consist of name, bpm'online URL, login and password.
-
-### Creating a new environment with custom options
-
+For display command help use:
 ```
-bpmcli cfg -e dev -u http://myapp.bpmonline.com -l user -p password
-```
-The command above creates a new environment with the next options:
-- name is "dev"
-- bpm'online URL is "http://myapp.bpmonline.com"
-- bpm'online login is "user"
-- bpm'online password is "password"
-
-### Creating a new environment with default options
-
-```
-bpmcli cfg -e dev
+bpmcli <command name> help
 ```
 
-### Changing the option of the existing environment
+# Packages
+
+## Creating new package
+
+To create new package project, use the next command:
+```
+ bpmcli new-pkg <package_name>
+```
+you can set reference on local core assembly with using bpmonline file design mode with command in Pkg directory
+```
+ bpmcli new-pkg <package_name> -r bin
+```
+
+## Installing package
+
+To install package from directory you can use the next command:
+```
+bpmcli push-pkg <package name>
+```
+or for .gz packages you can use command:
+```
+bpmcli push-pkg <package name>.gz
+```
+or with full path
+```
+bpmcli push-pkg C:\Packages\<package name>.gz
+```
+for get installation log file specify report path parameter
+```
+bpmcli push-pkg <package name> -r log.txt
+```
+
+## Pull package from remote application
+
+For download package to local file system from application use command:
+```
+bpmcli pull-pkg <package name>
+```
+
+## Delete package
+
+To delete package, use the next command:
+```
+bpmcli delete-pkg-remote <package name>
+```
+
+
+## Compress package
+
+For compress package into *.gz archive
+```
+bpmcli generate-pkg-zip  <package name>
+```
+or you can specify full path for package and .gz file
+```
+bpmcli generate-pkg-zip  C:\Packages\<package name> -d C:\Store\<package-name>.gz
+```
+
+# Application
+
+## Restart bpm'online application
+
+To restart bpm'online, use the next command for default application:
 
 ```
-bpmcli cfg -e dev -p newpassword
+bpmcli restart-web-app
 ```
-
-### Deleting the existing environment
-
+or for register application
 ```
-bpmcli remove -e dev
-```
-
-### Viewing the current environment options
-
-```
-bpmcli view
+bpmcli restart-web-app <app name>
 ```
 
 ### Clear redis database
-To clear application redis database, use the next command:
+
 ```
 bpmcli clear-redis-db
 ```
 
-### Using bpmcli commands for noncurrent environment
+or
 
 ```
-bpmcli restart -e dev
+bpmcli clear-redis-db dev
 ```
-### Using for CI\DI systems
+
+# Environment settings
+
+Environment is the set of configuration options. It consist of name, bpm'online URL, login and password.
+
+## Create/Update a environment
+
+Register new application settings
+
+```
+bpmcli reg-web-app <app name> -u <url> -l <login> -p <password>
+```
+or update existing settings
+```
+bpmcli reg-web-app <app name> -u <new user> -p <new password>
+```
+
+## Delete the existing environment
+
+```
+bpmcli unreg-web-app dev
+```
+
+## View the current environment options
+
+```
+bpmcli show-web-app-list
+```
+
+
+
+# Using for CI\DI systems
 In CI\CD systems, you can specify configuration options directly when calling command:
 ```
 bpmcli restart -u http://mysite.bpmonline.com -l administrator -p password
 ```
 
-## Working with packages
 
-### Compressing package
+# Development
 
-Before installing the package into bpm'online, you need to compress it into *.gz archive first.
-```
-bpmcli compress -s C:\bpmonline\src\mypackage -d C:\bpmonline\pkg\mypackage.gz
-```
-The command above uses the next options:
-- -s is the path to the source folder, which contains the package directories.
-- -d is the destination path to the resulting *.gz archive.
-
-### Installing package
-
-To install package, which is zipped into *.gz archive, use the next command:
-```
-bpmcli install -f C:\bpmonline\pkg\mypackage.gz
-```
-
-### Deleting package
-
-To delete package, use the next command:
-```
-bpmcli delete -c <package code>
-```
-
-### Creating new package
-
-To create new package project, use the next command:
-```
- bpmcli new pkg -n <package_name> -r false -d <package_path>
-```
-you can use shortest command, in this case -r (rebase) will be true and -d (package_path) will be current working directory:
-```
- bpmcli new pkg -n <package_name>
-```
-
-### Uploading package content from the file system into bpm'online database
-```
-bpmcli fetch -o upload -n PackageName
-```
-### Downloading package content from the bpm'online database into the file system
-
-```
-bpmcli fetch -o download -n PackageName
-```
-
-### Convert existing package to project
+## Convert existing package to project
 
 Convert package with name MyApp and MyIntegration, located in directory C:\Pkg
 ```
-bpmcli convert -p C:\Pkg -n MyApp,MyIntegration
+bpmcli convert <package name>
 ```
 
-Convert all packages in directory C:\Pkg
-```
-bpmcli convert -p C:\Pkg
-```
+## Execute assembly
 
-### Execute assembly
-
-Execute assembly with name libName and type LibType
+Execute code from assembly
 ```
-bpmcli exec -f libName -t LibType
+bpmcli execute-assembly-code -f <assembly name> -t <executor type>
 ```
