@@ -37,7 +37,7 @@ bpmcli help
 ```
 For display command help use:
 ```
-bpmcli <command name> help
+bpmcli <command name> --help
 ```
 
 # Packages
