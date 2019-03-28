@@ -121,7 +121,7 @@ bpmcli clear-redis-db
 or
 
 ```
-bpmcli clear-redis-db dev
+bpmcli clear-redis-db <app name>
 ```
 
 # Environment settings
@@ -143,7 +143,7 @@ bpmcli reg-web-app <app name> -u <new user> -p <new password>
 ## Delete the existing environment
 
 ```
-bpmcli unreg-web-app dev
+bpmcli unreg-web-app <app name>
 ```
 
 ## View the current environment options
