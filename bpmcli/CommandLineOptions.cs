@@ -36,14 +36,14 @@ namespace bpmcli
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
 	internal class RestartOptions : BaseOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
 	internal class RedisOptions : BaseOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
@@ -83,7 +83,7 @@ namespace bpmcli
 	[Verb("reg-web-app", Aliases = new string[] { "reg" }, HelpText = "Configure a web application settings")]
 	internal class ConfigureOptions : BaseOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of configured application")]
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
 		public string Name { get; set; }
 
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
