@@ -50,7 +50,7 @@ namespace bpmcli
 	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden = true)]
 	internal class RegisterOptions
 	{
-		[Option('t', "Target", Default = "u", HelpText = "Target enviromnment location. Could be user location or" +
+		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
 			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
 		public string Target { get; set; }
 
@@ -118,7 +118,7 @@ namespace bpmcli
 		public string Name { get; set; }
 	}
 
-	[Verb("rebase", HelpText = "Change bpm package project core pathes", Hidden = true)]
+	[Verb("rebase", HelpText = "Change bpm package project core paths", Hidden = true)]
 	internal class RebaseOptions
 	{
 		[Option('f', "FilePath", Required = false, HelpText = "Path to the project file",
@@ -146,7 +146,7 @@ namespace bpmcli
 				new Example("Create new package with name 'ATF'",
 					new NewPkgOptions { Name = "ATF" }
 				),
-				new Example("Create new package with name 'ATF' and with links on local insatllation bpm'online with file design mode",
+				new Example("Create new package with name 'ATF' and with links on local installation bpm'online with file design mode",
 					new NewPkgOptions { Name = "ATF", Rebase = "bin"}
 				)
 			};
