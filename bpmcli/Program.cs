@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Json;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using bpmcli.environment;
 using CommandLine;
 
@@ -36,6 +40,10 @@ namespace bpmcli
 		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 		private static string PingUrl => _url + @"/0/ping";
+		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
+
+		private static bool NeedCheckUpdate => false;
+
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static string CurrentProj =>
@@ -47,6 +55,47 @@ namespace bpmcli
 			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
 			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
 			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
+		}
+
+		private static void CheckUpdate() {
+			var currentVersion = GetCurrentVersion();
+			var latestVersion = GetLatestVersion();
+			if (currentVersion != latestVersion) {
+				MessageToConsole($"Current version: {currentVersion}, latest version: {latestVersion}", ConsoleColor.DarkYellow);
+			}
+		}
+
+		private static void MessageToConsole(string text, ConsoleColor color) {
+			var currentColor = Console.ForegroundColor;
+			Console.ForegroundColor = color;
+			Console.WriteLine(text);
+			Console.ForegroundColor = currentColor;
+		}
+
+		private static string GetCurrentVersion() {
+			System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
+			var fileVersionInfo = FileVersionInfo.GetVersionInfo(assembly.Location);
+			return fileVersionInfo.FileVersion;
+		}
+
+		private static string GetLatestVersion() {
+			System.Threading.Tasks.Task<byte[]> body;
+			using (var client = new HttpClient()) {
+				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
+				using (var response = client.GetAsync(LastVersionUrl).Result) {
+					response.EnsureSuccessStatusCode();
+					body = response.Content.ReadAsByteArrayAsync();
+				}
+			}
+			string json;
+			var jsonStream = new MemoryStream(body.Result) {Position = 0};
+			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
+				json = reader.ReadToEnd();
+			}
+			var jsonDoc = (JsonObject)JsonValue.Parse(json);
+			var version = jsonDoc["tag_name"];
+			return version;
 		}
 
 		public static void Login() {
@@ -713,6 +762,9 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
+			if (NeedCheckUpdate) {
+				new Thread(CheckUpdate).Start();
+			}
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
 					DeleteOptions, RebaseOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
