@@ -2,7 +2,7 @@
   "profiles": {
     "bpmcli": {
       "commandName": "Project",
-      "commandLineArgs": "push-pkg C:\\b.zip -r C:\\tempp.txt"
+      "commandLineArgs": "help"
     }
   }
 }
