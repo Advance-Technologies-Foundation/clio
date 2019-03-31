@@ -61,7 +61,9 @@ namespace bpmcli
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
-				MessageToConsole($"Current version: {currentVersion}, latest version: {latestVersion}", ConsoleColor.DarkYellow);
+				MessageToConsole($"You are using bpmcli version {currentVersion}, however version {latestVersion} is available." +
+				                 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-cli\' command.",
+					ConsoleColor.DarkYellow);
 			}
 		}
 
