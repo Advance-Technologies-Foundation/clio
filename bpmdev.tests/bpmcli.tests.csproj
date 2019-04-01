@@ -31,6 +31,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="BinReferenceHint.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="samplefiles\descriptor.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -43,10 +46,10 @@
     <None Update="OriginPkgProj.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="OriginReferenceHint.xml">
+    <None Update="SDKReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="ExpectReferenceHint.xml">
+    <None Update="CoreSrcReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
