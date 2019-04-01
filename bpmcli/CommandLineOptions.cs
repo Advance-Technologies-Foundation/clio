@@ -155,16 +155,13 @@ namespace bpmcli
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions
 	{
-		[Value(0, MetaName = "<TEMPLATE NAME>", Required = false, HelpText = "Template of the created instance. Can be (pkg)")]
-		public string Template {
-			get; set;
-		}
 		[Option('p', "Path", Required = false,
 			HelpText = "Path to package directory", Default = null)]
 		public string Path {
 			get; set;
 		}
-		[Option('n', Required = false, HelpText = "Name of the convert instance (or comma separated names)")]
+		[Value(0, MetaName = "<package names>", Required = false,
+			HelpText = "Name of the convert instance (or comma separated names)")]
 		public string Name {
 			get; set;
 		}
