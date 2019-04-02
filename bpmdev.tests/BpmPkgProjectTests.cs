@@ -13,25 +13,51 @@ namespace bpmcli.tests
 		}
 
 		[Test]
-		public void BpmPkgProject_RebaseToCoreDebug_LoadFromFileRealProjCase()
+		public void BpmPkgProject_RefToCoreSrc_LoadFromFileRealProjCase()
 		{
 			var expectProj = XElement.Load("ExpectPkgProj.xml", LoadOptions.SetBaseUri);
 			var proj = BpmPkgProject.LoadFromFile("OriginPkgProj.xml");
-			var document = proj.RebaseToCoreDebug().Document;
-			proj.RebaseToCoreDebug()
-			  .Document
-				.Should().BeEquivalentTo(expectProj);
+			proj.RefToCoreSrc()
+				.Document.Should().BeEquivalentTo(expectProj);
 		}
 
 		[Test]
-		public void BpmPkgProject_RebaseToCoreDebug_LoadFromFileSimpleCase() {
-			var expectElement = XElement.Load("ExpectReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("OriginReferenceHint.xml");
-			var document = proj.RebaseToCoreDebug()
-				.Document;
-			proj.RebaseToCoreDebug()
+		public void BpmPkgProject_RefToCoreSrc_LoadFromSDKFileSimpleCase() {
+			var expectElement = XElement.Load("CoreSrcReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
+			proj.RefToCoreSrc()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_RefToBin_LoadFromSDKFileSimpleCase() {
+			var expectElement = XElement.Load("BinReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
+			proj.RefToBin()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_RefToBin_LoadFromCoreSrcFileSimpleCase() {
+			var expectElement = XElement.Load("BinReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
+			proj.RefToBin()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromSdkFileSimpleCase() {
+			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
+			proj.CurrentRefType.Should().BeEquivalentTo(RefType.Sdk);
+		}
+
+		[Test]
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromCoreSrcFileSimpleCase() {
+			var proj = BpmPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
+			proj.CurrentRefType.Should().BeEquivalentTo(RefType.CoreSrc);
 		}
 
 	}

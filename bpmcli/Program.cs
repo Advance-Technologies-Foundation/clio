@@ -769,7 +769,7 @@ namespace bpmcli
 			}
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, RebaseOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
+					DeleteOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
 					DownloadZipPackagesOptions>(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
@@ -782,7 +782,7 @@ namespace bpmcli
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
 					(DeleteOptions opts) => Delete(opts),
-					(RebaseOptions opts) => Rebase(opts),
+					(ReferenceOptions opts) => ReferenceTo(opts),
 					(NewPkgOptions opts) => NewPkg(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
@@ -827,7 +827,7 @@ namespace bpmcli
 				var pkg = BpmPkg.CreatePackage(options.Name, settings.Maintainer);
 				pkg.Create();
 				if (!String.IsNullOrEmpty(options.Rebase)) {
-					Rebase(new RebaseOptions { ProjectType = options.Rebase });
+					ReferenceTo(new ReferenceOptions { ReferenceType = options.Rebase });
 					pkg.RemovePackageConfig();
 				}
 				Console.WriteLine("Done");
@@ -838,27 +838,27 @@ namespace bpmcli
 			}
 		}
 
-		private static int Rebase(RebaseOptions options) {
-			options.FilePath = options.FilePath ?? CurrentProj;
-			if (string.IsNullOrEmpty(options.FilePath)) {
-				throw new ArgumentNullException(nameof(options.FilePath));
+		private static int ReferenceTo(ReferenceOptions options) {
+			options.Path = options.Path ?? CurrentProj;
+			if (string.IsNullOrEmpty(options.Path)) {
+				throw new ArgumentNullException(nameof(options.Path));
 			}
 			try {
-				switch (options.ProjectType) {
+				switch (options.ReferenceType) {
 					case "bin": {
-						BpmPkgProject.LoadFromFile(options.FilePath)
-						.RebaseToBinDebug()
+						BpmPkgProject.LoadFromFile(options.Path)
+						.RefToBin()
 						.SaveChanges();
 					}
 						break;
 					case "src": {
-						BpmPkgProject.LoadFromFile(options.FilePath)
-						.RebaseToCoreDebug()
+						BpmPkgProject.LoadFromFile(options.Path)
+						.RefToCoreSrc()
 						.SaveChanges();
 					}
 						break;
 					default: {
-						throw new NotSupportedException($"You use not supported option type {options.ProjectType}");
+						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 					}
 				}
 				Console.WriteLine("Done");

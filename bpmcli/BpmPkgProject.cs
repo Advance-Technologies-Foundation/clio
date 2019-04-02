@@ -1,39 +1,42 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Dynamic;
 using System.Linq;
-using System.Text;
-using System.Xml;
 using System.Xml.Linq;
 
 namespace bpmcli
 {
+
 	public class BpmPkgProject
 	{
 		private const string HintElementName = "HintPath";
-		private const string ItemGroupElemetName = "ItemGroup";
+		private const string ItemGroupElementName = "ItemGroup";
 		private const string ReferenceElementName = "Reference";
 
 		private const string PathToCoreDebug = @"..\..\..\..\..\..\..\Bin\Debug\";
-
 		private const string PathToBinDebug = @"..\..\..\Bin\";
 
-		private string _activeHint;
+		private const string SdkSearchPattern = "BpmonlineSDK";
 
+
+		private string _activeHint;
 
 		private BpmPkgProject(string path) {
 			LoadPath = path;
 			Document = XElement.Load(path, LoadOptions.SetBaseUri);
 			Namespace = Document.Name.Namespace;
+			DetermineCurrentRef();
 		}
 
 		private XName HintPath => Namespace + HintElementName;
 
-		private XName ItemGroup => Namespace + ItemGroupElemetName;
+		private XName ItemGroup => Namespace + ItemGroupElementName;
 
 		private XName Reference => Namespace + ReferenceElementName;
 
 		private static XName IncludeAttr => "Include";
+
+		public RefType CurrentRefType { get; private set; }
 
 		public XElement Document { get; }
 
@@ -64,36 +67,73 @@ namespace bpmcli
 			}
 		}
 
-		public BpmPkgProject RebaseToBinDebug()
-		{
-			_activeHint = PathToBinDebug;
-			Rebase();
-			return this;
-		}
-
-		private void Rebase() {
-			List<XElement> rebaseElements = new List<XElement>();
-			foreach (var el in Document.Elements(ItemGroup))
-			{
-				rebaseElements.AddRange(el.Elements(Reference)
-					.Where(elem => (
-						elem.Element(HintPath) != null &&
-						((string)elem.Element(HintPath)).Contains("BpmonlineSDK"))));
-			}
-			rebaseElements.ForEach(ChangeHint);
-			var package = Document.Elements(ItemGroup).Descendants()
-				.Where(x => (string)x.Attribute("Include") == "packages.config").FirstOrDefault();
+		private void DeletePackagesConfig() {
+			var package = Document.Elements(ItemGroup)
+				.Descendants().FirstOrDefault(x => (string)x.Attribute("Include") == "packages.config");
 			package?.Remove();
 		}
 
-		public BpmPkgProject RebaseToCoreDebug() {
+		private void DetermineCurrentRef() {
+			if (Document.Elements(ItemGroup).Any(el => el.Elements(Reference)
+					.Any(elem => elem.Element(HintPath) != null 
+						&& ((string)elem.Element(HintPath)).Contains(SdkSearchPattern)))) {
+				CurrentRefType = RefType.Sdk;
+			}
+			else if (Document.Elements(ItemGroup).Any(el => el.Elements(Reference)
+				.Any(elem => elem.Element(HintPath) != null
+					&& ((string)elem.Element(HintPath)).Contains(PathToCoreDebug)))) {
+				CurrentRefType = RefType.CoreSrc;
+			}
+		}
+
+		private string GetSearchPattern(RefType type) {
+			switch (type) {
+				case RefType.Sdk:
+					return SdkSearchPattern;
+				case RefType.CoreSrc:
+					return PathToCoreDebug;
+				default:
+					return "undefined";
+			}
+		}
+
+		private void ChangeReference() {
+			List<XElement> rebaseElements = new List<XElement>();
+			foreach (var el in Document.Elements(ItemGroup)) {
+				rebaseElements.AddRange(el.Elements(Reference)
+					.Where(elem => (
+						elem.Element(HintPath) != null &&
+						((string)elem.Element(HintPath)).Contains(GetSearchPattern(CurrentRefType)))));
+			}
+			rebaseElements.ForEach(ChangeHint);
+		}
+
+		public BpmPkgProject RefToBin() {
+			_activeHint = PathToBinDebug;
+			ChangeReference();
+			DeletePackagesConfig();
+			CurrentRefType = RefType.Bin;
+			return this;
+		}
+
+		public BpmPkgProject RefToCoreSrc() {
 			_activeHint = PathToCoreDebug;
-			Rebase();
+			ChangeReference();
+			DeletePackagesConfig();
+			CurrentRefType = RefType.CoreSrc;
 			return this;
 		}
 
 		public void SaveChanges() {
 			Document.Save(LoadPath);
 		}
+	}
+
+	public enum RefType
+	{
+		Undef = 0,
+		Sdk = 1,
+		Bin = 2,
+		CoreSrc = 3
 	}
 }

@@ -118,16 +118,16 @@ namespace bpmcli
 		public string Name { get; set; }
 	}
 
-	[Verb("rebase", HelpText = "Change bpm package project core paths", Hidden = true)]
-	internal class RebaseOptions
+	[Verb("ref-to", HelpText = "Change bpm package project core paths", Hidden = true)]
+	internal class ReferenceOptions
 	{
-		[Option('f', "FilePath", Required = false, HelpText = "Path to the project file",
+		[Option('p', "Path", Required = false, HelpText = "Path to the project file",
 			Default = null)]
-		public string FilePath { get; set; }
+		public string Path { get; set; }
 
-		[Option('t', "ProjectType", Required = false, HelpText = "Type of the bpm project file. Can be 'pkg' or 'sln'",
-			Default = "pkg")]
-		public string ProjectType { get; set; }
+		[Value(0, MetaName = "ReferenceType", Required = false, HelpText = "Indicates what the project will refer to." +
+			" Can be 'bin' or 'src'", Default = "src")]
+		public string ReferenceType { get; set; }
 
 	}
 
@@ -155,16 +155,13 @@ namespace bpmcli
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions
 	{
-		[Value(0, MetaName = "<TEMPLATE NAME>", Required = false, HelpText = "Template of the created instance. Can be (pkg)")]
-		public string Template {
-			get; set;
-		}
 		[Option('p', "Path", Required = false,
 			HelpText = "Path to package directory", Default = null)]
 		public string Path {
 			get; set;
 		}
-		[Option('n', Required = false, HelpText = "Name of the convert instance (or comma separated names)")]
+		[Value(0, MetaName = "<package names>", Required = false,
+			HelpText = "Name of the convert instance (or comma separated names)")]
 		public string Name {
 			get; set;
 		}
