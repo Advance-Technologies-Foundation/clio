@@ -115,10 +115,21 @@ namespace bpmcli
 				}
 			}
 			using (var response = (HttpWebResponse)authRequest.GetResponse()) {
-				string authName = ".ASPXAUTH";
-				string headerCookies = response.Headers["Set-Cookie"];
-				string authCookeValue = GetCookieValueByName(headerCookies, authName);
-				AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
+				if (response.StatusCode == HttpStatusCode.OK)
+				{
+					using (var reader = new StreamReader(response.GetResponseStream()))
+					{
+						var responseMessage = reader.ReadToEnd();
+						if (responseMessage.Contains("\"Code\":1")) {
+							throw new UnauthorizedAccessException($"Unauthotized {_userName} for {_url}");
+						}
+					}
+					
+					string authName = ".ASPXAUTH";
+					string headerCookies = response.Headers["Set-Cookie"];
+					string authCookeValue = GetCookieValueByName(headerCookies, authName);
+					AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
+				}
 			}
 		}
 
