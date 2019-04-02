@@ -250,7 +250,7 @@ namespace bpmcli
 				Console.WriteLine($"Login done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine($"Login operation failed with error: {e.Message}");
+				Console.WriteLine($"{e.Message}");
 				return 1;
 			}
 		}
