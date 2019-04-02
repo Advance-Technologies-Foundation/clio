@@ -154,8 +154,14 @@ namespace bpmcli
 		}
 
 		internal void RemoveEnvironment(string environment) {
-			_settings.Environments.Remove(environment);
-			Save();
+			if (_settings.Environments.ContainsKey(environment))
+			{
+				_settings.Environments.Remove(environment);
+				Save();
+			}
+			else {
+				throw new KeyNotFoundException($"Application \"{environment}\" not found");
+			}
 		}
 
 	}

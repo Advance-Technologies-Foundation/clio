@@ -236,7 +236,7 @@ namespace bpmcli
 				Configure(options);
 				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
 				Login();
-				Console.WriteLine($"Done");
+				Console.WriteLine($"Login done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"Login operation failed with error: {e.Message}");
