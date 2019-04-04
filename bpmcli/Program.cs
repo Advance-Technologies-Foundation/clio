@@ -65,6 +65,54 @@ namespace bpmcli
 			}
 		}
 
+		private static int UpdateCli() {
+			try {
+				var url = GetLastReleaseUrl();
+				var dir = AppDomain.CurrentDomain.BaseDirectory;
+				string updaterDirPath = Path.Combine(dir, "Update");
+				string tempDirPath = Path.Combine(dir, "Update", "Temp");
+				string filePath = Path.Combine(updaterDirPath, "update.zip");
+				string updaterName = "updater.dll";
+				Directory.CreateDirectory(tempDirPath);
+				Console.WriteLine("Download update.");
+				using (var client = new WebClient()) {
+					client.DownloadFile(url, filePath);
+				}
+				ZipFile.ExtractToDirectory(filePath, tempDirPath, true);
+				var updaterFile = new FileInfo(Path.Combine(tempDirPath, updaterName));
+				updaterFile.CopyTo(Path.Combine(dir, updaterFile.Name), true);
+				var updateCmdPath = Path.Combine(dir, "update.cmd");
+				var proc = new Process {StartInfo = {FileName = updateCmdPath}};
+				Console.WriteLine("Start update.");
+				proc.Start();
+				return 0;
+			}
+			catch (Exception) {
+				Console.WriteLine("Update error.");
+				return 1;
+			}
+		}
+
+		private static string GetLastReleaseUrl() {
+			System.Threading.Tasks.Task<byte[]> body;
+			using (var client = new HttpClient()) {
+				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
+				using (var response = client.GetAsync(LastVersionUrl).Result) {
+					response.EnsureSuccessStatusCode();
+					body = response.Content.ReadAsByteArrayAsync();
+				}
+			}
+			string json;
+			var jsonStream = new MemoryStream(body.Result) { Position = 0 };
+			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
+				json = reader.ReadToEnd();
+			}
+			JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
+			var url = jsonDoc["assets"][0]["browser_download_url"];
+			return url;
+		}
+
 		private static void MessageToConsole(string text, ConsoleColor color) {
 			var currentColor = Console.ForegroundColor;
 			Console.ForegroundColor = color;
@@ -779,8 +827,8 @@ namespace bpmcli
 			}
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
-					DownloadZipPackagesOptions>(args)
+					DeleteOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
+					DownloadZipPackagesOptions >(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -797,6 +845,7 @@ namespace bpmcli
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(DownloadZipPackagesOptions opts) => DownloadZipPackages(opts),
+					(UpdateCliOptions opts) => UpdateCli(),
 					errs => 1);
 		}
 

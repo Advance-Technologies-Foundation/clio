@@ -27,8 +27,15 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="2.2.0" />
     <PackageReference Include="System.Json" Version="4.5.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\updater\updater.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="update.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="bpmcli.cmd">
