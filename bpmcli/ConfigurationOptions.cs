@@ -49,6 +49,9 @@ namespace bpmcli
 				return Environments[ActiveEnvironmentKey];
 			}
 		}
+
+		public bool Autoupdate { get; set; }
+
 		public Dictionary<string, EnvironmentSettings> Environments { get; set; }
 	}
 
@@ -133,6 +136,11 @@ namespace bpmcli
 				environment = _settings.Environments[name];
 			}
 			return environment;
+		}
+
+		internal bool GetAutoupdate()
+		{
+			return _settings.Autoupdate;
 		}
 
 		Settings _settings;

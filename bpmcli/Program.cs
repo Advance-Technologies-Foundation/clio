@@ -42,8 +42,6 @@ namespace bpmcli
 		private static string PingUrl => _url + @"/0/ping";
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
 
-		private static bool NeedCheckUpdate => false;
-
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static string CurrentProj =>
@@ -775,7 +773,8 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			if (NeedCheckUpdate) {
+			var autoupdate = new SettingsRepository().GetAutoupdate();
+			if (autoupdate) {
 				new Thread(CheckUpdate).Start();
 			}
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
