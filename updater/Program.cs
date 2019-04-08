@@ -16,7 +16,7 @@ namespace updater
 					fileInfo.CopyTo(Path.Combine(dir, fileInfo.Name), true);
 				}
 			}
-			Console.WriteLine("Update completed.");
+			Console.WriteLine("Update completed. Press enter to continue.");
 		}
 	}
 }
