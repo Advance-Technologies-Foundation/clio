@@ -843,6 +843,9 @@ namespace bpmcli
 			if (string.IsNullOrEmpty(options.Path)) {
 				throw new ArgumentNullException(nameof(options.Path));
 			}
+			if (!string.IsNullOrEmpty(options.RefPattern)) {
+				options.ReferenceType = "custom";
+			}
 			try {
 				switch (options.ReferenceType) {
 					case "bin": {
@@ -855,6 +858,12 @@ namespace bpmcli
 						BpmPkgProject.LoadFromFile(options.Path)
 						.RefToCoreSrc()
 						.SaveChanges();
+					}
+						break;
+					case "custom": {
+						BpmPkgProject.LoadFromFile(options.Path)
+							.RefToCustomPath(options.RefPattern)
+							.SaveChanges();
 					}
 						break;
 					default: {

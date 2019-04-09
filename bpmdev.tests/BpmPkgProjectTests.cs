@@ -49,6 +49,15 @@ namespace bpmcli.tests
 		}
 
 		[Test]
+		public void BpmPkgProject_RefToBinInner_LoadFromCoreSrcInnerFileSimpleCase() {
+			var expectElement = XElement.Load("InnerBinReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("InnerCoreSrcReferenceHint.xml");
+			proj.RefToCustomPath(@"..\..\..\..\Bin\")
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
 		public void BpmPkgProject_DetermineCurrentRef_LoadFromSdkFileSimpleCase() {
 			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.Sdk);

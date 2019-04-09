@@ -121,6 +121,10 @@ namespace bpmcli
 	[Verb("ref-to", HelpText = "Change bpm package project core paths", Hidden = true)]
 	internal class ReferenceOptions
 	{
+		[Option('r', "ReferencePattern", Required = false, HelpText = "Pattern for reference path",
+			Default = null)]
+		public string RefPattern { get; set; }
+
 		[Option('p', "Path", Required = false, HelpText = "Path to the project file",
 			Default = null)]
 		public string Path { get; set; }

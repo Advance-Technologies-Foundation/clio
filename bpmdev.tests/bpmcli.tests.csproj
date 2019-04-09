@@ -31,7 +31,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="InnerBinReferenceHint.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="BinReferenceHint.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="InnerCoreSrcReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="samplefiles\descriptor.json">

@@ -124,6 +124,13 @@ namespace bpmcli
 			return this;
 		}
 
+		public BpmPkgProject RefToCustomPath(string path) {
+			_activeHint = path;
+			ChangeReference();
+			CurrentRefType = RefType.Custom;
+			return this;
+		}
+
 		public void SaveChanges() {
 			Document.Save(LoadPath);
 		}
@@ -134,6 +141,7 @@ namespace bpmcli
 		Undef = 0,
 		Sdk = 1,
 		Bin = 2,
-		CoreSrc = 3
+		CoreSrc = 3,
+		Custom = 4
 	}
 }
