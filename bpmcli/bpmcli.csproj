@@ -35,6 +35,9 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="bpmcli">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="update.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
