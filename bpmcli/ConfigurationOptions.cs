@@ -84,6 +84,10 @@ namespace bpmcli
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
+                if (userPath == null)
+                {
+                    userPath = "";
+                }
 				return Path.Combine(userPath, companyName?.Company, product?.Product);
 			}
 		}
