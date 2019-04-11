@@ -20,7 +20,7 @@ namespace bpmcli.environment
 				return result;
 			}
 			result.AppendMessage($"register path {path} in {PathVariableName} variable.");
-			var value = string.Concat(pathValue, ";" + path.Trim(';'));
+			var value = string.Concat(pathValue, Path.PathSeparator + path.Trim(Path.PathSeparator));
 			Environment.SetEnvironmentVariable(PathVariableName, value, target);
 			result.AppendMessage($"{PathVariableName} variable registered.");
 			return result;
