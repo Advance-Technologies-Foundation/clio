@@ -1,1 +1,1 @@
-dotnet bpmcli.dll $*
+dotnet $(dirname "$BASH_SOURCE")/bpmcli.dll $*
