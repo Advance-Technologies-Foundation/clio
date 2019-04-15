@@ -42,8 +42,6 @@ namespace bpmcli
 		private static string PingUrl => _url + @"/0/ping";
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
 
-		private static bool NeedCheckUpdate => false;
-
 		public static CookieContainer AuthCookie = new CookieContainer();
 
 		private static string CurrentProj =>
@@ -65,6 +63,54 @@ namespace bpmcli
 				                 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-cli\' command.",
 					ConsoleColor.DarkYellow);
 			}
+		}
+
+		private static int UpdateCli() {
+			try {
+				var url = GetLastReleaseUrl();
+				var dir = AppDomain.CurrentDomain.BaseDirectory;
+				string updaterDirPath = Path.Combine(dir, "Update");
+				string tempDirPath = Path.Combine(dir, "Update", "Temp");
+				string filePath = Path.Combine(updaterDirPath, "update.zip");
+				string updaterName = "updater.dll";
+				Directory.CreateDirectory(tempDirPath);
+				Console.WriteLine("Download update.");
+				using (var client = new WebClient()) {
+					client.DownloadFile(url, filePath);
+				}
+				ZipFile.ExtractToDirectory(filePath, tempDirPath, true);
+				var updaterFile = new FileInfo(Path.Combine(tempDirPath, updaterName));
+				updaterFile.CopyTo(Path.Combine(dir, updaterFile.Name), true);
+				var updateCmdPath = Path.Combine(dir, "update.cmd");
+				var proc = new Process {StartInfo = {FileName = updateCmdPath}};
+				Console.WriteLine("Start update.");
+				proc.Start();
+				return 0;
+			}
+			catch (Exception) {
+				Console.WriteLine("Update error.");
+				return 1;
+			}
+		}
+
+		private static string GetLastReleaseUrl() {
+			System.Threading.Tasks.Task<byte[]> body;
+			using (var client = new HttpClient()) {
+				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
+				using (var response = client.GetAsync(LastVersionUrl).Result) {
+					response.EnsureSuccessStatusCode();
+					body = response.Content.ReadAsByteArrayAsync();
+				}
+			}
+			string json;
+			var jsonStream = new MemoryStream(body.Result) { Position = 0 };
+			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
+				json = reader.ReadToEnd();
+			}
+			JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
+			var url = jsonDoc["assets"][0]["browser_download_url"];
+			return url;
 		}
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
@@ -115,10 +161,21 @@ namespace bpmcli
 				}
 			}
 			using (var response = (HttpWebResponse)authRequest.GetResponse()) {
-				string authName = ".ASPXAUTH";
-				string headerCookies = response.Headers["Set-Cookie"];
-				string authCookeValue = GetCookieValueByName(headerCookies, authName);
-				AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
+				if (response.StatusCode == HttpStatusCode.OK)
+				{
+					using (var reader = new StreamReader(response.GetResponseStream()))
+					{
+						var responseMessage = reader.ReadToEnd();
+						if (responseMessage.Contains("\"Code\":1")) {
+							throw new UnauthorizedAccessException($"Unauthotized {_userName} for {_url}");
+						}
+					}
+					
+					string authName = ".ASPXAUTH";
+					string headerCookies = response.Headers["Set-Cookie"];
+					string authCookeValue = GetCookieValueByName(headerCookies, authName);
+					AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
+				}
 			}
 		}
 
@@ -236,10 +293,10 @@ namespace bpmcli
 				Configure(options);
 				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
 				Login();
-				Console.WriteLine($"Done");
+				Console.WriteLine($"Login done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine($"Login operation failed with error: {e.Message}");
+				Console.WriteLine($"{e.Message}");
 				return 1;
 			}
 		}
@@ -764,13 +821,14 @@ namespace bpmcli
 		}
 
 		private static int Main(string[] args) {
-			if (NeedCheckUpdate) {
+			var autoupdate = new SettingsRepository().GetAutoupdate();
+			if (autoupdate) {
 				new Thread(CheckUpdate).Start();
 			}
 			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
 					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
-					DownloadZipPackagesOptions>(args)
+					DeleteOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
+					DownloadZipPackagesOptions >(args)
 				.MapResult(
 					(ExecuteOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -787,6 +845,7 @@ namespace bpmcli
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(DownloadZipPackagesOptions opts) => DownloadZipPackages(opts),
+					(UpdateCliOptions opts) => UpdateCli(),
 					errs => 1);
 		}
 

@@ -7,15 +7,19 @@
     <Authors>bpmonline rnd team</Authors>
     <PackageTags>cli</PackageTags>
     <NeutralLanguage>en</NeutralLanguage>
-    <AssemblyVersion>1.0.0.5</AssemblyVersion>
-    <FileVersion>1.0.0.5</FileVersion>
-    <Version>1.0.0.5</Version>
+    <AssemblyVersion>1.0.0.7</AssemblyVersion>
+    <FileVersion>1.0.0.7</FileVersion>
+    <Version>1.0.0.7</Version>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <ErrorReport>prompt</ErrorReport>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,8 +31,18 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="2.2.0" />
     <PackageReference Include="System.Json" Version="4.5.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\updater\updater.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="bpmcli">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="update.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="bpmcli.cmd">
@@ -50,6 +64,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="tpl\packages.config.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="updater.runtimeconfig.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

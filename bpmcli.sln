@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmcli", "bpmcli\bpmcli.csp
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmcli.tests", "bpmdev.tests\bpmcli.tests.csproj", "{718FE94B-0CB7-4977-B2D7-E661C8E57555}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "updater", "updater\updater.csproj", "{29C0EE4B-0CA0-41F3-963F-392326C0E7BA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{718FE94B-0CB7-4977-B2D7-E661C8E57555}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{718FE94B-0CB7-4977-B2D7-E661C8E57555}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{718FE94B-0CB7-4977-B2D7-E661C8E57555}.Release|Any CPU.Build.0 = Release|Any CPU
+		{29C0EE4B-0CA0-41F3-963F-392326C0E7BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{29C0EE4B-0CA0-41F3-963F-392326C0E7BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{29C0EE4B-0CA0-41F3-963F-392326C0E7BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{29C0EE4B-0CA0-41F3-963F-392326C0E7BA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -49,6 +49,9 @@ namespace bpmcli
 				return Environments[ActiveEnvironmentKey];
 			}
 		}
+
+		public bool Autoupdate { get; set; }
+
 		public Dictionary<string, EnvironmentSettings> Environments { get; set; }
 	}
 
@@ -81,6 +84,10 @@ namespace bpmcli
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
+                if (userPath == null)
+                {
+                    userPath = "";
+                }
 				return Path.Combine(userPath, companyName?.Company, product?.Product);
 			}
 		}
@@ -135,6 +142,11 @@ namespace bpmcli
 			return environment;
 		}
 
+		internal bool GetAutoupdate()
+		{
+			return _settings.Autoupdate;
+		}
+
 		Settings _settings;
 
 		internal void ConfigureEnvironment(string name, EnvironmentSettings environment) {
@@ -154,8 +166,14 @@ namespace bpmcli
 		}
 
 		internal void RemoveEnvironment(string environment) {
-			_settings.Environments.Remove(environment);
-			Save();
+			if (_settings.Environments.ContainsKey(environment))
+			{
+				_settings.Environments.Remove(environment);
+				Save();
+			}
+			else {
+				throw new KeyNotFoundException($"Application \"{environment}\" not found");
+			}
 		}
 
 	}

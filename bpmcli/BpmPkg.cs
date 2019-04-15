@@ -14,14 +14,14 @@ namespace bpmcli
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
-		public static string EditProjTpl => $"tpl\\EditProj.{CsprojExtension}.tpl";
-		public static string PackageConfigTpl => $"tpl\\{PackageConfigName}.tpl";
-		public static string AssemblyInfoTpl => $"tpl\\{AssemblyInfoName}.tpl";
+		public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
+		public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
+		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
 
 		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources" };
 
-		private static string DescriptorTpl => $"tpl\\{DescriptorName}.tpl";
-		private static string ProjTpl => $"tpl\\Proj.{CsprojExtension}.tpl";
+		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
+		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
 
 		private readonly IBpmcliEnvironment _bpmcliEnvironment;
 
@@ -124,8 +124,8 @@ namespace bpmcli
 		}
 
 		protected BpmPkg CreateEmptyClass() {
-			System.IO.Directory.CreateDirectory(Path.Combine(FullPath, "Files\\cs"));
-			File.CreateText(Path.Combine(FullPath, "Files\\cs", "EmptyClass.cs")).Dispose();
+			System.IO.Directory.CreateDirectory(Path.Combine(FullPath, $"Files{Path.DirectorySeparatorChar}cs"));
+			File.CreateText(Path.Combine(FullPath, $"Files{Path.DirectorySeparatorChar}cs", "EmptyClass.cs")).Dispose();
 			return this;
 		}
 
