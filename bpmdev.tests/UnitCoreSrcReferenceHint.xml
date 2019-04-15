@@ -1,0 +1,8 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Reference Include="UnitTest">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\UnitTest\bin\Debug\UnitTest.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,18 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="Terrasoft.Common">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\..\..\Bin\Debug\Terrasoft.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Terrasoft.Core">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\..\..\Bin\Debug\Terrasoft.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="UnitTest">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\UnitTest\bin\Debug\UnitTest.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

@@ -58,15 +58,79 @@ namespace bpmcli.tests
 		}
 
 		[Test]
-		public void BpmPkgProject_DetermineCurrentRef_LoadFromSdkFileSimpleCase() {
+		public void BpmPkgProject_RefToBin_LoadFromUnitCoreSrcSample() {
+			var expectElement = XElement.Load("UnitBinSample.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("UnitCoreSrcSample.xml");
+			proj.RefToCustomPath(@"..\..\..\..\Bin\")
+				.RefToUnitBin()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_RefToUnitBinDoNothing_LoadFromBinFileSimpleCase() {
+			var expectElement = XElement.Load("BinReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("BinReferenceHint.xml");
+			proj.RefToUnitBin()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_RefToUnitBin_LoadFromUnitCoreSrcFileSimpleCase() {
+			var expectElement = XElement.Load("UnitBinReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
+			proj.RefToUnitBin()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_RefToUnitCoreSrc_LoadFromUnitBinFileSimpleCase() {
+			var expectElement = XElement.Load("UnitCoreSrcReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
+			proj.RefToUnitCoreSrc()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_RefToBin_LoadFromTsCoreBinPathFileSimpleCase() {
+			var expectElement = XElement.Load("BinNet472ReferenceHint.xml", LoadOptions.SetBaseUri);
+			var proj = BpmPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
+			proj.RefToBin()
+				.Document
+				.Should().BeEquivalentTo(expectElement);
+		}
+
+		[Test]
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromSdkFile() {
 			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.Sdk);
 		}
 
 		[Test]
-		public void BpmPkgProject_DetermineCurrentRef_LoadFromCoreSrcFileSimpleCase() {
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromCoreSrcFile() {
 			var proj = BpmPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.CoreSrc);
+		}
+
+		[Test]
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromUnitCoreSrcFile() {
+			var proj = BpmPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
+			proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
+		}
+
+		[Test]
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromUnitBinFile() {
+			var proj = BpmPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
+			proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
+		}
+
+		[Test]
+		public void BpmPkgProject_DetermineCurrentRef_LoadFromTsCoreBinPath() {
+			var proj = BpmPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
+			proj.CurrentRefType.Should().BeEquivalentTo(RefType.TsCoreBinPath);
 		}
 
 	}

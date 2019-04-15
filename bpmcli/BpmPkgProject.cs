@@ -15,8 +15,12 @@ namespace bpmcli
 
 		private const string PathToCoreDebug = @"..\..\..\..\..\..\..\Bin\Debug\";
 		private const string PathToBinDebug = @"..\..\..\Bin\";
+		private const string PathToUnitTestBin = @"..\..\UnitTest\bin\Debug\";
+		private const string PathToUnitTestCoreSrc = @"..\..\..\UnitTest\bin\Debug\";
 
 		private const string SdkSearchPattern = "BpmonlineSDK";
+		private const string UnitTestSearchPattern = "UnitTest";
+		private const string TsCoreBinPathSearchPattern = "$(TsCoreBinPath)";
 
 
 		private string _activeHint;
@@ -69,21 +73,36 @@ namespace bpmcli
 
 		private void DeletePackagesConfig() {
 			var package = Document.Elements(ItemGroup)
-				.Descendants().FirstOrDefault(x => (string)x.Attribute("Include") == "packages.config");
+				.Descendants().FirstOrDefault(x => (string)x.Attribute(IncludeAttr) == "packages.config");
 			package?.Remove();
 		}
 
 		private void DetermineCurrentRef() {
-			if (Document.Elements(ItemGroup).Any(el => el.Elements(Reference)
-					.Any(elem => elem.Element(HintPath) != null 
-						&& ((string)elem.Element(HintPath)).Contains(SdkSearchPattern)))) {
+			if (RecurseDetermineCurrentRef(Document, SdkSearchPattern)) {
 				CurrentRefType = RefType.Sdk;
-			}
-			else if (Document.Elements(ItemGroup).Any(el => el.Elements(Reference)
-				.Any(elem => elem.Element(HintPath) != null
-					&& ((string)elem.Element(HintPath)).Contains(PathToCoreDebug)))) {
+			} else if (RecurseDetermineCurrentRef(Document, PathToCoreDebug)) {
 				CurrentRefType = RefType.CoreSrc;
+			} else if (RecurseDetermineCurrentRef(Document, UnitTestSearchPattern)) {
+				CurrentRefType = RefType.UnitTest;
+			} else if (RecurseDetermineCurrentRef(Document, TsCoreBinPathSearchPattern)) {
+				CurrentRefType = RefType.TsCoreBinPath;
 			}
+		}
+
+		private bool RecurseDetermineCurrentRef(XElement element, string pattern) {
+			var result = element.Elements(ItemGroup).Any(el => el.Elements(Reference)
+				.Any(elem => elem.Element(HintPath) != null
+				 && ((string) elem.Element(HintPath)).Contains(pattern)));
+			if (result || !element.HasElements) {
+				return result;
+			}
+			foreach (var xElement in element.Elements()) {
+				result = RecurseDetermineCurrentRef(xElement, pattern);
+				if (result) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private string GetSearchPattern(RefType type) {
@@ -92,20 +111,32 @@ namespace bpmcli
 					return SdkSearchPattern;
 				case RefType.CoreSrc:
 					return PathToCoreDebug;
+				case RefType.UnitTest:
+					return UnitTestSearchPattern;
+				case RefType.TsCoreBinPath:
+					return TsCoreBinPathSearchPattern;
 				default:
 					return "undefined";
 			}
 		}
 
 		private void ChangeReference() {
-			List<XElement> rebaseElements = new List<XElement>();
-			foreach (var el in Document.Elements(ItemGroup)) {
-				rebaseElements.AddRange(el.Elements(Reference)
-					.Where(elem => (
-						elem.Element(HintPath) != null &&
-						((string)elem.Element(HintPath)).Contains(GetSearchPattern(CurrentRefType)))));
+			List<XElement> refElements = new List<XElement>();
+			RecurseSearchItemGroup(Document, ref refElements);
+			refElements.ForEach(ChangeHint);
+		}
+
+		private void RecurseSearchItemGroup(XElement element, ref List<XElement> refElements) {
+			if (element.HasElements) {
+				foreach (var xElement in element.Elements()) {
+					RecurseSearchItemGroup(xElement, ref refElements);
+				}
 			}
-			rebaseElements.ForEach(ChangeHint);
+			foreach (var el in element.Elements(ItemGroup)) {
+				refElements.AddRange(el.Elements(Reference)
+					.Where(elem => elem.Element(HintPath) != null &&
+						((string)elem.Element(HintPath)).Contains(GetSearchPattern(CurrentRefType))));
+			}
 		}
 
 		public BpmPkgProject RefToBin() {
@@ -131,9 +162,30 @@ namespace bpmcli
 			return this;
 		}
 
+		public BpmPkgProject RefToUnitBin() {
+			_activeHint = PathToUnitTestBin;
+			var incomeRefType = CurrentRefType;
+			CurrentRefType = RefType.UnitTest;
+			ChangeReference();
+			DeletePackagesConfig();
+			CurrentRefType = incomeRefType;
+			return this;
+		}
+
+		public BpmPkgProject RefToUnitCoreSrc() {
+			_activeHint = PathToUnitTestCoreSrc;
+			var incomeRefType = CurrentRefType;
+			CurrentRefType = RefType.UnitTest;
+			ChangeReference();
+			DeletePackagesConfig();
+			CurrentRefType = incomeRefType;
+			return this;
+		}
+
 		public void SaveChanges() {
 			Document.Save(LoadPath);
 		}
+
 	}
 
 	public enum RefType
@@ -142,6 +194,8 @@ namespace bpmcli
 		Sdk = 1,
 		Bin = 2,
 		CoreSrc = 3,
-		Custom = 4
+		Custom = 4,
+		UnitTest = 5,
+		TsCoreBinPath = 6
 	}
 }

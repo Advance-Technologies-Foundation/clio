@@ -866,6 +866,18 @@ namespace bpmcli
 							.SaveChanges();
 					}
 						break;
+					case "unit-bin": {
+						BpmPkgProject.LoadFromFile(options.Path)
+							.RefToUnitBin()
+							.SaveChanges();
+					}
+						break;
+					case "unit-src": {
+						BpmPkgProject.LoadFromFile(options.Path)
+							.RefToUnitCoreSrc()
+							.SaveChanges();
+					}
+						break;
 					default: {
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 					}
