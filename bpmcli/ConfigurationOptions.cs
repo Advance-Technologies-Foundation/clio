@@ -29,7 +29,13 @@ namespace bpmcli
 			if (!string.IsNullOrEmpty(environment.Maintainer)) {
 				Maintainer = environment.Maintainer;
 			}
-		}
+            if (Safe != environment.Safe)
+            {
+                Safe = environment.Safe;
+            }
+        }
+
+        public bool Safe { get; set; }
 	}
 
 	public class Settings
@@ -124,15 +130,20 @@ namespace bpmcli
 			}
 		}
 
-		internal void ShowSettingsTo(TextWriter streamWriter) {
+		internal void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
 			JsonSerializer serializer = new JsonSerializer() {
 				Formatting = Formatting.Indented
 			};
-			streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
-			serializer.Serialize(streamWriter, _settings);
+            if (String.IsNullOrEmpty(environment))
+            {
+                streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
+                serializer.Serialize(streamWriter, _settings);
+            } else {
+                serializer.Serialize(streamWriter, _settings.Environments[environment]);
+            }
 		}
 
-		internal EnvironmentSettings GetEnvironment(string name = null) {
+        internal EnvironmentSettings GetEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			if (string.IsNullOrEmpty(name)) {
 				environment = _settings.GetActiveEnviroment();

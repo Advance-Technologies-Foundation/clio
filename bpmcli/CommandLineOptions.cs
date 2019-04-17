@@ -88,12 +88,17 @@ namespace bpmcli
 
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
-	}
+
+        [Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
+        public bool Safe { get; set; }
+    }
 
 	[Verb("show-web-app-list", Aliases = new string[] { "apps" }, HelpText = "Show the list of web applications and their settings")]
 	internal class ViewOptions
 	{
-	}
+        [Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
+        public string Name { get; set; }
+    }
 
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Remove a web application's settings from the list")]
 	internal class RemoveOptions : BaseOptions

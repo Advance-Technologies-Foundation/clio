@@ -47,12 +47,23 @@ namespace bpmcli
 		private static string CurrentProj =>
 			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
-		private static void Configure(BaseOptions options) {
+        public static bool _safe { get; private set; } = true;
+
+        private static void Configure(BaseOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options.Environment);
 			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
 			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
 			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
+            if (settings.Safe && _safe) {
+                Console.Write($"Do you want proceed action on {settings.Uri}? (Y/N)...");
+                var answer = Console.ReadKey();
+                Console.WriteLine();
+                if (answer.KeyChar != 'y') {
+                    Console.WriteLine("Operation was canceled by user");
+                    Environment.Exit(1);
+                }
+            }
 		}
 
 		private static void CheckUpdate() {
@@ -278,34 +289,38 @@ namespace bpmcli
 
 		private static int ConfigureEnvironment(ConfigureOptions options) {
 			try {
+                _safe = false;
 				var repository = new SettingsRepository();
 				var environment = new EnvironmentSettings()	{
 					Login = options.Login,
 					Password = options.Password,
 					Uri = options.Uri,
-					Maintainer = options.Maintainer
+					Maintainer = options.Maintainer,
+                    Safe = options.Safe
 				};
 				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
 					repository.SetActiveEnvironment(options.ActiveEnvironment);
 				}
 				repository.ConfigureEnvironment(options.Name, environment);
-				options.Environment = options.Name;
+                options.Environment = options.Name;
+                repository.ShowSettingsTo(Console.Out, options.Name);
+                Console.WriteLine();
 				Configure(options);
 				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
 				Login();
 				Console.WriteLine($"Login done");
-				return 0;
+                return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"{e.Message}");
 				return 1;
 			}
 		}
 
-		private static int ViewEnvironments() {
+		private static int ViewEnvironments(ViewOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
-				repository.ShowSettingsTo(Console.Out);
+				repository.ShowSettingsTo(Console.Out, options.Name);
 				return 0;
 			}
 			catch (Exception e)
@@ -835,7 +850,7 @@ namespace bpmcli
 					(RedisOptions opts) => ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(ConfigureOptions opts) => ConfigureEnvironment(opts),
-					(ViewOptions opts) => ViewEnvironments(),
+					(ViewOptions opts) => ViewEnvironments(opts),
 					(RemoveOptions opts) => RemoveEnvironment(opts),
 					(CompressionOptions opts) => Compression(opts),
 					(InstallOptions opts) => Install(opts),
