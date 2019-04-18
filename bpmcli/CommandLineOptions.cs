@@ -90,7 +90,21 @@ namespace bpmcli
 		public string ActiveEnvironment { get; set; }
 
         [Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
-        public bool Safe { get; set; }
+        public string Safe { get; set; }
+
+        public bool? SafeValue {
+            get {
+                if (!String.IsNullOrEmpty(Safe))
+                {
+                    bool result;
+                    if (bool.TryParse(Safe, out result))
+                    {
+                        return result;
+                    }
+                }
+                return null;
+            }      
+        }
     }
 
 	[Verb("show-web-app-list", Aliases = new string[] { "apps" }, HelpText = "Show the list of web applications and their settings")]

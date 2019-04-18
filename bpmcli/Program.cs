@@ -55,7 +55,7 @@ namespace bpmcli
 			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
 			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
 			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
-            if (settings.Safe && _safe) {
+            if (settings.Safe.HasValue && settings.Safe.Value && _safe) {
               
                 Console.WriteLine($"You try to apply the action on the production site {settings.Uri}");
                 Console.Write($"Do you want to continue? [Y/N]:");
@@ -298,7 +298,7 @@ namespace bpmcli
 					Password = options.Password,
 					Uri = options.Uri,
 					Maintainer = options.Maintainer,
-                    Safe = options.Safe
+                    Safe = options.SafeValue
 				};
 				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
 					repository.SetActiveEnvironment(options.ActiveEnvironment);

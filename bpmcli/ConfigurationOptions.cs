@@ -29,13 +29,13 @@ namespace bpmcli
 			if (!string.IsNullOrEmpty(environment.Maintainer)) {
 				Maintainer = environment.Maintainer;
 			}
-            if (Safe != environment.Safe)
+            if (environment.Safe.HasValue)
             {
                 Safe = environment.Safe;
             }
         }
 
-        public bool Safe { get; set; }
+        public bool? Safe { get; set; }
 	}
 
 	public class Settings
