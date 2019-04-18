@@ -56,7 +56,9 @@ namespace bpmcli
 			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
 			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
             if (settings.Safe && _safe) {
-                Console.Write($"Do you want proceed action on {settings.Uri}? (Y/N)...");
+              
+                Console.WriteLine($"You try to apply the action on the production site {settings.Uri}");
+                Console.Write($"Do you want to continue? [Y/N]:");
                 var answer = Console.ReadKey();
                 Console.WriteLine();
                 if (answer.KeyChar != 'y') {
