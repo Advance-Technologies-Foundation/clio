@@ -286,7 +286,6 @@ namespace bpmcli
 				}
 			}
 			request.GetResponse();
-			Console.WriteLine("Done");
 		}
 
 		private static int ConfigureEnvironment(ConfigureOptions options) {
