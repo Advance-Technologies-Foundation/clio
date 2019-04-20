@@ -491,9 +491,12 @@ namespace bpmcli
 					ExecuteSqlScript(opts.Script);
 				} else if (!string.IsNullOrEmpty(opts.File)) {
 					var script = File.ReadAllText(opts.File);
+					Console.WriteLine(script);
 					ExecuteSqlScript(script);
 				} else {
-					throw new Exception("Script empty");
+					Console.WriteLine("Enter sql (Ctrl+C for exit): ");
+					var sc = Console.ReadLine();
+					ExecuteSqlScript(sc);
 				}
 				Console.WriteLine("Done");
 			} catch (Exception e) {

@@ -220,18 +220,17 @@ namespace bpmcli
 	{
 	}
 
-	[Verb("execute-sql-script", HelpText = "Execute script on web application")]
+	[Verb("execute-sql-script", Aliases = new string[] { "sql" }, HelpText = "Execute script on web application")]
 	internal class ExecuteSqlScriptOptions : EnvironmentOptions
 	{
-		[Option('f', "File", Required = false,
-			HelpText = "Path to the sql script file.", Default = null)]
-		public string File
+		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
+		public string Script
 		{
 			get; set;
 		}
-		[Option('s', "Script", Required = false,
-			HelpText = "Sql script.", Default = null)]
-		public string Script
+		[Option('f', "File", Required = false,
+			HelpText = "Path to the sql script file.", Default = null)]
+		public string File
 		{
 			get; set;
 		}
