@@ -80,7 +80,7 @@ namespace bpmcli
 		public string Packages { get; set; }
 	}
 
-	[Verb("reg-web-app", Aliases = new string[] { "reg" }, HelpText = "Configure a web application settings")]
+	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
 	internal class RegAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
@@ -107,24 +107,24 @@ namespace bpmcli
         }
     }
 
-	[Verb("show-web-app-list", Aliases = new string[] { "apps" }, HelpText = "Show the list of web applications and their settings")]
+	[Verb("show-web-app-list", Aliases = new string[] { "apps", "show-web-app", "app" }, HelpText = "Show the list of web applications and their settings")]
 	internal class AppListOptions
 	{
         [Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
         public string Name { get; set; }
     }
 
-	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Remove a web application's settings from the list")]
-	internal class UnregWebAppOptions : EnvironmentOptions
+	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]
+	internal class UnregAppOptions : EnvironmentOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name application for delete")]
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
 	internal class PushPkgOptions : EnvironmentOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }

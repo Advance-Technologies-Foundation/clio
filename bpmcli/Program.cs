@@ -317,7 +317,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int ViewEnvironments(AppListOptions options) {
+ 		private static int ViewEnvironments(AppListOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
@@ -330,14 +330,14 @@ namespace bpmcli
 				return 1;
 			}
 		}
-
-
-		private static int RemoveEnvironment(UnregWebAppOptions options) {
+        
+		private static int UnregApplication(UnregAppOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
 				repository.RemoveEnvironment(options.Name);
-				Console.WriteLine("Done");
+                repository.ShowSettingsTo(Console.Out);
+                Console.WriteLine("Done");
 				return 0;
 			}
 			catch (Exception e) {
@@ -805,6 +805,7 @@ namespace bpmcli
 				Login();
 				DeletePackage(options.Name);
 				Console.WriteLine("Done");
+                
 				return 0;
 			}
 			catch (Exception e) {
@@ -842,7 +843,7 @@ namespace bpmcli
 				new Thread(CheckUpdate).Start();
 			}
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
-					RegAppOptions, AppListOptions, UnregWebAppOptions, GeneratePkgZipOptions, PushPkgOptions,
+					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
 					PullPkgOptions >(args)
 				.MapResult(
@@ -852,7 +853,7 @@ namespace bpmcli
 					(FetchOptions opts) => Fetch(opts),
 					(RegAppOptions opts) => ConfigureEnvironment(opts),
 					(AppListOptions opts) => ViewEnvironments(opts),
-					(UnregWebAppOptions opts) => RemoveEnvironment(opts),
+					(UnregAppOptions opts) => UnregApplication(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
 					(DeletePkgOptions opts) => Delete(opts),
