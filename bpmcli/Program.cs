@@ -41,6 +41,7 @@ namespace bpmcli
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 		private static string PingUrl => _url + @"/0/ping";
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
+		private static string ExecuteSqlScriptUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ExecuteSqlScript";
 
 		public static CookieContainer AuthCookie = new CookieContainer();
 
@@ -482,6 +483,47 @@ namespace bpmcli
 			response.Close();
 		}
 
+		private static int ExecuteSqlScript(ExecuteSqlScriptOptions opts) {
+			try {
+				Configure(opts);
+				Login();
+				if (!string.IsNullOrEmpty(opts.Script)) {
+					ExecuteSqlScript(opts.Script);
+				} else if (!string.IsNullOrEmpty(opts.File)) {
+					var script = File.ReadAllText(opts.File);
+					ExecuteSqlScript(script);
+				} else {
+					throw new Exception("Script empty");
+				}
+				Console.WriteLine("Done");
+			} catch (Exception e) {
+				Console.WriteLine(e);
+			}
+			return 0;
+		}
+
+		private static void ExecuteSqlScript(string script) {
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ExecuteSqlScriptUrl);
+			request.Method = "POST";
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			using (var requestStream = request.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write("\"" + script + "\"");
+				}
+			}
+			request.ContentType = "application/json";
+			Stream dataStream;
+			WebResponse response = request.GetResponse();
+			dataStream = response.GetResponseStream();
+			StreamReader reader = new StreamReader(dataStream);
+			string responseFromServer = reader.ReadToEnd();
+			Console.WriteLine(responseFromServer);
+			reader.Close();
+			dataStream.Close();
+			response.Close();
+		}
+
 		private static void UnZipPackages(string zipFilePath) {
 			var fileInfo = new FileInfo(zipFilePath);
 			if (fileInfo.Length == 0) {
@@ -844,8 +886,8 @@ namespace bpmcli
 			}
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
-					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
-					PullPkgOptions >(args)
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, /*UpdateCliOptions,*/
+					PullPkgOptions, ExecuteSqlScriptOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -862,7 +904,8 @@ namespace bpmcli
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
-					(UpdateCliOptions opts) => UpdateCli(),
+					//(UpdateCliOptions opts) => UpdateCli(),
+					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					errs => 1);
 		}
 
