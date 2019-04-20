@@ -215,7 +215,7 @@ namespace bpmcli
 		}
 	}
 
-	[Verb("update-cli", HelpText = "Update Bpmcli")]
+	[Verb("update-cli", HelpText = "Update bpmcli to new available version")]
 	internal class UpdateCliOptions
 	{
 	}

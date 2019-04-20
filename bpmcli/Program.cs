@@ -887,9 +887,10 @@ namespace bpmcli
 			if (autoupdate) {
 				new Thread(CheckUpdate).Start();
 			}
+            Parser.Default.Settings.ShowHeader = false;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
-					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, /*UpdateCliOptions,*/
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
 					PullPkgOptions, ExecuteSqlScriptOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
@@ -907,7 +908,7 @@ namespace bpmcli
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
-					//(UpdateCliOptions opts) => UpdateCli(),
+					(UpdateCliOptions opts) => UpdateCli(),
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					errs => 1);
 		}
