@@ -5,9 +5,9 @@ using CommandLine.Text;
 
 namespace bpmcli
 {
-	internal class BaseOptions
+	internal class EnvironmentOptions
 	{
-		[Option('u', "uri", Required = false, HelpText = "bpm`online site uri")]
+		[Option('u', "uri", Required = false, HelpText = "Application uri")]
 		public string Uri { get; set; }
 
 		[Option('p', "Password", Required = false, HelpText = "User password")]
@@ -24,7 +24,7 @@ namespace bpmcli
 	}
 
 	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute an assembly code which implements the IExecutor interface")]
-	internal class ExecuteOptions : BaseOptions
+	internal class ExecuteAssemblyOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
 		public string Name { get; set; }
@@ -34,14 +34,14 @@ namespace bpmcli
 	}
 
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
-	internal class RestartOptions : BaseOptions
+	internal class RestartOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
-	internal class RedisOptions : BaseOptions
+	internal class ClearRedisOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
@@ -60,7 +60,7 @@ namespace bpmcli
 	}
 
 	[Verb("fetch", HelpText = "Download assembly", Hidden = true)]
-	internal class FetchOptions : BaseOptions
+	internal class FetchOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to downloaded assembly")]
 		public string Name { get; set; }
@@ -70,7 +70,7 @@ namespace bpmcli
 	}
 
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of bpm'online package")]
-	internal class CompressionOptions
+	internal class GeneratePkgZipOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
@@ -81,7 +81,7 @@ namespace bpmcli
 	}
 
 	[Verb("reg-web-app", Aliases = new string[] { "reg" }, HelpText = "Configure a web application settings")]
-	internal class ConfigureOptions : BaseOptions
+	internal class RegAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
 		public string Name { get; set; }
@@ -108,21 +108,21 @@ namespace bpmcli
     }
 
 	[Verb("show-web-app-list", Aliases = new string[] { "apps" }, HelpText = "Show the list of web applications and their settings")]
-	internal class ViewOptions
+	internal class AppListOptions
 	{
         [Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
         public string Name { get; set; }
     }
 
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Remove a web application's settings from the list")]
-	internal class RemoveOptions : BaseOptions
+	internal class UnregWebAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name application for delete")]
 		public string Name { get; set; }
 	}
 
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
-	internal class InstallOptions : BaseOptions
+	internal class PushPkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
 		public string Name { get; set; }
@@ -131,7 +131,7 @@ namespace bpmcli
 	}
 
 	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
-	internal class DeleteOptions : BaseOptions
+	internal class DeletePkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
@@ -202,7 +202,7 @@ namespace bpmcli
 	}
 
 	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
-	internal class DownloadZipPackagesOptions : BaseOptions
+	internal class PullPkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name {

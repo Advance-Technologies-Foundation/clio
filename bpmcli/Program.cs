@@ -49,7 +49,7 @@ namespace bpmcli
 
         public static bool _safe { get; private set; } = true;
 
-        private static void Configure(BaseOptions options) {
+        private static void Configure(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options.Environment);
 			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
@@ -230,7 +230,7 @@ namespace bpmcli
 			}
 		}
 
-		private static void ExecuteScript(ExecuteOptions options) {
+		private static void ExecuteScript(ExecuteAssemblyOptions options) {
 			string filePath = options.Name;
 			string executorType = options.ExecutorType;
 			var fileContent = File.ReadAllBytes(filePath);
@@ -288,7 +288,7 @@ namespace bpmcli
 			request.GetResponse();
 		}
 
-		private static int ConfigureEnvironment(ConfigureOptions options) {
+		private static int ConfigureEnvironment(RegAppOptions options) {
 			try {
                 _safe = false;
 				var repository = new SettingsRepository();
@@ -317,7 +317,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int ViewEnvironments(ViewOptions options) {
+		private static int ViewEnvironments(AppListOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
@@ -332,7 +332,7 @@ namespace bpmcli
 		}
 
 
-		private static int RemoveEnvironment(RemoveOptions options) {
+		private static int RemoveEnvironment(UnregWebAppOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
@@ -685,7 +685,7 @@ namespace bpmcli
 			return fileName;
 		}
 
-		private static int Execute(ExecuteOptions options) {
+		private static int Execute(ExecuteAssemblyOptions options) {
 			Configure(options);
 			Login();
 			ExecuteScript(options);
@@ -716,7 +716,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int ClearRedisDb(RedisOptions options) {
+		private static int ClearRedisDb(ClearRedisOptions options) {
 			try {
 				options.Environment = options.Name;
 				Configure(options);
@@ -731,7 +731,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int DownloadZipPackages(DownloadZipPackagesOptions options) {
+		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
 				Configure(options);
 				Login();
@@ -748,7 +748,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int Compression(CompressionOptions options) {
+		private static int Compression(GeneratePkgZipOptions options) {
 			try
 			{
 				if (options.Packages == null) {
@@ -768,7 +768,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int Install(InstallOptions options) {
+		private static int Install(PushPkgOptions options) {
 			try	{
 				Configure(options);
 				Login();
@@ -798,7 +798,7 @@ namespace bpmcli
 			}
 		}
 
-		private static int Delete(DeleteOptions options) {
+		private static int Delete(DeletePkgOptions options) {
 			try
 			{
 				Configure(options);
@@ -841,26 +841,26 @@ namespace bpmcli
 			if (autoupdate) {
 				new Thread(CheckUpdate).Start();
 			}
-			return Parser.Default.ParseArguments<ExecuteOptions, RestartOptions, RedisOptions, FetchOptions,
-					ConfigureOptions, ViewOptions, RemoveOptions, CompressionOptions, InstallOptions,
-					DeleteOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
-					DownloadZipPackagesOptions >(args)
+			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
+					RegAppOptions, AppListOptions, UnregWebAppOptions, GeneratePkgZipOptions, PushPkgOptions,
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
+					PullPkgOptions >(args)
 				.MapResult(
-					(ExecuteOptions opts) => Execute(opts),
+					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
-					(RedisOptions opts) => ClearRedisDb(opts),
+					(ClearRedisOptions opts) => ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
-					(ConfigureOptions opts) => ConfigureEnvironment(opts),
-					(ViewOptions opts) => ViewEnvironments(opts),
-					(RemoveOptions opts) => RemoveEnvironment(opts),
-					(CompressionOptions opts) => Compression(opts),
-					(InstallOptions opts) => Install(opts),
-					(DeleteOptions opts) => Delete(opts),
+					(RegAppOptions opts) => ConfigureEnvironment(opts),
+					(AppListOptions opts) => ViewEnvironments(opts),
+					(UnregWebAppOptions opts) => RemoveEnvironment(opts),
+					(GeneratePkgZipOptions opts) => Compression(opts),
+					(PushPkgOptions opts) => Install(opts),
+					(DeletePkgOptions opts) => Delete(opts),
 					(ReferenceOptions opts) => ReferenceTo(opts),
 					(NewPkgOptions opts) => NewPkg(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
-					(DownloadZipPackagesOptions opts) => DownloadZipPackages(opts),
+					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCli(),
 					errs => 1);
 		}
