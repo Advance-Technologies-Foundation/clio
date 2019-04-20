@@ -35,7 +35,7 @@ dotnet bpmcli.dll register -t m
 1. Download [.net core](https://dotnet.microsoft.com/download/dotnet-core) for mac
 2. Download and extract bpmcli [release](https://github.com/Advance-Technologies-Foundation/bpmcli/releases)
 
-   ![](https://lh4.googleusercontent.com/sJPKPhiWIV7xX9Lt_huXFVWx4pIkpxSjeLRLinQYqmrdZsTWGDntpZiXu_TeDrJz_edsW2AhNCdyDKS4MTR6=w714-h453)
+   ![](https://lh3.googleusercontent.com/cWNjJMRVOyE8bYDltAjSSJFkO14pB-1d-9Gv64pK2l-jzgXd9zL3qW08uGQf7Xl8_WafMDxcRiG_CLpx1k3AkPAgvTqvIxU4Msb6ycgQ0zFDPLu9z17R8q3919jJDzzCUWwGMk16JCw7dPpDvzU1VjGPPc6Xe7m4aV1zRkrPNMEgNQ1JfpcKOVK9cDOr069PpMZTTCwltfgv5wbrtzr4sGYHYAyamOIUV6i_gaTFGQ_tp6kmLqL4tiqd0BP4k9stAK5Su2XRNeQEKoZDCn_WOuG_SfBGjJOLu_No5GtjZQ5eYrYAnE0Hh9o-ygOGifib7NlsBrXcDtneMyPPydUfFEpcU-mP22qEDym8y_xZDcMrj2kVzoemqBB0TW-T3APPWPhjCj9XQ91ZKRR2V6lt0G-LkrmhPW3mT8yq4u0oSsq-KDtwa6bExAZWemWRmHV6jZdl_LCNDoH70vZND09odu81LY1tM2GerQsxzE7v6DthDn5Z4t3SoTJ5bu3gQaABZJMsO2J3h0cFLJcE62W2KNCE7hvKzPq8Ak7f9OYN2NIFnWxai4rLCBxHcP_lf8uJkQR-Egi50Em0Rs7-N28_WPr-CRzzLW5K6Eu6mSE=w720-h385)
 
 3. [Register](https://www.architectryan.com/2012/10/02/add-to-the-path-on-mac-os-x-mountain-lion/) bpmcli folder in PATH system variables
 
