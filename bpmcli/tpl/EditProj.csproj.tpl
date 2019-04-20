@@ -34,88 +34,88 @@
   </PropertyGroup>
   <ItemGroup>
 $ref1$
-    <Reference Include="Terrasoft.Common, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Common.dll</HintPath>
+    <Reference Include="Terrasoft.Common, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Common.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Core, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Core.dll</HintPath>
+    <Reference Include="Terrasoft.Core, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Terrasoft.Core.ConfigurationBuild, Version=0.0.0.0, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Core.ConfigurationBuild.dll</HintPath>
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.ConfigurationBuild.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Core.Packages, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Core.Packages.dll</HintPath>
+    <Reference Include="Terrasoft.Core.Packages, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Packages.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Core.Process, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Core.Process.dll</HintPath>
+    <Reference Include="Terrasoft.Core.Process, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Process.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Core.Scheduler, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Core.Scheduler.dll</HintPath>
+    <Reference Include="Terrasoft.Core.Scheduler, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Scheduler.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Core.Translation, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Core.Translation.dll</HintPath>
+    <Reference Include="Terrasoft.Core.Translation, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Translation.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.GlobalSearch, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.GlobalSearch.dll</HintPath>
+    <Reference Include="Terrasoft.GlobalSearch, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.GlobalSearch.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.GoogleServerConnector, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.GoogleServerConnector.dll</HintPath>
+    <Reference Include="Terrasoft.GoogleServerConnector, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.GoogleServerConnector.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.GoogleServices, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.GoogleServices.dll</HintPath>
+    <Reference Include="Terrasoft.GoogleServices, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.GoogleServices.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Messaging.Common, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Messaging.Common.dll</HintPath>
+    <Reference Include="Terrasoft.Messaging.Common, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Messaging.Common.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Mobile, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Mobile.dll</HintPath>
+    <Reference Include="Terrasoft.Mobile, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Mobile.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Monitoring, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Monitoring.dll</HintPath>
+    <Reference Include="Terrasoft.Monitoring, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Monitoring.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Terrasoft.Nui, Version=0.0.0.0, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Nui.dll</HintPath>
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Nui.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Nui.ServiceModel, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Nui.ServiceModel.dll</HintPath>
+    <Reference Include="Terrasoft.Nui.ServiceModel, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Nui.ServiceModel.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Reports, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Reports.dll</HintPath>
+    <Reference Include="Terrasoft.Reports, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Reports.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Services, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Services.dll</HintPath>
+    <Reference Include="Terrasoft.Services, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Services.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Social, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Social.dll</HintPath>
+    <Reference Include="Terrasoft.Social, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Social.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Sync, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Sync.dll</HintPath>
+    <Reference Include="Terrasoft.Sync, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Sync.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.UI.WebControls, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.UI.WebControls.dll</HintPath>
+    <Reference Include="Terrasoft.UI.WebControls, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.UI.WebControls.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Terrasoft.Web.Common, Version=7.13.4.638, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.13.4.681\lib\net40\Terrasoft.Web.Common.dll</HintPath>
+    <Reference Include="Terrasoft.Web.Common, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Web.Common.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

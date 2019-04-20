@@ -949,7 +949,7 @@ namespace bpmcli
 				Directory.SetCurrentDirectory(packageDirectory.FullName);
 				var pkg = BpmPkg.CreatePackage(options.Name, settings.Maintainer);
 				pkg.Create();
-				if (!String.IsNullOrEmpty(options.Rebase)) {
+				if (!String.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
 					ReferenceTo(new ReferenceOptions { ReferenceType = options.Rebase });
 					pkg.RemovePackageConfig();
 				}
@@ -1001,7 +1001,7 @@ namespace bpmcli
 							.SaveChanges();
 					}
 						break;
-					default: {
+                    default: {
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 					}
 				}
