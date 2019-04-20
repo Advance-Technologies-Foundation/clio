@@ -33,8 +33,14 @@ dotnet bpmcli.dll register -t m
 ```
 ## MacOS
 1. Download [.net core](https://dotnet.microsoft.com/download/dotnet-core) for mac
-2. Download and exctract bpmcli [release](https://github.com/Advance-Technologies-Foundation/bpmcli/releases)
+2. Download and extract bpmcli [release](https://github.com/Advance-Technologies-Foundation/bpmcli/releases)
+
+   ![](https://lh4.googleusercontent.com/sJPKPhiWIV7xX9Lt_huXFVWx4pIkpxSjeLRLinQYqmrdZsTWGDntpZiXu_TeDrJz_edsW2AhNCdyDKS4MTR6=w714-h453)
+
 3. [Register](https://www.architectryan.com/2012/10/02/add-to-the-path-on-mac-os-x-mountain-lion/) bpmcli folder in PATH system variables
+
+    ![](https://lh3.googleusercontent.com/sP2HujDnGGiJ-CuCnF7r4tf-aygwZgabYJSx8_R1gAV5aj7iAk4AYc5P6AYvgUz4DniA_QubrJqB0q4OkvxK=w10000-h10000)
+
 In terminal execute command for check success register
 ```
 bpmcli help
