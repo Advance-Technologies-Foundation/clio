@@ -801,7 +801,8 @@ namespace bpmcli
 					CompressionProject(options.Name, destinationPath);
 				} else {
 					var packages = GetPackages(options.Packages);
-					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"Pkg{DateTime.Now}.zip" : options.DestinationPath;
+					string zipFileName = $"packages_{DateTime.Now.ToString("yy.MM.dd_hh.mm.ss")}.zip";
+					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
 					CompressionProjects(options.Name, destinationPath, packages);
 				}
 				Console.WriteLine("Done");
