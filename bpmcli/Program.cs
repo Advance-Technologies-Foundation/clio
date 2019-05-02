@@ -487,17 +487,20 @@ namespace bpmcli
 			try {
 				Configure(opts);
 				Login();
+				string result = string.Empty;
 				if (!string.IsNullOrEmpty(opts.Script)) {
-					ExecuteSqlScript(opts.Script);
+					result = ExecuteSqlScript(opts.Script);
 				} else if (!string.IsNullOrEmpty(opts.File)) {
 					var script = File.ReadAllText(opts.File);
 					Console.WriteLine(script);
-					ExecuteSqlScript(script);
+					script = script.Replace(Environment.NewLine, "|nl|");
+					result = ExecuteSqlScript(script);
 				} else {
 					Console.WriteLine("Enter sql (Ctrl+C for exit): ");
 					var sc = Console.ReadLine();
-					ExecuteSqlScript(sc);
+					result = ExecuteSqlScript(sc);
 				}
+				Console.WriteLine(result);
 				Console.WriteLine("Done");
 			} catch (Exception e) {
 				Console.WriteLine(e);
@@ -505,7 +508,7 @@ namespace bpmcli
 			return 0;
 		}
 
-		private static void ExecuteSqlScript(string script) {
+		private static string ExecuteSqlScript(string script) {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ExecuteSqlScriptUrl);
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
@@ -521,10 +524,17 @@ namespace bpmcli
 			dataStream = response.GetResponseStream();
 			StreamReader reader = new StreamReader(dataStream);
 			string responseFromServer = reader.ReadToEnd();
-			Console.WriteLine(responseFromServer);
+			responseFromServer = CorrectJson(responseFromServer);
 			reader.Close();
 			dataStream.Close();
 			response.Close();
+			return responseFromServer;
+		}
+
+		private static string CorrectJson(string body) {
+			body = body.Replace("\\r\\n", Environment.NewLine);
+			body = body.Replace("\\\"", "\"");
+			return body;
 		}
 
 		private static void UnZipPackages(string zipFilePath) {
