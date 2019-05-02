@@ -48,25 +48,25 @@ namespace bpmcli
 		private static string CurrentProj =>
 			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
-        public static bool _safe { get; private set; } = true;
+		public static bool _safe { get; private set; } = true;
 
-        private static void Configure(EnvironmentOptions options) {
+		private static void Configure(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options.Environment);
 			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
 			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
 			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
-            if (settings.Safe.HasValue && settings.Safe.Value && _safe) {
-              
-                Console.WriteLine($"You try to apply the action on the production site {settings.Uri}");
-                Console.Write($"Do you want to continue? [Y/N]:");
-                var answer = Console.ReadKey();
-                Console.WriteLine();
-                if (answer.KeyChar != 'y') {
-                    Console.WriteLine("Operation was canceled by user");
-                    Environment.Exit(1);
-                }
-            }
+			if (settings.Safe.HasValue && settings.Safe.Value && _safe) {
+			  
+				Console.WriteLine($"You try to apply the action on the production site {settings.Uri}");
+				Console.Write($"Do you want to continue? [Y/N]:");
+				var answer = Console.ReadKey();
+				Console.WriteLine();
+				if (answer.KeyChar != 'y') {
+					Console.WriteLine("Operation was canceled by user");
+					Environment.Exit(1);
+				}
+			}
 		}
 
 		private static void CheckUpdate() {
@@ -74,7 +74,7 @@ namespace bpmcli
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
 				MessageToConsole($"You are using bpmcli version {currentVersion}, however version {latestVersion} is available." +
-				                 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-cli\' command.",
+								 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-cli\' command.",
 					ConsoleColor.DarkYellow);
 			}
 		}
@@ -291,34 +291,35 @@ namespace bpmcli
 
 		private static int ConfigureEnvironment(RegAppOptions options) {
 			try {
-                _safe = false;
+				_safe = false;
 				var repository = new SettingsRepository();
 				var environment = new EnvironmentSettings()	{
 					Login = options.Login,
 					Password = options.Password,
 					Uri = options.Uri,
 					Maintainer = options.Maintainer,
-                    Safe = options.SafeValue
+					Safe = options.SafeValue
 				};
 				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
-					repository.SetActiveEnvironment(options.ActiveEnvironment);
+					if (repository.IsExistInEnvironment(options.ActiveEnvironment)) repository.SetActiveEnvironment(options.ActiveEnvironment);
+					else throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
 				}
 				repository.ConfigureEnvironment(options.Name, environment);
-                options.Environment = options.Name;
-                repository.ShowSettingsTo(Console.Out, options.Name);
-                Console.WriteLine();
+				options.Environment = options.Name;
+				repository.ShowSettingsTo(Console.Out, options.Name);
+				Console.WriteLine();
 				Configure(options);
 				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
 				Login();
 				Console.WriteLine($"Login done");
-                return 0;
+				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"{e.Message}");
 				return 1;
 			}
 		}
 
- 		private static int ViewEnvironments(AppListOptions options) {
+		private static int ViewEnvironments(AppListOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
@@ -331,14 +332,14 @@ namespace bpmcli
 				return 1;
 			}
 		}
-        
+		
 		private static int UnregApplication(UnregAppOptions options) {
 			try
 			{
 				var repository = new SettingsRepository();
 				repository.RemoveEnvironment(options.Name);
-                repository.ShowSettingsTo(Console.Out);
-                Console.WriteLine("Done");
+				repository.ShowSettingsTo(Console.Out);
+				Console.WriteLine("Done");
 				return 0;
 			}
 			catch (Exception e) {
@@ -632,7 +633,7 @@ namespace bpmcli
 		private static string GetAppId(string code) {
 			string result;
 			string query = "{\"rootSchemaName\":\"SysInstalledApp\",\"operationType\":0,\"filters\":{\"items\":{\"4eacef8f-252a-4054-9711-ded84c911dc7\":{\"items\":{\"CustomFilters\":{\"items\":{\"customFilterCode_SysInstalledApp\":{\"filterType\":1,\"comparisonType\":3,\"isEnabled\":true,\"trimDateTimeParameterToDate\":false,\"leftExpression\":{\"expressionType\":0,\"columnPath\":\"Code\"},\"rightExpression\":{\"expressionType\":2,\"parameter\":{\"dataValueType\":1,\"value\":\""
-			               + code + "\"}}}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6},\"columns\":{\"items\":{\"Id\":{\"caption\":\"\",\"orderDirection\":0,\"orderPosition\":-1,\"isVisible\":true,\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}},\"isDistinct\":false,\"rowCount\":30,\"rowsOffset\":0,\"isPageable\":true,\"allColumns\":false,\"useLocalization\":true,\"useRecordDeactivation\":false,\"serverESQCacheParameters\":{\"cacheLevel\":0,\"cacheGroup\":\"\",\"cacheItemName\":\"\"},\"queryOptimize\":false,\"useMetrics\":false,\"querySource\":0,\"ignoreDisplayValues\":false,\"conditionalValues\":null,\"isHierarchical\":false}";
+						   + code + "\"}}}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6},\"columns\":{\"items\":{\"Id\":{\"caption\":\"\",\"orderDirection\":0,\"orderPosition\":-1,\"isVisible\":true,\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}},\"isDistinct\":false,\"rowCount\":30,\"rowsOffset\":0,\"isPageable\":true,\"allColumns\":false,\"useLocalization\":true,\"useRecordDeactivation\":false,\"serverESQCacheParameters\":{\"cacheLevel\":0,\"cacheGroup\":\"\",\"cacheItemName\":\"\"},\"queryOptimize\":false,\"useMetrics\":false,\"querySource\":0,\"ignoreDisplayValues\":false,\"conditionalValues\":null,\"isHierarchical\":false}";
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(SelectQueryUrl);
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
@@ -861,7 +862,7 @@ namespace bpmcli
 				Login();
 				DeletePackage(options.Name);
 				Console.WriteLine("Done");
-                
+				
 				return 0;
 			}
 			catch (Exception e) {
@@ -898,7 +899,7 @@ namespace bpmcli
 			if (autoupdate) {
 				new Thread(CheckUpdate).Start();
 			}
-            Parser.Default.Settings.ShowHeader = false;
+			Parser.Default.Settings.ShowHeader = false;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UpdateCliOptions,
@@ -1012,7 +1013,7 @@ namespace bpmcli
 							.SaveChanges();
 					}
 						break;
-                    default: {
+					default: {
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 					}
 				}
