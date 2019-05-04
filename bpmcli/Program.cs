@@ -674,13 +674,13 @@ namespace bpmcli
 			}
 		}
 
-		private static void InstallPackage(string filePath) {
+		private static string InstallPackage(string filePath) {
 			string fileName = string.Empty;
 			try {
 				fileName = UploadPackage(filePath);
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
-				return;
+				return e.Message;
 			}
 			Console.WriteLine("Installing...");
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(InstallUrl);
@@ -695,20 +695,23 @@ namespace bpmcli
 				}
 			}
 			try {
-				Stream dataStream;
-				WebResponse response = request.GetResponse();
-				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-				dataStream = response.GetResponseStream();
-				StreamReader reader = new StreamReader(dataStream);
-				string responseFromServer = reader.ReadToEnd();
-				Console.WriteLine(responseFromServer);
-				reader.Close();
-				dataStream.Close();
-				response.Close();
-				Console.WriteLine("Installed");
+				using (WebResponse response = request.GetResponse()) {
+					Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+					using (var dataStream = response.GetResponseStream()) {
+						using (StreamReader reader = new StreamReader(dataStream)) {
+							string responseFromServer = reader.ReadToEnd();
+							Console.WriteLine(responseFromServer);
+						}
+					}
+					Console.WriteLine("Installed");
+				}
 			} catch (Exception) {
 				Console.WriteLine("Not installed");
 			}
+			var logText = GetLog();
+			Console.WriteLine("Installation log");
+			Console.WriteLine($"{logText}");
+			return logText;
 		}
 
 		private static void DeletePackage(string code) {
@@ -910,19 +913,20 @@ namespace bpmcli
 				if (options.Name == null) {
 					options.Name = Environment.CurrentDirectory;
 				}
+				string logText = string.Empty;
 				if (File.Exists(options.Name)) {
-					InstallPackage(options.Name);
+					logText = InstallPackage(options.Name);
 				} else {
 					if (Directory.Exists(options.Name)) {
 						var folderPath = options.Name;
 						var filePath = options.Name + ".gz";
 						CompressionProject(folderPath, filePath);
-						InstallPackage(filePath);
+						logText = InstallPackage(filePath);
 						File.Delete(filePath);
 					}
 				}
 				if (options.ReportPath != null) {
-					SaveLogFile(options.ReportPath);
+					SaveLogFile(logText, options.ReportPath);
 				}
 				Console.WriteLine("Done");
 				return 0;
@@ -937,7 +941,6 @@ namespace bpmcli
 				SetupAppConnection(options);
 				DeletePackage(options.Name);
 				Console.WriteLine("Done");
-
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
@@ -945,27 +948,30 @@ namespace bpmcli
 			}
 		}
 
-		private static void SaveLogFile(string reportPath) {
-			if (File.Exists(reportPath)) {
-				File.Delete(reportPath);
-			}
+		private static string GetLog() {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(LogUrl);
 			request.Timeout = 100000;
 			request.Method = "GET";
 			request.CookieContainer = AuthCookie;
 			AddCsrfToken(request);
 			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			File.WriteAllText(reportPath, responseFromServer, Encoding.UTF8);
-			Console.WriteLine("Logs downloaded");
-			reader.Close();
-			dataStream.Close();
-			response.Close();
+			string logText;
+			using (WebResponse response = request.GetResponse()) {
+				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+				using (var dataStream = response.GetResponseStream()) {
+					using (StreamReader reader = new StreamReader(dataStream)) {
+						logText = reader.ReadToEnd();
+					}
+				}
+			}
+			return logText;
+		}
+
+		private static void SaveLogFile(string logText, string reportPath) {
+			if (File.Exists(reportPath)) {
+				File.Delete(reportPath);
+			}
+			File.WriteAllText(reportPath, logText, Encoding.UTF8);
 		}
 
 		private static int Main(string[] args) {
