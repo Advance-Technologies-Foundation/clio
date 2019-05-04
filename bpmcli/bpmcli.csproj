@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -42,6 +42,12 @@
     <None Update="bpmcli">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="bpmcligate\bpmcligate.gz">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="bpmcligate\version.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="update.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -70,5 +76,4 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
 </Project>

@@ -236,4 +236,9 @@ namespace bpmcli
 		}
 	}
 
+    [Verb("install-gate", Aliases = new string[] { "update-gate" }, HelpText = "Install bpmcli api gateway to application")]
+    internal class InstallGateOptions: EnvironmentOptions
+    {        
+    }
+
 }

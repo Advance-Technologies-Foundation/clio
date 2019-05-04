@@ -2,7 +2,7 @@
   "profiles": {
     "bpmcli": {
       "commandName": "Project",
-      "commandLineArgs": "help"
+      "commandLineArgs": "sql"
     }
   }
 }
