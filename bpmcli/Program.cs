@@ -46,7 +46,6 @@ namespace bpmcli
 		private static string PingUrl => _url + @"/0/ping";
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
 		private static string ExecuteSqlScriptUrl => _url + @"/0/rest/BpmcliApiGateway/ExecuteSqlScript";
-
 		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
 
 		public static CookieContainer AuthCookie = new CookieContainer();
@@ -574,6 +573,9 @@ namespace bpmcli
 		private static string GetSqlScriptResult(string result, string viewType) {
 			viewType = viewType.ToLower();
 			if (viewType == "table") {
+				if (result == "[]") {
+					return string.Empty;
+				}
 				var dataTable = JsonConvert.DeserializeObject<DataTable>(result);
 				var table = CreateConsoleTable(dataTable);
 				return table.ToString();
