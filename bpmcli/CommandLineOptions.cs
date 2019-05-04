@@ -234,6 +234,10 @@ namespace bpmcli
 		{
 			get; set;
 		}
+		[Option('v', "View", Required = false, HelpText = "View type.", Default = "table")]
+		public string ViewType { get; set; }
+		[Option('d', "DestinationPath", Required = false, HelpText = "Path to results file.", Default = null)]
+		public string DestPath { get; set; }
 	}
 
 }
