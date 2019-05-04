@@ -29,13 +29,13 @@ namespace bpmcli
 			if (!string.IsNullOrEmpty(environment.Maintainer)) {
 				Maintainer = environment.Maintainer;
 			}
-            if (environment.Safe.HasValue)
-            {
-                Safe = environment.Safe;
-            }
-        }
+			if (environment.Safe.HasValue)
+			{
+				Safe = environment.Safe;
+			}
+		}
 
-        public bool? Safe { get; set; }
+		public bool? Safe { get; set; }
 	}
 
 	public class Settings
@@ -90,10 +90,10 @@ namespace bpmcli
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
-                if (userPath == null)
-                {
-                    userPath = "";
-                }
+				if (userPath == null)
+				{
+					userPath = "";
+				}
 				return Path.Combine(userPath, companyName?.Company, product?.Product);
 			}
 		}
@@ -134,16 +134,16 @@ namespace bpmcli
 			JsonSerializer serializer = new JsonSerializer() {
 				Formatting = Formatting.Indented
 			};
-            if (String.IsNullOrEmpty(environment))
-            {
-                streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
-                serializer.Serialize(streamWriter, _settings);
-            } else {
-                serializer.Serialize(streamWriter, _settings.Environments[environment]);
-            }
+			if (String.IsNullOrEmpty(environment))
+			{
+				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
+				serializer.Serialize(streamWriter, _settings);
+			} else {
+				serializer.Serialize(streamWriter, _settings.Environments[environment]);
+			}
 		}
 
-        internal EnvironmentSettings GetEnvironment(string name = null) {
+		internal EnvironmentSettings GetEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			if (string.IsNullOrEmpty(name)) {
 				environment = _settings.GetActiveEnviroment();
@@ -151,6 +151,11 @@ namespace bpmcli
 				environment = _settings.Environments[name];
 			}
 			return environment;
+		}
+
+		internal bool IsExistInEnvironment(string name)
+		{
+			return _settings.Environments.ContainsKey(name);
 		}
 
 		internal bool GetAutoupdate()
