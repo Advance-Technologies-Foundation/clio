@@ -576,6 +576,9 @@ namespace bpmcli
 				if (result == "[]") {
 					return string.Empty;
 				}
+				if (int.TryParse(result, out var count)) {
+					return $"({count} rows affected)";
+				}
 				var dataTable = JsonConvert.DeserializeObject<DataTable>(result);
 				var table = CreateConsoleTable(dataTable);
 				return table.ToString();
