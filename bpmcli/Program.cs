@@ -753,28 +753,34 @@ namespace bpmcli
 			return result;
 		}
 
-		private static void DeleteAppById(string id) {
-			Console.WriteLine("Deleting...");
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UninstallAppUrl);
+		private static string ExecutePostRequest(string url, string requestData) {
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
 			request.Method = "POST";
 			request.CookieContainer = AuthCookie;
 			AddCsrfToken(request);
 			using (var requestStream = request.GetRequestStream()) {
 				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("\"" + id + "\"");
+					writer.Write($"{requestData}");
 				}
 			}
 			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			Console.WriteLine(responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
+			string responseFromServer = string.Empty;
+			using (WebResponse response = request.GetResponse()) {
+				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+				using (var dataStream = response.GetResponseStream()) {
+					using (StreamReader reader = new StreamReader(dataStream)) {
+						responseFromServer = reader.ReadToEnd();
+						Console.WriteLine(responseFromServer);
+					}
+				}
+			}
+			return responseFromServer;
+		}
+
+		private static void DeleteAppById(string id) {
+			Console.WriteLine("Deleting...");
+			string deleteRequestData = "\"" + id + "\"";
+			ExecutePostRequest(UninstallAppUrl, deleteRequestData);
 			Console.WriteLine("Deleted.");
 		}
 
