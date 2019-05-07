@@ -323,31 +323,11 @@ namespace bpmcli
 		}
 
 		private static void UnloadAppDomain() {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UnloadAppDomainUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			request.ContentType = "application/json";
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{}");
-				}
-			}
-			request.GetResponse();
+			ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
 		private static void ClearRedisDbInternal() {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ClearRedisDbUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			request.ContentType = "application/json";
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{}");
-				}
-			}
-			request.GetResponse();
+			ExecutePostRequest(ClearRedisDbUrl, @"{}");
 		}
 
 		private static int ConfigureEnvironment(RegAppOptions options) {
@@ -587,26 +567,8 @@ namespace bpmcli
 		}
 
 		private static string ExecuteSqlScript(string script) {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ExecuteSqlScriptUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("{ \"script\":\"" + script + "\"}");
-				}
-			}
-			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			responseFromServer = CorrectJson(responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
-			return responseFromServer;
+			var scriptData = "{ \"script\":\"" + script + "\"}";
+			return ExecutePostRequest(ExecuteSqlScriptUrl, scriptData);
 		}
 
 		private static ConsoleTable CreateConsoleTable(DataTable dataTable) {
@@ -618,13 +580,6 @@ namespace bpmcli
 				table.AddRow(dataTable.Rows[i].ItemArray);
 			}
 			return table;
-		}
-
-		private static string CorrectJson(string body) {
-			body = body.Replace("\\r\\n", Environment.NewLine);
-			body = body.Replace("\\\"", "\"");
-			body = body.Trim(new Char[] {'\"'});
-			return body;
 		}
 
 		private static void UnZipPackages(string zipFilePath) {
@@ -719,41 +674,6 @@ namespace bpmcli
 
 		private static void DeletePackage(string code) {
 			DeleteAppById(code);
-		}
-
-		private static string GetAppId(string code) {
-			string result;
-			string query = "{\"rootSchemaName\":\"SysInstalledApp\",\"operationType\":0,\"filters\":{\"items\":{\"4eacef8f-252a-4054-9711-ded84c911dc7\":{\"items\":{\"CustomFilters\":{\"items\":{\"customFilterCode_SysInstalledApp\":{\"filterType\":1,\"comparisonType\":3,\"isEnabled\":true,\"trimDateTimeParameterToDate\":false,\"leftExpression\":{\"expressionType\":0,\"columnPath\":\"Code\"},\"rightExpression\":{\"expressionType\":2,\"parameter\":{\"dataValueType\":1,\"value\":\""
-						   + code + "\"}}}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6}},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6},\"columns\":{\"items\":{\"Id\":{\"caption\":\"\",\"orderDirection\":0,\"orderPosition\":-1,\"isVisible\":true,\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}},\"isDistinct\":false,\"rowCount\":30,\"rowsOffset\":0,\"isPageable\":true,\"allColumns\":false,\"useLocalization\":true,\"useRecordDeactivation\":false,\"serverESQCacheParameters\":{\"cacheLevel\":0,\"cacheGroup\":\"\",\"cacheItemName\":\"\"},\"queryOptimize\":false,\"useMetrics\":false,\"querySource\":0,\"ignoreDisplayValues\":false,\"conditionalValues\":null,\"isHierarchical\":false}";
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(SelectQueryUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(query);
-				}
-			}
-			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			Regex regex = new Regex("\"Id\":\"(.+?)\"");
-			Match match = regex.Match(responseFromServer);
-			if (match.Success) {
-				result = match.Groups[1].Value;
-			} else {
-				const string message = "This code not exists.";
-				Console.WriteLine(message);
-				throw new Exception(message);
-			}
-			reader.Close();
-			dataStream.Close();
-			response.Close();
-			return result;
 		}
 
 		private static string ExecutePostRequest(string url, string requestData) {
