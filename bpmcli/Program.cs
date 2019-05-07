@@ -117,7 +117,6 @@ namespace bpmcli
 			try {
 				Configure(options);
 				Login();
-				var url = "http://localhost/bpmcligate.gz";
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
 				string packageFilePath = Path.Combine(dir, "bpmcligate", "bpmcligate.gz");
 				InstallPackage(packageFilePath);
