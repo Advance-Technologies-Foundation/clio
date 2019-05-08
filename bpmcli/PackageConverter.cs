@@ -1,13 +1,10 @@
-﻿using CommandLine;
-using CommandLine.Text;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Json;
 using System.Linq;
-using static System.Net.WebRequestMethods;
 using File = System.IO.File;
 
 namespace bpmcli
