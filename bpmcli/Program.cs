@@ -26,12 +26,11 @@ namespace bpmcli
 		}
 	}
 
-	class Program
-	{
+	class Program {
 		private static string _userName;
 		private static string _userPassword;
 		private static string _url; // Необходимо получить из конфига
-		private static string LoginUrl => _url + @"/ServiceModel/AuthService.svc/Login";
+
 		private static string ExecutorUrl => _url + @"/0/IDE/ExecuteScript";
 		private static string UnloadAppDomainUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 		private static string DownloadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
@@ -43,12 +42,15 @@ namespace bpmcli
 		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
 		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
-		private static string PingUrl => _url + @"/0/ping";
+
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
 		private static string ExecuteSqlScriptUrl => _url + @"/0/rest/BpmcliApiGateway/ExecuteSqlScript";
 		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
 
-		public static CookieContainer AuthCookie = new CookieContainer();
+		private static BpmonlineClient BpmonlineClient {
+			get => new BpmonlineClient(_url, _userName, _userPassword);
+		}
+
 
 		private static string CurrentProj =>
 			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
@@ -84,8 +86,6 @@ namespace bpmcli
 			}
 		}
 
-
-
 		private static int UpdateCli() {
 			try {
 				var url = GetLastReleaseUrl();
@@ -116,7 +116,6 @@ namespace bpmcli
 		private static int UpdateGate(EnvironmentOptions options) {
 			try {
 				Configure(options);
-				Login();
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
 				string packageFilePath = Path.Combine(dir, "bpmcligate", "bpmcligate.gz");
 				InstallPackage(packageFilePath);
@@ -183,40 +182,10 @@ namespace bpmcli
 
 		public static void SetupAppConnection(EnvironmentOptions options) {
 			Configure(options);
-			PingApp();
-			Login();
 			CheckApiVersion();
 		}
 
-		public static void Login() {
-			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
-			authRequest.Method = "POST";
-			authRequest.ContentType = "application/json";
-			authRequest.CookieContainer = AuthCookie;
-			using (var requestStream = authRequest.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{
-						""UserName"":""" + _userName + @""",
-						""UserPassword"":""" + _userPassword + @"""
-					}");
-				}
-			}
-			using (var response = (HttpWebResponse)authRequest.GetResponse()) {
-				if (response.StatusCode == HttpStatusCode.OK) {
-					using (var reader = new StreamReader(response.GetResponseStream())) {
-						var responseMessage = reader.ReadToEnd();
-						if (responseMessage.Contains("\"Code\":1")) {
-							throw new UnauthorizedAccessException($"Unauthotized {_userName} for {_url}");
-						}
-					}
 
-					string authName = ".ASPXAUTH";
-					string headerCookies = response.Headers["Set-Cookie"];
-					string authCookeValue = GetCookieValueByName(headerCookies, authName);
-					AuthCookie.Add(new Uri(_url), new Cookie(authName, authCookeValue));
-				}
-			}
-		}
 
 		public static void CheckApiVersion() {
 			var dir = AppDomain.CurrentDomain.BaseDirectory;
@@ -232,60 +201,12 @@ namespace bpmcli
 			}
 		}
 
-		private static void PingApp() {
-			var pingRequest = HttpWebRequest.Create(PingUrl) as HttpWebRequest;
-			pingRequest.Method = "POST";
-			pingRequest.ContentType = "application/json";
-			pingRequest.CookieContainer = AuthCookie;
-			pingRequest.Timeout = 60000;
-			using (var requestStream = pingRequest.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{}");
-				}
-			}
-			try {
-				using (var response = (HttpWebResponse)pingRequest.GetResponse()) {
-				}
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				throw;
-			}
-		}
-
-		private static string GetCookieValueByName(string headerCookies, string name) {
-			string tokens = headerCookies.Replace("HttpOnly,", string.Empty);
-			string[] cookies = tokens.Split(';');
-			foreach (var cookie in cookies) {
-				if (cookie.Contains(name)) {
-					return cookie.Split('=')[1];
-				}
-			}
-			return string.Empty;
-		}
-
-		private static void AddCsrfToken(HttpWebRequest request) {
-			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(_url))["BPMCSRF"];
-			if (bpmcsrf != null) {
-				request.Headers.Add("BPMCSRF", bpmcsrf.Value);
-			}
-		}
-
+	
 		private static Version GetAppApiVersion() {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ApiVersionUrl);
-			request.Method = "GET";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			request.ContentType = "application/json";
 			var apiVersion = new Version("0.0.0.0");
-			;
 			try {
-				using (var response = (HttpWebResponse)request.GetResponse()) {
-					using (var dataStream = response.GetResponseStream()) {
-						StreamReader reader = new StreamReader(dataStream);
-						string appVersionResponse = reader.ReadToEnd().Trim('"');
-						apiVersion = new Version(appVersionResponse);
-					}
-				}
+				string appVersionResponse = BpmonlineClient.ExecuteGetRequest(ApiVersionUrl).Trim('"');
+				apiVersion = new Version(appVersionResponse);
 			} catch (Exception) {
 			}
 			return apiVersion;
@@ -296,37 +217,17 @@ namespace bpmcli
 			string executorType = options.ExecutorType;
 			var fileContent = File.ReadAllBytes(filePath);
 			string body = Convert.ToBase64String(fileContent);
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(ExecutorUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{
-						""Body"":""" + body + @""",
-						""LibraryType"":""" + executorType + @"""
-					}");
-				}
-			}
-			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
+			string requestData = @"{""Body"":""" + body + @""",""LibraryType"":""" + executorType + @"""}";
+			var responseFromServer = BpmonlineClient.ExecutePostRequest(ExecutorUrl, requestData);
 			Console.WriteLine(responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
 		}
 
 		private static void UnloadAppDomain() {
-			ExecutePostRequest(UnloadAppDomainUrl, @"{}");
+			BpmonlineClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
 		private static void ClearRedisDbInternal() {
-			ExecutePostRequest(ClearRedisDbUrl, @"{}");
+			BpmonlineClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
 		}
 
 		private static int ConfigureEnvironment(RegAppOptions options) {
@@ -352,7 +253,7 @@ namespace bpmcli
 				Console.WriteLine();
 				Configure(options);
 				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
-				Login();
+				BpmonlineClient.Login();
 				Console.WriteLine($"Login done");
 				return 0;
 			} catch (Exception e) {
@@ -386,49 +287,15 @@ namespace bpmcli
 		}
 
 		private static void DownloadPackages(string packageName) {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(DownloadPackageUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("[\"" + packageName + "\"]");
-				}
-			}
-			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			//Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
+			string requestData = "[\"" + packageName + "\"]";
+			string responseFromServer = BpmonlineClient.ExecutePostRequest(DownloadPackageUrl, requestData);
 			Console.WriteLine(packageName + " - " + responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
 		}
 
 		private static void UploadPackages(string packageName) {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UploadPackageUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("[\"" + packageName + "\"]");
-				}
-			}
-			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			//Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
+			string requestData = "[\"" + packageName + "\"]";
+			string responseFromServer = BpmonlineClient.ExecutePostRequest(UploadPackageUrl, requestData);
 			Console.WriteLine(packageName + " - " + responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
 		}
 
 		private static void CompressionProjects(string sourcePath, string destinationPath, IEnumerable<string> names) {
@@ -494,31 +361,15 @@ namespace bpmcli
 		}
 
 		private static void DownloadZipPackagesInternal(string packageName, string destinationPath) {
-			Console.WriteLine("Start download packages ({0}).", packageName);
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(GetZipPackageUrl);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("[" + packageNames + "]");
-				}
-			}
-			request.ContentType = "application/json";
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			dataStream = response.GetResponseStream();
-			if (dataStream != null) {
-				var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write);
-				dataStream.CopyTo(fileStream);
-				fileStream.Dispose();
-				dataStream.Close();
+			try {
+				Console.WriteLine("Start download packages ({0}).", packageName);
+				var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
+				string requestData = "[" + packageNames + "]";
+				BpmonlineClient.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
-			} else {
+			} catch (Exception e) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
 			}
-			response.Close();
 		}
 
 		private static int ExecuteSqlScript(ExecuteSqlScriptOptions opts) {
@@ -565,9 +416,17 @@ namespace bpmcli
 			return result;
 		}
 
+		private static string CorrectJson(string body) {
+			body = body.Replace("\\r\\n", Environment.NewLine);
+			body = body.Replace("\\\"", "\"");
+			body = body.Trim(new Char[] { '\"' });
+			return body;
+		}
+
 		private static string ExecuteSqlScript(string script) {
 			var scriptData = "{ \"script\":\"" + script + "\"}";
-			return ExecutePostRequest(ExecuteSqlScriptUrl, scriptData);
+			string responseFormServer = BpmonlineClient.ExecutePostRequest(ExecuteSqlScriptUrl, scriptData);
+			return CorrectJson(responseFormServer);
 		}
 
 		private static ConsoleTable CreateConsoleTable(DataTable dataTable) {
@@ -639,35 +498,12 @@ namespace bpmcli
 				Console.WriteLine(e.Message);
 				return e.Message;
 			}
-			Console.WriteLine("Installing...");
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(InstallUrl);
-			request.Timeout = 1800000;
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			request.ContentType = "application/json";
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write("\"" + fileName + "\"");
-				}
-			}
-			try {
-				using (WebResponse response = request.GetResponse()) {
-					Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-					using (var dataStream = response.GetResponseStream()) {
-						using (StreamReader reader = new StreamReader(dataStream)) {
-							string responseFromServer = reader.ReadToEnd();
-							Console.WriteLine(responseFromServer);
-						}
-					}
-					Console.WriteLine("Installed");
-				}
-			} catch (Exception) {
-				Console.WriteLine("Not installed");
-			}
+			Console.WriteLine($"Install {fileName} ...");
+			var installResponse = BpmonlineClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"");
+			Console.WriteLine(installResponse);
 			var logText = GetLog();
-			Console.WriteLine("Installation log");
-			Console.WriteLine($"{logText}");
+			Console.WriteLine("Installation log:");
+			Console.WriteLine(logText);
 			return logText;
 		}
 
@@ -675,34 +511,10 @@ namespace bpmcli
 			DeleteAppById(code);
 		}
 
-		private static string ExecutePostRequest(string url, string requestData) {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-			request.Method = "POST";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write($"{requestData}");
-				}
-			}
-			request.ContentType = "application/json";
-			string responseFromServer = string.Empty;
-			using (WebResponse response = request.GetResponse()) {
-				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-				using (var dataStream = response.GetResponseStream()) {
-					using (StreamReader reader = new StreamReader(dataStream)) {
-						responseFromServer = reader.ReadToEnd();
-						Console.WriteLine(responseFromServer);
-					}
-				}
-			}
-			return responseFromServer;
-		}
-
 		private static void DeleteAppById(string id) {
 			Console.WriteLine("Deleting...");
 			string deleteRequestData = "\"" + id + "\"";
-			ExecutePostRequest(UninstallAppUrl, deleteRequestData);
+			BpmonlineClient.ExecutePostRequest(UninstallAppUrl, deleteRequestData);
 			Console.WriteLine("Deleted.");
 		}
 
@@ -710,56 +522,13 @@ namespace bpmcli
 			Console.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string fileName = fileInfo.Name;
-			string boundary = DateTime.Now.Ticks.ToString("x");
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(UploadUrl);
-			request.ContentType = "multipart/form-data; boundary=" + boundary;
-			request.Method = "POST";
-			request.KeepAlive = true;
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			Stream memStream = new MemoryStream();
-			var boundarybytes = Encoding.ASCII.GetBytes("\r\n--" + boundary + "\r\n");
-			var endBoundaryBytes = Encoding.ASCII.GetBytes("\r\n--" + boundary + "--");
-			string headerTemplate =
-				"Content-Disposition: form-data; name=\"{0}\"; filename=\"{1}\"\r\n" +
-				"Content-Type: application/octet-stream\r\n\r\n";
-			memStream.Write(boundarybytes, 0, boundarybytes.Length);
-			var header = string.Format(headerTemplate, "files", fileName);
-			var headerbytes = Encoding.UTF8.GetBytes(header);
-			memStream.Write(headerbytes, 0, headerbytes.Length);
-			using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read)) {
-				var buffer = new byte[1024];
-				var bytesRead = 0;
-				while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) != 0) {
-					memStream.Write(buffer, 0, bytesRead);
-				}
-			}
-			memStream.Write(endBoundaryBytes, 0, endBoundaryBytes.Length);
-			request.ContentLength = memStream.Length;
-			using (Stream requestStream = request.GetRequestStream()) {
-				memStream.Position = 0;
-				byte[] tempBuffer = new byte[memStream.Length];
-				memStream.Read(tempBuffer, 0, tempBuffer.Length);
-				memStream.Close();
-				requestStream.Write(tempBuffer, 0, tempBuffer.Length);
-			}
-			Stream dataStream;
-			WebResponse response = request.GetResponse();
-			Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-			dataStream = response.GetResponseStream();
-			StreamReader reader = new StreamReader(dataStream);
-			string responseFromServer = reader.ReadToEnd();
-			Console.WriteLine(responseFromServer);
-			reader.Close();
-			dataStream.Close();
-			response.Close();
+			BpmonlineClient.UploadFile(UploadUrl, filePath);
 			Console.WriteLine("Uploaded");
 			return fileName;
 		}
 
 		private static int Execute(ExecuteAssemblyOptions options) {
 			Configure(options);
-			Login();
 			ExecuteScript(options);
 			return 0;
 		}
@@ -877,22 +646,7 @@ namespace bpmcli
 		}
 
 		private static string GetLog() {
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(LogUrl);
-			request.Timeout = 100000;
-			request.Method = "GET";
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			request.ContentType = "application/json";
-			string logText;
-			using (WebResponse response = request.GetResponse()) {
-				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-				using (var dataStream = response.GetResponseStream()) {
-					using (StreamReader reader = new StreamReader(dataStream)) {
-						logText = reader.ReadToEnd();
-					}
-				}
-			}
-			return logText;
+			return BpmonlineClient.ExecuteGetRequest(LogUrl);
 		}
 
 		private static void SaveLogFile(string logText, string reportPath) {
