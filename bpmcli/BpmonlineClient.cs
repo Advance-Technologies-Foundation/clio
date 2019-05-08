@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -8,19 +7,59 @@ namespace bpmcli
 {
 	public class BpmonlineClient
 	{
+
+		#region Fields: private
+
+		private string _appUrl;
+
+		private string _userName;
+
+		private string _userPassword;
+
+		private string LoginUrl => _appUrl + @"/ServiceModel/AuthService.svc/Login";
+
+		private string PingUrl => _appUrl + @"/0/ping";
+
+		private CookieContainer AuthCookie = new CookieContainer();
+
+		#endregion
+
+		#region Methods: Public
+
 		public BpmonlineClient(string appUrl, string userName, string userPassword) {
 			_appUrl = appUrl;
 			_userName = userName;
 			_userPassword = userPassword;
 		}
 
-		private string _appUrl;
-		private string _userName;
-		private string _userPassword;
-		private string LoginUrl => _appUrl + @"/ServiceModel/AuthService.svc/Login";
-		private string PingUrl => _appUrl + @"/0/ping";
-
-		private CookieContainer AuthCookie = new CookieContainer();
+		public void Login() {
+			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
+			authRequest.Method = "POST";
+			authRequest.ContentType = "application/json";
+			authRequest.CookieContainer = AuthCookie;
+			using (var requestStream = authRequest.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write(@"{
+						""UserName"":""" + _userName + @""",
+						""UserPassword"":""" + _userPassword + @"""
+					}");
+				}
+			}
+			using (var response = (HttpWebResponse)authRequest.GetResponse()) {
+				if (response.StatusCode == HttpStatusCode.OK) {
+					using (var reader = new StreamReader(response.GetResponseStream())) {
+						var responseMessage = reader.ReadToEnd();
+						if (responseMessage.Contains("\"Code\":1")) {
+							throw new UnauthorizedAccessException($"Unauthotized {_userName} for {_appUrl}");
+						}
+					}
+					string authName = ".ASPXAUTH";
+					string headerCookies = response.Headers["Set-Cookie"];
+					string authCookeValue = GetCookieValueByName(headerCookies, authName);
+					AuthCookie.Add(new Uri(_appUrl), new Cookie(authName, authCookeValue));
+				}
+			}
+		}
 
 		public string ExecuteGetRequest(string url) {
 			HttpWebRequest request = CreateRequest(url);
@@ -56,88 +95,6 @@ namespace bpmcli
 			return responseFromServer;
 		}
 
-		private void AddCsrfToken(HttpWebRequest request) {
-			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(_appUrl))["BPMCSRF"];
-			if (bpmcsrf != null) {
-				request.Headers.Add("BPMCSRF", bpmcsrf.Value);
-			}
-		}
-
-		public void Login() {
-			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
-			authRequest.Method = "POST";
-			authRequest.ContentType = "application/json";
-			authRequest.CookieContainer = AuthCookie;
-			using (var requestStream = authRequest.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{
-						""UserName"":""" + _userName + @""",
-						""UserPassword"":""" + _userPassword + @"""
-					}");
-				}
-			}
-			using (var response = (HttpWebResponse)authRequest.GetResponse()) {
-				if (response.StatusCode == HttpStatusCode.OK) {
-					using (var reader = new StreamReader(response.GetResponseStream())) {
-						var responseMessage = reader.ReadToEnd();
-						if (responseMessage.Contains("\"Code\":1")) {
-							throw new UnauthorizedAccessException($"Unauthotized {_userName} for {_appUrl}");
-						}
-					}
-
-					string authName = ".ASPXAUTH";
-					string headerCookies = response.Headers["Set-Cookie"];
-					string authCookeValue = GetCookieValueByName(headerCookies, authName);
-					AuthCookie.Add(new Uri(_appUrl), new Cookie(authName, authCookeValue));
-				}
-			}
-		}
-
-		private string GetCookieValueByName(string headerCookies, string name) {
-			string tokens = headerCookies.Replace("HttpOnly,", string.Empty);
-			string[] cookies = tokens.Split(';');
-			foreach (var cookie in cookies) {
-				if (cookie.Contains(name)) {
-					return cookie.Split('=')[1];
-				}
-			}
-			return string.Empty;
-		}
-
-		private void PingApp() {
-			var pingRequest = CreateRequest(PingUrl);
-			pingRequest.Timeout = 60000;
-			using (var requestStream = pingRequest.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{}");
-				}
-			}
-			try {
-				using (var response = (HttpWebResponse)pingRequest.GetResponse()) {
-				}
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				throw;
-			}
-		}
-
-		private void InitConnection() {
-			if (AuthCookie.Count == 0) {
-				Login();
-				PingApp();
-			}
-		}
-
-		private HttpWebRequest CreateRequest(string url) {
-			InitConnection();
-			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-			request.ContentType = "application/json";
-			request.Method = "POST";
-			request.KeepAlive = true;
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
-			return request;
-		}
 
 		public string UploadFile(string url, string filePath) {
 			FileInfo fileInfo = new FileInfo(filePath);
@@ -202,6 +159,65 @@ namespace bpmcli
 				}
 			}
 		}
+
+		#endregion
+
+		#region Methods: private
+
+		private void InitConnection() {
+			if (AuthCookie.Count == 0) {
+				Login();
+				PingApp();
+			}
+		}
+
+		private void AddCsrfToken(HttpWebRequest request) {
+			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(_appUrl))["BPMCSRF"];
+			if (bpmcsrf != null) {
+				request.Headers.Add("BPMCSRF", bpmcsrf.Value);
+			}
+		}
+
+		private string GetCookieValueByName(string headerCookies, string name) {
+			string tokens = headerCookies.Replace("HttpOnly,", string.Empty);
+			string[] cookies = tokens.Split(';');
+			foreach (var cookie in cookies) {
+				if (cookie.Contains(name)) {
+					return cookie.Split('=')[1];
+				}
+			}
+			return string.Empty;
+		}
+
+		private void PingApp() {
+			var pingRequest = CreateRequest(PingUrl);
+			pingRequest.Timeout = 60000;
+			using (var requestStream = pingRequest.GetRequestStream()) {
+				using (var writer = new StreamWriter(requestStream)) {
+					writer.Write(@"{}");
+				}
+			}
+			try {
+				using (var response = (HttpWebResponse)pingRequest.GetResponse()) {
+				}
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				throw;
+			}
+		}
+
+		private HttpWebRequest CreateRequest(string url) {
+			InitConnection();
+			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+			request.ContentType = "application/json";
+			request.Method = "POST";
+			request.KeepAlive = true;
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			return request;
+		}
+
+		#endregion
 
 	}
 }
