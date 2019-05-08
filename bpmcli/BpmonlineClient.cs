@@ -45,7 +45,6 @@ namespace bpmcli
 					writer.Write($"{requestData}");
 				}
 			}
-			request.ContentType = "application/json";
 			string responseFromServer = string.Empty;
 			using (WebResponse response = request.GetResponse()) {
 				using (var dataStream = response.GetResponseStream()) {
