@@ -1,8 +1,7 @@
 {
   "profiles": {
     "bpmcli": {
-      "commandName": "Project",
-      "commandLineArgs": "update-gate"
+      "commandName": "Project"
     }
   }
 }
