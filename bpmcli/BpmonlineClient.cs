@@ -95,7 +95,6 @@ namespace bpmcli
 			return responseFromServer;
 		}
 
-
 		public string UploadFile(string url, string filePath) {
 			FileInfo fileInfo = new FileInfo(filePath);
 			string fileName = fileInfo.Name;
