@@ -65,15 +65,7 @@ namespace bpmcli
 			HttpWebRequest request = CreateRequest(url);
 			request.Timeout = 100000;
 			request.Method = "GET";
-			string responseFromServer;
-			using (WebResponse response = request.GetResponse()) {
-				using (var dataStream = response.GetResponseStream()) {
-					using (StreamReader reader = new StreamReader(dataStream)) {
-						responseFromServer = reader.ReadToEnd();
-					}
-				}
-			}
-			return responseFromServer;
+			return request.GetServiceResponse();
 		}
 
 		public string ExecutePostRequest(string url, string requestData) {
@@ -83,15 +75,7 @@ namespace bpmcli
 					writer.Write($"{requestData}");
 				}
 			}
-			string responseFromServer = string.Empty;
-			using (WebResponse response = request.GetResponse()) {
-				using (var dataStream = response.GetResponseStream()) {
-					using (StreamReader reader = new StreamReader(dataStream)) {
-						responseFromServer = reader.ReadToEnd();
-					}
-				}
-			}
-			return responseFromServer;
+			return request.GetServiceResponse();
 		}
 
 		public string UploadFile(string url, string filePath) {
@@ -126,16 +110,7 @@ namespace bpmcli
 				memStream.Close();
 				requestStream.Write(tempBuffer, 0, tempBuffer.Length);
 			}
-			string responseFromServer;
-			using (WebResponse response = request.GetResponse()) {
-				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-				using (var dataStream = response.GetResponseStream()) {
-					using (StreamReader reader = new StreamReader(dataStream)) {
-						responseFromServer = reader.ReadToEnd();
-						}
-				}
-			}
-			return responseFromServer;
+			return request.GetServiceResponse();
 		}
 
 		public void DownloadFile(string url, string filePath, string requestData) {
@@ -215,5 +190,18 @@ namespace bpmcli
 
 		#endregion
 
+	}
+
+	public static class ATFWebRequestExtension
+	{
+		public static string GetServiceResponse(this HttpWebRequest request) {
+			using (WebResponse response = request.GetResponse()) {
+				using (var dataStream = response.GetResponseStream()) {
+					using (StreamReader reader = new StreamReader(dataStream)) {
+						return reader.ReadToEnd();
+					}
+				}
+			}
+		}
 	}
 }
