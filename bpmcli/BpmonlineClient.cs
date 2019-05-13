@@ -67,7 +67,6 @@ namespace bpmcli
 			request.Method = "GET";
 			string responseFromServer;
 			using (WebResponse response = request.GetResponse()) {
-				Console.WriteLine(((HttpWebResponse)response).StatusDescription);
 				using (var dataStream = response.GetResponseStream()) {
 					using (StreamReader reader = new StreamReader(dataStream)) {
 						responseFromServer = reader.ReadToEnd();
@@ -133,9 +132,7 @@ namespace bpmcli
 				using (var dataStream = response.GetResponseStream()) {
 					using (StreamReader reader = new StreamReader(dataStream)) {
 						responseFromServer = reader.ReadToEnd();
-						Console.WriteLine(responseFromServer);
-						reader.Close();
-					}
+						}
 				}
 			}
 			return responseFromServer;
