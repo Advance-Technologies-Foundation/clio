@@ -47,6 +47,8 @@ namespace bpmcli
 		private static string ExecuteSqlScriptUrl => _url + @"/0/rest/BpmcliApiGateway/ExecuteSqlScript";
 		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
 
+		private const string DefLogFileName = "bpmclilog.txt";
+
 		private static BpmonlineClient BpmonlineClient {
 			get => new BpmonlineClient(_url, _userName, _userPassword);
 		}
@@ -652,6 +654,9 @@ namespace bpmcli
 		private static void SaveLogFile(string logText, string reportPath) {
 			if (File.Exists(reportPath)) {
 				File.Delete(reportPath);
+				File.WriteAllText(reportPath, logText, Encoding.UTF8);
+			} else if (Directory.Exists(reportPath)) {
+				reportPath = Path.Combine(reportPath, DefLogFileName);
 			}
 			File.WriteAllText(reportPath, logText, Encoding.UTF8);
 		}
