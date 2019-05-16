@@ -39,7 +39,7 @@ namespace bpmcli
 		private static string InstallUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/InstallPackage";
 		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
-		private static string UninstallAppUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
+		private static string DeletePackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
 		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
@@ -510,13 +510,9 @@ namespace bpmcli
 		}
 
 		private static void DeletePackage(string code) {
-			DeleteAppById(code);
-		}
-
-		private static void DeleteAppById(string id) {
 			Console.WriteLine("Deleting...");
-			string deleteRequestData = "\"" + id + "\"";
-			BpmonlineClient.ExecutePostRequest(UninstallAppUrl, deleteRequestData);
+			string deleteRequestData = "\"" + code + "\"";
+			BpmonlineClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData);
 			Console.WriteLine("Deleted.");
 		}
 
