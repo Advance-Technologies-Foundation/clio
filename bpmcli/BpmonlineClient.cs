@@ -50,7 +50,7 @@ namespace bpmcli
 					using (var reader = new StreamReader(response.GetResponseStream())) {
 						var responseMessage = reader.ReadToEnd();
 						if (responseMessage.Contains("\"Code\":1")) {
-							throw new UnauthorizedAccessException($"Unauthotized {_userName} for {_appUrl}");
+							throw new UnauthorizedAccessException($"Unauthorized {_userName} for {_appUrl}");
 						}
 					}
 					string authName = ".ASPXAUTH";
