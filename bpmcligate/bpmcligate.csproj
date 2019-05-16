@@ -127,6 +127,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Files\cs\BpmcliApiGateway.cs" />
+    <Compile Include="Files\cs\EntitySchemaRepository.cs" />
     <Compile Include="Files\cs\SQLFunctions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

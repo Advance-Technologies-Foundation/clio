@@ -33,6 +33,18 @@ namespace bpmcligate.Files.cs
 			var version = typeof(BpmcliApiGateway).Assembly.GetName().Version;
 			return version.ToString();
 		}
+
+		[OperationContract]
+		[WebInvoke(Method = "GET", UriTemplate = "GetEntitySchemaModels", RequestFormat = WebMessageFormat.Json,
+			ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.WrappedRequest)]
+		public Dictionary<string, string> GetEntitySchemaModels(string entitySchema) {
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				var generator = new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
+				return generator.Generate(entitySchema);
+			} else {
+				throw new Exception("You don`n have permission for operation CanManageSolution");
+			}
+		}
 	}
 }
 
