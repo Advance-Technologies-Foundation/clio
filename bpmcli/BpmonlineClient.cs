@@ -20,7 +20,7 @@ namespace bpmcli
 
 		private string PingUrl => _appUrl + @"/0/ping";
 
-		private CookieContainer AuthCookie = new CookieContainer();
+		private CookieContainer AuthCookie;
 
 		#endregion
 
@@ -33,19 +33,14 @@ namespace bpmcli
 		}
 
 		public void Login() {
-			var authRequest = HttpWebRequest.Create(LoginUrl) as HttpWebRequest;
-			authRequest.Method = "POST";
-			authRequest.ContentType = "application/json";
-			authRequest.CookieContainer = AuthCookie;
-			using (var requestStream = authRequest.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{
-						""UserName"":""" + _userName + @""",
-						""UserPassword"":""" + _userPassword + @"""
-					}");
-				}
-			}
-			using (var response = (HttpWebResponse)authRequest.GetResponse()) {
+			var authData = @"{
+				""UserName"":""" + _userName + @""",
+				""UserPassword"":""" + _userPassword + @"""
+			}";
+			var request = CreateRequest(LoginUrl, authData);
+			AuthCookie = new CookieContainer();
+			request.CookieContainer = AuthCookie;
+			using (var response = (HttpWebResponse)request.GetResponse()) {
 				if (response.StatusCode == HttpStatusCode.OK) {
 					using (var reader = new StreamReader(response.GetResponseStream())) {
 						var responseMessage = reader.ReadToEnd();
@@ -62,19 +57,13 @@ namespace bpmcli
 		}
 
 		public string ExecuteGetRequest(string url) {
-			HttpWebRequest request = CreateRequest(url);
-			request.Timeout = 100000;
+			HttpWebRequest request = CreateBpmonlineRequest(url);
 			request.Method = "GET";
 			return request.GetServiceResponse();
 		}
 
 		public string ExecutePostRequest(string url, string requestData) {
-			HttpWebRequest request = CreateRequest(url);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write($"{requestData}");
-				}
-			}
+			HttpWebRequest request = CreateBpmonlineRequest(url, requestData);
 			return request.GetServiceResponse();
 		}
 
@@ -82,7 +71,7 @@ namespace bpmcli
 			FileInfo fileInfo = new FileInfo(filePath);
 			string fileName = fileInfo.Name;
 			string boundary = DateTime.Now.Ticks.ToString("x");
-			HttpWebRequest request = CreateRequest(url);
+			HttpWebRequest request = CreateBpmonlineRequest(url);
 			request.ContentType = "multipart/form-data; boundary=" + boundary;
 			Stream memStream = new MemoryStream();
 			var boundarybytes = Encoding.ASCII.GetBytes("\r\n--" + boundary + "\r\n");
@@ -114,33 +103,13 @@ namespace bpmcli
 		}
 
 		public void DownloadFile(string url, string filePath, string requestData) {
-			HttpWebRequest request = CreateRequest(url);
-			using (var requestStream = request.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(requestData);
-				}
-			}
-			using (WebResponse response = request.GetResponse()) {
-				using (var dataStream = response.GetResponseStream()) {
-					if (dataStream != null) {
-						using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write)) {
-							dataStream.CopyTo(fileStream);
-						}
-					}
-				}
-			}
+			HttpWebRequest request = CreateBpmonlineRequest(url, requestData);
+			request.SaveToFile(filePath);
 		}
 
 		#endregion
 
 		#region Methods: private
-
-		private void InitConnection() {
-			if (AuthCookie.Count == 0) {
-				Login();
-				PingApp();
-			}
-		}
 
 		private void AddCsrfToken(HttpWebRequest request) {
 			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(_appUrl))["BPMCSRF"];
@@ -161,30 +130,35 @@ namespace bpmcli
 		}
 
 		private void PingApp() {
-			var pingRequest = CreateRequest(PingUrl);
+			var pingRequest = CreateBpmonlineRequest(PingUrl);
 			pingRequest.Timeout = 60000;
-			using (var requestStream = pingRequest.GetRequestStream()) {
-				using (var writer = new StreamWriter(requestStream)) {
-					writer.Write(@"{}");
-				}
-			}
-			try {
-				using (var response = (HttpWebResponse)pingRequest.GetResponse()) {
-				}
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				throw;
-			}
+			_ = pingRequest.GetServiceResponse();
 		}
 
-		private HttpWebRequest CreateRequest(string url) {
-			InitConnection();
+		private HttpWebRequest CreateBpmonlineRequest(string url, string requestData = null) {
+			if (AuthCookie == null) {
+				Login();
+				PingApp();
+			}
+			var request = CreateRequest(url, requestData);
+			request.CookieContainer = AuthCookie;
+			AddCsrfToken(request);
+			return request;
+		}
+
+		private HttpWebRequest CreateRequest(string url, string requestData = null) {
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
 			request.ContentType = "application/json";
 			request.Method = "POST";
+			request.Timeout = 100000;
 			request.KeepAlive = true;
-			request.CookieContainer = AuthCookie;
-			AddCsrfToken(request);
+			if (!string.IsNullOrEmpty(requestData)) {
+				using (var requestStream = request.GetRequestStream()) {
+					using (var writer = new StreamWriter(requestStream)) {
+						writer.Write(requestData);
+					}
+				}
+			}
 			return request;
 		}
 
@@ -199,6 +173,18 @@ namespace bpmcli
 				using (var dataStream = response.GetResponseStream()) {
 					using (StreamReader reader = new StreamReader(dataStream)) {
 						return reader.ReadToEnd();
+					}
+				}
+			}
+		}
+
+		public static void SaveToFile(this HttpWebRequest request, string filePath) {
+			using (WebResponse response = request.GetResponse()) {
+				using (var dataStream = response.GetResponseStream()) {
+					if (dataStream != null) {
+						using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write)) {
+							dataStream.CopyTo(fileStream);
+						}
 					}
 				}
 			}
