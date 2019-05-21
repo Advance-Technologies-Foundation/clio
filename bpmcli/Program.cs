@@ -195,7 +195,7 @@ namespace bpmcli
 			var localApiVersion = new Version(File.ReadAllText(versionFilePath));
 			var appApiVersion = GetAppApiVersion();
 			if (appApiVersion == new Version("0.0.0.0")) {
-				MessageToConsole($"You app are not contains bpmcli api" +
+				MessageToConsole($"Your app does not contain bpmcli API." +
 				 $"{Environment.NewLine}You should consider install it via the \'bpmcli install-gate\' command.", ConsoleColor.DarkYellow);
 			} else if (localApiVersion > appApiVersion) {
 				MessageToConsole($"You are using bpmcli api version {appApiVersion}, however version {localApiVersion} is available." +
