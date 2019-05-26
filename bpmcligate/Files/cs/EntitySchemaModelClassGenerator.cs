@@ -47,8 +47,8 @@ namespace bpmcligate.Files.cs
 
 		private string GetSchemaClass(string entitySchemaName) {
 			var schema = entitySchemaManager.GetInstanceByName(entitySchemaName);
-			string classTemplate = File.ReadAllText(@"C:\Temp\class-template.cs"); //@"[Schema(""{0}"")]public class {0}: BaseModel{1}";
-			string columnTemplate = File.ReadAllText(@"C:\Temp\column-template.cs");//@"[SchemaProperty(""{0}"")"+Environment.NewLine+@"public {1} {0} {get;set;}";
+			string classTemplate = File.ReadAllText(@"C:\Temp\class-template.cs");
+			string columnTemplate = File.ReadAllText(@"C:\Temp\column-template.cs");
 			var columnsBuilder = new StringBuilder();
 			foreach (var column in schema.Columns) {
 				if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {
