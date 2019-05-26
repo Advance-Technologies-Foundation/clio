@@ -47,8 +47,9 @@ namespace bpmcligate.Files.cs
 
 		private string GetSchemaClass(string entitySchemaName) {
 			var schema = entitySchemaManager.GetInstanceByName(entitySchemaName);
-			string classTemplate = File.ReadAllText(@"C:\Temp\class-template.cs");
-			string columnTemplate = File.ReadAllText(@"C:\Temp\column-template.cs");
+			var tplFolder = System.Web.HttpRuntime.AppDomainAppPath + @"\Terrasoft.Configuration\Pkg\bpmcligate\Files\tpl";
+			string classTemplate = File.ReadAllText($"{tplFolder}\\class-template.tpl");
+			string columnTemplate = File.ReadAllText($"{tplFolder}\\column-template.tpl");
 			var columnsBuilder = new StringBuilder();
 			foreach (var column in schema.Columns) {
 				if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {
