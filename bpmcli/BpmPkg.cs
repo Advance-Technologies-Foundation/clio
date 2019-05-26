@@ -18,7 +18,7 @@ namespace bpmcli
 		public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
 		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
 
-		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources" };
+		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
 
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
@@ -117,21 +117,15 @@ namespace bpmcli
 		}
 
 		protected BpmPkg CreateAssemblyInfo() {
-			System.IO.Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
+			Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
 			var filePath = Path.Combine(FullPath, PropertiesDirName, AssemblyInfoName);
 			CreateFromTpl(AssemblyInfoTpl, filePath);
 			return this;
 		}
 
-		protected BpmPkg CreateEmptyClass() {
-			System.IO.Directory.CreateDirectory(Path.Combine(FullPath, $"Files{Path.DirectorySeparatorChar}cs"));
-			File.CreateText(Path.Combine(FullPath, $"Files{Path.DirectorySeparatorChar}cs", "EmptyClass.cs")).Dispose();
-			return this;
-		}
-
 		protected BpmPkg CreatePackageDirectories() {
 			foreach (var directory in _pkgDirectories) {
-				var dInfo = System.IO.Directory.CreateDirectory(Path.Combine(FullPath, directory));
+				var dInfo = Directory.CreateDirectory(Path.Combine(FullPath, directory));
 				AddPlaceholderFile(dInfo.FullName);
 			}
 			return this;
@@ -141,8 +135,7 @@ namespace bpmcli
 			CreatePkgDescriptor()
 				.CreateProj()
 				.CreatePackageConfig()
-				.CreateAssemblyInfo()
-				.CreateEmptyClass();
+				.CreateAssemblyInfo();
 			return this;
 		}
 

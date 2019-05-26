@@ -74,8 +74,10 @@ namespace bpmcli
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
+
 		[Option('d', "DestinationPath", Required = false)]
 		public string DestinationPath { get; set; }
+
 		[Option('p', "Packages", Required = false)]
 		public string Packages { get; set; }
 	}
@@ -89,30 +91,30 @@ namespace bpmcli
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
 
-        [Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
-        public string Safe { get; set; }
+		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
+		public string Safe { get; set; }
 
-        public bool? SafeValue {
-            get {
-                if (!String.IsNullOrEmpty(Safe))
-                {
-                    bool result;
-                    if (bool.TryParse(Safe, out result))
-                    {
-                        return result;
-                    }
-                }
-                return null;
-            }      
-        }
-    }
+		public bool? SafeValue
+		{
+			get
+			{
+				if (!String.IsNullOrEmpty(Safe)) {
+					bool result;
+					if (bool.TryParse(Safe, out result)) {
+						return result;
+					}
+				}
+				return null;
+			}
+		}
+	}
 
 	[Verb("show-web-app-list", Aliases = new string[] { "apps", "show-web-app", "app" }, HelpText = "Show the list of web applications and their settings")]
 	internal class AppListOptions
 	{
-        [Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
-        public string Name { get; set; }
-    }
+		[Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
+		public string Name { get; set; }
+	}
 
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]
 	internal class UnregAppOptions : EnvironmentOptions
@@ -126,6 +128,7 @@ namespace bpmcli
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
+
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
 	}
@@ -180,14 +183,11 @@ namespace bpmcli
 	{
 		[Option('p', "Path", Required = false,
 			HelpText = "Path to package directory", Default = null)]
-		public string Path {
-			get; set;
-		}
+		public string Path { get; set; }
+
 		[Value(0, MetaName = "<package names>", Required = false,
 			HelpText = "Name of the convert instance (or comma separated names)")]
-		public string Name {
-			get; set;
-		}
+		public string Name { get; set; }
 
 		[Usage(ApplicationAlias = "bpmcli")]
 		public static IEnumerable<Example> Examples =>
@@ -205,14 +205,11 @@ namespace bpmcli
 	internal class PullPkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
-		public string Name {
-			get; set;
-		}
+		public string Name { get; set; }
+
 		[Option('d', "DestinationPath", Required = false,
 			HelpText = "Path to the directory where Zip created.", Default = null)]
-		public string DestPath {
-			get; set;
-		}
+		public string DestPath { get; set; }
 	}
 
 	[Verb("update-cli", HelpText = "Update bpmcli to new available version")]
@@ -224,25 +221,34 @@ namespace bpmcli
 	internal class ExecuteSqlScriptOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
-		public string Script
-		{
-			get; set;
-		}
+		public string Script { get; set; }
+
 		[Option('f', "File", Required = false,
 			HelpText = "Path to the sql script file.", Default = null)]
-		public string File
-		{
-			get; set;
-		}
+		public string File { get; set; }
+
 		[Option('v', "View", Required = false, HelpText = "View type.", Default = "table")]
 		public string ViewType { get; set; }
+
 		[Option('d', "DestinationPath", Required = false, HelpText = "Path to results file.", Default = null)]
 		public string DestPath { get; set; }
 	}
 
-    [Verb("install-gate", Aliases = new string[] { "update-gate" }, HelpText = "Install bpmcli api gateway to application")]
-    internal class InstallGateOptions: EnvironmentOptions
-    {        
-    }
+	[Verb("install-gate", Aliases = new string[] { "update-gate" }, HelpText = "Install bpmcli api gateway to application")]
+	internal class InstallGateOptions : EnvironmentOptions
+	{
+	}
 
+	[Verb("get-model", Aliases = new string[] { "class" }, HelpText = "Generate model classes")]
+	internal class EntityModelOptions : EnvironmentOptions
+	{
+		[Value(0, MetaName = "Entity name", Required = true, HelpText = "Entity schema name")]
+		public string EntitySchemaName { get; set; }
+
+		[Option('d', "DestinationPath", Required = false, HelpText = "Path to source directory.", Default = null)]
+		public string DestionationPath { get; set; }
+
+		[Option('n', "Namespace", Required = false, HelpText = "Name space for model classes.", Default = null)]
+		public string Namespace { get; set; }
+	}
 }

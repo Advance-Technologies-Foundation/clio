@@ -47,7 +47,9 @@ namespace bpmcli
 		private static string ExecuteSqlScriptUrl => _url + @"/0/rest/BpmcliApiGateway/ExecuteSqlScript";
 		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
 
-		private const string DefLogFileName = "bpmclilog.txt";
+		private static string DefLogFileName => "bpmclilog.txt";
+
+		private static string GetEntityModelsUrl => _url + @"/0/rest/BpmcliApiGateway/GetEntitySchemaModels/{0}";
 
 		private static BpmonlineClient BpmonlineClient {
 			get => new BpmonlineClient(_url, _userName, _userPassword);
@@ -369,7 +371,7 @@ namespace bpmcli
 				string requestData = "[" + packageNames + "]";
 				BpmonlineClient.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
-			} catch (Exception e) {
+			} catch (Exception) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
 			}
 		}
@@ -419,8 +421,11 @@ namespace bpmcli
 		}
 
 		private static string CorrectJson(string body) {
+			body = body.Replace("\\\\r\\\\n", Environment.NewLine);
 			body = body.Replace("\\r\\n", Environment.NewLine);
+			body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
 			body = body.Replace("\\\"", "\"");
+			body = body.Replace("\\\\", "\\");
 			body = body.Trim(new Char[] { '\"' });
 			return body;
 		}
@@ -666,7 +671,7 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, EntityModelOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -686,7 +691,61 @@ namespace bpmcli
 					(UpdateCliOptions opts) => UpdateCli(),
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
+					(EntityModelOptions opts) => GetModels(opts),
 					errs => 1);
+		}
+
+		private static int GetModels(EntityModelOptions opts) {
+			try {
+				SetupAppConnection(opts);
+				var models = GetClassModels(opts.EntitySchemaName);
+				var destPath = opts.DestionationPath ?? Environment.CurrentDirectory;
+				var rootNamespace = opts.Namespace;
+				var projFile = string.Empty;
+				if (string.IsNullOrEmpty(rootNamespace)) {
+					var curDir = Environment.CurrentDirectory;
+					projFile = Directory.GetFiles(curDir, "*.csproj").FirstOrDefault();
+					if (File.Exists(projFile)) {
+						Console.WriteLine($"Detected projFile {projFile}");
+						var fileText = File.ReadAllText(projFile);
+						int start = fileText.IndexOf("<RootNamespace>");
+						int end = fileText.IndexOf("</RootNamespace>");
+						if (end > start) {
+							rootNamespace = fileText.Substring(start + 15, end - start - 15);
+							Console.WriteLine($"Detected namespace {rootNamespace}");
+						}
+						if (string.IsNullOrEmpty(opts.DestionationPath)) {
+							destPath = $"{curDir}\\Files\\cs";
+						}
+					}
+
+				}
+				foreach (var model in models) {
+					Console.WriteLine($"Save {model.Key} class");
+					var classText = model.Value;
+					if (!string.IsNullOrEmpty(rootNamespace)) {
+						classText = classText.Replace("<RootNamespace>", rootNamespace);
+					}
+					File.WriteAllText($"{destPath}\\{model.Key}.cs", classText);
+				}
+				if (File.Exists(projFile)) {
+					File.AppendAllText(projFile, " ");
+					var content = File.ReadAllText(projFile);
+					File.WriteAllText(projFile, content.Substring(0, content.Length - 1));
+					Console.WriteLine($"Modified proj file {projFile}");
+				}
+				Console.WriteLine("Done");
+			} catch (Exception e) {
+				Console.WriteLine(e);
+			}
+			return 0;
+		}
+
+		private static Dictionary<string, string> GetClassModels(string entitySchemaName) {
+			var url = string.Format(GetEntityModelsUrl, entitySchemaName);
+			string responseFormServer = BpmonlineClient.ExecuteGetRequest(url);
+			var result = CorrectJson(responseFormServer);
+			return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 		}
 
 		private static int ConvertPackage(ConvertOptions opts) {

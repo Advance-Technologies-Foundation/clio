@@ -1,4 +1,5 @@
 ﻿using BpmcliGate.Functions.SQL;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -35,12 +36,12 @@ namespace bpmcligate.Files.cs
 		}
 
 		[OperationContract]
-		[WebInvoke(Method = "GET", UriTemplate = "GetEntitySchemaModels", RequestFormat = WebMessageFormat.Json,
-			ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.WrappedRequest)]
-		public Dictionary<string, string> GetEntitySchemaModels(string entitySchema) {
+		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}", ResponseFormat = WebMessageFormat.Json, BodyStyle =WebMessageBodyStyle.Bare)]
+		public string GetEntitySchemaModels(string entitySchema) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var generator = new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
-				return generator.Generate(entitySchema);
+				var models = generator.Generate(entitySchema);
+				return JsonConvert.SerializeObject(models, Formatting.Indented);
 			} else {
 				throw new Exception("You don`n have permission for operation CanManageSolution");
 			}
