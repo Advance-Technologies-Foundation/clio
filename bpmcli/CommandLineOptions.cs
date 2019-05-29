@@ -5,7 +5,7 @@ using CommandLine.Text;
 
 namespace bpmcli
 {
-	internal class EnvironmentOptions
+	public class EnvironmentOptions
 	{
 		[Option('u', "uri", Required = false, HelpText = "Application uri")]
 		public string Uri { get; set; }
@@ -24,7 +24,7 @@ namespace bpmcli
 	}
 
 	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute an assembly code which implements the IExecutor interface")]
-	internal class ExecuteAssemblyOptions : EnvironmentOptions
+	public class ExecuteAssemblyOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
 		public string Name { get; set; }
@@ -34,21 +34,21 @@ namespace bpmcli
 	}
 
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
-	internal class RestartOptions : EnvironmentOptions
+	public class RestartOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
-	internal class ClearRedisOptions : EnvironmentOptions
+	public class ClearRedisOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden = true)]
-	internal class RegisterOptions
+	public class RegisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
 			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
@@ -60,7 +60,7 @@ namespace bpmcli
 	}
 
 	[Verb("fetch", HelpText = "Download assembly", Hidden = true)]
-	internal class FetchOptions : EnvironmentOptions
+	public class FetchOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to downloaded assembly")]
 		public string Name { get; set; }
@@ -70,7 +70,7 @@ namespace bpmcli
 	}
 
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of bpm'online package")]
-	internal class GeneratePkgZipOptions
+	public class GeneratePkgZipOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
@@ -83,7 +83,7 @@ namespace bpmcli
 	}
 
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
-	internal class RegAppOptions : EnvironmentOptions
+	public class RegAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
 		public string Name { get; set; }
@@ -110,21 +110,21 @@ namespace bpmcli
 	}
 
 	[Verb("show-web-app-list", Aliases = new string[] { "apps", "show-web-app", "app" }, HelpText = "Show the list of web applications and their settings")]
-	internal class AppListOptions
+	public class AppListOptions
 	{
 		[Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
 		public string Name { get; set; }
 	}
 
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]
-	internal class UnregAppOptions : EnvironmentOptions
+	public class UnregAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
-	internal class PushPkgOptions : EnvironmentOptions
+	public class PushPkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
@@ -134,14 +134,14 @@ namespace bpmcli
 	}
 
 	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
-	internal class DeletePkgOptions : EnvironmentOptions
+	public class DeletePkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 	}
 
 	[Verb("ref-to", HelpText = "Change bpm package project core paths", Hidden = true)]
-	internal class ReferenceOptions
+	public class ReferenceOptions
 	{
 		[Option('r', "ReferencePattern", Required = false, HelpText = "Pattern for reference path",
 			Default = null)]
@@ -158,7 +158,7 @@ namespace bpmcli
 	}
 
 	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new bpm'online package in local file system")]
-	internal class NewPkgOptions
+	public class NewPkgOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
 		public string Name { get; set; }
@@ -179,7 +179,7 @@ namespace bpmcli
 	}
 
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
-	internal class ConvertOptions
+	public class ConvertOptions
 	{
 		[Option('p', "Path", Required = false,
 			HelpText = "Path to package directory", Default = null)]
@@ -202,7 +202,7 @@ namespace bpmcli
 	}
 
 	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
-	internal class PullPkgOptions : EnvironmentOptions
+	public class PullPkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
@@ -213,12 +213,12 @@ namespace bpmcli
 	}
 
 	[Verb("update-cli", HelpText = "Update bpmcli to new available version")]
-	internal class UpdateCliOptions
+	public class UpdateCliOptions
 	{
 	}
 
 	[Verb("execute-sql-script", Aliases = new string[] { "sql" }, HelpText = "Execute script on web application")]
-	internal class ExecuteSqlScriptOptions : EnvironmentOptions
+	public class ExecuteSqlScriptOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
 		public string Script { get; set; }
@@ -235,12 +235,12 @@ namespace bpmcli
 	}
 
 	[Verb("install-gate", Aliases = new string[] { "update-gate" }, HelpText = "Install bpmcli api gateway to application")]
-	internal class InstallGateOptions : EnvironmentOptions
+	public class InstallGateOptions : EnvironmentOptions
 	{
 	}
 
 	[Verb("get-model", Aliases = new string[] { "class" }, HelpText = "Generate model classes")]
-	internal class EntityModelOptions : EnvironmentOptions
+	public class EntityModelOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Entity name", Required = true, HelpText = "Entity schema name")]
 		public string EntitySchemaName { get; set; }
