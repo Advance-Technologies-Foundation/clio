@@ -56,14 +56,14 @@ namespace bpmcli
 			}
 		}
 
-		public string ExecuteGetRequest(string url) {
-			HttpWebRequest request = CreateBpmonlineRequest(url);
+		public string ExecuteGetRequest(string url, int requestTimeout = 10000) {
+			HttpWebRequest request = CreateBpmonlineRequest(url, null, requestTimeout);
 			request.Method = "GET";
 			return request.GetServiceResponse();
 		}
 
-		public string ExecutePostRequest(string url, string requestData) {
-			HttpWebRequest request = CreateBpmonlineRequest(url, requestData);
+		public string ExecutePostRequest(string url, string requestData, int requestTimeout = 10000) {
+			HttpWebRequest request = CreateBpmonlineRequest(url, requestData, requestTimeout);
 			return request.GetServiceResponse();
 		}
 
@@ -135,12 +135,13 @@ namespace bpmcli
 			_ = pingRequest.GetServiceResponse();
 		}
 
-		private HttpWebRequest CreateBpmonlineRequest(string url, string requestData = null) {
+		private HttpWebRequest CreateBpmonlineRequest(string url, string requestData = null, int requestTimeout = 100000) {
 			if (AuthCookie == null) {
 				Login();
 				PingApp();
 			}
 			var request = CreateRequest(url, requestData);
+			request.Timeout = requestTimeout;
 			request.CookieContainer = AuthCookie;
 			AddCsrfToken(request);
 			return request;
@@ -150,7 +151,6 @@ namespace bpmcli
 			HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
 			request.ContentType = "application/json";
 			request.Method = "POST";
-			request.Timeout = 100000;
 			request.KeepAlive = true;
 			if (!string.IsNullOrEmpty(requestData)) {
 				using (var requestStream = request.GetRequestStream()) {

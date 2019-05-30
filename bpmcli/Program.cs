@@ -506,7 +506,7 @@ namespace bpmcli
 				return e.Message;
 			}
 			Console.WriteLine($"Install {fileName} ...");
-			var installResponse = BpmonlineClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"");
+			var installResponse = BpmonlineClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			Console.WriteLine(installResponse);
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
