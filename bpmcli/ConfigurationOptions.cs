@@ -33,9 +33,14 @@ namespace bpmcli
 			{
 				Safe = environment.Safe;
 			}
+			if (environment.DeveloperModeEnabled.HasValue) {
+				DeveloperModeEnabled = environment.DeveloperModeEnabled;
+			}
 		}
 
 		public bool? Safe { get; set; }
+
+		public bool? DeveloperModeEnabled { get; set; }
 	}
 
 	public class Settings

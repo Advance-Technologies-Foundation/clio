@@ -30,6 +30,8 @@ namespace bpmcli
 		private static string _userName;
 		private static string _userPassword;
 		private static string _url; // Необходимо получить из конфига
+		private static EnvironmentSettings _settings;
+		private static string _environmentName;
 
 		private static string ExecutorUrl => _url + @"/0/IDE/ExecuteScript";
 		private static string UnloadAppDomainUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
@@ -63,13 +65,14 @@ namespace bpmcli
 
 		private static void Configure(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
-			var settings = settingsRepository.GetEnvironment(options.Environment);
-			_url = string.IsNullOrEmpty(options.Uri) ? settings.Uri : options.Uri;
-			_userName = string.IsNullOrEmpty(options.Login) ? settings.Login : options.Login;
-			_userPassword = string.IsNullOrEmpty(options.Password) ? settings.Password : options.Password;
-			if (settings.Safe.HasValue && settings.Safe.Value && _safe) {
+			_environmentName = options.Environment;
+			_settings = settingsRepository.GetEnvironment(_environmentName);
+			_url = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
+			_userName = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
+			_userPassword = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
+			if (_settings.Safe.HasValue && _settings.Safe.Value && _safe) {
 
-				Console.WriteLine($"You try to apply the action on the production site {settings.Uri}");
+				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 				Console.Write($"Do you want to continue? [Y/N]:");
 				var answer = Console.ReadKey();
 				Console.WriteLine();
@@ -123,7 +126,7 @@ namespace bpmcli
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
 				string packageFilePath = Path.Combine(dir, "bpmcligate", "bpmcligate.gz");
 				InstallPackage(packageFilePath);
-				UnloadAppDomain();
+				RestartInternal();
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"Update error {e.Message}");
@@ -226,7 +229,7 @@ namespace bpmcli
 			Console.WriteLine(responseFromServer);
 		}
 
-		private static void UnloadAppDomain() {
+		private static void RestartInternal() {
 			BpmonlineClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
@@ -507,6 +510,9 @@ namespace bpmcli
 			}
 			Console.WriteLine($"Install {fileName} ...");
 			var installResponse = BpmonlineClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
+			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
+				UnlockMaintainerPackageInternal();
+			}
 			Console.WriteLine(installResponse);
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
@@ -555,7 +561,7 @@ namespace bpmcli
 			try {
 				options.Environment = options.Name;
 				SetupAppConnection(options);
-				UnloadAppDomain();
+				RestartInternal();
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -676,7 +682,7 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -697,7 +703,29 @@ namespace bpmcli
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
+					(DeveloperModeOptions opts) => ActivateDeveloperMode(opts),
 					errs => 1);
+		}
+
+		private static int ActivateDeveloperMode(DeveloperModeOptions opts) {
+			try {
+				SetupAppConnection(opts);
+				var repository = new SettingsRepository();
+				_settings.DeveloperModeEnabled = true;
+				repository.ConfigureEnvironment(_environmentName, _settings);
+				ExecuteSqlScript($"UPDATE SysSettingsValue SET TextValue = '{_settings.Maintainer}' where SysSettingsId = (select Id from SysSettings where Code = 'Maintainer')");
+				UnlockMaintainerPackageInternal();
+				RestartInternal();
+				Console.WriteLine("Done");
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
+		}
+
+		private static void UnlockMaintainerPackageInternal() {
+			ExecuteSqlScript($"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_settings.Maintainer}'");
 		}
 
 		private static int AddModels(ItemOptions opts) {

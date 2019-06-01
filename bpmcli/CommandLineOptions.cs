@@ -255,4 +255,9 @@ namespace bpmcli
 		[Option('n', "Namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
 		public string Namespace { get; set; }
 	}
+
+	[Verb("activate-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Create item in project")]
+	internal class DeveloperModeOptions : EnvironmentOptions
+	{
+	}
 }
