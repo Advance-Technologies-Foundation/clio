@@ -126,7 +126,7 @@ namespace bpmcli
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
 	internal class PushPkgOptions : EnvironmentOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
 		public string Name { get; set; }
 
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
@@ -239,16 +239,20 @@ namespace bpmcli
 	{
 	}
 
-	[Verb("get-model", Aliases = new string[] { "class" }, HelpText = "Generate model classes")]
-	internal class EntityModelOptions : EnvironmentOptions
+	[Verb("add-item", Aliases = new string[] { "create" }, HelpText = "Create item in project")]
+	internal class ItemOptions: EnvironmentOptions
 	{
-		[Value(0, MetaName = "Entity name", Required = true, HelpText = "Entity schema name")]
-		public string EntitySchemaName { get; set; }
+		[Value(0, MetaName = "Item type", Required = true, HelpText = "Item type")]
+		public string ItemType { get; set; }
+
+		[Value(1, MetaName = "Item name", Required = true, HelpText = "Item name")]
+		public string ItemName { get; set; }
+
 
 		[Option('d', "DestinationPath", Required = false, HelpText = "Path to source directory.", Default = null)]
 		public string DestionationPath { get; set; }
 
-		[Option('n', "Namespace", Required = false, HelpText = "Name space for model classes.", Default = null)]
+		[Option('n', "Namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
 		public string Namespace { get; set; }
 	}
 }

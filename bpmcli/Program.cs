@@ -537,13 +537,18 @@ namespace bpmcli
 		}
 
 		private static int Register(RegisterOptions options) {
-			var bpmcliEnv = new BpmcliEnvironment();
-			string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
-			IResult result = options.Target == "m"
-				? bpmcliEnv.MachineRegisterPath(path)
-				: bpmcliEnv.UserRegisterPath(path);
-			result.ShowMessagesTo(Console.Out);
-			return 1;
+			try {
+				var bpmcliEnv = new BpmcliEnvironment();
+				string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
+				IResult result = options.Target == "m"
+					? bpmcliEnv.MachineRegisterPath(path)
+					: bpmcliEnv.UserRegisterPath(path);
+				result.ShowMessagesTo(Console.Out);
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
 		}
 
 		private static int Restart(RestartOptions options) {
@@ -671,7 +676,7 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, EntityModelOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -691,54 +696,103 @@ namespace bpmcli
 					(UpdateCliOptions opts) => UpdateCli(),
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
-					(EntityModelOptions opts) => GetModels(opts),
+					(ItemOptions opts) => AddItem(opts),
 					errs => 1);
 		}
 
-		private static int GetModels(EntityModelOptions opts) {
+		private static int AddModels(ItemOptions opts) {
 			try {
 				SetupAppConnection(opts);
-				var models = GetClassModels(opts.EntitySchemaName);
-				var destPath = opts.DestionationPath ?? Environment.CurrentDirectory;
-				var rootNamespace = opts.Namespace;
-				var projFile = string.Empty;
-				if (string.IsNullOrEmpty(rootNamespace)) {
+				var models = GetClassModels(opts.ItemName);
+				var project = new Project(opts.DestionationPath, opts.Namespace);
+				foreach (var model in models) {
+					project.AddFile(model.Key, model.Value);
+				}
+				project.Reload();
+				Console.WriteLine("Done");
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
+		}
+
+		public class Project {
+
+			public string DestPath { get; set; }
+
+			public string Namespace { get; set; }
+
+			public string ProjFile { get; set; }
+
+			public Project(string destPath = null, string @namespace = null) {
+				DestPath = destPath;
+				Namespace = @namespace;
+				if (string.IsNullOrEmpty(Namespace)) {
 					var curDir = Environment.CurrentDirectory;
-					projFile = Directory.GetFiles(curDir, "*.csproj").FirstOrDefault();
-					if (File.Exists(projFile)) {
-						Console.WriteLine($"Detected projFile {projFile}");
-						var fileText = File.ReadAllText(projFile);
+					ProjFile = Directory.GetFiles(curDir, "*.csproj").FirstOrDefault();
+					if (File.Exists(ProjFile)) {
+						Console.WriteLine($"Detected projFile {ProjFile}");
+						var fileText = File.ReadAllText(ProjFile);
 						int start = fileText.IndexOf("<RootNamespace>");
 						int end = fileText.IndexOf("</RootNamespace>");
 						if (end > start) {
-							rootNamespace = fileText.Substring(start + 15, end - start - 15);
-							Console.WriteLine($"Detected namespace {rootNamespace}");
+							Namespace = fileText.Substring(start + 15, end - start - 15);
+							Console.WriteLine($"Detected namespace {@Namespace}");
 						}
-						if (string.IsNullOrEmpty(opts.DestionationPath)) {
-							destPath = $"{curDir}\\Files\\cs";
+						if (string.IsNullOrEmpty(DestPath)) {
+							DestPath = $"{curDir}\\Files\\cs";
 						}
 					}
 
 				}
-				foreach (var model in models) {
-					Console.WriteLine($"Save {model.Key} class");
-					var classText = model.Value;
-					if (!string.IsNullOrEmpty(rootNamespace)) {
-						classText = classText.Replace("<RootNamespace>", rootNamespace);
+			}
+
+			public void AddFile(string name, string body) {
+					Console.WriteLine($"Save {name} class");
+					if (!string.IsNullOrEmpty(Namespace)) {
+						body = body.Replace("<Namespace>", Namespace);
 					}
-					File.WriteAllText($"{destPath}\\{model.Key}.cs", classText);
+					File.WriteAllText($"{DestPath}\\{name}.cs", body);
+			}
+
+			public void Reload() {
+				if (File.Exists(ProjFile)) {
+					File.AppendAllText(ProjFile, " ");
+					var content = File.ReadAllText(ProjFile);
+					File.WriteAllText(ProjFile, content.Substring(0, content.Length - 1));
+					Console.WriteLine($"Modified proj file {ProjFile}");
 				}
-				if (File.Exists(projFile)) {
-					File.AppendAllText(projFile, " ");
-					var content = File.ReadAllText(projFile);
-					File.WriteAllText(projFile, content.Substring(0, content.Length - 1));
-					Console.WriteLine($"Modified proj file {projFile}");
+			}
+		}
+
+		private static int AddItem(ItemOptions options) {
+			if (options.ItemType.ToLower() == "model") {
+				return AddModels(options);
+			} else {
+				return AddItemFromTemplate(options);
+			} 
+		}
+
+		private static int AddItemFromTemplate(ItemOptions options) {
+			try {
+				var project = new Project(options.DestionationPath, options.Namespace);
+				var bpmcliEnvironment = new BpmcliEnvironment();
+				string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
+				if (!File.Exists(tplPath)) {
+					var envPath = bpmcliEnvironment.GetRegisteredPath();
+					if (!string.IsNullOrEmpty(envPath)) {
+						tplPath = Path.Combine(envPath, tplPath);
+					}
 				}
-				Console.WriteLine("Done");
+				string templateBody = File.ReadAllText(tplPath);
+				project.AddFile(options.ItemName, templateBody.Replace("<Name>", options.ItemName));
+				project.Reload();
+				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
+				return 1;
 			}
-			return 0;
 		}
 
 		private static Dictionary<string, string> GetClassModels(string entitySchemaName) {

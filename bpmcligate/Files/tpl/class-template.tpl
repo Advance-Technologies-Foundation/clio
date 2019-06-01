@@ -2,7 +2,7 @@ using System;
 using ATF.Repository;
 using ATF.Repository.Attributes;
 
-namespace <RootNamespace>
+namespace <Namespace>
 {{
 
 	[Schema("{0}")]
