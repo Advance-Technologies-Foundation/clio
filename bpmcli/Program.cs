@@ -703,11 +703,11 @@ namespace bpmcli
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
-					(DeveloperModeOptions opts) => ActivateDeveloperMode(opts),
+					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					errs => 1);
 		}
 
-		private static int ActivateDeveloperMode(DeveloperModeOptions opts) {
+		private static int SetDeveloperMode(DeveloperModeOptions opts) {
 			try {
 				SetupAppConnection(opts);
 				var repository = new SettingsRepository();

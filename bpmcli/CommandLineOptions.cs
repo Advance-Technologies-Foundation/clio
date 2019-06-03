@@ -256,7 +256,7 @@ namespace bpmcli
 		public string Namespace { get; set; }
 	}
 
-	[Verb("activate-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Create item in project")]
+	[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Activate developer mode for selected environment")]
 	internal class DeveloperModeOptions : EnvironmentOptions
 	{
 	}
