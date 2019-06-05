@@ -14,9 +14,37 @@ With aid of bpmcli you can:
 - Build CI\CD pipelines
 - Convert existing bpmonline package to project
 
+
 # Installation and features
 
 You can dowload release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/bpmcli/releases). Unpack the archive with bpmcli.
+
+# Content table
+1. [Register](#Register)
+2. [Help](#Help-and-examples)
+3. [Packages](#Packages)
+    1. [Create](#Creating-new-package)
+    2. [Install](#Installing-package)
+    3. [Pull](#Pull-package-from-remote-application)
+    4. [Delete](#Delete-package)
+    5. [Compress](#Compress-package)
+4. [Application](#Application)
+    1. [Restart](#Restart-bpm'online-application)
+    2. [Clear redis](#Clear-redis-database)
+5. [Environment](#Environment-settings)
+    1. [Create/Update](#Create/Update-a-environment)
+    2. [Delete](#Delete-the-existing-environment)
+    3. [View](#View-application-options)
+6. [Using for CI\DI systems](#Delete-the-existing-environment)
+7. [Development](#Development)
+    1. [Convert existing package to project](#Convert-existing-package-to-project)
+    2. [Execute assembly](#Execute-assembly)
+    3. [References](#References)
+
+# Arguments
+- `<PACKAGE_NAME>` - package name
+- `<ENVIRONMENT_NAME>` - environment name
+- `<COMMAND_NAME>` - bpmcli command name
 
 # Register
 
@@ -56,7 +84,7 @@ bpmcli help
 ```
 For display command help use:
 ```
-bpmcli <command name> --help
+bpmcli <COMMAND_NAME> --help
 ```
 
 # Packages
@@ -65,11 +93,11 @@ bpmcli <command name> --help
 
 To create new package project, use the next command:
 ```
- bpmcli new-pkg package
+ bpmcli new-pkg <PACKAGE_NAME>
 ```
 you can set reference on local core assembly with using bpmonline file design mode with command in Pkg directory
 ```
- bpmcli new-pkg package -r bin
+ bpmcli new-pkg <PACKAGE_NAME> -r bin
 ```
 
 ## Installing package
@@ -77,7 +105,7 @@ you can set reference on local core assembly with using bpmonline file design mo
 To install package from directory you can use the next command:
 for non compressed package in current folder
 ```
-bpmcli push-pkg package
+bpmcli push-pkg <PACKAGE_NAME>
 ```
 or for .gz packages you can use command:
 ```
@@ -89,36 +117,36 @@ bpmcli push-pkg C:\Packages\package.gz
 ```
 for get installation log file specify report path parameter
 ```
-bpmcli push-pkg package -r log.txt
+bpmcli push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
 ## Pull package from remote application
 
 For download package to local file system from application use command:
 ```
-bpmcli pull-pkg package
+bpmcli pull-pkg <PACKAGE_NAME>
 ```
 for pull package from non default application
 ```
-bpmcli pull-pkg package -e myapp
+bpmcli pull-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 ```
 
 ## Delete package
 
 To delete package, use the next command:
 ```
-bpmcli delete-pkg-remote package
+bpmcli delete-pkg-remote <PACKAGE_NAME>
 ```
 for delete for non default application
 ```
-bpmcli delete-pkg-remote package -e myapp
+bpmcli delete-pkg-remote <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 ```
 
 ## Compress package
 
 For compress package into *.gz archive for directory which conatain package folder
 ```
-bpmcli generate-pkg-zip package
+bpmcli generate-pkg-zip <PACKAGE_NAME>
 ```
 or you can specify full path for package and .gz file
 ```
@@ -136,17 +164,17 @@ bpmcli restart-web-app
 ```
 or for register application
 ```
-bpmcli restart-web-app myapp
+bpmcli restart-web-app <ENVIRONMENT_NAME>
 ```
 
-### Clear redis database
+## Clear redis database
 For default application
 ```
 bpmcli clear-redis-db
 ```
 or non default application
 ```
-bpmcli clear-redis-db myapp
+bpmcli clear-redis-db <ENVIRONMENT_NAME>
 ```
 
 # Environment settings
@@ -158,17 +186,17 @@ Environment is the set of configuration options. It consist of name, bpm'online 
 Register new application settings
 
 ```
-bpmcli reg-web-app myapp -u http://mysite.bpmonline.com -l administrator -p password
+bpmcli reg-web-app <ENVIRONMENT_NAME> -u http://mysite.bpmonline.com -l administrator -p password
 ```
 or update existing settings
 ```
-bpmcli reg-web-app myapp -u administrator -p password
+bpmcli reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
 ```
 
 ## Delete the existing environment
 
 ```
-bpmcli unreg-web-app myapp
+bpmcli unreg-web-app <ENVIRONMENT_NAME>
 ```
 
 ## View application options
@@ -179,7 +207,7 @@ bpmcli show-web-app-list
 ```
 or for concrete application
 ```
-bpmcli show-web-app <app name>
+bpmcli show-web-app <ENVIRONMENT_NAME>
 ```
 
 # Using for CI\DI systems
@@ -195,7 +223,7 @@ bpmcli restart -u http://mysite.bpmonline.com -l administrator -p password
 
 Convert package with name MyApp and MyIntegration, located in directory C:\Pkg
 ```
-bpmcli convert package
+bpmcli convert <PACKAGE_NAME>
 ```
 
 ## Execute assembly
