@@ -255,7 +255,7 @@ namespace bpmcli
 						throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
 				}
 				repository.ConfigureEnvironment(options.Name, environment);
-				options.Environment = options.Name;
+				options.Environment = options.Environment ?? options.Name;
 				repository.ShowSettingsTo(Console.Out, options.Name);
 				Console.WriteLine();
 				Configure(options);
@@ -512,8 +512,8 @@ namespace bpmcli
 			var installResponse = BpmonlineClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal();
+				RestartInternal();
 			}
-			Console.WriteLine(installResponse);
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
 			Console.WriteLine(logText);
@@ -559,7 +559,7 @@ namespace bpmcli
 
 		private static int Restart(RestartOptions options) {
 			try {
-				options.Environment = options.Name;
+				options.Environment = options.Environment ?? options.Name;
 				SetupAppConnection(options);
 				RestartInternal();
 				Console.WriteLine("Done");
@@ -572,7 +572,7 @@ namespace bpmcli
 
 		private static int ClearRedisDb(ClearRedisOptions options) {
 			try {
-				options.Environment = options.Name;
+				options.Environment = options.Environment ?? options.Name;
 				SetupAppConnection(options);
 				ClearRedisDbInternal();
 				Console.WriteLine("Done");
