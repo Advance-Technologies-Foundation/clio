@@ -173,7 +173,7 @@ bpmcli unreg-web-app myapp
 
 ## View application options
 
-For view liast of all applications
+For view list of all applications
 ```
 bpmcli show-web-app-list
 ```
