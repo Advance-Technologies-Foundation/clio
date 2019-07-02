@@ -3,7 +3,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 
-namespace bpmcli
+namespace Bpmonline.Client
 {
 	public class BpmonlineClient
 	{

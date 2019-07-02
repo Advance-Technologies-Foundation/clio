@@ -34,9 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\bpmclient\bpmclient.csproj">
-      <Private>true</Private>
-    </ProjectReference>
+    <ProjectReference Include="..\bpmclient\bpmclient.csproj" />
     <ProjectReference Include="..\updater\updater.csproj" />
   </ItemGroup>
   <ItemGroup>

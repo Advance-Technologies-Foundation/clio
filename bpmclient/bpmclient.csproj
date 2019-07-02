@@ -7,6 +7,8 @@
     <Company>ATF</Company>
     <PackageId>bpmonline.client</PackageId>
     <Product>bpmonline.client</Product>
+    <AssemblyName>Bpmonline.Client</AssemblyName>
+    <RootNamespace>Bpmonline.Client</RootNamespace>
   </PropertyGroup>
 
 </Project>

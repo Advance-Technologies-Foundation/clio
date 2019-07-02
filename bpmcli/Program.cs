@@ -9,12 +9,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using bpmcli.environment;
 using CommandLine;
 using ConsoleTables;
 using Newtonsoft.Json;
+using Bpmonline.Client;
 
 namespace bpmcli
 {
