@@ -51,6 +51,9 @@ namespace bpmcli
 
 		private static string DefLogFileName => "bpmclilog.txt";
 
+		private static string InsertSysSettingsUrl => _url + @"/0/DataService/json/SyncReply/InsertSysSettingRequest";
+		private static string PostSysSettingsValuesUrl => _url + @"/0/DataService/json/SyncReply/PostSysSettingsValues";
+
 		private static string GetEntityModelsUrl => _url + @"/0/rest/BpmcliApiGateway/GetEntitySchemaModels/{0}";
 
 		private static BpmonlineClient BpmonlineClient {
@@ -682,7 +685,8 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions>(args)
+					//UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions, SysSettingsOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, SysSettingsOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -703,7 +707,8 @@ namespace bpmcli
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
-					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
+					//(DeveloperModeOptions opts) => SetDeveloperMode(opts),
+					(SysSettingsOptions opts) => FetchSysSettings(opts),
 					errs => 1);
 		}
 
@@ -800,6 +805,58 @@ namespace bpmcli
 			} else {
 				return AddItemFromTemplate(options);
 			} 
+		}
+
+		private static void CreateSysSetting(SysSettingsOptions opts) {
+			Guid id = Guid.NewGuid();
+			string requestData = "{" + string.Format("\"id\":\"{0}\",\"name\":\"{1}\",\"code\":\"{2}\",\"valueTypeName\":\"{3}\",\"isCacheable\":true",
+				id, opts.Name, opts.Code, opts.Type) + "}";
+			string responseFromServer = BpmonlineClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
+			Console.WriteLine(responseFromServer);
+			UpdateSysSetting(opts);
+		}
+
+		private static void UpdateSysSetting(SysSettingsOptions opts) {
+			string requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
+			string responseFromServer = BpmonlineClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
+			Console.WriteLine(responseFromServer);
+		}
+
+		private static void DeleteSysSetting(SysSettingsOptions opts) {
+			throw new NotImplementedException();
+		}
+
+		private static void RenameSysSetting(SysSettingsOptions opts) {
+			throw new NotImplementedException();
+		}
+
+		private static int FetchSysSettings(SysSettingsOptions opts) {
+			try {
+				string operation = opts.Operation.ToLower();
+
+				Configure(opts);
+
+				switch (operation) {
+					case "create":
+						CreateSysSetting(opts);
+						break;
+					case "update":
+						UpdateSysSetting(opts);
+						break;
+					case "delete":
+						DeleteSysSetting(opts);
+						break;
+					case "rename":
+						RenameSysSetting(opts);
+						break;
+					default: {
+							throw new NotSupportedException($"You use not supported option type {operation}");
+						}
+				}
+			} catch (Exception ex) {
+				return 1;
+			}
+			return 0;
 		}
 
 		private static int AddItemFromTemplate(ItemOptions options) {
