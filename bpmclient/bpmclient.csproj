@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>.net client for call bpmonline api in simple way (.net standart campatible)</Description>
+    <Authors>a.technologies.foundation@gmail.com</Authors>
+    <Company>ATF</Company>
+    <PackageId>bpmonline.client</PackageId>
+    <Product>bpmonline.client</Product>
+  </PropertyGroup>
+
+</Project>

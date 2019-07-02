@@ -23,17 +23,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineSDK" Version="1.0.3" />
+    <PackageReference Include="CommandLineSDK" Version="1.0.4" />
     <PackageReference Include="ConsoleTables" Version="2.3.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="2.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="2.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="2.2.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="2.2.4" />
     <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="2.2.0" />
     <PackageReference Include="System.Json" Version="4.5.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\bpmclient\bpmclient.csproj">
+      <Private>true</Private>
+    </ProjectReference>
     <ProjectReference Include="..\updater\updater.csproj" />
   </ItemGroup>
   <ItemGroup>
