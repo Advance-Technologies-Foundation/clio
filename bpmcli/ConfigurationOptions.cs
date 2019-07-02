@@ -16,6 +16,7 @@ namespace bpmcli
 		public string Login { get; set; }
 		public string Password { get; set; }
 		public string Maintainer { get; set; }
+		public bool IsNetCore { get; set; }
 		internal void Merge(EnvironmentSettings environment) {
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;

@@ -16,6 +16,8 @@ namespace bpmcli
 
 		private string _userPassword;
 
+		private bool _isNetCore;
+
 		private string LoginUrl => _appUrl + @"/ServiceModel/AuthService.svc/Login";
 
 		private string PingUrl => _appUrl + @"/0/ping";
@@ -26,10 +28,11 @@ namespace bpmcli
 
 		#region Methods: Public
 
-		public BpmonlineClient(string appUrl, string userName, string userPassword) {
+		public BpmonlineClient(string appUrl, string userName, string userPassword, bool isNetCore = false) {
 			_appUrl = appUrl;
 			_userName = userName;
 			_userPassword = userPassword;
+			_isNetCore = isNetCore;
 		}
 
 		public void Login() {
@@ -123,6 +126,9 @@ namespace bpmcli
 			string[] cookies = tokens.Split(';');
 			foreach (var cookie in cookies) {
 				if (cookie.Contains(name)) {
+					if (_isNetCore) {
+						return cookie.Split('=')[2];
+					}
 					return cookie.Split('=')[1];
 				}
 			}
@@ -130,6 +136,9 @@ namespace bpmcli
 		}
 
 		private void PingApp() {
+			if (_isNetCore) {
+				return;
+			}
 			var pingRequest = CreateBpmonlineRequest(PingUrl);
 			pingRequest.Timeout = 60000;
 			_ = pingRequest.GetServiceResponse();
