@@ -260,4 +260,26 @@ namespace bpmcli
 	internal class DeveloperModeOptions : EnvironmentOptions
 	{
 	}
+
+	[Verb("SysSettings", Aliases = new string[] { "ss" }, HelpText = "Install package on a web application")]
+	internal class SysSettingsOptions : EnvironmentOptions
+	{
+		[Value(0, MetaName = "Operation", Required = true, HelpText = "Operation")]
+		public string Operation { get; set; }
+
+		[Option('c', "Code", Required = false, HelpText = "Code")]
+		public string Code { get; set; }
+
+		[Option('n', "Name", Required = false, HelpText = "Name")]
+		public string Name { get; set; }
+
+		[Option('v', "Value", Required = false, HelpText = "Value")]
+		public string Value { get; set; }
+
+		[Option('t', "Type", Required = false, HelpText = "Type")]
+		public string Type { get; set; }
+
+	}
+
+
 }
