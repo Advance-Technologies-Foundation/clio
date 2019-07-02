@@ -30,6 +30,7 @@ namespace bpmcli
 		private static string _userName;
 		private static string _userPassword;
 		private static string _url; // Необходимо получить из конфига
+		private static bool _isNetCore;
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
 
@@ -57,7 +58,7 @@ namespace bpmcli
 		private static string GetEntityModelsUrl => _url + @"/0/rest/BpmcliApiGateway/GetEntitySchemaModels/{0}";
 
 		private static BpmonlineClient BpmonlineClient {
-			get => new BpmonlineClient(_url, _userName, _userPassword);
+			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
 		}
 
 
@@ -71,6 +72,7 @@ namespace bpmcli
 			_environmentName = options.Environment;
 			_settings = settingsRepository.GetEnvironment(_environmentName);
 			_url = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
+			_isNetCore = _settings.IsNetCore ? _settings.IsNetCore : false;
 			_userName = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 			_userPassword = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
 			if (_settings.Safe.HasValue && _settings.Safe.Value && _safe) {
@@ -685,8 +687,7 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					//UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions, SysSettingsOptions>(args)
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, SysSettingsOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions, SysSettingsOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -707,7 +708,7 @@ namespace bpmcli
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
-					//(DeveloperModeOptions opts) => SetDeveloperMode(opts),
+					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => FetchSysSettings(opts),
 					errs => 1);
 		}

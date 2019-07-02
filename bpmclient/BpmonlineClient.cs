@@ -18,6 +18,8 @@ namespace Bpmonline.Client
 
 		private string _worskpaceId;
 
+		private bool _isNetCore;
+
 		private string LoginUrl => _appUrl + @"/ServiceModel/AuthService.svc/Login";
 
 		private string PingUrl => _appUrl + @"/0/ping";
@@ -28,11 +30,12 @@ namespace Bpmonline.Client
 
 		#region Methods: Public
 
-		public BpmonlineClient(string appUrl, string userName, string userPassword, string workspaceId = "0") {
+		public BpmonlineClient(string appUrl, string userName, string userPassword, bool isNetCore = false, string workspaceId = "0") {
 			_appUrl = appUrl;
 			_userName = userName;
 			_userPassword = userPassword;
 			_worskpaceId = workspaceId;
+			_isNetCore = isNetCore;
 		}
 
 		public void Login() {
@@ -135,6 +138,9 @@ namespace Bpmonline.Client
 			string[] cookies = tokens.Split(';');
 			foreach (var cookie in cookies) {
 				if (cookie.Contains(name)) {
+					if (_isNetCore) {
+						return cookie.Split('=')[2];
+					}
 					return cookie.Split('=')[1];
 				}
 			}
@@ -142,6 +148,9 @@ namespace Bpmonline.Client
 		}
 
 		private void PingApp() {
+			if (_isNetCore) {
+				return;
+			}
 			var pingRequest = CreateBpmonlineRequest(PingUrl);
 			pingRequest.Timeout = 60000;
 			_ = pingRequest.GetServiceResponse();
