@@ -685,8 +685,7 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					//UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions, SysSettingsOptions>(args)
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, SysSettingsOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions, SysSettingsOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -707,7 +706,7 @@ namespace bpmcli
 					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
-					//(DeveloperModeOptions opts) => SetDeveloperMode(opts),
+					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => FetchSysSettings(opts),
 					errs => 1);
 		}
