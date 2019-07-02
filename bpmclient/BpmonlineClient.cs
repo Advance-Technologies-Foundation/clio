@@ -16,6 +16,8 @@ namespace Bpmonline.Client
 
 		private string _userPassword;
 
+		private string _worskpaceId;
+
 		private string LoginUrl => _appUrl + @"/ServiceModel/AuthService.svc/Login";
 
 		private string PingUrl => _appUrl + @"/0/ping";
@@ -26,10 +28,11 @@ namespace Bpmonline.Client
 
 		#region Methods: Public
 
-		public BpmonlineClient(string appUrl, string userName, string userPassword) {
+		public BpmonlineClient(string appUrl, string userName, string userPassword, string workspaceId = "0") {
 			_appUrl = appUrl;
 			_userName = userName;
 			_userPassword = userPassword;
+			_worskpaceId = workspaceId;
 		}
 
 		public void Login() {
@@ -107,9 +110,18 @@ namespace Bpmonline.Client
 			request.SaveToFile(filePath);
 		}
 
+		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = 10000) {
+			var executeUrl = CreateConfigurationServiceUrl(serviceName, serviceMethod);
+			return ExecutePostRequest(executeUrl, requestData, requestTimeout);
+		}
+
 		#endregion
 
 		#region Methods: private
+
+		private string CreateConfigurationServiceUrl(string serviceName, string methodName) {
+			return $"{_appUrl}/{_worskpaceId}/rest/{serviceName}/{methodName}";
+		}
 
 		private void AddCsrfToken(HttpWebRequest request) {
 			var bpmcsrf = request.CookieContainer.GetCookies(new Uri(_appUrl))["BPMCSRF"];
@@ -166,28 +178,4 @@ namespace Bpmonline.Client
 
 	}
 
-	public static class ATFWebRequestExtension
-	{
-		public static string GetServiceResponse(this HttpWebRequest request) {
-			using (WebResponse response = request.GetResponse()) {
-				using (var dataStream = response.GetResponseStream()) {
-					using (StreamReader reader = new StreamReader(dataStream)) {
-						return reader.ReadToEnd();
-					}
-				}
-			}
-		}
-
-		public static void SaveToFile(this HttpWebRequest request, string filePath) {
-			using (WebResponse response = request.GetResponse()) {
-				using (var dataStream = response.GetResponseStream()) {
-					if (dataStream != null) {
-						using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write)) {
-							dataStream.CopyTo(fileStream);
-						}
-					}
-				}
-			}
-		}
-	}
 }
