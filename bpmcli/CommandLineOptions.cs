@@ -253,7 +253,7 @@ namespace bpmcli
 
 
 		[Option('d', "DestinationPath", Required = false, HelpText = "Path to source directory.", Default = null)]
-		public string DestionationPath { get; set; }
+		public string DestinationPath { get; set; }
 
 		[Option('n', "Namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
 		public string Namespace { get; set; }
@@ -264,7 +264,7 @@ namespace bpmcli
 	{
 	}
 
-	[Verb("SysSettings", Aliases = new string[] { "ss" }, HelpText = "Install package on a web application")]
+	[Verb("SysSettings", Aliases = new string[] { "ss" }, HelpText = "Changes settings value")]
 	internal class SysSettingsOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Operation", Required = true, HelpText = "Operation")]
