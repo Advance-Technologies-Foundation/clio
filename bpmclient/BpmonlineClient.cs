@@ -55,8 +55,7 @@ namespace Bpmonline.Client
 						}
 					}
 					string authName = ".ASPXAUTH";
-					string headerCookies = response.Headers["Set-Cookie"];
-					string authCookeValue = GetCookieValueByName(headerCookies, authName);
+					string authCookeValue = response.Cookies[authName].Value;
 					AuthCookie.Add(new Uri(_appUrl), new Cookie(authName, authCookeValue));
 				}
 			}
@@ -131,20 +130,6 @@ namespace Bpmonline.Client
 			if (bpmcsrf != null) {
 				request.Headers.Add("BPMCSRF", bpmcsrf.Value);
 			}
-		}
-
-		private string GetCookieValueByName(string headerCookies, string name) {
-			string tokens = headerCookies.Replace("HttpOnly,", string.Empty);
-			string[] cookies = tokens.Split(';');
-			foreach (var cookie in cookies) {
-				if (cookie.Contains(name)) {
-					if (_isNetCore) {
-						return cookie.Split('=')[2];
-					}
-					return cookie.Split('=')[1];
-				}
-			}
-			return string.Empty;
 		}
 
 		private void PingApp() {
