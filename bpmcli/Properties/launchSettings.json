@@ -2,7 +2,7 @@
   "profiles": {
     "bpmcli": {
       "commandName": "Project",
-      "commandLineArgs": "activate-dev-mode"
+      "commandLineArgs": "feature test 0"
     }
   }
 }

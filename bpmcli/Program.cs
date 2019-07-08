@@ -15,6 +15,7 @@ using CommandLine;
 using ConsoleTables;
 using Newtonsoft.Json;
 using Bpmonline.Client;
+using bpmcli.Feature;
 
 namespace bpmcli
 {
@@ -687,7 +688,8 @@ namespace bpmcli
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions, SysSettingsOptions>(args)
+					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
+					SysSettingsOptions, FeatureOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => Execute(opts),
 					(RestartOptions opts) => Restart(opts),
@@ -710,6 +712,7 @@ namespace bpmcli
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => FetchSysSettings(opts),
+					(FeatureOptions opts) => SetFeatureState(opts),
 					errs => 1);
 		}
 
@@ -738,7 +741,7 @@ namespace bpmcli
 			try {
 				SetupAppConnection(opts);
 				var models = GetClassModels(opts.ItemName);
-				var project = new Project(opts.DestionationPath, opts.Namespace);
+				var project = new Project(opts.DestinationPath, opts.Namespace);
 				foreach (var model in models) {
 					project.AddFile(model.Key, model.Value);
 				}
@@ -860,9 +863,30 @@ namespace bpmcli
 			return 0;
 		}
 
+		private static int SetFeatureState(FeatureOptions options) {
+			try {
+				Configure(options);
+				var fm = new FeatureModerator(BpmonlineClient);
+				switch (options.State) {
+					case 0: 
+						fm.SwitchFeatureOff(options.Code);
+						break;
+					case 1:
+						fm.SwitchFeatureOn(options.Code);
+						break;
+					default:
+						throw new NotSupportedException($"You use not supported feature state type {options.State}");
+				}
+			} catch (Exception exception) {
+				Console.WriteLine(exception.Message);
+				return 1;
+			}
+			return 0;
+		}
+
 		private static int AddItemFromTemplate(ItemOptions options) {
 			try {
-				var project = new Project(options.DestionationPath, options.Namespace);
+				var project = new Project(options.DestinationPath, options.Namespace);
 				var bpmcliEnvironment = new BpmcliEnvironment();
 				string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
 				if (!File.Exists(tplPath)) {

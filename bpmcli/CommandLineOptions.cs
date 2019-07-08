@@ -284,5 +284,16 @@ namespace bpmcli
 
 	}
 
+	[Verb("set-feature-state", Aliases = new[] { "feature" }, HelpText = "Changes feature value")]
+	internal class FeatureOptions : EnvironmentOptions
+	{
+		[Value(0, MetaName = "Code", Required = true, HelpText = "Feature code")]
+		public string Code { get; set; }
+
+		[Value(1, MetaName = "State", Required = false, HelpText = "Feature state")]
+		public int State { get; set; }
+
+	}
+
 
 }
