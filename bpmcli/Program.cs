@@ -711,7 +711,7 @@ namespace bpmcli
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
-					(SysSettingsOptions opts) => FetchSysSettings(opts),
+					(SysSettingsOptions opts) => SetSysSettings(opts),
 					(FeatureOptions opts) => SetFeatureState(opts),
 					errs => 1);
 		}
@@ -813,50 +813,31 @@ namespace bpmcli
 
 		private static void CreateSysSetting(SysSettingsOptions opts) {
 			Guid id = Guid.NewGuid();
-			string requestData = "{" + string.Format("\"id\":\"{0}\",\"name\":\"{1}\",\"code\":\"{2}\",\"valueTypeName\":\"{3}\",\"isCacheable\":true",
-				id, opts.Name, opts.Code, opts.Type) + "}";
-			string responseFromServer = BpmonlineClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
-			Console.WriteLine(responseFromServer);
-			UpdateSysSetting(opts);
+			string requestData = "{" + string.Format("\"id\":\"{0}\",\"name\":\"{1}\",\"code\":\"{1}\",\"valueTypeName\":\"{2}\",\"isCacheable\":true",
+				id, opts.Code, opts.Type) + "}";
+			try {
+				BpmonlineClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
+				Console.WriteLine("SysSettings with code: {0} created.", opts.Code);
+			} catch {
+				Console.WriteLine("SysSettings with code: {0} already exists.", opts.Code);
+			}
 		}
 
 		private static void UpdateSysSetting(SysSettingsOptions opts) {
 			string requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
-			string responseFromServer = BpmonlineClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
-			Console.WriteLine(responseFromServer);
-		}
-
-		private static void DeleteSysSetting(SysSettingsOptions opts) {
-			throw new NotImplementedException();
-		}
-
-		private static void RenameSysSetting(SysSettingsOptions opts) {
-			throw new NotImplementedException();
-		}
-
-		private static int FetchSysSettings(SysSettingsOptions opts) {
 			try {
-				string operation = opts.Operation.ToLower();
+				BpmonlineClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
+				Console.WriteLine("SysSettings with code: {0} updated.", opts.Code);
+			} catch {
+				Console.WriteLine("SysSettings with code: {0} is not updated.", opts.Code);
+			}
+		}
 
+		private static int SetSysSettings(SysSettingsOptions opts) {
+			try {
 				Configure(opts);
-
-				switch (operation) {
-					case "create":
-						CreateSysSetting(opts);
-						break;
-					case "update":
-						UpdateSysSetting(opts);
-						break;
-					case "delete":
-						DeleteSysSetting(opts);
-						break;
-					case "rename":
-						RenameSysSetting(opts);
-						break;
-					default: {
-							throw new NotSupportedException($"You use not supported option type {operation}");
-						}
-				}
+				CreateSysSetting(opts);
+				UpdateSysSetting(opts);
 			} catch (Exception ex) {
 				return 1;
 			}
