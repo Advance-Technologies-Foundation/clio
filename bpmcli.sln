@@ -11,7 +11,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "updater", "updater\updater.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bpmcligate", "bpmcligate\bpmcligate.csproj", "{E24226F9-C177-458F-AF34-9338E2699983}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bpmclient", "bpmclient\bpmclient.csproj", "{2DD65DFE-69A0-4D52-852F-24C2A3811141}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmclient", "bpmclient\bpmclient.csproj", "{2DD65DFE-69A0-4D52-852F-24C2A3811141}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
