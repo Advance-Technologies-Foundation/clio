@@ -689,14 +689,7 @@ namespace bpmcli
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
 			var envPath = bpmcliEnvironment.GetRegisteredPath();
-			var culture = Thread.CurrentThread.CurrentUICulture.TwoLetterISOLanguageName;
-			helpDirectoryPath = Path.Combine(envPath, helpFolderName, culture);
-			if (!Directory.Exists(helpDirectoryPath)) {
-				helpDirectoryPath = Path.Combine(envPath, helpFolderName, "en");
-			}
-			if (!Directory.Exists(helpDirectoryPath)) {
-				helpDirectoryPath = Path.Combine(envPath, helpFolderName);
-			}
+			helpDirectoryPath = Path.Combine(envPath, helpFolderName);
 			Parser.Default.Settings.ShowHeader = false;
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
