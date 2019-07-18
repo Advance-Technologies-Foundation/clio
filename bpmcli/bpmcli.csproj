@@ -56,6 +56,9 @@
     <None Update="help\en\execute-assembly-code.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="help\en\pull-pkg.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="help\en\push-pkg.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
