@@ -1,0 +1,37 @@
+COMMAND TYPE
+	CI/CD commands
+	
+NAME
+	clear-redis-db - clear web application(website) cache
+
+DESCRIPTION
+	clear-redis-db command can be used in CI/CD pipeline or in development 
+	when you need forcible clear a web application (website) cache. Be 
+	attentive, the command only clear  web application cache and doesn't 
+	restart it.
+
+SYNOPSIS
+	clear-redis-db [Name] [options]
+	
+OPTIONS
+	Name (pos. 0)	Application name
+
+	--uri			-u			Application uri
+			
+	--Password		-p			User password
+			
+	--Login			-l			User login (administrator permission required)
+			
+	--Environment		-e			Environment name
+			
+	--Maintainer		-m			Maintainer name
+
+EXAMPLE
+	bpmcli clear-redis-db
+		clear current web application(website) cache
+		
+	bpmcli clear-redis-db myapp
+		clear web application(website) cache which registered as a myapp
+
+REPORTING BUGS
+	https://github.com/Advance-Technologies-Foundation/bpmcli
