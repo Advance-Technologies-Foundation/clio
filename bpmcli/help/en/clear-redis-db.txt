@@ -16,11 +16,11 @@ SYNOPSIS
 OPTIONS
 	Name (pos. 0)	Application name
 
-	--uri			-u			Application uri
+	--uri				-u			Application uri
 			
-	--Password		-p			User password
+	--Password			-p			User password
 			
-	--Login			-l			User login (administrator permission required)
+	--Login				-l			User login (administrator permission required)
 			
 	--Environment		-e			Environment name
 			
