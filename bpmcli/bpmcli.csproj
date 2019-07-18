@@ -23,6 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="bpmonline.client" Version="1.0.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.7" />
     <PackageReference Include="ConsoleTables" Version="2.3.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="2.2.0" />
@@ -34,7 +35,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\bpmclient\bpmclient.csproj" />
     <ProjectReference Include="..\updater\updater.csproj" />
   </ItemGroup>
   <ItemGroup>
