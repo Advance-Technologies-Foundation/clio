@@ -1,0 +1,38 @@
+COMMAND TYPE
+	CI/CD commands
+	
+NAME
+	new-pkg - create new package in a web application
+
+DESCRIPTION
+	new-pkg command can be used in CI/CD pipeline or in development 
+	when you need to create new package in a web application (website).
+
+SYNOPSIS
+	bpmcli new-pkg <PACKAGE_NAME>
+	
+OPTIONS
+	Package name (pos. 0)	Name of package to create
+
+	--uri					-u			Application uri
+			
+	--Password				-p			User password
+			
+	--Login					-l			User login (administrator permission required)
+			
+	--Environment	        -e			Environment name
+			
+	--Maintainer	        -m			Maintainer name
+
+EXAMPLE
+	bpmcli new-pkg <PACKAGE_NAME>
+		create new package in a web application
+
+	bpmcli pull-pkg <PACKAGE_NAME> -r bin
+		create new package in a web application and set reference on local 
+		core assembly with using bpmonline file design mode with command in 
+		Pkg directory
+
+
+REPORTING BUGS
+	https://github.com/Advance-Technologies-Foundation/bpmcli
