@@ -2,7 +2,7 @@ bpm'online CLI
 
 DESCRIPTION
     bpmcli - is a bpm'online command line interface utility that makes possible
-    development in the local fail system and to build automation CI.
+    development in the local file system and to build automation CI.
 
 COMMANDS
     Name                    Short name  Description
