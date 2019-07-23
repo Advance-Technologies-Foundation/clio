@@ -15,9 +15,9 @@ SYNOPSIS
 OPTIONS
     Name (pos. 0)       Required. Path to executed assembly
 
-    --ExecutorType		-t		Required. Assembly type name for proceed
+    --ExecutorType      -t      Required. Assembly type name for proceed
 
-    --uri              	-u      Application uri
+    --uri               -u      Application uri
 
     --Password          -p      User password
 
