@@ -1,14 +1,14 @@
 COMMAND TYPE
-	Service commands
-	
+    Service commands
+
 NAME
-	set-syssetting - Set setting value 
+    set-syssetting - Set setting value
 
 DESCRIPTION
-	set-syssetting set setting value. 
+    set-syssetting set setting value.
 
 EXAMPLE
-	set-syssetting ExampleCode True Boolean
+    set-syssetting ExampleCode True Boolean
 
 REPORTING BUGS
-	https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/bpmcli

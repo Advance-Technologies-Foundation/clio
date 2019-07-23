@@ -1,37 +1,37 @@
 COMMAND TYPE
-	CI/CD commands
-	
+    CI/CD commands
+
 NAME
-	restart-web-app - restart web application(website)
+    restart-web-app - restart web application(website)
 
 DESCRIPTION
-	restart-web-app command can be used in CI/CD pipeline or in development 
-	when you need forcible restart a web application (website). Be attentive, 
-	the command restart only web application and doesn't clear application 
-	cache.
+    restart-web-app command can be used in CI/CD pipeline or in development
+    when you need forcible restart a web application (website). Be attentive,
+    the command restart only web application and doesn't clear application
+    cache.
 
 SYNOPSIS
-	restart-web-app [Name] [options]
-	
-OPTIONS
-	Name (pos. 0)	Application name
+    restart-web-app [Name] [options]
 
-	--uri					-u			Application uri
-			
-	--Password				-p			User password
-			
-	--Login					-l			User login (administrator permission required)
-			
-	--Environment	        -e			Environment name
-			
-	--Maintainer			-m			Maintainer name
+OPTIONS
+    Name (pos. 0)	Application name
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+    --Maintainer            -m          Maintainer name
 
 EXAMPLE
-	bpmcli restart-web-app
-		restarts current web application(website)
-		
-	bpmcli restart-web-app myapp
-		restarts web application(website) which registered as a myapp
+    bpmcli restart-web-app
+        restarts current web application(website)
+
+    bpmcli restart-web-app myapp
+        restarts web application(website) which registered as a myapp
 
 REPORTING BUGS
-	https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/bpmcli
