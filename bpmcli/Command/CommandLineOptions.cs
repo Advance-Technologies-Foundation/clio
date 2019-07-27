@@ -84,13 +84,6 @@ namespace bpmcli
 		public string Packages { get; set; }
 	}
 
-	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]
-	internal class UnregAppOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]
-		public string Name { get; set; }
-	}
-
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
 	internal class PushPkgOptions : EnvironmentOptions
 	{

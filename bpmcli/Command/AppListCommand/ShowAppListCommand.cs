@@ -11,7 +11,7 @@ namespace bpmcli
 	}
 
 
-	internal class AppListCommand {
+	internal class ShowAppListCommand {
 
 		public static int ShowAppList(AppListOptions options) {
 			try {

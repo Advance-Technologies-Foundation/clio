@@ -228,18 +228,6 @@ namespace bpmcli
 			BpmonlineClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
 		}
 
-		private static int UnregApplication(UnregAppOptions options) {
-			try {
-				var repository = new SettingsRepository();
-				repository.RemoveEnvironment(options.Name);
-				repository.ShowSettingsTo(Console.Out);
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
 
 		private static void DownloadPackages(string packageName) {
 			string requestData = "[\"" + packageName + "\"]";
@@ -645,8 +633,8 @@ namespace bpmcli
 					(ClearRedisOptions opts) => ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
-					(AppListOptions opts) => AppListCommand.ShowAppList(opts),
-					(UnregAppOptions opts) => UnregApplication(opts),
+					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
+					(UnregAppOptions opts) => UnregAppCommand.UnregApplication(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
 					(DeletePkgOptions opts) => Delete(opts),
