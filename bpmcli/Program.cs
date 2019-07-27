@@ -275,17 +275,6 @@ namespace bpmcli
 			}
 		}
 
-		private static int ViewEnvironments(AppListOptions options) {
-			try {
-				var repository = new SettingsRepository();
-				repository.ShowSettingsTo(Console.Out, options.Name);
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
-
 		private static int UnregApplication(UnregAppOptions options) {
 			try {
 				var repository = new SettingsRepository();
@@ -703,7 +692,7 @@ namespace bpmcli
 					(ClearRedisOptions opts) => ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(RegAppOptions opts) => ConfigureEnvironment(opts),
-					(AppListOptions opts) => ViewEnvironments(opts),
+					(AppListOptions opts) => AppListCommand.ShowAppList(opts),
 					(UnregAppOptions opts) => UnregApplication(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
