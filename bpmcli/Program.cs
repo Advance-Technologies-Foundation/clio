@@ -28,10 +28,10 @@ namespace bpmcli
 	}
 
 	class Program {
-		private static string _userName;
-		private static string _userPassword;
-		private static string _url; // Необходимо получить из конфига
-		private static bool _isNetCore;
+		private static string _userName => _settings.Login;
+		private static string _userPassword => _settings.Password;
+		private static string _url => _settings.Uri; // Необходимо получить из конфига
+		private static bool _isNetCore => _settings.IsNetCore;
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
 
@@ -71,22 +71,7 @@ namespace bpmcli
 		private static void Configure(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
 			_environmentName = options.Environment;
-			_settings = settingsRepository.GetEnvironment(_environmentName);
-			_url = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
-			_isNetCore = _settings.IsNetCore ? _settings.IsNetCore : false;
-			_userName = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
-			_userPassword = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
-			if (_settings.Safe.HasValue && _settings.Safe.Value && _safe) {
-
-				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
-				Console.Write($"Do you want to continue? [Y/N]:");
-				var answer = Console.ReadKey();
-				Console.WriteLine();
-				if (answer.KeyChar != 'y') {
-					Console.WriteLine("Operation was canceled by user");
-					Environment.Exit(1);
-				}
-			}
+			_settings = settingsRepository.GetEnvironment(options);
 		}
 
 		private static void CheckUpdate() {
@@ -241,38 +226,6 @@ namespace bpmcli
 
 		private static void ClearRedisDbInternal() {
 			BpmonlineClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
-		}
-
-		private static int ConfigureEnvironment(RegAppOptions options) {
-			try {
-				_safe = false;
-				var repository = new SettingsRepository();
-				var environment = new EnvironmentSettings() {
-					Login = options.Login,
-					Password = options.Password,
-					Uri = options.Uri,
-					Maintainer = options.Maintainer,
-					Safe = options.SafeValue
-				};
-				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
-					if (repository.IsExistInEnvironment(options.ActiveEnvironment))
-						repository.SetActiveEnvironment(options.ActiveEnvironment);
-					else
-						throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
-				}
-				repository.ConfigureEnvironment(options.Name, environment);
-				options.Environment = options.Environment ?? options.Name;
-				repository.ShowSettingsTo(Console.Out, options.Name);
-				Console.WriteLine();
-				Configure(options);
-				Console.WriteLine($"Try login to {_url} with {_userName} credentials...");
-				BpmonlineClient.Login();
-				Console.WriteLine($"Login done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine($"{e.Message}");
-				return 1;
-			}
 		}
 
 		private static int UnregApplication(UnregAppOptions options) {
@@ -691,7 +644,7 @@ namespace bpmcli
 					(RestartOptions opts) => Restart(opts),
 					(ClearRedisOptions opts) => ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
-					(RegAppOptions opts) => ConfigureEnvironment(opts),
+					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
 					(AppListOptions opts) => AppListCommand.ShowAppList(opts),
 					(UnregAppOptions opts) => UnregApplication(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),

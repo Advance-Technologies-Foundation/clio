@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using CommandLine;
 using CommandLine.Text;
 
@@ -83,33 +82,6 @@ namespace bpmcli
 
 		[Option('p', "Packages", Required = false)]
 		public string Packages { get; set; }
-	}
-
-	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
-	internal class RegAppOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
-		public string Name { get; set; }
-
-		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
-		public string ActiveEnvironment { get; set; }
-
-		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
-		public string Safe { get; set; }
-
-		public bool? SafeValue
-		{
-			get
-			{
-				if (!String.IsNullOrEmpty(Safe)) {
-					bool result;
-					if (bool.TryParse(Safe, out result)) {
-						return result;
-					}
-				}
-				return null;
-			}
-		}
 	}
 
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]

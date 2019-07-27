@@ -159,6 +159,27 @@ namespace bpmcli
 			return environment;
 		}
 
+		internal EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
+				var result = new EnvironmentSettings();
+				var settingsRepository = new SettingsRepository();
+				var _settings = settingsRepository.GetEnvironment(options.Environment);
+				result.Uri  = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
+				result.IsNetCore = _settings.IsNetCore ? _settings.IsNetCore : false;
+				result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
+				result.Password  = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
+				if (_settings.Safe.HasValue && _settings.Safe.Value) {
+					Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
+					Console.Write($"Do you want to continue? [Y/N]:");
+					var answer = Console.ReadKey();
+					Console.WriteLine();
+					if (answer.KeyChar != 'y') {
+						Console.WriteLine("Operation was canceled by user");
+						Environment.Exit(1);
+					}
+				}
+				return result;
+		}
+
 		internal bool IsExistInEnvironment(string name)
 		{
 			return _settings.Environments.ContainsKey(name);
