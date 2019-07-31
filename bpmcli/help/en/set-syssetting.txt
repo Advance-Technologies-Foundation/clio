@@ -5,7 +5,7 @@ NAME
     set-syssetting - Set setting value
 
 DESCRIPTION
-    set-syssetting commandset setting value.
+    set-syssetting command set setting value.
 	set-syssetting command can be used in CI/CD pipeline or in development
     when you need create or update settings on web application (website).
 
