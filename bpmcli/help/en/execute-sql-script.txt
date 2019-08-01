@@ -1,0 +1,33 @@
+COMMAND TYPE
+    Service commands
+
+NAME
+    execute-sql-script - Execute script on web application
+
+DESCRIPTION
+    Executes custom script on web application.
+
+OPTIONS
+    Value (pos. 0)	Sql script
+
+	--uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+    --Maintainer            -m          Maintainer name
+
+	--File					-f			Path to the sql script file
+
+	--View					-v			View type
+
+	--DestinationPath		-d			Path to results file
+
+EXAMPLE
+    execute-sql-script "SELECT Id FROM SysSettings WHERE Code = 'CustomPackageId'"
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/bpmcli
