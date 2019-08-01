@@ -10,9 +10,9 @@ DESCRIPTION
 	will be automaitaly restarted.
 
 EXAMPLE
-    set-dev-mode
+    bpmcli set-dev-mode
 
-	set-dev-mode -e <ENVIRONMENT NAME>
+	bpmcli set-dev-mode -e <ENVIRONMENT NAME>
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli

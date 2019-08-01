@@ -9,9 +9,9 @@ DESCRIPTION
 	options of bpmcli.
 
 EXAMPLE
-    install-gate
+    bpmcli install-gate
 
-	install-gate -e <ENVIRONMENT NAME>
+	bpmcli install-gate -e <ENVIRONMENT NAME>
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli

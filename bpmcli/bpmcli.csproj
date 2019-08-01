@@ -53,6 +53,9 @@
     <None Update="help\en\clear-redis-db.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="help\en\delete-pkg-remote.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="help\en\execute-assembly-code.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
