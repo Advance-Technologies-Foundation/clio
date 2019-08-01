@@ -181,7 +181,7 @@ bpmcli clear-redis-db <ENVIRONMENT_NAME>
 
 Environment is the set of configuration options. It consist of name, bpm'online URL, login and password.
 
-## Create/Update a environment
+## Create/Update an environment
 
 Register new application settings
 

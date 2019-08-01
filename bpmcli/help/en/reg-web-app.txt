@@ -2,7 +2,7 @@ COMMAND TYPE
     CI/CD commands
 
 NAME
-    reg-web-app - create/update environment
+    reg-web-app - create/update an environment
 
 DESCRIPTION
     Register new application settings or update existing
@@ -22,8 +22,6 @@ OPTIONS
     --Password              -p          User password
 
     --Login                 -l          User login (administrator permission required)
-
-    --Environment           -e          Environment name
 
     --Maintainer            -m          Maintainer name
 
