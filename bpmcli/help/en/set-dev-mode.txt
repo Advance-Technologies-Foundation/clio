@@ -1,0 +1,18 @@
+﻿COMMAND TYPE
+    Development commands
+
+NAME
+    set-dev-mode - Setup develepment mode for selected envirinment
+
+DESCRIPTION
+    System settings Maintainer will be updated by Maintainer value from environment setting.
+	All package for this maintainer will be unlocked on application. After this application
+	will be automaitaly restarted.
+
+EXAMPLE
+    bpmcli set-dev-mode
+
+	bpmcli set-dev-mode -e <ENVIRONMENT NAME>
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/bpmcli

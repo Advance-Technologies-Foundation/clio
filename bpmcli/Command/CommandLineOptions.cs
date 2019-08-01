@@ -77,7 +77,7 @@ namespace bpmcli
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
 
-		[Option('d', "DestinationPath", Required = false)]
+		[Option('d', "DestinationPath", Required = false, HelpText = "Full destination path for gz file")]
 		public string DestinationPath { get; set; }
 
 		[Option('p', "Packages", Required = false)]
