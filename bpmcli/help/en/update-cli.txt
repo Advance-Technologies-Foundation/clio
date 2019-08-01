@@ -8,8 +8,8 @@ DESCRIPTION
     update-cli updates the bpmcli to the latest version. Any time when you run
     any commands by bpmcli it checks the current version, and if it available
     bpmcli show the message about it.
-    Recommended using the latest version of bpmcli with fixed bugs and extended
-    features.
+    Recommended to use the latest version of bpmcli with fixed bugs and 
+    extended features.
 
 EXAMPLE
     update-cli

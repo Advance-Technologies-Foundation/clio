@@ -31,7 +31,7 @@ EXAMPLE
         restarts current web application(website)
 
     bpmcli restart-web-app myapp
-        restarts web application(website) which registered as a myapp
+        restarts web application(website) that registered as a myapp
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli

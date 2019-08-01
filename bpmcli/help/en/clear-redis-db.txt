@@ -31,7 +31,7 @@ EXAMPLE
         clear current web application(website) cache
 
     bpmcli clear-redis-db myapp
-        clear web application(website) cache which registered as a myapp
+        clear web application(website) cache that registered as a myapp
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli

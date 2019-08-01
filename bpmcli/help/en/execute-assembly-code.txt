@@ -2,7 +2,7 @@ COMMAND TYPE
     Development commands
 
 NAME
-    execute-assembly-code - execute class code which implements IExecuter
+    execute-assembly-code - execute class code that implements IExecuter
     interface
 
 DESCRIPTION

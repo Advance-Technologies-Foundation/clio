@@ -8,7 +8,7 @@ COMMANDS
     Name                    Short name  Description
     ---------------------   ----------  ---------------------------------------
 
-    execute-assembly-code   exec        Execute an assembly code which
+    execute-assembly-code   exec        Execute an assembly code that
                                         implements the IExecutor interface
 
     restart-web-app         restart     Restart a web application

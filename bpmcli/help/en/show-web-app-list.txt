@@ -5,7 +5,7 @@ NAME
     show-web-app-list - show applications options list
 
 DESCRIPTION
-    View list of all applications
+    View list of all web applications
 
 SYNOPSIS
     bpmcli show-web-app-list

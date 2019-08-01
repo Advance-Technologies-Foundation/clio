@@ -6,13 +6,14 @@ NAME
 
 
 DESCRIPTION
-    generate-pkg-zip command compress package into *.gz archive for directory which conatain package folder
+    generate-pkg-zip command compress package into *.gz archive for directory 
+    that contain package folder
 
 
 OPTIONS
-    Package name (pos. 0)	Name/path of package folder
+    Package name (pos. 0)    Name/path of package folder
 
-    --DestinationPath       -d         Destionation path for result gz file (Optional)
+    --DestinationPath       -d  Destionation path for result gz file (Optional)
 
 
 EXAMPLE
@@ -20,16 +21,19 @@ EXAMPLE
         compress package to .gz file if command run from package directory
 
     bpmcli generate-pkg-zip <PACKAGE_NAME>
-        compress package to .gz file if command run from package containing directory
+        compress package to .gz file if command run from package containing 
+        directory
 
-	bpmcli generate-pkg-zip <PACKAGE_NAME> -d "C:\STORE\<PACKAGE>.gz"
-        compress package to specified .gz file if command run from package containing directory
+    bpmcli generate-pkg-zip <PACKAGE_NAME> -d "C:\STORE\<PACKAGE>.gz"
+        compress package to specified .gz file if command run from package 
+        containing directory
 
     bpmcli generate-pkg-zip "C:\DEV\PKG\<PACKAG_NAME>" -d "C:\STORE\<PACKAGE>.gz"
         compress package from specify directory to specify .gz file
 
     bpmcli generate-pkg-zip <PACKAGE_NAME_1>,<PACKAGE_NAME_2>,<PACKAGE_NAME_3>
-        compress more than one packages to single .gz file if command run from packages containing directory
+        compress more than one packages to single .gz file if command run from 
+        packages containing directory
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli

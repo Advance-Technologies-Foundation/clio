@@ -2,16 +2,16 @@ COMMAND TYPE
     CI/CD commands
 
 NAME
-    reg-web-app - create/update an environment
+    reg-web-app - create/update a web application (website)
 
 DESCRIPTION
-    Register new application settings or update existing
+    Register a new web application settings or update existing
 
 SYNOPSIS
     bpmcli reg-web-app <ENVIRONMENT_NAME> -u http://mysite.bpmonline.com -l administrator -p password
 
 OPTIONS
-    Name (pos. 0)	Environment(application) name
+    Name (pos. 0)	Environment(web application) name
     
     --ActiveEnvironment     -a          Set a web application by default
     
