@@ -59,6 +59,9 @@
     <None Update="help\en\help.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="help\en\install-gate.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="help\en\pull-pkg.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
