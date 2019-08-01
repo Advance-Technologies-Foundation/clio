@@ -1,5 +1,5 @@
 COMMAND TYPE
-    CI/CD commands
+    Development
 
 NAME
     new-pkg - create new package in a web application

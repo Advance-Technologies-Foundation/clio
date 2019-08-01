@@ -1,0 +1,24 @@
+COMMAND TYPE
+    Service
+
+NAME
+    show-web-app-list - show applications options list
+
+DESCRIPTION
+    View list of all applications
+
+SYNOPSIS
+    bpmcli show-web-app-list
+
+OPTIONS
+    Name (pos. 0)    Environment(application) name
+
+EXAMPLE
+    bpmcli show-web-app-list
+        shows all applications options list
+        
+    bpmcli show-web-app-list <ENVIRONMENT_NAME>
+            shows <ENVIRONMENT_NAME> application options list
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/bpmcli
