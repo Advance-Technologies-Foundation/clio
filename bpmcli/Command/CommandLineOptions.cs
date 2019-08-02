@@ -173,7 +173,7 @@ namespace bpmcli
 		public string DestPath { get; set; }
 	}
 
-	[Verb("update-cli", HelpText = "Update bpmcli to new available version")]
+	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update bpmcli to new available version")]
 	internal class UpdateCliOptions
 	{
 	}
@@ -195,7 +195,7 @@ namespace bpmcli
 		public string DestPath { get; set; }
 	}
 
-	[Verb("install-gate", Aliases = new string[] { "update-gate" }, HelpText = "Install bpmcli api gateway to application")]
+	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install bpmcli api gateway to application")]
 	internal class InstallGateOptions : EnvironmentOptions
 	{
 	}

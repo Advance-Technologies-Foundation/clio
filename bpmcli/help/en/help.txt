@@ -15,7 +15,7 @@ COMMANDS
 
     clear-redis-db          flushdb     Clear redis database
 
-    reg-web-app                         Configure a web application settings
+    reg-web-app             reg         Configure a web application settings
 
     unreg-web-app           unreg       Unregister application's settings from
                                         the list
@@ -35,16 +35,16 @@ COMMANDS
 
     pull-pkg                download    Download package from a web application
 
-    update-cli                          Update bpmcli to new available version
+    update-cli              update      Update bpmcli to new available version
 
     execute-sql-script      sql         Execute SQL script on a web application
 
-    install-gate                        Install bpmcli api gateway package on a
+    install-gate            gate        Install bpmcli api gateway package on a
                                         web application(website)
 
     add-item                create      Create item in a project
 
-    set-dev-mode                        Activate developer mode for selected
+    set-dev-mode            dev         Activate developer mode for selected
                                         web application(website)
 
 AUTHOR
