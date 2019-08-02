@@ -2,15 +2,15 @@ COMMAND TYPE
     Service commands
 
 NAME
-    execute-sql-script - Execute script on web application
+    execute-sql-script - Execute SQL script on a web application
 
 DESCRIPTION
-    Executes custom script on web application.
+    Executes custom SQL script on a web application.
 
 OPTIONS
-    Value (pos. 0)	Sql script
+    Value (pos. 0)   Sql script
 
-	--uri                   -u          Application uri
+    --uri                   -u          Application uri
 
     --Password              -p          User password
 
@@ -20,11 +20,11 @@ OPTIONS
 
     --Maintainer            -m          Maintainer name
 
-	--File					-f			Path to the sql script file
+    --File                  -f          Path to the sql script file
 
-	--View					-v			View type
+    --View                  -v          View type
 
-	--DestinationPath		-d			Path to results file
+    --DestinationPath       -d          Path to results file
 
 EXAMPLE
     execute-sql-script "SELECT Id FROM SysSettings WHERE Code = 'CustomPackageId'"

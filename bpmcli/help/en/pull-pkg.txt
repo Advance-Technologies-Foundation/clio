@@ -2,8 +2,7 @@ COMMAND TYPE
     CI/CD commands
 
 NAME
-    pull-pkg - Install package from directory you can use the next command:
-           for non compressed package in current folder
+    pull-pkg - download package to local file system from default a web application
 
 DESCRIPTION
     pull-pkg command can be used in CI/CD pipeline or in development

@@ -2,16 +2,16 @@
     Service commands
 
 NAME
-    install-gate - Setup develepment mode for selected envirinment
+    install-gate - installs a service package that expands bpmcli commands
 
 DESCRIPTION
-    Installed to the selected application service package bpmcligate for compatible full
-	options of bpmcli.
+    Installs on the selected web application(website) a service package 
+    "bpmcligate" that makes available all bpmcli's commands.
 
 EXAMPLE
     bpmcli install-gate
 
-	bpmcli install-gate -e <ENVIRONMENT NAME>
+    bpmcli install-gate -e <ENVIRONMENT NAME>
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli

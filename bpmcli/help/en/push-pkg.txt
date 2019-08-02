@@ -13,13 +13,15 @@ SYNOPSIS
     bpmcli push-pkg <PACKAGE_NAME>
 
 OPTIONS
-    Package name (pos. 0)	Name/path of package folder or path for zip or gz package file
+    Package name (pos. 0) Name/path of package folder or path for zip or gz 
+    package file
 
     --uri                   -u          Application uri
 
     --Password              -p          User password
 
-    --Login                 -l          User login (administrator permission required)
+    --Login                 -l          User login (administrator permission 
+                                                                      required)
 
     --Environment           -e          Environment name
 
@@ -27,7 +29,8 @@ OPTIONS
 
 EXAMPLE
     bpmcli push-pkg <PACKAGE_NAME>
-        install package from directory you can use the next command: for non compressed package
+        install package from directory you can use the next command: for non 
+        compressed package
         in current folder
 
     bpmcli push-pkg package.gz
