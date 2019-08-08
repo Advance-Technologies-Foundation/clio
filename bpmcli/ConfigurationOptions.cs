@@ -172,7 +172,7 @@ namespace bpmcli
 					Console.Write($"Do you want to continue? [Y/N]:");
 					var answer = Console.ReadKey();
 					Console.WriteLine();
-					if (answer.KeyChar != 'y') {
+					if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
 						Console.WriteLine("Operation was canceled by user");
 						Environment.Exit(1);
 					}
