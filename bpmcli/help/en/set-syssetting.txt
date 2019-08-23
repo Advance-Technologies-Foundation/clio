@@ -10,14 +10,14 @@ DESCRIPTION
     when you need create or update settings on web application (website).
 
 OPTIONS
-    Code (pos. 0)    Syssetting code
+    Code (pos. 0)    Sys setting code
 
-    Value (pos. 1)   Syssetting Value
+    Value (pos. 1)   Sys setting Value
 
-    Type (pos. 2)    Syssetting Type
+    Type (pos. 2)    Sys setting Type
 
 EXAMPLE
-    set-syssetting ExampleCode True Boolean
-
+    set-syssetting ExampleCode True Boolean - create boolean sys setting with code ExampleCode and value True
+	set-syssetting Maintainer ATF - update Maintainer sys setting with value ATF
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/bpmcli
