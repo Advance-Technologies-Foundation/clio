@@ -137,6 +137,7 @@
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
     <Content Include="Files\cs\placeholder.txt" />
+	<Content Include="Files\cs\*.cs" />
     <Content Include="Assemblies\**\*.*" />
     <Content Include="Data\**\*.*" />
     <Content Include="Resources\**\*.*" />
