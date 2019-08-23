@@ -167,6 +167,8 @@ namespace bpmcli
 				result.IsNetCore = _settings.IsNetCore ? _settings.IsNetCore : false;
 				result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 				result.Password  = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
+				result.Maintainer =
+					string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
 				if (_settings.Safe.HasValue && _settings.Safe.Value) {
 					Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 					Console.Write($"Do you want to continue? [Y/N]:");
