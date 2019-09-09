@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Json;
 using System.Linq;
+using System.Reflection;
 using File = System.IO.File;
 
 namespace bpmcli
@@ -225,12 +226,12 @@ namespace bpmcli
 		}
 
 		private static string GetTplPath(string tplPath) {
-			string fullPath = tplPath;
+			string fullPath;
 			if (File.Exists(tplPath)) {
 				fullPath = tplPath;
-			}  else { 
-				var envPath = GetPathFromEnvironment();
-				fullPath = Path.Combine(envPath, tplPath);
+			} else {
+				var executingPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+				fullPath = Path.Combine(executingPath, tplPath);
 			}
 			return fullPath;
 		}
