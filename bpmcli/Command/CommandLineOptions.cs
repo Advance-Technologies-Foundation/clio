@@ -82,6 +82,9 @@ namespace bpmcli
 
 		[Option('p', "Packages", Required = false)]
 		public string Packages { get; set; }
+
+		[Option('s', "SkipPdb", Required = false, Default = false)]
+		public bool SkipPdb { get; set; }
 	}
 
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]

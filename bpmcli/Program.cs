@@ -241,7 +241,7 @@ namespace bpmcli
 			Console.WriteLine(packageName + " - " + responseFromServer);
 		}
 
-		private static void CompressionProjects(string sourcePath, string destinationPath, IEnumerable<string> names) {
+		private static void CompressionProjects(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb) {
 			string tempPath = Path.Combine(Path.GetTempPath(), "Application_");// + DateTime.Now.ToShortDateString());
 			if (Directory.Exists(tempPath)) {
 				Directory.Delete(tempPath, true);
@@ -253,7 +253,7 @@ namespace bpmcli
 			foreach (var name in names) {
 				var currentSourcePath = Path.Combine(sourcePath, name);
 				var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
-				CompressionProject(currentSourcePath, currentDestinationPath);
+				CompressionProject(currentSourcePath, currentDestinationPath, skipPdb);
 			}
 			ZipFile.CreateFromDirectory(tempPath, destinationPath);
 		}
@@ -262,14 +262,15 @@ namespace bpmcli
 			return StringParser.ParseArray(inputline);
 		}
 
-		private static void CompressionProject(string sourcePath, string destinationPath) {
+		private static void CompressionProject(string sourcePath, string destinationPath, bool skipPdb) {
 			if (File.Exists(destinationPath)) {
 				File.Delete(destinationPath);
 			}
 			string tempPath = CreateTempPath(sourcePath);
 			CopyProjectFiles(sourcePath, tempPath);
 
-			string[] files = Directory.GetFiles(tempPath, "*.*", SearchOption.AllDirectories);
+			var files = Directory.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
+				.Where(name => !name.EndsWith(".pdb") || !skipPdb);
 			int directoryPathLength = tempPath.Length;
 			using (Stream fileStream =
 				File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None)) {
@@ -539,12 +540,12 @@ namespace bpmcli
 			try {
 				if (options.Packages == null) {
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
-					CompressionProject(options.Name, destinationPath);
+					CompressionProject(options.Name, destinationPath, options.SkipPdb);
 				} else {
 					var packages = GetPackages(options.Packages);
 					string zipFileName = $"packages_{DateTime.Now.ToString("yy.MM.dd_hh.mm.ss")}.zip";
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
-					CompressionProjects(options.Name, destinationPath, packages);
+					CompressionProjects(options.Name, destinationPath, packages, options.SkipPdb);
 				}
 				Console.WriteLine("Done");
 				return 0;
@@ -567,7 +568,7 @@ namespace bpmcli
 					if (Directory.Exists(options.Name)) {
 						var folderPath = options.Name;
 						var filePath = options.Name + ".gz";
-						CompressionProject(folderPath, filePath);
+						CompressionProject(folderPath, filePath, false);
 						logText = InstallPackage(filePath);
 						File.Delete(filePath);
 					}
@@ -619,7 +620,7 @@ namespace bpmcli
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
 			var envPath = bpmcliEnvironment.GetRegisteredPath();
-			helpDirectoryPath = Path.Combine(envPath, helpFolderName);
+			helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 			Parser.Default.Settings.ShowHeader = false;
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
