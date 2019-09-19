@@ -27,8 +27,8 @@ namespace bpmcli.environment
 		}
 
 		public string GetRegisteredPath() {
-            var environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
-            string[] cliPath = (environmentPath?.Split(Path.PathSeparator));
+			var environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
+			string[] cliPath = (environmentPath?.Split(Path.PathSeparator));
 			return cliPath?.FirstOrDefault(p => p.Contains("bpmcli"));
 		}
 

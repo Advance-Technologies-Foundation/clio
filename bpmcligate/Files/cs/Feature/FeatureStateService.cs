@@ -1,5 +1,6 @@
 ﻿namespace bpmcligate.Files.cs.Feature
 {
+	using System;
 	using System.ServiceModel;
 	using System.ServiceModel.Activation;
 	using System.ServiceModel.Web;
@@ -21,8 +22,12 @@
 		[WebInvoke(Method = "POST", UriTemplate = "SetFeatureState", BodyStyle = WebMessageBodyStyle.Wrapped,
 			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
 		public void SetFeatureState(string code, int state) {
-			var featureRepo = new FeatureRepository(UserConnection);
-			featureRepo.SetFeatureState(code, state);
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				var featureRepo = new FeatureRepository(UserConnection);
+				featureRepo.SetFeatureState(code, state);
+			} else {
+				throw new Exception("You don`n have permission for operation CanManageSolution");
+			}
 		}
 	}
 }
