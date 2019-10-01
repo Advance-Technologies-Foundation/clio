@@ -57,6 +57,7 @@ namespace bpmcli.Command.SysSettingsCommand
 				CreateSysSetting(opts);
 				UpdateSysSetting(opts);
 			} catch (Exception ex) {
+				Console.WriteLine($"Error during set setting value occured with message: {ex.Message}");
 				return 1;
 			}
 			return 0;
