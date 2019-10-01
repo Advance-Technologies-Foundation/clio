@@ -1,13 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
-using System.Json;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Text;
 using System.Threading;
 using bpmcli.environment;
@@ -15,7 +11,11 @@ using CommandLine;
 using ConsoleTables;
 using Newtonsoft.Json;
 using Bpmonline.Client;
-using bpmcli.Feature;
+using bpmcli.Command.UpdateCliCommand;
+using bpmcli.Command.FeatureCommand;
+using bpmcli.Command.RedisCommand;
+using bpmcli.Command.AssemblyCommand;
+using bpmcli.Command.SqlScriptCommand;
 
 namespace bpmcli
 {
@@ -35,7 +35,6 @@ namespace bpmcli
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
 
-		private static string ExecutorUrl => _url + @"/0/IDE/ExecuteScript";
 		private static string UnloadAppDomainUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 		private static string DownloadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
 		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
@@ -44,11 +43,8 @@ namespace bpmcli
 		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
 		private static string DeletePackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
-		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
-		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
-		private static string ExecuteSqlScriptUrl => _url + @"/0/rest/BpmcliApiGateway/ExecuteSqlScript";
 		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
 
 		private static string DefLogFileName => "bpmclilog.txt";
@@ -74,43 +70,6 @@ namespace bpmcli
 			_settings = settingsRepository.GetEnvironment(options);
 		}
 
-		private static void CheckUpdate() {
-			var currentVersion = GetCurrentVersion();
-			var latestVersion = GetLatestVersion();
-			if (currentVersion != latestVersion) {
-				MessageToConsole($"You are using bpmcli version {currentVersion}, however version {latestVersion} is available." +
-								 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-cli\' command.",
-					ConsoleColor.DarkYellow);
-			}
-		}
-
-		private static int UpdateCli() {
-			try {
-				var url = GetLastReleaseUrl();
-				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string updaterDirPath = Path.Combine(dir, "Update");
-				string tempDirPath = Path.Combine(dir, "Update", "Temp");
-				string filePath = Path.Combine(updaterDirPath, "update.zip");
-				string updaterName = "updater.dll";
-				Directory.CreateDirectory(tempDirPath);
-				Console.WriteLine("Download update.");
-				using (var client = new WebClient()) {
-					client.DownloadFile(url, filePath);
-				}
-				ZipFile.ExtractToDirectory(filePath, tempDirPath, true);
-				var updaterFile = new FileInfo(Path.Combine(tempDirPath, updaterName));
-				updaterFile.CopyTo(Path.Combine(dir, updaterFile.Name), true);
-				var updateCmdPath = Path.Combine(dir, "update.cmd");
-				var proc = new Process { StartInfo = { FileName = updateCmdPath } };
-				Console.WriteLine("Start update.");
-				proc.Start();
-				return 0;
-			} catch (Exception) {
-				Console.WriteLine("Update error.");
-				return 1;
-			}
-		}
-
 		private static int UpdateGate(EnvironmentOptions options) {
 			try {
 				Configure(options);
@@ -125,25 +84,6 @@ namespace bpmcli
 			}
 		}
 
-		private static string GetLastReleaseUrl() {
-			System.Threading.Tasks.Task<byte[]> body;
-			using (var client = new HttpClient()) {
-				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
-				using (var response = client.GetAsync(LastVersionUrl).Result) {
-					response.EnsureSuccessStatusCode();
-					body = response.Content.ReadAsByteArrayAsync();
-				}
-			}
-			string json;
-			var jsonStream = new MemoryStream(body.Result) { Position = 0 };
-			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
-				json = reader.ReadToEnd();
-			}
-			JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
-			var url = jsonDoc["assets"][0]["browser_download_url"];
-			return url;
-		}
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
 			var currentColor = Console.ForegroundColor;
@@ -152,37 +92,11 @@ namespace bpmcli
 			Console.ForegroundColor = currentColor;
 		}
 
-		private static string GetCurrentVersion() {
-			System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-			var fileVersionInfo = FileVersionInfo.GetVersionInfo(assembly.Location);
-			return fileVersionInfo.FileVersion;
-		}
-
-		private static string GetLatestVersion() {
-			System.Threading.Tasks.Task<byte[]> body;
-			using (var client = new HttpClient()) {
-				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
-				using (var response = client.GetAsync(LastVersionUrl).Result) {
-					response.EnsureSuccessStatusCode();
-					body = response.Content.ReadAsByteArrayAsync();
-				}
-			}
-			string json;
-			var jsonStream = new MemoryStream(body.Result) { Position = 0 };
-			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
-				json = reader.ReadToEnd();
-			}
-			var jsonDoc = (JsonObject)JsonValue.Parse(json);
-			var version = jsonDoc["tag_name"];
-			return version;
-		}
 
 		public static void SetupAppConnection(EnvironmentOptions options) {
 			Configure(options);
 			CheckApiVersion();
 		}
-
 
 
 		public static void CheckApiVersion() {
@@ -210,22 +124,8 @@ namespace bpmcli
 			return apiVersion;
 		}
 
-		private static void ExecuteScript(ExecuteAssemblyOptions options) {
-			string filePath = options.Name;
-			string executorType = options.ExecutorType;
-			var fileContent = File.ReadAllBytes(filePath);
-			string body = Convert.ToBase64String(fileContent);
-			string requestData = @"{""Body"":""" + body + @""",""LibraryType"":""" + executorType + @"""}";
-			var responseFromServer = BpmonlineClient.ExecutePostRequest(ExecutorUrl, requestData);
-			Console.WriteLine(responseFromServer);
-		}
-
 		private static void RestartInternal() {
 			BpmonlineClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
-		}
-
-		private static void ClearRedisDbInternal() {
-			BpmonlineClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
 		}
 
 
@@ -316,49 +216,6 @@ namespace bpmcli
 			}
 		}
 
-		private static int ExecuteSqlScript(ExecuteSqlScriptOptions opts) {
-			try {
-				SetupAppConnection(opts);
-				string result = string.Empty;
-				if (!string.IsNullOrEmpty(opts.Script)) {
-					result = ExecuteSqlScript(opts.Script);
-				} else if (!string.IsNullOrEmpty(opts.File)) {
-					var script = File.ReadAllText(opts.File);
-					Console.WriteLine(script);
-					script = script.Replace(Environment.NewLine, "|nl|");
-					result = ExecuteSqlScript(script);
-				} else {
-					Console.WriteLine("Enter sql (Ctrl+C for exit): ");
-					var sc = Console.ReadLine();
-					result = ExecuteSqlScript(sc);
-				}
-				result = GetSqlScriptResult(result, opts.ViewType);
-				Console.WriteLine(result);
-				if (opts.DestPath != null) {
-					File.WriteAllText(opts.DestPath, result);
-				}
-				Console.WriteLine("Done");
-			} catch (Exception e) {
-				Console.WriteLine(e);
-			}
-			return 0;
-		}
-
-		private static string GetSqlScriptResult(string result, string viewType) {
-			viewType = viewType.ToLower();
-			if (viewType == "table") {
-				if (result == "[]") {
-					return string.Empty;
-				}
-				if (int.TryParse(result, out var count)) {
-					return $"({count} rows affected)";
-				}
-				var dataTable = JsonConvert.DeserializeObject<DataTable>(result);
-				var table = CreateConsoleTable(dataTable);
-				return table.ToString();
-			}
-			return result;
-		}
 
 		private static string CorrectJson(string body) {
 			body = body.Replace("\\\\r\\\\n", Environment.NewLine);
@@ -368,23 +225,6 @@ namespace bpmcli
 			body = body.Replace("\\\\", "\\");
 			body = body.Trim(new Char[] { '\"' });
 			return body;
-		}
-
-		private static string ExecuteSqlScript(string script) {
-			var scriptData = "{ \"script\":\"" + script + "\"}";
-			string responseFormServer = BpmonlineClient.ExecutePostRequest(ExecuteSqlScriptUrl, scriptData);
-			return CorrectJson(responseFormServer);
-		}
-
-		private static ConsoleTable CreateConsoleTable(DataTable dataTable) {
-			var table = new ConsoleTable();
-			foreach (var column in dataTable.Columns) {
-				table.AddColumn(new [] { column.ToString() });
-			}
-			for (var i = 0; i < dataTable.Rows.Count; i++) {
-				table.AddRow(dataTable.Rows[i].ItemArray);
-			}
-			return table;
 		}
 
 		private static void UnZipPackages(string zipFilePath) {
@@ -473,12 +313,6 @@ namespace bpmcli
 			return fileName;
 		}
 
-		private static int Execute(ExecuteAssemblyOptions options) {
-			Configure(options);
-			ExecuteScript(options);
-			return 0;
-		}
-
 		private static int Register(RegisterOptions options) {
 			try {
 				var bpmcliEnv = new BpmcliEnvironment();
@@ -499,19 +333,6 @@ namespace bpmcli
 				options.Environment = options.Environment ?? options.Name;
 				SetupAppConnection(options);
 				RestartInternal();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
-
-		private static int ClearRedisDb(ClearRedisOptions options) {
-			try {
-				options.Environment = options.Environment ?? options.Name;
-				SetupAppConnection(options);
-				ClearRedisDbInternal();
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -613,9 +434,8 @@ namespace bpmcli
 		private static int Main(string[] args) {
 			var autoupdate = new SettingsRepository().GetAutoupdate();
 			if (autoupdate) {
-				new Thread(CheckUpdate).Start();
+				new Thread(UpdateCliCommand.CheckUpdate).Start();
 			}
-
 			var bpmcliEnvironment = new BpmcliEnvironment();
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
@@ -629,9 +449,9 @@ namespace bpmcli
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
 					SysSettingsOptions, FeatureOptions>(args)
 				.MapResult(
-					(ExecuteAssemblyOptions opts) => Execute(opts),
+					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssmebly(opts),
 					(RestartOptions opts) => Restart(opts),
-					(ClearRedisOptions opts) => ClearRedisDb(opts),
+					(ClearRedisOptions opts) => RedisCommand.ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
 					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
@@ -644,13 +464,13 @@ namespace bpmcli
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
-					(UpdateCliOptions opts) => UpdateCli(),
-					(ExecuteSqlScriptOptions opts) => ExecuteSqlScript(opts),
+					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(),
+					(ExecuteSqlScriptOptions opts) => SqlScriptCommand.ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SetSysSettings(opts),
-					(FeatureOptions opts) => SetFeatureState(opts),
+					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					errs => 1);
 		}
 
@@ -660,7 +480,11 @@ namespace bpmcli
 				var repository = new SettingsRepository();
 				_settings.DeveloperModeEnabled = true;
 				repository.ConfigureEnvironment(_environmentName, _settings);
-				ExecuteSqlScript($"UPDATE SysSettingsValue SET TextValue = '{_settings.Maintainer}' where SysSettingsId = (select Id from SysSettings where Code = 'Maintainer')");
+				var sysSettingOptions = new SysSettingsOptions() {
+					Code = "Maintainer",
+					Value = _settings.Maintainer
+				};
+				SetSysSettings(sysSettingOptions);
 				UnlockMaintainerPackageInternal();
 				RestartInternal();
 				Console.WriteLine("Done");
@@ -672,7 +496,8 @@ namespace bpmcli
 		}
 
 		private static void UnlockMaintainerPackageInternal() {
-			ExecuteSqlScript($"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_settings.Maintainer}'");
+			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_settings.Maintainer}'";
+			SqlScriptCommand.ExecuteSqlScript(script, BpmonlineClient);
 		}
 
 		private static int AddModels(ItemOptions opts) {
@@ -777,27 +602,6 @@ namespace bpmcli
 				CreateSysSetting(opts);
 				UpdateSysSetting(opts);
 			} catch (Exception ex) {
-				return 1;
-			}
-			return 0;
-		}
-
-		private static int SetFeatureState(FeatureOptions options) {
-			try {
-				Configure(options);
-				var fm = new FeatureModerator(BpmonlineClient);
-				switch (options.State) {
-					case 0: 
-						fm.SwitchFeatureOff(options.Code);
-						break;
-					case 1:
-						fm.SwitchFeatureOn(options.Code);
-						break;
-					default:
-						throw new NotSupportedException($"You use not supported feature state type {options.State}");
-				}
-			} catch (Exception exception) {
-				Console.WriteLine(exception.Message);
 				return 1;
 			}
 			return 0;

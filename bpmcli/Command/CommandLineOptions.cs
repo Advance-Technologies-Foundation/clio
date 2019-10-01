@@ -25,16 +25,6 @@ namespace bpmcli
 		public string Maintainer { get; set; }
 	}
 
-	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute an assembly code which implements the IExecutor interface")]
-	internal class ExecuteAssemblyOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
-		public string Name { get; set; }
-
-		[Option('t', "ExecutorType", Required = true, HelpText = "Assembly type name for proceed")]
-		public string ExecutorType { get; set; }
-	}
-
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
 	internal class RestartOptions : EnvironmentOptions
 	{
@@ -42,12 +32,6 @@ namespace bpmcli
 		public string Name { get; set; }
 	}
 
-	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
-	internal class ClearRedisOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get; set; }
-	}
 
 	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden = true)]
 	internal class RegisterOptions
@@ -176,28 +160,6 @@ namespace bpmcli
 		public string DestPath { get; set; }
 	}
 
-	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update bpmcli to new available version")]
-	internal class UpdateCliOptions
-	{
-	}
-
-	[Verb("execute-sql-script", Aliases = new string[] { "sql" }, HelpText = "Execute script on web application")]
-	internal class ExecuteSqlScriptOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
-		public string Script { get; set; }
-
-		[Option('f', "File", Required = false,
-			HelpText = "Path to the sql script file.", Default = null)]
-		public string File { get; set; }
-
-		[Option('v', "View", Required = false, HelpText = "View type.", Default = "table")]
-		public string ViewType { get; set; }
-
-		[Option('d', "DestinationPath", Required = false, HelpText = "Path to results file.", Default = null)]
-		public string DestPath { get; set; }
-	}
-
 	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install bpmcli api gateway to application")]
 	internal class InstallGateOptions : EnvironmentOptions
 	{
@@ -236,17 +198,6 @@ namespace bpmcli
 
 		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Boolean")]
 		public string Type { get; set; }
-
-	}
-
-	[Verb("set-feature", Aliases = new[] { "feature" }, HelpText = "Set feature state")]
-	internal class FeatureOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Code", Required = true, HelpText = "Feature code")]
-		public string Code { get; set; }
-
-		[Value(1, MetaName = "State", Required = true, HelpText = "Feature state")]
-		public int State { get; set; }
 
 	}
 
