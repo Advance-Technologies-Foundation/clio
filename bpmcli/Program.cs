@@ -16,6 +16,7 @@ using bpmcli.Command.FeatureCommand;
 using bpmcli.Command.RedisCommand;
 using bpmcli.Command.AssemblyCommand;
 using bpmcli.Command.SqlScriptCommand;
+using bpmcli.Command.SysSettingsCommand;
 
 namespace bpmcli
 {
@@ -48,9 +49,6 @@ namespace bpmcli
 		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
 
 		private static string DefLogFileName => "bpmclilog.txt";
-
-		private static string InsertSysSettingsUrl => _url + @"/0/DataService/json/SyncReply/InsertSysSettingRequest";
-		private static string PostSysSettingsValuesUrl => _url + @"/0/DataService/json/SyncReply/PostSysSettingsValues";
 
 		private static string GetEntityModelsUrl => _url + @"/0/rest/BpmcliApiGateway/GetEntitySchemaModels/{0}";
 
@@ -469,7 +467,7 @@ namespace bpmcli
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
-					(SysSettingsOptions opts) => SetSysSettings(opts),
+					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					errs => 1);
 		}
@@ -484,7 +482,7 @@ namespace bpmcli
 					Code = "Maintainer",
 					Value = _settings.Maintainer
 				};
-				SetSysSettings(sysSettingOptions);
+				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, BpmonlineClient);
 				UnlockMaintainerPackageInternal();
 				RestartInternal();
 				Console.WriteLine("Done");
@@ -574,38 +572,7 @@ namespace bpmcli
 			} 
 		}
 
-		private static void CreateSysSetting(SysSettingsOptions opts) {
-			Guid id = Guid.NewGuid();
-			string requestData = "{" + string.Format("\"id\":\"{0}\",\"name\":\"{1}\",\"code\":\"{1}\",\"valueTypeName\":\"{2}\",\"isCacheable\":true",
-				id, opts.Code, opts.Type) + "}";
-			try {
-				BpmonlineClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
-				Console.WriteLine("SysSettings with code: {0} created.", opts.Code);
-			} catch {
-				Console.WriteLine("SysSettings with code: {0} already exists.", opts.Code);
-			}
-		}
 
-		private static void UpdateSysSetting(SysSettingsOptions opts) {
-			string requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
-			try {
-				BpmonlineClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
-				Console.WriteLine("SysSettings with code: {0} updated.", opts.Code);
-			} catch {
-				Console.WriteLine("SysSettings with code: {0} is not updated.", opts.Code);
-			}
-		}
-
-		private static int SetSysSettings(SysSettingsOptions opts) {
-			try {
-				Configure(opts);
-				CreateSysSetting(opts);
-				UpdateSysSetting(opts);
-			} catch (Exception ex) {
-				return 1;
-			}
-			return 0;
-		}
 
 		private static int AddItemFromTemplate(ItemOptions options) {
 			try {

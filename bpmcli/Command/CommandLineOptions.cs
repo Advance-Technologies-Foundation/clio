@@ -187,19 +187,4 @@ namespace bpmcli
 	{
 	}
 
-	[Verb("set-syssetting", Aliases = new string[] { "syssetting" }, HelpText = "Set setting value")]
-	internal class SysSettingsOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Code", Required = true, HelpText = "Syssetting code")]
-		public string Code { get; set; }
-
-		[Value(1, MetaName = "Value", Required = true, HelpText = "Syssetting Value")]
-		public string Value { get; set; }
-
-		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Boolean")]
-		public string Type { get; set; }
-
-	}
-
-
 }
