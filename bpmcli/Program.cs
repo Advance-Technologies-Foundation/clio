@@ -45,11 +45,11 @@ namespace clio
 		private static string DeletePackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
 		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
-		private static string ApiVersionUrl => _url + @"/0/rest/BpmcliApiGateway/GetApiVersion";
+		private static string ApiVersionUrl => _url + @"/0/rest/CreatioApiGateway/GetApiVersion";
 
-		private static string DefLogFileName => "bpmclilog.txt";
+		private static string DefLogFileName => "cliolog.txt";
 
-		private static string GetEntityModelsUrl => _url + @"/0/rest/BpmcliApiGateway/GetEntitySchemaModels/{0}";
+		private static string GetEntityModelsUrl => _url + @"/0/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
 		private static BpmonlineClient BpmonlineClient {
 			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
@@ -71,7 +71,7 @@ namespace clio
 			try {
 				Configure(options);
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string packageFilePath = Path.Combine(dir, "bpmcligate", "bpmcligate.gz");
+				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
 				InstallPackage(packageFilePath);
 				RestartInternal();
 				return 0;
@@ -98,15 +98,15 @@ namespace clio
 
 		public static void CheckApiVersion() {
 			var dir = AppDomain.CurrentDomain.BaseDirectory;
-			string versionFilePath = Path.Combine(dir, "bpmcligate", "version.txt");
+			string versionFilePath = Path.Combine(dir, "clio", "version.txt");
 			var localApiVersion = new Version(File.ReadAllText(versionFilePath));
 			var appApiVersion = GetAppApiVersion();
 			if (appApiVersion == new Version("0.0.0.0")) {
-				MessageToConsole($"Your app does not contain bpmcli API." +
-				 $"{Environment.NewLine}You should consider install it via the \'bpmcli install-gate\' command.", ConsoleColor.DarkYellow);
+				MessageToConsole($"Your app does not contain clio API." +
+				 $"{Environment.NewLine}You should consider install it via the \'clio install-gate\' command.", ConsoleColor.DarkYellow);
 			} else if (localApiVersion > appApiVersion) {
 				MessageToConsole($"You are using bpmcli api version {appApiVersion}, however version {localApiVersion} is available." +
-				 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-gate\' command.", ConsoleColor.DarkYellow);
+				 $"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
 			}
 		}
 
@@ -312,11 +312,11 @@ namespace clio
 
 		private static int Register(RegisterOptions options) {
 			try {
-				var bpmcliEnv = new BpmcliEnvironment();
+				var creatioEnv = new CreatioEnvironment();
 				string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
 				IResult result = options.Target == "m"
-					? bpmcliEnv.MachineRegisterPath(path)
-					: bpmcliEnv.UserRegisterPath(path);
+					? creatioEnv.MachineRegisterPath(path)
+					: creatioEnv.UserRegisterPath(path);
 				result.ShowMessagesTo(Console.Out);
 				return 0;
 			} catch (Exception e) {
@@ -433,10 +433,10 @@ namespace clio
 			if (autoupdate) {
 				new Thread(UpdateCliCommand.CheckUpdate).Start();
 			}
-			var bpmcliEnvironment = new BpmcliEnvironment();
+			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
-			var envPath = bpmcliEnvironment.GetRegisteredPath();
+			var envPath = creatioEnv.GetRegisteredPath();
 			helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 			Parser.Default.Settings.ShowHeader = false;
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
@@ -576,10 +576,10 @@ namespace clio
 		private static int AddItemFromTemplate(ItemOptions options) {
 			try {
 				var project = new Project(options.DestinationPath, options.Namespace);
-				var bpmcliEnvironment = new BpmcliEnvironment();
+				var creatioEnv = new CreatioEnvironment();
 				string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
 				if (!File.Exists(tplPath)) {
-					var envPath = bpmcliEnvironment.GetRegisteredPath();
+					var envPath = creatioEnv.GetRegisteredPath();
 					if (!string.IsNullOrEmpty(envPath)) {
 						tplPath = Path.Combine(envPath, tplPath);
 					}

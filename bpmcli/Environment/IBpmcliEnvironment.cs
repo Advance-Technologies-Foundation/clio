@@ -8,7 +8,7 @@ namespace clio.environment
 		void AppendMessage(string message);
 	}
 
-	internal interface IBpmcliEnvironment
+	internal interface ICreatioEnvironment
 	{
 		string GetRegisteredPath();
 		IResult UserRegisterPath(string path);

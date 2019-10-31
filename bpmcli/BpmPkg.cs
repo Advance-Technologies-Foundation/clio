@@ -23,7 +23,7 @@ namespace clio
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
 
-		private readonly IBpmcliEnvironment _bpmcliEnvironment;
+		private readonly ICreatioEnvironment _creatioEnvironment;
 
 
 		public string PackageName { get; }
@@ -41,7 +41,7 @@ namespace clio
 		}
 
 		protected BpmPkg(string packageName, string maintainer) {
-			_bpmcliEnvironment = new BpmcliEnvironment();
+			_creatioEnvironment = new CreatioEnvironment();
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
@@ -72,7 +72,7 @@ namespace clio
 				fullPath = tplPath;
 				return true;
 			}
-			var envPath = _bpmcliEnvironment.GetRegisteredPath();
+			var envPath = _creatioEnvironment.GetRegisteredPath();
 			if (!string.IsNullOrEmpty(envPath)) {
 				fullPath = Path.Combine(envPath, tplPath);
 				return true;

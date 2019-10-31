@@ -222,7 +222,7 @@ namespace clio
 
 		private static string GetPathFromEnvironment() {
 			string[] cliPath = (Environment.GetEnvironmentVariable("PATH")?.Split(';'));
-			return cliPath?.First(p => p.Contains("bpmcli"));
+			return cliPath?.First(p => p.Contains("clio"));
 		}
 
 		private static string GetTplPath(string tplPath) {

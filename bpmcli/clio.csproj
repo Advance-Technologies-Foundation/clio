@@ -45,7 +45,7 @@
     <None Update="clio">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="cliogate\bpmcligate.gz">
+    <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="cliogate\version.txt">

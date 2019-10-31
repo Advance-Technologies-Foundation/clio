@@ -15,7 +15,7 @@ namespace cliogate.Files.cs
 
 		private List<string> relatedSchemas = new List<string>();
 
-		private string tplFolder { get => System.Web.HttpRuntime.AppDomainAppPath + @"\Terrasoft.Configuration\Pkg\bpmcligate\Files\tpl"; }
+		private string tplFolder { get => System.Web.HttpRuntime.AppDomainAppPath + @"\Terrasoft.Configuration\Pkg\cliogate\Files\tpl"; }
 
 		private string _lookupColumnTemplate;
 		private string lookupColumnTemplate { get => _lookupColumnTemplate ?? (_lookupColumnTemplate = File.ReadAllText($"{tplFolder}\\lookup-template.tpl")); }

@@ -33,14 +33,14 @@ namespace clio
 	}
 
 
-	[Verb("register", HelpText = "Register bpmcli in global environment", Hidden = true)]
+	[Verb("register", HelpText = "Register clio in global environment", Hidden = true)]
 	internal class RegisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
 			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
 		public string Target { get; set; }
 
-		[Option('p', "Path", HelpText = "Path where bpmcli is stored.")]
+		[Option('p', "Path", HelpText = "Path where clio is stored.")]
 		public string Path { get; set; }
 
 	}
@@ -114,7 +114,7 @@ namespace clio
 		[Option('r', "References", Required = false, HelpText = "Set references to local bin assemblies for development")]
 		public string Rebase { get; set; }
 
-		[Usage(ApplicationAlias = "bpmcli")]
+		[Usage(ApplicationAlias = "clio")]
 		public static IEnumerable<Example> Examples =>
 			new List<Example> {
 				new Example("Create new package with name 'ATF'",
@@ -137,7 +137,7 @@ namespace clio
 			HelpText = "Name of the convert instance (or comma separated names)")]
 		public string Name { get; set; }
 
-		[Usage(ApplicationAlias = "bpmcli")]
+		[Usage(ApplicationAlias = "clio")]
 		public static IEnumerable<Example> Examples =>
 			new List<Example> {
 				new Example("Convert existing packages",
@@ -160,7 +160,7 @@ namespace clio
 		public string DestPath { get; set; }
 	}
 
-	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install bpmcli api gateway to application")]
+	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install clio api gateway to application")]
 	internal class InstallGateOptions : EnvironmentOptions
 	{
 	}

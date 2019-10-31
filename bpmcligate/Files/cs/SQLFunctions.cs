@@ -25,7 +25,7 @@ namespace clioGate.Functions.SQL
 			}
 			var records = query.ExecuteReader(userConnection.EnsureDBConnection());
 			var dataTable = new DataTable {
-				TableName = "bpmcliTable"
+				TableName = "clioTable"
 			};
 			dataTable.Load(records);
 			return JsonConvert.SerializeObject(dataTable, Formatting.Indented);

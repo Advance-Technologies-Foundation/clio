@@ -6,7 +6,7 @@ NAME
 
 DESCRIPTION
     Installs on the selected web application(website) a service package 
-    "bpmcligate" that makes available all bpmcli's commands.
+    "cliogate" that makes available all Creatio's commands.
 
 EXAMPLE
     clio install-gate

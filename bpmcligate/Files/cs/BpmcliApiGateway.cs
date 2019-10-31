@@ -14,7 +14,7 @@ namespace cliogate.Files.cs
 {
 	[ServiceContract]
 	[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]
-	class BpmcliApiGateway : BaseService
+	class CreatioApiGateway : BaseService
 	{
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "ExecuteSqlScript", BodyStyle = WebMessageBodyStyle.WrappedRequest,
@@ -31,7 +31,7 @@ namespace cliogate.Files.cs
 		[WebInvoke(Method = "GET", UriTemplate = "GetApiVersion", RequestFormat = WebMessageFormat.Json,
 			ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.WrappedRequest)]
 		public string GetApiVersion() {
-			var version = typeof(BpmcliApiGateway).Assembly.GetName().Version;
+			var version = typeof(CreatioApiGateway).Assembly.GetName().Version;
 			return version.ToString();
 		}
 

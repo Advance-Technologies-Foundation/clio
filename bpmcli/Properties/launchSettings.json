@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "bpmcli": {
+    "clio": {
       "commandName": "Project",
       "commandLineArgs": "feature test 0"
     }

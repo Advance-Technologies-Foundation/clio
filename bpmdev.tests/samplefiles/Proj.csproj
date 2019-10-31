@@ -147,6 +147,6 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(TemplateBuilderTargets)" Condition="Exists('$(TemplateBuilderTargets)')" Label="TemplateBuilder" />
   <PropertyGroup>
-    <PreBuildEvent>bpmcli restart</PreBuildEvent>
+    <PreBuildEvent>clio restart</PreBuildEvent>
   </PropertyGroup>
 </Project>

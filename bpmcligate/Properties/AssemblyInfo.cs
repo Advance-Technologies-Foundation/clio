@@ -6,11 +6,11 @@ using Terrasoft.Core.Attributes;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: PackageReferenceAssembly(RefAssemblyMarker.All)]
-[assembly: AssemblyTitle("bpmcligate")]
+[assembly: AssemblyTitle("cliogate")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("bpmcligate")]
+[assembly: AssemblyProduct("cliogate")]
 [assembly: AssemblyCopyright("Copyright ©  2019")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

@@ -1,2 +1,2 @@
 @echo on
-bpmcli register -t u -p %~dp0
+clio register -t u -p %~dp0

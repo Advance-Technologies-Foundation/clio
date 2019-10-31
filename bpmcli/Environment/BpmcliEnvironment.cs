@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace clio.environment
 {
-	internal class BpmcliEnvironment : IBpmcliEnvironment
+	internal class CreatioEnvironment : ICreatioEnvironment
 	{
 		private const string PathVariableName = "PATH";
 
@@ -29,7 +29,7 @@ namespace clio.environment
 		public string GetRegisteredPath() {
 			var environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
 			string[] cliPath = (environmentPath?.Split(Path.PathSeparator));
-			return cliPath?.FirstOrDefault(p => p.Contains("bpmcli"));
+			return cliPath?.FirstOrDefault(p => p.Contains("clio"));
 		}
 
 		public IResult UserRegisterPath(string path) {

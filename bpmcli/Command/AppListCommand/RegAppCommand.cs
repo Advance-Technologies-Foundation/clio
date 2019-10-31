@@ -35,7 +35,7 @@ namespace clio
 
 		private static EnvironmentSettings _settings { get; set; }
 
-		private static BpmonlineClient _bpmClient { get => new BpmonlineClient(_settings.Uri, _settings.Login, _settings.Password, _settings.IsNetCore); }
+		private static BpmonlineClient _creatioClient { get => new BpmonlineClient(_settings.Uri, _settings.Login, _settings.Password, _settings.IsNetCore); }
 
 		public static int RegApp(RegAppOptions options) {
 			try {
@@ -59,7 +59,7 @@ namespace clio
 				Console.WriteLine();
 				_settings = repository.GetEnvironment(options);
 				Console.WriteLine($"Try login to {options.Uri} with {options.Name} credentials...");
-				_bpmClient.Login();
+				_creatioClient.Login();
 				Console.WriteLine($"Login done");
 				return 0;
 			} catch (Exception e) {

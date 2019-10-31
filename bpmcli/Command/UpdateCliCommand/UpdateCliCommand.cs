@@ -11,14 +11,14 @@ using CommandLine;
 namespace clio.Command.UpdateCliCommand
 {
 
-	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update bpmcli to new available version")]
+	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update clio to new available version")]
 	internal class UpdateCliOptions
 	{
 	}
 
 	class UpdateCliCommand
 	{
-		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/bpmcli/releases/latest";
+		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
 		public static int UpdateCli() {
 			try {
@@ -51,8 +51,8 @@ namespace clio.Command.UpdateCliCommand
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
-				Console.WriteLine($"You are using bpmcli version {currentVersion}, however version {latestVersion} is available." +
-								 $"{Environment.NewLine}You should consider upgrading via the \'bpmcli update-cli\' command.",
+				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
+								 $"{Environment.NewLine}You should consider upgrading via the \'clio update-cli\' command.",
 					ConsoleColor.DarkYellow);
 			}
 		}
