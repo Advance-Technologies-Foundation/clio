@@ -1,8 +1,8 @@
 ﻿using System;
-using bpmcli.Feature;
+using clio.Feature;
 using CommandLine;
 
-namespace bpmcli.Command.FeatureCommand
+namespace clio.Command.FeatureCommand
 {
 	[Verb("set-feature", Aliases = new[] { "feature" }, HelpText = "Set feature state")]
 	internal class FeatureOptions: EnvironmentOptions

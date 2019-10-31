@@ -1,4 +1,4 @@
-﻿namespace bpmcligate.Files.cs.Feature
+﻿namespace cliogate.Files.cs.Feature
 {
 	using System;
 	using System.Collections.Generic;

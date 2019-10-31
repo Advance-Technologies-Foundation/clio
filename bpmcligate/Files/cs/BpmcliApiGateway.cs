@@ -1,4 +1,4 @@
-﻿using BpmcliGate.Functions.SQL;
+﻿using clioGate.Functions.SQL;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -10,7 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Terrasoft.Web.Common;
 
-namespace bpmcligate.Files.cs
+namespace cliogate.Files.cs
 {
 	[ServiceContract]
 	[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]

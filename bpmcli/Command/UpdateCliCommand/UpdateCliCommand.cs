@@ -8,7 +8,7 @@ using System.Net.Http;
 using System.Text;
 using CommandLine;
 
-namespace bpmcli.Command.UpdateCliCommand
+namespace clio.Command.UpdateCliCommand
 {
 
 	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update bpmcli to new available version")]

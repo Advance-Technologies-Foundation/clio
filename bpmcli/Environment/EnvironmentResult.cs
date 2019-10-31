@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 
-namespace bpmcli.environment
+namespace clio.environment
 {
 	class EnvironmentResult : IResult
 	{

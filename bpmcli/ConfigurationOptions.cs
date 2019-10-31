@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
-namespace bpmcli
+namespace clio
 {
 
 	public class EnvironmentSettings

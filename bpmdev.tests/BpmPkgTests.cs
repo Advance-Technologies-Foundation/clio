@@ -3,11 +3,11 @@ using System.IO;
 using System.Xml.Linq;
 using FluentAssertions;
 using NUnit.Framework;
-using static bpmcli.tests.AssertionExtensions;
+using static clio.tests.AssertionExtensions;
 using File = System.IO.File;
 
 
-namespace bpmcli.tests
+namespace clio.tests
 {
 	public class BpmPkgTests
 	{

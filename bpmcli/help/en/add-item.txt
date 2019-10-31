@@ -10,7 +10,7 @@ DESCRIPTION
     work with class oriented entity throuth repository (Detailed 
     https://github.com/Advance-Technologies-Foundation/repository).
     Supported by default web service and entity-listener template for bpmonline.
-    You can add your own template in tpl folder in bpmcli directory for 
+    You can add your own template in tpl folder in clio directory for 
     frequently used code constructions. 
 
 OPTIONS
@@ -22,14 +22,14 @@ OPTIONS
 
 
 EXAMPLE
-    bpmcli add-item model <ENTITY_NAME>            
+    clio add-item model <ENTITY_NAME>            
         add class model for <ENTITY_NAME> (ATF.Repository required)
 
-    bpmcli add-item service <SERVICE_NAME>         
+    clio add-item service <SERVICE_NAME>         
         add new service in package based on template    
 
-    bpmcli add-item entity-listener <ENTITY_NAME>  
+    clio add-item entity-listener <ENTITY_NAME>  
         add new entity-listener for <ENTITY_NAME> based on template 
 
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

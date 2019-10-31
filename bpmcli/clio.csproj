@@ -3,13 +3,14 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.0</TargetFramework>
-    <Company>bpmonline</Company>
-    <Authors>bpmonline rnd team</Authors>
+    <Company>creatio</Company>
+    <Authors>creatio rnd team</Authors>
     <PackageTags>cli</PackageTags>
     <NeutralLanguage>en</NeutralLanguage>
-    <AssemblyVersion>1.3.0.0</AssemblyVersion>
-    <FileVersion>1.3.0.0</FileVersion>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
     <Version>1.3.0.0</Version>
+    <Description>CLI intarface for Creatio platform</Description>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -41,13 +42,13 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="bpmcli">
+    <None Update="clio">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="bpmcligate\bpmcligate.gz">
+    <None Update="cliogate\bpmcligate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="bpmcligate\version.txt">
+    <None Update="cliogate\version.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="help\en\add-item.txt">
@@ -95,7 +96,7 @@
     <None Update="update.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="bpmcli.cmd">
+    <None Update="clio.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="register.cmd">

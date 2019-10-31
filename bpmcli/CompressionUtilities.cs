@@ -5,7 +5,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace bpmcli
+namespace clio
 {
 	#region Class: CompressionUtilities
 

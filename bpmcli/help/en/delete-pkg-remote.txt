@@ -9,7 +9,7 @@ DESCRIPTION
     when you need delete package from a web application (website).
 
 SYNOPSIS
-    bpmcli delete-pkg-remote <PACKAGE_NAME>
+    clio delete-pkg-remote <PACKAGE_NAME>
 
 OPTIONS
     Package name (pos. 0)	Name/path of package folder or path for zip or gz package file
@@ -33,4 +33,4 @@ EXAMPLE
 
 
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

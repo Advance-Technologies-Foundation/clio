@@ -3,13 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.28803.202
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmcli", "bpmcli\bpmcli.csproj", "{CE8FEF29-6FCA-44BD-96A4-19778B44989A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "clio", "bpmcli\clio.csproj", "{CE8FEF29-6FCA-44BD-96A4-19778B44989A}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "bpmcli.tests", "bpmdev.tests\bpmcli.tests.csproj", "{718FE94B-0CB7-4977-B2D7-E661C8E57555}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "clio.tests", "bpmdev.tests\clio.tests.csproj", "{718FE94B-0CB7-4977-B2D7-E661C8E57555}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "updater", "updater\updater.csproj", "{29C0EE4B-0CA0-41F3-963F-392326C0E7BA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bpmcligate", "bpmcligate\bpmcligate.csproj", "{E24226F9-C177-458F-AF34-9338E2699983}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "cliogate", "bpmcligate\cliogate.csproj", "{E24226F9-C177-458F-AF34-9338E2699983}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

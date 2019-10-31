@@ -2,7 +2,7 @@
 using System.IO;
 using System.Linq;
 
-namespace bpmcli.environment
+namespace clio.environment
 {
 	internal class BpmcliEnvironment : IBpmcliEnvironment
 	{

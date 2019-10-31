@@ -1,7 +1,7 @@
 ﻿using System;
 using CommandLine;
 
-namespace bpmcli.Command.RedisCommand
+namespace clio.Command.RedisCommand
 {
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
 	internal class ClearRedisOptions : EnvironmentOptions

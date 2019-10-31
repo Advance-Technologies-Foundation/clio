@@ -1,7 +1,7 @@
 ﻿using System;
 using CommandLine;
 
-namespace bpmcli
+namespace clio
 {
 	[Verb("show-web-app-list", Aliases = new string[] { "apps", "show-web-app", "app" }, HelpText = "Show the list of web applications and their settings")]
 	internal class AppListOptions

@@ -6,19 +6,18 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using bpmcli.environment;
+using clio.environment;
 using CommandLine;
-using ConsoleTables;
 using Newtonsoft.Json;
 using Bpmonline.Client;
-using bpmcli.Command.UpdateCliCommand;
-using bpmcli.Command.FeatureCommand;
-using bpmcli.Command.RedisCommand;
-using bpmcli.Command.AssemblyCommand;
-using bpmcli.Command.SqlScriptCommand;
-using bpmcli.Command.SysSettingsCommand;
+using clio.Command.UpdateCliCommand;
+using clio.Command.FeatureCommand;
+using clio.Command.RedisCommand;
+using clio.Command.AssemblyCommand;
+using clio.Command.SqlScriptCommand;
+using clio.Command.SysSettingsCommand;
 
-namespace bpmcli
+namespace clio
 {
 
 	public class StringParser

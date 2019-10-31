@@ -1,0 +1,1 @@
+dotnet $(dirname "$BASH_SOURCE")/clio.dll $*

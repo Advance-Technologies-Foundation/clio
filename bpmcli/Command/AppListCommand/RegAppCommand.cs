@@ -2,7 +2,7 @@
 using Bpmonline.Client;
 using CommandLine;
 
-namespace bpmcli
+namespace clio
 {
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
 	internal class RegAppOptions : EnvironmentOptions

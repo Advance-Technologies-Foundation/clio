@@ -1,6 +1,6 @@
 ﻿using NUnit.Framework;
 
-namespace bpmcli.tests
+namespace clio.tests
 {
 	internal class CommonTests
 	{

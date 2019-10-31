@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using CommandLine;
 
-namespace bpmcli.Command.AssemblyCommand
+namespace clio.Command.AssemblyCommand
 {
 	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute an assembly code which implements the IExecutor interface")]
 	internal class ExecuteAssemblyOptions : EnvironmentOptions

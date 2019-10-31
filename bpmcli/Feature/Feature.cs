@@ -1,4 +1,4 @@
-﻿namespace bpmcli.Feature
+﻿namespace clio.Feature
 {
 
 	public enum FeatureState

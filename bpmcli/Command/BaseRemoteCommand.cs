@@ -1,6 +1,6 @@
 ﻿using Bpmonline.Client;
 
-namespace bpmcli.Command
+namespace clio.Command
 {
 	class BaseRemoteCommand
 	{

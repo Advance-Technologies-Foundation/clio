@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Terrasoft.Core.Entities;
 
-namespace bpmcligate.Files.cs
+namespace cliogate.Files.cs
 {
 	public class EntitySchemaModelClassGenerator
 	{

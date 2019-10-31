@@ -1,9 +1,9 @@
 ﻿using System;
 using System.IO;
-using bpmcli.environment;
+using clio.environment;
 using Newtonsoft.Json;
 
-namespace bpmcli
+namespace clio
 {
 	public class BpmPkg
 	{

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using FluentAssertions;
 
-namespace bpmcli.tests
+namespace clio.tests
 {
 	public static class AssertionExtensions
 	{

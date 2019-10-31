@@ -2,7 +2,7 @@
 using CommandLine;
 using CommandLine.Text;
 
-namespace bpmcli
+namespace clio
 {
 	internal class EnvironmentOptions
 	{

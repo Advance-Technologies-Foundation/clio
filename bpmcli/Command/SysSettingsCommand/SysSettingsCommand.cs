@@ -4,7 +4,7 @@ using System.Text;
 using Bpmonline.Client;
 using CommandLine;
 
-namespace bpmcli.Command.SysSettingsCommand
+namespace clio.Command.SysSettingsCommand
 {
 	[Verb("set-syssetting", Aliases = new string[] { "syssetting" }, HelpText = "Set setting value")]
 	internal class SysSettingsOptions : EnvironmentOptions

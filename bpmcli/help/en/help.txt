@@ -1,7 +1,7 @@
 bpm'online CLI
 
 DESCRIPTION
-    bpmcli - is a bpm'online command line interface utility that makes possible
+    clio - is a Creatio command line interface utility that makes possible
     development in the local file system and to build automation CI.
 
 COMMANDS
@@ -35,11 +35,11 @@ COMMANDS
 
     pull-pkg                download    Download package from a web application
 
-    update-cli              update      Update bpmcli to new available version
+    update-cli              update      Update clio to new available version
 
     execute-sql-script      sql         Execute SQL script on a web application
 
-    install-gate            gate        Install bpmcli api gateway package on a
+    install-gate            gate        Install clio api gateway package on a
                                         web application(website)
 
     add-item                create      Create item in a project
@@ -48,4 +48,4 @@ COMMANDS
                                         web application(website)
 
 AUTHOR
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

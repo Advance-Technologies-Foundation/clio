@@ -4,7 +4,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace bpmcli.tests
+namespace clio.tests
 {
 	public class BpmPkgProjectTests
 	{

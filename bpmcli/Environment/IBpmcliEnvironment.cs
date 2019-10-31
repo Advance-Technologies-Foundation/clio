@@ -1,6 +1,6 @@
 ﻿using System.IO;
 
-namespace bpmcli.environment
+namespace clio.environment
 {
 	internal interface IResult
 	{

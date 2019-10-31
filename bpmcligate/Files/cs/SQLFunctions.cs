@@ -1,4 +1,4 @@
-namespace BpmcliGate.Functions.SQL
+namespace clioGate.Functions.SQL
 {
 	using Newtonsoft.Json;
 	using System;
