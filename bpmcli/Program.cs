@@ -51,7 +51,7 @@ namespace clio
 
 		private static string GetEntityModelsUrl => _url + @"/0/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
-		private static BpmonlineClient BpmonlineClient {
+		private static BpmonlineClient CreatioClient {
 			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
 		}
 
@@ -114,7 +114,7 @@ namespace clio
 		private static Version GetAppApiVersion() {
 			var apiVersion = new Version("0.0.0.0");
 			try {
-				string appVersionResponse = BpmonlineClient.ExecuteGetRequest(ApiVersionUrl).Trim('"');
+				string appVersionResponse = CreatioClient.ExecuteGetRequest(ApiVersionUrl).Trim('"');
 				apiVersion = new Version(appVersionResponse);
 			} catch (Exception) {
 			}
@@ -122,19 +122,19 @@ namespace clio
 		}
 
 		private static void RestartInternal() {
-			BpmonlineClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
+			CreatioClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
 
 		private static void DownloadPackages(string packageName) {
 			string requestData = "[\"" + packageName + "\"]";
-			string responseFromServer = BpmonlineClient.ExecutePostRequest(DownloadPackageUrl, requestData);
+			string responseFromServer = CreatioClient.ExecutePostRequest(DownloadPackageUrl, requestData);
 			Console.WriteLine(packageName + " - " + responseFromServer);
 		}
 
 		private static void UploadPackages(string packageName) {
 			string requestData = "[\"" + packageName + "\"]";
-			string responseFromServer = BpmonlineClient.ExecutePostRequest(UploadPackageUrl, requestData);
+			string responseFromServer = CreatioClient.ExecutePostRequest(UploadPackageUrl, requestData);
 			Console.WriteLine(packageName + " - " + responseFromServer);
 		}
 
@@ -206,7 +206,7 @@ namespace clio
 				Console.WriteLine("Start download packages ({0}).", packageName);
 				var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 				string requestData = "[" + packageNames + "]";
-				BpmonlineClient.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
+				CreatioClient.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
 			} catch (Exception) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
@@ -283,7 +283,7 @@ namespace clio
 				return e.Message;
 			}
 			Console.WriteLine($"Install {fileName} ...");
-			var installResponse = BpmonlineClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
+			var installResponse = CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal();
 				RestartInternal();
@@ -297,7 +297,7 @@ namespace clio
 		private static void DeletePackage(string code) {
 			Console.WriteLine("Deleting...");
 			string deleteRequestData = "\"" + code + "\"";
-			BpmonlineClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData);
+			CreatioClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData);
 			Console.WriteLine("Deleted.");
 		}
 
@@ -305,7 +305,7 @@ namespace clio
 			Console.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string fileName = fileInfo.Name;
-			BpmonlineClient.UploadFile(UploadUrl, filePath);
+			CreatioClient.UploadFile(UploadUrl, filePath);
 			Console.WriteLine("Uploaded");
 			return fileName;
 		}
@@ -415,7 +415,7 @@ namespace clio
 		}
 
 		private static string GetLog() {
-			return BpmonlineClient.ExecuteGetRequest(LogUrl);
+			return CreatioClient.ExecuteGetRequest(LogUrl);
 		}
 
 		private static void SaveLogFile(string logText, string reportPath) {
@@ -481,7 +481,7 @@ namespace clio
 					Code = "Maintainer",
 					Value = _settings.Maintainer
 				};
-				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, BpmonlineClient);
+				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioClient);
 				UnlockMaintainerPackageInternal();
 				RestartInternal();
 				Console.WriteLine("Done");
@@ -494,7 +494,7 @@ namespace clio
 
 		private static void UnlockMaintainerPackageInternal() {
 			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_settings.Maintainer}'";
-			SqlScriptCommand.ExecuteSqlScript(script, BpmonlineClient);
+			SqlScriptCommand.ExecuteSqlScript(script, CreatioClient);
 		}
 
 		private static int AddModels(ItemOptions opts) {
@@ -596,7 +596,7 @@ namespace clio
 
 		private static Dictionary<string, string> GetClassModels(string entitySchemaName) {
 			var url = string.Format(GetEntityModelsUrl, entitySchemaName);
-			string responseFormServer = BpmonlineClient.ExecuteGetRequest(url);
+			string responseFormServer = CreatioClient.ExecuteGetRequest(url);
 			var result = CorrectJson(responseFormServer);
 			return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 		}
