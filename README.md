@@ -55,6 +55,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 
 
 ## Windows
+
 To register clio as the global command, run the command in CLI directory:
 
 ```
@@ -64,22 +65,17 @@ you can register clio for all users
 ```
 dotnet clio.dll register -t m
 ```
+
 ## MacOS
+
 1. Download [.net core](https://dotnet.microsoft.com/download/dotnet-core) for mac
 2. Download and extract clio [release](https://github.com/Advance-Technologies-Foundation/clio/releases)
-
-   ![](/resources/img/clio_mac_unpackage.png)
-
 3. [Register](https://www.architectryan.com/2012/10/02/add-to-the-path-on-mac-os-x-mountain-lion/) clio folder in PATH system variables
-
-    ![](/resources/img/clio_mac_reg_path.png)
 
 In terminal execute command for check success register
 ```
 clio help
 ```
-
-
 
 ## Help and examples
 
