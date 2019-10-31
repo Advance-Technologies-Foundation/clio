@@ -32,7 +32,7 @@ namespace clio.Command.SqlScriptCommand
 		private static string ExecuteSqlScriptUrl => _appUrl + @"/rest/CreatioApiGateway/ExecuteSqlScript";
 
 		public static string ExecuteSqlScript(string script, BpmonlineClient client = null) {
-			var _client = BpmonlineClient;
+			var _client = CreatioClient;
 			if (client != null) {
 				_client = client;
 			}

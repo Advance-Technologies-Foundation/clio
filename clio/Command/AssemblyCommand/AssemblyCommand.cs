@@ -26,7 +26,7 @@ namespace clio.Command.AssemblyCommand
 			var fileContent = File.ReadAllBytes(filePath);
 			string body = Convert.ToBase64String(fileContent);
 			string requestData = @"{""Body"":""" + body + @""",""LibraryType"":""" + executorType + @"""}";
-			var responseFromServer = BpmonlineClient.ExecutePostRequest(ExecutorUrl, requestData);
+			var responseFromServer = CreatioClient.ExecutePostRequest(ExecutorUrl, requestData);
 			Console.WriteLine(responseFromServer);
 		}
 

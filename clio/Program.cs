@@ -45,15 +45,7 @@ namespace clio
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
 
-		private static string UnloadAppDomainUrl {
-			get {
-				if (_isNetCore) {
-					return _appUrl + @"/ServiceModel/AppInstallerService.svc/RestartApp";
-				} else {
-					return _appUrl + @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-				}
-			}
-		}
+
 
 		private static string DownloadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
 		private static string UploadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
@@ -91,7 +83,7 @@ namespace clio
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
 				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
 				InstallPackage(packageFilePath);
-				RestartInternal();
+				RestartCommand.Restart(_settings);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"Update error {e.Message}");
@@ -137,10 +129,6 @@ namespace clio
 			} catch (Exception) {
 			}
 			return apiVersion;
-		}
-
-		private static void RestartInternal() {
-			CreatioClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
 
@@ -304,7 +292,7 @@ namespace clio
 			var installResponse = CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal();
-				RestartInternal();
+				RestartCommand.Restart(_settings);
 			}
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
@@ -343,18 +331,6 @@ namespace clio
 			}
 		}
 
-		private static int Restart(RestartOptions options) {
-			try {
-				options.Environment = options.Environment ?? options.Name;
-				SetupAppConnection(options);
-				RestartInternal();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
@@ -465,7 +441,7 @@ namespace clio
 					SysSettingsOptions, FeatureOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssmebly(opts),
-					(RestartOptions opts) => Restart(opts),
+					(RestartOptions opts) => RestartCommand.Restart(opts),
 					(ClearRedisOptions opts) => RedisCommand.ClearRedisDb(opts),
 					(FetchOptions opts) => Fetch(opts),
 					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
@@ -501,7 +477,7 @@ namespace clio
 				};
 				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioClient);
 				UnlockMaintainerPackageInternal();
-				RestartInternal();
+				RestartCommand.Restart(_settings);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

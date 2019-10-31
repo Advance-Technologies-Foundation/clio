@@ -18,7 +18,7 @@ namespace clio.Command
 				}
 			}
 		}
-		private static bool _isNetCore => _settings.IsNetCore;
+		protected static bool _isNetCore => _settings.IsNetCore;
 		private static EnvironmentSettings _settings;
 
 
@@ -27,7 +27,11 @@ namespace clio.Command
 			_settings = settingsRepository.GetEnvironment(options);
 		}
 
-		protected static BpmonlineClient BpmonlineClient
+		protected static void Configure(EnvironmentSettings settings) {
+			_settings = settings;
+		}
+
+		protected static BpmonlineClient CreatioClient
 		{
 			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
 		}

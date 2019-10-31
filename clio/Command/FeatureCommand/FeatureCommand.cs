@@ -20,7 +20,7 @@ namespace clio.Command.FeatureCommand
 		public static int SetFeatureState(FeatureOptions options) {
 			try {
 				Configure(options);
-				var fm = new FeatureModerator(BpmonlineClient);
+				var fm = new FeatureModerator(CreatioClient);
 				switch (options.State) {
 					case 0:
 						fm.SwitchFeatureOff(options.Code);

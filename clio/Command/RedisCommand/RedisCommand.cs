@@ -15,7 +15,7 @@ namespace clio.Command.RedisCommand
 		private static string ClearRedisDbUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 
 		private static void ClearRedisDbInternal() {
-			BpmonlineClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
+			CreatioClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
 		}
 
 		public static int ClearRedisDb(ClearRedisOptions options) {

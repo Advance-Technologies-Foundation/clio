@@ -25,13 +25,6 @@ namespace clio
 		public string Maintainer { get; set; }
 	}
 
-	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
-	internal class RestartOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get; set; }
-	}
-
 
 	[Verb("register", HelpText = "Register clio in global environment", Hidden = true)]
 	internal class RegisterOptions

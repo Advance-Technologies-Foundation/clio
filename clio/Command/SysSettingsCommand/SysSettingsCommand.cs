@@ -30,7 +30,7 @@ namespace clio.Command.SysSettingsCommand
 			string requestData = "{" + string.Format("\"id\":\"{0}\",\"name\":\"{1}\",\"code\":\"{1}\",\"valueTypeName\":\"{2}\",\"isCacheable\":true",
 				id, opts.Code, opts.Type) + "}";
 			try {
-				BpmonlineClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
+				CreatioClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
 				Console.WriteLine("SysSettings with code: {0} created.", opts.Code);
 			} catch {
 				Console.WriteLine("SysSettings with code: {0} already exists.", opts.Code);
@@ -38,7 +38,7 @@ namespace clio.Command.SysSettingsCommand
 		}
 
 		public static void UpdateSysSetting(SysSettingsOptions opts, BpmonlineClient client = null) {
-			var _client = BpmonlineClient;
+			var _client = CreatioClient;
 			if (client != null) {
 				_client = client;
 			}
