@@ -29,7 +29,7 @@ namespace clio.Command.SqlScriptCommand
 
 	class SqlScriptCommand: BaseRemoteCommand
 	{
-		private static string ExecuteSqlScriptUrl => _url + @"/0/rest/CreatioApiGateway/ExecuteSqlScript";
+		private static string ExecuteSqlScriptUrl => _appUrl + @"/rest/CreatioApiGateway/ExecuteSqlScript";
 
 		public static string ExecuteSqlScript(string script, BpmonlineClient client = null) {
 			var _client = BpmonlineClient;

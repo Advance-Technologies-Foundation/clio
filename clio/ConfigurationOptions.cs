@@ -37,6 +37,7 @@ namespace clio
 			if (environment.DeveloperModeEnabled.HasValue) {
 				DeveloperModeEnabled = environment.DeveloperModeEnabled;
 			}
+			IsNetCore = environment.IsNetCore;
 		}
 
 		public bool? Safe { get; set; }

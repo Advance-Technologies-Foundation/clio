@@ -22,8 +22,8 @@ namespace clio.Command.SysSettingsCommand
 
 	class SysSettingsCommand: BaseRemoteCommand
 	{
-		private static string InsertSysSettingsUrl => _url + @"/0/DataService/json/SyncReply/InsertSysSettingRequest";
-		private static string PostSysSettingsValuesUrl => _url + @"/0/DataService/json/SyncReply/PostSysSettingsValues";
+		private static string InsertSysSettingsUrl => _appUrl + @"/DataService/json/SyncReply/InsertSysSettingRequest";
+		private static string PostSysSettingsValuesUrl => _appUrl + @"/DataService/json/SyncReply/PostSysSettingsValues";
 
 		private static void CreateSysSetting(SysSettingsOptions opts) {
 			Guid id = Guid.NewGuid();

@@ -12,7 +12,7 @@ namespace clio.Command.RedisCommand
 
 	class RedisCommand: BaseRemoteCommand
 	{
-		private static string ClearRedisDbUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
+		private static string ClearRedisDbUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 
 		private static void ClearRedisDbInternal() {
 			BpmonlineClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");

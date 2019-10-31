@@ -6,7 +6,18 @@ namespace clio.Command
 	{
 		private static string _userName => _settings.Login;
 		private static string _userPassword => _settings.Password;
-		protected static string _url => _settings.Uri;
+		private static string _url => _settings.Uri;
+		protected static string _appUrl
+		{
+			get
+			{
+				if (_isNetCore) {
+					return _url;
+				} else {
+					return _url + @"/0";
+				}
+			}
+		}
 		private static bool _isNetCore => _settings.IsNetCore;
 		private static EnvironmentSettings _settings;
 

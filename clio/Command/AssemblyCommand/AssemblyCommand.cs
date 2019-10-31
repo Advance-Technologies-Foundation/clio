@@ -18,7 +18,7 @@ namespace clio.Command.AssemblyCommand
 
 	class AssemblyCommand: BaseRemoteCommand
 	{
-		private static string ExecutorUrl => _url + @"/0/IDE/ExecuteScript";
+		private static string ExecutorUrl => _appUrl + @"/IDE/ExecuteScript";
 
 		private static void ExecuteCodeFromAssemblyInternal(ExecuteAssemblyOptions options) {
 			string filePath = options.Name;

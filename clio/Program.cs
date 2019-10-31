@@ -31,21 +31,30 @@ namespace clio
 		private static string _userName => _settings.Login;
 		private static string _userPassword => _settings.Password;
 		private static string _url => _settings.Uri; // Необходимо получить из конфига
+		private static string _appUrl {
+			get
+			{
+				if (_isNetCore) {
+					return _url;
+				} else	{
+					return _url + @"/0";
+				}
+			}
+		}
 		private static bool _isNetCore => _settings.IsNetCore;
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
 
-		private static string UnloadAppDomainUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-		private static string DownloadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
-		private static string UploadPackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
-		private static string UploadUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/UploadPackage";
-		private static string InstallUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/InstallPackage";
-		private static string LogUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetLogFile";
-		private static string SelectQueryUrl => _url + @"/0/DataService/json/SyncReply/SelectQuery";
-		private static string DeletePackageUrl => _url + @"/0/ServiceModel/AppInstallerService.svc/DeletePackage";
-		private static string GetZipPackageUrl => _url + @"/0/ServiceModel/PackageInstallerService.svc/GetZipPackages";
+		private static string UnloadAppDomainUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+		private static string DownloadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
+		private static string UploadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
+		private static string UploadUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
+		private static string InstallUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
+		private static string LogUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
+		private static string DeletePackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/DeletePackage";
+		private static string GetZipPackageUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
-		private static string ApiVersionUrl => _url + @"/0/rest/CreatioApiGateway/GetApiVersion";
+		private static string ApiVersionUrl => _url + @"/rest/CreatioApiGateway/GetApiVersion";
 
 		private static string DefLogFileName => "cliolog.txt";
 
@@ -98,7 +107,7 @@ namespace clio
 
 		public static void CheckApiVersion() {
 			var dir = AppDomain.CurrentDomain.BaseDirectory;
-			string versionFilePath = Path.Combine(dir, "clio", "version.txt");
+			string versionFilePath = Path.Combine(dir, "cliogate", "version.txt");
 			var localApiVersion = new Version(File.ReadAllText(versionFilePath));
 			var appApiVersion = GetAppApiVersion();
 			if (appApiVersion == new Version("0.0.0.0")) {

@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "feature test 0"
+      "commandLineArgs": "flushdb"
     }
   }
 }

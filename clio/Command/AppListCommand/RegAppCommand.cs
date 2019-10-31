@@ -45,7 +45,8 @@ namespace clio
 					Password = options.Password,
 					Uri = options.Uri,
 					Maintainer = options.Maintainer,
-					Safe = options.SafeValue
+					Safe = options.SafeValue,
+					IsNetCore = options.IsNetCore
 				};
 				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
 					if (repository.IsExistInEnvironment(options.ActiveEnvironment))
