@@ -45,7 +45,16 @@ namespace clio
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
 
-		private static string UnloadAppDomainUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+		private static string UnloadAppDomainUrl {
+			get {
+				if (_isNetCore) {
+					return _appUrl + @"/ServiceModel/AppInstallerService.svc/RestartApp";
+				} else {
+					return _appUrl + @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+				}
+			}
+		}
+
 		private static string DownloadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
 		private static string UploadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
 		private static string UploadUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
