@@ -1,0 +1,21 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    unreg-web-app - delete environment
+
+DESCRIPTION
+    Delete existing application settings
+
+SYNOPSIS
+    clio unreg-web-app <ENVIRONMENT_NAME>
+
+OPTIONS
+    Name (pos. 0)    Environment(application) name
+
+EXAMPLE
+    clio unreg-web-app <ENVIRONMENT_NAME>
+        deletes existing environment, named <ENVIRONMENT_NAME>
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

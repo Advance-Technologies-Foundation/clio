@@ -1,0 +1,33 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    reg-web-app - create/update a web application (website)
+
+DESCRIPTION
+    Register a new web application settings or update existing
+
+SYNOPSIS
+    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.bpmonline.com -l administrator -p password
+
+OPTIONS
+    Name (pos. 0)	Environment(web application) name
+    
+    --ActiveEnvironment     -a          Set a web application by default
+    
+    --Safe                  -s          Safe action in this environment
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Maintainer            -m          Maintainer name
+
+EXAMPLE
+    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.bpmonline.com -l administrator -p password
+        creates new environment, named <ENVIRONMENT_NAME> or updates existing environment settings
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

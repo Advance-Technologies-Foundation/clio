@@ -7,8 +7,8 @@
     <ProjectGuid>{E24226F9-C177-458F-AF34-9338E2699983}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>bpmcligate</RootNamespace>
-    <AssemblyName>bpmcligate</AssemblyName>
+    <RootNamespace>cliogate</RootNamespace>
+    <AssemblyName>cliogate</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>

@@ -27,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\bpmcli\clio.csproj" />
+    <ProjectReference Include="..\clio\clio.csproj" />
   </ItemGroup>
 
   <ItemGroup>

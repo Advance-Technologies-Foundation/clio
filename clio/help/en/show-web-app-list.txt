@@ -1,0 +1,24 @@
+COMMAND TYPE
+    Service
+
+NAME
+    show-web-app-list - show applications options list
+
+DESCRIPTION
+    View list of all web applications
+
+SYNOPSIS
+    clio show-web-app-list
+
+OPTIONS
+    Name (pos. 0)    Environment(application) name
+
+EXAMPLE
+    clio show-web-app-list
+        shows all applications options list
+        
+    clio show-web-app-list <ENVIRONMENT_NAME>
+            shows <ENVIRONMENT_NAME> application options list
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
