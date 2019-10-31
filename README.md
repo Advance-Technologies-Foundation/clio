@@ -1,5 +1,5 @@
 # Introduction
-Creation Command Line Interface clio is the utility for integration bpm'online platform with development and CI/CD tools.
+Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
 
 With aid of clio you can:
 - Maintanance Creatio packages
@@ -34,7 +34,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Delete package](#delete-package)
 	- [Compress package](#compress-package)
 - [Application](#application)
-	- [Restart bpm'online application](#restart-bpmonline-application)
+	- [Restart application](#restart-application)
 	- [Clear redis database](#clear-redis-database)
 - [Environment settings](#environment-settings)
 	- [Create/Update an environment](#createupdate-an-environment)
@@ -156,9 +156,9 @@ clio generate-pkg-zip  C:\Packages\package -d C:\Store\package.gz
 
 # Application
 
-## Restart bpm'online application
+## Restart application
 
-To restart bpm'online, use the next command for default application:
+To restart Creatio application, use the next command for default environment:
 
 ```
 clio restart-web-app
@@ -180,7 +180,7 @@ clio clear-redis-db <ENVIRONMENT_NAME>
 
 # Environment settings
 
-Environment is the set of configuration options. It consist of name, bpm'online URL, login and password.
+Environment is the set of configuration options. It consist of name, Creatio application URL, login and password.
 
 ## Create/Update an environment
 
