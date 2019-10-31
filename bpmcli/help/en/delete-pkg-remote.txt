@@ -25,10 +25,10 @@ OPTIONS
     --Maintainer            -m          Maintainer name
 
 EXAMPLE
-    bpmcli delete-pkg-remote <PACKAGE_NAME>
+    clio delete-pkg-remote <PACKAGE_NAME>
         delete package with <PACKAGE_NAME> from default application
 
-    bpmcli delete-pkg-remote <PACKAGE_NAME> -e dev
+    clio delete-pkg-remote <PACKAGE_NAME> -e dev
         delete package with <PACKAGE_NAME> from specify application with name dev
 
 

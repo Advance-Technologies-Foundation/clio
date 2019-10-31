@@ -9,7 +9,7 @@ DESCRIPTION
     when you need download package from a web application (website).
 
 SYNOPSIS
-    bpmcli pull-pkg <PACKAGE_NAME>
+    clio pull-pkg <PACKAGE_NAME>
 
 OPTIONS
     Package name (pos. 0)	Name of package for download
@@ -25,12 +25,12 @@ OPTIONS
     --Maintainer            -m          Maintainer name
 
 EXAMPLE
-    bpmcli pull-pkg <PACKAGE_NAME>
+    clio pull-pkg <PACKAGE_NAME>
         download package to local file system from default application
 
-    bpmcli pull-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+    clio pull-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
         download package to local file system from non default application
 
 
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

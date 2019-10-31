@@ -20,4 +20,4 @@ EXAMPLE
     set-syssetting ExampleCode True Boolean - create boolean sys setting with code ExampleCode and value True
 	set-syssetting Maintainer ATF - update Maintainer sys setting with value ATF
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

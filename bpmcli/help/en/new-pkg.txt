@@ -9,7 +9,7 @@ DESCRIPTION
     new bpm'online package
 
 SYNOPSIS
-    bpmcli new-pkg <PACKAGE_NAME>
+    clio new-pkg <PACKAGE_NAME>
 
 OPTIONS
     Package name (pos. 0)	Name of package to create
@@ -25,14 +25,14 @@ OPTIONS
     --Maintainer            -m          Maintainer name
 
 EXAMPLE
-    bpmcli new-pkg <PACKAGE_NAME>
+    clio new-pkg <PACKAGE_NAME>
         create new package in current folder
 
-    bpmcli new-pkg <PACKAGE_NAME> -r bin
+    clio new-pkg <PACKAGE_NAME> -r bin
         create new package in current folder and set reference on local
         core assembly with using bpmonline file design mode with command in
         Pkg directory
 
 
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

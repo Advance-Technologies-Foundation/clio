@@ -2,13 +2,13 @@ COMMAND TYPE
     Service commands
 
 NAME
-    update-cli - updates the bpmcli to the latest version
+    update-cli - updates the clio to the latest version
 
 DESCRIPTION
-    update-cli updates the bpmcli to the latest version. Any time when you run
-    any commands by bpmcli it checks the current version, and if it available
-    bpmcli show the message about it.
-    Recommended to use the latest version of bpmcli with fixed bugs and 
+    update-cli updates the clio to the latest version. Any time when you run
+    any commands by clio it checks the current version, and if it available
+    clio show the message about it.
+    Recommended to use the latest version of clio with fixed bugs and 
     extended features.
 
 EXAMPLE

@@ -11,9 +11,9 @@ DESCRIPTION
     application will be automaitaly restarted.
 
 EXAMPLE
-    bpmcli set-dev-mode
+    clio set-dev-mode
 
-    bpmcli set-dev-mode -e <ENVIRONMENT NAME>
+    clio set-dev-mode -e <ENVIRONMENT NAME>
 
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio

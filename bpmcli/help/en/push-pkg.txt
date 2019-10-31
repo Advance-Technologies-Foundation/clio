@@ -10,7 +10,7 @@ DESCRIPTION
     when you need install package to a web application (website).
 
 SYNOPSIS
-    bpmcli push-pkg <PACKAGE_NAME>
+    clio push-pkg <PACKAGE_NAME>
 
 OPTIONS
     Package name (pos. 0) Name/path of package folder or path for zip or gz 
@@ -28,19 +28,19 @@ OPTIONS
     --Maintainer            -m          Maintainer name
 
 EXAMPLE
-    bpmcli push-pkg <PACKAGE_NAME>
+    clio push-pkg <PACKAGE_NAME>
         install package from directory you can use the next command: for non 
         compressed package
         in current folder
 
-    bpmcli push-pkg package.gz
+    clio push-pkg package.gz
         install package from .gz packages you can use command
 
-    bpmcli push-pkg C:\Packages\package.gz
+    clio push-pkg C:\Packages\package.gz
         install package from .gz packages you can use command
 
-    bpmcli push-pkg <PACKAGE_NAME> -r log.txt
+    clio push-pkg <PACKAGE_NAME> -r log.txt
         installation log file specify report path parameter
 
 REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/bpmcli
+    https://github.com/Advance-Technologies-Foundation/clio
