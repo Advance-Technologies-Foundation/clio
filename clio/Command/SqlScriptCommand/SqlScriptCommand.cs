@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Text;
-using Bpmonline.Client;
+using Creatio.Client;
 using CommandLine;
 using ConsoleTables;
 using Newtonsoft.Json;
@@ -31,7 +31,7 @@ namespace clio.Command.SqlScriptCommand
 	{
 		private static string ExecuteSqlScriptUrl => _appUrl + @"/rest/CreatioApiGateway/ExecuteSqlScript";
 
-		public static string ExecuteSqlScript(string script, BpmonlineClient client = null) {
+		public static string ExecuteSqlScript(string script, CreatioClient client = null) {
 			var _client = CreatioClient;
 			if (client != null) {
 				_client = client;

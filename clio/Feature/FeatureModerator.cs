@@ -1,6 +1,6 @@
 ﻿namespace clio.Feature
 {
-	using Bpmonline.Client;
+	using Creatio.Client;
 
 	public class FeatureModerator
 	{
@@ -9,9 +9,9 @@
 		private const string SetFeatureStateMethodName = "SetFeatureState";
 
 
-		protected BpmonlineClient BpmonlineClient;
+		protected CreatioClient BpmonlineClient;
 
-		public FeatureModerator(BpmonlineClient client) {
+		public FeatureModerator(CreatioClient client) {
 			BpmonlineClient = client;
 		}
 

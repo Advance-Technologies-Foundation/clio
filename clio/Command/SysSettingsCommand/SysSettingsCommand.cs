@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using Bpmonline.Client;
+using Creatio.Client;
 using CommandLine;
 
 namespace clio.Command.SysSettingsCommand
@@ -37,7 +37,7 @@ namespace clio.Command.SysSettingsCommand
 			}
 		}
 
-		public static void UpdateSysSetting(SysSettingsOptions opts, BpmonlineClient client = null) {
+		public static void UpdateSysSetting(SysSettingsOptions opts, CreatioClient client = null) {
 			var _client = CreatioClient;
 			if (client != null) {
 				_client = client;

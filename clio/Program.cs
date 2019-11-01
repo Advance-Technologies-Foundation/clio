@@ -9,7 +9,7 @@ using System.Threading;
 using clio.environment;
 using CommandLine;
 using Newtonsoft.Json;
-using Bpmonline.Client;
+using Creatio.Client;
 using clio.Command.UpdateCliCommand;
 using clio.Command.FeatureCommand;
 using clio.Command.RedisCommand;
@@ -61,8 +61,8 @@ namespace clio
 
 		private static string GetEntityModelsUrl => _url + @"/0/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
-		private static BpmonlineClient CreatioClient {
-			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
+		private static CreatioClient CreatioClient {
+			get => new CreatioClient(_url, _userName, _userPassword, _isNetCore);
 		}
 
 
