@@ -8,7 +8,7 @@ DESCRIPTION
     Register a new web application settings or update existing
 
 SYNOPSIS
-    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.bpmonline.com -l administrator -p password
+    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
 
 OPTIONS
     Name (pos. 0)	Environment(web application) name
@@ -26,7 +26,7 @@ OPTIONS
     --Maintainer            -m          Maintainer name
 
 EXAMPLE
-    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.bpmonline.com -l administrator -p password
+    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
         creates new environment, named <ENVIRONMENT_NAME> or updates existing environment settings
 
 REPORTING BUGS

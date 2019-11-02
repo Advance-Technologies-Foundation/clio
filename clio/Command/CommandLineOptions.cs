@@ -48,7 +48,7 @@ namespace clio
 		public string Operation { get; set; }
 	}
 
-	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of bpm'online package")]
+	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
 	internal class GeneratePkgZipOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
@@ -98,7 +98,7 @@ namespace clio
 
 	}
 
-	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new bpm'online package in local file system")]
+	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new creatio package in local file system")]
 	internal class NewPkgOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
@@ -113,7 +113,7 @@ namespace clio
 				new Example("Create new package with name 'ATF'",
 					new NewPkgOptions { Name = "ATF" }
 				),
-				new Example("Create new package with name 'ATF' and with links on local installation bpm'online with file design mode",
+				new Example("Create new package with name 'ATF' and with links on local installation creatio with file design mode",
 					new NewPkgOptions { Name = "ATF", Rebase = "bin"}
 				)
 			};

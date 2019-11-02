@@ -30,7 +30,7 @@ EXAMPLE
 
     clio new-pkg <PACKAGE_NAME> -r bin
         create new package in current folder and set reference on local
-        core assembly with using bpmonline file design mode with command in
+        core assembly with using creatio file design mode with command in
         Pkg directory
 
 
