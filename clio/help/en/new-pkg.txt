@@ -6,7 +6,7 @@ NAME
 
 DESCRIPTION
     new-pkg command can be used in development when you need to create
-    new bpm'online package
+    new creatio package
 
 SYNOPSIS
     clio new-pkg <PACKAGE_NAME>

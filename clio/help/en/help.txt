@@ -1,4 +1,4 @@
-bpm'online CLI
+Creatio CLI
 
 DESCRIPTION
     clio - is a Creatio command line interface utility that makes possible
@@ -23,14 +23,14 @@ COMMANDS
     show-web-app-list       apps        Show the list of web applications and
                                         their settings
 
-    generate-pkg-zip        compress    Prepare an archive of bpm'online
+    generate-pkg-zip        compress    Prepare an archive of creatio
                                         package
 
     push-pkg                install     Install package on a web application
 
     delete-pkg-remote       delete      Delete package from a web application
 
-    new-pkg                 init        Create a new bpm'online package in
+    new-pkg                 init        Create a new creatio package in
                                         local file system
 
     pull-pkg                download    Download package from a web application
