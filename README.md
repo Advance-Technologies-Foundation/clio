@@ -16,7 +16,7 @@ With aid of clio you can:
 
 # Installation and features
 
-You can dowload release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/creatio/releases). Unpack the archive with clio.
+You can dowload release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/clio/releases). Unpack the archive with clio.
 
 # Content table
 - [Introduction](#introduction)
