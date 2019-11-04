@@ -55,11 +55,11 @@ namespace clio
 		private static string DeletePackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/DeletePackage";
 		private static string GetZipPackageUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
-		private static string ApiVersionUrl => _url + @"/rest/CreatioApiGateway/GetApiVersion";
+		private static string ApiVersionUrl => _appUrl + @"/rest/CreatioApiGateway/GetApiVersion";
 
 		private static string DefLogFileName => "cliolog.txt";
 
-		private static string GetEntityModelsUrl => _url + @"/0/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
+		private static string GetEntityModelsUrl => _appUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
 		private static BpmonlineClient CreatioClient {
 			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
