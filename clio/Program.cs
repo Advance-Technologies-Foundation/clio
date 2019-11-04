@@ -16,16 +16,11 @@ using clio.Command.RedisCommand;
 using clio.Command.AssemblyCommand;
 using clio.Command.SqlScriptCommand;
 using clio.Command.SysSettingsCommand;
+using clio.Common;
 
 namespace clio
 {
 
-	public class StringParser
-	{
-		public static IEnumerable<string> ParseArray(string input) {
-			return input.Split(',').Select(p => p.Trim()).ToList();
-		}
-	}
 
 	class Program {
 		private static string _userName => _settings.Login;

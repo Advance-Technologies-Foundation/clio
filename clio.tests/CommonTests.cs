@@ -1,4 +1,5 @@
-﻿using NUnit.Framework;
+﻿using clio.Common;
+using NUnit.Framework;
 
 namespace clio.tests
 {
