@@ -139,10 +139,6 @@ namespace clio
 			ZipFile.CreateFromDirectory(tempPath, destinationPath);
 		}
 
-		internal static IEnumerable<string> GetPackages(string inputline) {
-			return StringParser.ParseArray(inputline);
-		}
-
 		private static void CompressionProject(string sourcePath, string destinationPath, bool skipPdb) {
 			if (File.Exists(destinationPath)) {
 				File.Delete(destinationPath);
@@ -332,7 +328,7 @@ namespace clio
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
 					CompressionProject(options.Name, destinationPath, options.SkipPdb);
 				} else {
-					var packages = GetPackages(options.Packages);
+					var packages = StringParser.ParseArray(options.Packages);
 					string zipFileName = $"packages_{DateTime.Now.ToString("yy.MM.dd_hh.mm.ss")}.zip";
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
 					CompressionProjects(options.Name, destinationPath, packages, options.SkipPdb);
