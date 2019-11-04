@@ -39,11 +39,6 @@ namespace clio
 		private static bool _isNetCore => _settings.IsNetCore;
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
-
-
-
-		private static string DownloadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToFileSystem";
-		private static string UploadPackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/LoadPackagesToDB";
 		private static string UploadUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private static string InstallUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
 		private static string LogUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
@@ -124,19 +119,6 @@ namespace clio
 			} catch (Exception) {
 			}
 			return apiVersion;
-		}
-
-
-		private static void DownloadPackages(string packageName) {
-			string requestData = "[\"" + packageName + "\"]";
-			string responseFromServer = CreatioClient.ExecutePostRequest(DownloadPackageUrl, requestData);
-			Console.WriteLine(packageName + " - " + responseFromServer);
-		}
-
-		private static void UploadPackages(string packageName) {
-			string requestData = "[\"" + packageName + "\"]";
-			string responseFromServer = CreatioClient.ExecutePostRequest(UploadPackageUrl, requestData);
-			Console.WriteLine(packageName + " - " + responseFromServer);
 		}
 
 		private static void CompressionProjects(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb) {
