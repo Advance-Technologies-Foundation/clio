@@ -1,4 +1,4 @@
-﻿using Bpmonline.Client;
+﻿using Creatio.Client;
 
 namespace clio.Command
 {
@@ -31,9 +31,9 @@ namespace clio.Command
 			_settings = settings;
 		}
 
-		protected static BpmonlineClient CreatioClient
+		protected static CreatioClient CreatioClient
 		{
-			get => new BpmonlineClient(_url, _userName, _userPassword, _isNetCore);
+			get => new CreatioClient(_url, _userName, _userPassword, _isNetCore);
 		}
 	}
 }

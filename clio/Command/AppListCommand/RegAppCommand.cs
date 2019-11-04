@@ -1,5 +1,5 @@
 ﻿using System;
-using Bpmonline.Client;
+using Creatio.Client;
 using CommandLine;
 
 namespace clio
@@ -35,7 +35,7 @@ namespace clio
 
 		private static EnvironmentSettings _settings { get; set; }
 
-		private static BpmonlineClient _creatioClient { get => new BpmonlineClient(_settings.Uri, _settings.Login, _settings.Password, _settings.IsNetCore); }
+		private static CreatioClient _creatioClient { get => new CreatioClient(_settings.Uri, _settings.Login, _settings.Password, _settings.IsNetCore); }
 
 		public static int RegApp(RegAppOptions options) {
 			try {
