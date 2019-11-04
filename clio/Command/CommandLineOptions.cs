@@ -38,16 +38,6 @@ namespace clio
 
 	}
 
-	[Verb("fetch", HelpText = "Download assembly", Hidden = true)]
-	internal class FetchOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to downloaded assembly")]
-		public string Name { get; set; }
-
-		[Option('o', "Operation", Required = false, HelpText = "Operation: load - from file system to app, download - from app to file system)")]
-		public string Operation { get; set; }
-	}
-
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
 	internal class GeneratePkgZipOptions
 	{

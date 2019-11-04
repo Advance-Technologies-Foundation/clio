@@ -434,7 +434,7 @@ namespace clio
 			helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 			Parser.Default.Settings.ShowHeader = false;
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
-			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions, FetchOptions,
+			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
@@ -443,7 +443,6 @@ namespace clio
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssmebly(opts),
 					(RestartOptions opts) => RestartCommand.Restart(opts),
 					(ClearRedisOptions opts) => RedisCommand.ClearRedisDb(opts),
-					(FetchOptions opts) => Fetch(opts),
 					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
 					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
 					(UnregAppOptions opts) => UnregAppCommand.UnregApplication(opts),
@@ -597,24 +596,6 @@ namespace clio
 
 		private static int ConvertPackage(ConvertOptions opts) {
 			return PackageConverter.Convert(opts);
-		}
-
-		private static int Fetch(FetchOptions opts) {
-			try {
-				SetupAppConnection(opts);
-				var packages = GetPackages(opts.Name);
-				foreach (var package in packages) {
-					if (opts.Operation == "load") {
-						DownloadPackages(package);
-					} else {
-						UploadPackages(package);
-					}
-				}
-				Console.WriteLine("Done");
-			} catch (Exception e) {
-				Console.WriteLine(e);
-			}
-			return 0;
 		}
 
 		private static int NewPkg(NewPkgOptions options) {
