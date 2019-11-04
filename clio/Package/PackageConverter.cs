@@ -116,13 +116,13 @@ namespace clio
 				var curName = depend.ToString().Split("\": \"")[1].Split("\"")[0];
 				depends.Add(curName);
 			}
-			CreateFromTpl(GetTplPath(BpmPkg.EditProjTpl), filePath, name, fileNames, maintainer, refs, depends);
+			CreateFromTpl(GetTplPath(CreatioPackage.EditProjTpl), filePath, name, fileNames, maintainer, refs, depends);
 			var propertiesDirPath = Path.Combine(path, "Properties");
 			Directory.CreateDirectory(propertiesDirPath);
 			var propertiesFilePath = Path.Combine(propertiesDirPath, "AssemblyInfo.cs");
-			CreateFromTpl(GetTplPath(BpmPkg.AssemblyInfoTpl), propertiesFilePath, name, new List<string>(), maintainer, refs, depends);
+			CreateFromTpl(GetTplPath(CreatioPackage.AssemblyInfoTpl), propertiesFilePath, name, new List<string>(), maintainer, refs, depends);
 			var packagesConfigFilePath = Path.Combine(path, "packages.config");
-			CreateFromTpl(GetTplPath(BpmPkg.PackageConfigTpl), packagesConfigFilePath, name, new List<string>(), maintainer, refs, depends);
+			CreateFromTpl(GetTplPath(CreatioPackage.PackageConfigTpl), packagesConfigFilePath, name, new List<string>(), maintainer, refs, depends);
 		}
 
 		private static List<string> GetRefs(string path, List<string> files) {

@@ -20,7 +20,7 @@ namespace clio.tests
 
 		private static readonly DateTime TestCreatedOn = new DateTime(2018, 1, 1, 1, 12, 10, 200, DateTimeKind.Utc);
 
-		private class BpmPkgMock : BpmPkg
+		private class BpmPkgMock : CreatioPackage
 		{
 
 			public BpmPkgMock(bool setDirectory = true) : base(BpmPkgTests.PackageName, BpmPkgTests.Maintainer) {
@@ -57,12 +57,12 @@ namespace clio.tests
 		}
 
 		[Test, Category("Integration")]
-		[TestCase(BpmPkg.DescriptorName, BpmPkg.DescriptorName, "CreateDescriptor", TestName = "Check Correct Descriptor")]
-		[TestCase(PackageName + "." + BpmPkg.CsprojExtension, "Proj.csproj", "CreateProjFile",
+		[TestCase(CreatioPackage.DescriptorName, CreatioPackage.DescriptorName, "CreateDescriptor", TestName = "Check Correct Descriptor")]
+		[TestCase(PackageName + "." + CreatioPackage.CsprojExtension, "Proj.csproj", "CreateProjFile",
 			TestName = "Check Correct ProjectFile")]
-		[TestCase(BpmPkg.PackageConfigName, BpmPkg.PackageConfigName, "CreateNugetPackageConfig",
+		[TestCase(CreatioPackage.PackageConfigName, CreatioPackage.PackageConfigName, "CreateNugetPackageConfig",
 			TestName = "Check Correct PackageConfig")]
-		[TestCase(BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName, BpmPkg.AssemblyInfoName,
+		[TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, CreatioPackage.AssemblyInfoName,
 			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo")]
 		public void BpmPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
 			var pkg = new BpmPkgMock();
@@ -77,20 +77,20 @@ namespace clio.tests
 		public void BpmPkg_Create_CheckPackageStructure() {
 			var oldEnvironment = Environment.CurrentDirectory;
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
-			var pkg = BpmPkg.CreatePackage(PackageName, Maintainer);
+			var pkg = CreatioPackage.CreatePackage(PackageName, Maintainer);
 			Environment.CurrentDirectory = oldEnvironment;
 			pkg.Create();
-			File(Path.Combine(pkg.FullPath, BpmPkg.DescriptorName)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, PackageName + "." + BpmPkg.CsprojExtension)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, BpmPkg.PackageConfigName)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, BpmPkg.PropertiesDirName + "\\" + BpmPkg.AssemblyInfoName))
+			File(Path.Combine(pkg.FullPath, CreatioPackage.DescriptorName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, PackageName + "." + CreatioPackage.CsprojExtension)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, CreatioPackage.PackageConfigName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName))
 				.Should().Exist();
 			File(Path.Combine(pkg.FullPath, "Files\\cs", "EmptyClass.cs")).Should().Exist();
-			File(Path.Combine(pkg.FullPath, "Assemblies"+ "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, "Data" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, "Resources" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, "Schemas" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
-			File(Path.Combine(pkg.FullPath, "SqlScripts" + "\\" + BpmPkg.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Assemblies"+ "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Data" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Resources" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Schemas" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "SqlScripts" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
 			Directory(Path.Combine(pkg.FullPath, "Assemblies")).Should().Exist();
 			Directory(Path.Combine(pkg.FullPath, "Data")).Should().Exist();
 			Directory(Path.Combine(pkg.FullPath, "Resources")).Should().Exist();
@@ -110,8 +110,8 @@ namespace clio.tests
 			pkg.CreateNugetPackageConfig();
 			Environment.CurrentDirectory = oldCD;
 			Environment.SetEnvironmentVariable("PATH", oldPath);
-			var resultPath = Path.Combine(pkg.FullPath, BpmPkg.PackageConfigName);
-			var samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, BpmPkg.PackageConfigName);
+			var resultPath = Path.Combine(pkg.FullPath, CreatioPackage.PackageConfigName);
+			var samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, CreatioPackage.PackageConfigName);
 			File(resultPath).Should().Exist();
 			File.ReadAllText(resultPath).Should().BeEquivalentTo(File.ReadAllText(samplePath));
 		}

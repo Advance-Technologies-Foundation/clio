@@ -16,7 +16,7 @@ namespace clio.tests
 		public void BpmPkgProject_RefToCoreSrc_LoadFromFileRealProjCase()
 		{
 			var expectProj = XElement.Load("ExpectPkgProj.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("OriginPkgProj.xml");
+			var proj = CreatioPkgProject.LoadFromFile("OriginPkgProj.xml");
 			proj.RefToCoreSrc()
 				.Document.Should().BeEquivalentTo(expectProj);
 		}
@@ -24,7 +24,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToCoreSrc_LoadFromSDKFileSimpleCase() {
 			var expectElement = XElement.Load("CoreSrcReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("SDKReferenceHint.xml");
 			proj.RefToCoreSrc()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -33,7 +33,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToBin_LoadFromSDKFileSimpleCase() {
 			var expectElement = XElement.Load("BinReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("SDKReferenceHint.xml");
 			proj.RefToBin()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -42,7 +42,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToBin_LoadFromCoreSrcFileSimpleCase() {
 			var expectElement = XElement.Load("BinReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
 			proj.RefToBin()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -51,7 +51,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToBinInner_LoadFromCoreSrcInnerFileSimpleCase() {
 			var expectElement = XElement.Load("InnerBinReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("InnerCoreSrcReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("InnerCoreSrcReferenceHint.xml");
 			proj.RefToCustomPath(@"..\..\..\..\Bin\")
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -60,7 +60,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToBin_LoadFromUnitCoreSrcSample() {
 			var expectElement = XElement.Load("UnitBinSample.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("UnitCoreSrcSample.xml");
+			var proj = CreatioPkgProject.LoadFromFile("UnitCoreSrcSample.xml");
 			proj.RefToCustomPath(@"..\..\..\..\Bin\")
 				.RefToUnitBin()
 				.Document
@@ -70,7 +70,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToUnitBinDoNothing_LoadFromBinFileSimpleCase() {
 			var expectElement = XElement.Load("BinReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("BinReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("BinReferenceHint.xml");
 			proj.RefToUnitBin()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -79,7 +79,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToUnitBin_LoadFromUnitCoreSrcFileSimpleCase() {
 			var expectElement = XElement.Load("UnitBinReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
 			proj.RefToUnitBin()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -88,7 +88,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToUnitCoreSrc_LoadFromUnitBinFileSimpleCase() {
 			var expectElement = XElement.Load("UnitCoreSrcReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
 			proj.RefToUnitCoreSrc()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -97,7 +97,7 @@ namespace clio.tests
 		[Test]
 		public void BpmPkgProject_RefToBin_LoadFromTsCoreBinPathFileSimpleCase() {
 			var expectElement = XElement.Load("BinNet472ReferenceHint.xml", LoadOptions.SetBaseUri);
-			var proj = BpmPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
 			proj.RefToBin()
 				.Document
 				.Should().BeEquivalentTo(expectElement);
@@ -105,31 +105,31 @@ namespace clio.tests
 
 		[Test]
 		public void BpmPkgProject_DetermineCurrentRef_LoadFromSdkFile() {
-			var proj = BpmPkgProject.LoadFromFile("SDKReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("SDKReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.Sdk);
 		}
 
 		[Test]
 		public void BpmPkgProject_DetermineCurrentRef_LoadFromCoreSrcFile() {
-			var proj = BpmPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.CoreSrc);
 		}
 
 		[Test]
 		public void BpmPkgProject_DetermineCurrentRef_LoadFromUnitCoreSrcFile() {
-			var proj = BpmPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
 		}
 
 		[Test]
 		public void BpmPkgProject_DetermineCurrentRef_LoadFromUnitBinFile() {
-			var proj = BpmPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
 		}
 
 		[Test]
 		public void BpmPkgProject_DetermineCurrentRef_LoadFromTsCoreBinPath() {
-			var proj = BpmPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
+			var proj = CreatioPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
 			proj.CurrentRefType.Should().BeEquivalentTo(RefType.TsCoreBinPath);
 		}
 

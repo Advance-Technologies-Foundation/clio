@@ -7,7 +7,7 @@ using System.Xml.Linq;
 namespace clio
 {
 
-	public class BpmPkgProject
+	public class CreatioPkgProject
 	{
 		private const string HintElementName = "HintPath";
 		private const string ItemGroupElementName = "ItemGroup";
@@ -25,7 +25,7 @@ namespace clio
 
 		private string _activeHint;
 
-		private BpmPkgProject(string path) {
+		private CreatioPkgProject(string path) {
 			LoadPath = path;
 			Document = XElement.Load(path, LoadOptions.SetBaseUri);
 			Namespace = Document.Name.Namespace;
@@ -48,8 +48,8 @@ namespace clio
 
 		public XNamespace Namespace { get; }
 
-		public static BpmPkgProject LoadFromFile(string path) {
-			return new BpmPkgProject(path);
+		public static CreatioPkgProject LoadFromFile(string path) {
+			return new CreatioPkgProject(path);
 		}
 
 		private void ChangeHint(XElement element) {
@@ -139,7 +139,7 @@ namespace clio
 			}
 		}
 
-		public BpmPkgProject RefToBin() {
+		public CreatioPkgProject RefToBin() {
 			_activeHint = PathToBinDebug;
 			ChangeReference();
 			DeletePackagesConfig();
@@ -147,7 +147,7 @@ namespace clio
 			return this;
 		}
 
-		public BpmPkgProject RefToCoreSrc() {
+		public CreatioPkgProject RefToCoreSrc() {
 			_activeHint = PathToCoreDebug;
 			ChangeReference();
 			DeletePackagesConfig();
@@ -155,14 +155,14 @@ namespace clio
 			return this;
 		}
 
-		public BpmPkgProject RefToCustomPath(string path) {
+		public CreatioPkgProject RefToCustomPath(string path) {
 			_activeHint = path;
 			ChangeReference();
 			CurrentRefType = RefType.Custom;
 			return this;
 		}
 
-		public BpmPkgProject RefToUnitBin() {
+		public CreatioPkgProject RefToUnitBin() {
 			_activeHint = PathToUnitTestBin;
 			var incomeRefType = CurrentRefType;
 			CurrentRefType = RefType.UnitTest;
@@ -172,7 +172,7 @@ namespace clio
 			return this;
 		}
 
-		public BpmPkgProject RefToUnitCoreSrc() {
+		public CreatioPkgProject RefToUnitCoreSrc() {
 			_activeHint = PathToUnitTestCoreSrc;
 			var incomeRefType = CurrentRefType;
 			CurrentRefType = RefType.UnitTest;

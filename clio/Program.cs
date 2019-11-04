@@ -17,6 +17,7 @@ using clio.Command.AssemblyCommand;
 using clio.Command.SqlScriptCommand;
 using clio.Command.SysSettingsCommand;
 using clio.Common;
+using clio.Project;
 
 namespace clio
 {
@@ -471,7 +472,7 @@ namespace clio
 			try {
 				SetupAppConnection(opts);
 				var models = GetClassModels(opts.ItemName);
-				var project = new Project(opts.DestinationPath, opts.Namespace);
+				var project = new VSProject(opts.DestinationPath, opts.Namespace);
 				foreach (var model in models) {
 					project.AddFile(model.Key, model.Value);
 				}
@@ -484,55 +485,6 @@ namespace clio
 			}
 		}
 
-		public class Project {
-
-			public string DestPath { get; set; }
-
-			public string Namespace { get; set; }
-
-			public string ProjFile { get; set; }
-
-			public Project(string destPath = null, string @namespace = null) {
-				DestPath = destPath;
-				Namespace = @namespace;
-				if (string.IsNullOrEmpty(Namespace)) {
-					var curDir = Environment.CurrentDirectory;
-					ProjFile = Directory.GetFiles(curDir, "*.csproj").FirstOrDefault();
-					if (File.Exists(ProjFile)) {
-						Console.WriteLine($"Detected projFile {ProjFile}");
-						var fileText = File.ReadAllText(ProjFile);
-						int start = fileText.IndexOf("<RootNamespace>");
-						int end = fileText.IndexOf("</RootNamespace>");
-						if (end > start) {
-							Namespace = fileText.Substring(start + 15, end - start - 15);
-							Console.WriteLine($"Detected namespace {@Namespace}");
-						}
-						if (string.IsNullOrEmpty(DestPath)) {
-							DestPath = $"{curDir}\\Files\\cs";
-						}
-					}
-
-				}
-			}
-
-			public void AddFile(string name, string body) {
-					Console.WriteLine($"Save {name} class");
-					if (!string.IsNullOrEmpty(Namespace)) {
-						body = body.Replace("<Namespace>", Namespace);
-					}
-					File.WriteAllText($"{DestPath}\\{name}.cs", body);
-			}
-
-			public void Reload() {
-				if (File.Exists(ProjFile)) {
-					File.AppendAllText(ProjFile, " ");
-					var content = File.ReadAllText(ProjFile);
-					File.WriteAllText(ProjFile, content.Substring(0, content.Length - 1));
-					Console.WriteLine($"Modified proj file {ProjFile}");
-				}
-			}
-		}
-
 		private static int AddItem(ItemOptions options) {
 			if (options.ItemType.ToLower() == "model") {
 				return AddModels(options);
@@ -541,11 +493,9 @@ namespace clio
 			} 
 		}
 
-
-
 		private static int AddItemFromTemplate(ItemOptions options) {
 			try {
-				var project = new Project(options.DestinationPath, options.Namespace);
+				var project = new VSProject(options.DestinationPath, options.Namespace);
 				var creatioEnv = new CreatioEnvironment();
 				string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
 				if (!File.Exists(tplPath)) {
@@ -581,7 +531,7 @@ namespace clio
 				var packageName = options.Name;
 				var packageDirectory = Directory.CreateDirectory(packageName);
 				Directory.SetCurrentDirectory(packageDirectory.FullName);
-				var pkg = BpmPkg.CreatePackage(options.Name, settings.Maintainer);
+				var pkg = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
 				pkg.Create();
 				if (!String.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
 					ReferenceTo(new ReferenceOptions { ReferenceType = options.Rebase });
@@ -606,31 +556,31 @@ namespace clio
 			try {
 				switch (options.ReferenceType) {
 					case "bin": {
-							BpmPkgProject.LoadFromFile(options.Path)
+							CreatioPkgProject.LoadFromFile(options.Path)
 							.RefToBin()
 							.SaveChanges();
 						}
 						break;
 					case "src": {
-							BpmPkgProject.LoadFromFile(options.Path)
+							CreatioPkgProject.LoadFromFile(options.Path)
 							.RefToCoreSrc()
 							.SaveChanges();
 						}
 						break;
 					case "custom": {
-							BpmPkgProject.LoadFromFile(options.Path)
+							CreatioPkgProject.LoadFromFile(options.Path)
 								.RefToCustomPath(options.RefPattern)
 								.SaveChanges();
 						}
 						break;
 					case "unit-bin": {
-							BpmPkgProject.LoadFromFile(options.Path)
+							CreatioPkgProject.LoadFromFile(options.Path)
 								.RefToUnitBin()
 								.SaveChanges();
 						}
 						break;
 					case "unit-src": {
-							BpmPkgProject.LoadFromFile(options.Path)
+							CreatioPkgProject.LoadFromFile(options.Path)
 								.RefToUnitCoreSrc()
 								.SaveChanges();
 						}

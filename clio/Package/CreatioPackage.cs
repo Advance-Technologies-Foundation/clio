@@ -5,7 +5,7 @@ using Newtonsoft.Json;
 
 namespace clio
 {
-	public class BpmPkg
+	public class CreatioPackage
 	{
 
 		public const string DescriptorName = "descriptor.json";
@@ -40,7 +40,7 @@ namespace clio
 			protected set => _createdOn = GetDateTimeTillSeconds(value);
 		}
 
-		protected BpmPkg(string packageName, string maintainer) {
+		protected CreatioPackage(string packageName, string maintainer) {
 			_creatioEnvironment = new CreatioEnvironment();
 			PackageName = packageName;
 			Maintainer = maintainer;
@@ -98,32 +98,32 @@ namespace clio
 			File.Create(placeholderPath).Dispose();
 		}
 
-		protected BpmPkg CreatePkgDescriptor() {
+		protected CreatioPackage CreatePkgDescriptor() {
 			var filePath = Path.Combine(FullPath, DescriptorName);
 			CreateFromTpl(DescriptorTpl, filePath);
 			return this;
 		}
 
-		protected BpmPkg CreateProj() {
+		protected CreatioPackage CreateProj() {
 			var filePath = Path.Combine(FullPath, PackageName + "." + CsprojExtension);
 			CreateFromTpl(ProjTpl, filePath);
 			return this;
 		}
 
-		protected BpmPkg CreatePackageConfig() {
+		protected CreatioPackage CreatePackageConfig() {
 			var filePath = Path.Combine(FullPath, PackageConfigName);
 			CreateFromTpl(PackageConfigTpl, filePath);
 			return this;
 		}
 
-		protected BpmPkg CreateAssemblyInfo() {
+		protected CreatioPackage CreateAssemblyInfo() {
 			Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
 			var filePath = Path.Combine(FullPath, PropertiesDirName, AssemblyInfoName);
 			CreateFromTpl(AssemblyInfoTpl, filePath);
 			return this;
 		}
 
-		protected BpmPkg CreatePackageDirectories() {
+		protected CreatioPackage CreatePackageDirectories() {
 			foreach (var directory in _pkgDirectories) {
 				var dInfo = Directory.CreateDirectory(Path.Combine(FullPath, directory));
 				AddPlaceholderFile(dInfo.FullName);
@@ -131,7 +131,7 @@ namespace clio
 			return this;
 		}
 
-		protected BpmPkg CreatePackageFiles() {
+		protected CreatioPackage CreatePackageFiles() {
 			CreatePkgDescriptor()
 				.CreateProj()
 				.CreatePackageConfig()
@@ -139,8 +139,8 @@ namespace clio
 			return this;
 		}
 
-		public static BpmPkg CreatePackage(string name, string maintainer) {
-			return new BpmPkg(name, maintainer) {
+		public static CreatioPackage CreatePackage(string name, string maintainer) {
+			return new CreatioPackage(name, maintainer) {
 				ProjectId = Guid.NewGuid(),
 			};
 		}
