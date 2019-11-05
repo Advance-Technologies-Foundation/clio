@@ -131,13 +131,12 @@
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
-    <Compile Include="Files\cs\*.cs" />
+    <Compile Include="Files\cs\EmptyClass.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
-    <Content Include="Files\cs\placeholder.txt" />
-	<Content Include="Files\cs\*.cs" />
+    <Content Include="Files\cs\*.cs" />
     <Content Include="Assemblies\**\*.*" />
     <Content Include="Data\**\*.*" />
     <Content Include="Resources\**\*.*" />
