@@ -9,10 +9,10 @@
 		private const string SetFeatureStateMethodName = "SetFeatureState";
 
 
-		protected CreatioClient BpmonlineClient;
+		protected CreatioClient CreatioClient;
 
 		public FeatureModerator(CreatioClient client) {
-			BpmonlineClient = client;
+			CreatioClient = client;
 		}
 
 		public void SwitchFeatureOn(string code) {
@@ -28,7 +28,7 @@
 		private FeatureModerator CallChangeFeatureStateV2(Feature feature) {
 			string requestData = "{" +
 				$"\"code\":\"{feature.Code}\",\"state\":\"{(int)feature.State}\"" + "}";
-			BpmonlineClient.CallConfigurationService(FeatureServiceName, SetFeatureStateMethodName, requestData);
+			CreatioClient.CallConfigurationService(FeatureServiceName, SetFeatureStateMethodName, requestData);
 			return this;
 		}
 
