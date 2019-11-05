@@ -71,7 +71,7 @@ namespace clio
 		public string Name { get; set; }
 	}
 
-	[Verb("ref-to", HelpText = "Change bpm package project core paths", Hidden = true)]
+	[Verb("ref-to", HelpText = "Change creatio package project core paths", Hidden = true)]
 	internal class ReferenceOptions
 	{
 		[Option('r', "ReferencePattern", Required = false, HelpText = "Pattern for reference path",
