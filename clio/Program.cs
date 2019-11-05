@@ -106,7 +106,7 @@ namespace clio
 				MessageToConsole($"Your app does not contain clio API." +
 				 $"{Environment.NewLine}You should consider install it via the \'clio install-gate\' command.", ConsoleColor.DarkYellow);
 			} else if (localApiVersion > appApiVersion) {
-				MessageToConsole($"You are using bpmcli api version {appApiVersion}, however version {localApiVersion} is available." +
+				MessageToConsole($"You are using clio api version {appApiVersion}, however version {localApiVersion} is available." +
 				 $"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
 			}
 		}

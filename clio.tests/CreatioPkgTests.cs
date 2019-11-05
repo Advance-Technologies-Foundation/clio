@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Xml.Linq;
 using FluentAssertions;
 using NUnit.Framework;
 using static clio.tests.AssertionExtensions;
@@ -9,7 +8,7 @@ using File = System.IO.File;
 
 namespace clio.tests
 {
-	public class BpmPkgTests
+	public class CreatioPkgTests
 	{
 
 		private const string PackageName = "TestPackage";
@@ -20,10 +19,10 @@ namespace clio.tests
 
 		private static readonly DateTime TestCreatedOn = new DateTime(2018, 1, 1, 1, 12, 10, 200, DateTimeKind.Utc);
 
-		private class BpmPkgMock : CreatioPackage
+		private class CreatioPkgMock : CreatioPackage
 		{
 
-			public BpmPkgMock(bool setDirectory = true) : base(BpmPkgTests.PackageName, BpmPkgTests.Maintainer) {
+			public CreatioPkgMock(bool setDirectory = true) : base(CreatioPkgTests.PackageName, CreatioPkgTests.Maintainer) {
 				ProjectId = Guid.Parse(PackageUId);
 				CreatedOn = TestCreatedOn;
 				if (setDirectory) {
@@ -64,8 +63,8 @@ namespace clio.tests
 			TestName = "Check Correct PackageConfig")]
 		[TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, CreatioPackage.AssemblyInfoName,
 			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo")]
-		public void BpmPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
-			var pkg = new BpmPkgMock();
+		public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
+			var pkg = new CreatioPkgMock();
 			pkg.GetType().GetMethod(methodName).Invoke(pkg, null);
 			var resultPath = Path.Combine(pkg.FullPath, resultFileName);
 			var samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, sampleFileName);
@@ -74,7 +73,7 @@ namespace clio.tests
 		}
 
 		[Test, Category("Integration")]
-		public void BpmPkg_Create_CheckPackageStructure() {
+		public void CreatioPkg_Create_CheckPackageStructure() {
 			var oldEnvironment = Environment.CurrentDirectory;
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
 			var pkg = CreatioPackage.CreatePackage(PackageName, Maintainer);
@@ -101,12 +100,12 @@ namespace clio.tests
 		}
 
 		[Test, Category("Integration")]
-		public void BpmPkg_Create_CheckCorrectTplFilePathGettingFromPath() {
+		public void CreatioPkg_Create_CheckCorrectTplFilePathGettingFromPath() {
 			var oldCD = Environment.CurrentDirectory;
 			var oldPath = Environment.GetEnvironmentVariable("PATH");
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
 			Environment.SetEnvironmentVariable("PATH", oldCD + ";C:\\Program Files");
-			var pkg = new BpmPkgMock(false);
+			var pkg = new CreatioPkgMock(false);
 			pkg.CreateNugetPackageConfig();
 			Environment.CurrentDirectory = oldCD;
 			Environment.SetEnvironmentVariable("PATH", oldPath);
