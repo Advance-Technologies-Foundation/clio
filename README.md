@@ -40,11 +40,12 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Create/Update an environment](#createupdate-an-environment)
 	- [Delete the existing environment](#delete-the-existing-environment)
 	- [View application options](#view-application-options)
-- [Using for CI\DI systems](#using-for-cidi-systems)
+- [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
 	- [Convert existing package to project](#convert-existing-package-to-project)
 	- [Execute assembly](#execute-assembly)
 	- [References](#references)
+	- [Execute custom SQL script](#execute-custom-sql-script)
 
 # Arguments
 - `<PACKAGE_NAME>` - package name
