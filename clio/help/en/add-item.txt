@@ -9,7 +9,7 @@ DESCRIPTION
     Add package item to project based on template. You can add data model for 
     work with class oriented entity throuth repository (Detailed 
     https://github.com/Advance-Technologies-Foundation/repository).
-    Supported by default web service and entity-listener template for bpmonline.
+    Supported by default web service and entity-listener template for creatio.
     You can add your own template in tpl folder in clio directory for 
     frequently used code constructions. 
 

@@ -116,6 +116,12 @@ namespace clio
 			return this;
 		}
 
+		protected CreatioPackage CreateEmptyClass() {
+			var filePath = Path.Combine(FullPath, "Files\\cs", "EmptyClass.cs");
+			File.Create(filePath).Dispose();
+			return this;
+		}
+
 		protected CreatioPackage CreateAssemblyInfo() {
 			Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
 			var filePath = Path.Combine(FullPath, PropertiesDirName, AssemblyInfoName);
@@ -135,7 +141,8 @@ namespace clio
 			CreatePkgDescriptor()
 				.CreateProj()
 				.CreatePackageConfig()
-				.CreateAssemblyInfo();
+				.CreateAssemblyInfo()
+				.CreateEmptyClass();
 			return this;
 		}
 
@@ -146,7 +153,7 @@ namespace clio
 		}
 
 		public void Create() {
-			CreatePackageFiles().CreatePackageDirectories();
+			CreatePackageDirectories().CreatePackageFiles();
 		}
 
 		internal void RemovePackageConfig()
