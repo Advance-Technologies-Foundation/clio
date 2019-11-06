@@ -1,20 +1,16 @@
-﻿using clioGate.Functions.SQL;
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
-using System.Text;
-using System.Threading.Tasks;
+using ClioGate.Functions.SQL;
+using Newtonsoft.Json;
 using Terrasoft.Web.Common;
 
 namespace cliogate.Files.cs
 {
 	[ServiceContract]
 	[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]
-	class CreatioApiGateway : BaseService
+	public class CreatioApiGateway : BaseService
 	{
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "ExecuteSqlScript", BodyStyle = WebMessageBodyStyle.WrappedRequest,

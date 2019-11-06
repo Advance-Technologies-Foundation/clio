@@ -1,17 +1,17 @@
-namespace clioGate.Functions.SQL
+namespace ClioGate.Functions.SQL
 {
-	using Newtonsoft.Json;
 	using System;
 	using System.Data;
+	using Newtonsoft.Json;
 	using Terrasoft.Core;
 	using Terrasoft.Core.DB;
+
 	public static class SQLFunctions
 	{
-
 		private static bool GetIsChangeStateScript(string script) {
 			script = script.ToLower();
 			var result = script.StartsWith("update") || script.StartsWith("insert") ||
-			              script.StartsWith("delete");
+				script.StartsWith("delete");
 			return result;
 		}
 
@@ -31,6 +31,4 @@ namespace clioGate.Functions.SQL
 			return JsonConvert.SerializeObject(dataTable, Formatting.Indented);
 		}
 	}
-
-
 }
