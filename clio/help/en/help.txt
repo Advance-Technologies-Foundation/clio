@@ -47,5 +47,9 @@ COMMANDS
     set-dev-mode            dev         Activate developer mode for selected
                                         web application(website)
 
+    set-syssetting          syssetting  Set setting value
+
+	set-feature             feature     Set feature state
+
 AUTHOR
     https://github.com/Advance-Technologies-Foundation/clio
