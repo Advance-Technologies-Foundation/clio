@@ -10,7 +10,7 @@ With aid of clio you can:
 - Maintanance Creatio application
   - Restart application
   - Clear session and cache storage (redisdb)
-- Build CI\CD pipelines
+- Build CI/CD pipelines
 - Convert existing Creatio package to project
 
 
@@ -40,11 +40,12 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Create/Update an environment](#createupdate-an-environment)
 	- [Delete the existing environment](#delete-the-existing-environment)
 	- [View application options](#view-application-options)
-- [Using for CI\DI systems](#using-for-cidi-systems)
+- [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
 	- [Convert existing package to project](#convert-existing-package-to-project)
 	- [Execute assembly](#execute-assembly)
 	- [References](#references)
+	- [Execute custom SQL script](#execute-custom-sql-script)
 
 # Arguments
 - `<PACKAGE_NAME>` - package name
@@ -131,6 +132,7 @@ for pull package from non default application
 ```
 clio pull-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 ```
+Applies to Creatio 7.14.0 and up
 
 ## Delete package
 
@@ -145,7 +147,7 @@ clio delete-pkg-remote <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 
 ## Compress package
 
-For compress package into *.gz archive for directory which conatain package folder
+For compress package into *.gz archive for directory which contain package folder
 ```
 clio generate-pkg-zip <PACKAGE_NAME>
 ```
@@ -211,8 +213,8 @@ or for concrete application
 clio show-web-app <ENVIRONMENT_NAME>
 ```
 
-# Using for CI\DI systems
-In CI\CD systems, you can specify configuration options directly when calling command:
+# Using for CI/CD systems
+In CI/CD systems, you can specify configuration options directly when calling command:
 ```
 clio restart -u http://mysite.creatio.com -l administrator -p password
 ```
@@ -243,4 +245,14 @@ clio ref-to src
 Set references for project on application distributive binary files
 ```
 clio ref-to bin
+```
+## Execute custom SQL script
+
+Execute custom SQL script on a web application
+```
+execute-sql-script "SELECT Id FROM SysSettings WHERE Code = 'CustomPackageId'"
+```
+Executes custom SQL script from specified file
+```
+execute-sql-script -f c:\Path to file\file.sql
 ```
