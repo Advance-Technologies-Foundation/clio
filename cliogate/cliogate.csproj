@@ -5,6 +5,7 @@
     <OutputPath>Files\Bin\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <PropertyGroup Label="TemplateBuilder">
     <TemplateBuilderTargets Condition=" '$(TemplateBuilderTargets)'=='' ">$([System.IO.Path]::GetFullPath( $(MSBuildProjectDirectory)\..\packages\TemplateBuilder.1.1.6.1\tools\ligershark.templates.targets ))</TemplateBuilderTargets>
@@ -29,6 +30,10 @@
     <PackageReference Include="Common.Logging.NLog45" Version="3.4.1"/>
     <PackageReference Include="Newtonsoft.Json" Version="12.0.2"/>
     <PackageReference Include="BpmonlineSDK" Version="7.14.4.844-rc"/>
+    <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0"/>
+    <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
+      <Private>False</Private>
+    </PackageReference>
   </ItemGroup>
   <!--Move to Package reference, when ATF.Repository will be built against netstandard-->
   <ItemGroup>
@@ -36,4 +41,9 @@
       <HintPath>..\packages\ATF.Repository.1.1.0\lib\net472\ATF.Repository.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <Target Name="FilterCopyLocalItems" AfterTargets="ResolveLockFileCopyLocalProjectDeps">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)' != 'Terrasoft.ServiceModel.Primitives'" />
+    </ItemGroup>
+  </Target>
 </Project>
