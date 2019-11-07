@@ -1,0 +1,10 @@
+﻿{
+  "Descriptor": {
+    "UId": "26863cbc-7fba-4483-b4aa-9ce1d8d2ecde",
+    "Name": "BpmcliApiGateway",
+    "ModifiedOnUtc": "\/Date(1573118663000)\/",
+    "ManagerName": "SourceCodeSchemaManager",
+    "Caption": "BpmcliApiGateway",
+    "DependsOn": []
+  }
+}

@@ -1,12 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>netstandard2.0;net472</TargetFrameworks>
     <ProjectGuid>{E24226F9-C177-458F-AF34-9338E2699983}</ProjectGuid>
     <OutputPath>Files\Bin\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+  <Choose>
+    <When Condition="'$(TargetFramework)'=='netstandard2.0'">
+      <PropertyGroup>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+      </PropertyGroup>
+    </When>
+  </Choose>
   <PropertyGroup Label="TemplateBuilder">
     <TemplateBuilderTargets Condition=" '$(TemplateBuilderTargets)'=='' ">$([System.IO.Path]::GetFullPath( $(MSBuildProjectDirectory)\..\packages\TemplateBuilder.1.1.6.1\tools\ligershark.templates.targets ))</TemplateBuilderTargets>
   </PropertyGroup>
@@ -30,11 +36,24 @@
     <PackageReference Include="Common.Logging.NLog45" Version="3.4.1"/>
     <PackageReference Include="Newtonsoft.Json" Version="12.0.2"/>
     <PackageReference Include="BpmonlineSDK" Version="7.14.4.844-rc"/>
-    <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0"/>
-    <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
-      <Private>False</Private>
-    </PackageReference>
   </ItemGroup>
+  <Choose>
+    <When Condition="'$(TargetFramework)'=='netstandard2.0'">
+      <ItemGroup>
+        <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0"/>
+        <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
+          <Private>False</Private>
+        </PackageReference>
+      </ItemGroup>
+    </When>
+    <When Condition="'$(TargetFramework)'=='net472'">
+      <ItemGroup>
+        <Reference Include="System.ServiceModel"/>
+        <Reference Include="System.ServiceModel.Activation"/>
+        <Reference Include="System.ServiceModel.Web"/>
+      </ItemGroup>
+    </When>
+  </Choose>
   <!--Move to Package reference, when ATF.Repository will be built against netstandard-->
   <ItemGroup>
     <Reference Include="ATF.Repository, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
@@ -43,7 +62,7 @@
   </ItemGroup>
   <Target Name="FilterCopyLocalItems" AfterTargets="ResolveLockFileCopyLocalProjectDeps">
     <ItemGroup>
-      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)' != 'Terrasoft.ServiceModel.Primitives'" />
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)' != 'Terrasoft.ServiceModel.Primitives'"/>
     </ItemGroup>
   </Target>
 </Project>

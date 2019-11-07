@@ -1,0 +1,10 @@
+﻿{
+  "Descriptor": {
+    "UId": "09679cbe-c28c-4485-9178-ad265df4fb63",
+    "Name": "SQLFunctions",
+    "ModifiedOnUtc": "\/Date(1573118717000)\/",
+    "ManagerName": "SourceCodeSchemaManager",
+    "Caption": "SQLFunctions",
+    "DependsOn": []
+  }
+}
