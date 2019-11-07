@@ -49,7 +49,7 @@ COMMANDS
 
     set-syssetting          syssetting  Set setting value
 
-	set-feature             feature     Set feature state
+    set-feature             feature     Set feature state
 
 AUTHOR
     https://github.com/Advance-Technologies-Foundation/clio
