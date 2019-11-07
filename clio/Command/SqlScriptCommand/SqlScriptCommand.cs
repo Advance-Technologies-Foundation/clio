@@ -87,7 +87,9 @@ namespace clio.Command.SqlScriptCommand
 
 		private static string CorrectJson(string body) {
 			body = body.Replace("\\\\r\\\\n", Environment.NewLine);
+			body = body.Replace("\\\\n", Environment.NewLine);
 			body = body.Replace("\\r\\n", Environment.NewLine);
+			body = body.Replace("\\n", Environment.NewLine);
 			body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
 			body = body.Replace("\\\"", "\"");
 			body = body.Replace("\\\\", "\\");
