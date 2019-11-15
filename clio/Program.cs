@@ -72,7 +72,9 @@ namespace clio
 			try {
 				Configure(options);
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
+				string packageFilePath = _settings.IsNetCore 
+					? Path.Combine(dir, "cliogate", "netcore", "cliogate.gz")
+					: Path.Combine(dir, "cliogate", "netframework", "cliogate.gz");
 				InstallPackage(packageFilePath);
 				RestartCommand.Restart(_settings);
 				return 0;
@@ -197,6 +199,8 @@ namespace clio
 		private static string CorrectJson(string body) {
 			body = body.Replace("\\\\r\\\\n", Environment.NewLine);
 			body = body.Replace("\\r\\n", Environment.NewLine);
+			body = body.Replace("\\\\n", Environment.NewLine);
+			body = body.Replace("\\n", Environment.NewLine);
 			body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
 			body = body.Replace("\\\"", "\"");
 			body = body.Replace("\\\\", "\\");
