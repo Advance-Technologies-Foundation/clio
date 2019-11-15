@@ -416,7 +416,7 @@ namespace clio
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
 					SysSettingsOptions, FeatureOptions>(args)
 				.MapResult(
-					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssmebly(opts),
+					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => RestartCommand.Restart(opts),
 					(ClearRedisOptions opts) => RedisCommand.ClearRedisDb(opts),
 					(RegAppOptions opts) => RegAppCommand.RegApp(opts),

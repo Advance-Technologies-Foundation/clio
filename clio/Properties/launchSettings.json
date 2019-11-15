@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "restart"
+      "commandLineArgs": "exec myassembly.dll -t MyNamespace.CodeExecutor"
     }
   }
 }
