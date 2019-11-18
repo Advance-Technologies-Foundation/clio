@@ -29,7 +29,7 @@ OPTIONS
 
 
 EXAMPLE
-    clio execute-assembly-code -f myassembly.dll -t MyNamespace.CodeExecutor
+    clio execute-assembly-code myassembly.dll -t MyNamespace.CodeExecutor
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

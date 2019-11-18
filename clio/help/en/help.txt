@@ -8,9 +8,6 @@ COMMANDS
     Name                    Short name  Description
     ---------------------   ----------  ---------------------------------------
 
-    execute-assembly-code   exec        Execute an assembly code that
-                                        implements the IExecutor interface
-
     restart-web-app         restart     Restart a web application
 
     clear-redis-db          flushdb     Clear redis database

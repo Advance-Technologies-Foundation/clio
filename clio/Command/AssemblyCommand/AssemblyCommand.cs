@@ -1,12 +1,13 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using CommandLine;
 
 namespace clio.Command.AssemblyCommand
 {
-	[Verb("execute-assembly-code", Aliases = new string[] { "exec" }, HelpText = "Execute an assembly code which implements the IExecutor interface")]
+	[Verb("execute-assembly-code", 
+		Aliases = new[] { "exec" }, 
+		HelpText = "Execute an assembly code which implements the IExecutor interface",
+		Hidden = true)]
 	internal class ExecuteAssemblyOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
@@ -30,9 +31,8 @@ namespace clio.Command.AssemblyCommand
 			Console.WriteLine(responseFromServer);
 		}
 
-		public static int ExecuteCodeFromAssmebly(ExecuteAssemblyOptions options) {
-			Configure(options);
-			ExecuteCodeFromAssemblyInternal(options);
+		public static int ExecuteCodeFromAssembly(ExecuteAssemblyOptions options) {
+			Console.WriteLine("This command was obsoleted.");
 			return 0;
 		}
 	}
