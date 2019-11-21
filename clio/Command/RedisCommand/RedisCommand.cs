@@ -1,24 +1,29 @@
 ﻿using System;
+using Clio.Common;
 using CommandLine;
 
-namespace clio.Command.RedisCommand
+namespace Clio.Command.RedisCommand
 {
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
-	internal class ClearRedisOptions : EnvironmentOptions
+	public class ClearRedisOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
-	class RedisCommand: BaseRemoteCommand
+	public class RedisCommand: BaseRemoteCommand
 	{
-		private static string ClearRedisDbUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/ClearRedisDb";
-
-		private static void ClearRedisDbInternal() {
-			CreatioClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
+		public RedisCommand(IApplicationClient applicationClient) 
+			: base(applicationClient) {
 		}
 
-		public static int ClearRedisDb(ClearRedisOptions options) {
+		private static string ClearRedisDbUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/ClearRedisDb";
+
+		private void ClearRedisDbInternal() {
+			ApplicationClient.ExecutePostRequest(ClearRedisDbUrl, @"{}");
+		}
+
+		public int ClearRedisDb(ClearRedisOptions options) {
 			try {
 				Configure(options);
 				ClearRedisDbInternal();

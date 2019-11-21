@@ -8,7 +8,7 @@ using System.Linq;
 using System.Reflection;
 using File = System.IO.File;
 
-namespace clio
+namespace Clio
 {
 	internal class PackageConverter
 	{

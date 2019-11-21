@@ -2,7 +2,7 @@
 using Creatio.Client;
 using CommandLine;
 
-namespace clio
+namespace Clio
 {
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
 	internal class RegAppOptions : EnvironmentOptions
@@ -46,7 +46,7 @@ namespace clio
 					Uri = options.Uri,
 					Maintainer = options.Maintainer,
 					Safe = options.SafeValue,
-					IsNetCore = options.IsNetCore
+					IsNetCore = options.IsNetCore.Value
 				};
 				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
 					if (repository.IsExistInEnvironment(options.ActiveEnvironment))

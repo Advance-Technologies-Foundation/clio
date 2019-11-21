@@ -8,7 +8,7 @@ using System.Net.Http;
 using System.Text;
 using CommandLine;
 
-namespace clio.Command.UpdateCliCommand
+namespace Clio.Command.UpdateCliCommand
 {
 
 	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update clio to new available version")]

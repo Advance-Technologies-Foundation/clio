@@ -4,7 +4,7 @@ using System.Text;
 using Creatio.Client;
 using CommandLine;
 
-namespace clio.Command.SysSettingsCommand
+namespace Clio.Command.SysSettingsCommand
 {
 	[Verb("set-syssetting", Aliases = new string[] { "syssetting" }, HelpText = "Set setting value")]
 	internal class SysSettingsOptions : EnvironmentOptions

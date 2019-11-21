@@ -1,8 +1,8 @@
 ﻿using System;
-using clio.Feature;
+using Clio.Feature;
 using CommandLine;
 
-namespace clio.Command.FeatureCommand
+namespace Clio.Command.FeatureCommand
 {
 	[Verb("set-feature", Aliases = new[] { "feature" }, HelpText = "Set feature state")]
 	internal class FeatureOptions: EnvironmentOptions

@@ -4,7 +4,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace clio.Common
+namespace Clio.Common
 {
 	#region Class: CompressionUtilities
 

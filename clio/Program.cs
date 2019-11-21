@@ -6,20 +6,21 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using clio.environment;
+using Clio.environment;
 using CommandLine;
 using Newtonsoft.Json;
 using Creatio.Client;
-using clio.Command.UpdateCliCommand;
-using clio.Command.FeatureCommand;
-using clio.Command.RedisCommand;
-using clio.Command.AssemblyCommand;
-using clio.Command.SqlScriptCommand;
-using clio.Command.SysSettingsCommand;
-using clio.Common;
-using clio.Project;
+using Clio.Command.UpdateCliCommand;
+using Clio.Command.FeatureCommand;
+using Clio.Command.RedisCommand;
+using Clio.Command.AssemblyCommand;
+using Clio.Command.SqlScriptCommand;
+using Clio.Command.SysSettingsCommand;
+using Clio.Common;
+using Clio.Project;
+using Clio.Command.RestartCommand;
 
-namespace clio
+namespace Clio
 {
 
 
@@ -74,7 +75,7 @@ namespace clio
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
 				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
 				InstallPackage(packageFilePath);
-				RestartCommand.Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"Update error {e.Message}");
@@ -266,7 +267,7 @@ namespace clio
 			var installResponse = CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal();
-				RestartCommand.Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 			}
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
@@ -415,8 +416,8 @@ namespace clio
 					SysSettingsOptions, FeatureOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssmebly(opts),
-					(RestartOptions opts) => RestartCommand.Restart(opts),
-					(ClearRedisOptions opts) => RedisCommand.ClearRedisDb(opts),
+					(RestartOptions opts) => new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(opts),
+					(ClearRedisOptions opts) => new RedisCommand(new CreatioClientAdapter(CreatioClient)).ClearRedisDb(opts),
 					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
 					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
 					(UnregAppOptions opts) => UnregAppCommand.UnregApplication(opts),
@@ -450,7 +451,7 @@ namespace clio
 				};
 				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioClient);
 				UnlockMaintainerPackageInternal();
-				RestartCommand.Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

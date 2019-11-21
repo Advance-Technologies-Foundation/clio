@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
-namespace clio
+namespace Clio
 {
 
 	public class EnvironmentSettings
@@ -165,7 +165,9 @@ namespace clio
 				var settingsRepository = new SettingsRepository();
 				var _settings = settingsRepository.GetEnvironment(options.Environment);
 				result.Uri  = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
-				result.IsNetCore = _settings.IsNetCore ? _settings.IsNetCore : false;
+				result.IsNetCore = options.IsNetCore.HasValue 
+					? options.IsNetCore.Value
+					: _settings.IsNetCore;
 				result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 				result.Password  = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
 				result.Maintainer =

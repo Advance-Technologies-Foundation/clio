@@ -2,9 +2,9 @@
 using CommandLine;
 using CommandLine.Text;
 
-namespace clio
+namespace Clio
 {
-	internal class EnvironmentOptions
+	public class EnvironmentOptions
 	{
 		[Option('u', "uri", Required = false, HelpText = "Application uri")]
 		public string Uri { get; set; }
@@ -15,8 +15,8 @@ namespace clio
 		[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
 		public string Login { get; set; }
 
-		[Option('i', "IsNetCore", Required = false, HelpText = "Use NetCore application)")]
-		public bool IsNetCore { get; set; }
+		[Option('i', "IsNetCore", Required = false, HelpText = "Use NetCore application)", Default = null)]
+		public bool? IsNetCore { get; set; }
 
 		[Option('e', "Environment", Required = false, HelpText = "Environment name")]
 		public string Environment { get; set; }

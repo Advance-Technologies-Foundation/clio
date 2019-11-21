@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 
-namespace clio.environment
+namespace Clio.environment
 {
 	class EnvironmentResult : IResult
 	{

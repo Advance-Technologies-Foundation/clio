@@ -1,9 +1,9 @@
 ﻿using System;
 using System.IO;
-using clio.environment;
+using Clio.environment;
 using Newtonsoft.Json;
 
-namespace clio
+namespace Clio
 {
 	public class CreatioPackage
 	{

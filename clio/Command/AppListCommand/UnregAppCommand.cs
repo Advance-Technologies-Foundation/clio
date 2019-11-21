@@ -1,7 +1,7 @@
 ﻿using System;
 using CommandLine;
 
-namespace clio
+namespace Clio
 {
 	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]
 	internal class UnregAppOptions : EnvironmentOptions
