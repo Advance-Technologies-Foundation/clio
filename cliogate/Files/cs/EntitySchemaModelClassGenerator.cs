@@ -21,9 +21,6 @@ namespace cliogate.Files.cs
 		private string _valueColumnTemplate;
 		private string valueColumnTemplate { get => _valueColumnTemplate ?? (_valueColumnTemplate = File.ReadAllText($"{tplFolder}\\column-template.tpl")); }
 
-
-		string rootSchemaName;
-
 		public EntitySchemaModelClassGenerator(EntitySchemaManager entitySchemaManager) {
 			this.entitySchemaManager = entitySchemaManager;
 		}
