@@ -136,7 +136,7 @@
   </ItemGroup>
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
-    <Content Include="Files\cs\*.cs" />
+    <Compile Include="Files\cs\*.cs" />
     <Content Include="Assemblies\**\*.*" />
     <Content Include="Data\**\*.*" />
     <Content Include="Resources\**\*.*" />
