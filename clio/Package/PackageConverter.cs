@@ -17,10 +17,10 @@ namespace clio
 		internal static int Convert(ConvertOptions options) {
 			try {
 				var names = new List<string>();
+				if (options.Path == null) {
+					options.Path = Environment.CurrentDirectory;
+				}
 				if (String.IsNullOrEmpty(options.Name)) {
-					if (options.Path == null) {
-						options.Path = Environment.CurrentDirectory;
-					}
 					DirectoryInfo info = new DirectoryInfo(options.Path);
 					foreach (var directory in info.GetDirectories()) {
 						if (File.Exists(Path.Combine(directory.FullName, prefix, "descriptor.json"))) {
@@ -47,7 +47,13 @@ namespace clio
 
 		private static int ConvertPackage(ConvertOptions options) {
 			try {
-				string packageName = new DirectoryInfo(options.Path).Name;
+				string packageFolderPath = options.Path;
+				var packageDirectory = new DirectoryInfo(packageFolderPath);
+				var existingProjects = packageDirectory.GetFiles("*.csproj");
+				string packageName = packageDirectory.Name;
+				if (existingProjects.Length > 0) {
+					throw new Exception($"Package {packageName} contains existing .proj file. Remove existing project from package folder and try again.");
+				}
 				Console.WriteLine("Start converting package '{0}'.", packageName);
 				string packagePath = Path.Combine(options.Path, prefix);
 				var backupPath = packageName + ".zip";
@@ -218,11 +224,6 @@ namespace clio
 				result += string.Format(template, _ref);
 			}
 			return result;
-		}
-
-		private static string GetPathFromEnvironment() {
-			string[] cliPath = (Environment.GetEnvironmentVariable("PATH")?.Split(';'));
-			return cliPath?.First(p => p.Contains("clio"));
 		}
 
 		private static string GetTplPath(string tplPath) {

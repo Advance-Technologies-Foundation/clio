@@ -25,6 +25,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="tpl\packages.config.tpl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="tpl\packages.config.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CommandLineSDK" Version="1.0.9" />
     <PackageReference Include="ConsoleTables" Version="2.3.0" />
     <PackageReference Include="creatio.client" Version="1.0.1" />
@@ -138,9 +148,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="tpl\descriptor.json.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\packages.config.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="updater.runtimeconfig.json">

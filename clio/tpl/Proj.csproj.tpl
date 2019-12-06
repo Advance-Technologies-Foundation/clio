@@ -44,94 +44,81 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
-    <Reference Include="Terrasoft.Common, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Common.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.ConfigurationBuild, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.ConfigurationBuild.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core.ConfigurationBuild, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.ConfigurationBuild.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.DI, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.DI.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core.Packages, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Packages.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.Packages, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.Packages.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core.Process, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Process.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.Process, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.Process.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core.Scheduler, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Scheduler.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.Scheduler, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.Scheduler.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Core.Translation, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Core.Translation.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.ScriptEngine, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.ScriptEngine.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.GlobalSearch, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.GlobalSearch.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Core.Translation, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.Translation.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.GoogleServerConnector, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.GoogleServerConnector.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.GlobalSearch, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.GlobalSearch.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.GoogleServices, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.GoogleServices.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.GoogleServerConnector, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.GoogleServerConnector.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Messaging.Common, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Messaging.Common.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.GoogleServices, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.GoogleServices.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Mobile, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Mobile.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.IO, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.IO.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Monitoring, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Monitoring.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Messaging.Common, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Messaging.Common.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Nui, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Nui.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Mobile, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Mobile.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Nui.ServiceModel, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Nui.ServiceModel.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Monitoring, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Monitoring.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Reports, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Reports.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Nui, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Nui.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Services, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Services.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Nui.ServiceModel, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Nui.ServiceModel.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Social, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Social.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Reports, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Reports.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Sync, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Sync.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Services, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Services.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.UI.WebControls, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.UI.WebControls.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Social, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Social.dll</HintPath>
     </Reference>
-    <Reference Include="Terrasoft.Web.Common, Version=7.14.0.597, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
-      <HintPath>packages\BpmonlineSDK.7.14.0.597\lib\net40\Terrasoft.Web.Common.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="Terrasoft.Sync, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Sync.dll</HintPath>
+    </Reference>
+    <Reference Include="Terrasoft.UI.WebControls, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.UI.WebControls.dll</HintPath>
+    </Reference>
+    <Reference Include="Terrasoft.Web.Common, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Web.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Terrasoft.Web.Http.Abstractions, Version=7.15.2.501, Culture=neutral, PublicKeyToken=edaadfbc3b0bb879, processorArchitecture=MSIL">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Web.Http.Abstractions.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
-    <Compile Include="Files\cs\EmptyClass.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <!-- ##BpmonlineSDKMarker## -->
