@@ -6,7 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using Clio.environment;
+using Clio.UserEnvironment;
 using CommandLine;
 using Newtonsoft.Json;
 using Creatio.Client;
@@ -19,6 +19,9 @@ using Clio.Command.SysSettingsCommand;
 using Clio.Common;
 using Clio.Project;
 using Clio.Command.RestartCommand;
+using Clio.Command.PackageCommand;
+using Clio.Command;
+using Clio.Command.RegAppCommand;
 
 namespace Clio
 {
@@ -397,6 +400,22 @@ namespace Clio
 			File.WriteAllText(reportPath, logText, Encoding.UTF8);
 		}
 
+		//ToDo: move to factory
+		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options, 
+				params object[] additionalConstructorArgs) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options);
+			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
+			var clientAdapter = new CreatioClientAdapter(creatioClient);
+			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
+			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		}
+
+		//ToDo: move to factory
+		private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
+			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
+		}
+
 		private static int Main(string[] args) {
 			var autoupdate = new SettingsRepository().GetAutoupdate();
 			if (autoupdate) {
@@ -416,14 +435,14 @@ namespace Clio
 					SysSettingsOptions, FeatureOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssmebly(opts),
-					(RestartOptions opts) => new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(opts),
-					(ClearRedisOptions opts) => new RedisCommand(new CreatioClientAdapter(CreatioClient)).ClearRedisDb(opts),
-					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
+					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
+					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).ClearRedisDb(opts),
+					(RegAppOptions opts) => CreateRemoteCommand<RegAppCommand>(opts, new SettingsRepository()).Execute(opts),
 					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
-					(UnregAppOptions opts) => UnregAppCommand.UnregApplication(opts),
+					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
-					(DeletePkgOptions opts) => Delete(opts),
+					(DeletePkgOptions opts) => CreateRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => ReferenceTo(opts),
 					(NewPkgOptions opts) => NewPkg(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),

@@ -1,8 +1,10 @@
 ﻿using System;
 using Creatio.Client;
 using CommandLine;
+using Clio.Common;
+using Clio.UserEnvironment;
 
-namespace Clio
+namespace Clio.Command.RegAppCommand
 {
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
 	internal class RegAppOptions : EnvironmentOptions
@@ -20,7 +22,7 @@ namespace Clio
 		{
 			get
 			{
-				if (!String.IsNullOrEmpty(Safe)) {
+				if (!string.IsNullOrEmpty(Safe)) {
 					bool result;
 					if (bool.TryParse(Safe, out result)) {
 						return result;
@@ -31,36 +33,38 @@ namespace Clio
 		}
 	}
 
-	internal class RegAppCommand {
+	internal class RegAppCommand: RemoteCommand<RegAppOptions>
+	{
+		private readonly ISettingsRepository _settingsRepository;
 
-		private static EnvironmentSettings _settings { get; set; }
+		public RegAppCommand(IApplicationClient applicationClient, ISettingsRepository settingsRepository)
+			: base(applicationClient) {
+			_settingsRepository = settingsRepository;
+		}
 
-		private static CreatioClient _creatioClient { get => new CreatioClient(_settings.Uri, _settings.Login, _settings.Password, _settings.IsNetCore); }
-
-		public static int RegApp(RegAppOptions options) {
+		public override int Execute(RegAppOptions options) {
 			try {
-				var repository = new SettingsRepository();
-				var environment = new EnvironmentSettings() {
+				var environment = new EnvironmentSettings {
 					Login = options.Login,
 					Password = options.Password,
 					Uri = options.Uri,
 					Maintainer = options.Maintainer,
-					Safe = options.SafeValue,
-					IsNetCore = options.IsNetCore.Value
+					Safe = options.SafeValue.HasValue ? options.SafeValue : false,
+					IsNetCore = options.IsNetCore.HasValue ? options.IsNetCore.Value : false
 				};
-				if (!String.IsNullOrEmpty(options.ActiveEnvironment)) {
-					if (repository.IsExistInEnvironment(options.ActiveEnvironment))
-						repository.SetActiveEnvironment(options.ActiveEnvironment);
-					else
+				if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
+					if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
+						_settingsRepository.SetActiveEnvironment(options.ActiveEnvironment);
+					} else {
 						throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
+					}
 				}
-				repository.ConfigureEnvironment(options.Name, environment);
+				_settingsRepository.ConfigureEnvironment(options.Name, environment);
 				options.Environment = options.Environment ?? options.Name;
-				repository.ShowSettingsTo(Console.Out, options.Name);
+				_settingsRepository.ShowSettingsTo(Console.Out, options.Name);
 				Console.WriteLine();
-				_settings = repository.GetEnvironment(options);
 				Console.WriteLine($"Try login to {options.Uri} with {options.Name} credentials...");
-				_creatioClient.Login();
+				ApplicationClient.Login();
 				Console.WriteLine($"Login done");
 				return 0;
 			} catch (Exception e) {

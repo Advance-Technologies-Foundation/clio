@@ -1,11 +1,12 @@
+using Clio.UserEnvironment;
+using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 
 namespace Clio
 {
@@ -13,10 +14,15 @@ namespace Clio
 	public class EnvironmentSettings
 	{
 		public string Uri { get; set; }
+
 		public string Login { get; set; }
+
 		public string Password { get; set; }
+
 		public string Maintainer { get; set; }
+
 		public bool IsNetCore { get; set; }
+
 		internal void Merge(EnvironmentSettings environment) {
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
@@ -30,8 +36,7 @@ namespace Clio
 			if (!string.IsNullOrEmpty(environment.Maintainer)) {
 				Maintainer = environment.Maintainer;
 			}
-			if (environment.Safe.HasValue)
-			{
+			if (environment.Safe.HasValue) {
 				Safe = environment.Safe;
 			}
 			if (environment.DeveloperModeEnabled.HasValue) {
@@ -68,37 +73,23 @@ namespace Clio
 		public Dictionary<string, EnvironmentSettings> Environments { get; set; }
 	}
 
-	public class SettingsRepository
+	public class SettingsRepository : ISettingsRepository
 	{
-		public SettingsRepository() {
-			InitializeSettingsFile();
-			InitSettings();
-		}
-
-		private void InitSettings() {
-			var builder = new ConfigurationBuilder()
-				.SetBasePath(Environment.CurrentDirectory)
-				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
-				.AddEnvironmentVariables();
-			IConfigurationRoot configuration = builder.Build();
-			_settings = new Settings();
-			configuration.Bind(_settings);
-		}
-
 		private const string FileName = "appsettings.json";
+
+		private Settings _settings;
 
 		private string AppSettingsFolderPath {
 			get {
-				var userPath = Environment.GetEnvironmentVariable(
-				   RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
-					   "LOCALAPPDATA" : "Home");
+				var userPath = System.Environment.GetEnvironmentVariable(
+					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
+						"LOCALAPPDATA" : "Home");
 				var assy = Assembly.GetEntryAssembly();
 				var companyName = assy.GetCustomAttributes<AssemblyCompanyAttribute>()
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
-				if (userPath == null)
-				{
+				if (userPath == null) {
 					userPath = "";
 				}
 				return Path.Combine(userPath, companyName?.Company, product?.Product);
@@ -106,6 +97,21 @@ namespace Clio
 		}
 
 		private string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
+
+		public SettingsRepository() {
+			InitializeSettingsFile();
+			InitSettings();
+		}
+
+		private void InitSettings() {
+			var builder = new ConfigurationBuilder()
+				.SetBasePath(System.Environment.CurrentDirectory)
+				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
+				.AddEnvironmentVariables();
+			IConfigurationRoot configuration = builder.Build();
+			_settings = new Settings();
+			configuration.Bind(_settings);
+		}
 
 		private void InitializeSettingsFile() {
 			if (File.Exists(AppSettingsFilePath)) {
@@ -137,12 +143,11 @@ namespace Clio
 			}
 		}
 
-		internal void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
+		public void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
 			JsonSerializer serializer = new JsonSerializer() {
 				Formatting = Formatting.Indented
 			};
-			if (String.IsNullOrEmpty(environment))
-			{
+			if (String.IsNullOrEmpty(environment)) {
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				serializer.Serialize(streamWriter, _settings);
 			} else {
@@ -150,7 +155,7 @@ namespace Clio
 			}
 		}
 
-		internal EnvironmentSettings GetEnvironment(string name = null) {
+		public EnvironmentSettings GetEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			if (string.IsNullOrEmpty(name)) {
 				environment = _settings.GetActiveEnviroment();
@@ -160,44 +165,40 @@ namespace Clio
 			return environment;
 		}
 
-		internal EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
-				var result = new EnvironmentSettings();
-				var settingsRepository = new SettingsRepository();
-				var _settings = settingsRepository.GetEnvironment(options.Environment);
-				result.Uri  = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
-				result.IsNetCore = options.IsNetCore.HasValue 
-					? options.IsNetCore.Value
-					: _settings.IsNetCore;
-				result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
-				result.Password  = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
-				result.Maintainer =
-					string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
-				if (_settings.Safe.HasValue && _settings.Safe.Value) {
-					Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
-					Console.Write($"Do you want to continue? [Y/N]:");
-					var answer = Console.ReadKey();
-					Console.WriteLine();
-					if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
-						Console.WriteLine("Operation was canceled by user");
-						Environment.Exit(1);
-					}
+		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
+			var result = new EnvironmentSettings();
+			var settingsRepository = new SettingsRepository();
+			var _settings = settingsRepository.GetEnvironment(options.Environment);
+			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
+			result.IsNetCore = options.IsNetCore.HasValue
+				? options.IsNetCore.Value
+				: _settings.IsNetCore;
+			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
+			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
+			result.Maintainer =
+				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
+			if (_settings.Safe.HasValue && _settings.Safe.Value) {
+				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
+				Console.Write($"Do you want to continue? [Y/N]:");
+				var answer = Console.ReadKey();
+				Console.WriteLine();
+				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
+					Console.WriteLine("Operation was canceled by user");
+					System.Environment.Exit(1);
 				}
-				return result;
+			}
+			return result;
 		}
 
-		internal bool IsExistInEnvironment(string name)
-		{
+		public bool IsEnvironmentExists(string name) {
 			return _settings.Environments.ContainsKey(name);
 		}
 
-		internal bool GetAutoupdate()
-		{
+		internal bool GetAutoupdate() {
 			return _settings.Autoupdate;
 		}
 
-		Settings _settings;
-
-		internal void ConfigureEnvironment(string name, EnvironmentSettings environment) {
+		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
 			if (string.IsNullOrEmpty(name)) {
 				_settings.GetActiveEnviroment().Merge(environment);
 			} else if (_settings.Environments.ContainsKey(name)) {
@@ -208,18 +209,16 @@ namespace Clio
 			Save();
 		}
 
-		internal void SetActiveEnvironment(string activeEnvironment) {
+		public void SetActiveEnvironment(string activeEnvironment) {
 			_settings.ActiveEnvironmentKey = activeEnvironment;
 			Save();
 		}
 
-		internal void RemoveEnvironment(string environment) {
-			if (_settings.Environments.ContainsKey(environment))
-			{
+		public void RemoveEnvironment(string environment) {
+			if (_settings.Environments.ContainsKey(environment)) {
 				_settings.Environments.Remove(environment);
 				Save();
-			}
-			else {
+			} else {
 				throw new KeyNotFoundException($"Application \"{environment}\" not found");
 			}
 		}

@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net472</TargetFrameworks>
+    <TargetFrameworks>net472</TargetFrameworks>
     <ProjectGuid>{E24226F9-C177-458F-AF34-9338E2699983}</ProjectGuid>
     <OutputPath>Files\Bin\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -31,6 +31,9 @@
     <None Include="app.config"/>
     <None Include="descriptor.json"/>
     <None Include="packages.config"/>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Schemas\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Common.Logging.NLog45" Version="3.4.1"/>

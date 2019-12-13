@@ -2,7 +2,7 @@
 using System.IO;
 using System.Linq;
 
-namespace Clio.environment
+namespace Clio.UserEnvironment
 {
 	internal class CreatioEnvironment : ICreatioEnvironment
 	{

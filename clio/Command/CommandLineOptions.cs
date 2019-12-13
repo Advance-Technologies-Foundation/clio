@@ -64,13 +64,6 @@ namespace Clio
 		public string ReportPath { get; set; }
 	}
 
-	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
-	internal class DeletePkgOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
-		public string Name { get; set; }
-	}
-
 	[Verb("ref-to", HelpText = "Change creatio package project core paths", Hidden = true)]
 	internal class ReferenceOptions
 	{
