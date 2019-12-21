@@ -4,8 +4,8 @@ using Terrasoft.Core.Entities.Events;
 namespace <Namespace>
 {
 
-	[EntityEventListener(SchemaName = "<EntitySchemaName>")]
-	public class <Name>: BaseEntityEventListener
+	[EntityEventListener(SchemaName = "<Name>")]
+	public class <Name>EventListener: BaseEntityEventListener
 	{
 
 		public override void OnSaved(object sender, EntityAfterEventArgs e) {
