@@ -27,7 +27,6 @@ namespace cliogate.Files.cs
 		[WebInvoke(Method = "GET", UriTemplate = "GetApiVersion", RequestFormat = WebMessageFormat.Json,
 			ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.WrappedRequest)]
 		public string GetApiVersion() {
-			//var version = typeof(CreatioApiGateway).Assembly.GetName().Version;
 			return "1.1.0.2";
 		}
 
