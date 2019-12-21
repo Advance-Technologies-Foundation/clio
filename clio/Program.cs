@@ -72,7 +72,9 @@ namespace clio
 			try {
 				Configure(options);
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
+				string packageFilePath = _settings.IsNetCore 
+					? Path.Combine(dir, "cliogate", "netcore", "cliogate.gz")
+					: Path.Combine(dir, "cliogate", "netframework", "cliogate.gz");
 				InstallPackage(packageFilePath);
 				RestartCommand.Restart(_settings);
 				return 0;

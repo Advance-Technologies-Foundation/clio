@@ -63,6 +63,12 @@
     <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="cliogate\netcore\cliogate.gz">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="cliogate\netframework\cliogate.gz">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="cliogate\version.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -153,5 +159,9 @@
     <None Update="updater.runtimeconfig.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="cliogate\netcore\" />
+    <Folder Include="cliogate\netframework\" />
   </ItemGroup>
 </Project>
