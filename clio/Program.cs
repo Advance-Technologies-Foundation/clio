@@ -18,6 +18,7 @@ using clio.Command.SqlScriptCommand;
 using clio.Command.SysSettingsCommand;
 using clio.Common;
 using clio.Project;
+using clio.Command.PackageCommand;
 
 namespace clio
 {
@@ -416,7 +417,7 @@ namespace clio
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
-					SysSettingsOptions, FeatureOptions>(args)
+					SysSettingsOptions, FeatureOptions, UnzipPkgOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => RestartCommand.Restart(opts),
@@ -439,6 +440,7 @@ namespace clio
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
+					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
 					errs => 1);
 		}
 

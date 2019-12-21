@@ -1,0 +1,27 @@
+﻿COMMAND TYPE
+    CI/CD commands
+
+NAME
+    extract-pkg-zip
+
+
+DESCRIPTION
+    extract-pkg-zip command unzip package from *.gz archive to directory 
+    that contain package folder
+
+
+OPTIONS
+    Package name (pos. 0)    Name/path of package acrhive file
+
+    --DestinationPath       -d  Destionation path for extract package (Optional)
+
+
+EXAMPLE
+    clio extract-pkg-zip MyPackage
+        unzip MyPackage.gz in current folder to directory MyPackage in current folder
+
+    clio extract-pkg-zip c:\MyPackage.gz -f c:\App\Pkg
+        extract MyPackage.gz file to c:\App\MyPackage folder
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
