@@ -2,11 +2,11 @@
 using System.IO;
 using FluentAssertions;
 using NUnit.Framework;
-using static clio.tests.AssertionExtensions;
+using static Clio.Tests.AssertionExtensions;
 using File = System.IO.File;
 
 
-namespace clio.tests
+namespace Clio.Tests
 {
 	public class CreatioPkgTests
 	{

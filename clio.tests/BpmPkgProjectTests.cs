@@ -4,7 +4,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace clio.tests
+namespace Clio.Tests
 {
 	public class CreatioPkgProjectTests
 	{

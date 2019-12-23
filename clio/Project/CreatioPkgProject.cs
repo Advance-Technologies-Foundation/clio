@@ -4,7 +4,7 @@ using System.Dynamic;
 using System.Linq;
 using System.Xml.Linq;
 
-namespace clio
+namespace Clio
 {
 
 	public class CreatioPkgProject

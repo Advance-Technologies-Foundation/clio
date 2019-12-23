@@ -2,9 +2,9 @@
 using CommandLine;
 using CommandLine.Text;
 
-namespace clio
+namespace Clio
 {
-	internal class EnvironmentOptions
+	public class EnvironmentOptions
 	{
 		[Option('u', "uri", Required = false, HelpText = "Application uri")]
 		public string Uri { get; set; }
@@ -15,8 +15,8 @@ namespace clio
 		[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
 		public string Login { get; set; }
 
-		[Option('i', "IsNetCore", Required = false, HelpText = "Use NetCore application)")]
-		public bool IsNetCore { get; set; }
+		[Option('i', "IsNetCore", Required = false, HelpText = "Use NetCore application)", Default = null)]
+		public bool? IsNetCore { get; set; }
 
 		[Option('e', "Environment", Required = false, HelpText = "Environment name")]
 		public string Environment { get; set; }
@@ -62,51 +62,6 @@ namespace clio
 
 		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
-	}
-
-	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
-	internal class DeletePkgOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
-		public string Name { get; set; }
-	}
-
-	[Verb("ref-to", HelpText = "Change creatio package project core paths", Hidden = true)]
-	internal class ReferenceOptions
-	{
-		[Option('r', "ReferencePattern", Required = false, HelpText = "Pattern for reference path",
-			Default = null)]
-		public string RefPattern { get; set; }
-
-		[Option('p', "Path", Required = false, HelpText = "Path to the project file",
-			Default = null)]
-		public string Path { get; set; }
-
-		[Value(0, MetaName = "ReferenceType", Required = false, HelpText = "Indicates what the project will refer to." +
-			" Can be 'bin' or 'src'", Default = "src")]
-		public string ReferenceType { get; set; }
-
-	}
-
-	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new creatio package in local file system")]
-	internal class NewPkgOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
-		public string Name { get; set; }
-
-		[Option('r', "References", Required = false, HelpText = "Set references to local bin assemblies for development")]
-		public string Rebase { get; set; }
-
-		[Usage(ApplicationAlias = "clio")]
-		public static IEnumerable<Example> Examples =>
-			new List<Example> {
-				new Example("Create new package with name 'ATF'",
-					new NewPkgOptions { Name = "ATF" }
-				),
-				new Example("Create new package with name 'ATF' and with links on local installation creatio with file design mode",
-					new NewPkgOptions { Name = "ATF", Rebase = "bin"}
-				)
-			};
 	}
 
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]

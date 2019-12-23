@@ -1,4 +1,4 @@
-﻿namespace clio.Feature
+﻿namespace Clio.Feature
 {
 
 	public enum FeatureState

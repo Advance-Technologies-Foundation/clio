@@ -8,7 +8,7 @@ using CommandLine;
 using ConsoleTables;
 using Newtonsoft.Json;
 
-namespace clio.Command.SqlScriptCommand
+namespace Clio.Command.SqlScriptCommand
 {
 	[Verb("execute-sql-script", Aliases = new string[] { "sql" }, HelpText = "Execute script on web application")]
 	internal class ExecuteSqlScriptOptions : EnvironmentOptions

@@ -11,6 +11,7 @@
     <FileVersion>2.0.0.0</FileVersion>
     <Version>2.0.0.1</Version>
     <Description>CLI intarface for Creatio platform</Description>
+    <RootNamespace>Clio</RootNamespace>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 

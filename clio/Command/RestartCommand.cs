@@ -1,18 +1,23 @@
 ﻿using System;
+using Clio.Common;
 using CommandLine;
 
-namespace clio.Command.RedisCommand
+namespace Clio.Command
 {
 
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
-	internal class RestartOptions : EnvironmentOptions
+	public class RestartOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get; set; }
 	}
 
-	class RestartCommand : BaseRemoteCommand
+	public class RestartCommand : BaseRemoteCommand
 	{
+		public RestartCommand(IApplicationClient applicationClient) 
+			: base(applicationClient) {
+		}
+
 		private static string UnloadAppDomainUrl
 		{
 			get
@@ -25,11 +30,11 @@ namespace clio.Command.RedisCommand
 			}
 		}
 
-		private static void RestartInternal() {
-			CreatioClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
+		private void RestartInternal() {
+			ApplicationClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
-		public static int Restart(RestartOptions options) {
+		public int Restart(RestartOptions options) {
 			try {
 				Configure(options);
 				RestartInternal();
@@ -41,7 +46,7 @@ namespace clio.Command.RedisCommand
 			}
 		}
 
-		public static int Restart(EnvironmentSettings settings) {
+		public int Restart(EnvironmentSettings settings) {
 			try {
 				Configure(settings);
 				RestartInternal();

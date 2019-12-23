@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Text;
-using clio.Common;
+using Clio.Common;
 using CommandLine;
 
-namespace clio.Command.PackageCommand
+namespace Сlio.Command.PackageCommand
 {
 	[Verb("extract-pkg-zip", Aliases = new string[] { "extract", "unzip" }, HelpText = "Prepare an archive of creatio package")]
 	class UnzipPkgOptions

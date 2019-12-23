@@ -1,26 +1,24 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using clio.environment;
+using Clio.UserEnvironment;
 using CommandLine;
 using Newtonsoft.Json;
 using Creatio.Client;
-using clio.Command.UpdateCliCommand;
-using clio.Command.FeatureCommand;
-using clio.Command.RedisCommand;
-using clio.Command.AssemblyCommand;
-using clio.Command.SqlScriptCommand;
-using clio.Command.SysSettingsCommand;
-using clio.Common;
-using clio.Project;
-using clio.Command.PackageCommand;
+using Clio.Command;
+using Clio.Command.UpdateCliCommand;
+using Сlio.Command.PackageCommand;
+using Clio.Command.SqlScriptCommand;
+using Clio.Command.SysSettingsCommand;
+using Clio.Common;
+using Clio.Project;
+using Clio.Command.PackageCommand;
 
-namespace clio
+namespace Clio
 {
 
 
@@ -77,7 +75,7 @@ namespace clio
 					? Path.Combine(dir, "cliogate", "netcore", "cliogate.gz")
 					: Path.Combine(dir, "cliogate", "netframework", "cliogate.gz");
 				InstallPackage(packageFilePath);
-				RestartCommand.Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"Update error {e.Message}");
@@ -271,7 +269,7 @@ namespace clio
 			var installResponse = CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal();
-				RestartCommand.Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 			}
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
@@ -375,18 +373,6 @@ namespace clio
 			}
 		}
 
-		private static int Delete(DeletePkgOptions options) {
-			try {
-				SetupAppConnection(options);
-				DeletePackage(options.Name);
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
-
 		private static string GetLog() {
 			return CreatioClient.ExecuteGetRequest(LogUrl);
 		}
@@ -399,6 +385,22 @@ namespace clio
 				reportPath = Path.Combine(reportPath, DefLogFileName);
 			}
 			File.WriteAllText(reportPath, logText, Encoding.UTF8);
+		}
+
+		//ToDo: move to factory
+		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options, 
+				params object[] additionalConstructorArgs) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options);
+			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
+			var clientAdapter = new CreatioClientAdapter(creatioClient);
+			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
+			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		}
+
+		//ToDo: move to factory
+		private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
+			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
 		private static int Main(string[] args) {
@@ -420,14 +422,14 @@ namespace clio
 					SysSettingsOptions, FeatureOptions, UnzipPkgOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
-					(RestartOptions opts) => RestartCommand.Restart(opts),
-					(ClearRedisOptions opts) => RedisCommand.ClearRedisDb(opts),
-					(RegAppOptions opts) => RegAppCommand.RegApp(opts),
-					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
-					(UnregAppOptions opts) => UnregAppCommand.UnregApplication(opts),
+					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
+					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).ClearRedisDb(opts),
+					(RegAppOptions opts) => CreateRemoteCommand<RegAppCommand>(opts, new SettingsRepository()).Execute(opts),
+					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
+					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
-					(DeletePkgOptions opts) => Delete(opts),
+					(DeletePkgOptions opts) => CreateRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => ReferenceTo(opts),
 					(NewPkgOptions opts) => NewPkg(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
@@ -456,7 +458,7 @@ namespace clio
 				};
 				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioClient);
 				UnlockMaintainerPackageInternal();
-				RestartCommand.Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -535,7 +537,7 @@ namespace clio
 				Directory.SetCurrentDirectory(packageDirectory.FullName);
 				var pkg = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
 				pkg.Create();
-				if (!String.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
+				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
 					ReferenceTo(new ReferenceOptions { ReferenceType = options.Rebase });
 					pkg.RemovePackageConfig();
 				}

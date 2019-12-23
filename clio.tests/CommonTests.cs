@@ -1,7 +1,7 @@
-﻿using clio.Common;
+﻿using Clio.Common;
 using NUnit.Framework;
 
-namespace clio.tests
+namespace Clio.Tests
 {
 	internal class CommonTests
 	{

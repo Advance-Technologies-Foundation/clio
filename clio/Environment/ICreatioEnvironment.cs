@@ -1,6 +1,6 @@
 ﻿using System.IO;
 
-namespace clio.environment
+namespace Clio.UserEnvironment
 {
 	internal interface IResult
 	{

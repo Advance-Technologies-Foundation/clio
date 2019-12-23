@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using FluentAssertions;
 
-namespace clio.tests
+namespace Clio.Tests
 {
 	public static class AssertionExtensions
 	{

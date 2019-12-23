@@ -2,7 +2,7 @@
 using System.IO;
 using CommandLine;
 
-namespace clio.Command.AssemblyCommand
+namespace Clio.Command
 {
 	[Verb("execute-assembly-code", 
 		Aliases = new[] { "exec" }, 
