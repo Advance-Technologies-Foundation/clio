@@ -4,6 +4,7 @@ using System;
 
 namespace Clio.Command
 {
+	[Obsolete("Use RemoteCommand class instead.")]
 	public class BaseRemoteCommand 
 	{
 

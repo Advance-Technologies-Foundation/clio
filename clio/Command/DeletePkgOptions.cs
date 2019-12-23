@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Clio.Command.PackageCommand
+namespace Clio.Command
 {
 	[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
 	public class DeletePkgOptions : EnvironmentOptions

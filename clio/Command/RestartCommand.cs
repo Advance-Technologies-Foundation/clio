@@ -2,7 +2,7 @@
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command.RestartCommand
+namespace Clio.Command
 {
 
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]

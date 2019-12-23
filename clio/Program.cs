@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -10,18 +9,14 @@ using Clio.UserEnvironment;
 using CommandLine;
 using Newtonsoft.Json;
 using Creatio.Client;
+using Clio.Command;
 using Clio.Command.UpdateCliCommand;
-using Clio.Command.FeatureCommand;
-using Clio.Command.RedisCommand;
-using Clio.Command.AssemblyCommand;
+
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
 using Clio.Common;
 using Clio.Project;
-using Clio.Command.RestartCommand;
 using Clio.Command.PackageCommand;
-using Clio.Command;
-using Clio.Command.RegAppCommand;
 
 namespace Clio
 {
@@ -374,18 +369,6 @@ namespace Clio
 			}
 		}
 
-		private static int Delete(DeletePkgOptions options) {
-			try {
-				SetupAppConnection(options);
-				DeletePackage(options.Name);
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
-
 		private static string GetLog() {
 			return CreatioClient.ExecuteGetRequest(LogUrl);
 		}
@@ -438,7 +421,7 @@ namespace Clio
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
 					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).ClearRedisDb(opts),
 					(RegAppOptions opts) => CreateRemoteCommand<RegAppCommand>(opts, new SettingsRepository()).Execute(opts),
-					(AppListOptions opts) => ShowAppListCommand.ShowAppList(opts),
+					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
@@ -549,7 +532,7 @@ namespace Clio
 				Directory.SetCurrentDirectory(packageDirectory.FullName);
 				var pkg = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
 				pkg.Create();
-				if (!String.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
+				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
 					ReferenceTo(new ReferenceOptions { ReferenceType = options.Rebase });
 					pkg.RemovePackageConfig();
 				}

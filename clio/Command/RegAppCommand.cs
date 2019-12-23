@@ -4,7 +4,7 @@ using CommandLine;
 using Clio.Common;
 using Clio.UserEnvironment;
 
-namespace Clio.Command.RegAppCommand
+namespace Clio.Command
 {
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
 	internal class RegAppOptions : EnvironmentOptions

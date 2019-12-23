@@ -64,44 +64,6 @@ namespace Clio
 		public string ReportPath { get; set; }
 	}
 
-	[Verb("ref-to", HelpText = "Change creatio package project core paths", Hidden = true)]
-	internal class ReferenceOptions
-	{
-		[Option('r', "ReferencePattern", Required = false, HelpText = "Pattern for reference path",
-			Default = null)]
-		public string RefPattern { get; set; }
-
-		[Option('p', "Path", Required = false, HelpText = "Path to the project file",
-			Default = null)]
-		public string Path { get; set; }
-
-		[Value(0, MetaName = "ReferenceType", Required = false, HelpText = "Indicates what the project will refer to." +
-			" Can be 'bin' or 'src'", Default = "src")]
-		public string ReferenceType { get; set; }
-
-	}
-
-	[Verb("new-pkg", Aliases = new string[] { "init" }, HelpText = "Create a new creatio package in local file system")]
-	internal class NewPkgOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the created instance")]
-		public string Name { get; set; }
-
-		[Option('r', "References", Required = false, HelpText = "Set references to local bin assemblies for development")]
-		public string Rebase { get; set; }
-
-		[Usage(ApplicationAlias = "clio")]
-		public static IEnumerable<Example> Examples =>
-			new List<Example> {
-				new Example("Create new package with name 'ATF'",
-					new NewPkgOptions { Name = "ATF" }
-				),
-				new Example("Create new package with name 'ATF' and with links on local installation creatio with file design mode",
-					new NewPkgOptions { Name = "ATF", Rebase = "bin"}
-				)
-			};
-	}
-
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions
 	{

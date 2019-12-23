@@ -1,6 +1,6 @@
 ﻿namespace Clio.Tests.Command
 {
-	using Clio.Command.RedisCommand;
+	using Clio.Command;
 	using Clio.Common;
 	using NSubstitute;
 	using NUnit.Framework;

@@ -1,7 +1,8 @@
 ﻿namespace Clio.Tests.Command
 {
-	using Clio.Command.PackageCommand;
-	using Clio.Common;
+	using Clio.Command;
+    using Clio.Command.PackageCommand;
+    using Clio.Common;
 	using NSubstitute;
 	using NUnit.Framework;
 
