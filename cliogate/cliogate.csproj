@@ -29,7 +29,6 @@
     <Compile Remove="Schemas\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Common.Logging.NLog45" Version="3.4.1"/>
     <PackageReference Include="Newtonsoft.Json" Version="12.0.2"/>
   </ItemGroup>
   <Choose>
