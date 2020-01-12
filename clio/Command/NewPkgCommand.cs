@@ -1,4 +1,5 @@
-﻿using CommandLine;
+﻿using Clio.UserEnvironment;
+using CommandLine;
 using CommandLine.Text;
 using System;
 using System.Collections.Generic;
@@ -30,17 +31,26 @@ namespace Clio.Command
 
 	public class NewPkgCommand : Command<NewPkgOptions>
 	{
+		private readonly ISettingsRepository _settingsRepository;
+		private readonly Command<ReferenceOptions> _referenceCommand;
+
+		public NewPkgCommand(ISettingsRepository settingsRepository, Command<ReferenceOptions> referenceCommand) {
+			_settingsRepository = settingsRepository;
+			_referenceCommand = referenceCommand;
+		}
+
 		public override int Execute(NewPkgOptions options) {
-			var settings = new SettingsRepository().GetEnvironment();
+			var settings = _settingsRepository.GetEnvironment();
 			try {
-				var packageName = options.Name;
-				var packageDirectory = Directory.CreateDirectory(packageName);
-				Directory.SetCurrentDirectory(packageDirectory.FullName);
-				var pkg = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
-				pkg.Create();
+				//DirectoryInfo packageDirectory = Directory.CreateDirectory(options.Name);
+				CreatioPackage package = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
+				package.Create();
 				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
-					new ReferenceCommand().Execute(new ReferenceOptions { ReferenceType = options.Rebase });
-					pkg.RemovePackageConfig();
+					_referenceCommand.Execute(new ReferenceOptions {
+						Path = package.FullPath,
+						ReferenceType = options.Rebase 
+					});
+					package.RemovePackageConfig();
 				}
 				Console.WriteLine("Done");
 				return 0;

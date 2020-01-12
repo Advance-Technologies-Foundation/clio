@@ -1,13 +1,13 @@
-﻿using System;
+﻿using Clio.Project;
+using System;
 using System.Collections.Generic;
-using System.Dynamic;
 using System.Linq;
 using System.Xml.Linq;
 
 namespace Clio
 {
 
-	public class CreatioPkgProject
+	public class CreatioPkgProject: ICreatioPkgProject
 	{
 		private const string HintElementName = "HintPath";
 		private const string ItemGroupElementName = "ItemGroup";

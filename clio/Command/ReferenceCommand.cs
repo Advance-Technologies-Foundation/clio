@@ -1,7 +1,8 @@
-﻿using CommandLine;
+﻿using Clio.Project;
+using CommandLine;
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.IO;
+using System.Linq;
 
 namespace Clio.Command
 {
@@ -24,8 +25,51 @@ namespace Clio.Command
 
 	public class ReferenceCommand : Command<ReferenceOptions>
 	{
+		private readonly ICreatioPkgProjectCreator _projectCreator;
+
+		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator) {
+			_projectCreator = projectCreator;
+		}
+
+		private static string CurrentProj =>
+			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
+
 		public override int Execute(ReferenceOptions options) {
-			throw new NotImplementedException();
+			options.Path = options.Path ?? CurrentProj;
+			if (string.IsNullOrEmpty(options.Path)) {
+				throw new ArgumentNullException(nameof(options.Path));
+			}
+			if (!string.IsNullOrEmpty(options.RefPattern)) {
+				options.ReferenceType = "custom";
+			}
+			ICreatioPkgProject project = _projectCreator.CreateFromFile(options.Path);
+			try {
+				switch (options.ReferenceType) {
+					case "bin":
+						project = project.RefToBin();
+						break;
+					case "src": 
+						project = project.RefToCoreSrc();
+						break;
+					case "custom":
+						project = project.RefToCustomPath(options.RefPattern);
+						break;
+					case "unit-bin":
+						project = project.RefToUnitBin();
+						break;
+					case "unit-src":
+						project = project.RefToUnitCoreSrc();
+						break;
+					default:
+						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
+				}
+				project.SaveChanges();
+				Console.WriteLine("Done");
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
+			}
 		}
 	}
 }

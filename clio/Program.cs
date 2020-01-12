@@ -55,10 +55,6 @@ namespace Clio
 			get => new CreatioClient(_url, _userName, _userPassword, _isNetCore);
 		}
 
-
-		private static string CurrentProj =>
-			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
-
 		public static bool _safe { get; private set; } = true;
 
 		private static void Configure(EnvironmentOptions options) {
@@ -266,7 +262,7 @@ namespace Clio
 				return e.Message;
 			}
 			Console.WriteLine($"Install {fileName} ...");
-			var installResponse = CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
+			CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
 			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal();
 				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
@@ -275,13 +271,6 @@ namespace Clio
 			Console.WriteLine("Installation log:");
 			Console.WriteLine(logText);
 			return logText;
-		}
-
-		private static void DeletePackage(string code) {
-			Console.WriteLine("Deleting...");
-			string deleteRequestData = "\"" + code + "\"";
-			CreatioClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData);
-			Console.WriteLine("Deleted.");
 		}
 
 		private static string UploadPackage(string filePath) {
@@ -430,8 +419,8 @@ namespace Clio
 					(GeneratePkgZipOptions opts) => Compression(opts),
 					(PushPkgOptions opts) => Install(opts),
 					(DeletePkgOptions opts) => CreateRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
-					(ReferenceOptions opts) => ReferenceTo(opts),
-					(NewPkgOptions opts) => NewPkg(opts),
+					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>().Execute(opts),
+					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>()).Execute(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
@@ -527,78 +516,6 @@ namespace Clio
 
 		private static int ConvertPackage(ConvertOptions opts) {
 			return PackageConverter.Convert(opts);
-		}
-
-		private static int NewPkg(NewPkgOptions options) {
-			var settings = new SettingsRepository().GetEnvironment();
-			try {
-				var packageName = options.Name;
-				var packageDirectory = Directory.CreateDirectory(packageName);
-				Directory.SetCurrentDirectory(packageDirectory.FullName);
-				var pkg = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
-				pkg.Create();
-				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
-					ReferenceTo(new ReferenceOptions { ReferenceType = options.Rebase });
-					pkg.RemovePackageConfig();
-				}
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
-
-		private static int ReferenceTo(ReferenceOptions options) {
-			options.Path = options.Path ?? CurrentProj;
-			if (string.IsNullOrEmpty(options.Path)) {
-				throw new ArgumentNullException(nameof(options.Path));
-			}
-			if (!string.IsNullOrEmpty(options.RefPattern)) {
-				options.ReferenceType = "custom";
-			}
-			try {
-				switch (options.ReferenceType) {
-					case "bin": {
-							CreatioPkgProject.LoadFromFile(options.Path)
-							.RefToBin()
-							.SaveChanges();
-						}
-						break;
-					case "src": {
-							CreatioPkgProject.LoadFromFile(options.Path)
-							.RefToCoreSrc()
-							.SaveChanges();
-						}
-						break;
-					case "custom": {
-							CreatioPkgProject.LoadFromFile(options.Path)
-								.RefToCustomPath(options.RefPattern)
-								.SaveChanges();
-						}
-						break;
-					case "unit-bin": {
-							CreatioPkgProject.LoadFromFile(options.Path)
-								.RefToUnitBin()
-								.SaveChanges();
-						}
-						break;
-					case "unit-src": {
-							CreatioPkgProject.LoadFromFile(options.Path)
-								.RefToUnitCoreSrc()
-								.SaveChanges();
-						}
-						break;
-					default: {
-							throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
-						}
-				}
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
 		}
 	}
 }

@@ -45,7 +45,7 @@ namespace Clio
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
-			FullPath = Environment.CurrentDirectory;
+			FullPath = Path.Combine(Environment.CurrentDirectory, packageName);
 		}
 
 		private static DateTime GetDateTimeTillSeconds(DateTime dateTime) {

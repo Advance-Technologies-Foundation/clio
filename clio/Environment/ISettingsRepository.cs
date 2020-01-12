@@ -5,7 +5,7 @@ namespace Clio.UserEnvironment
 	public interface ISettingsRepository
 	{
 		bool IsEnvironmentExists(string name);
-		EnvironmentSettings GetEnvironment(string name);
+		EnvironmentSettings GetEnvironment(string name = null);
 		EnvironmentSettings GetEnvironment(EnvironmentOptions options);
 		void SetActiveEnvironment(string name);
 		void ConfigureEnvironment(string name, EnvironmentSettings environment);
