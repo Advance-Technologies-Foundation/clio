@@ -37,14 +37,13 @@ namespace Clio.Command.SysSettingsCommand
 			}
 		}
 
-		public static void UpdateSysSetting(SysSettingsOptions opts, CreatioClient client = null) {
-			var _client = CreatioClient;
-			if (client != null) {
-				_client = client;
+		public static void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
+			if (settings != null) {
+				Configure(settings);
 			}
 			string requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
 			try {
-				_client.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
+				CreatioClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
 				Console.WriteLine("SysSettings with code: {0} updated.", opts.Code);
 			} catch {
 				Console.WriteLine("SysSettings with code: {0} is not updated.", opts.Code);

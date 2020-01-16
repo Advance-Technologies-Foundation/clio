@@ -445,7 +445,7 @@ namespace Clio
 					Code = "Maintainer",
 					Value = _settings.Maintainer
 				};
-				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioClient);
+				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, _settings);
 				UnlockMaintainerPackageInternal();
 				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				Console.WriteLine("Done");
