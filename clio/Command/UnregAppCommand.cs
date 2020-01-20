@@ -23,6 +23,7 @@ namespace Clio.Command
 			try {
 				_settingsRepository.RemoveEnvironment(options.Name);
 				_settingsRepository.ShowSettingsTo(Console.Out, string.Empty);
+				Console.WriteLine();
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

@@ -121,7 +121,7 @@ namespace Clio
 	}
 
 	[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Activate developer mode for selected environment")]
-	internal class DeveloperModeOptions : EnvironmentOptions
+	internal class DeveloperModeOptions: EnvironmentOptions
 	{
 	}
 

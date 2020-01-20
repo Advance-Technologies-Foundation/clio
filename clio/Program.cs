@@ -24,6 +24,7 @@ namespace Clio
 
 	class Program {
 		private static string _userName => _settings.Login;
+		private static bool _isDevMode => _settings.IsDevMode;
 		private static string _userPassword => _settings.Password;
 		private static string _url => _settings.Uri; // Необходимо получить из конфига
 		private static string _appUrl {
@@ -52,7 +53,7 @@ namespace Clio
 		private static string GetEntityModelsUrl => _appUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
 		private static CreatioClient CreatioClient {
-			get => new CreatioClient(_url, _userName, _userPassword, _isNetCore);
+			get => new CreatioClient(_url, _userName, _userPassword, _isDevMode, _isNetCore);
 		}
 
 		public static bool _safe { get; private set; } = true;
@@ -381,7 +382,7 @@ namespace Clio
 				params object[] additionalConstructorArgs) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options);
-			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
+			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsDevMode, settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
@@ -408,7 +409,7 @@ namespace Clio
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
-					SysSettingsOptions, FeatureOptions, UnzipPkgOptions>(args)
+					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
@@ -432,6 +433,7 @@ namespace Clio
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
+					(PingAppOptions opts) => PingAppCommand.Ping(opts),
 					errs => 1);
 		}
 

@@ -47,7 +47,11 @@ namespace Clio
 
 		public bool? Safe { get; set; }
 
+
 		public bool? DeveloperModeEnabled { get; set; }
+
+		[JsonIgnore]
+		public bool IsDevMode { get => DeveloperModeEnabled.HasValue ? DeveloperModeEnabled.Value : false; }
 	}
 
 	public class Settings
@@ -137,7 +141,8 @@ namespace Clio
 		private void Save() {
 			using (StreamWriter fileWriter = File.CreateText(AppSettingsFilePath)) {
 				JsonSerializer serializer = new JsonSerializer() {
-					Formatting = Formatting.Indented
+					Formatting = Formatting.Indented,
+					NullValueHandling = NullValueHandling.Ignore
 				};
 				serializer.Serialize(fileWriter, _settings);
 			}
@@ -145,7 +150,8 @@ namespace Clio
 
 		public void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
 			JsonSerializer serializer = new JsonSerializer() {
-				Formatting = Formatting.Indented
+				Formatting = Formatting.Indented,
+				NullValueHandling = NullValueHandling.Ignore
 			};
 			if (String.IsNullOrEmpty(environment)) {
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
@@ -177,6 +183,7 @@ namespace Clio
 			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
+			result.DeveloperModeEnabled = _settings.DeveloperModeEnabled;
 			if (_settings.Safe.HasValue && _settings.Safe.Value) {
 				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 				Console.Write($"Do you want to continue? [Y/N]:");
