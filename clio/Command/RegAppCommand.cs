@@ -10,7 +10,7 @@ namespace Clio.Command
 	internal class RegAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
-		public string Name { get; set; }
+		public string Name { get => Environment; set { Environment = value; } }
 
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
@@ -79,10 +79,13 @@ namespace Clio.Command
 					}
 				}
 				_settingsRepository.ConfigureEnvironment(options.Name, environment);
-				options.Environment = options.Environment ?? options.Name;
+				environment = _settingsRepository.GetEnvironment(options.Name);
 				_settingsRepository.ShowSettingsTo(Console.Out, options.Name);
 				Console.WriteLine();
-				PingAppCommand.Ping(options);
+				Console.WriteLine($"Try login to {environment.Uri} with {environment.Login} credentials ...");
+				var creatioClient = new CreatioClient(environment.Uri, environment.Login, environment.Password, environment.IsDevMode, environment.IsNetCore);
+				creatioClient.Login();
+				Console.WriteLine($"Login successfull");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine($"{e.Message}");

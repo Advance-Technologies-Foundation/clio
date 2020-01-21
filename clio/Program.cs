@@ -433,7 +433,7 @@ namespace Clio
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
-					(PingAppOptions opts) => PingAppCommand.Ping(opts),
+					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

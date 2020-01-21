@@ -11,13 +11,15 @@ namespace Clio.Command
 		public string Name { get => Environment; set { Environment = value; } }
 	}
 
-	public class PingAppCommand: BaseRemoteCommand
+	public class PingAppCommand : RemoteCommand<PingAppOptions>
 	{
-		public static int Ping(EnvironmentOptions options) {
+		public PingAppCommand(IApplicationClient applicationClient): base(applicationClient) {
+		}
+
+		public override int Execute(PingAppOptions options) {
 			try {
-				Configure(options);
-				Console.WriteLine($"Try login to {Settings.Uri} with {Settings.Login} credentials...");
-				CreatioClient.Login();
+				Console.WriteLine($"Try login to {options.Uri} with {options.Login} credentials...");
+				ApplicationClient.Login();
 				Console.WriteLine("Login done");
 				return 0;
 			} catch (Exception e) {

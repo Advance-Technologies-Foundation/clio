@@ -9,7 +9,7 @@ namespace Clio.Command
 	public class RestartOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get; set; }
+		public string Name { get => Environment; set { Environment = value; } }
 	}
 
 	public class RestartCommand : BaseRemoteCommand
