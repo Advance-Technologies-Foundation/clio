@@ -18,7 +18,9 @@ namespace Clio.Command
 
 		public override int Execute(PingAppOptions options) {
 			try {
-				Console.WriteLine($"Try login to {options.Uri} with {options.Login} credentials...");
+				var settings = new SettingsRepository();
+				var env = settings.GetEnvironment(options.Environment);
+				Console.WriteLine($"Try login to {env.Uri} with {env.Login} credentials...");
 				ApplicationClient.Login();
 				Console.WriteLine("Login done");
 				return 0;

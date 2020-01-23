@@ -23,9 +23,40 @@ namespace Clio
 
 		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
 		public string Maintainer { get; set; }
+		
+		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
+		public string DevMode { get; set; }
 
-		[Option('c', "dev", Required = false, HelpText = "Developer mode")]
-		public bool? DeveloperModeEnabled { get; set; }
+		public bool? DeveloperModeEnabled
+		{
+			get
+			{
+				if (!string.IsNullOrEmpty(DevMode)) {
+					bool result;
+					if (bool.TryParse(DevMode, out result)) {
+						return result;
+					}
+				}
+				return null;
+			}
+		}
+
+		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
+		public string Safe { get; set; }
+
+		public bool? SafeValue
+		{
+			get
+			{
+				if (!string.IsNullOrEmpty(Safe)) {
+					bool result;
+					if (bool.TryParse(Safe, out result)) {
+						return result;
+					}
+				}
+				return null;
+			}
+		}
 	}
 
 

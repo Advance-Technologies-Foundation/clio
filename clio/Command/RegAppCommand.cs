@@ -15,40 +15,6 @@ namespace Clio.Command
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
 
-		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
-		public string Safe { get; set; }
-
-		public bool? SafeValue
-		{
-			get
-			{
-				if (!string.IsNullOrEmpty(Safe)) {
-					bool result;
-					if (bool.TryParse(Safe, out result)) {
-						return result;
-					}
-				}
-				return null;
-			}
-		}
-
-		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
-		public string DevMode { get; set; }
-
-		public bool? IsDevMode
-		{
-			get
-			{
-				if (!string.IsNullOrEmpty(DevMode)) {
-					bool result;
-					if (bool.TryParse(DevMode, out result)) {
-						return result;
-					}
-				}
-				return null;
-			}
-		}
-
 	}
 
 	internal class RegAppCommand: RemoteCommand<RegAppOptions>
@@ -69,7 +35,7 @@ namespace Clio.Command
 					Maintainer = options.Maintainer,
 					Safe = options.SafeValue.HasValue ? options.SafeValue : false,
 					IsNetCore = options.IsNetCore.HasValue ? options.IsNetCore.Value : false,
-					DeveloperModeEnabled = options.IsDevMode
+					DeveloperModeEnabled = options.DeveloperModeEnabled
 				};
 				if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
 					if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
