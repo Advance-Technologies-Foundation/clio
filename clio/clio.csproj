@@ -1,19 +1,27 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
-    <Company>creatio</Company>
-    <Authors>creatio rnd team</Authors>
-    <PackageTags>cli</PackageTags>
-    <NeutralLanguage>en</NeutralLanguage>
-    <AssemblyVersion>2.0.0.1</AssemblyVersion>
-    <FileVersion>2.0.0.0</FileVersion>
-    <Version>2.0.0.1</Version>
-    <Description>CLI intarface for Creatio platform</Description>
-    <RootNamespace>Clio</RootNamespace>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-  </PropertyGroup>
+	<PropertyGroup>
+	  <OutputType>Exe</OutputType>
+	  <TargetFramework>netcoreapp2.0</TargetFramework>
+	  <PackageId>clio</PackageId>
+	  <Company>creatio</Company>
+	  <Authors>creatio rnd team</Authors>
+	  <PackageTags>cli ATF clio creatio</PackageTags>
+	  <NeutralLanguage>en</NeutralLanguage>
+	  <AssemblyVersion>2.0.0.1</AssemblyVersion>
+	  <FileVersion>2.0.0.0</FileVersion>
+	  <Version>2.0.0.1-alpha</Version>
+	  <Description>CLI interface for Creatio platform</Description>
+	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	  <PackageLicenseUrl>https://licenses.nuget.org/MIT</PackageLicenseUrl>
+	  <PackageLicense>MIT</PackageLicense>
+	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
+	  <RepositoryType>git</RepositoryType>
+	  <PackageProjectUrl>https://github.com/Advance-Technologies-Foundation/clio</PackageProjectUrl>
+	  <Copyright>Copyright ©2019</Copyright>
+	  <RootNamespace>Clio</RootNamespace>
+	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <ErrorReport>prompt</ErrorReport>
