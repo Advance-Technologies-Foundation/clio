@@ -23,6 +23,9 @@ namespace Clio
 
 		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
 		public string Maintainer { get; set; }
+
+		[Option('c', "dev", Required = false, HelpText = "Developer mode")]
+		public bool? DeveloperModeEnabled { get; set; }
 	}
 
 

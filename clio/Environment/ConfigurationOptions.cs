@@ -179,11 +179,13 @@ namespace Clio
 			result.IsNetCore = options.IsNetCore.HasValue
 				? options.IsNetCore.Value
 				: _settings.IsNetCore;
+			result.DeveloperModeEnabled = options.DeveloperModeEnabled.HasValue
+				? options.DeveloperModeEnabled.Value
+				: _settings.DeveloperModeEnabled;
 			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
-			result.DeveloperModeEnabled = _settings.DeveloperModeEnabled;
 			if (_settings.Safe.HasValue && _settings.Safe.Value) {
 				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 				Console.Write($"Do you want to continue? [Y/N]:");
