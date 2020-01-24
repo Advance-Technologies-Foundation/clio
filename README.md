@@ -39,6 +39,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 - [Environment settings](#environment-settings)
 	- [Create/Update an environment](#createupdate-an-environment)
 	- [Delete the existing environment](#delete-the-existing-environment)
+	- [Check environment](#check-environment)
 	- [View application options](#view-application-options)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
@@ -201,6 +202,14 @@ clio reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
 ```
 clio unreg-web-app <ENVIRONMENT_NAME>
 ```
+
+## Check environment
+
+For validation existing environment setting you can use ping command
+```
+clio ping <ENVIRONMENT_NAME>
+```
+
 
 ## View application options
 
