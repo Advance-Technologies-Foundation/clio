@@ -77,7 +77,7 @@ or for all users:
 dotnet tool uninstall clio -g
 ```
 
-More information you can see in [.NET Core Global Tools overview] (https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
+More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
 
 ## MacOS
 
