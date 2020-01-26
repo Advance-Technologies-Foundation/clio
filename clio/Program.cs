@@ -425,7 +425,7 @@ namespace Clio
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => Register(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
-					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(),
+					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
 					(ExecuteSqlScriptOptions opts) => SqlScriptCommand.ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
