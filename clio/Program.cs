@@ -68,9 +68,7 @@ namespace Clio
 			try {
 				Configure(options);
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string packageFilePath = _settings.IsNetCore 
-					? Path.Combine(dir, "cliogate", "netcore", "cliogate.gz")
-					: Path.Combine(dir, "cliogate", "netframework", "cliogate.gz");
+				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
 				InstallPackage(packageFilePath);
 				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				return 0;
@@ -394,7 +392,7 @@ namespace Clio
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions, PullPkgOptions,
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
-					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions>(args)
+					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions, OpenAppOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
@@ -420,6 +418,7 @@ namespace Clio
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

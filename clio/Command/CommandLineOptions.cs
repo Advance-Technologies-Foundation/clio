@@ -63,7 +63,7 @@ namespace Clio
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
 	internal class GeneratePkgZipOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
 
 		[Option('d', "DestinationPath", Required = false, HelpText = "Full destination path for gz file")]

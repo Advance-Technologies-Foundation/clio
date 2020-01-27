@@ -35,6 +35,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="cliogate\netcore\**" />
+    <Compile Remove="cliogate\netframework\**" />
+    <EmbeddedResource Remove="cliogate\netcore\**" />
+    <EmbeddedResource Remove="cliogate\netframework\**" />
+    <None Remove="cliogate\netcore\**" />
+    <None Remove="cliogate\netframework\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
   </ItemGroup>
 
@@ -71,12 +80,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="cliogate\cliogate.gz">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="cliogate\netcore\cliogate.gz">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="cliogate\netframework\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="cliogate\version.txt">
@@ -169,9 +172,5 @@
     <None Update="updater.runtimeconfig.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="cliogate\netcore\" />
-    <Folder Include="cliogate\netframework\" />
   </ItemGroup>
 </Project>

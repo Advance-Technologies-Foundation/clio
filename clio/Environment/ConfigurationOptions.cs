@@ -176,10 +176,20 @@ namespace Clio
 			return environment;
 		}
 
+		private EnvironmentSettings FindEnvironment(string name = null) {
+			EnvironmentSettings environment;
+			try {
+				environment = GetEnvironment(name);
+			} catch {
+				environment = new EnvironmentSettings();
+			}
+			return environment;
+		}
+
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
 			var result = new EnvironmentSettings();
 			var settingsRepository = new SettingsRepository();
-			var _settings = settingsRepository.GetEnvironment(options.Environment);
+			var _settings = settingsRepository.FindEnvironment(options.Environment);
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore.HasValue
 				? options.IsNetCore.Value
