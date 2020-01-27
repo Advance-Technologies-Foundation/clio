@@ -85,7 +85,7 @@ namespace Clio
 
 		private string AppSettingsFolderPath {
 			get {
-				var userPath = System.Environment.GetEnvironmentVariable(
+				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
 						"LOCALAPPDATA" : "Home");
 				var assy = Assembly.GetEntryAssembly();
@@ -108,13 +108,18 @@ namespace Clio
 		}
 
 		private void InitSettings() {
-			var builder = new ConfigurationBuilder()
-				.SetBasePath(System.Environment.CurrentDirectory)
-				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
-				.AddEnvironmentVariables();
-			IConfigurationRoot configuration = builder.Build();
-			_settings = new Settings();
-			configuration.Bind(_settings);
+			try {
+				var builder = new ConfigurationBuilder()
+					.SetBasePath(Environment.CurrentDirectory)
+					.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
+					.AddEnvironmentVariables();
+				IConfigurationRoot configuration = builder.Build();
+				_settings = new Settings();
+				configuration.Bind(_settings);
+			} catch (FormatException ex) {
+				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
+				throw;
+			}
 		}
 
 		private void InitializeSettingsFile() {
