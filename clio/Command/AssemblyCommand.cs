@@ -32,8 +32,16 @@ namespace Clio.Command
 		}
 
 		public static int ExecuteCodeFromAssembly(ExecuteAssemblyOptions options) {
-			Console.WriteLine("This command was obsoleted.");
-			return 0;
+			try {
+				Configure(options);
+				ExecuteCodeFromAssemblyInternal(options);
+				Console.WriteLine();
+				Console.WriteLine("Done");
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e.Message);
+				return 1;
+			}
 		}
 	}
 }

@@ -283,21 +283,6 @@ namespace Clio
 			return fileName;
 		}
 
-		private static int Register(RegisterOptions options) {
-			try {
-				var creatioEnv = new CreatioEnvironment();
-				string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
-				IResult result = options.Target == "m"
-					? creatioEnv.MachineRegisterPath(path)
-					: creatioEnv.UserRegisterPath(path);
-				result.ShowMessagesTo(Console.Out);
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
-
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
@@ -407,7 +392,7 @@ namespace Clio
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
-					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions, PullPkgOptions,
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
 					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions>(args)
 				.MapResult(
@@ -423,7 +408,8 @@ namespace Clio
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>().Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>()).Execute(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
-					(RegisterOptions opts) => Register(opts),
+					(RegisterOptions opts) => CreateCommand<RegisterCommand>().Execute(opts),
+					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
 					(ExecuteSqlScriptOptions opts) => SqlScriptCommand.ExecuteSqlScript(opts),

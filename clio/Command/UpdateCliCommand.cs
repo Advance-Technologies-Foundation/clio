@@ -57,9 +57,21 @@ namespace Clio.Command.UpdateCliCommand
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
-				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
-								 $"{Environment.NewLine}You should consider upgrading via the \'clio update-cli\' command.",
-					ConsoleColor.DarkYellow);
+				switch (Environment.OSVersion.Platform) {
+					case PlatformID.Win32NT:
+					case PlatformID.Win32S:
+					case PlatformID.Win32Windows:
+					case PlatformID.WinCE:
+						Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
+										 $"{Environment.NewLine}You should consider upgrading via the \'dotnet tool update clio -g\' command.",
+							ConsoleColor.DarkYellow);
+						break;
+					default:
+						Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
+											 $"{Environment.NewLine}You should consider upgrading via the \'clio update-cli\' command.",
+								ConsoleColor.DarkYellow);
+						break;
+				}
 			}
 		}
 

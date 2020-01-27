@@ -60,18 +60,6 @@ namespace Clio
 	}
 
 
-	[Verb("register", HelpText = "Register clio in global environment", Hidden = true)]
-	internal class RegisterOptions
-	{
-		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
-			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
-		public string Target { get; set; }
-
-		[Option('p', "Path", HelpText = "Path where clio is stored.")]
-		public string Path { get; set; }
-
-	}
-
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
 	internal class GeneratePkgZipOptions
 	{
