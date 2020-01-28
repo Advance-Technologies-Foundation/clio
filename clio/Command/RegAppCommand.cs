@@ -7,7 +7,7 @@ using Clio.UserEnvironment;
 namespace Clio.Command
 {
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
-	internal class RegAppOptions : EnvironmentOptions
+	public class RegAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
 		public string Name { get => Environment; set { Environment = value; } }
@@ -17,13 +17,14 @@ namespace Clio.Command
 
 	}
 
-	internal class RegAppCommand: RemoteCommand<RegAppOptions>
+	public class RegAppCommand: Command<RegAppOptions>
 	{
 		private readonly ISettingsRepository _settingsRepository;
+		private readonly IApplicationClientFactory _applicationClientFactory;
 
-		public RegAppCommand(IApplicationClient applicationClient, ISettingsRepository settingsRepository)
-			: base(applicationClient) {
+		public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory) {
 			_settingsRepository = settingsRepository;
+			_applicationClientFactory = applicationClientFactory;
 		}
 
 		public override int Execute(RegAppOptions options) {
@@ -40,6 +41,8 @@ namespace Clio.Command
 				if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
 					if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
 						_settingsRepository.SetActiveEnvironment(options.ActiveEnvironment);
+						Console.WriteLine($"Active environment set to {options.ActiveEnvironment}");
+						return 0;
 					} else {
 						throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
 					}
@@ -49,7 +52,7 @@ namespace Clio.Command
 				_settingsRepository.ShowSettingsTo(Console.Out, options.Name);
 				Console.WriteLine();
 				Console.WriteLine($"Try login to {environment.Uri} with {environment.Login} credentials ...");
-				var creatioClient = new CreatioClient(environment.Uri, environment.Login, environment.Password, environment.IsDevMode, environment.IsNetCore);
+				var creatioClient = _applicationClientFactory.CreateClient(environment);
 				creatioClient.Login();
 				Console.WriteLine($"Login successfull");
 				return 0;

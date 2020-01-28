@@ -397,7 +397,7 @@ namespace Clio
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
 					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).ClearRedisDb(opts),
-					(RegAppOptions opts) => CreateRemoteCommand<RegAppCommand>(opts, new SettingsRepository()).Execute(opts),
+					(RegAppOptions opts) => CreateCommand<RegAppCommand>(new SettingsRepository(), new ApplicationClientFactory()).Execute(opts),
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Compression(opts),
