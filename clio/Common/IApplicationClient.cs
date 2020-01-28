@@ -1,7 +1,4 @@
 ﻿using Creatio.Client;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace Clio.Common
 {
