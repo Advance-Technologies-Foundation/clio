@@ -15,7 +15,7 @@
 		private void DeletePackage(string code) {
 			Console.WriteLine("Deleting...");
 			string deleteRequestData = "\"" + code + "\"";
-			ApplicationClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData);
+			ApplicationClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData, 600000);
 			Console.WriteLine("Deleted.");
 		}
 
