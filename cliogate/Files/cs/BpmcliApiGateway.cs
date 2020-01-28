@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
 using ClioGate.Functions.SQL;
 using Newtonsoft.Json;
+using Terrasoft.Core.Entities;
 using Terrasoft.Web.Common;
 
 namespace cliogate.Files.cs
@@ -38,6 +40,29 @@ namespace cliogate.Files.cs
 				var generator = new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
 				var models = generator.Generate(entitySchema);
 				return JsonConvert.SerializeObject(models, Formatting.Indented);
+			} else {
+				throw new Exception("You don`n have permission for operation CanManageSolution");
+			}
+		}
+
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "GetPackages", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public string GetPackages() {
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				var packageList = new List<Dictionary<string, string>>();
+				var esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
+				esq.AddAllSchemaColumns();
+				var packages = esq.GetEntityCollection(UserConnection);
+				foreach (var p in packages) {
+					var package = new Dictionary<string, string>();
+					package["Name"] = p.PrimaryDisplayColumnValue;
+					package["UId"] = p.GetTypedColumnValue<string>("UId");
+					package["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer");
+					packageList.Add(package);
+				}
+				var json = JsonConvert.SerializeObject(packageList);
+				return json;
 			} else {
 				throw new Exception("You don`n have permission for operation CanManageSolution");
 			}
