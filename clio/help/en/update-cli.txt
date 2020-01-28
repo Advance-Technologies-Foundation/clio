@@ -11,8 +11,13 @@ DESCRIPTION
     Recommended to use the latest version of clio with fixed bugs and 
     extended features.
 
+OPTIONS
+
+    --CurrentVersion                   -v          Show current version
+
 EXAMPLE
     update-cli
+    update-cli -v
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

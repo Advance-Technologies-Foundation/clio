@@ -23,7 +23,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 - [Installation and features](#installation-and-features)
 - [Content table](#content-table)
 - [Arguments](#arguments)
-- [Register](#register)
+- [Register and unregister](#register-and-unregister)
 	- [Windows](#windows)
 	- [MacOS](#macos)
 	- [Help and examples](#help-and-examples)
@@ -39,6 +39,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 - [Environment settings](#environment-settings)
 	- [Create/Update an environment](#createupdate-an-environment)
 	- [Delete the existing environment](#delete-the-existing-environment)
+	- [Check environment](#check-environment)
 	- [View application options](#view-application-options)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
@@ -52,20 +53,32 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 - `<ENVIRONMENT_NAME>` - environment name
 - `<COMMAND_NAME>` - clio command name
 
-# Register
+# Register and unregister
 
 
 ## Windows
 
-To register clio as the global command, run the command in CLI directory:
+To register clio as the global tool, run the command:
 
 ```
-dotnet clio.dll register
+dotnet tool install clio
 ```
-you can register clio for all users
+you can register clio for all users:
 ```
-dotnet clio.dll register -t m
+dotnet tool install clio -g
 ```
+
+To unregister clio as the global tool, run the command:
+
+```
+dotnet tool uninstall clio
+```
+or for all users:
+```
+dotnet tool uninstall clio -g
+```
+
+More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
 
 ## MacOS
 
@@ -201,6 +214,14 @@ clio reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
 ```
 clio unreg-web-app <ENVIRONMENT_NAME>
 ```
+
+## Check environment
+
+For validation existing environment setting you can use ping command
+```
+clio ping <ENVIRONMENT_NAME>
+```
+
 
 ## View application options
 

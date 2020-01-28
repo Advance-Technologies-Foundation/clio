@@ -85,7 +85,7 @@ namespace Clio
 
 		private string AppSettingsFolderPath {
 			get {
-				var userPath = System.Environment.GetEnvironmentVariable(
+				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
 						"LOCALAPPDATA" : "Home");
 				var assy = Assembly.GetEntryAssembly();
@@ -108,13 +108,18 @@ namespace Clio
 		}
 
 		private void InitSettings() {
-			var builder = new ConfigurationBuilder()
-				.SetBasePath(System.Environment.CurrentDirectory)
-				.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
-				.AddEnvironmentVariables();
-			IConfigurationRoot configuration = builder.Build();
-			_settings = new Settings();
-			configuration.Bind(_settings);
+			try {
+				var builder = new ConfigurationBuilder()
+					.SetBasePath(Environment.CurrentDirectory)
+					.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
+					.AddEnvironmentVariables();
+				IConfigurationRoot configuration = builder.Build();
+				_settings = new Settings();
+				configuration.Bind(_settings);
+			} catch (FormatException ex) {
+				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
+				throw;
+			}
 		}
 
 		private void InitializeSettingsFile() {
@@ -169,19 +174,31 @@ namespace Clio
 			return environment;
 		}
 
+		private EnvironmentSettings FindEnvironment(string name = null) {
+			EnvironmentSettings environment;
+			try {
+				environment = GetEnvironment(name);
+			} catch {
+				environment = new EnvironmentSettings();
+			}
+			return environment;
+		}
+
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
 			var result = new EnvironmentSettings();
 			var settingsRepository = new SettingsRepository();
-			var _settings = settingsRepository.GetEnvironment(options.Environment);
+			var _settings = settingsRepository.FindEnvironment(options.Environment);
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore.HasValue
 				? options.IsNetCore.Value
 				: _settings.IsNetCore;
+			result.DeveloperModeEnabled = options.DeveloperModeEnabled.HasValue
+				? options.DeveloperModeEnabled.Value
+				: _settings.DeveloperModeEnabled;
 			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
-			result.DeveloperModeEnabled = _settings.DeveloperModeEnabled;
 			if (_settings.Safe.HasValue && _settings.Safe.Value) {
 				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 				Console.Write($"Do you want to continue? [Y/N]:");

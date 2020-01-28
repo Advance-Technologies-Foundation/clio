@@ -23,25 +23,47 @@ namespace Clio
 
 		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
 		public string Maintainer { get; set; }
+		
+		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
+		public string DevMode { get; set; }
+
+		public bool? DeveloperModeEnabled
+		{
+			get
+			{
+				if (!string.IsNullOrEmpty(DevMode)) {
+					bool result;
+					if (bool.TryParse(DevMode, out result)) {
+						return result;
+					}
+				}
+				return null;
+			}
+		}
+
+		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
+		public string Safe { get; set; }
+
+		public bool? SafeValue
+		{
+			get
+			{
+				if (!string.IsNullOrEmpty(Safe)) {
+					bool result;
+					if (bool.TryParse(Safe, out result)) {
+						return result;
+					}
+				}
+				return null;
+			}
+		}
 	}
 
-
-	[Verb("register", HelpText = "Register clio in global environment", Hidden = true)]
-	internal class RegisterOptions
-	{
-		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
-			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
-		public string Target { get; set; }
-
-		[Option('p', "Path", HelpText = "Path where clio is stored.")]
-		public string Path { get; set; }
-
-	}
 
 	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
 	internal class GeneratePkgZipOptions
 	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Name of the compressed package")]
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
 
 		[Option('d', "DestinationPath", Required = false, HelpText = "Full destination path for gz file")]

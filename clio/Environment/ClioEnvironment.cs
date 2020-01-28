@@ -12,8 +12,7 @@ namespace Clio.UserEnvironment
 			var result = new EnvironmentResult();
 			string pathValue = Environment.GetEnvironmentVariable(PathVariableName, target);
 			if (string.IsNullOrEmpty(pathValue)) {
-				result.AppendMessage($"{PathVariableName} variable is empty!");
-				return result;
+				pathValue = string.Empty;
 			}
 			if (pathValue.Contains(path)) {
 				result.AppendMessage($"{PathVariableName} variable already registered!");
@@ -23,6 +22,32 @@ namespace Clio.UserEnvironment
 			var value = string.Concat(pathValue, Path.PathSeparator + path.Trim(Path.PathSeparator));
 			Environment.SetEnvironmentVariable(PathVariableName, value, target);
 			result.AppendMessage($"{PathVariableName} variable registered.");
+			return result;
+		}
+
+		private IResult UnregisterPath(EnvironmentVariableTarget target) {
+			var result = new EnvironmentResult();
+			string pathValue = Environment.GetEnvironmentVariable(PathVariableName, target);
+			var paths = pathValue.Split(Path.PathSeparator);
+			string clioPath = string.Empty;
+			foreach (var path in paths) {
+				if (Directory.Exists(path)) {
+					var dir = new DirectoryInfo(path);
+					var files = dir.GetFiles("clio.cmd");
+					if (files.Length > 0) {
+						clioPath = path;
+						break;
+					}
+				}
+			}
+			if (string.IsNullOrEmpty(clioPath)) {
+				result.AppendMessage($"Application already unregistered!");
+				return result;
+			}
+			result.AppendMessage($"Unregister path {clioPath} in {PathVariableName} variable.");
+			string newValue = pathValue.Replace(clioPath, string.Empty).Replace(String.Concat(Path.PathSeparator, Path.PathSeparator), Path.PathSeparator.ToString());
+			Environment.SetEnvironmentVariable(PathVariableName, newValue, target);
+			result.AppendMessage($"{PathVariableName} variable unregistered.");
 			return result;
 		}
 
@@ -38,6 +63,14 @@ namespace Clio.UserEnvironment
 
 		public IResult MachineRegisterPath(string path) {
 			return RegisterPath(path, EnvironmentVariableTarget.Machine);
+		}
+
+		public IResult MachineUnregisterPath(string path) {
+			return UnregisterPath(EnvironmentVariableTarget.Machine);
+		}
+
+		public IResult UserUnregisterPath(string path) {
+			return UnregisterPath(EnvironmentVariableTarget.User);
 		}
 
 	}

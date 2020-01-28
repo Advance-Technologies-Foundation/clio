@@ -68,9 +68,7 @@ namespace Clio
 			try {
 				Configure(options);
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string packageFilePath = _settings.IsNetCore 
-					? Path.Combine(dir, "cliogate", "netcore", "cliogate.gz")
-					: Path.Combine(dir, "cliogate", "netframework", "cliogate.gz");
+				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
 				InstallPackage(packageFilePath);
 				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
 				return 0;
@@ -283,21 +281,6 @@ namespace Clio
 			return fileName;
 		}
 
-		private static int Register(RegisterOptions options) {
-			try {
-				var creatioEnv = new CreatioEnvironment();
-				string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
-				IResult result = options.Target == "m"
-					? creatioEnv.MachineRegisterPath(path)
-					: creatioEnv.UserRegisterPath(path);
-				result.ShowMessagesTo(Console.Out);
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
-
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
@@ -407,9 +390,9 @@ namespace Clio
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
-					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, PullPkgOptions,
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions, PullPkgOptions,
 					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
-					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions>(args)
+					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions, OpenAppOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
@@ -423,9 +406,10 @@ namespace Clio
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>().Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>()).Execute(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
-					(RegisterOptions opts) => Register(opts),
+					(RegisterOptions opts) => CreateCommand<RegisterCommand>().Execute(opts),
+					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
-					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(),
+					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
 					(ExecuteSqlScriptOptions opts) => SqlScriptCommand.ExecuteSqlScript(opts),
 					(InstallGateOptions opts) => UpdateGate(opts),
 					(ItemOptions opts) => AddItem(opts),
@@ -434,6 +418,7 @@ namespace Clio
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

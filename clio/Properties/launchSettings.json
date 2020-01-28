@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "cfg ssl -c true"
+      "commandLineArgs": "apps"
     }
   }
 }

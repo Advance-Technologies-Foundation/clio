@@ -14,13 +14,15 @@ namespace Clio.Command.UpdateCliCommand
 	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update clio to new available version")]
 	internal class UpdateCliOptions
 	{
+		[Option('v', "CurrentVersion", Required = false, Default = false, HelpText = "Show current version")]
+		public bool CurrentVersion { get; set; }
 	}
 
 	class UpdateCliCommand
 	{
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
-		public static int UpdateCli() {
+		public static int UpdateCli(UpdateCliOptions options) {
 			try {
 				var url = GetLastReleaseUrl();
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
@@ -29,6 +31,10 @@ namespace Clio.Command.UpdateCliCommand
 				string filePath = Path.Combine(updaterDirPath, "update.zip");
 				string updaterName = "updater.dll";
 				Directory.CreateDirectory(tempDirPath);
+				if (options.CurrentVersion) {
+					var currentVersion = GetCurrentVersion();
+					Console.WriteLine($"You are using clio version {currentVersion}.");
+				}
 				Console.WriteLine("Download update.");
 				using (var client = new WebClient()) {
 					client.DownloadFile(url, filePath);
@@ -51,9 +57,21 @@ namespace Clio.Command.UpdateCliCommand
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
-				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
-								 $"{Environment.NewLine}You should consider upgrading via the \'clio update-cli\' command.",
-					ConsoleColor.DarkYellow);
+				switch (Environment.OSVersion.Platform) {
+					case PlatformID.Win32NT:
+					case PlatformID.Win32S:
+					case PlatformID.Win32Windows:
+					case PlatformID.WinCE:
+						Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
+										 $"{Environment.NewLine}You should consider upgrading via the \'dotnet tool update clio -g\' command.",
+							ConsoleColor.DarkYellow);
+						break;
+					default:
+						Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
+											 $"{Environment.NewLine}You should consider upgrading via the \'clio update-cli\' command.",
+								ConsoleColor.DarkYellow);
+						break;
+				}
 			}
 		}
 
