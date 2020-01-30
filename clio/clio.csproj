@@ -34,14 +34,6 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Remove="cliogate\netcore\**" />
-    <Compile Remove="cliogate\netframework\**" />
-    <EmbeddedResource Remove="cliogate\netcore\**" />
-    <EmbeddedResource Remove="cliogate\netframework\**" />
-    <None Remove="cliogate\netcore\**" />
-    <None Remove="cliogate\netframework\**" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
@@ -79,7 +71,10 @@
     <None Update="clio">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="cliogate\cliogate.gz">
+    <None Update="cliogate\netframework\cliogate.gz">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="cliogate\netstandard\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="cliogate\version.txt">
@@ -155,9 +150,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="register.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\AssemblyInfo.cs.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="tpl\EditProj.csproj.tpl">

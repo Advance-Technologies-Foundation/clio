@@ -238,8 +238,8 @@ namespace Clio
 						var dir = AppDomain.CurrentDomain.BaseDirectory;
 						var settingsRepository = new SettingsRepository();
 						var settings = settingsRepository.GetEnvironment(opts);
-						string packageName = settings.IsNetCore ? "cliogate_netcore.gz" : "cliogate.gz";
-						string packageFilePath = Path.Combine(dir, "cliogate", packageName);
+						string packageFolder = settings.IsNetCore ? "netstandard" : "netframework";
+						string packageFilePath = Path.Combine(dir, "cliogate", packageFolder, "cliogate.gz");
 						return CreateRemoteCommand<PushPackageCommand>(opts,
 								new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor())
 							.Execute(new PushPkgOptions {
