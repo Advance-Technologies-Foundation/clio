@@ -84,10 +84,7 @@ namespace Clio
 		private bool CreateFromTpl(string tplPath, string filePath) {
 			if (GetTplPath(tplPath, out string fullTplPath)) {
 				var text = ReplaceMacro(File.ReadAllText(fullTplPath));
-				FileInfo file = new FileInfo(filePath);
-				using (StreamWriter sw = file.CreateText()) {
-					sw.Write(text);
-				}
+				File.WriteAllText(filePath, text);
 				return true;
 			}
 			return false;
