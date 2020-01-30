@@ -20,8 +20,7 @@ namespace Clio.Common
 		private static void WriteFileName(string relativeFilePath, GZipStream zipStream) {
 			char[] chars = relativeFilePath.ToCharArray();
 			zipStream.Write(BitConverter.GetBytes(chars.Length), 0, sizeof(int));
-			foreach (char c in chars)
-			{
+			foreach (char c in chars) {
 				zipStream.Write(BitConverter.GetBytes(c), 0, sizeof(char));
 			}
 		}

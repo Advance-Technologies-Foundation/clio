@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Clio.Common
+﻿namespace Clio.Common
 {
 	public interface IApplicationClientFactory
 	{

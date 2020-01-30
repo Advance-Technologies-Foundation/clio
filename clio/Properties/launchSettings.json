@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "apps"
+      "commandLineArgs": "install-gate"
     }
   }
 }

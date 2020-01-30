@@ -14,7 +14,8 @@ namespace Clio.Command
 
 	public class OpenAppCommand : RemoteCommand<OpenAppOptions>
 	{
-		public OpenAppCommand(IApplicationClient applicationClient) : base(applicationClient) {
+		public OpenAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings) 
+			: base(applicationClient, environmentSettings) {
 		}
 
 		public override int Execute(OpenAppOptions options) {

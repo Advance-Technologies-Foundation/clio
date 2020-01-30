@@ -12,20 +12,20 @@ namespace Clio.Command
 		public string Name { get => Environment; set { Environment = value; } }
 	}
 
-	public class RestartCommand : BaseRemoteCommand
+	public class RestartCommand : RemoteCommand<RestartOptions>
 	{
-		public RestartCommand(IApplicationClient applicationClient) 
-			: base(applicationClient) {
+		public RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings) 
+			: base(applicationClient, settings) {
 		}
 
-		private static string UnloadAppDomainUrl
+		private string UnloadAppDomainUrl
 		{
 			get
 			{
-				if (_isNetCore) {
-					return _appUrl + @"/ServiceModel/AppInstallerService.svc/RestartApp";
+				if (EnvironmentSettings.IsNetCore) {
+					return EnvironmentSettings.Uri + @"/ServiceModel/AppInstallerService.svc/RestartApp";
 				} else {
-					return _appUrl + @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+					return EnvironmentSettings.Uri + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 				}
 			}
 		}
@@ -34,21 +34,8 @@ namespace Clio.Command
 			ApplicationClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
 		}
 
-		public int Restart(RestartOptions options) {
+		public override int Execute(RestartOptions options) {
 			try {
-				Configure(options);
-				RestartInternal();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
-
-		public int Restart(EnvironmentSettings settings) {
-			try {
-				Configure(settings);
 				RestartInternal();
 				Console.WriteLine("Done");
 				return 0;

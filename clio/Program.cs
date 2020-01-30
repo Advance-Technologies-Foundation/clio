@@ -40,15 +40,11 @@ namespace Clio
 		private static bool _isNetCore => _settings.IsNetCore;
 		private static EnvironmentSettings _settings;
 		private static string _environmentName;
-		private static string UploadUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
-		private static string InstallUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
-		private static string LogUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
-		private static string DeletePackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/DeletePackage";
+		
 		private static string GetZipPackageUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
 		private static string ApiVersionUrl => _appUrl + @"/rest/CreatioApiGateway/GetApiVersion";
 
-		private static string DefLogFileName => "cliolog.txt";
 
 		private static string GetEntityModelsUrl => _appUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
@@ -63,21 +59,6 @@ namespace Clio
 			_environmentName = options.Environment;
 			_settings = settingsRepository.GetEnvironment(options);
 		}
-
-		private static int UpdateGate(EnvironmentOptions options) {
-			try {
-				Configure(options);
-				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
-				InstallPackage(packageFilePath);
-				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine($"Update error {e.Message}");
-				return 1;
-			}
-		}
-
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
 			var currentColor = Console.ForegroundColor;
@@ -116,65 +97,6 @@ namespace Clio
 			} catch (Exception) {
 			}
 			return apiVersion;
-		}
-
-		private static void CompressionProjects(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb) {
-			string tempPath = Path.Combine(Path.GetTempPath(), "Application_");// + DateTime.Now.ToShortDateString());
-			if (Directory.Exists(tempPath)) {
-				Directory.Delete(tempPath, true);
-			}
-			if (sourcePath == null) {
-				sourcePath = Environment.CurrentDirectory;
-			}
-			Directory.CreateDirectory(tempPath);
-			foreach (var name in names) {
-				var currentSourcePath = Path.Combine(sourcePath, name);
-				var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
-				CompressionProject(currentSourcePath, currentDestinationPath, skipPdb);
-			}
-			ZipFile.CreateFromDirectory(tempPath, destinationPath);
-		}
-
-		private static void CompressionProject(string sourcePath, string destinationPath, bool skipPdb) {
-			if (File.Exists(destinationPath)) {
-				File.Delete(destinationPath);
-			}
-			string tempPath = CreateTempPath(sourcePath);
-			CopyProjectFiles(sourcePath, tempPath);
-
-			var files = Directory.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
-				.Where(name => !name.EndsWith(".pdb") || !skipPdb);
-			int directoryPathLength = tempPath.Length;
-			using (Stream fileStream =
-				File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None)) {
-				using (var zipStream = new GZipStream(fileStream, CompressionMode.Compress)) {
-					foreach (string filePath in files) {
-						CompressionUtilities.ZipFile(filePath, directoryPathLength, zipStream);
-					}
-				}
-			}
-			Directory.Delete(tempPath, true);
-		}
-
-		private static string CreateTempPath(string sourcePath) {
-			var directoryInfo = new DirectoryInfo(sourcePath);
-			string tempPath = Path.Combine(Path.GetTempPath(), directoryInfo.Name);
-			return tempPath;
-		}
-
-		private static void CopyProjectFiles(string sourcePath, string destinationPath) {
-			if (Directory.Exists(destinationPath)) {
-				Directory.Delete(destinationPath, true);
-			}
-			Directory.CreateDirectory(destinationPath);
-			CopyProjectElement(sourcePath, destinationPath, "Assemblies");
-			CopyProjectElement(sourcePath, destinationPath, "Bin");
-			CopyProjectElement(sourcePath, destinationPath, "Data");
-			CopyProjectElement(sourcePath, destinationPath, "Files");
-			CopyProjectElement(sourcePath, destinationPath, "Resources");
-			CopyProjectElement(sourcePath, destinationPath, "Schemas");
-			CopyProjectElement(sourcePath, destinationPath, "SqlScripts");
-			File.Copy(Path.Combine(sourcePath, "descriptor.json"), Path.Combine(destinationPath, "descriptor.json"));
 		}
 
 		private static void DownloadZipPackagesInternal(string packageName, string destinationPath) {
@@ -232,56 +154,6 @@ namespace Clio
 			return targetDirectoryPath;
 		}
 
-		internal static void CopyProjectElement(string sourcePath, string destinationPath, string name) {
-			string fromAssembliesPath = Path.Combine(sourcePath, name);
-			if (Directory.Exists(fromAssembliesPath)) {
-				string toAssembliesPath = Path.Combine(destinationPath, name);
-				CopyDir(fromAssembliesPath, toAssembliesPath);
-			}
-		}
-
-		internal static void CopyDir(string source, string dest) {
-			if (String.IsNullOrEmpty(source) || String.IsNullOrEmpty(dest))
-				return;
-			Directory.CreateDirectory(dest);
-			foreach (string fn in Directory.GetFiles(source)) {
-				File.Copy(fn, Path.Combine(dest, Path.GetFileName(fn)), true);
-			}
-			foreach (string dirFn in Directory.GetDirectories(source)) {
-				CopyDir(dirFn, Path.Combine(dest, Path.GetFileName(dirFn)));
-			}
-		}
-
-		private static string InstallPackage(string filePath) {
-			string fileName = string.Empty;
-			try {
-				fileName = UploadPackage(filePath);
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return e.Message;
-			}
-			Console.WriteLine($"Install {fileName} ...");
-			CreatioClient.ExecutePostRequest(InstallUrl, "\"" + fileName + "\"", 600000);
-			if (_settings.DeveloperModeEnabled.HasValue && _settings.DeveloperModeEnabled.Value) {
-				UnlockMaintainerPackageInternal();
-				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
-			}
-			var logText = GetLog();
-			Console.WriteLine("Installation log:");
-			Console.WriteLine(logText);
-			return logText;
-		}
-
-		private static string UploadPackage(string filePath) {
-			Console.WriteLine("Uploading...");
-			FileInfo fileInfo = new FileInfo(filePath);
-			string fileName = fileInfo.Name;
-			CreatioClient.UploadFile(UploadUrl, filePath);
-			Console.WriteLine("Uploaded");
-			return fileName;
-		}
-
-
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
 				SetupAppConnection(options);
@@ -298,68 +170,6 @@ namespace Clio
 			}
 		}
 
-		private static int Compression(GeneratePkgZipOptions options) {
-			try {
-				if (options.Packages == null) {
-					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
-					CompressionProject(options.Name, destinationPath, options.SkipPdb);
-				} else {
-					var packages = StringParser.ParseArray(options.Packages);
-					string zipFileName = $"packages_{DateTime.Now.ToString("yy.MM.dd_hh.mm.ss")}.zip";
-					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
-					CompressionProjects(options.Name, destinationPath, packages, options.SkipPdb);
-				}
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
-
-		private static int Install(PushPkgOptions options) {
-			try {
-				SetupAppConnection(options);
-				if (options.Name == null) {
-					options.Name = Environment.CurrentDirectory;
-				}
-				string logText = string.Empty;
-				if (File.Exists(options.Name)) {
-					logText = InstallPackage(options.Name);
-				} else {
-					if (Directory.Exists(options.Name)) {
-						var folderPath = options.Name;
-						var filePath = options.Name + ".gz";
-						CompressionProject(folderPath, filePath, false);
-						logText = InstallPackage(filePath);
-						File.Delete(filePath);
-					}
-				}
-				if (options.ReportPath != null) {
-					SaveLogFile(logText, options.ReportPath);
-				}
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
-
-		private static string GetLog() {
-			return CreatioClient.ExecuteGetRequest(LogUrl);
-		}
-
-		private static void SaveLogFile(string logText, string reportPath) {
-			if (File.Exists(reportPath)) {
-				File.Delete(reportPath);
-				File.WriteAllText(reportPath, logText, Encoding.UTF8);
-			} else if (Directory.Exists(reportPath)) {
-				reportPath = Path.Combine(reportPath, DefLogFileName);
-			}
-			File.WriteAllText(reportPath, logText, Encoding.UTF8);
-		}
-
 		//ToDo: move to factory
 		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options, 
 				params object[] additionalConstructorArgs) {
@@ -367,7 +177,7 @@ namespace Clio
 			var settings = settingsRepository.GetEnvironment(options);
 			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsDevMode, settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
-			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
+			var constructorArgs = new object[] { clientAdapter, settings }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 		}
 
@@ -395,23 +205,34 @@ namespace Clio
 					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions, OpenAppOptions, PkgListOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
-					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Restart(opts),
-					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).ClearRedisDb(opts),
-					(RegAppOptions opts) => CreateCommand<RegAppCommand>(new SettingsRepository(), new ApplicationClientFactory()).Execute(opts),
+					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
+					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
+					(RegAppOptions opts) => CreateCommand<RegAppCommand>(
+						new SettingsRepository(), new ApplicationClientFactory()).Execute(opts),
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
-					(GeneratePkgZipOptions opts) => Compression(opts),
-					(PushPkgOptions opts) => Install(opts),
+					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(new ProjectUtilities()).Execute(opts),
+					(PushPkgOptions opts) => CreateRemoteCommand<PushPackageCommand>(opts, 
+						new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor()).Execute(opts),
 					(DeletePkgOptions opts) => CreateRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
-					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>().Execute(opts),
-					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>()).Execute(opts),
+					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
+					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
+						new CreatioPkgProjectCreator())).Execute(opts),
 					(ConvertOptions opts) => ConvertPackage(opts),
 					(RegisterOptions opts) => CreateCommand<RegisterCommand>().Execute(opts),
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
-					(ExecuteSqlScriptOptions opts) => SqlScriptCommand.ExecuteSqlScript(opts),
-					(InstallGateOptions opts) => UpdateGate(opts),
+					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts, new SqlScriptExecutor()).Execute(opts),
+					(InstallGateOptions opts) => {
+						var dir = AppDomain.CurrentDomain.BaseDirectory;
+						string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
+						return CreateRemoteCommand<PushPackageCommand>(opts,
+								new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor())
+							.Execute(new PushPkgOptions {
+								Name = packageFilePath
+							});
+					},
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
@@ -435,7 +256,7 @@ namespace Clio
 				};
 				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, _settings);
 				UnlockMaintainerPackageInternal();
-				new RestartCommand(new CreatioClientAdapter(CreatioClient)).Restart(_settings);
+				new RestartCommand(new CreatioClientAdapter(CreatioClient), _settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -446,7 +267,7 @@ namespace Clio
 
 		private static void UnlockMaintainerPackageInternal() {
 			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_settings.Maintainer}'";
-			SqlScriptCommand.ExecuteSqlScript(script, CreatioClient);
+			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(CreatioClient), _settings);
 		}
 
 		private static int AddModels(ItemOptions opts) {

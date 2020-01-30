@@ -7,7 +7,7 @@ using CommandLine;
 namespace Сlio.Command.PackageCommand
 {
 	[Verb("extract-pkg-zip", Aliases = new string[] { "extract", "unzip" }, HelpText = "Prepare an archive of creatio package")]
-	class UnzipPkgOptions
+	public class UnzipPkgOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
@@ -17,7 +17,7 @@ namespace Сlio.Command.PackageCommand
 	}
 
 
-	class ExtractPackageCommand
+	public class ExtractPackageCommand
 	{
 		public static int ExtractPackage(UnzipPkgOptions options) {
 			var packageFile = options.Name;

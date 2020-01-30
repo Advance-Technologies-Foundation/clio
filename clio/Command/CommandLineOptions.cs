@@ -60,32 +60,6 @@ namespace Clio
 	}
 
 
-	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
-	internal class GeneratePkgZipOptions
-	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
-		public string Name { get; set; }
-
-		[Option('d', "DestinationPath", Required = false, HelpText = "Full destination path for gz file")]
-		public string DestinationPath { get; set; }
-
-		[Option('p', "Packages", Required = false)]
-		public string Packages { get; set; }
-
-		[Option('s', "SkipPdb", Required = false, Default = false)]
-		public bool SkipPdb { get; set; }
-	}
-
-	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
-	internal class PushPkgOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
-		public string Name { get; set; }
-
-		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
-		public string ReportPath { get; set; }
-	}
-
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions
 	{

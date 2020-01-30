@@ -9,10 +9,15 @@ namespace Clio.Command
 		where TEnvironmentOptions: EnvironmentOptions
 	{
 		private readonly IApplicationClient _applicationClient;
-		protected IApplicationClient ApplicationClient => _applicationClient;
+		private readonly EnvironmentSettings _environmentSettings;
 
-		protected RemoteCommand(IApplicationClient applicationClient) {
+		protected IApplicationClient ApplicationClient => _applicationClient;
+		protected EnvironmentSettings EnvironmentSettings => _environmentSettings;
+
+		protected RemoteCommand(IApplicationClient applicationClient, 
+				EnvironmentSettings environmentSettings) {
 			_applicationClient = applicationClient;
+			_environmentSettings = environmentSettings;
 		}
 	}
 }

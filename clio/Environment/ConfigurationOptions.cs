@@ -167,11 +167,13 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(string name = null) {
-			EnvironmentSettings environment;
-			if (string.IsNullOrEmpty(name)) {
-				environment = _settings.GetActiveEnviroment();
-			} else {
-				environment = _settings.Environments[name];
+			if (string.IsNullOrWhiteSpace(name)) {
+				var activeEnvironment = _settings.ActiveEnvironmentKey;
+				return _settings.Environments[activeEnvironment];
+			}
+			if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
+				environment = new EnvironmentSettings();
+				_settings.Environments[name] = environment;
 			}
 			return environment;
 		}
