@@ -181,6 +181,16 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 		}
 
+		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
+				params object[] additionalConstructorArgs) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options);
+			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsDevMode, settings.IsNetCore);
+			var clientAdapter = new CreatioClientAdapter(creatioClient);
+			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
+			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		}
+
 		//ToDo: move to factory
 		private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
@@ -214,7 +224,7 @@ namespace Clio
 					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(new ProjectUtilities()).Execute(opts),
 					(PushPkgOptions opts) => CreateRemoteCommand<PushPackageCommand>(opts, 
 						new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor()).Execute(opts),
-					(DeletePkgOptions opts) => CreateRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
+					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
 						new CreatioPkgProjectCreator())).Execute(opts),
@@ -226,7 +236,10 @@ namespace Clio
 					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts, new SqlScriptExecutor()).Execute(opts),
 					(InstallGateOptions opts) => {
 						var dir = AppDomain.CurrentDomain.BaseDirectory;
-						string packageFilePath = Path.Combine(dir, "cliogate", "cliogate.gz");
+						var settingsRepository = new SettingsRepository();
+						var settings = settingsRepository.GetEnvironment(opts);
+						string packageName = settings.IsNetCore ? "cliogate_netcore.gz" : "cliogate.gz";
+						string packageFilePath = Path.Combine(dir, "cliogate", packageName);
 						return CreateRemoteCommand<PushPackageCommand>(opts,
 								new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor())
 							.Execute(new PushPkgOptions {
