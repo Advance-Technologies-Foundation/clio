@@ -23,7 +23,7 @@
 			deleteCommand.Delete(deleteOptions);
 			applicationClient.Received(1).ExecutePostRequest(
 				deleteOptions.Uri + "/0/ServiceModel/AppInstallerService.svc/DeletePackage",
-				"\"TestPackage\"");
+				"\"TestPackage\"", Arg.Any<int>());
 		}
 	}
 }
