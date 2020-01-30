@@ -105,8 +105,8 @@ namespace Clio.Tests
 			var oldPath = Environment.GetEnvironmentVariable("PATH");
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
 			Environment.SetEnvironmentVariable("PATH", oldCD + ";C:\\Program Files");
-			var pkg = new CreatioPkgMock(false);
-			pkg.CreateNugetPackageConfig();
+			var pkg = CreatioPackage.CreatePackage(PackageName, Maintainer);
+			pkg.Create();
 			Environment.CurrentDirectory = oldCD;
 			Environment.SetEnvironmentVariable("PATH", oldPath);
 			var resultPath = Path.Combine(pkg.FullPath, CreatioPackage.PackageConfigName);
