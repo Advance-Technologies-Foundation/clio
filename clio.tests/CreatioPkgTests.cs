@@ -62,7 +62,7 @@ namespace Clio.Tests
 		[TestCase(CreatioPackage.PackageConfigName, CreatioPackage.PackageConfigName, "CreateNugetPackageConfig",
 			TestName = "Check Correct PackageConfig")]
 		[TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, CreatioPackage.AssemblyInfoName,
-			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo")]
+			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo file")]
 		public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
 			var pkg = new CreatioPkgMock();
 			pkg.GetType().GetMethod(methodName).Invoke(pkg, null);
