@@ -62,7 +62,7 @@ namespace Clio.Tests
 		[TestCase(CreatioPackage.PackageConfigName, CreatioPackage.PackageConfigName, "CreateNugetPackageConfig",
 			TestName = "Check Correct PackageConfig")]
 		[TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, CreatioPackage.AssemblyInfoName,
-			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo")]
+			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo file")]
 		public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
 			var pkg = new CreatioPkgMock();
 			pkg.GetType().GetMethod(methodName).Invoke(pkg, null);
@@ -105,8 +105,8 @@ namespace Clio.Tests
 			var oldPath = Environment.GetEnvironmentVariable("PATH");
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
 			Environment.SetEnvironmentVariable("PATH", oldCD + ";C:\\Program Files");
-			var pkg = new CreatioPkgMock(false);
-			pkg.CreateNugetPackageConfig();
+			var pkg = CreatioPackage.CreatePackage(PackageName, Maintainer);
+			pkg.Create();
 			Environment.CurrentDirectory = oldCD;
 			Environment.SetEnvironmentVariable("PATH", oldPath);
 			var resultPath = Path.Combine(pkg.FullPath, CreatioPackage.PackageConfigName);
