@@ -152,6 +152,9 @@
     <None Update="register.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="tpl\AssemblyInfo.cs.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="tpl\EditProj.csproj.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
