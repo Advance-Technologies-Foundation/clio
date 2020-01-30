@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>2.0.1.1</AssemblyVersion>
-	  <FileVersion>2.0.1.1</FileVersion>
-	  <Version>2.0.1.1</Version>
+	  <AssemblyVersion>2.0.0.4</AssemblyVersion>
+	  <FileVersion>2.0.0.4</FileVersion>
+	  <Version>2.0.0.4</Version>
 	  <Description>CLI interface for Creatio platform</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl>https://licenses.nuget.org/MIT</PackageLicenseUrl>
