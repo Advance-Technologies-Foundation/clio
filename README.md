@@ -1,19 +1,6 @@
 # Introduction
 Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
 
-With aid of clio you can:
-- Maintanance Creatio packages
-  - Create new packages in local file system
-  - Push package from local file system to cloud application
-  - Pull package from cloud application to local file system
-  - Compress package to .gz file
-- Maintanance Creatio application
-  - Restart application
-  - Clear session and cache storage (redisdb)
-- Build CI/CD pipelines
-- Convert existing Creatio package to project
-
-
 # Installation and features
 
 You can dowload release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/clio/releases). Unpack the archive with clio.
