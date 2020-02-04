@@ -33,6 +33,8 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Pull package from remote application](#pull-package-from-remote-application)
 	- [Delete package](#delete-package)
 	- [Compress package](#compress-package)
+	- [Extract package](#extract-package)
+	- [Get package list](#get-package-list)
 - [Application](#application)
 	- [Restart application](#restart-application)
 	- [Clear redis database](#clear-redis-database)
@@ -41,6 +43,8 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Delete the existing environment](#delete-the-existing-environment)
 	- [Check environment](#check-environment)
 	- [View application options](#view-application-options)
+	- [Open application](#open-application)
+	- [Ping application](#ping-application)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
 	- [Convert existing package to project](#convert-existing-package-to-project)
@@ -169,6 +173,24 @@ or you can specify full path for package and .gz file
 clio generate-pkg-zip  C:\Packages\package -d C:\Store\package.gz
 ```
 
+## Extract package
+
+For package from  *.gz archive
+```
+clio extract-pkg-zip <package>.gz -d c:\Pkg\<package>
+```
+
+## Get package list
+
+To get packages list in selected environment, use the next command:
+```
+clio get-pkg-list
+```
+for filter results, use -f option
+```
+clio get-pkg-list -f clio
+```
+
 # Application
 
 ## Restart application
@@ -234,12 +256,26 @@ or for concrete application
 clio show-web-app <ENVIRONMENT_NAME>
 ```
 
+## Open application
+
+For open selected environment in default browser use (Windows only command)
+```
+clio open <ENVIRONMENT NAME>
+```
+
+## Ping application
+
+For check options fort selected environment use next command
+```
+clio ping <ENVIRONMENT NAME>
+```
+
+
 # Using for CI/CD systems
 In CI/CD systems, you can specify configuration options directly when calling command:
 ```
 clio restart -u http://mysite.creatio.com -l administrator -p password
 ```
-
 
 # Development
 
