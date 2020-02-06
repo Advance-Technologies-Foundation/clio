@@ -72,13 +72,18 @@ namespace Clio
 				fullPath = tplPath;
 				return true;
 			}
-			var envPath = _creatioEnvironment.GetRegisteredPath();
+			var envPath = GetExecutingDirectorybyAppDomain();
 			if (!string.IsNullOrEmpty(envPath)) {
 				fullPath = Path.Combine(envPath, tplPath);
 				return true;
 			}
 			fullPath = null;
 			return false;
+		}
+
+		public static string GetExecutingDirectorybyAppDomain() {
+			string path = AppDomain.CurrentDomain.BaseDirectory;
+			return path;
 		}
 
 		private bool CreateFromTpl(string tplPath, string filePath) {
