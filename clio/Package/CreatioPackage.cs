@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using Clio.UserEnvironment;
 using Newtonsoft.Json;
@@ -11,6 +12,7 @@ namespace Clio
 		public const string DescriptorName = "descriptor.json";
 		public const string PropertiesDirName = "Properties";
 		public const string CsprojExtension = "csproj";
+		public const string SlnExtension = "sln";
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
@@ -22,7 +24,9 @@ namespace Clio
 
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
-
+		private string ProjectFileName => $"{PackageName}.{CsprojExtension}";
+		private string SolutionName => PackageName;
+		private string SolutionFileName => $"{SolutionName}.{SlnExtension}";
 		private readonly ICreatioEnvironment _creatioEnvironment;
 
 
@@ -81,6 +85,20 @@ namespace Clio
 			return false;
 		}
 
+		private void ExecuteDotnetCommand(string command) {
+			var process = new Process();
+			process.StartInfo = new ProcessStartInfo() {
+				FileName = "dotnet",
+				Arguments = command,
+				CreateNoWindow = true,
+				UseShellExecute = false,
+				WorkingDirectory = FullPath
+			};
+			process.EnableRaisingEvents = true;
+			process.Start();
+			process.WaitForExit();
+		}
+
 		public static string GetExecutingDirectorybyAppDomain() {
 			string path = AppDomain.CurrentDomain.BaseDirectory;
 			return path;
@@ -107,8 +125,14 @@ namespace Clio
 		}
 
 		protected CreatioPackage CreateProj() {
-			var filePath = Path.Combine(FullPath, PackageName + "." + CsprojExtension);
+			var filePath = Path.Combine(FullPath, ProjectFileName);
 			CreateFromTpl(ProjTpl, filePath);
+			return this;
+		}
+
+		protected CreatioPackage CreateSolution() {
+			ExecuteDotnetCommand($"new sln -n {SolutionName}");
+			ExecuteDotnetCommand($"sln {SolutionFileName} add {ProjectFileName}");
 			return this;
 		}
 
@@ -142,6 +166,7 @@ namespace Clio
 		protected CreatioPackage CreatePackageFiles() {
 			CreatePkgDescriptor()
 				.CreateProj()
+				.CreateSolution()
 				.CreatePackageConfig()
 				.CreateAssemblyInfo()
 				.CreateEmptyClass();
