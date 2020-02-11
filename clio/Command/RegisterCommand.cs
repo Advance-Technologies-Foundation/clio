@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 using Clio.UserEnvironment;
 using CommandLine;
 
@@ -56,10 +54,9 @@ namespace Clio.Command
 		public override int Execute(UnregisterOptions options) {
 			try {
 				var creatioEnv = new CreatioEnvironment();
-				string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
 				IResult result = options.Target == "m"
-					? creatioEnv.MachineUnregisterPath(path)
-					: creatioEnv.UserUnregisterPath(path);
+					? creatioEnv.MachineUnregisterPath()
+					: creatioEnv.UserUnregisterPath();
 				result.ShowMessagesTo(Console.Out);
 				return 0;
 			} catch (Exception e) {

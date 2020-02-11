@@ -51,7 +51,7 @@ namespace Clio
 		public bool? DeveloperModeEnabled { get; set; }
 
 		[JsonIgnore]
-		public bool IsDevMode { get => DeveloperModeEnabled.HasValue ? DeveloperModeEnabled.Value : false; }
+		public bool IsDevMode { get => DeveloperModeEnabled ?? false; }
 	}
 
 	public class Settings
@@ -193,12 +193,8 @@ namespace Clio
 			var settingsRepository = new SettingsRepository();
 			var _settings = settingsRepository.FindEnvironment(options.Environment);
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
-			result.IsNetCore = options.IsNetCore.HasValue
-				? options.IsNetCore.Value
-				: _settings.IsNetCore;
-			result.DeveloperModeEnabled = options.DeveloperModeEnabled.HasValue
-				? options.DeveloperModeEnabled.Value
-				: _settings.DeveloperModeEnabled;
+			result.IsNetCore = options.IsNetCore ?? _settings.IsNetCore;
+			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? _settings.DeveloperModeEnabled;
 			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
 			result.Maintainer =

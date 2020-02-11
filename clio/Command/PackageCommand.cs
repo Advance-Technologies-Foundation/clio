@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Clio.Feature;
 using CommandLine;
 using Creatio.Client;
 using Newtonsoft.Json;
@@ -19,7 +18,7 @@ namespace Clio.Command
 
 	public class GetPkgListCommand : BaseRemoteCommand
 	{
-		private static string ServiceUrl => _appUrl + @"/rest/CreatioApiGateway/GetPackages";
+		private static string ServiceUrl => AppUrl + @"/rest/CreatioApiGateway/GetPackages";
 
 		public static int GetPkgList(PkgListOptions options) {
 			Configure(options);

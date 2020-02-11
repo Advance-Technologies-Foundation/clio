@@ -42,7 +42,6 @@ namespace Clio.Command
 		public override int Execute(NewPkgOptions options) {
 			var settings = _settingsRepository.GetEnvironment();
 			try {
-				//DirectoryInfo packageDirectory = Directory.CreateDirectory(options.Name);
 				CreatioPackage package = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
 				package.Create();
 				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {

@@ -27,7 +27,6 @@ namespace Clio
 		private string ProjectFileName => $"{PackageName}.{CsprojExtension}";
 		private string SolutionName => PackageName;
 		private string SolutionFileName => $"{SolutionName}.{SlnExtension}";
-		private readonly ICreatioEnvironment _creatioEnvironment;
 
 
 		public string PackageName { get; }
@@ -45,7 +44,6 @@ namespace Clio
 		}
 
 		protected CreatioPackage(string packageName, string maintainer) {
-			_creatioEnvironment = new CreatioEnvironment();
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
@@ -86,15 +84,16 @@ namespace Clio
 		}
 
 		private void ExecuteDotnetCommand(string command) {
-			var process = new Process();
-			process.StartInfo = new ProcessStartInfo() {
-				FileName = "dotnet",
-				Arguments = command,
-				CreateNoWindow = true,
-				UseShellExecute = false,
-				WorkingDirectory = FullPath
+			var process = new Process {
+				StartInfo = new ProcessStartInfo() {
+					FileName = "dotnet",
+					Arguments = command,
+					CreateNoWindow = true,
+					UseShellExecute = false,
+					WorkingDirectory = FullPath
+				},
+				EnableRaisingEvents = true
 			};
-			process.EnableRaisingEvents = true;
 			process.Start();
 			process.WaitForExit();
 		}

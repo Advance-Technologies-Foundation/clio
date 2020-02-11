@@ -65,11 +65,11 @@ namespace Clio.UserEnvironment
 			return RegisterPath(path, EnvironmentVariableTarget.Machine);
 		}
 
-		public IResult MachineUnregisterPath(string path) {
+		public IResult MachineUnregisterPath() {
 			return UnregisterPath(EnvironmentVariableTarget.Machine);
 		}
 
-		public IResult UserUnregisterPath(string path) {
+		public IResult UserUnregisterPath() {
 			return UnregisterPath(EnvironmentVariableTarget.User);
 		}
 

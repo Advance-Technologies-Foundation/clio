@@ -10,11 +10,11 @@ namespace Clio.Command
 		private IApplicationClient _applicationClient;
 
 		protected IApplicationClient ApplicationClient {
-			get => _applicationClient ?? (_applicationClient = new CreatioClientAdapter(_url, _userName, _userPassword, _isNetCore));
+			get => _applicationClient ?? (_applicationClient = new CreatioClientAdapter(Url, UserName, UserPassword, IsNetCore));
 		}
 
 		protected static CreatioClient CreatioClient {
-			get => new CreatioClient(_url, _userName, _userPassword, _isDevMode, _isNetCore);
+			get => new CreatioClient(Url, UserName, UserPassword, IsDevMode, IsNetCore);
 		}
 
 		public BaseRemoteCommand() {
@@ -25,22 +25,22 @@ namespace Clio.Command
 		}
 
 
-		private static bool _isDevMode => Settings.IsDevMode;
-		private static string _userName => Settings.Login;
-		private static string _userPassword => Settings.Password;
-		private static string _url => Settings.Uri;
-		protected static string _appUrl
+		private static bool IsDevMode => Settings.IsDevMode;
+		private static string UserName => Settings.Login;
+		private static string UserPassword => Settings.Password;
+		private static string Url => Settings.Uri;
+		protected static string AppUrl
 		{
 			get
 			{
-				if (_isNetCore) {
-					return _url;
+				if (IsNetCore) {
+					return Url;
 				} else {
-					return _url + @"/0";
+					return Url + @"/0";
 				}
 			}
 		}
-		protected static bool _isNetCore => Settings.IsNetCore;
+		protected static bool IsNetCore => Settings.IsNetCore;
 		protected static EnvironmentSettings Settings;
 
 		protected static void Configure(EnvironmentOptions options) {

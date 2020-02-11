@@ -14,7 +14,7 @@ namespace Clio.Common
 
 	public class CreatioClientAdapter : IApplicationClient
 	{
-		private CreatioClient _creatioClient;
+		private readonly CreatioClient _creatioClient;
 
 		public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false, string workspaceId = "0") {
 			_creatioClient = new CreatioClient(appUrl, userName, userPassword, isNetCore, workspaceId);

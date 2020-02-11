@@ -19,7 +19,7 @@ namespace Clio.Command
 
 	class AssemblyCommand: BaseRemoteCommand
 	{
-		private static string ExecutorUrl => _appUrl + @"/IDE/ExecuteScript";
+		private static string ExecutorUrl => AppUrl + @"/IDE/ExecuteScript";
 
 		private static void ExecuteCodeFromAssemblyInternal(ExecuteAssemblyOptions options) {
 			string filePath = options.Name;

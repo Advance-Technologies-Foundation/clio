@@ -10,7 +10,7 @@
 			: base(applicationClient) {
 		}
 
-		private static string DeletePackageUrl => _appUrl + @"/ServiceModel/AppInstallerService.svc/DeletePackage";
+		private static string DeletePackageUrl => AppUrl + @"/ServiceModel/AppInstallerService.svc/DeletePackage";
 
 		private void DeletePackage(string code) {
 			Console.WriteLine("Deleting...");

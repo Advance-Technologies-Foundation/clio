@@ -35,7 +35,7 @@ namespace Clio.Command
 					Uri = options.Uri,
 					Maintainer = options.Maintainer,
 					Safe = options.SafeValue.HasValue ? options.SafeValue : false,
-					IsNetCore = options.IsNetCore.HasValue ? options.IsNetCore.Value : false,
+					IsNetCore = options.IsNetCore ?? false,
 					DeveloperModeEnabled = options.DeveloperModeEnabled
 				};
 				if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
