@@ -2,8 +2,9 @@
 {
     using Clio.Common;
     using System;
+    using System.Threading;
 
-	public class DeletePackageCommand: BaseRemoteCommand
+    public class DeletePackageCommand: BaseRemoteCommand
 	{
 
 		public DeletePackageCommand(IApplicationClient applicationClient) 
@@ -15,7 +16,7 @@
 		private void DeletePackage(string code) {
 			Console.WriteLine("Deleting...");
 			string deleteRequestData = "\"" + code + "\"";
-			ApplicationClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData, 600000);
+			ApplicationClient.ExecutePostRequest(DeletePackageUrl, deleteRequestData, Timeout.Infinite);
 			Console.WriteLine("Deleted.");
 		}
 
