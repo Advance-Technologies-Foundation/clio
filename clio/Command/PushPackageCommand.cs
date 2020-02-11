@@ -4,6 +4,7 @@ using CommandLine;
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace Clio.Command
 {
@@ -47,7 +48,7 @@ namespace Clio.Command
 		}
 
 		private string InstallPackage(string filePath, EnvironmentOptions options) {
-			string fileName = string.Empty;
+			string fileName;
 			try {
 				fileName = UploadPackage(filePath);
 			} catch (Exception e) {
@@ -55,7 +56,7 @@ namespace Clio.Command
 				return e.Message;
 			}
 			Console.WriteLine($"Install {fileName} ...");
-			ApplicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), "\"" + fileName + "\"", 600000);
+			ApplicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), "\"" + fileName + "\"", Timeout.Infinite);
 			var settings = _settingsRepository.GetEnvironment(options);
 			if (settings.DeveloperModeEnabled.HasValue && settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal(settings);

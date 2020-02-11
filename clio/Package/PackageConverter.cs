@@ -12,7 +12,7 @@ namespace Clio
 {
 	internal class PackageConverter
 	{
-		private static string prefix = string.Empty;
+		private static readonly string prefix = string.Empty;
 
 		internal static int Convert(ConvertOptions options) {
 			try {
@@ -110,9 +110,8 @@ namespace Clio
 
 		private static void CreateProjectInfo(string path, string name, List<string> fileNames) {
 			var filePath = Path.Combine(path, name + "." + "csproj");
-			var refs = new List<string>();
 			var csFilesPath = Path.Combine(path, "Files", "cs");
-			refs = GetRefs(csFilesPath, fileNames);
+			List<string> refs = GetRefs(csFilesPath, fileNames);
 			var descriptorPath = Path.Combine(path, "descriptor.json");
 			string descriptorContent = File.ReadAllText(descriptorPath);
 			JsonObject jsonDoc = (JsonObject)JsonObject.Parse(descriptorContent);
@@ -133,9 +132,8 @@ namespace Clio
 
 		private static List<string> GetRefs(string path, List<string> files) {
 			List<string> result = new List<string>();
-			List<string> refs = new List<string>();
 			foreach (var fileName in files) {
-				refs = GetRefFromFile(Path.Combine(path, fileName));
+				List<string> refs = GetRefFromFile(Path.Combine(path, fileName));
 				foreach (var line in refs) {
 					if (!result.Contains(line)) {
 						result.Add(line);

@@ -23,41 +23,41 @@ namespace Clio
 
 
 	class Program {
-		private static string _userName => _settings.Login;
-		private static bool _isDevMode => _settings.IsDevMode;
-		private static string _userPassword => _settings.Password;
-		private static string _url => _settings.Uri; // Необходимо получить из конфига
-		private static string _appUrl {
+		private static string UserName => settings.Login;
+		private static bool IsDevMode => settings.IsDevMode;
+		private static string UserPassword => settings.Password;
+		private static string Url => settings.Uri; // Необходимо получить из конфига
+		private static string AppUrl {
 			get
 			{
-				if (_isNetCore) {
-					return _url;
+				if (IsNetCore) {
+					return Url;
 				} else	{
-					return _url + @"/0";
+					return Url + @"/0";
 				}
 			}
 		}
-		private static bool _isNetCore => _settings.IsNetCore;
-		private static EnvironmentSettings _settings;
-		private static string _environmentName;
+		private static bool IsNetCore => settings.IsNetCore;
+		private static EnvironmentSettings settings;
+		private static string environmentName;
 		
-		private static string GetZipPackageUrl => _appUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
+		private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
-		private static string ApiVersionUrl => _appUrl + @"/rest/CreatioApiGateway/GetApiVersion";
+		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
 
 
-		private static string GetEntityModelsUrl => _appUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
+		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
 		private static CreatioClient CreatioClient {
-			get => new CreatioClient(_url, _userName, _userPassword, _isDevMode, _isNetCore);
+			get => new CreatioClient(Url, UserName, UserPassword, IsDevMode, IsNetCore);
 		}
 
-		public static bool _safe { get; private set; } = true;
+		public static bool Safe { get; private set; } = true;
 
 		private static void Configure(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
-			_environmentName = options.Environment;
-			_settings = settingsRepository.GetEnvironment(options);
+			environmentName = options.Environment;
+			settings = settingsRepository.GetEnvironment(options);
 		}
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
@@ -157,9 +157,7 @@ namespace Clio
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
 				SetupAppConnection(options);
-				string destPath = options.DestPath != null
-					? options.DestPath
-					: Path.Combine(Path.GetTempPath(), "packages.zip");
+				string destPath = options.DestPath ?? Path.Combine(Path.GetTempPath(), "packages.zip");
 				DownloadZipPackagesInternal(options.Name, destPath);
 				UnZipPackages(destPath);
 				Console.WriteLine("Done");
@@ -261,15 +259,15 @@ namespace Clio
 			try {
 				SetupAppConnection(opts);
 				var repository = new SettingsRepository();
-				_settings.DeveloperModeEnabled = true;
-				repository.ConfigureEnvironment(_environmentName, _settings);
+				settings.DeveloperModeEnabled = true;
+				repository.ConfigureEnvironment(environmentName, settings);
 				var sysSettingOptions = new SysSettingsOptions() {
 					Code = "Maintainer",
-					Value = _settings.Maintainer
+					Value = settings.Maintainer
 				};
-				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, _settings);
+				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, settings);
 				UnlockMaintainerPackageInternal();
-				new RestartCommand(new CreatioClientAdapter(CreatioClient), _settings).Execute(new RestartOptions());
+				new RestartCommand(new CreatioClientAdapter(CreatioClient), settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -279,8 +277,8 @@ namespace Clio
 		}
 
 		private static void UnlockMaintainerPackageInternal() {
-			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_settings.Maintainer}'";
-			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(CreatioClient), _settings);
+			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{settings.Maintainer}'";
+			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(CreatioClient), settings);
 		}
 
 		private static int AddModels(ItemOptions opts) {

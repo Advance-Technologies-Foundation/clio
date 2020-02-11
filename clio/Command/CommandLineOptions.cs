@@ -32,8 +32,7 @@ namespace Clio
 			get
 			{
 				if (!string.IsNullOrEmpty(DevMode)) {
-					bool result;
-					if (bool.TryParse(DevMode, out result)) {
+					if (bool.TryParse(DevMode, out bool result)) {
 						return result;
 					}
 				}
@@ -49,8 +48,7 @@ namespace Clio
 			get
 			{
 				if (!string.IsNullOrEmpty(Safe)) {
-					bool result;
-					if (bool.TryParse(Safe, out result)) {
+					if (bool.TryParse(Safe, out bool result)) {
 						return result;
 					}
 				}
