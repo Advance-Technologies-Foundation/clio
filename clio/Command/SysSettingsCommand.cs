@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Creatio.Client;
 using CommandLine;
+using Creatio.Client;
 
 namespace Clio.Command.SysSettingsCommand
 {
@@ -20,7 +18,7 @@ namespace Clio.Command.SysSettingsCommand
 
 	}
 
-	class SysSettingsCommand: BaseRemoteCommand
+	class SysSettingsCommand : BaseRemoteCommand
 	{
 		private static string InsertSysSettingsUrl => AppUrl + @"/DataService/json/SyncReply/InsertSysSettingRequest";
 		private static string PostSysSettingsValuesUrl => AppUrl + @"/DataService/json/SyncReply/PostSysSettingsValues";

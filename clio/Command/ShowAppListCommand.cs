@@ -11,7 +11,7 @@ namespace Clio.Command
 		public string Name { get; set; }
 	}
 
-	public class ShowAppListCommand: Command<AppListOptions> 
+	public class ShowAppListCommand : Command<AppListOptions>
 	{
 
 		private readonly ISettingsRepository _settingsRepository;

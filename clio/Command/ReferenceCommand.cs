@@ -1,8 +1,8 @@
-﻿using Clio.Project;
-using CommandLine;
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
+using Clio.Project;
+using CommandLine;
 
 namespace Clio.Command
 {
@@ -48,7 +48,7 @@ namespace Clio.Command
 					case "bin":
 						project = project.RefToBin();
 						break;
-					case "src": 
+					case "src":
 						project = project.RefToCoreSrc();
 						break;
 					case "custom":

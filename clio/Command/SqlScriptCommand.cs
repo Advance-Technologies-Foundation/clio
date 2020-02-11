@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Data;
 using System.IO;
+using Clio.Common;
 using CommandLine;
 using ConsoleTables;
 using Newtonsoft.Json;
-using Clio.Common;
 
 namespace Clio.Command.SqlScriptCommand
 {
@@ -25,12 +25,12 @@ namespace Clio.Command.SqlScriptCommand
 		public string DestPath { get; set; }
 	}
 
-	public class SqlScriptCommand: RemoteCommand<ExecuteSqlScriptOptions>
+	public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
 	{
 		private readonly ISqlScriptExecutor _sqlScriptExecutor;
 
-		public SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings, 
-				ISqlScriptExecutor sqlScriptExecutor) 
+		public SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+				ISqlScriptExecutor sqlScriptExecutor)
 			: base(applicationClient, settings) {
 			_sqlScriptExecutor = sqlScriptExecutor;
 		}

@@ -1,8 +1,8 @@
 namespace ClioGate.Functions.SQL
 {
-	using Newtonsoft.Json;
 	using System;
 	using System.Data;
+	using Newtonsoft.Json;
 	using Terrasoft.Core;
 	using Terrasoft.Core.DB;
 

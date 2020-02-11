@@ -1,10 +1,8 @@
-﻿using Clio.UserEnvironment;
+﻿using System;
+using System.Collections.Generic;
+using Clio.UserEnvironment;
 using CommandLine;
 using CommandLine.Text;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
 
 namespace Clio.Command
 {
@@ -47,7 +45,7 @@ namespace Clio.Command
 				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
 					_referenceCommand.Execute(new ReferenceOptions {
 						Path = package.FullPath,
-						ReferenceType = options.Rebase 
+						ReferenceType = options.Rebase
 					});
 					package.RemovePackageConfig();
 				}

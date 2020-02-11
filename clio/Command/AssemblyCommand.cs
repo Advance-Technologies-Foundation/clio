@@ -4,8 +4,8 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("execute-assembly-code", 
-		Aliases = new[] { "exec" }, 
+	[Verb("execute-assembly-code",
+		Aliases = new[] { "exec" },
 		HelpText = "Execute an assembly code which implements the IExecutor interface",
 		Hidden = true)]
 	internal class ExecuteAssemblyOptions : EnvironmentOptions
@@ -17,7 +17,7 @@ namespace Clio.Command
 		public string ExecutorType { get; set; }
 	}
 
-	class AssemblyCommand: BaseRemoteCommand
+	class AssemblyCommand : BaseRemoteCommand
 	{
 		private static string ExecutorUrl => AppUrl + @"/IDE/ExecuteScript";
 

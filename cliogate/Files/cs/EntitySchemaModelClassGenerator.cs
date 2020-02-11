@@ -56,7 +56,7 @@ namespace cliogate.Files.cs
 		private string GetSchemaClass(string entitySchemaName) {
 			var schema = entitySchemaManager.GetInstanceByName(entitySchemaName);
 			string classTemplate = File.ReadAllText($"{tplFolder}\\class-template.tpl");
-			
+
 			var columnsBuilder = new StringBuilder();
 			foreach (var column in schema.Columns) {
 				if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {

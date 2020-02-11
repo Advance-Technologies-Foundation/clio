@@ -1,9 +1,9 @@
-﻿using Clio.Command;
+﻿using System.IO;
+using Clio.Command;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using System.IO;
 
 namespace Clio.Tests.Command
 {

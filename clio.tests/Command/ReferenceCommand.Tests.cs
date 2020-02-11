@@ -1,11 +1,9 @@
-﻿using Clio.Command;
+﻿using System;
+using Clio.Command;
 using Clio.Project;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace Clio.Tests.Command
 {
@@ -28,7 +26,7 @@ namespace Clio.Tests.Command
 			ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
 			ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
 			creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-			ReferenceOptions options = new ReferenceOptions { 
+			ReferenceOptions options = new ReferenceOptions {
 				Path = "Testpath",
 				ReferenceType = "src"
 			};

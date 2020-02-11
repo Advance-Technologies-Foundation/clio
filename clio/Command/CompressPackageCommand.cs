@@ -1,6 +1,6 @@
-﻿using Clio.Common;
+﻿using System;
+using Clio.Common;
 using CommandLine;
-using System;
 
 namespace Clio.Command
 {

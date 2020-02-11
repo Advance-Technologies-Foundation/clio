@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using Clio.UserEnvironment;
 using Newtonsoft.Json;
 
 namespace Clio
@@ -20,7 +19,7 @@ namespace Clio
 		public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
 		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
 
-		private readonly string[] _pkgDirectories = {"Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
+		private readonly string[] _pkgDirectories = { "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
 
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
@@ -38,7 +37,8 @@ namespace Clio
 		public string FullPath { get; protected set; }
 
 		private DateTime _createdOn;
-		public DateTime CreatedOn {
+		public DateTime CreatedOn
+		{
 			get => _createdOn;
 			protected set => _createdOn = GetDateTimeTillSeconds(value);
 		}
@@ -182,8 +182,7 @@ namespace Clio
 			CreatePackageDirectories().CreatePackageFiles();
 		}
 
-		internal void RemovePackageConfig()
-		{
+		internal void RemovePackageConfig() {
 			var filePath = Path.Combine(FullPath, PackageConfigName);
 			File.Delete(filePath);
 		}

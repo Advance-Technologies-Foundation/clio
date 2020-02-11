@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using FluentAssertions;
+﻿using FluentAssertions;
 
 namespace Clio.Tests
 {
@@ -22,7 +19,7 @@ namespace Clio.Tests
 		public class FileToTest { public string Path; }
 
 
-		public static DirectoryAssertion Should(this DirectoryToTest directory) => 
+		public static DirectoryAssertion Should(this DirectoryToTest directory) =>
 			new DirectoryAssertion { Directory = directory };
 		public class DirectoryAssertion
 		{

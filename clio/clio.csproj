@@ -14,7 +14,7 @@
 	  <Version>2.0.0.5</Version>
 	  <Description>CLI interface for Creatio platform</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-	  <PackageLicenseUrl>https://licenses.nuget.org/MIT</PackageLicenseUrl>
+	  <PackageLicenseUrl></PackageLicenseUrl>
 	  <PackageLicense>MIT</PackageLicense>
 	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
 	  <RepositoryType>git</RepositoryType>
@@ -22,6 +22,7 @@
 	  <Copyright>ATF ©2020</Copyright>
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">

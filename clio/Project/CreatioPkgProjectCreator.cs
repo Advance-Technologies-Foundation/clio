@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Clio.Project
+﻿namespace Clio.Project
 {
 	public class CreatioPkgProjectCreator : ICreatioPkgProjectCreator
 	{

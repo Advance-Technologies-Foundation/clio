@@ -1,10 +1,10 @@
-﻿using Clio.Common;
-using Clio.UserEnvironment;
-using CommandLine;
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Threading;
+using Clio.Common;
+using Clio.UserEnvironment;
+using CommandLine;
 
 namespace Clio.Command
 {
@@ -29,9 +29,9 @@ namespace Clio.Command
 		private static string UploadUrl => @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private static string DefLogFileName => "cliolog.txt";
 
-		public PushPackageCommand(IApplicationClient applicationClient, EnvironmentSettings settings, 
-				IProjectUtilities projectUtilities, ISettingsRepository settingsRepository, 
-				ISqlScriptExecutor scriptExecutor) 
+		public PushPackageCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+				IProjectUtilities projectUtilities, ISettingsRepository settingsRepository,
+				ISqlScriptExecutor scriptExecutor)
 			: base(applicationClient, settings) {
 			_projectUtilities = projectUtilities;
 			_settingsRepository = settingsRepository;

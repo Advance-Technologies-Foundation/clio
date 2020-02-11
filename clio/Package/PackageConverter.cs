@@ -1,11 +1,11 @@
-﻿using Newtonsoft.Json;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Json;
 using System.Linq;
 using System.Reflection;
+using Newtonsoft.Json;
 using File = System.IO.File;
 
 namespace Clio

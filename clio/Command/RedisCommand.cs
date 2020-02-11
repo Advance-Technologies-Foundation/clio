@@ -11,13 +11,13 @@ namespace Clio.Command
 		public string Name { get => Environment; set { Environment = value; } }
 	}
 
-	public class RedisCommand: RemoteCommand<ClearRedisOptions>
+	public class RedisCommand : RemoteCommand<ClearRedisOptions>
 	{
-		public RedisCommand(IApplicationClient applicationClient, EnvironmentSettings settings) 
+		public RedisCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
 			: base(applicationClient, settings) {
 		}
 
-		private string ClearRedisDbUrl => EnvironmentSettings.IsNetCore 
+		private string ClearRedisDbUrl => EnvironmentSettings.IsNetCore
 			? EnvironmentSettings.Uri + @"/ServiceModel/AppInstallerService.svc/ClearRedisDb"
 			: EnvironmentSettings.Uri + @"/0/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 

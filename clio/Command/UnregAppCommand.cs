@@ -11,7 +11,8 @@ namespace Clio.Command
 		public string Name { get; set; }
 	}
 
-	public class UnregAppCommand: Command<UnregAppOptions> {
+	public class UnregAppCommand : Command<UnregAppOptions>
+	{
 
 		private readonly ISettingsRepository _settingsRepository;
 

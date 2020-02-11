@@ -4,34 +4,36 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
-using Clio.UserEnvironment;
-using CommandLine;
-using Newtonsoft.Json;
-using Creatio.Client;
 using Clio.Command;
-using Clio.Command.UpdateCliCommand;
-using Сlio.Command.PackageCommand;
+using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
+using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Project;
-using Clio.Command.PackageCommand;
+using Clio.UserEnvironment;
+using CommandLine;
+using Creatio.Client;
+using Newtonsoft.Json;
+using Сlio.Command.PackageCommand;
 
 namespace Clio
 {
 
 
-	class Program {
+	class Program
+	{
 		private static string UserName => settings.Login;
 		private static bool IsDevMode => settings.IsDevMode;
 		private static string UserPassword => settings.Password;
 		private static string Url => settings.Uri; // Необходимо получить из конфига
-		private static string AppUrl {
+		private static string AppUrl
+		{
 			get
 			{
 				if (IsNetCore) {
 					return Url;
-				} else	{
+				} else {
 					return Url + @"/0";
 				}
 			}
@@ -39,7 +41,7 @@ namespace Clio
 		private static bool IsNetCore => settings.IsNetCore;
 		private static EnvironmentSettings settings;
 		private static string environmentName;
-		
+
 		private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
 		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
@@ -47,7 +49,8 @@ namespace Clio
 
 		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
-		private static CreatioClient CreatioClient {
+		private static CreatioClient CreatioClient
+		{
 			get => new CreatioClient(Url, UserName, UserPassword, IsDevMode, IsNetCore);
 		}
 
@@ -87,7 +90,7 @@ namespace Clio
 			}
 		}
 
-	
+
 		private static Version GetAppApiVersion() {
 			var apiVersion = new Version("0.0.0.0");
 			try {
@@ -168,7 +171,7 @@ namespace Clio
 		}
 
 		//ToDo: move to factory
-		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options, 
+		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options);
@@ -219,7 +222,7 @@ namespace Clio
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(new ProjectUtilities()).Execute(opts),
-					(PushPkgOptions opts) => CreateRemoteCommand<PushPackageCommand>(opts, 
+					(PushPkgOptions opts) => CreateRemoteCommand<PushPackageCommand>(opts,
 						new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor()).Execute(opts),
 					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
@@ -302,7 +305,7 @@ namespace Clio
 				return AddModels(options);
 			} else {
 				return AddItemFromTemplate(options);
-			} 
+			}
 		}
 
 		private static int AddItemFromTemplate(ItemOptions options) {

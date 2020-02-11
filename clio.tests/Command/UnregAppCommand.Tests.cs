@@ -1,7 +1,7 @@
-﻿using NUnit.Framework;
-using NSubstitute;
+﻿using Clio.Command;
 using Clio.UserEnvironment;
-using Clio.Command;
+using NSubstitute;
+using NUnit.Framework;
 
 namespace Clio.Tests.Command
 {

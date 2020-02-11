@@ -25,7 +25,7 @@ namespace Сlio.Command.PackageCommand
 				packageFile += ".gz";
 			}
 
-			if (!File.Exists(packageFile)) { 
+			if (!File.Exists(packageFile)) {
 				throw new Exception($"Package archive {packageFile} not found");
 			}
 			var fileInfo = new FileInfo(packageFile);

@@ -34,7 +34,7 @@ namespace cliogate.Files.cs
 		}
 
 		[OperationContract]
-		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}", ResponseFormat = WebMessageFormat.Json, BodyStyle =WebMessageBodyStyle.Bare)]
+		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}", ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.Bare)]
 		public string GetEntitySchemaModels(string entitySchema) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var generator = new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
@@ -55,10 +55,11 @@ namespace cliogate.Files.cs
 				esq.AddAllSchemaColumns();
 				var packages = esq.GetEntityCollection(UserConnection);
 				foreach (var p in packages) {
-					var package = new Dictionary<string, string>();
-					package["Name"] = p.PrimaryDisplayColumnValue;
-					package["UId"] = p.GetTypedColumnValue<string>("UId");
-					package["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer");
+					var package = new Dictionary<string, string> {
+						["Name"] = p.PrimaryDisplayColumnValue,
+						["UId"] = p.GetTypedColumnValue<string>("UId"),
+						["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer")
+					};
 					packageList.Add(package);
 				}
 				var json = JsonConvert.SerializeObject(packageList);

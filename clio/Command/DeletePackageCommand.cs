@@ -1,13 +1,13 @@
 ﻿namespace Clio.Command.PackageCommand
 {
-    using Clio.Common;
-    using System;
-    using System.Threading;
+	using System;
+	using System.Threading;
+	using Clio.Common;
 
-    public class DeletePackageCommand: BaseRemoteCommand
+	public class DeletePackageCommand : BaseRemoteCommand
 	{
 
-		public DeletePackageCommand(IApplicationClient applicationClient) 
+		public DeletePackageCommand(IApplicationClient applicationClient)
 			: base(applicationClient) {
 		}
 

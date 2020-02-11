@@ -5,7 +5,7 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("set-feature", Aliases = new[] { "feature" }, HelpText = "Set feature state")]
-	internal class FeatureOptions: EnvironmentOptions
+	internal class FeatureOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Feature code")]
 		public string Code { get; set; }
@@ -15,7 +15,7 @@ namespace Clio.Command
 
 	}
 
-	class FeatureCommand: BaseRemoteCommand
+	class FeatureCommand : BaseRemoteCommand
 	{
 		public static int SetFeatureState(FeatureOptions options) {
 			try {

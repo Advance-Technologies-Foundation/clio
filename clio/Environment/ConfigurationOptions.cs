@@ -1,12 +1,12 @@
-using Clio.UserEnvironment;
-using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Clio.UserEnvironment;
+using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 
 namespace Clio
 {
@@ -83,8 +83,10 @@ namespace Clio
 
 		private Settings _settings;
 
-		private string AppSettingsFolderPath {
-			get {
+		private string AppSettingsFolderPath
+		{
+			get
+			{
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
 						"LOCALAPPDATA" : "Home");

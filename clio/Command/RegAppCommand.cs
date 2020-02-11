@@ -1,8 +1,7 @@
 ﻿using System;
-using Creatio.Client;
-using CommandLine;
 using Clio.Common;
 using Clio.UserEnvironment;
+using CommandLine;
 
 namespace Clio.Command
 {
@@ -17,7 +16,7 @@ namespace Clio.Command
 
 	}
 
-	public class RegAppCommand: Command<RegAppOptions>
+	public class RegAppCommand : Command<RegAppOptions>
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly IApplicationClientFactory _applicationClientFactory;

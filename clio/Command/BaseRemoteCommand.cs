@@ -1,19 +1,20 @@
 ﻿using Clio.Common;
 using Creatio.Client;
-using System;
 
 namespace Clio.Command
 {
-	public class BaseRemoteCommand 
+	public class BaseRemoteCommand
 	{
 
 		private IApplicationClient _applicationClient;
 
-		protected IApplicationClient ApplicationClient {
+		protected IApplicationClient ApplicationClient
+		{
 			get => _applicationClient ?? (_applicationClient = new CreatioClientAdapter(Url, UserName, UserPassword, IsNetCore));
 		}
 
-		protected static CreatioClient CreatioClient {
+		protected static CreatioClient CreatioClient
+		{
 			get => new CreatioClient(Url, UserName, UserPassword, IsDevMode, IsNetCore);
 		}
 

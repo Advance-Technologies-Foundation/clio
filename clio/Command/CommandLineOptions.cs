@@ -23,7 +23,7 @@ namespace Clio
 
 		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
 		public string Maintainer { get; set; }
-		
+
 		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
 		public string DevMode { get; set; }
 
@@ -98,7 +98,7 @@ namespace Clio
 	}
 
 	[Verb("add-item", Aliases = new string[] { "create" }, HelpText = "Create item in project")]
-	internal class ItemOptions: EnvironmentOptions
+	internal class ItemOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Item type", Required = true, HelpText = "Item type")]
 		public string ItemType { get; set; }
@@ -115,7 +115,7 @@ namespace Clio
 	}
 
 	[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Activate developer mode for selected environment")]
-	internal class DeveloperModeOptions: EnvironmentOptions
+	internal class DeveloperModeOptions : EnvironmentOptions
 	{
 	}
 

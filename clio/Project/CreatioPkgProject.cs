@@ -1,13 +1,13 @@
-﻿using Clio.Project;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
+using Clio.Project;
 
 namespace Clio
 {
 
-	public class CreatioPkgProject: ICreatioPkgProject
+	public class CreatioPkgProject : ICreatioPkgProject
 	{
 		private const string HintElementName = "HintPath";
 		private const string ItemGroupElementName = "ItemGroup";
@@ -92,7 +92,7 @@ namespace Clio
 		private bool RecurseDetermineCurrentRef(XElement element, string pattern) {
 			var result = element.Elements(ItemGroup).Any(el => el.Elements(Reference)
 				.Any(elem => elem.Element(HintPath) != null
-				 && ((string) elem.Element(HintPath)).Contains(pattern)));
+				 && ((string)elem.Element(HintPath)).Contains(pattern)));
 			if (result || !element.HasElements) {
 				return result;
 			}

@@ -14,7 +14,7 @@ namespace Clio.Command
 
 	public class RestartCommand : RemoteCommand<RestartOptions>
 	{
-		public RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings) 
+		public RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
 			: base(applicationClient, settings) {
 		}
 

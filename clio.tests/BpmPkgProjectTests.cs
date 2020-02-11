@@ -11,8 +11,7 @@ namespace Clio.Tests
 		}
 
 		[Test]
-		public void CreatioPkgProject_RefToCoreSrc_LoadFromFileRealProjCase()
-		{
+		public void CreatioPkgProject_RefToCoreSrc_LoadFromFileRealProjCase() {
 			var expectProj = XElement.Load("ExpectPkgProj.xml", LoadOptions.SetBaseUri);
 			var proj = CreatioPkgProject.LoadFromFile("OriginPkgProj.xml");
 			proj.RefToCoreSrc()

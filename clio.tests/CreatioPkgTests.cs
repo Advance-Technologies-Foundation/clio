@@ -85,7 +85,7 @@ namespace Clio.Tests
 			File(Path.Combine(pkg.FullPath, CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName))
 				.Should().Exist();
 			File(Path.Combine(pkg.FullPath, "Files\\cs", "EmptyClass.cs")).Should().Exist();
-			File(Path.Combine(pkg.FullPath, "Assemblies"+ "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
+			File(Path.Combine(pkg.FullPath, "Assemblies" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
 			File(Path.Combine(pkg.FullPath, "Data" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
 			File(Path.Combine(pkg.FullPath, "Resources" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
 			File(Path.Combine(pkg.FullPath, "Schemas" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
