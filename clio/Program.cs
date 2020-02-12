@@ -210,9 +210,10 @@ namespace Clio
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
-					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions, PullPkgOptions,
-					UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions, DeveloperModeOptions,
-					SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions, OpenAppOptions, PkgListOptions>(args)
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
+					PullPkgOptions,	UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
+					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
+					OpenAppOptions, PkgListOptions,	CompileWorkspaceCommand>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -254,6 +255,7 @@ namespace Clio
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
+					(CompileOptions opts) => CompileWorkspaceCommand.Compile(opts),
 					errs => 1);
 		}
 
