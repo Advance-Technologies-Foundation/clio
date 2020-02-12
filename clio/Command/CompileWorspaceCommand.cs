@@ -20,7 +20,8 @@ namespace Clio.Command
 			try {
 				Configure(options);
 				var scriptData = "{}";
-				string responseFormServer = CreatioClient.ExecutePostRequest(ServiceUrl, scriptData);
+				string responseFormServer = CreatioClient.ExecutePostRequest(ServiceUrl, scriptData, int.MaxValue);
+				Console.WriteLine(responseFormServer);
 				Console.WriteLine($"Done");
 				return 0;
 			} catch (Exception e) {

@@ -1,15 +1,30 @@
 ﻿using System;
+using System.CodeDom.Compiler;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
 using ClioGate.Functions.SQL;
 using Newtonsoft.Json;
+using Terrasoft.Core.ConfigurationBuild;
 using Terrasoft.Core.Entities;
+using Terrasoft.Core.Factories;
+using Terrasoft.Core.Packages;
 using Terrasoft.Web.Common;
 
 namespace cliogate.Files.cs
 {
+	[DataContract]
+	public class CompilationResult
+	{
+		[JsonProperty("compilerErrors")]
+		public CompilerErrorCollection CompilerErrors { get; set; }
+
+		[JsonProperty("status")]
+		public BuildResultType Status { get; set; }
+	}
+
 	[ServiceContract]
 	[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]
 	public class CreatioApiGateway : BaseService
@@ -67,6 +82,22 @@ namespace cliogate.Files.cs
 			} else {
 				throw new Exception("You don`n have permission for operation CanManageSolution");
 			}
+		}
+
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public CompilationResult CompileAll() {
+			WorkspaceBuilder workspaceBuilder =
+				WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
+			CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace, 
+				out var buildResultType);
+			var configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
+			configurationBuilder.BuildAll();
+			return new CompilationResult {
+				Status = buildResultType,
+				CompilerErrors = compilerErrors
+			};
 		}
 	}
 }
