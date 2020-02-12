@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using CommandLine;
 using Creatio.Client;
 using Newtonsoft.Json;
@@ -20,7 +21,7 @@ namespace Clio.Command
 			try {
 				Configure(options);
 				var scriptData = "{}";
-				string responseFormServer = CreatioClient.ExecutePostRequest(ServiceUrl, scriptData, int.MaxValue);
+				string responseFormServer = CreatioClient.ExecutePostRequest(ServiceUrl, scriptData, Timeout.Infinite);
 				Console.WriteLine(responseFormServer);
 				Console.WriteLine($"Done");
 				return 0;
