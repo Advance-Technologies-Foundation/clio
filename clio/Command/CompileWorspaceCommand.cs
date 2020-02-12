@@ -7,7 +7,7 @@ using Newtonsoft.Json;
 
 namespace Clio.Command
 {
-	[Verb("build-workspace", Aliases = new[] { "build", "compile", "compile-all" }, HelpText = "Build/Rebuild worksapce for selected environment")]
+	[Verb("build-workspace", Aliases = new[] { "build", "compile", "compile-all", "rebuild" }, HelpText = "Build/Rebuild worksapce for selected environment")]
 	public class CompileOptions : EnvironmentOptions
 	{
 	}
