@@ -262,7 +262,7 @@ namespace Clio
 					(CompileOptions opts) => CompileWorkspaceCommand.Compile(opts),
 					(PushNuGetPkgsOptions opts) => CreateCommand<PushNuGetPackagesCommand>(
 						GetEnvironmentSettings(opts), new PackageFinder(), 
-						new NuspecFilesGenerator(new TemplateUtilities())).Execute(opts),
+						new NuspecFilesGenerator(new TemplateProvider())).Execute(opts),
 					errs => 1);
 		}
 

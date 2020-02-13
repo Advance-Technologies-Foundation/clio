@@ -1,6 +1,6 @@
 namespace Clio.Common
 {
-	public interface ITemplateUtilities
+	public interface ITemplateProvider
 	{
 		string GetTemplate(string relativeTplPath);
 	}

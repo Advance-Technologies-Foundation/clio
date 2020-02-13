@@ -14,10 +14,10 @@ namespace Clio
 		private const string DependencyRecordTemplate = "      <dependency id=\"$id$\"$version$ />";
 		private const string DependencyVersionTemplate = " version=\"$version$\"";
 		private static readonly string PackageNuspecTpl = $"tpl{Path.DirectorySeparatorChar}{PackageNuspecName}.tpl";
-		private readonly ITemplateUtilities _templateUtilities;
+		private readonly ITemplateProvider _templateProvider;
 
-		public NuspecFilesGenerator(ITemplateUtilities templateUtilities) {
-			_templateUtilities = templateUtilities ?? throw new ArgumentException(nameof(templateUtilities));
+		public NuspecFilesGenerator(ITemplateProvider templateProvider) {
+			_templateProvider = templateProvider ?? throw new ArgumentException(nameof(templateProvider));
 		}
 
 		private string GetNuspecFileName(PackageInfo packageInfo) {
@@ -40,9 +40,10 @@ namespace Clio
 				IDictionary<string, PackageInfo> packagesInfo) {
 			var sb = new StringBuilder();
 			foreach (string dependency in packageInfo.Depends) {
-				string dependencyVersion = packagesInfo.ContainsKey(dependency)
-					? DependencyVersionTemplate.Replace("$version$", version)
-					: string.Empty;
+				if (!packagesInfo.ContainsKey(dependency)) {
+					continue;
+				}
+				string dependencyVersion = DependencyVersionTemplate.Replace("$version$", version);
 				string fileRecord = DependencyRecordTemplate
 					.Replace("$id$", dependency)
 					.Replace("$version$", dependencyVersion);
@@ -64,7 +65,7 @@ namespace Clio
 
 		private void CreateFromTpl(string filePath, string version, PackageInfo packageInfo,  string files,
 				string dependencies) {
-			string template = _templateUtilities.GetTemplate(PackageNuspecTpl);
+			string template = _templateProvider.GetTemplate(PackageNuspecTpl);
 			string nuspecFileContent = ReplaceMacro(template, version, packageInfo, files, dependencies);
 			File.WriteAllText(filePath, nuspecFileContent);
 		}
