@@ -170,11 +170,15 @@ namespace Clio
 			}
 		}
 
+		private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options) {
+			var settingsRepository = new SettingsRepository();
+			return settingsRepository.GetEnvironment(options);
+		}
+
 		//ToDo: move to factory
 		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
-			var settingsRepository = new SettingsRepository();
-			var settings = settingsRepository.GetEnvironment(options);
+			var settings = GetEnvironmentSettings(options);
 			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsDevMode, settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter, settings }.Concat(additionalConstructorArgs).ToArray();
@@ -183,8 +187,7 @@ namespace Clio
 
 		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
-			var settingsRepository = new SettingsRepository();
-			var settings = settingsRepository.GetEnvironment(options);
+			var settings = GetEnvironmentSettings(options);
 			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.IsDevMode, settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
@@ -213,7 +216,7 @@ namespace Clio
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
 					PullPkgOptions,	UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
-					OpenAppOptions, PkgListOptions, CompileOptions>(args)
+					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -256,6 +259,9 @@ namespace Clio
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
 					(CompileOptions opts) => CompileWorkspaceCommand.Compile(opts),
+					(PushNuGetPkgsOptions opts) => CreateCommand<PushNuGetPackagesCommand>(
+						GetEnvironmentSettings(opts), new PackageFinder(), 
+						new NuspecFilesGenerator(new TemplateUtilities())).Execute(opts),
 					errs => 1);
 		}
 
