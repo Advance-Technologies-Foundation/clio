@@ -35,7 +35,8 @@ namespace Clio.Command
 					Maintainer = options.Maintainer,
 					Safe = options.SafeValue.HasValue ? options.SafeValue : false,
 					IsNetCore = options.IsNetCore ?? false,
-					DeveloperModeEnabled = options.DeveloperModeEnabled
+					DeveloperModeEnabled = options.DeveloperModeEnabled,
+					UntrustedSSL = options.UntrustedSSL
 				};
 				if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
 					if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {

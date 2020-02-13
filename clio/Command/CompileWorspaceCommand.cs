@@ -1,10 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using CommandLine;
 using Creatio.Client;
-using Newtonsoft.Json;
 
 namespace Clio.Command
 {

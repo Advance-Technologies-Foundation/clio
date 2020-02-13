@@ -6,7 +6,7 @@ namespace Clio.Common
 	{
 		public IApplicationClient CreateClient(EnvironmentSettings environment) {
 			var creatioClient = new CreatioClient(environment.Uri, environment.Login, environment.Password,
-				environment.IsDevMode, environment.IsNetCore);
+				environment.UntrustedSSL, environment.IsNetCore);
 			return new CreatioClientAdapter(creatioClient);
 		}
 	}
