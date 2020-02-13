@@ -3,7 +3,7 @@ using System.IO;
 
 namespace Clio.Common
 {
-	public class TemplateUtilities : ITemplateUtilities
+	public class TemplateProvider : ITemplateProvider
 	{
 		private string ExecutingDirectorybyAppDomain => AppDomain.CurrentDomain.BaseDirectory;
 
