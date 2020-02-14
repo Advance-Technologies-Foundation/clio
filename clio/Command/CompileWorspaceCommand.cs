@@ -8,6 +8,8 @@ namespace Clio.Command
 	[Verb("build-workspace", Aliases = new[] { "build", "compile", "compile-all", "rebuild" }, HelpText = "Build/Rebuild worksapce for selected environment")]
 	public class CompileOptions : EnvironmentOptions
 	{
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
+		public string Name { get => Environment; set { Environment = value; } }
 	}
 
 	public class CompileWorkspaceCommand : BaseRemoteCommand
