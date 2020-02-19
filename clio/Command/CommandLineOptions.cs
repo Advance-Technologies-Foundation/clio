@@ -56,9 +56,6 @@ namespace Clio
 			}
 		}
 
-		[Option("ignore-ssl", Required = false, HelpText = "Ignore SSL certificate origin")]
-		public bool UntrustedSSL { get; set; }
-
 	}
 
 

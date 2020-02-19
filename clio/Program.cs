@@ -25,7 +25,6 @@ namespace Clio
 	{
 		private static string UserName => settings.Login;
 		private static bool IsDevMode => settings.IsDevMode;
-		private static bool UntrustedSSL => settings.UntrustedSSL;
 		private static string UserPassword => settings.Password;
 		private static string Url => settings.Uri; // Необходимо получить из конфига
 		private static string AppUrl
@@ -52,7 +51,7 @@ namespace Clio
 
 		private static CreatioClient CreatioClient
 		{
-			get => new CreatioClient(Url, UserName, UserPassword, UntrustedSSL, IsNetCore);
+			get => new CreatioClient(Url, UserName, UserPassword, true, IsNetCore);
 		}
 
 		public static bool Safe { get; private set; } = true;
@@ -180,7 +179,7 @@ namespace Clio
 		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
 			var settings = GetEnvironmentSettings(options);
-			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.UntrustedSSL, settings.IsNetCore);
+			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter, settings }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
@@ -189,7 +188,7 @@ namespace Clio
 		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
 			var settings = GetEnvironmentSettings(options);
-			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, settings.UntrustedSSL, settings.IsNetCore);
+			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, true , settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
