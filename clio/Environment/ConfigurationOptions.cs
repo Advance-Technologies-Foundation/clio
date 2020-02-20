@@ -53,12 +53,6 @@ namespace Clio
 		[JsonIgnore]
 		public bool IsDevMode { get => DeveloperModeEnabled ?? false; }
 
-		private bool untrustedSSL;
-		[JsonIgnore]
-		public bool UntrustedSSL {
-			get { return untrustedSSL || IsDevMode; }
-			set { untrustedSSL = value; }
-		}
 	}
 
 	public class Settings
@@ -218,7 +212,6 @@ namespace Clio
 					System.Environment.Exit(1);
 				}
 			}
-			result.UntrustedSSL = options.UntrustedSSL;
 			return result;
 		}
 

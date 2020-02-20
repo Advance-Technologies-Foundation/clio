@@ -10,6 +10,9 @@ namespace Clio.Command
 	[Verb("get-pkg-list", Aliases = new[] { "packages" }, HelpText = "Get environments packages")]
 	public class PkgListOptions : EnvironmentOptions
 	{
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
+		public string Name { get => Environment; set { Environment = value; } }
+
 		[Option('f', "Filter", Required = false, HelpText = "Contains name filter",
 		Default = null)]
 		public string SearchPattern { get; set; } = string.Empty;
@@ -38,13 +41,13 @@ namespace Clio.Command
 				Console.WriteLine(row);
 			}
 			Console.WriteLine();
-			Console.WriteLine($"Find {selectedPackages.Count()} packages");
+			Console.WriteLine($"Find {selectedPackages.Count()} packages in {Settings.Uri}");
 			return 0;
 		}
 
 		private static string GetFormatedString(params string[] args) {
 			int columnSize = 30;
-			string result = string.Empty;
+			string result = "  ";
 			for (int i = 0; i < args.Length; i++) {
 				int tabSize = columnSize * i - result.Length;
 				for (int j = 0; j < tabSize; j++) {
