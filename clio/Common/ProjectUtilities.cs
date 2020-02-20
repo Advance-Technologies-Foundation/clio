@@ -71,7 +71,23 @@ namespace Clio.Common
 		}
 
 		public void CompressProjects(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb) {
-			throw new NotImplementedException();
+			string tempPath = Path.Combine(Path.GetTempPath(), "Application_");// + DateTime.Now.ToShortDateString());
+			if (Directory.Exists(tempPath))
+			{
+				Directory.Delete(tempPath, true);
+			}
+			if (sourcePath == null)
+			{
+				sourcePath = Environment.CurrentDirectory;
+			}
+			Directory.CreateDirectory(tempPath);
+			foreach (var name in names)
+			{
+				var currentSourcePath = Path.Combine(sourcePath, name);
+				var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
+				CompressProject(currentSourcePath, currentDestinationPath, skipPdb);
+			}
+			ZipFile.CreateFromDirectory(tempPath, destinationPath);
 		}
 	}
 }
