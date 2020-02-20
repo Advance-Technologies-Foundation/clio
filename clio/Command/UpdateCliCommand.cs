@@ -22,7 +22,15 @@ namespace Clio.Command.UpdateCliCommand
 	{
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
+		private static void ShowNugetUpdateMessage() {
+			Console.WriteLine($"You should consider upgrading via the \'dotnet tool update clio -g\' command.", ConsoleColor.DarkYellow);
+		}
+
 		public static int UpdateCli(UpdateCliOptions options) {
+			if (IsWindowsEnvironment()) {
+				ShowNugetUpdateMessage();
+				return 1;
+			}
 			try {
 				var url = GetLastReleaseUrl();
 				var dir = AppDomain.CurrentDomain.BaseDirectory;
@@ -57,21 +65,24 @@ namespace Clio.Command.UpdateCliCommand
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
-				switch (Environment.OSVersion.Platform) {
-					case PlatformID.Win32NT:
-					case PlatformID.Win32S:
-					case PlatformID.Win32Windows:
-					case PlatformID.WinCE:
-						Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
-										 $"{Environment.NewLine}You should consider upgrading via the \'dotnet tool update clio -g\' command.",
-							ConsoleColor.DarkYellow);
-						break;
-					default:
-						Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available." +
-											 $"{Environment.NewLine}You should consider upgrading via the \'clio update-cli\' command.",
-								ConsoleColor.DarkYellow);
-						break;
+				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
+				if (IsWindowsEnvironment()) {
+					ShowNugetUpdateMessage();
+				} else {
+					Console.WriteLine( $"You should consider upgrading via the \'clio update-cli\' command.", ConsoleColor.DarkYellow);
 				}
+			}
+		}
+
+		private static bool IsWindowsEnvironment() {
+			switch (Environment.OSVersion.Platform) {
+				case PlatformID.Win32NT:
+				case PlatformID.Win32S:
+				case PlatformID.Win32Windows:
+				case PlatformID.WinCE:
+					return true;
+				default:
+					return false;
 			}
 		}
 

@@ -15,7 +15,7 @@ namespace Clio.Command
 
 		protected static CreatioClient CreatioClient
 		{
-			get => new CreatioClient(Url, UserName, UserPassword, UntrustedSSL, IsNetCore);
+			get => new CreatioClient(Url, UserName, UserPassword, true, IsNetCore);
 		}
 
 		public BaseRemoteCommand() {
@@ -29,7 +29,6 @@ namespace Clio.Command
 		private static string UserName => Settings.Login;
 		private static string UserPassword => Settings.Password;
 		private static string Url => Settings.Uri;
-		private static bool UntrustedSSL => Settings.UntrustedSSL;
 		protected static string AppUrl
 		{
 			get
