@@ -5,6 +5,7 @@ using System.Threading;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Command
 {
@@ -47,16 +48,17 @@ namespace Clio.Command
 			_scriptExecutor.Execute(script, ApplicationClient, settings);
 		}
 
-		private string InstallPackage(string filePath, EnvironmentOptions options) {
+		private (bool, string) InstallPackage(string filePath, EnvironmentOptions options) {
 			string fileName;
 			try {
 				fileName = UploadPackage(filePath);
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
-				return e.Message;
+				return (false, e.Message);
 			}
 			Console.WriteLine($"Install {fileName} ...");
-			ApplicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), "\"" + fileName + "\"", Timeout.Infinite);
+			string result = ApplicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), "\"" + fileName + "\"", Timeout.Infinite);
+			dynamic resultObj = JObject.Parse(result);
 			var settings = _settingsRepository.GetEnvironment(options);
 			if (settings.DeveloperModeEnabled.HasValue && settings.DeveloperModeEnabled.Value) {
 				UnlockMaintainerPackageInternal(settings);
@@ -65,7 +67,7 @@ namespace Clio.Command
 			var logText = GetLog();
 			Console.WriteLine("Installation log:");
 			Console.WriteLine(logText);
-			return logText;
+			return (resultObj.success, logText);
 		}
 
 		private string GetLog() {
@@ -92,31 +94,32 @@ namespace Clio.Command
 		}
 
 		public override int Execute(PushPkgOptions options) {
+			var result = (success: false, logText: String.Empty);
 			try {
 				if (options.Name == null) {
 					options.Name = Environment.CurrentDirectory;
 				}
 				string logText = string.Empty;
 				if (File.Exists(options.Name)) {
-					logText = InstallPackage(options.Name, options);
+					result = InstallPackage(options.Name, options);
 				} else if (Directory.Exists(options.Name)) {
 					var folderPath = options.Name;
 					var filePath = options.Name + ".gz";
 					_projectUtilities.CompressProject(folderPath, filePath, false);
-					logText = InstallPackage(filePath, options);
+					result = InstallPackage(filePath, options);
 					File.Delete(filePath);
 				} else {
 					Console.WriteLine("Specified package not found.");
 				}
-				if (options.ReportPath != null) {
-					SaveLogFile(logText, options.ReportPath);
-				}
 				Console.WriteLine("Done");
-				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
-				return 1;
 			}
+			if (options.ReportPath != null)
+			{
+				SaveLogFile(result.logText, options.ReportPath);
+			}
+			return (result.success) ? 0 : 1;
 		}
 	}
 }
