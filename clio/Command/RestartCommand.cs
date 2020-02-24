@@ -18,31 +18,7 @@ namespace Clio.Command
 			: base(applicationClient, settings) {
 		}
 
-		private string UnloadAppDomainUrl
-		{
-			get
-			{
-				if (EnvironmentSettings.IsNetCore) {
-					return EnvironmentSettings.Uri + @"/ServiceModel/AppInstallerService.svc/RestartApp";
-				} else {
-					return EnvironmentSettings.Uri + @"/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-				}
-			}
-		}
+		protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/RestartApp";
 
-		private void RestartInternal() {
-			ApplicationClient.ExecutePostRequest(UnloadAppDomainUrl, @"{}");
-		}
-
-		public override int Execute(RestartOptions options) {
-			try {
-				RestartInternal();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
-		}
 	}
 }
