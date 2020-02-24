@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net;
+using System.Threading;
 using Clio.Common;
 
 namespace Clio.Command
@@ -11,6 +12,8 @@ namespace Clio.Command
 			? EnvironmentSettings.Uri : EnvironmentSettings.Uri + @"/0";
 
 		protected virtual string ServicePath { get; set; }
+
+		protected virtual int RequestTimeout => Timeout.Infinite;
 
 		protected string ServiceUri => RootPath + ServicePath;
 
@@ -51,7 +54,7 @@ namespace Clio.Command
 		}
 
 		private void ExecuteRemoteCommand(TEnvironmentOptions options) {
-			ApplicationClient.ExecutePostRequest(ServiceUri, GetResponseData(options));
+			ApplicationClient.ExecutePostRequest(ServiceUri, GetResponseData(options), RequestTimeout);
 		}
 
 		protected string GetResponseData(EnvironmentOptions options) {

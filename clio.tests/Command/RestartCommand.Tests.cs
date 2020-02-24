@@ -1,6 +1,7 @@
 ﻿namespace Clio.Tests.Command
 {
-	using Clio.Command;
+    using System.Threading;
+    using Clio.Command;
 	using Clio.Common;
 	using NSubstitute;
 	using NUnit.Framework;
@@ -23,7 +24,7 @@
 			restartCommand.Execute(options);
 			applicationClient.Received(1).ExecutePostRequest(
 				environmentSettings.Uri + "/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain",
-				"{}");
+				"{}", Timeout.Infinite);
 		}
 
 		[Test, Category("Unit")]
@@ -41,7 +42,7 @@
 			restartCommand.Execute(options);
 			applicationClient.Received(1).ExecutePostRequest(
 				environmentSettings.Uri + "/ServiceModel/AppInstallerService.svc/RestartApp",
-				"{}");
+				"{}", Timeout.Infinite);
 		}
 	}
 }

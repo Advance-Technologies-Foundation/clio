@@ -15,7 +15,7 @@ namespace Clio.Command
 			: base(applicationClient, settings) {
 		}
 
-		protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/RestartApp";
+		protected override string ServicePath => EnvironmentSettings.IsNetCore ? @"/ServiceModel/AppInstallerService.svc/RestartApp" : @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 
 	}
 }

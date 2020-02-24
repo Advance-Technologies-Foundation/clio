@@ -1,6 +1,7 @@
 ﻿namespace Clio.Tests.Command
 {
-	using Clio.Command;
+    using System.Threading;
+    using Clio.Command;
 	using Clio.Common;
 	using NSubstitute;
 	using NUnit.Framework;
@@ -21,7 +22,7 @@
 			redisCommand.Execute(clearRedisOptions);
 			applicationClient.Received(1).ExecutePostRequest(
 				testUri + "/0/ServiceModel/AppInstallerService.svc/ClearRedisDb",
-				"{}");
+				"{}", Timeout.Infinite);
 		}
 
 		[Test, Category("Unit")]
@@ -37,7 +38,7 @@
 			redisCommand.Execute(clearRedisOptions);
 			applicationClient.Received(1).ExecutePostRequest(
 				testUri + "/ServiceModel/AppInstallerService.svc/ClearRedisDb",
-				"{}");
+				"{}", Timeout.Infinite);
 		}
 	}
 }
