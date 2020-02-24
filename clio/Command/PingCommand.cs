@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using Clio.Common;
 using CommandLine;
 
@@ -18,13 +19,20 @@ namespace Clio.Command
 		}
 
 		public override int Execute(PingAppOptions options) {
+			EnvironmentSettings env = null;
 			try {
 				var settings = new SettingsRepository();
-				var env = settings.GetEnvironment(options);
+				env = settings.GetEnvironment(options);
 				Console.WriteLine($"Try login to {env.Uri} with {env.Login} credentials...");
 				ApplicationClient.Login();
 				Console.WriteLine("Login done");
 				return 0;
+			} catch (WebException we) {
+				HttpWebResponse errorResponse = we.Response as HttpWebResponse;
+				if (errorResponse.StatusCode == HttpStatusCode.NotFound) {
+					Console.WriteLine($"Application {env.Uri} not found");
+				}
+				return 1;
 			} catch (Exception e) {
 				Console.WriteLine(e);
 				return 1;
