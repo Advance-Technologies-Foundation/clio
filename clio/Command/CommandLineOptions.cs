@@ -58,6 +58,12 @@ namespace Clio
 
 	}
 
+	public class EnvironmentNameOptions: EnvironmentOptions
+	{
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
+		public string Name { get => Environment; set { Environment = value; } }
+	}
+
 
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions

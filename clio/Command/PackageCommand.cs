@@ -8,10 +8,8 @@ using Newtonsoft.Json;
 namespace Clio.Command
 {
 	[Verb("get-pkg-list", Aliases = new[] { "packages" }, HelpText = "Get environments packages")]
-	public class PkgListOptions : EnvironmentOptions
+	public class PkgListOptions : EnvironmentNameOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get => Environment; set { Environment = value; } }
 
 		[Option('f', "Filter", Required = false, HelpText = "Contains name filter",
 		Default = null)]
