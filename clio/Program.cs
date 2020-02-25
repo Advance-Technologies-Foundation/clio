@@ -11,6 +11,7 @@ using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Project;
+using Clio.Project.NuGet;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
@@ -199,6 +200,17 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
+		private static PushNuGetPackagesCommand CreatePushNuGetPkgsCommand(PushNuGetPkgsOptions opts) {
+			var dotnetExecutor = new DotnetExecutor();
+			var workingDirectoriesProvider = new WorkingDirectoriesProvider();
+			var templateProvider = new TemplateProvider(workingDirectoriesProvider);
+			var nuspecFilesGenerator = new NuspecFilesGenerator(templateProvider);
+			var nugetPacker = new NugetPacker(templateProvider, dotnetExecutor, workingDirectoriesProvider);
+			var nuGetManager = new NuGetManager(nuspecFilesGenerator, nugetPacker, dotnetExecutor);
+			return CreateCommand<PushNuGetPackagesCommand>(GetEnvironmentSettings(opts),
+				new PackageFinder(), nuGetManager);
+		}
+
 		private static int Main(string[] args) {
 			var autoupdate = new SettingsRepository().GetAutoupdate();
 			if (autoupdate) {
@@ -259,9 +271,7 @@ namespace Clio
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
 					(CompileOptions opts) => CompileWorkspaceCommand.Compile(opts),
-					(PushNuGetPkgsOptions opts) => CreateCommand<PushNuGetPackagesCommand>(
-						GetEnvironmentSettings(opts), new PackageFinder(), 
-						new NuspecFilesGenerator(new TemplateProvider())).Execute(opts),
+					(PushNuGetPkgsOptions opts) => CreatePushNuGetPkgsCommand(opts).Execute(opts),
 					errs => 1);
 		}
 

@@ -168,8 +168,11 @@
     <None Update="tpl\Package.nuspec.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="updater.runtimeconfig.json">
+    <None Update="tpl\NugetPackProj.csproj.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="updater.runtimeconfig.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>    
   </ItemGroup>
 </Project>
