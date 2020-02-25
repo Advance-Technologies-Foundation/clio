@@ -6,14 +6,10 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
-	public class RegAppOptions : EnvironmentOptions
+	public class RegAppOptions : EnvironmentNameOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of configured application")]
-		public string Name { get => Environment; set { Environment = value; } }
-
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
 		public string ActiveEnvironment { get; set; }
-
 	}
 
 	public class RegAppCommand : Command<RegAppOptions>

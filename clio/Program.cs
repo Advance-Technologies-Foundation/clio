@@ -270,7 +270,7 @@ namespace Clio
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
-					(CompileOptions opts) => CompileWorkspaceCommand.Compile(opts),
+					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => CreatePushNuGetPkgsCommand(opts).Execute(opts),
 					errs => 1);
 		}

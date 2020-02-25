@@ -1,35 +1,22 @@
-﻿using System;
-using System.Threading;
+﻿using Clio.Common;
 using CommandLine;
-using Creatio.Client;
 
 namespace Clio.Command
 {
 	[Verb("build-workspace", Aliases = new[] { "build", "compile", "compile-all", "rebuild" }, HelpText = "Build/Rebuild worksapce for selected environment")]
-	public class CompileOptions : EnvironmentOptions
+	public class CompileOptions : EnvironmentNameOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get => Environment; set { Environment = value; } }
 	}
 
-	public class CompileWorkspaceCommand : BaseRemoteCommand
-	{
-		private static string ServiceUrl => AppUrl + @"/rest/CreatioApiGateway/CompileWorkspace";
 
-		public static int Compile(CompileOptions options) {
-			try {
-				Configure(options);
-				var scriptData = "{}";
-				string responseFormServer = CreatioClient.ExecutePostRequest(ServiceUrl, scriptData, Timeout.Infinite);
-				Console.WriteLine(responseFormServer);
-				Console.WriteLine($"Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine("Error execute command...");
-				Console.WriteLine(e.Message);
-				return 1;
-			}
+	public class CompileWorkspaceCommand : RemoteCommand<CompileOptions>
+	{
+		public CompileWorkspaceCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+			: base(applicationClient, settings) {
 		}
 
+		protected override string ServicePath => @"/rest/CreatioApiGateway/CompileWorkspace";
+
 	}
+
 }
