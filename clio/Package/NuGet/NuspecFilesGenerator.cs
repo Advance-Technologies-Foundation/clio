@@ -21,14 +21,10 @@ namespace Clio.Project.NuGet
 			_templateProvider = templateProvider;
 		}
 
-		private string GetNuspecFileName(PackageInfo packageInfo) {
-			return $"{packageInfo.Name}.{NuspecExtension}";
-		}
-		
-		private string GetNuspecFilesSection(string nuspecFilesDirectory, PackageInfo packageInfo) {
+		private string GetNuspecFilesSection(PackageInfo packageInfo) {
 			var sb = new StringBuilder();
 			foreach (string filePath in packageInfo.FilePaths) {
-				string target = filePath.Replace(nuspecFilesDirectory, string.Empty);
+				string target = filePath.Replace(packageInfo.PackagePath, string.Empty);
 				string fileRecord = FileRecordTemplate
 					.Replace("$src$", filePath)
 					.Replace("$target$", target);
@@ -37,26 +33,23 @@ namespace Clio.Project.NuGet
 			return sb.ToString();
 		}
 
-		private string GetNuspecDependenciesSection(PackageInfo packageInfo, string version, 
-				IDictionary<string, PackageInfo> packagesInfo) {
+		private string GetNuspecDependenciesSection(IEnumerable<DependencyInfo> dependencies) {
 			var sb = new StringBuilder();
-			foreach (string dependency in packageInfo.Depends) {
-				if (!packagesInfo.ContainsKey(dependency)) {
-					continue;
-				}
-				string dependencyVersion = DependencyVersionTemplate.Replace("$version$", version);
+			foreach (DependencyInfo dependency in dependencies) {
+				string dependencyVersion = DependencyVersionTemplate
+					.Replace("$version$", dependency.PackageVersion);
 				string fileRecord = DependencyRecordTemplate
-					.Replace("$id$", dependency)
+					.Replace("$id$", dependency.Name)
 					.Replace("$version$", dependencyVersion);
 				sb.AppendLine(fileRecord);
 			}
 			return sb.ToString();
 		}
 
-		private string ReplaceMacro(string template, string version, PackageInfo packageInfo, string filesSection,
+		private string ReplaceMacro(string template, PackageInfo packageInfo, string filesSection,
 				string dependenciesSection) {
 			return template.Replace("$id$", packageInfo.Name)
-				.Replace("$version$", version)
+				.Replace("$version$", packageInfo.PackageVersion)
 				.Replace("$authors$", packageInfo.Maintainer)
 				.Replace("$owners$", packageInfo.Maintainer)
 				.Replace("$copyright$", $"Copyright {DateTime.Now.Year}")
@@ -64,23 +57,26 @@ namespace Clio.Project.NuGet
 				.Replace("$files$", filesSection);
 		}
 
-		private void CreateFromTpl(string filePath, string version, PackageInfo packageInfo,  string filesSection,
-				string dependenciesSection) {
+		private void CreateFromTemplate(PackageInfo packageInfo, string filesSection, string dependenciesSection,
+				string filePath) {
 			string template = _templateProvider.GetTemplate(_packageNuspecFileName);
-			string nuspecFileContent = ReplaceMacro(template, version, packageInfo, filesSection, dependenciesSection);
+			string nuspecFileContent = ReplaceMacro(template, packageInfo, filesSection, dependenciesSection);
 			File.WriteAllText(filePath, nuspecFileContent);
 		}
 
-		public void Create(string packagesPath, IDictionary<string, PackageInfo> packagesInfo, string version) {
-			packagesPath.CheckArgumentNullOrWhiteSpace(nameof(packagesPath));
-			packagesInfo.CheckArgumentNull(nameof(packagesInfo));
-			version.CheckArgumentNullOrWhiteSpace(nameof(version));
-			foreach (PackageInfo packageInfo in packagesInfo.Values) {
-				string nuspecFilePath = Path.Combine(packagesPath, GetNuspecFileName(packageInfo));
-				string filesSection = GetNuspecFilesSection(packagesPath, packageInfo);
-				string dependenciesSection = GetNuspecDependenciesSection(packageInfo, version, packagesInfo);
-				CreateFromTpl(nuspecFilePath, version, packageInfo, filesSection, dependenciesSection);
-			}
+		public string GetNuspecFileName(PackageInfo packageInfo) {
+			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NuspecExtension}";
 		}
+
+		public void Create(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, string nuspecFilePath) {
+			packageInfo.CheckArgumentNull(nameof(packageInfo));
+			dependencies.CheckArgumentNull(nameof(dependencies));
+			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
+			string filesSection = GetNuspecFilesSection(packageInfo);
+			string dependenciesSection = GetNuspecDependenciesSection(dependencies);
+			CreateFromTemplate(packageInfo, filesSection, dependenciesSection, nuspecFilePath);
+		}
+
 	}
+
 }

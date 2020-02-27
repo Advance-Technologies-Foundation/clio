@@ -4,6 +4,9 @@ namespace Clio.Project.NuGet
 {
 	public interface INuspecFilesGenerator
 	{
-		void Create(string packagesPath, IDictionary<string, PackageInfo> packagesInfo, string version);
+
+		string GetNuspecFileName(PackageInfo packageInfo);
+
+		void Create(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, string nuspecFilePath);
 	}
 }

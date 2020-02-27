@@ -4,16 +4,17 @@ namespace Clio.Project.NuGet
 {
 	public interface INuGetManager
 	{
-		IEnumerable<string> GetNuspecFilesPaths(string nuspecFilesDirectory);
 
-		IEnumerable<string> GetNupkgFilesPaths(string nupkgFilesDirectory);
+		string GetNuspecFileName(PackageInfo packageInfo);
 
-		void CreateNuspecFiles(string packagesPath, IDictionary<string, PackageInfo> packagesInfo, 
-			string version);
+		string GetNupkgFileName(PackageInfo packageInfo);
 
-		void Pack(IEnumerable<string> nuspecFilesPaths, string destinationNupkgDirectory);
+		void CreateNuspecFile(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, 
+			string nuspecFilePath);
 
-		void Push(IEnumerable<string> nupkgFilesPaths, string apiKey, string nugetSourceUrl);
+		void Pack(string nuspecFilePath, string nupkgFilePath);
+
+		void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl);
 
 	}
 }

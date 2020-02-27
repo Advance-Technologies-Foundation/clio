@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Clio.Common;
@@ -20,30 +21,27 @@ namespace Clio.Project.NuGet
 			_dotnetExecutor = dotnetExecutor;
 		}
 
-		public IEnumerable<string> GetNuspecFilesPaths(string nuspecFilesDirectory) {
-			nuspecFilesDirectory.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilesDirectory));
-			return Directory.EnumerateFiles(nuspecFilesDirectory, $"*.{NuspecFilesGenerator.NuspecExtension}");
-		}
+		public string GetNuspecFileName(PackageInfo packageInfo) =>
+			_nuspecFilesGenerator.GetNuspecFileName(packageInfo);
 
-		public IEnumerable<string> GetNupkgFilesPaths(string nupkgFilesDirectory) {
-			nupkgFilesDirectory.CheckArgumentNullOrWhiteSpace(nameof(nupkgFilesDirectory));
-			return Directory.EnumerateFiles(nupkgFilesDirectory, $"*.{NugetPacker.NupkgExtension}");
-		}
+		public string GetNupkgFileName(PackageInfo packageInfo) => _nugetPacker.GetNupkgFileName(packageInfo);
 
-		public void CreateNuspecFiles(string packagesPath, IDictionary<string, PackageInfo> packagesInfo, 
-			string version) => _nuspecFilesGenerator.Create(packagesPath, packagesInfo, version);
+		public void CreateNuspecFile(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, 
+				string nuspecFilePath) => 
+			_nuspecFilesGenerator.Create(packageInfo, dependencies, nuspecFilePath);
 
-		public void Pack(IEnumerable<string> nuspecFilesPaths, string destinationNupkgDirectory)
-			=> _nugetPacker.Pack(nuspecFilesPaths, destinationNupkgDirectory);
+		public void Pack(string nuspecFilePath, string nupkgFilePath)
+			=> _nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
 
-		public void Push(IEnumerable<string> nupkgFilesPaths, string apiKey, string nugetSourceUrl) {
-			nupkgFilesPaths.CheckArgumentNull(nameof(nupkgFilesPaths));
+		public void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
+			nupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(nupkgFilePath));
 			apiKey.CheckArgumentNullOrWhiteSpace(nameof(apiKey));
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
-			foreach (string nupkgFilePath in nupkgFilesPaths) {
-				string pushCommand = $"nuget push {nupkgFilePath} -k {apiKey} -s {nugetSourceUrl}";
-				_dotnetExecutor.Execute(pushCommand, true);
+			if (!File.Exists(nupkgFilePath)) {
+				throw new InvalidOperationException($"Invalid nupkg file path '{nupkgFilePath}'");
 			}
+			string pushCommand = $"nuget push \"{nupkgFilePath}\" -k {apiKey} -s {nugetSourceUrl}";
+			_dotnetExecutor.Execute(pushCommand, true);
 		}
 
 	}

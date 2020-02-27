@@ -200,15 +200,21 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
-		private static PushNuGetPackagesCommand CreatePushNuGetPkgsCommand(PushNuGetPkgsOptions opts) {
+		private static INuGetManager CreateNuGetManager() {
 			var dotnetExecutor = new DotnetExecutor();
 			var workingDirectoriesProvider = new WorkingDirectoriesProvider();
 			var templateProvider = new TemplateProvider(workingDirectoriesProvider);
 			var nuspecFilesGenerator = new NuspecFilesGenerator(templateProvider);
 			var nugetPacker = new NugetPacker(templateProvider, dotnetExecutor, workingDirectoriesProvider);
-			var nuGetManager = new NuGetManager(nuspecFilesGenerator, nugetPacker, dotnetExecutor);
-			return CreateCommand<PushNuGetPackagesCommand>(GetEnvironmentSettings(opts),
-				new PackageFinder(), nuGetManager);
+			return new NuGetManager(nuspecFilesGenerator, nugetPacker, dotnetExecutor);
+		}
+
+		private static PushNuGetPackagesCommand CreatePushNuGetPkgsCommand() {
+			return CreateCommand<PushNuGetPackagesCommand>(CreateNuGetManager());
+		}
+
+		private static PackNuGetPackageCommand CreatePackNuGetPackageCommand() {
+			return CreateCommand<PackNuGetPackageCommand>(new PackageInfoProvider(), CreateNuGetManager());
 		}
 
 		private static int Main(string[] args) {
@@ -228,7 +234,7 @@ namespace Clio
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
 					PullPkgOptions,	UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
-					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions>(args)
+					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -271,7 +277,8 @@ namespace Clio
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
-					(PushNuGetPkgsOptions opts) => CreatePushNuGetPkgsCommand(opts).Execute(opts),
+					(PushNuGetPkgsOptions opts) => CreatePushNuGetPkgsCommand().Execute(opts),
+					(PackNuGetPkgOptions opts) => CreatePackNuGetPackageCommand().Execute(opts),
 					errs => 1);
 		}
 
