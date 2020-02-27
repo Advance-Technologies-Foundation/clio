@@ -9,15 +9,18 @@ namespace Clio.Project.NuGet
 	{
 		private readonly INuspecFilesGenerator _nuspecFilesGenerator;
 		private readonly INugetPacker _nugetPacker;
+		private readonly INugetPackageRestorer _nugetPackageRestorer;
 		private readonly IDotnetExecutor _dotnetExecutor;
 
 		public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker, 
-				IDotnetExecutor dotnetExecutor) {
+				INugetPackageRestorer nugetPackageRestorer, IDotnetExecutor dotnetExecutor) {
 			nuspecFilesGenerator.CheckArgumentNull(nameof(nuspecFilesGenerator));
 			nugetPacker.CheckArgumentNull(nameof(nugetPacker));
+			nugetPackageRestorer.CheckArgumentNull(nameof(nugetPackageRestorer));
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
 			_nuspecFilesGenerator = nuspecFilesGenerator;
 			_nugetPacker = nugetPacker;
+			_nugetPackageRestorer = nugetPackageRestorer;
 			_dotnetExecutor = dotnetExecutor;
 		}
 
@@ -30,10 +33,10 @@ namespace Clio.Project.NuGet
 				string nuspecFilePath) => 
 			_nuspecFilesGenerator.Create(packageInfo, dependencies, nuspecFilePath);
 
-		public void Pack(string nuspecFilePath, string nupkgFilePath)
+		public string Pack(string nuspecFilePath, string nupkgFilePath)
 			=> _nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
 
-		public void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
+		public string Push(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
 			nupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(nupkgFilePath));
 			apiKey.CheckArgumentNullOrWhiteSpace(nameof(apiKey));
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
@@ -41,8 +44,11 @@ namespace Clio.Project.NuGet
 				throw new InvalidOperationException($"Invalid nupkg file path '{nupkgFilePath}'");
 			}
 			string pushCommand = $"nuget push \"{nupkgFilePath}\" -k {apiKey} -s {nugetSourceUrl}";
-			_dotnetExecutor.Execute(pushCommand, true);
+			return _dotnetExecutor.Execute(pushCommand, true);
 		}
+
+		public string Restore(string name, string version, string nugetSourceUrl, string destinationNupkgDirectory) =>
+				_nugetPackageRestorer.Restore(name, version, nugetSourceUrl, destinationNupkgDirectory);
 
 	}
 

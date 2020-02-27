@@ -173,6 +173,9 @@
     </None>
     <None Update="updater.runtimeconfig.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>    
+    </None>
+    <None Update="tpl\NugetRestoreProj.csproj.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

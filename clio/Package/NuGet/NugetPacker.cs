@@ -41,9 +41,9 @@ namespace Clio.Project.NuGet
 			return nupkgFilePath;
 		}
 
-		private void PackPackage(string nugetPackProjPath, string nuspecFilePath) {
+		private string PackPackage(string nugetPackProjPath, string nuspecFilePath) {
 			string packCommand = $"pack \"{nugetPackProjPath}\" -p:NuspecFile=\"{nuspecFilePath}\"";
-			_dotnetExecutor.Execute(packCommand, true);
+			return _dotnetExecutor.Execute(packCommand, true);
 		}
  
 		private void CopyNupkgFileToDestinationDirectory(string sourceNupkgFilePath, string destinationNupkgFilePath) {
@@ -56,11 +56,17 @@ namespace Clio.Project.NuGet
 			File.Copy(sourceNupkgFilePath, destinationNupkgFilePath);
 		}
 
+		private string ReplaceInOutputResult(string outputResult, string nugetPackProjPath, string sourceNupkgFilePath, 
+				string destinationNupkgFilePath) {
+			return outputResult.Replace(nugetPackProjPath, "nuspec file")
+				.Replace(sourceNupkgFilePath, destinationNupkgFilePath);
+		}
+
 		public string GetNupkgFileName(PackageInfo packageInfo) {
 			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NupkgExtension}";
 		}
 
-		public void Pack(string nuspecFilePath, string destinationNupkgFilePath) {
+		public string Pack(string nuspecFilePath, string destinationNupkgFilePath) {
 			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
 			destinationNupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgFilePath));
 			if (!File.Exists(nuspecFilePath)) {
@@ -70,9 +76,12 @@ namespace Clio.Project.NuGet
 			try {
 				string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
 				CreateNugetPackProj(nugetPackProjPath);
-				PackPackage(nugetPackProjPath, nuspecFilePath);
+				string result = PackPackage(nugetPackProjPath, nuspecFilePath);
 				string sourceNupkgFilePath = GetNupkgFilePath(nugetPackProjPath);
 				CopyNupkgFileToDestinationDirectory(sourceNupkgFilePath, destinationNupkgFilePath);
+				result = ReplaceInOutputResult(result, nugetPackProjPath, sourceNupkgFilePath,
+					destinationNupkgFilePath);
+				return result;
 			} finally {
 				_workingDirectoriesProvider.SafeDeleteTempDirectory(tempDirectory);
 			}

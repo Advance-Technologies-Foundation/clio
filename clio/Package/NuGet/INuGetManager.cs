@@ -12,9 +12,10 @@ namespace Clio.Project.NuGet
 		void CreateNuspecFile(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, 
 			string nuspecFilePath);
 
-		void Pack(string nuspecFilePath, string nupkgFilePath);
+		string Pack(string nuspecFilePath, string nupkgFilePath);
 
-		void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl);
+		string Push(string nupkgFilePath, string apiKey, string nugetSourceUrl);
 
+		string Restore(string name, string version, string nugetSourceUrl, string destinationNupkgDirectory);
 	}
 }

@@ -35,7 +35,8 @@ namespace Clio.Command
 
 		public override int Execute(PushNuGetPkgsOptions options) {
 			try {
-				_nugetManager.Push(options.NugetPkgPath, options.ApiKey, options.SourceUrl);
+				string result = _nugetManager.Push(options.NugetPkgPath, options.ApiKey, options.SourceUrl);
+				Console.WriteLine(result);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

@@ -206,7 +206,9 @@ namespace Clio
 			var templateProvider = new TemplateProvider(workingDirectoriesProvider);
 			var nuspecFilesGenerator = new NuspecFilesGenerator(templateProvider);
 			var nugetPacker = new NugetPacker(templateProvider, dotnetExecutor, workingDirectoriesProvider);
-			return new NuGetManager(nuspecFilesGenerator, nugetPacker, dotnetExecutor);
+			var nugetPackageRestorer = new NugetPackageRestorer(templateProvider, dotnetExecutor, 
+				workingDirectoriesProvider);
+			return new NuGetManager(nuspecFilesGenerator, nugetPacker, nugetPackageRestorer, dotnetExecutor);
 		}
 
 		private static PushNuGetPackagesCommand CreatePushNuGetPkgsCommand() {
@@ -215,6 +217,27 @@ namespace Clio
 
 		private static PackNuGetPackageCommand CreatePackNuGetPackageCommand() {
 			return CreateCommand<PackNuGetPackageCommand>(new PackageInfoProvider(), CreateNuGetManager());
+		}
+
+		private static PushPackageCommand CreatePushPackageCommand(EnvironmentOptions options) {
+			return CreateRemoteCommand<PushPackageCommand>(options, new ProjectUtilities(), 
+				new SettingsRepository(), new SqlScriptExecutor());
+		}
+
+		private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
+				var dir = AppDomain.CurrentDomain.BaseDirectory;
+				var settingsRepository = new SettingsRepository();
+				var settings = settingsRepository.GetEnvironment(options);
+				string packageFolder = settings.IsNetCore ? "netstandard" : "netframework";
+				string packageFilePath = Path.Combine(dir, "cliogate", packageFolder, "cliogate.gz");
+				return new PushPkgOptions {
+					Name = packageFilePath
+				};
+		}
+
+		private static RestoreNugetPackageCommand CreateRestoreNugetPackageCommand(EnvironmentOptions options) {
+			return CreateCommand<RestoreNugetPackageCommand>(CreateNuGetManager(), 
+				CreatePushPackageCommand(options));
 		}
 
 		private static int Main(string[] args) {
@@ -234,7 +257,8 @@ namespace Clio
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
 					PullPkgOptions,	UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
-					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions>(args)
+					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
+					RestoreNugetPkgOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -244,8 +268,7 @@ namespace Clio
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(new ProjectUtilities()).Execute(opts),
-					(PushPkgOptions opts) => CreateRemoteCommand<PushPackageCommand>(opts,
-						new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor()).Execute(opts),
+					(PushPkgOptions opts) => CreatePushPackageCommand(opts).Execute(opts),
 					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
@@ -256,18 +279,8 @@ namespace Clio
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
 					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts, new SqlScriptExecutor()).Execute(opts),
-					(InstallGateOptions opts) => {
-						var dir = AppDomain.CurrentDomain.BaseDirectory;
-						var settingsRepository = new SettingsRepository();
-						var settings = settingsRepository.GetEnvironment(opts);
-						string packageFolder = settings.IsNetCore ? "netstandard" : "netframework";
-						string packageFilePath = Path.Combine(dir, "cliogate", packageFolder, "cliogate.gz");
-						return CreateRemoteCommand<PushPackageCommand>(opts,
-								new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor())
-							.Execute(new PushPkgOptions {
-								Name = packageFilePath
-							});
-					},
+					(InstallGateOptions opts) => CreatePushPackageCommand(opts)
+							.Execute(CreatePushPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
@@ -279,6 +292,7 @@ namespace Clio
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => CreatePushNuGetPkgsCommand().Execute(opts),
 					(PackNuGetPkgOptions opts) => CreatePackNuGetPackageCommand().Execute(opts),
+					(RestoreNugetPkgOptions opts) => CreateRestoreNugetPackageCommand(opts).Execute(opts),
 					errs => 1);
 		}
 

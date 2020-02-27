@@ -86,7 +86,8 @@ namespace Clio.Command
 				_nugetManager.CreateNuspecFile(packageInfo, dependencies, nuspecFilePath);
 				string nupkgFileName = _nugetManager.GetNupkgFileName(packageInfo);
 				string nupkgFilePath = Path.Combine(options.NupkgDirectory, nupkgFileName); 
-				_nugetManager.Pack(nuspecFilePath, nupkgFilePath);
+				string result = _nugetManager.Pack(nuspecFilePath, nupkgFilePath);
+				Console.WriteLine(result);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

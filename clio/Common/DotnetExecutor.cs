@@ -6,7 +6,7 @@ namespace Clio.Common
 	public class DotnetExecutor : IDotnetExecutor
 	{
 
-		public void Execute(string command, bool waitForExit, string workingDirectory = null) {
+		public string Execute(string command, bool waitForExit, string workingDirectory = null) {
 			command.CheckArgumentNullOrWhiteSpace(nameof(command));
 			using (var process = new Process()) {
 				process.StartInfo = new ProcessStartInfo {
@@ -14,13 +14,15 @@ namespace Clio.Common
 					Arguments = command,
 					CreateNoWindow = true,
 					UseShellExecute = false,
-					WorkingDirectory = workingDirectory
+					WorkingDirectory = workingDirectory,
+					RedirectStandardOutput = true,
 				};
+				process.EnableRaisingEvents = waitForExit;
 				process.Start();
 				if (waitForExit) {
-					process.EnableRaisingEvents = true;
 					process.WaitForExit();
 				}
+				return process.StandardOutput.ReadToEnd();
 			}
 		}
 
