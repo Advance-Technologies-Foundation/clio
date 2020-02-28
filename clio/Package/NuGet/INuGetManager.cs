@@ -5,14 +5,8 @@ namespace Clio.Project.NuGet
 	public interface INuGetManager
 	{
 
-		string GetNuspecFileName(PackageInfo packageInfo);
-
-		string GetNupkgFileName(PackageInfo packageInfo);
-
-		void CreateNuspecFile(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, 
-			string nuspecFilePath);
-
-		string Pack(string nuspecFilePath, string nupkgFilePath);
+		string Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb,
+			string destinationNupkgDirectory);
 
 		string Push(string nupkgFilePath, string apiKey, string nugetSourceUrl);
 

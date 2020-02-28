@@ -6,13 +6,13 @@ namespace Clio
 	{
 
 		public PackageInfo(string name, string packageVersion, string maintainer, string packagePath, 
-				IEnumerable<string> filePaths, IEnumerable<DependencyInfo> depends) {
+				IEnumerable<string> filePaths, IEnumerable<PackageDependency> packageDependencies) {
 			Name = name;
 			PackageVersion = packageVersion;
 			Maintainer = maintainer;
 			PackagePath = packagePath;
 			FilePaths = filePaths;
-			Depends = depends;
+			PackageDependencies = packageDependencies;
 		}
 
 		public string Name { get; }
@@ -20,7 +20,7 @@ namespace Clio
 		public string Maintainer { get; }
 		public string PackagePath  { get; }
 		public IEnumerable<string> FilePaths { get; }
-		public IEnumerable<DependencyInfo> Depends { get; }
+		public IEnumerable<PackageDependency> PackageDependencies { get; }
 
 	}
 }

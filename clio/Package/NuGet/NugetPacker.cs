@@ -58,7 +58,7 @@ namespace Clio.Project.NuGet
 
 		private string ReplaceInOutputResult(string outputResult, string nugetPackProjPath, string sourceNupkgFilePath, 
 				string destinationNupkgFilePath) {
-			return outputResult.Replace(nugetPackProjPath, "nuspec file")
+			return outputResult.Replace(nugetPackProjPath, "nuget file")
 				.Replace(sourceNupkgFilePath, destinationNupkgFilePath);
 		}
 

@@ -10,7 +10,7 @@ namespace Clio.Project.NuGet
 	{
 		public const string NuspecExtension = "nuspec";
 
-		private const string FileRecordTemplate = "    <file src=\"$src$\" target=\"tools$target$\" />";
+		private const string FileRecordTemplate = "    <file src=\"$src$\" target=\"tools\\$target$\" />";
 		private const string DependencyRecordTemplate = "      <dependency id=\"$id$\"$version$ />";
 		private const string DependencyVersionTemplate = " version=\"$version$\"";
 		private readonly string _packageNuspecFileName = $"Package.{NuspecExtension}";
@@ -21,21 +21,16 @@ namespace Clio.Project.NuGet
 			_templateProvider = templateProvider;
 		}
 
-		private string GetNuspecFilesSection(PackageInfo packageInfo) {
-			var sb = new StringBuilder();
-			foreach (string filePath in packageInfo.FilePaths) {
-				string target = filePath.Replace(packageInfo.PackagePath, string.Empty);
-				string fileRecord = FileRecordTemplate
-					.Replace("$src$", filePath)
-					.Replace("$target$", target);
-				sb.AppendLine(fileRecord);
-			}
-			return sb.ToString();
+		private string GetNuspecFilesSection(string compressedPackagePath) {
+			var compressedPackageFileInfo = new FileInfo(compressedPackagePath);
+			return FileRecordTemplate
+				.Replace("$src$", compressedPackagePath)
+				.Replace("$target$", compressedPackageFileInfo.Name);
 		}
 
-		private string GetNuspecDependenciesSection(IEnumerable<DependencyInfo> dependencies) {
+		private string GetNuspecDependenciesSection(IEnumerable<PackageDependency> dependencies) {
 			var sb = new StringBuilder();
-			foreach (DependencyInfo dependency in dependencies) {
+			foreach (PackageDependency dependency in dependencies) {
 				string dependencyVersion = DependencyVersionTemplate
 					.Replace("$version$", dependency.PackageVersion);
 				string fileRecord = DependencyRecordTemplate
@@ -68,11 +63,13 @@ namespace Clio.Project.NuGet
 			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NuspecExtension}";
 		}
 
-		public void Create(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, string nuspecFilePath) {
+		public void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,
+				string compressedPackagePath, string nuspecFilePath) {
 			packageInfo.CheckArgumentNull(nameof(packageInfo));
 			dependencies.CheckArgumentNull(nameof(dependencies));
+			compressedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(compressedPackagePath));
 			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
-			string filesSection = GetNuspecFilesSection(packageInfo);
+			string filesSection = GetNuspecFilesSection(compressedPackagePath);
 			string dependenciesSection = GetNuspecDependenciesSection(dependencies);
 			CreateFromTemplate(packageInfo, filesSection, dependenciesSection, nuspecFilePath);
 		}

@@ -208,7 +208,10 @@ namespace Clio
 			var nugetPacker = new NugetPacker(templateProvider, dotnetExecutor, workingDirectoriesProvider);
 			var nugetPackageRestorer = new NugetPackageRestorer(templateProvider, dotnetExecutor, 
 				workingDirectoriesProvider);
-			return new NuGetManager(nuspecFilesGenerator, nugetPacker, nugetPackageRestorer, dotnetExecutor);
+			var packageInfoProvider = new PackageInfoProvider(); 
+			var projectUtilities = new ProjectUtilities();
+			return new NuGetManager(nuspecFilesGenerator, nugetPacker, nugetPackageRestorer, packageInfoProvider, 
+				projectUtilities, dotnetExecutor);
 		}
 
 		private static PushNuGetPackagesCommand CreatePushNuGetPkgsCommand() {

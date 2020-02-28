@@ -42,7 +42,7 @@ namespace Clio.Project.NuGet
 		}
  
 		private string ReplaceInOutputResult(string outputResult, string nugetPackProjPath, 
-			string destinationNupkgDirectory) {
+				string destinationNupkgDirectory) {
 			return outputResult.Replace(nugetPackProjPath, $"\"{destinationNupkgDirectory}\"");
 		}
 

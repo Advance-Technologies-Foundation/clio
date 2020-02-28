@@ -7,6 +7,7 @@ namespace Clio.Project.NuGet
 
 		string GetNuspecFileName(PackageInfo packageInfo);
 
-		void Create(PackageInfo packageInfo, IEnumerable<DependencyInfo> dependencies, string nuspecFilePath);
+		void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies, string compressedPackagePath,
+			string nuspecFilePath);
 	}
 }

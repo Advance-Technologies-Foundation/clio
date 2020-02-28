@@ -9,7 +9,7 @@ using Clio.Project.NuGet;
 
 namespace Clio.Command
 {
-	[Verb("push-nuget-pkg", Aliases = new string[] { "nuget" }, HelpText = "Push NuGet package on server")]
+	[Verb("push-nuget-pkg", Aliases = new string[] { "push" }, HelpText = "Push package on NuGet server")]
 	public class PushNuGetPkgsOptions : EnvironmentOptions
 	{
 
