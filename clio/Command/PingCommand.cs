@@ -5,10 +5,8 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("ping-app", Aliases = new string[] { "ping" }, HelpText = "Check current credentional for selected environments")]
-	public class PingAppOptions : EnvironmentOptions
+	public class PingAppOptions : EnvironmentNameOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Environment name")]
-		public string Name { get => Environment; set { Environment = value; } }
 	}
 
 	public class PingAppCommand : RemoteCommand<PingAppOptions>

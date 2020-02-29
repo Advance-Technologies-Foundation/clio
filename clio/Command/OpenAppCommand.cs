@@ -7,10 +7,8 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("open-web-app", Aliases = new string[] { "open" }, HelpText = "Open application in web browser")]
-	public class OpenAppOptions : EnvironmentOptions
+	public class OpenAppOptions : EnvironmentNameOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Environment name")]
-		public string Name { get => Environment; set { Environment = value; } }
 	}
 
 	public class OpenAppCommand : RemoteCommand<OpenAppOptions>
