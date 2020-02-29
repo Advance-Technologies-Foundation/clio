@@ -49,6 +49,8 @@ namespace Clio.Common
 			File.Copy(Path.Combine(sourcePath, "descriptor.json"), Path.Combine(destinationPath, "descriptor.json"));
 		}
 
+		public string GetCompressedPackageName(string packageName) => $"{packageName}.gz";
+
 		public void CompressProject(string sourcePath, string destinationPath, bool skipPdb) {
 			if (File.Exists(destinationPath)) {
 				File.Delete(destinationPath);

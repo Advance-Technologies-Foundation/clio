@@ -8,7 +8,7 @@ namespace Clio.Common
 	{
 		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
 		public string TemplateDirectory =>  Path.Combine(ExecutingDirectory, "tpl");
-		public string BaseTempDirectory =>  Path.Combine(ExecutingDirectory, "Temp");
+		public string BaseTempDirectory =>  Path.GetTempPath();
 
 		public string GetTemplatePath(string templateName) {
 			templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
@@ -16,9 +16,6 @@ namespace Clio.Common
 		}
 
 		public string CreateTempDirectory() {
-			if (!Directory.Exists(BaseTempDirectory)) {
-				Directory.CreateDirectory(BaseTempDirectory);
-			}
 			string directoryName = DateTime.Now.Ticks.ToString();
 			string tempDirectory = Path.Combine(BaseTempDirectory, directoryName);
 			Directory.CreateDirectory(tempDirectory);
