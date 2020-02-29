@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using Clio.Common;
+using Clio.Utilities;
 using CommandLine;
 
 namespace Clio.Command
@@ -22,8 +23,7 @@ namespace Clio.Command
 			try {
 				var settings = new SettingsRepository();
 				var env = settings.GetEnvironment(options);
-				Console.WriteLine($"Open {env.Uri}");
-				Process.Start(new ProcessStartInfo("cmd", $"/c start {env.Uri}") { CreateNoWindow = true });
+				WebBrowser.OpenUrl(env.Uri);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 
 namespace Clio.UserEnvironment
 {
@@ -73,5 +74,8 @@ namespace Clio.UserEnvironment
 			return UnregisterPath(EnvironmentVariableTarget.User);
 		}
 
+		public string GetAssemblyFolderPath() {
+			return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+		}
 	}
 }

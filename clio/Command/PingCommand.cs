@@ -4,7 +4,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("ping", Aliases = new string[] { "ping-app" }, HelpText = "Check current credentional for selected environments")]
+	[Verb("ping-app", Aliases = new string[] { "ping" }, HelpText = "Check current credentional for selected environments")]
 	public class PingAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Environment name")]

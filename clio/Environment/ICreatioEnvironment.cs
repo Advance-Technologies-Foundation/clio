@@ -14,5 +14,6 @@ namespace Clio.UserEnvironment
 		IResult UserRegisterPath(string path);
 		IResult MachineRegisterPath(string path);
 
+		string GetAssemblyFolderPath();
 	}
 }

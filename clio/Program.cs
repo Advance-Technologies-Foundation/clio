@@ -25,7 +25,6 @@ namespace Clio
 	class Program
 	{
 		private static string UserName => settings.Login;
-		private static bool IsDevMode => settings.IsDevMode;
 		private static string UserPassword => settings.Password;
 		private static string Url => settings.Uri; // Необходимо получить из конфига
 		private static string AppUrl
@@ -248,10 +247,11 @@ namespace Clio
 			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
-			var envPath = creatioEnv.GetRegisteredPath();
+			var envPath = creatioEnv.GetAssemblyFolderPath();
 			helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 			Parser.Default.Settings.ShowHeader = false;
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
+			Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
@@ -353,7 +353,7 @@ namespace Clio
 				var creatioEnv = new CreatioEnvironment();
 				string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
 				if (!File.Exists(tplPath)) {
-					var envPath = creatioEnv.GetRegisteredPath();
+					var envPath = creatioEnv.GetAssemblyFolderPath();
 					if (!string.IsNullOrEmpty(envPath)) {
 						tplPath = Path.Combine(envPath, tplPath);
 					}
