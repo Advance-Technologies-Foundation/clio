@@ -22,21 +22,21 @@ namespace Clio.Command
 
 	public class CompressPackageCommand : Command<GeneratePkgZipOptions>
 	{
-		private readonly IProjectUtilities _projectUtilities;
+		private readonly IPackageArchiver _packageArchiver;
 
-		public CompressPackageCommand(IProjectUtilities projectUtilities) {
-			_projectUtilities = projectUtilities;
+		public CompressPackageCommand(IPackageArchiver packageArchiver) {
+			_packageArchiver = packageArchiver;
 		}
 		public override int Execute(GeneratePkgZipOptions options) {
 			try {
 				if (options.Packages == null) {
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
-					_projectUtilities.CompressProject(options.Name, destinationPath, options.SkipPdb);
+					_packageArchiver.Pack(options.Name, destinationPath, options.SkipPdb, true);
 				} else {
 					var packages = StringParser.ParseArray(options.Packages);
 					string zipFileName = $"packages_{DateTime.Now.ToString("yy.MM.dd_hh.mm.ss")}.zip";
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
-					_projectUtilities.CompressProjects(options.Name, destinationPath, packages, options.SkipPdb);
+					_packageArchiver.Pack(options.Name, destinationPath, packages, options.SkipPdb, true);
 				}
 				Console.WriteLine("Done");
 				return 0;

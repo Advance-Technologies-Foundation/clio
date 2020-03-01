@@ -7,6 +7,5 @@ namespace Clio.Common
 		string BaseTempDirectory { get; }
 		string GetTemplatePath(string templateName);
 		string CreateTempDirectory();
-		void SafeDeleteTempDirectory(string tempDirectory);
 	}
 }

@@ -20,7 +20,7 @@ namespace Clio.Command
 
 	public class PushPackageCommand : RemoteCommand<PushPkgOptions>
 	{
-		private readonly IProjectUtilities _projectUtilities;
+		private readonly IPackageArchiver _packageArchiver;
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly ISqlScriptExecutor _scriptExecutor;
 
@@ -30,10 +30,10 @@ namespace Clio.Command
 		private static string DefLogFileName => "cliolog.txt";
 
 		public PushPackageCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-				IProjectUtilities projectUtilities, ISettingsRepository settingsRepository,
+				IPackageArchiver packageArchiver, ISettingsRepository settingsRepository,
 				ISqlScriptExecutor scriptExecutor)
 			: base(applicationClient, settings) {
-			_projectUtilities = projectUtilities;
+			_packageArchiver = packageArchiver;
 			_settingsRepository = settingsRepository;
 			_scriptExecutor = scriptExecutor;
 		}
@@ -102,7 +102,7 @@ namespace Clio.Command
 				} else if (Directory.Exists(options.Name)) {
 					var folderPath = options.Name;
 					var filePath = options.Name + ".gz";
-					_projectUtilities.CompressProject(folderPath, filePath, false);
+					_packageArchiver.Pack(folderPath, filePath, false, true);
 					logText = InstallPackage(filePath, options);
 					File.Delete(filePath);
 				} else {

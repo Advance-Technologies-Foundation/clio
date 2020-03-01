@@ -127,33 +127,15 @@ namespace Clio
 		}
 
 		private static void UnZipPackages(string zipFilePath) {
+			IPackageArchiver packageArchiver = CreatePackageArchiver();
 			var fileInfo = new FileInfo(zipFilePath);
-			if (fileInfo.Length == 0) {
-				throw new Exception("CompressionUtilities.Exception.FileIsEmpty");
-			}
-			string targetDirectoryPath = GetPackagePathFromZipFile(zipFilePath, ".zip");
-			if (Directory.Exists(targetDirectoryPath)) {
-				Directory.Delete(targetDirectoryPath, true);
-			}
-			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
-			foreach (var filePath in Directory.GetFiles(targetDirectoryPath)) {
-				string packageName = GetPackagePathFromZipFile(new FileInfo(filePath).Name, ".gz");
-				string currentDirectoryPath = Path.Combine(Environment.CurrentDirectory, packageName);
-				Console.WriteLine("Start unzip package ({0}).", packageName);
-				using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.None)) {
-					using (var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true)) {
-						while (CompressionUtilities.UnzipFile(currentDirectoryPath, zipStream)) {
-						}
-					}
-				}
-				Console.WriteLine("Unzip package ({0}) completed.", packageName);
-			}
-		}
-
-		private static string GetPackagePathFromZipFile(string filePath, string zipFileExtention) {
-			string targetDirectoryPath = filePath.Remove(filePath.IndexOf(zipFileExtention,
-				StringComparison.Ordinal), zipFileExtention.Length);
-			return targetDirectoryPath;
+			packageArchiver.UnZipPackages(zipFilePath, true, false, fileInfo.DirectoryName, 
+				(packageName, packedPackagePath) => {
+					Console.WriteLine("Start unzip package ({0}).", packageName);
+				},
+				(packageName) => {
+					Console.WriteLine("Unzip package ({0}) completed.", packageName);
+				});
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
@@ -199,18 +181,30 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
+		private static IPackageUtilities CreatePackageUtilities() {
+			var fileSystem = new FileSystem();
+			return new PackageUtilities(fileSystem);
+		}
+
+		private static IPackageArchiver CreatePackageArchiver() {
+			var fileSystem = new FileSystem();
+			IWorkingDirectoriesProvider workingDirectoriesProvider = new WorkingDirectoriesProvider();
+			ICompressionUtilities compressionUtilities = new CompressionUtilities(fileSystem);
+			return new PackageArchiver(CreatePackageUtilities(), compressionUtilities, workingDirectoriesProvider, fileSystem);
+		}
+
 		private static INuGetManager CreateNuGetManager() {
 			var dotnetExecutor = new DotnetExecutor();
+			var fileSystem = new FileSystem();
 			var workingDirectoriesProvider = new WorkingDirectoriesProvider();
 			var templateProvider = new TemplateProvider(workingDirectoriesProvider);
 			var nuspecFilesGenerator = new NuspecFilesGenerator(templateProvider);
-			var nugetPacker = new NugetPacker(templateProvider, dotnetExecutor, workingDirectoriesProvider);
+			var nugetPacker = new NugetPacker(templateProvider, dotnetExecutor, workingDirectoriesProvider, fileSystem);
 			var nugetPackageRestorer = new NugetPackageRestorer(templateProvider, dotnetExecutor, 
-				workingDirectoriesProvider);
+				workingDirectoriesProvider, fileSystem);
 			var packageInfoProvider = new PackageInfoProvider(); 
-			var projectUtilities = new ProjectUtilities();
 			return new NuGetManager(nuspecFilesGenerator, nugetPacker, nugetPackageRestorer, packageInfoProvider, 
-				projectUtilities, dotnetExecutor);
+				CreatePackageArchiver(), dotnetExecutor);
 		}
 
 		private static PushNuGetPackagesCommand CreatePushNuGetPkgsCommand() {
@@ -222,7 +216,7 @@ namespace Clio
 		}
 
 		private static PushPackageCommand CreatePushPackageCommand(EnvironmentOptions options) {
-			return CreateRemoteCommand<PushPackageCommand>(options, new ProjectUtilities(), 
+			return CreateRemoteCommand<PushPackageCommand>(options, CreatePackageArchiver(), 
 				new SettingsRepository(), new SqlScriptExecutor());
 		}
 
@@ -270,7 +264,7 @@ namespace Clio
 						new SettingsRepository(), new ApplicationClientFactory()).Execute(opts),
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
-					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(new ProjectUtilities()).Execute(opts),
+					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(CreatePackageArchiver()).Execute(opts),
 					(PushPkgOptions opts) => CreatePushPackageCommand(opts).Execute(opts),
 					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
@@ -288,7 +282,8 @@ namespace Clio
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
-					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
+					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts, 
+						CreatePackageArchiver(), CreatePackageUtilities(), new FileSystem()),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),

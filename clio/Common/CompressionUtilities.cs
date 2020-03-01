@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -8,12 +9,23 @@ namespace Clio.Common
 {
 	#region Class: CompressionUtilities
 
-	/// <summary>
-	/// Предоставляет методы работы по упаковке (сжатию) и распаковке данных.
-	/// </summary>
-	[ComVisible(true)]
-	public class CompressionUtilities
+	public class CompressionUtilities : ICompressionUtilities
 	{
+
+		#region Fields: Private
+
+		private readonly IFileSystem _fileSystem;
+
+		#endregion
+
+		#region Constructors: Public
+
+		public CompressionUtilities(IFileSystem fileSystem) {
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			_fileSystem = fileSystem;
+		}
+
+		#endregion
 
 		#region Methods: Private
 
@@ -63,26 +75,63 @@ namespace Clio.Common
 			}
 		}
 
-		#endregion
+		private static void CheckPackToGZipArgument(IEnumerable<string> files, string rootDirectoryPath, 
+				string destinationPackagePath) {
+			files.CheckArgumentNull(nameof(files));
+			rootDirectoryPath.CheckArgumentNullOrWhiteSpace(nameof(rootDirectoryPath));
+			destinationPackagePath.CheckArgumentNullOrWhiteSpace(nameof(destinationPackagePath));
+		}
 
-		#region Methods: Public
-
-		public static void ZipFile(string filePath, int rootDirectoryPathLength, GZipStream zipStream) {
-			string relativeFilePath = filePath.Substring(rootDirectoryPathLength);
+		private void PackToGZip(string filePath, string rootDirectoryPath, GZipStream zipStream) {
+			var relativeFilePath = _fileSystem.ConvertToRelativePath(filePath, rootDirectoryPath);
 			WriteFileName(relativeFilePath.TrimStart(Path.DirectorySeparatorChar), zipStream);
 			WriteFileContent(filePath, zipStream);
 		}
 
-		public static bool UnzipFile(string targetDirectoryPath, GZipStream zipStream) {
+		private static void CheckUnpackFromGZipArgument(string packedPackagePath, string destinationPackageDirectory) {
+			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
+			destinationPackageDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationPackageDirectory));
+		}
+
+		private bool UnpackFromGZip(string destinationDirectory, GZipStream zipStream) {
 			string fileName = ReadFileName(zipStream);
 			if (string.IsNullOrEmpty(fileName)) {
 				return false;
 			}
-			ReadFileContent(Path.Combine(targetDirectoryPath, fileName), zipStream);
+			ReadFileContent(Path.Combine(destinationDirectory, fileName), zipStream);
 			return true;
 		}
 
 		#endregion
+
+		#region Methods: Public
+
+
+		public void PackToGZip(IEnumerable<string> files, string rootDirectoryPath, string destinationPackagePath) {
+			CheckPackToGZipArgument(files, rootDirectoryPath, destinationPackagePath);
+			using (Stream fileStream = 
+				File.Open(destinationPackagePath, FileMode.Create, FileAccess.Write, FileShare.None)) {
+				using (var zipStream = new GZipStream(fileStream, CompressionMode.Compress)) {
+					foreach (string filePath in files) {
+						PackToGZip(filePath, rootDirectoryPath, zipStream);
+					}
+				}
+			}
+		}
+
+		public void UnpackFromGZip(string packedPackagePath, string destinationPackageDirectory) {
+			CheckUnpackFromGZipArgument(packedPackagePath, destinationPackageDirectory);
+			using (var fileStream = new FileStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.None)) {
+				using (var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true)) {
+					while(UnpackFromGZip(destinationPackageDirectory, zipStream)) {
+					}
+				}
+			}
+		}
+
+
+		#endregion
+
 	}
 
 	#endregion

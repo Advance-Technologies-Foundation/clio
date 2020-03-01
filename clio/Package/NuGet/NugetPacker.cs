@@ -13,15 +13,26 @@ namespace Clio.Project.NuGet
 		private readonly IDotnetExecutor _dotnetExecutor;
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		
+		private readonly IFileSystem _fileSystem;
+
 		public NugetPacker(ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider) {
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_dotnetExecutor = dotnetExecutor;
 			_templateProvider = templateProvider;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_fileSystem = fileSystem;
+		}
+
+		private static void CheckArguments(string nuspecFilePath, string destinationNupkgFilePath) {
+			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
+			destinationNupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgFilePath));
+			if (!File.Exists(nuspecFilePath)) {
+				throw new InvalidOperationException($"Invalid nuspec file path '{nuspecFilePath}'");
+			}
 		}
 
 		private void CreateNugetPackProj(string nugetPackProjPath) {
@@ -67,11 +78,7 @@ namespace Clio.Project.NuGet
 		}
 
 		public string Pack(string nuspecFilePath, string destinationNupkgFilePath) {
-			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
-			destinationNupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgFilePath));
-			if (!File.Exists(nuspecFilePath)) {
-				throw new InvalidOperationException($"Invalid nuspec file path '{nuspecFilePath}'");
-			}
+			CheckArguments(nuspecFilePath, destinationNupkgFilePath);
 			string tempDirectory = _workingDirectoriesProvider.CreateTempDirectory();
 			try {
 				string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
@@ -83,7 +90,7 @@ namespace Clio.Project.NuGet
 					destinationNupkgFilePath);
 				return result;
 			} finally {
-				_workingDirectoriesProvider.SafeDeleteTempDirectory(tempDirectory);
+				_fileSystem.DeleteDirectoryIfExists(tempDirectory);
 			}
 		}
 

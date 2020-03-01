@@ -21,10 +21,18 @@ namespace Clio.Project.NuGet
 			_templateProvider = templateProvider;
 		}
 
-		private string GetNuspecFilesSection(string compressedPackagePath) {
-			var compressedPackageFileInfo = new FileInfo(compressedPackagePath);
+		private static void CheckArguments(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies, 
+			string packedPackagePath, string nuspecFilePath) {
+			packageInfo.CheckArgumentNull(nameof(packageInfo));
+			dependencies.CheckArgumentNull(nameof(dependencies));
+			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
+			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
+		}
+		
+		private string GetNuspecFilesSection(string packedPackagePath) {
+			var compressedPackageFileInfo = new FileInfo(packedPackagePath);
 			return FileRecordTemplate
-				.Replace("$src$", compressedPackagePath)
+				.Replace("$src$", packedPackagePath)
 				.Replace("$target$", compressedPackageFileInfo.Name);
 		}
 
@@ -64,12 +72,9 @@ namespace Clio.Project.NuGet
 		}
 
 		public void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,
-				string compressedPackagePath, string nuspecFilePath) {
-			packageInfo.CheckArgumentNull(nameof(packageInfo));
-			dependencies.CheckArgumentNull(nameof(dependencies));
-			compressedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(compressedPackagePath));
-			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
-			string filesSection = GetNuspecFilesSection(compressedPackagePath);
+				string packedPackagePath, string nuspecFilePath) {
+			CheckArguments(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
+			string filesSection = GetNuspecFilesSection(packedPackagePath);
 			string dependenciesSection = GetNuspecDependenciesSection(dependencies);
 			CreateFromTemplate(packageInfo, filesSection, dependenciesSection, nuspecFilePath);
 		}

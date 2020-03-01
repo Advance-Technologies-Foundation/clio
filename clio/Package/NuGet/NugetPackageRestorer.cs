@@ -12,15 +12,26 @@ namespace Clio.Project.NuGet
 		private readonly IDotnetExecutor _dotnetExecutor;
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		
+		private readonly IFileSystem _fileSystem;
+
 		public NugetPackageRestorer(ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider) {
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_dotnetExecutor = dotnetExecutor;
 			_templateProvider = templateProvider;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_fileSystem = fileSystem;
+		}
+
+		private static void CheckArguments(string name, string version, string nugetSourceUrl, 
+				string destinationNupkgDirectory) {
+			name.CheckArgumentNullOrWhiteSpace(nameof(name));
+			version.CheckArgumentNullOrWhiteSpace(nameof(version));
+			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
+			destinationNupkgDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgDirectory));
 		}
 
 		private string ReplaceMacro(string template, string name, string version) {
@@ -47,10 +58,7 @@ namespace Clio.Project.NuGet
 		}
 
 		public string Restore(string name, string version, string nugetSourceUrl, string destinationNupkgDirectory) {
-			name.CheckArgumentNullOrWhiteSpace(nameof(name));
-			version.CheckArgumentNullOrWhiteSpace(nameof(version));
-			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
-			destinationNupkgDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgDirectory));
+			CheckArguments(name, version, nugetSourceUrl, destinationNupkgDirectory);
 			string tempDirectory = _workingDirectoriesProvider.CreateTempDirectory();
 			try {
 				string nugetRestoreProjPath = Path.Combine(tempDirectory, NugetRestoreProjName);
@@ -59,10 +67,9 @@ namespace Clio.Project.NuGet
 				result = ReplaceInOutputResult(result, nugetRestoreProjPath, destinationNupkgDirectory);
 				return result;
 			} finally {
-				_workingDirectoriesProvider.SafeDeleteTempDirectory(tempDirectory);
+				_fileSystem.DeleteDirectoryIfExists(tempDirectory);
 			}
 		}
-
 
 	}
 }

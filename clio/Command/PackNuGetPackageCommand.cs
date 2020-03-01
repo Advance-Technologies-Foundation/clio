@@ -13,11 +13,11 @@ namespace Clio.Command
 	public class PackNuGetPkgOptions : EnvironmentOptions
 	{
 
-		[Value(0, MetaName = "PackagePath", Required = true, HelpText = "Package path")]
+		[Value(0, MetaName = "PackagePath", Required = true, HelpText = "Path of package folder")]
 		public string PackagePath { get; set; }
 
 
-		[Option('s', "SkipPdb", Required = false, Default = false)]
+		[Option('s', "SkipPdb", Required = false, HelpText = "Exclude pdb files from nuget package", Default = false)]
 		public bool SkipPdb { get; set; }
 
 		[Option('d', "Dependencies", Required = false, HelpText = "Package dependencies", Default = null)]
@@ -47,7 +47,7 @@ namespace Clio.Command
 				return null;
 			}
 			IEnumerable<string> dependencies = StringParser.ParseArray(dependenciesDescription);
-			if (dependencies.Count() == 0) {
+			if (!dependencies.Any()) {
 				return null;
 			}
 			return dependencies.Select(ParseDependency).ToArray();
