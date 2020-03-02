@@ -26,19 +26,38 @@ namespace Clio
 	{
 		private static string UserName => CreatioEnvironment.Settings.Login;
 		private static string UserPassword => CreatioEnvironment.Settings.Password;
+		private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
+		private static string AppUrl
+		{
+			get
+			{
+				if (CreatioEnvironment.IsNetCore) {
+					return Url;
+				} else {
+					return Url + @"/0";
+				}
+			}
+		}
+
+		private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
+
+		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
+
+
+		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
 
 		private static CreatioClient CreatioClient
 		{
-			get => new CreatioClient(CreatioEnvironment.Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
+			get => new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
 		}
 
 		public static bool Safe { get; private set; } = true;
 
-		//private static void Configure(EnvironmentOptions options) {
-		//	var settingsRepository = new SettingsRepository();
-		//	CreatioEnvironment.EnvironmentName = options.Environment;
-		//	CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
-		//}
+		private static void Configure(EnvironmentOptions options) {
+			var settingsRepository = new SettingsRepository();
+			CreatioEnvironment.EnvironmentName = options.Environment;
+			CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
+		}
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
 			var currentColor = Console.ForegroundColor;
@@ -48,36 +67,36 @@ namespace Clio
 		}
 
 
-		//public static void SetupAppConnection(EnvironmentOptions options) {
-		//	Configure(options);
-		//	CheckApiVersion();
-		//}
+		public static void SetupAppConnection(EnvironmentOptions options) {
+			Configure(options);
+			CheckApiVersion();
+		}
 
 
-		//public static void CheckApiVersion() {
-		//	var dir = AppDomain.CurrentDomain.BaseDirectory;
-		//	string versionFilePath = Path.Combine(dir, "cliogate", "version.txt");
-		//	var localApiVersion = new Version(File.ReadAllText(versionFilePath));
-		//	var appApiVersion = GetAppApiVersion();
-		//	if (appApiVersion == new Version("0.0.0.0")) {
-		//		MessageToConsole($"Your app does not contain clio API." +
-		//		 $"{Environment.NewLine}You should consider install it via the \'clio install-gate\' command.", ConsoleColor.DarkYellow);
-		//	} else if (localApiVersion > appApiVersion) {
-		//		MessageToConsole($"You are using clio api version {appApiVersion}, however version {localApiVersion} is available." +
-		//		 $"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
-		//	}
-		//}
+		public static void CheckApiVersion() {
+			var dir = AppDomain.CurrentDomain.BaseDirectory;
+			string versionFilePath = Path.Combine(dir, "cliogate", "version.txt");
+			var localApiVersion = new Version(File.ReadAllText(versionFilePath));
+			var appApiVersion = GetAppApiVersion();
+			if (appApiVersion == new Version("0.0.0.0")) {
+				MessageToConsole($"Your app does not contain clio API." +
+				 $"{Environment.NewLine}You should consider install it via the \'clio install-gate\' command.", ConsoleColor.DarkYellow);
+			} else if (localApiVersion > appApiVersion) {
+				MessageToConsole($"You are using clio api version {appApiVersion}, however version {localApiVersion} is available." +
+				 $"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
+			}
+		}
 
 
-		//private static Version GetAppApiVersion() {
-		//	var apiVersion = new Version("0.0.0.0");
-		//	try {
-		//		string appVersionResponse = CreatioClient.ExecuteGetRequest(ApiVersionUrl).Trim('"');
-		//		apiVersion = new Version(appVersionResponse);
-		//	} catch (Exception) {
-		//	}
-		//	return apiVersion;
-		//}
+		private static Version GetAppApiVersion() {
+			var apiVersion = new Version("0.0.0.0");
+			try {
+				string appVersionResponse = CreatioClient.ExecuteGetRequest(ApiVersionUrl).Trim('"');
+				apiVersion = new Version(appVersionResponse);
+			} catch (Exception) {
+			}
+			return apiVersion;
+		}
 
 		private static void DownloadZipPackagesInternal(string packageName, string destinationPath) {
 			try {
@@ -118,7 +137,7 @@ namespace Clio
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
-				CreatioEnvironment.SetupAppConnection(options);
+				SetupAppConnection(options);
 				string destPath = options.DestPath ?? Path.Combine(Path.GetTempPath(), "packages.zip");
 				DownloadZipPackagesInternal(options.Name, destPath);
 				UnZipPackages(destPath);
@@ -274,7 +293,7 @@ namespace Clio
 
 		private static int SetDeveloperMode(DeveloperModeOptions opts) {
 			try {
-				CreatioEnvironment.SetupAppConnection(opts);
+				SetupAppConnection(opts);
 				var repository = new SettingsRepository();
 				CreatioEnvironment.Settings.DeveloperModeEnabled = true;
 				repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
@@ -300,7 +319,7 @@ namespace Clio
 
 		private static int AddModels(ItemOptions opts) {
 			try {
-				CreatioEnvironment.SetupAppConnection(opts);
+				SetupAppConnection(opts);
 				var models = GetClassModels(opts.ItemName);
 				var project = new VSProject(opts.DestinationPath, opts.Namespace);
 				foreach (var model in models) {
