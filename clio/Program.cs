@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using Autofac;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
@@ -14,6 +15,7 @@ using Clio.Package;
 using Clio.Project;
 using Clio.Project.NuGet;
 using Clio.UserEnvironment;
+using Clio.Utilities;
 using Clio.WebApplication;
 using CommandLine;
 using Creatio.Client;
@@ -150,7 +152,6 @@ namespace Clio
 			return settingsRepository.GetEnvironment(options);
 		}
 
-		//ToDo: move to factory
 		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
 			var settings = GetEnvironmentSettings(options);
@@ -158,6 +159,14 @@ namespace Clio
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter, settings }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		}
+
+
+		//ToDo: move to factory
+		private static TCommand CreateRemoteCommandWithDI<TCommand>(EnvironmentOptions options) {
+			var settings = GetEnvironmentSettings(options);
+			var container = new BindingsModule().Register(settings);
+			return container.Resolve<TCommand>();
 		}
 
 		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
@@ -253,8 +262,7 @@ namespace Clio
 		}
 
 		private static PushPackageCommand CreatePushPackageCommand(EnvironmentOptions options) {
-			return CreateRemoteCommand<PushPackageCommand>(options, CreatePackageArchiver(), 
-				new SettingsRepository(), new SqlScriptExecutor());
+			return CreateRemoteCommandWithDI<PushPackageCommand>(options);
 		}
 
 		private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
@@ -315,7 +323,7 @@ namespace Clio
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
-					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts, new SqlScriptExecutor()).Execute(opts),
+					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts).Execute(opts),
 					(InstallGateOptions opts) => CreatePushPackageCommand(opts)
 							.Execute(CreatePushPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
@@ -324,7 +332,7 @@ namespace Clio
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts, 
 						CreatePackageArchiver(), CreatePackageUtilities(), new FileSystem()),
-					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+					(PingAppOptions opts) => CreateRemoteCommandWithDI<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),

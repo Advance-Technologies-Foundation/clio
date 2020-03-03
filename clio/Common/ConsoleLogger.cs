@@ -7,6 +7,9 @@ namespace Clio.Common
 
 	public class ConsoleLogger : ILogger
 	{
+		public void Write(string value) {
+			Console.Write(value);
+		}
 
 		#region Methods: Public
 

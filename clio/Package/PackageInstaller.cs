@@ -4,6 +4,7 @@ using System.Threading;
 using Clio.WebApplication;
 using Clio.Command;
 using Clio.Common;
+using System.Threading.Tasks;
 
 namespace Clio.Package
 {
@@ -32,6 +33,7 @@ namespace Clio.Package
 		private readonly IFileSystem _fileSystem;
 		private readonly bool _developerModeEnabled;
 		private readonly ILogger _logger;
+		private readonly IApplicationClientFactory _applicationClientFactory;
 		private readonly IApplication _application;
 
 		#endregion
@@ -40,7 +42,8 @@ namespace Clio.Package
 
 		public PackageInstaller(EnvironmentSettings environmentSettings, IApplicationClient applicationClient, 
 			IApplication application, IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor, 
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger) {
+				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger,
+				IApplicationClientFactory applicationClientFactory = null) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClient.CheckArgumentNull(nameof(applicationClient));
 			application.CheckArgumentNull(nameof(application));
@@ -56,6 +59,7 @@ namespace Clio.Package
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_fileSystem = fileSystem;
 			_logger = logger;
+			_applicationClientFactory = applicationClientFactory;
 			_developerModeEnabled = _environmentSettings.DeveloperModeEnabled.HasValue &&
 			                        _environmentSettings.DeveloperModeEnabled.Value;
 		}
@@ -66,8 +70,8 @@ namespace Clio.Package
 
 		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url); 
 
-		private string GetInstallLog() {
-			return _applicationClient.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
+		private string GetInstallLog(IApplicationClient client) {
+			return client.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
 		}
 
 		private void UnlockMaintainerPackageInternal() {
@@ -93,22 +97,52 @@ namespace Clio.Package
 			return packageName;
 		}
 
+		private string GetLogDiff(string currentLog, string completeLog) {
+			return completeLog.Substring(currentLog.Length);
+		}
+
+		private string ListenForLogs(object cancellationTokenObject) {
+			var cancellationToken = (CancellationToken)cancellationTokenObject;
+			var currentLogContent = string.Empty;
+			while (!cancellationToken.IsCancellationRequested) {
+				try {
+					var cl = _applicationClientFactory.CreateClient(_environmentSettings);
+					var completeLog = cl.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
+					var output = GetLogDiff(currentLogContent, completeLog);
+					if (!string.IsNullOrWhiteSpace(output)) {
+						_logger.Write(output);
+						currentLogContent = completeLog;
+					}
+					Thread.Sleep(500);
+				} catch (System.Exception e) {
+					_logger.WriteLine(e.ToString());
+				}
+			}
+			return currentLogContent;
+		}
+
 		private void InstallPackageOnServer(string fileName) {
 			_logger.WriteLine($"Install {fileName} ...");
+			_logger.WriteLine("Installation log:");
+			var cancellationTokenSource = new CancellationTokenSource();
+			var log = string.Empty;
+			var task = Task.Factory.StartNew(
+				(cancellationToken) => log = ListenForLogs(cancellationToken), cancellationTokenSource.Token);
 			_applicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), $"\"{fileName}\"", Timeout.Infinite);
+			cancellationTokenSource.Cancel();
+			task.Wait();
+			var completeInstallLog = GetInstallLog(_applicationClient);
+			_logger.Write(GetLogDiff(log, completeInstallLog));
 		}
 
 		private string InstallPackedPackage(string filePath) {
 			string packageName = UploadPackage(filePath);
 			InstallPackageOnServer(packageName);
-			var logText = GetInstallLog();
-			_logger.WriteLine("Installation log:");
-			_logger.WriteLine(logText);
 			if (_developerModeEnabled) {
 				UnlockMaintainerPackageInternal();
 				_application.Restart();
 			}
-			return logText;
+			return string.Empty;
 		}
 
 		private string InstallPackageFromFolder(string packageFolderPath) {
