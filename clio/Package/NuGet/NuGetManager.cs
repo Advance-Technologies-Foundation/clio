@@ -19,7 +19,7 @@ namespace Clio.Project.NuGet
 
 		public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker, 
 				INugetPackageRestorer nugetPackageRestorer, IPackageInfoProvider packageInfoProvider, 
-				IPackageArchiver packageArchiver, DotnetExecutor dotnetExecutor, ILogger logger) {
+				IPackageArchiver packageArchiver, IDotnetExecutor dotnetExecutor, ILogger logger) {
 			nuspecFilesGenerator.CheckArgumentNull(nameof(nuspecFilesGenerator));
 			nugetPacker.CheckArgumentNull(nameof(nugetPacker));
 			nugetPackageRestorer.CheckArgumentNull(nameof(nugetPackageRestorer));

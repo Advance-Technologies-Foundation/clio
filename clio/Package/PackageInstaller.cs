@@ -25,41 +25,44 @@ namespace Clio.Package
 
 		#region Fields: Private
 
+		private readonly EnvironmentSettings _environmentSettings;
+		private readonly IApplicationClientFactory _applicationClientFactory;
 		private readonly IApplicationClient _applicationClient;
+		private readonly IApplicationClient _applicationClientForLog;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly ISqlScriptExecutor _scriptExecutor;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IFileSystem _fileSystem;
 		private readonly bool _developerModeEnabled;
 		private readonly ILogger _logger;
-		private readonly IApplicationClientFactory _applicationClientFactory;
+
 		private readonly IApplication _application;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PackageInstaller(EnvironmentSettings environmentSettings, IApplicationClient applicationClient, 
-			IApplication application, IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor, 
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger,
-				IApplicationClientFactory applicationClientFactory = null) {
+		public PackageInstaller(EnvironmentSettings environmentSettings, 
+				IApplicationClientFactory applicationClientFactory, IApplication application, 
+				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor, 
+				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			applicationClient.CheckArgumentNull(nameof(applicationClient));
+			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			application.CheckArgumentNull(nameof(application));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			scriptExecutor.CheckArgumentNull(nameof(scriptExecutor));
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_environmentSettings = environmentSettings;
-			_applicationClient = applicationClient;
+			_applicationClientFactory = applicationClientFactory;
 			_application = application;
 			_packageArchiver = packageArchiver;
 			_scriptExecutor = scriptExecutor;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_fileSystem = fileSystem;
 			_logger = logger;
-			_applicationClientFactory = applicationClientFactory;
+			_applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
+			_applicationClientForLog = _applicationClientFactory.CreateClient(_environmentSettings);
 			_developerModeEnabled = _environmentSettings.DeveloperModeEnabled.HasValue &&
 			                        _environmentSettings.DeveloperModeEnabled.Value;
 		}
@@ -69,10 +72,6 @@ namespace Clio.Package
 		#region Methods: Private
 
 		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url); 
-
-		private string GetInstallLog(IApplicationClient client) {
-			return client.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
-		}
 
 		private void UnlockMaintainerPackageInternal() {
 			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_environmentSettings.Maintainer}'";
@@ -97,6 +96,10 @@ namespace Clio.Package
 			return packageName;
 		}
 
+		private string GetInstallLog() {
+			return _applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl), Timeout.Infinite);
+		}
+
 		private string GetLogDiff(string currentLog, string completeLog) {
 			return completeLog.Substring(currentLog.Length);
 		}
@@ -106,8 +109,7 @@ namespace Clio.Package
 			var currentLogContent = string.Empty;
 			while (!cancellationToken.IsCancellationRequested) {
 				try {
-					var cl = _applicationClientFactory.CreateClient(_environmentSettings);
-					var completeLog = cl.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
+					var completeLog = GetInstallLog();
 					var output = GetLogDiff(currentLogContent, completeLog);
 					if (!string.IsNullOrWhiteSpace(output)) {
 						_logger.Write(output);
@@ -120,29 +122,34 @@ namespace Clio.Package
 			}
 			return currentLogContent;
 		}
-
+		
 		private void InstallPackageOnServer(string fileName) {
+			_applicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), $"\"{fileName}\"", Timeout.Infinite);
+		}
+		
+		private string InstallPackageOnServerWithLogListener(string fileName) {
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
 			var cancellationTokenSource = new CancellationTokenSource();
 			var log = string.Empty;
 			var task = Task.Factory.StartNew(
 				(cancellationToken) => log = ListenForLogs(cancellationToken), cancellationTokenSource.Token);
-			_applicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), $"\"{fileName}\"", Timeout.Infinite);
+			InstallPackageOnServer(fileName);
 			cancellationTokenSource.Cancel();
 			task.Wait();
-			var completeInstallLog = GetInstallLog(_applicationClient);
+			var completeInstallLog = GetInstallLog();
 			_logger.Write(GetLogDiff(log, completeInstallLog));
+			return completeInstallLog;
 		}
 
 		private string InstallPackedPackage(string filePath) {
 			string packageName = UploadPackage(filePath);
-			InstallPackageOnServer(packageName);
+			string logText = InstallPackageOnServerWithLogListener(packageName);
 			if (_developerModeEnabled) {
 				UnlockMaintainerPackageInternal();
 				_application.Restart();
 			}
-			return string.Empty;
+			return logText;
 		}
 
 		private string InstallPackageFromFolder(string packageFolderPath) {
