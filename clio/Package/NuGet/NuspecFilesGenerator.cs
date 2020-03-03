@@ -8,12 +8,11 @@ namespace Clio.Project.NuGet
 {
 	public class NuspecFilesGenerator : INuspecFilesGenerator
 	{
-		public const string NuspecExtension = "nuspec";
 
 		private const string FileRecordTemplate = "    <file src=\"$src$\" target=\"tools\\$target$\" />";
 		private const string DependencyRecordTemplate = "      <dependency id=\"$id$\"$version$ />";
 		private const string DependencyVersionTemplate = " version=\"$version$\"";
-		private readonly string _packageNuspecFileName = $"Package.{NuspecExtension}";
+		private readonly string _packageNuspecFileName = $"Package.{NugetConstants.NuspecExtension}";
 		private readonly ITemplateProvider _templateProvider;
 
 		public NuspecFilesGenerator(ITemplateProvider templateProvider) {
@@ -68,7 +67,7 @@ namespace Clio.Project.NuGet
 		}
 
 		public string GetNuspecFileName(PackageInfo packageInfo) {
-			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NuspecExtension}";
+			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NugetConstants.NuspecExtension}";
 		}
 
 		public void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,

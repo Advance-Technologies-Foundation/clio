@@ -1,3 +1,5 @@
+using System;
+
 namespace Clio.Common
 {
 	public interface IWorkingDirectoriesProvider
@@ -7,5 +9,7 @@ namespace Clio.Common
 		string BaseTempDirectory { get; }
 		string GetTemplatePath(string templateName);
 		string CreateTempDirectory();
+		void CreateTempDirectory(Action<string> onCreated);
+		T CreateTempDirectory<T>(Func<string, T> onCreated);
 	}
 }

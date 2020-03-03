@@ -30,11 +30,12 @@ namespace Clio
 				string name = (string)descriptor["Name"];
 				string packageVersion = (string)descriptor["PackageVersion"] ?? string.Empty;
 				string maintainer = (string)descriptor["Maintainer"];
+				string uid = (string)descriptor["UId"];
 				JToken dependsOn = descriptor["DependsOn"];
 				IEnumerable<PackageDependency> depends = dependsOn.Select(CreateDependencyInfo);
 				IEnumerable<string> filePaths = Directory
 					.EnumerateFiles(packagePath, "*.*", SearchOption.AllDirectories);
-				return new PackageInfo(name, packageVersion, maintainer, packagePath, filePaths, depends);
+				return new PackageInfo(name, packageVersion, maintainer, uid, packagePath, filePaths, depends);
 			}
 			catch (Exception ex) {
 				throw new Exception($"Package descriptor is wrong: '{ex.Message}'");

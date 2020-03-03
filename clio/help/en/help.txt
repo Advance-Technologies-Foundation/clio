@@ -52,7 +52,9 @@ COMMANDS
 
     push-nuget-pkg          push        Push package on NuGet server
 
-    restore-nuget-pkg       restore     Restore NuGet package to a folder or 
+    restore-nuget-pkg       restore     Restore NuGet package to a folder 
+
+    install-nuget-pkg       installng   Restore NuGet package to  
                                         a web application (website)
 
 AUTHOR

@@ -1,4 +1,6 @@
-﻿namespace Clio.Common
+﻿using System.Collections.Generic;
+
+namespace Clio.Common
 {
 
 	#region Interface: IFileSystem
@@ -15,6 +17,7 @@
 		string ExtractNameFromPath(string path);
 		string GetDestinationFileDirectory(string filePath, string destinationPath);
 		void CopyDirectory(string source, string destination, bool overwrite);
+		void Copy(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
 		void DeleteDirectoryIfExists(string path);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
 

@@ -53,7 +53,7 @@ namespace Clio.Command
 			return dependencies.Select(ParseDependency).ToArray();
 		}
 
-		public PackNuGetPackageCommand(IPackageInfoProvider packageInfoProvider, INuGetManager nugetManager) {
+		public PackNuGetPackageCommand(INuGetManager nugetManager) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			_nugetManager = nugetManager;
 		}
@@ -63,9 +63,7 @@ namespace Clio.Command
 				IEnumerable<PackageDependency> dependencies = options.Dependencies == null 
 					? Enumerable.Empty<PackageDependency>() 
 					: ParseDependencies(options.Dependencies);
-				string result = _nugetManager.Pack(options.PackagePath, dependencies, options.SkipPdb, 
-					options.NupkgDirectory);
-				Console.WriteLine(result);
+				_nugetManager.Pack(options.PackagePath, dependencies, options.SkipPdb, options.NupkgDirectory);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

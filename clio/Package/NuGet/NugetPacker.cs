@@ -7,24 +7,26 @@ namespace Clio.Project.NuGet
 {
 	public class NugetPacker : INugetPacker
 	{
-		public const string NupkgExtension = "nupkg";
-		
+
 		private const string NugetPackProjName = "NugetPackProj.csproj";
 		private readonly IDotnetExecutor _dotnetExecutor;
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
+		private readonly ILogger _logger;
 
 		public NugetPacker(ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger) {
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			logger.CheckArgumentNull(nameof(logger));
 			_dotnetExecutor = dotnetExecutor;
 			_templateProvider = templateProvider;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
+			_logger = logger;
 		}
 
 		private static void CheckArguments(string nuspecFilePath, string destinationNupkgFilePath) {
@@ -44,7 +46,7 @@ namespace Clio.Project.NuGet
 			var fileInfo = new FileInfo(nugetPackProjPath);
 			string nupkgFileDirectory = Path.Combine(fileInfo.DirectoryName, "bin", "Debug");
 			string nupkgFilePath = Directory
-				.EnumerateFiles(nupkgFileDirectory, $"*.{NugetPacker.NupkgExtension}")
+				.EnumerateFiles(nupkgFileDirectory, $"*.{NugetConstants.NupkgExtension}")
 				.FirstOrDefault();
 			if (string.IsNullOrWhiteSpace(nupkgFilePath)) {
 				throw new InvalidOperationException("Error packing nuget package");
@@ -74,13 +76,12 @@ namespace Clio.Project.NuGet
 		}
 
 		public string GetNupkgFileName(PackageInfo packageInfo) {
-			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NupkgExtension}";
+			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NugetConstants.NupkgExtension}";
 		}
 
-		public string Pack(string nuspecFilePath, string destinationNupkgFilePath) {
+		public void Pack(string nuspecFilePath, string destinationNupkgFilePath) {
 			CheckArguments(nuspecFilePath, destinationNupkgFilePath);
-			string tempDirectory = _workingDirectoriesProvider.CreateTempDirectory();
-			try {
+			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
 				CreateNugetPackProj(nugetPackProjPath);
 				string result = PackPackage(nugetPackProjPath, nuspecFilePath);
@@ -88,10 +89,8 @@ namespace Clio.Project.NuGet
 				CopyNupkgFileToDestinationDirectory(sourceNupkgFilePath, destinationNupkgFilePath);
 				result = ReplaceInOutputResult(result, nugetPackProjPath, sourceNupkgFilePath,
 					destinationNupkgFilePath);
-				return result;
-			} finally {
-				_fileSystem.DeleteDirectoryIfExists(tempDirectory);
-			}
+				_logger.WriteLine(result);
+			});
 		}
 
 	}

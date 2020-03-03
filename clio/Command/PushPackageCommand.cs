@@ -84,7 +84,6 @@ namespace Clio.Command
 		private void SaveLogFile(string logText, string reportPath) {
 			if (File.Exists(reportPath)) {
 				File.Delete(reportPath);
-				File.WriteAllText(reportPath, logText, Encoding.UTF8);
 			} else if (Directory.Exists(reportPath)) {
 				reportPath = Path.Combine(reportPath, DefLogFileName);
 			}

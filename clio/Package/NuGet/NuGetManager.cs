@@ -15,22 +15,25 @@ namespace Clio.Project.NuGet
 		private readonly IPackageInfoProvider _packageInfoProvider;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IDotnetExecutor _dotnetExecutor;
+		private readonly ILogger _logger;
 
 		public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker, 
 				INugetPackageRestorer nugetPackageRestorer, IPackageInfoProvider packageInfoProvider, 
-				IPackageArchiver packageArchiver, DotnetExecutor dotnetExecutor) {
+				IPackageArchiver packageArchiver, DotnetExecutor dotnetExecutor, ILogger logger) {
 			nuspecFilesGenerator.CheckArgumentNull(nameof(nuspecFilesGenerator));
 			nugetPacker.CheckArgumentNull(nameof(nugetPacker));
 			nugetPackageRestorer.CheckArgumentNull(nameof(nugetPackageRestorer));
 			packageInfoProvider.CheckArgumentNull(nameof(packageInfoProvider));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
+			logger.CheckArgumentNull(nameof(logger));
 			_nuspecFilesGenerator = nuspecFilesGenerator;
 			_nugetPacker = nugetPacker;
 			_nugetPackageRestorer = nugetPackageRestorer;
 			_packageInfoProvider = packageInfoProvider;
 			_packageArchiver = packageArchiver;
 			_dotnetExecutor = dotnetExecutor;
+			_logger = logger;
 		}
 
 		private static void CheckPackArguments(string packagePath, IEnumerable<PackageDependency> dependencies, 
@@ -69,7 +72,7 @@ namespace Clio.Project.NuGet
 			}
 		}
 
-		public string Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb, 
+		public void Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb, 
 				string destinationNupkgDirectory) {
 			CheckPackArguments(packagePath, dependencies, destinationNupkgDirectory);
 			PackageInfo packageInfo = _packageInfoProvider.GetPackageInfo(packagePath);
@@ -81,23 +84,34 @@ namespace Clio.Project.NuGet
 				_nuspecFilesGenerator.GetNuspecFileName(packageInfo));
 			_nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
 			string nupkgFilePath = Path.Combine(destinationNupkgDirectory, _nugetPacker.GetNupkgFileName(packageInfo));
-			string result = _nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
+			_nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
 			SafeFileDelete(nuspecFilePath);
 			SafeFileDelete(packedPackagePath);
-			return result;
 		}
 
-		public string Push(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
+		public void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
 			CheckPushArguments(nupkgFilePath, apiKey, nugetSourceUrl);
 			if (!File.Exists(nupkgFilePath)) {
 				throw new InvalidOperationException($"Invalid nupkg file path '{nupkgFilePath}'");
 			}
 			string pushCommand = $"nuget push \"{nupkgFilePath}\" -k {apiKey} -s {nugetSourceUrl}";
-			return _dotnetExecutor.Execute(pushCommand, true);
+			string result = _dotnetExecutor.Execute(pushCommand, true);
+			_logger.WriteLine(result);
 		}
 
-		public string Restore(string name, string version, string nugetSourceUrl, string destinationNupkgDirectory) =>
-				_nugetPackageRestorer.Restore(name, version, nugetSourceUrl, destinationNupkgDirectory);
+		public void RestoreToNugetFileStorage(string packageName, string version, string nugetSourceUrl,
+				string destinationNupkgDirectory) =>
+			_nugetPackageRestorer.RestoreToNugetFileStorage(packageName, version, nugetSourceUrl, destinationNupkgDirectory);
+
+		public void RestoreToDirectory(string packageName, string version, string nugetSourceUrl,
+				string destinationNupkgDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToDirectory(packageName, version, nugetSourceUrl, destinationNupkgDirectory, 
+				overwrite);
+
+		public void RestoreToPackageStorage(string packageName, string version, string nugetSourceUrl,
+			string destinationNupkgDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToPackageStorage(packageName, version, nugetSourceUrl, 
+				destinationNupkgDirectory, overwrite);
 
 	}
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Clio.Common
@@ -68,6 +69,16 @@ namespace Clio.Common
 			}
 			foreach (string directoryPath in Directory.GetDirectories(source)) {
 				CopyDirectory(directoryPath, Path.Combine(destination, Path.GetFileName(directoryPath)), overwrite);
+			}
+		}
+
+		public void Copy(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite) {
+			filesPaths.CheckArgumentNull(nameof(filesPaths));
+			destinationDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationDirectory));
+			foreach (string sourceFilePath in filesPaths) {
+				var sourceFileInfo = new FileInfo(sourceFilePath);
+				string destinationFilePath = Path.Combine(destinationDirectory, sourceFileInfo.Name);
+				File.Copy(sourceFilePath, destinationFilePath, overwrite);
 			}
 		}
 
