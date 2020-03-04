@@ -84,12 +84,18 @@ namespace Clio.Project.NuGet
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
 				CreateNugetPackProj(nugetPackProjPath);
-				string result = PackPackage(nugetPackProjPath, nuspecFilePath);
-				string sourceNupkgFilePath = GetNupkgFilePath(nugetPackProjPath);
-				CopyNupkgFileToDestinationDirectory(sourceNupkgFilePath, destinationNupkgFilePath);
-				result = ReplaceInOutputResult(result, nugetPackProjPath, sourceNupkgFilePath,
+				string packResult = PackPackage(nugetPackProjPath, nuspecFilePath);
+				string sourceNupkgFilePath;
+				try {
+					sourceNupkgFilePath = GetNupkgFilePath(nugetPackProjPath);
+					CopyNupkgFileToDestinationDirectory(sourceNupkgFilePath, destinationNupkgFilePath);
+				} catch (Exception) {
+					_logger.WriteLine(packResult);
+					throw;
+				}
+				packResult = ReplaceInOutputResult(packResult, nugetPackProjPath, sourceNupkgFilePath,
 					destinationNupkgFilePath);
-				_logger.WriteLine(result);
+				_logger.WriteLine(packResult);
 			});
 		}
 

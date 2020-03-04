@@ -7,25 +7,43 @@ using Clio.Common;
 
 namespace Clio.Project.NuGet
 {
+
+	#region Class: NuGetManager
+
 	public class NuGetManager : INuGetManager
 	{
+
+		#region Fields: Private
+
 		private readonly INuspecFilesGenerator _nuspecFilesGenerator;
 		private readonly INugetPacker _nugetPacker;
 		private readonly INugetPackageRestorer _nugetPackageRestorer;
 		private readonly IPackageInfoProvider _packageInfoProvider;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IDotnetExecutor _dotnetExecutor;
+		private readonly IFileSystem _fileSystem;
 		private readonly ILogger _logger;
+		private readonly IEnumerable<string> _isNotEmptyPackageInfoFields = new[] {
+			nameof(PackageInfo.Name),
+			nameof(PackageInfo.Maintainer),
+			nameof(PackageInfo.PackageVersion)
+		};
+
+	#endregion
+
+		#region Constructors: Public
 
 		public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker, 
 				INugetPackageRestorer nugetPackageRestorer, IPackageInfoProvider packageInfoProvider, 
-				IPackageArchiver packageArchiver, IDotnetExecutor dotnetExecutor, ILogger logger) {
+				IPackageArchiver packageArchiver, IDotnetExecutor dotnetExecutor, IFileSystem fileSystem, 
+				ILogger logger) {
 			nuspecFilesGenerator.CheckArgumentNull(nameof(nuspecFilesGenerator));
 			nugetPacker.CheckArgumentNull(nameof(nugetPacker));
 			nugetPackageRestorer.CheckArgumentNull(nameof(nugetPackageRestorer));
 			packageInfoProvider.CheckArgumentNull(nameof(packageInfoProvider));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			logger.CheckArgumentNull(nameof(logger));
 			_nuspecFilesGenerator = nuspecFilesGenerator;
 			_nugetPacker = nugetPacker;
@@ -33,26 +51,23 @@ namespace Clio.Project.NuGet
 			_packageInfoProvider = packageInfoProvider;
 			_packageArchiver = packageArchiver;
 			_dotnetExecutor = dotnetExecutor;
+			_fileSystem = fileSystem;
 			_logger = logger;
 		}
 
-		private static void CheckPackArguments(string packagePath, IEnumerable<PackageDependency> dependencies, 
-				string destinationNupkgDirectory) {
+		#endregion
+
+		#region Methods: Private
+
+		private static void CheckPackArguments(string packagePath, IEnumerable<PackageDependency> dependencies) {
 			packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
 			dependencies.CheckArgumentNull(nameof(dependencies));
-			destinationNupkgDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgDirectory));
 		}
 
 		private static void CheckPushArguments(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
 			nupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(nupkgFilePath));
 			apiKey.CheckArgumentNullOrWhiteSpace(nameof(apiKey));
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
-		}
-
-		private void SafeFileDelete(string s) {
-			if (File.Exists(s)) {
-				File.Delete(s);
-			}
 		}
 
 		private void CheckDependencies(IEnumerable<PackageDependency> dependencies, 
@@ -72,21 +87,45 @@ namespace Clio.Project.NuGet
 			}
 		}
 
+		private void CheckEmptyFieldPackageInfo(PackageInfo packageInfo, string fieldName) {
+			string fieldValue = (string)packageInfo.GetType().GetProperty(fieldName).GetValue(packageInfo);
+			if (string.IsNullOrWhiteSpace(fieldValue)) {
+				throw new InvalidOperationException(
+					$"Field: '{fieldName}' mast be is not empty in package descriptor: '{packageInfo.PackageDescriptorPath}'");
+			}
+		}
+
+		private void CheckEmptyFieldsPackageInfo(PackageInfo packageInfo) {
+			foreach (string isNotEmptyPackageInfoField in _isNotEmptyPackageInfoFields) {
+				CheckEmptyFieldPackageInfo(packageInfo, isNotEmptyPackageInfoField);
+			}
+		}
+
+		#endregion
+
+		#region Methods: Public
+
 		public void Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb, 
 				string destinationNupkgDirectory) {
-			CheckPackArguments(packagePath, dependencies, destinationNupkgDirectory);
+			CheckPackArguments(packagePath, dependencies);
+			destinationNupkgDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationNupkgDirectory);
 			PackageInfo packageInfo = _packageInfoProvider.GetPackageInfo(packagePath);
+			CheckEmptyFieldsPackageInfo(packageInfo);
 			CheckDependencies(dependencies, packageInfo.PackageDependencies);
 			string packedPackagePath = Path.Combine(destinationNupkgDirectory, 
 				_packageArchiver.GetPackedPackageFileName(packageInfo.Name));
-			_packageArchiver.Pack(packagePath, packedPackagePath, skipPdb, true);
 			string nuspecFilePath = Path.Combine(destinationNupkgDirectory,
 				_nuspecFilesGenerator.GetNuspecFileName(packageInfo));
-			_nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
 			string nupkgFilePath = Path.Combine(destinationNupkgDirectory, _nugetPacker.GetNupkgFileName(packageInfo));
-			_nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
-			SafeFileDelete(nuspecFilePath);
-			SafeFileDelete(packedPackagePath);
+			try {
+				_packageArchiver.Pack(packagePath, packedPackagePath, skipPdb, true);
+				_nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
+				_nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
+			}
+			finally {
+				_fileSystem.DeleteFileIfExists(nuspecFilePath);
+				_fileSystem.DeleteFileIfExists(packedPackagePath);
+			}
 		}
 
 		public void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl) {
@@ -113,6 +152,10 @@ namespace Clio.Project.NuGet
 			_nugetPackageRestorer.RestoreToPackageStorage(packageName, version, nugetSourceUrl, 
 				destinationNupkgDirectory, overwrite);
 
+		#endregion
+
 	}
+
+	#endregion
 
 }

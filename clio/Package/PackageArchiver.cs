@@ -47,7 +47,7 @@ namespace Clio
 		}
 
 		#endregion
-		
+
 		#region Methods: Private
 
 		private static void CheckPackArgument(string packagePath, string packedPackagePath) {

@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace Clio
 {
 	using System.Collections.Generic;
@@ -23,6 +25,6 @@ namespace Clio
 		public string PackagePath  { get; }
 		public IEnumerable<string> FilePaths { get; }
 		public IEnumerable<PackageDependency> PackageDependencies { get; }
-
+		public string PackageDescriptorPath => Path.Combine(PackagePath, "descriptor.json");
 	}
 }

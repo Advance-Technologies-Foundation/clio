@@ -173,15 +173,22 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
-		private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
-				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				var settingsRepository = new SettingsRepository();
-				var settings = settingsRepository.GetEnvironment(options);
-				string packageFolder = settings.IsNetCore ? "netstandard" : "netframework";
-				string packageFilePath = Path.Combine(dir, "cliogate", packageFolder, "cliogate.gz");
-				return new PushPkgOptions {
-					Name = packageFilePath
-				};
+		private static InstallNugetPkgOptions CreateInstallNugetPkgOptions(InstallGateOptions options) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options);
+			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
+			return new InstallNugetPkgOptions {
+				Name = packageName,
+				Version = "2.0.0.8",
+				SourceUrl = "http://192.168.181.131:8081/repository/nuget-hosted",
+				DevMode = options.DevMode,
+				Environment = options.Environment,
+				IsNetCore = options.IsNetCore,
+				Login = options.Login,
+				Maintainer = options.Maintainer,
+				Password = options.Password,
+				Safe = options.Safe
+			};
 		}
 
 		private static T Resolve<T>(EnvironmentOptions options = null) {
@@ -234,8 +241,8 @@ namespace Clio
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
 					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
-					(InstallGateOptions opts) => Resolve<PushPackageCommand>(opts)
-						.Execute(CreatePushPkgOptions(opts)),
+					(InstallGateOptions opts) => Resolve<InstallNugetPackageCommand>(CreateInstallNugetPkgOptions(opts))
+						.Execute(CreateInstallNugetPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
