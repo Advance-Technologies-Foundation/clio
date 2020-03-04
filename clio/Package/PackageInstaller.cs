@@ -1,8 +1,8 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Text;
 using System.Threading;
 using Clio.WebApplication;
-using Clio.Command;
 using Clio.Common;
 using System.Threading.Tasks;
 
@@ -97,7 +97,12 @@ namespace Clio.Package
 		}
 
 		private string GetInstallLog() {
-			return _applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl), Timeout.Infinite);
+			try {
+				return _applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl), 3000);
+			}
+			catch (Exception) {
+			}
+			return string.Empty;
 		}
 
 		private string GetLogDiff(string currentLog, string completeLog) {
