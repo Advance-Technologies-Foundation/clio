@@ -1,5 +1,6 @@
 ﻿using Autofac;
 using Clio.Command;
+using Clio.Command.SqlScriptCommand;
 using Clio.Common;
 using System.Reflection;
 
@@ -19,6 +20,7 @@ namespace Clio
 			}
 			containerBuilder.RegisterType<PushPackageCommand>();
 			containerBuilder.RegisterType<PingAppCommand>();
+			containerBuilder.RegisterType<SqlScriptCommand>();
 			containerBuilder.RegisterType<CompressPackageCommand>();
 			containerBuilder.RegisterType<PushNuGetPackagesCommand>();
 			containerBuilder.RegisterType<PackNuGetPackageCommand>();
