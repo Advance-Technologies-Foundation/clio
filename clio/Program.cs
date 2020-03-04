@@ -233,7 +233,7 @@ namespace Clio
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
-					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts).Execute(opts),
+					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
 					(InstallGateOptions opts) => Resolve<PushPackageCommand>(opts)
 						.Execute(CreatePushPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
