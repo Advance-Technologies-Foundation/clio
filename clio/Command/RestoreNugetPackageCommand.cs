@@ -11,7 +11,7 @@ namespace Clio.Command
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 
-		[Option('n', "NupkgDirectory", Required = true, HelpText = "Nupkg package directory")]
+		[Option('n', "NupkgDirectory", Required = false, HelpText = "Nupkg package directory")]
 		public string NupkgDirectory { get; set; }
 
 		[Option('v', "Version", Required = false, HelpText = "Version NuGet package", Default = "*")]
