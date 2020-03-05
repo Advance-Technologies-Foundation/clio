@@ -180,7 +180,7 @@ namespace Clio
 			return new InstallNugetPkgOptions {
 				Name = packageName,
 				Version = "2.0.0.8",
-				SourceUrl = "http://192.168.181.131:8081/repository/nuget-hosted",
+				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",
 				DevMode = options.DevMode,
 				Environment = options.Environment,
 				IsNetCore = options.IsNetCore,
