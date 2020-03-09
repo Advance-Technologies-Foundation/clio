@@ -1,6 +1,7 @@
 ﻿using System;
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
@@ -88,18 +89,51 @@ namespace cliogate.Files.cs
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
 		public CompilationResult CompileAll() {
-			WorkspaceBuilder workspaceBuilder =
-				WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
-			CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace, 
-				out var buildResultType);
-			var configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
-			configurationBuilder.BuildAll();
-			return new CompilationResult {
-				Status = buildResultType,
-				CompilerErrors = compilerErrors
-			};
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				WorkspaceBuilder workspaceBuilder = WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
+				CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace,
+					out var buildResultType);
+				var configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
+				configurationBuilder.BuildAll();
+				return new CompilationResult {
+					Status = buildResultType,
+					CompilerErrors = compilerErrors
+				};
+
+			} else {
+				throw new Exception("You don`n have permission for operation CanManageSolution");
+			}
+		}
+
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "UpdateDBStructure", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public bool UpdateDBStructure() {
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				var invalidSchemas = GetEntitySchemasWithNeedUpdateStructure();
+				return CreateInstallUtilities().SaveSchemaDBStructure(invalidSchemas, true);
+			} else {
+				throw new Exception("You don`n have permission for operation CanManageSolution");
+			}
+		}
+
+		private IEnumerable<Guid> GetEntitySchemasWithNeedUpdateStructure() {
+			var result = new List<Guid>();
+			var esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "VwSysEntitySchemaInWorkspace");
+			esq.AddAllSchemaColumns();
+			esq.Filters.LogicalOperation = Terrasoft.Common.LogicalOperationStrict.And;
+			var needUpdateFilter = esq.CreateFilterWithParameters(FilterComparisonType.Equal, "NeedUpdateStructure", true);
+			esq.Filters.Add(needUpdateFilter);
+			var packages = esq.GetEntityCollection(UserConnection);
+			foreach (var p in packages) {
+				var schemaUId = p.GetTypedColumnValue<Guid>("UId");
+				result.Add(schemaUId);
+			}
+			return result;
+		}
+
+		private PackageInstallUtilities CreateInstallUtilities() {
+			return new PackageInstallUtilities(UserConnection);
 		}
 	}
 }
-
-

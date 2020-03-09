@@ -1,11 +1,14 @@
 ﻿using System;
 using System.IO;
-using System.IO.Compression;
+using Clio;
 using Clio.Common;
 using CommandLine;
 
 namespace Сlio.Command.PackageCommand
 {
+
+	#region Class: UnzipPkgOptions
+
 	[Verb("extract-pkg-zip", Aliases = new string[] { "extract", "unzip" }, HelpText = "Prepare an archive of creatio package")]
 	public class UnzipPkgOptions
 	{
@@ -16,42 +19,50 @@ namespace Сlio.Command.PackageCommand
 		public string DestinationPath { get; set; }
 	}
 
+	#endregion
+
+	#region Class: ExtractPackageCommand
 
 	public class ExtractPackageCommand
 	{
-		public static int ExtractPackage(UnzipPkgOptions options) {
-			var packageFile = options.Name;
-			if (!packageFile.EndsWith(".gz")) {
-				packageFile += ".gz";
-			}
 
-			if (!File.Exists(packageFile)) {
-				throw new Exception($"Package archive {packageFile} not found");
+		#region Methods: Private
+
+		private static string GetCorrectedPackagePath(UnzipPkgOptions options) {
+			var packagePath = options.Name;
+			if (!packagePath.EndsWith(".gz")) {
+				packagePath += ".gz";
 			}
-			var fileInfo = new FileInfo(packageFile);
-			string destinationFolder = String.IsNullOrEmpty(options.DestinationPath) ? Directory.GetCurrentDirectory() : options.DestinationPath;
-			string packageName = fileInfo.Name.Substring(0, fileInfo.Name.Length - 3);
-			var folderPath = Path.Combine(destinationFolder, packageName);
+			return packagePath;
+		}
+
+		private static bool ShowDialogOverwriteDestinationPackageDir(string destinationPackagePath) {
+			bool overwrite = true;
+			if (Directory.Exists(destinationPackagePath)) {
+				Console.Write($"Directory {destinationPackagePath} already exist. Do you want replace it (y/n)? ");
+				var key = Console.ReadKey();
+				Console.WriteLine();
+				overwrite = key.KeyChar == 'y';
+			} else {
+				Directory.CreateDirectory(destinationPackagePath);
+			}
+			return overwrite;
+		}
+
+		#endregion
+
+		#region Methods: Public
+
+		public static int ExtractPackage(UnzipPkgOptions options, IPackageArchiver packageArchiver, 
+				IPackageUtilities packageUtilities, IFileSystem fileSystem) {
+			var packagePath = GetCorrectedPackagePath(options);
+			var destinationDirectory = fileSystem.GetCurrentDirectoryIfEmpty(options.DestinationPath);
+			string packageName = fileSystem.ExtractNameFromPath(packagePath);
+			var destinationPackagePath = Path.Combine(destinationDirectory, packageName);
 			try {
-				if (Directory.Exists(folderPath)) {
-					Console.Write($"Folder {folderPath} already exist. Do you want replace it (y/n)? ");
-					var key = Console.ReadKey();
-					Console.WriteLine();
-					if (key.KeyChar == 'y') {
-						Directory.Delete(folderPath, true);
-					} else {
-						throw new Exception($"Folder {folderPath} already exist");
-					}
-				} else {
-					Directory.CreateDirectory(folderPath);
-				}
 				Console.WriteLine($"Start unzip package ({packageName}).");
-				using (var fileStream = new FileStream(packageFile, FileMode.Open, FileAccess.Read, FileShare.None)) {
-					using (var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true)) {
-						while (CompressionUtilities.UnzipFile(folderPath, zipStream)) {
-						}
-					}
-				}
+				var overwrite = ShowDialogOverwriteDestinationPackageDir(destinationPackagePath);
+				packageArchiver.Unpack(packagePath, overwrite, destinationDirectory);
 				Console.WriteLine($"Unzip package ({packageName}) completed.");
 				return 0;
 			} catch (Exception e) {
@@ -59,5 +70,11 @@ namespace Сlio.Command.PackageCommand
 				return 1;
 			}
 		}
+
+		#endregion
+
 	}
+
+	#endregion
+
 }

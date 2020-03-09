@@ -1,12 +1,18 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 
 namespace Clio.UserEnvironment
 {
 	internal class CreatioEnvironment : ICreatioEnvironment
 	{
 		private const string PathVariableName = "PATH";
+
+		public static bool IsNetCore => Settings.IsNetCore;
+		public static string EnvironmentName { get; set; }
+		public static EnvironmentSettings Settings { get; set; }
+
 
 		private IResult RegisterPath(string path, EnvironmentVariableTarget target) {
 			var result = new EnvironmentResult();
@@ -51,6 +57,12 @@ namespace Clio.UserEnvironment
 			return result;
 		}
 
+		private static void Configure(EnvironmentOptions options) {
+			var settingsRepository = new SettingsRepository();
+			EnvironmentName = options.Environment;
+			Settings = settingsRepository.GetEnvironment(options);
+		}
+
 		public string GetRegisteredPath() {
 			var environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
 			string[] cliPath = (environmentPath?.Split(Path.PathSeparator));
@@ -71,6 +83,10 @@ namespace Clio.UserEnvironment
 
 		public IResult UserUnregisterPath() {
 			return UnregisterPath(EnvironmentVariableTarget.User);
+		}
+
+		public string GetAssemblyFolderPath() {
+			return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 		}
 
 	}

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using Clio.Common;
 using Newtonsoft.Json;
 
 namespace Clio
@@ -84,18 +85,8 @@ namespace Clio
 		}
 
 		private void ExecuteDotnetCommand(string command) {
-			var process = new Process {
-				StartInfo = new ProcessStartInfo() {
-					FileName = "dotnet",
-					Arguments = command,
-					CreateNoWindow = true,
-					UseShellExecute = false,
-					WorkingDirectory = FullPath
-				},
-				EnableRaisingEvents = true
-			};
-			process.Start();
-			process.WaitForExit();
+			IDotnetExecutor dotnetExecutor = new DotnetExecutor();
+			dotnetExecutor.Execute(command, true, FullPath);
 		}
 
 		public static string GetExecutingDirectorybyAppDomain() {

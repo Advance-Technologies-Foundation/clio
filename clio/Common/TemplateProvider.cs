@@ -5,22 +5,20 @@ namespace Clio.Common
 {
 	public class TemplateProvider : ITemplateProvider
 	{
-		private string ExecutingDirectorybyAppDomain => AppDomain.CurrentDomain.BaseDirectory;
+		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
-		private string GetAbsoluteTemplatePath(string relativeTplPath) {
-			string fullTplPath = Path.Combine(ExecutingDirectorybyAppDomain, relativeTplPath);
-			if (!File.Exists(fullTplPath)) {
-				throw new InvalidOperationException($"Invalid template file path '{fullTplPath}'");
-			}
-			return fullTplPath;
+		public TemplateProvider(IWorkingDirectoriesProvider workingDirectoriesProvider) {
+			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+			_workingDirectoriesProvider = workingDirectoriesProvider;
 		}
-		
-		public string GetTemplate(string relativeTplPath) {
-			if (string.IsNullOrWhiteSpace(relativeTplPath)) {
-				throw new ArgumentNullException(nameof(relativeTplPath));
+
+		public string GetTemplate(string templateName) {
+			templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
+			string templatePath = _workingDirectoriesProvider.GetTemplatePath(templateName); 
+			if (!File.Exists(templatePath)) {
+				throw new InvalidOperationException($"Invalid template file path '{templatePath}'");
 			}
-			string absoluteTplPath = GetAbsoluteTemplatePath(relativeTplPath);
-			return File.ReadAllText(absoluteTplPath);
+			return File.ReadAllText(templatePath);
 		}
 	}
 }

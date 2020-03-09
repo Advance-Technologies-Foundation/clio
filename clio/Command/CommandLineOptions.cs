@@ -58,6 +58,12 @@ namespace Clio
 
 	}
 
+	public class EnvironmentNameOptions: EnvironmentOptions
+	{
+		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
+		public string Name { get => Environment; set { Environment = value; } }
+	}
+
 
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
 	internal class ConvertOptions
@@ -80,17 +86,6 @@ namespace Clio
 					new ConvertOptions { Path = "C:\\Pkg\\"}
 				)
 			};
-	}
-
-	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
-	internal class PullPkgOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
-		public string Name { get; set; }
-
-		[Option('d', "DestinationPath", Required = false,
-			HelpText = "Path to the directory where Zip created.", Default = null)]
-		public string DestPath { get; set; }
 	}
 
 	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install clio api gateway to application")]

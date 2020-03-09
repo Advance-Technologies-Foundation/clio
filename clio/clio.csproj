@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>2.0.0.7</AssemblyVersion>
-	  <FileVersion>2.0.0.7</FileVersion>
-	  <Version>2.0.0.7</Version>
+	  <AssemblyVersion>2.0.0.8</AssemblyVersion>
+	  <FileVersion>2.0.0.8</FileVersion>
+	  <Version>2.0.0.8</Version>
 	  <Description>CLI interface for Creatio platform</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -47,14 +47,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineSDK" Version="1.0.10" />
+    <PackageReference Include="Autofac" Version="5.1.2" />
+    <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.4.0" />
     <PackageReference Include="creatio.client" Version="1.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="3.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="3.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="3.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="3.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.2" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageReference Include="System.Json" Version="4.7.0" />
   </ItemGroup>
@@ -168,7 +169,13 @@
     <None Update="tpl\Package.nuspec.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="tpl\NugetPackProj.csproj.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="updater.runtimeconfig.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="tpl\NugetRestoreProj.csproj.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

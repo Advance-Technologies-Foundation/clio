@@ -1,40 +1,41 @@
 using Clio.Common;
-using Clio.UserEnvironment;
 using CommandLine;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using Clio.Project.NuGet;
 
 namespace Clio.Command
 {
-	[Verb("push-nuget-pkgs", Aliases = new string[] { "install" }, HelpText = "Push NuGet package on server")]
+	[Verb("push-nuget-pkg", Aliases = new string[] { "push" }, HelpText = "Push package on NuGet server")]
 	public class PushNuGetPkgsOptions : EnvironmentOptions
 	{
 
-		[Value(0, MetaName = "Version", Required = true, HelpText = "Packages version")]
-		public string Version { get; set; }
+		[Value(0, MetaName = "NugetPkgPath", Required = true, HelpText = "Nuget package file path")]
+		public string NugetPkgPath { get; set; }
 
-		[Option('r', "PackagesPath", Required = true, HelpText = "Packages path")]
-		public string PackagesPath { get; set; }
+		[Option('k', "ApiKey", Required = true, HelpText = "The API key for the server")]
+		public string ApiKey { get; set; }
+
+		[Option('s', "Source", Required = true, HelpText = "Specifies the server URL")]
+		public string SourceUrl { get; set; }
+
 	}
 
 	public class PushNuGetPackagesCommand : Command<PushNuGetPkgsOptions>
 	{
-		private EnvironmentSettings _environmentSettings;
-		private IPackageFinder _packageFinder; 
-		private INuspecFilesGenerator _nuspecFilesGenerator;
+		private INuGetManager _nugetManager;
 
-		public PushNuGetPackagesCommand(EnvironmentSettings environmentSettings, IPackageFinder packageFinder, 
-				INuspecFilesGenerator nuspecFilesGenerator) {
-			_environmentSettings = environmentSettings ?? throw new ArgumentNullException(nameof(environmentSettings));
-			_packageFinder = packageFinder ?? throw new ArgumentNullException(nameof(packageFinder));
-			_nuspecFilesGenerator = nuspecFilesGenerator 
-				?? throw new ArgumentNullException(nameof(nuspecFilesGenerator));
+		public PushNuGetPackagesCommand(INuGetManager nugetManager) {
+			nugetManager.CheckArgumentNull(nameof(nugetManager));
+			_nugetManager = nugetManager;
 		}
 
 		public override int Execute(PushNuGetPkgsOptions options) {
 			try {
-				IDictionary<string, PackageInfo> packagesInfo = _packageFinder.Find(options.PackagesPath);
-				_nuspecFilesGenerator.Create(options.PackagesPath, packagesInfo, options.Version);
+				_nugetManager.Push(options.NugetPkgPath, options.ApiKey, options.SourceUrl);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -42,5 +43,7 @@ namespace Clio.Command
 				return 1;
 			}
 		}
+
 	}
+
 }

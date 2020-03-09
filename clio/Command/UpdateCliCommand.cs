@@ -6,6 +6,7 @@ using System.Json;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using Clio.Utilities;
 using CommandLine;
 
 namespace Clio.Command.UpdateCliCommand
@@ -27,7 +28,7 @@ namespace Clio.Command.UpdateCliCommand
 		}
 
 		public static int UpdateCli(UpdateCliOptions options) {
-			if (IsWindowsEnvironment()) {
+			if (OSPlatformChecker.IsWindowsEnvironment()) {
 				ShowNugetUpdateMessage();
 				return 1;
 			}
@@ -66,7 +67,7 @@ namespace Clio.Command.UpdateCliCommand
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
 				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
-				if (IsWindowsEnvironment()) {
+				if (OSPlatformChecker.IsWindowsEnvironment()) {
 					ShowNugetUpdateMessage();
 				} else {
 					Console.WriteLine( $"You should consider upgrading via the \'clio update-cli\' command.", ConsoleColor.DarkYellow);
@@ -74,17 +75,7 @@ namespace Clio.Command.UpdateCliCommand
 			}
 		}
 
-		private static bool IsWindowsEnvironment() {
-			switch (Environment.OSVersion.Platform) {
-				case PlatformID.Win32NT:
-				case PlatformID.Win32S:
-				case PlatformID.Win32Windows:
-				case PlatformID.WinCE:
-					return true;
-				default:
-					return false;
-			}
-		}
+
 
 		private static string GetLastReleaseUrl() {
 			System.Threading.Tasks.Task<byte[]> body;

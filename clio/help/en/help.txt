@@ -48,5 +48,14 @@ COMMANDS
 
     set-feature             feature     Set feature state
 
+    pack-nuget-pkg          pack        Pack NuGet package
+
+    push-nuget-pkg          push        Push package on NuGet server
+
+    restore-nuget-pkg       restore     Restore NuGet package to a folder 
+
+    install-nuget-pkg       installng   Restore NuGet package to  
+                                        a web application (website)
+
 AUTHOR
     https://github.com/Advance-Technologies-Foundation/clio

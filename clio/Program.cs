@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using Autofac;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
@@ -23,24 +23,20 @@ namespace Clio
 
 	class Program
 	{
-		private static string UserName => settings.Login;
-		private static bool IsDevMode => settings.IsDevMode;
-		private static string UserPassword => settings.Password;
-		private static string Url => settings.Uri; // Необходимо получить из конфига
+		private static string UserName => CreatioEnvironment.Settings.Login;
+		private static string UserPassword => CreatioEnvironment.Settings.Password;
+		private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
 		private static string AppUrl
 		{
 			get
 			{
-				if (IsNetCore) {
+				if (CreatioEnvironment.IsNetCore) {
 					return Url;
 				} else {
 					return Url + @"/0";
 				}
 			}
 		}
-		private static bool IsNetCore => settings.IsNetCore;
-		private static EnvironmentSettings settings;
-		private static string environmentName;
 
 		private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
@@ -51,15 +47,15 @@ namespace Clio
 
 		private static CreatioClient CreatioClient
 		{
-			get => new CreatioClient(Url, UserName, UserPassword, true, IsNetCore);
+			get => new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
 		}
 
 		public static bool Safe { get; private set; } = true;
 
 		private static void Configure(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
-			environmentName = options.Environment;
-			settings = settingsRepository.GetEnvironment(options);
+			CreatioEnvironment.EnvironmentName = options.Environment;
+			CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
 		}
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
@@ -127,33 +123,9 @@ namespace Clio
 		}
 
 		private static void UnZipPackages(string zipFilePath) {
+			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 			var fileInfo = new FileInfo(zipFilePath);
-			if (fileInfo.Length == 0) {
-				throw new Exception("CompressionUtilities.Exception.FileIsEmpty");
-			}
-			string targetDirectoryPath = GetPackagePathFromZipFile(zipFilePath, ".zip");
-			if (Directory.Exists(targetDirectoryPath)) {
-				Directory.Delete(targetDirectoryPath, true);
-			}
-			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
-			foreach (var filePath in Directory.GetFiles(targetDirectoryPath)) {
-				string packageName = GetPackagePathFromZipFile(new FileInfo(filePath).Name, ".gz");
-				string currentDirectoryPath = Path.Combine(Environment.CurrentDirectory, packageName);
-				Console.WriteLine("Start unzip package ({0}).", packageName);
-				using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.None)) {
-					using (var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true)) {
-						while (CompressionUtilities.UnzipFile(currentDirectoryPath, zipStream)) {
-						}
-					}
-				}
-				Console.WriteLine("Unzip package ({0}) completed.", packageName);
-			}
-		}
-
-		private static string GetPackagePathFromZipFile(string filePath, string zipFileExtention) {
-			string targetDirectoryPath = filePath.Remove(filePath.IndexOf(zipFileExtention,
-				StringComparison.Ordinal), zipFileExtention.Length);
-			return targetDirectoryPath;
+			packageArchiver.UnZipPackages(zipFilePath, true, false, fileInfo.DirectoryName);
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
@@ -175,7 +147,6 @@ namespace Clio
 			return settingsRepository.GetEnvironment(options);
 		}
 
-		//ToDo: move to factory
 		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
 			var settings = GetEnvironmentSettings(options);
@@ -184,6 +155,9 @@ namespace Clio
 			var constructorArgs = new object[] { clientAdapter, settings }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 		}
+
+
+		//ToDo: move to factory
 
 		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
@@ -199,6 +173,34 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
+		private static InstallNugetPkgOptions CreateInstallNugetPkgOptions(InstallGateOptions options) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options);
+			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
+			return new InstallNugetPkgOptions {
+				Name = packageName,
+				Version = "2.0.0.8",
+				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",
+				DevMode = options.DevMode,
+				Environment = options.Environment,
+				IsNetCore = options.IsNetCore,
+				Login = options.Login,
+				Maintainer = options.Maintainer,
+				Password = options.Password,
+				Safe = options.Safe
+			};
+		}
+
+		private static T Resolve<T>(EnvironmentOptions options = null) {
+			EnvironmentSettings settings = null; 
+			if (options != null) {
+				settings = GetEnvironmentSettings(options);
+			}
+			var container = new BindingsModule().Register(settings);
+			return container.Resolve<T>();
+		}
+
+
 		private static int Main(string[] args) {
 			var autoupdate = new SettingsRepository().GetAutoupdate();
 			if (autoupdate) {
@@ -207,16 +209,18 @@ namespace Clio
 			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
-			var envPath = creatioEnv.GetRegisteredPath();
+			var envPath = creatioEnv.GetAssemblyFolderPath();
 			helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 			Parser.Default.Settings.ShowHeader = false;
 			Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
+			Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
 					PullPkgOptions,	UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
-					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions>(args)
+					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
+					RestoreNugetPkgOptions, InstallNugetPkgOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -225,9 +229,8 @@ namespace Clio
 						new SettingsRepository(), new ApplicationClientFactory()).Execute(opts),
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
-					(GeneratePkgZipOptions opts) => CreateCommand<CompressPackageCommand>(new ProjectUtilities()).Execute(opts),
-					(PushPkgOptions opts) => CreateRemoteCommand<PushPackageCommand>(opts,
-						new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor()).Execute(opts),
+					(GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
+					(PushPkgOptions opts) => Resolve<PushPackageCommand>(opts).Execute(opts),
 					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
@@ -237,31 +240,24 @@ namespace Clio
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
-					(ExecuteSqlScriptOptions opts) => CreateRemoteCommand<SqlScriptCommand>(opts, new SqlScriptExecutor()).Execute(opts),
-					(InstallGateOptions opts) => {
-						var dir = AppDomain.CurrentDomain.BaseDirectory;
-						var settingsRepository = new SettingsRepository();
-						var settings = settingsRepository.GetEnvironment(opts);
-						string packageFolder = settings.IsNetCore ? "netstandard" : "netframework";
-						string packageFilePath = Path.Combine(dir, "cliogate", packageFolder, "cliogate.gz");
-						return CreateRemoteCommand<PushPackageCommand>(opts,
-								new ProjectUtilities(), new SettingsRepository(), new SqlScriptExecutor())
-							.Execute(new PushPkgOptions {
-								Name = packageFilePath
-							});
-					},
+					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
+					(InstallGateOptions opts) => Resolve<InstallNugetPackageCommand>(CreateInstallNugetPkgOptions(opts))
+						.Execute(CreateInstallNugetPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
 					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
-					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts),
-					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
+						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
+						Resolve<IFileSystem>()),
+					(PingAppOptions opts) => Resolve<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
-					(CompileOptions opts) => CompileWorkspaceCommand.Compile(opts),
-					(PushNuGetPkgsOptions opts) => CreateCommand<PushNuGetPackagesCommand>(
-						GetEnvironmentSettings(opts), new PackageFinder(), 
-						new NuspecFilesGenerator(new TemplateProvider())).Execute(opts),
+					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
+					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
+					(PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
+					(RestoreNugetPkgOptions opts) => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
+					(InstallNugetPkgOptions opts) => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 
@@ -269,15 +265,15 @@ namespace Clio
 			try {
 				SetupAppConnection(opts);
 				var repository = new SettingsRepository();
-				settings.DeveloperModeEnabled = true;
-				repository.ConfigureEnvironment(environmentName, settings);
+				CreatioEnvironment.Settings.DeveloperModeEnabled = true;
+				repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
 				var sysSettingOptions = new SysSettingsOptions() {
 					Code = "Maintainer",
-					Value = settings.Maintainer
+					Value = CreatioEnvironment.Settings.Maintainer
 				};
-				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, settings);
+				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 				UnlockMaintainerPackageInternal();
-				new RestartCommand(new CreatioClientAdapter(CreatioClient), settings).Execute(new RestartOptions());
+				new RestartCommand(new CreatioClientAdapter(CreatioClient), CreatioEnvironment.Settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -287,8 +283,8 @@ namespace Clio
 		}
 
 		private static void UnlockMaintainerPackageInternal() {
-			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{settings.Maintainer}'";
-			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(CreatioClient), settings);
+			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{CreatioEnvironment.Settings.Maintainer}'";
+			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(CreatioClient), CreatioEnvironment.Settings);
 		}
 
 		private static int AddModels(ItemOptions opts) {
@@ -322,7 +318,7 @@ namespace Clio
 				var creatioEnv = new CreatioEnvironment();
 				string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
 				if (!File.Exists(tplPath)) {
-					var envPath = creatioEnv.GetRegisteredPath();
+					var envPath = creatioEnv.GetAssemblyFolderPath();
 					if (!string.IsNullOrEmpty(envPath)) {
 						tplPath = Path.Combine(envPath, tplPath);
 					}
