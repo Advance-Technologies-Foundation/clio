@@ -116,11 +116,10 @@ namespace Clio.Project.NuGet
 				_packageArchiver.GetPackedPackageFileName(packageInfo.Name));
 			string nuspecFilePath = Path.Combine(destinationNupkgDirectory,
 				_nuspecFilesGenerator.GetNuspecFileName(packageInfo));
-			string nupkgFilePath = Path.Combine(destinationNupkgDirectory, _nugetPacker.GetNupkgFileName(packageInfo));
 			try {
 				_packageArchiver.Pack(packagePath, packedPackagePath, skipPdb, true);
 				_nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
-				_nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
+				_nugetPacker.Pack(nuspecFilePath, destinationNupkgDirectory);
 			}
 			finally {
 				_fileSystem.DeleteFileIfExists(nuspecFilePath);
