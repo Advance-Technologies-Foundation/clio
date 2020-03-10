@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command
@@ -17,31 +18,21 @@ namespace Clio.Command
 		public string ExecutorType { get; set; }
 	}
 
-	class AssemblyCommand : BaseRemoteCommand
+	class AssemblyCommand : RemoteCommand<ExecuteAssemblyOptions>
 	{
-		private static string ExecutorUrl => AppUrl + @"/IDE/ExecuteScript";
+		protected override string ServicePath => @"/IDE/ExecuteScript";
 
-		private static void ExecuteCodeFromAssemblyInternal(ExecuteAssemblyOptions options) {
+
+		public AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+			: base(applicationClient, settings) {
+		}
+
+		protected override string GetResponseData(ExecuteAssemblyOptions options) {
 			string filePath = options.Name;
 			string executorType = options.ExecutorType;
 			var fileContent = File.ReadAllBytes(filePath);
 			string body = Convert.ToBase64String(fileContent);
-			string requestData = @"{""Body"":""" + body + @""",""LibraryType"":""" + executorType + @"""}";
-			var responseFromServer = CreatioClient.ExecutePostRequest(ExecutorUrl, requestData);
-			Console.WriteLine(responseFromServer);
-		}
-
-		public static int ExecuteCodeFromAssembly(ExecuteAssemblyOptions options) {
-			try {
-				Configure(options);
-				ExecuteCodeFromAssemblyInternal(options);
-				Console.WriteLine();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
+			return @"{""Body"":""" + body + @""",""LibraryType"":""" + executorType + @"""}";
 		}
 	}
 }

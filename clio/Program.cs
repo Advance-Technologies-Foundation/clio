@@ -222,7 +222,7 @@ namespace Clio
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
 					RestoreNugetPkgOptions, InstallNugetPkgOptions>(args)
 				.MapResult(
-					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
+					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
 					(RegAppOptions opts) => CreateCommand<RegAppCommand>(
