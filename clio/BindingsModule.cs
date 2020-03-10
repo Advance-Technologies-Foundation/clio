@@ -1,5 +1,6 @@
 ﻿using Autofac;
 using Clio.Command;
+using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
 using System.Reflection;
@@ -26,6 +27,7 @@ namespace Clio
 			containerBuilder.RegisterType<PackNuGetPackageCommand>();
 			containerBuilder.RegisterType<RestoreNugetPackageCommand>();
 			containerBuilder.RegisterType<InstallNugetPackageCommand>();
+			containerBuilder.RegisterType<SetPackageVersionCommand>();
 			return containerBuilder.Build();
 		}
 	}

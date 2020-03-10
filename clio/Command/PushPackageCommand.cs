@@ -22,6 +22,7 @@ namespace Clio.Command
 	public class PushPackageCommand : Command<PushPkgOptions>
 	{
 		public PushPackageCommand(IPackageInstaller packageInstaller) {
+			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 			_packageInstaller = packageInstaller;
 
 		}
