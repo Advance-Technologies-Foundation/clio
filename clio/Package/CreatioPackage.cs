@@ -85,7 +85,8 @@ namespace Clio
 		}
 
 		private void ExecuteDotnetCommand(string command) {
-			IDotnetExecutor dotnetExecutor = new DotnetExecutor();
+			IProcessExecutor processExecutor = new ProcessExecutor();
+			IDotnetExecutor dotnetExecutor = new DotnetExecutor(processExecutor);
 			dotnetExecutor.Execute(command, true, FullPath);
 		}
 

@@ -10,11 +10,6 @@ namespace Clio.Project.NuGet
 	public class InstallNugetPackage : IInstallNugetPackage
 	{
 
-		#region Constants: Private
-
-
-		#endregion
-
 		#region Fields: Private
 
 		private readonly INuGetManager _nugetManager;

@@ -26,7 +26,7 @@ namespace Clio.Project.NuGet
 		private readonly IEnumerable<string> _isNotEmptyPackageInfoFields = new[] {
 			nameof(PackageInfo.Name),
 			nameof(PackageInfo.Maintainer),
-			nameof(PackageInfo.PackageVersion)
+			nameof(PackageInfo.Version)
 		};
 
 	#endregion

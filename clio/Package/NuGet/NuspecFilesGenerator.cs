@@ -51,7 +51,7 @@ namespace Clio.Project.NuGet
 		private string ReplaceMacro(string template, PackageInfo packageInfo, string filesSection,
 				string dependenciesSection) {
 			return template.Replace("$id$", packageInfo.Name)
-				.Replace("$version$", packageInfo.PackageVersion)
+				.Replace("$version$", packageInfo.Version)
 				.Replace("$authors$", packageInfo.Maintainer)
 				.Replace("$owners$", packageInfo.Maintainer)
 				.Replace("$copyright$", $"Copyright {DateTime.Now.Year}")
@@ -67,7 +67,7 @@ namespace Clio.Project.NuGet
 		}
 
 		public string GetNuspecFileName(PackageInfo packageInfo) {
-			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NugetConstants.NuspecExtension}";
+			return $"{packageInfo.Name}.{packageInfo.Version}.{NugetConstants.NuspecExtension}";
 		}
 
 		public void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,

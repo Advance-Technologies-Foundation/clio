@@ -14,6 +14,7 @@
 *.suo
 # Include dlls if they're in the CommonReferences directory
 !*CommonReferences/*.dll
+!clio\clio\tools\nuget\nuget.exe 
 ####################
 # VS Upgrade stuff #
 ####################
