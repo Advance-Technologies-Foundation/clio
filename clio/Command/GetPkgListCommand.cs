@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Common;
 using CommandLine;
-using Creatio.Client;
 using Newtonsoft.Json;
 
 namespace Clio.Command
@@ -17,30 +17,38 @@ namespace Clio.Command
 
 	}
 
-	public class GetPkgListCommand : BaseRemoteCommand
+	public class GetPkgListCommand : RemoteCommand<PkgListOptions>
 	{
-		private static string ServiceUrl => AppUrl + @"/rest/CreatioApiGateway/GetPackages";
+		public GetPkgListCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+			: base(applicationClient, settings) {
+		}
 
-		public static int GetPkgList(PkgListOptions options) {
-			Configure(options);
-			var scriptData = "{}";
-			string responseFormServer = CreatioClient.ExecutePostRequest(ServiceUrl, scriptData);
-			var json = CorrectJson(responseFormServer);
-			var packages = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(json);
-			var selectedPackages = packages.Where(p => p["Name"].ToLower().Contains(options.SearchPattern.ToLower())).OrderBy(p => p["Name"]);
-			if (selectedPackages.Count() > 0) {
-				var row = GetFormatedString("Name", "Maintainer");
+		protected override string ServicePath => @"/rest/CreatioApiGateway/GetPackages";
+
+		public override int Execute(PkgListOptions options) {
+			try {
+				var scriptData = "{}";
+				string responseFormServer = ApplicationClient.ExecutePostRequest(ServiceUri, scriptData);
+				var json = CorrectJson(responseFormServer);
+				var packages = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(json);
+				var selectedPackages = packages.Where(p => p["Name"].ToLower().Contains(options.SearchPattern.ToLower())).OrderBy(p => p["Name"]);
+				if (selectedPackages.Count() > 0) {
+					var row = GetFormatedString("Name", "Maintainer");
+					Console.WriteLine();
+					Console.WriteLine(row);
+					Console.WriteLine();
+				}
+				foreach (var p in selectedPackages) {
+					var row = GetFormatedString(p["Name"], p["Maintainer"]);
+					Console.WriteLine(row);
+				}
 				Console.WriteLine();
-				Console.WriteLine(row);
-				Console.WriteLine();
+				Console.WriteLine($"Find {selectedPackages.Count()} packages in {options.Uri}");
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine(e);
+				return 1;
 			}
-			foreach (var p in selectedPackages) {
-				var row = GetFormatedString(p["Name"], p["Maintainer"]);
-				Console.WriteLine(row);
-			}
-			Console.WriteLine();
-			Console.WriteLine($"Find {selectedPackages.Count()} packages in {Settings.Uri}");
-			return 0;
 		}
 
 		private static string GetFormatedString(params string[] args) {

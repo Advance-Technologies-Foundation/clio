@@ -156,18 +156,6 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 		}
 
-
-		//ToDo: move to factory
-
-		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
-				params object[] additionalConstructorArgs) {
-			var settings = GetEnvironmentSettings(options);
-			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, true , settings.IsNetCore);
-			var clientAdapter = new CreatioClientAdapter(creatioClient);
-			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
-			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
-		}
-
 		//ToDo: move to factory
 		private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
@@ -231,7 +219,7 @@ namespace Clio
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
 					(PushPkgOptions opts) => Resolve<PushPackageCommand>(opts).Execute(opts),
-					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
+					(DeletePkgOptions opts) => CreateCommand<DeletePackageCommand>(opts).Execute(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
 						new CreatioPkgProjectCreator())).Execute(opts),
@@ -244,14 +232,14 @@ namespace Clio
 						.Execute(CreateInstallNugetPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
-					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
+					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
 					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
 						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
 						Resolve<IFileSystem>()),
 					(PingAppOptions opts) => Resolve<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
-					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
+					(PkgListOptions opts) => CreateRemoteCommand<GetPkgListCommand>(opts).Execute(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					(PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
@@ -270,7 +258,8 @@ namespace Clio
 					Code = "Maintainer",
 					Value = CreatioEnvironment.Settings.Maintainer
 				};
-				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
+				var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
+				sysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 				UnlockMaintainerPackageInternal();
 				new RestartCommand(new CreatioClientAdapter(CreatioClient), CreatioEnvironment.Settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");
