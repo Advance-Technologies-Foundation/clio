@@ -116,7 +116,23 @@ namespace Clio
 
 		public void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb, 
 				bool overwrite) {
-			throw new NotImplementedException();
+			string tempPath = Path.Combine(Path.GetTempPath(), "Application_");// + DateTime.Now.ToShortDateString());
+			if (Directory.Exists(tempPath))
+			{
+				Directory.Delete(tempPath, true);
+			}
+			if (sourcePath == null)
+			{
+				sourcePath = Environment.CurrentDirectory;
+			}
+			Directory.CreateDirectory(tempPath);
+			foreach (var name in names)
+			{
+				var currentSourcePath = Path.Combine(sourcePath, name);
+				var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
+				Pack(currentSourcePath, currentDestinationPath, skipPdb, overwrite);
+			}
+			ZipFile.CreateFromDirectory(tempPath, destinationPath);
 		}
 
 		public void Unpack(string packedPackagePath, bool overwrite, string destinationPath = null) {
