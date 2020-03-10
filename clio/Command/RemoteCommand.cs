@@ -57,7 +57,7 @@ namespace Clio.Command
 			ApplicationClient.ExecutePostRequest(ServiceUri, GetResponseData(options), RequestTimeout);
 		}
 
-		protected string GetResponseData(EnvironmentOptions options) {
+		protected virtual string GetResponseData(TEnvironmentOptions options) {
 			return "{}";
 		}
 
