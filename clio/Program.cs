@@ -245,7 +245,7 @@ namespace Clio
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
-					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
+					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
 						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
 						Resolve<IFileSystem>()),
