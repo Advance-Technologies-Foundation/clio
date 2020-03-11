@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Clio.Package
 {
-	internal class PackageDescriptorDto
+	public class PackageDescriptorDto
 	{
 		public class DescriptorDto
 		{

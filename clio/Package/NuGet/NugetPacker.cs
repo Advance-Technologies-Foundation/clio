@@ -70,8 +70,8 @@ namespace Clio.Project.NuGet
 
 		#region Methods: Public
 
-		public string GetNupkgFileName(PackageInfo packageInfo) {
-			return $"{packageInfo.Name}.{packageInfo.Version}.{NugetConstants.NupkgExtension}";
+		public string GetNupkgFileName(PackageInfo pkgInfo) {
+			return $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NupkgExtension}";
 		}
 
 		public void Pack(string nuspecFilePath, string destinationNupkgDirectory) {

@@ -10,9 +10,9 @@
 			UId = uid ?? string.Empty;
 		}
 
-		public string UId { get; }
-		public string PackageVersion { get; }
-		public string Name { get; }
+		public string UId { get; set; }
+		public string PackageVersion { get; set; }
+		public string Name { get; set; }
 
 		public bool Equals(PackageDependency packageDependency) {
 			return Equals(packageDependency, this);

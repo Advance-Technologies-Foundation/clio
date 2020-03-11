@@ -24,9 +24,9 @@ namespace Clio.Project.NuGet
 		private readonly IFileSystem _fileSystem;
 		private readonly ILogger _logger;
 		private readonly IEnumerable<string> _isNotEmptyPackageInfoFields = new[] {
-			nameof(PackageInfo.Name),
-			nameof(PackageInfo.Maintainer),
-			nameof(PackageInfo.Version)
+			nameof(PackageInfo.Descriptor.Name),
+			nameof(PackageInfo.Descriptor.Maintainer),
+			nameof(PackageInfo.Descriptor.PackageVersion)
 		};
 
 	#endregion
@@ -88,7 +88,10 @@ namespace Clio.Project.NuGet
 		}
 
 		private void CheckEmptyFieldPackageInfo(PackageInfo packageInfo, string fieldName) {
-			string fieldValue = (string)packageInfo.GetType().GetProperty(fieldName).GetValue(packageInfo);
+			string fieldValue = (string)packageInfo.Descriptor
+				.GetType()
+				.GetProperty(fieldName)
+				.GetValue(packageInfo.Descriptor);
 			if (string.IsNullOrWhiteSpace(fieldValue)) {
 				throw new InvalidOperationException(
 					$"Field: '{fieldName}' mast be is not empty in package descriptor: '{packageInfo.PackageDescriptorPath}'");
@@ -101,6 +104,14 @@ namespace Clio.Project.NuGet
 			}
 		}
 
+		private  IEnumerable<PackageDependency> SetEmptyUIdDependencies(IEnumerable<PackageDependency> dependencies) {
+			return dependencies.Select(dependency => {
+				dependency.UId = string.Empty;
+				return dependency;
+			});
+
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -111,9 +122,11 @@ namespace Clio.Project.NuGet
 			destinationNupkgDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationNupkgDirectory);
 			PackageInfo packageInfo = _packageInfoProvider.GetPackageInfo(packagePath);
 			CheckEmptyFieldsPackageInfo(packageInfo);
-			CheckDependencies(dependencies, packageInfo.PackageDependencies);
+			IEnumerable<PackageDependency> packagesDependencies = 
+				SetEmptyUIdDependencies(packageInfo.Descriptor.DependsOn);
+			CheckDependencies(dependencies, packagesDependencies);
 			string packedPackagePath = Path.Combine(destinationNupkgDirectory, 
-				_packageArchiver.GetPackedPackageFileName(packageInfo.Name));
+				_packageArchiver.GetPackedPackageFileName(packageInfo.Descriptor.Name));
 			string nuspecFilePath = Path.Combine(destinationNupkgDirectory,
 				_nuspecFilesGenerator.GetNuspecFileName(packageInfo));
 			try {

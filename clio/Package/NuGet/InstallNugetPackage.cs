@@ -35,11 +35,6 @@ namespace Clio.Project.NuGet
 
 		#endregion
 
-		#region Methods: Private
-
-
-		#endregion
-
 		#region Methods: Public
 
 		public void Install(string packageName, string version, string nugetSourceUrl) {
