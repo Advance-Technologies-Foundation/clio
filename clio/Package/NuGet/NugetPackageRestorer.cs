@@ -77,7 +77,7 @@ namespace Clio.Project.NuGet
 		private string RestorePackage(string nugetRestoreProjPath, string nugetSourceUrl, 
 				string destinationNupkgDirectory) {
 			string packCommand = $"restore \"{nugetRestoreProjPath}\" --source {nugetSourceUrl} " + 
-				$"--packages \"{destinationNupkgDirectory}\" --force";
+				$"--packages \"{destinationNupkgDirectory}\" --force --no-cache";
 			return _dotnetExecutor.Execute(packCommand, true);
 		}
 
