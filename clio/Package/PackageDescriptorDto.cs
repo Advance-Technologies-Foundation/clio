@@ -17,7 +17,7 @@ namespace Clio.Package
 
 			public string Maintainer { get; set; }
 
-			public IList<string> DependsOn { get; set; }
+			public IList<PackageDependency> DependsOn { get; set; }
 		}
 
 		public DescriptorDto Descriptor { get; set; }
