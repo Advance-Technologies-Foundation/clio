@@ -8,7 +8,7 @@ DESCRIPTION
     Set specified package version into descriptor.json by specified package path.
 
 EXAMPLE
-    clio set-pkg-version -p <PACKAGE PATH> -v <PACKAGE VERSION>
+    clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
