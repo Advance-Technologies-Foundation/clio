@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using Clio.Package;
+using Clio.Project.NuGet;
 
 namespace Clio
 {
@@ -17,6 +18,9 @@ namespace Clio
 			Descriptor = descriptor;
 			PackagePath = packagePath;
 			FilePaths = filePaths;
+			if (PackageVersion.TryParseVersion(descriptor.PackageVersion, out PackageVersion version)) {
+				Version = version;
+			}
 		}
 
 		#endregion
@@ -24,6 +28,7 @@ namespace Clio
 		#region Properties: Public
 
 		public PackageDescriptorDto.DescriptorDto Descriptor { get; }
+		public PackageVersion Version { get; }
 		public string PackagePath  { get; }
 		public IEnumerable<string> FilePaths { get; }
 		public string PackageDescriptorPath => Path.Combine(PackagePath, "descriptor.json");

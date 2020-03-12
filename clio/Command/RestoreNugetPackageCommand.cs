@@ -15,7 +15,7 @@ namespace Clio.Command
 		public string NupkgDirectory { get; set; }
 
 		[Option('v', "Version", Required = false, HelpText = "Version NuGet package", 
-			Default = NugetPackageVersion.LastVersion)]
+			Default = PackageVersion.LastVersion)]
 		public string Version { get; set; }
 
 		[Option('s', "Source", Required = false, HelpText = "Specifies the server URL", 

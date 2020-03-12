@@ -69,8 +69,8 @@ namespace Clio.Project.NuGet
 
 		private string GetLastVersionPackage(string name, string nugetSourceUrl) {
 			string version;
-			NugetPackage lastVersionPackage = _nugetPackagesProvider.GetLastVersionPackage(name, nugetSourceUrl);
-			version = lastVersionPackage?.Version.ToString();
+			LastVersionNugetPackages lastVersionPackage = _nugetPackagesProvider.GetLastVersionPackages(name, nugetSourceUrl);
+			version = lastVersionPackage?.Last.Version.ToString();
 			return version;
 		}
 
@@ -84,7 +84,7 @@ namespace Clio.Project.NuGet
 		private string Restore(string name, string version, string nugetSourceUrl, string destinationNupkgDirectory) {
 			destinationNupkgDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationNupkgDirectory);
 			return _workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-				if (version == NugetPackageVersion.LastVersion) {
+				if (version == PackageVersion.LastVersion) {
 					version = GetLastVersionPackage(name, nugetSourceUrl);
 				}
 				string nugetRestoreProjPath = Path.Combine(tempDirectory, NugetRestoreProjName);

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Clio.Common;
+using Clio.Package;
 
 namespace Clio.Project.NuGet
 {
@@ -18,7 +19,9 @@ namespace Clio.Project.NuGet
 		private readonly INuspecFilesGenerator _nuspecFilesGenerator;
 		private readonly INugetPacker _nugetPacker;
 		private readonly INugetPackageRestorer _nugetPackageRestorer;
+		private readonly INugetPackagesProvider _nugetPackagesProvider;
 		private readonly IPackageInfoProvider _packageInfoProvider;
+		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IDotnetExecutor _dotnetExecutor;
 		private readonly IFileSystem _fileSystem;
@@ -29,18 +32,22 @@ namespace Clio.Project.NuGet
 			nameof(PackageInfo.Descriptor.PackageVersion)
 		};
 
-	#endregion
+		#endregion
 
 		#region Constructors: Public
 
 		public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker, 
-				INugetPackageRestorer nugetPackageRestorer, IPackageInfoProvider packageInfoProvider, 
+				INugetPackageRestorer nugetPackageRestorer, INugetPackagesProvider nugetPackagesProvider, 
+				IPackageInfoProvider packageInfoProvider, 
+				IApplicationPackageListProvider applicationPackageListProvider,
 				IPackageArchiver packageArchiver, IDotnetExecutor dotnetExecutor, IFileSystem fileSystem, 
 				ILogger logger) {
 			nuspecFilesGenerator.CheckArgumentNull(nameof(nuspecFilesGenerator));
 			nugetPacker.CheckArgumentNull(nameof(nugetPacker));
 			nugetPackageRestorer.CheckArgumentNull(nameof(nugetPackageRestorer));
+			nugetPackagesProvider.CheckArgumentNull(nameof(nugetPackagesProvider));
 			packageInfoProvider.CheckArgumentNull(nameof(packageInfoProvider));
+			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
@@ -48,7 +55,9 @@ namespace Clio.Project.NuGet
 			_nuspecFilesGenerator = nuspecFilesGenerator;
 			_nugetPacker = nugetPacker;
 			_nugetPackageRestorer = nugetPackageRestorer;
+			_nugetPackagesProvider = nugetPackagesProvider;
 			_packageInfoProvider = packageInfoProvider;
+			_applicationPackageListProvider = applicationPackageListProvider;
 			_packageArchiver = packageArchiver;
 			_dotnetExecutor = dotnetExecutor;
 			_fileSystem = fileSystem;
@@ -112,6 +121,36 @@ namespace Clio.Project.NuGet
 
 		}
 
+		private static IEnumerable<string> GetApplicationPackagesNamesInNuget(
+				IEnumerable<PackageInfo> applicationPackages, IEnumerable<NugetPackage> nugetPackages) {
+			IEnumerable<string> applicationPackagesNames = 
+				applicationPackages.Select(pkg => pkg.Descriptor.Name);
+			IEnumerable<string> nugetPackagesNames = nugetPackages.Select(pkg => pkg.Name);
+			return applicationPackagesNames.Intersect(nugetPackagesNames);
+		}
+
+		private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<string> applicationPackagesNamesInNuget, 
+				IEnumerable<PackageInfo> applicationPackages, IEnumerable<NugetPackage> nugetPackages) {
+			var packagesForUpdate = new List<PackageForUpdate>();
+			foreach (string applicationPackageNameInNuget in applicationPackagesNamesInNuget) {
+				PackageInfo package = applicationPackages
+					.First(pkg => pkg.Descriptor.Name == applicationPackageNameInNuget);
+				if (!PackageVersion.TryParseVersion(package.Descriptor.PackageVersion,
+					out PackageVersion packageVersion)) {
+					continue;
+				}
+				LastVersionNugetPackages lastVersionNugetPackages =
+					_nugetPackagesProvider.GetLastVersionPackages(applicationPackageNameInNuget, nugetPackages);
+				if (lastVersionNugetPackages == null) {
+					continue;
+				}
+				if (lastVersionNugetPackages.Last.Version > packageVersion) {
+					packagesForUpdate.Add(new PackageForUpdate(lastVersionNugetPackages, package));
+				}
+			}
+			return packagesForUpdate;
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -163,6 +202,15 @@ namespace Clio.Project.NuGet
 			string destinationNupkgDirectory, bool overwrite) =>
 			_nugetPackageRestorer.RestoreToPackageStorage(packageName, version, nugetSourceUrl, 
 				destinationNupkgDirectory, overwrite);
+
+		public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl) {
+			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
+			IEnumerable<PackageInfo> applicationPackages = _applicationPackageListProvider.GetPackages();
+			IEnumerable<NugetPackage> nugetPackages = _nugetPackagesProvider.GetPackages(nugetSourceUrl);
+			IEnumerable<string> applicationPackagesNamesInNuget = 
+				GetApplicationPackagesNamesInNuget(applicationPackages, nugetPackages);
+			return GetPackagesForUpdate(applicationPackagesNamesInNuget, applicationPackages, nugetPackages);
+		}
 
 		#endregion
 

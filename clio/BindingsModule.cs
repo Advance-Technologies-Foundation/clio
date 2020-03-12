@@ -28,6 +28,7 @@ namespace Clio
 			containerBuilder.RegisterType<RestoreNugetPackageCommand>();
 			containerBuilder.RegisterType<InstallNugetPackageCommand>();
 			containerBuilder.RegisterType<SetPackageVersionCommand>();
+			containerBuilder.RegisterType<CheckNugetUpdateCommand>();
 			return containerBuilder.Build();
 		}
 	}
