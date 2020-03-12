@@ -22,7 +22,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Compress package](#compress-package)
 	- [Extract package](#extract-package)
 	- [Get package list](#get-package-list)
-	- [Set package version](#set-pkg-version)
+	- [Set package version](#set-package-version)
 - [Application](#application)
 	- [Restart application](#restart-application)
 	- [Clear redis database](#clear-redis-database)
