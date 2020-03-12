@@ -39,22 +39,6 @@ namespace Clio.Project.NuGet
 			return $"{nugetSourceUrl}/";
 		}
 
-		private NugetPackageVersion ParseVersion(string versionDescription) {
-			string[] versionItems = versionDescription
-				.Trim(' ')
-				.Split(new[] { '-' }, StringSplitOptions.RemoveEmptyEntries);
-			if (versionItems.Length == 0 || versionItems.Length > 2) {
-				throw new ArgumentException(
-					$"Wrong format the nuget version: '{versionDescription}'. " + 
-					"The format the nuget version mast be: <Version>[-<Suffix>]");
-			}
-			Version version = new Version(versionItems[0].Trim(' '));
-			string suffix = versionItems.Length == 2
-				? versionItems[1].Trim(' ') 
-				: string.Empty;
-			return new NugetPackageVersion(version, suffix);
-		}
-
 		private NugetPackage ParsePackage(string packageWithVersionDescription) {
 			string[] packageItems = packageWithVersionDescription
 				.Trim(' ')
@@ -65,7 +49,7 @@ namespace Clio.Project.NuGet
 					"The format the package with version mast be: <NamePackage> <VersionPackage>");
 			}
 			string packageName = packageItems[0].Trim(' ');
-			NugetPackageVersion packageVersion = ParseVersion(packageItems[1].Trim(' '));
+			PackageVersion packageVersion = PackageVersion.ParseVersion(packageItems[1].Trim(' '));
 			return new NugetPackage(packageName, packageVersion);
 		}
 
@@ -73,6 +57,21 @@ namespace Clio.Project.NuGet
 			return packagesDescription
 				.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
 				.Select(ParsePackage);
+		}
+
+		private NugetPackage GetLastVersionNugetPackage(string packageName, IEnumerable<NugetPackage> nugetPackages) {
+			return nugetPackages
+				.Where(pkg => pkg.Name == packageName)
+				.OrderByDescending(pkg => pkg.Version)
+				.FirstOrDefault();
+		}
+
+		private NugetPackage GetLastStableVersionNugetPackage(string packageName, 
+				IEnumerable<NugetPackage> nugetPackages) {
+			return nugetPackages
+				.Where(pkg => pkg.Name == packageName)
+				.OrderByDescending(pkg => pkg.Version)
+				.FirstOrDefault(pkg => pkg.Version.IsStable);
 		}
 
 		#endregion
@@ -87,14 +86,20 @@ namespace Clio.Project.NuGet
 			return ParsePackages(packagesDescription);
 		}
 
-		public NugetPackage GetLastVersionPackage(string packageName, string nugetSourceUrl) {
+		public LastVersionNugetPackages GetLastVersionPackages(string packageName, IEnumerable<NugetPackage> nugetPackages) {
+			packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+			nugetPackages.CheckArgumentNull(nameof(nugetPackages));
+			NugetPackage last = GetLastVersionNugetPackage(packageName,  nugetPackages);
+			NugetPackage stable = GetLastStableVersionNugetPackage(packageName,  nugetPackages);
+			return last == null ? null : new LastVersionNugetPackages(last, stable);
+		}
+
+		public LastVersionNugetPackages GetLastVersionPackages(string packageName, string nugetSourceUrl) {
 			packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
 			nugetSourceUrl = CorrectNugetSourceUrlForLinux(nugetSourceUrl);
-			return GetPackages(nugetSourceUrl)
-				.Where(pkg => pkg.Name == packageName)
-				.OrderByDescending(pkg => pkg.Version)
-				.FirstOrDefault();
+			IEnumerable<NugetPackage> nugetPackages = GetPackages(nugetSourceUrl);
+			return GetLastVersionPackages(packageName, nugetPackages);
 		}
 
 		#endregion

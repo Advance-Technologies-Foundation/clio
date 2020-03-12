@@ -74,7 +74,8 @@ namespace cliogate.Files.cs
 					var package = new Dictionary<string, string> {
 						["Name"] = p.PrimaryDisplayColumnValue,
 						["UId"] = p.GetTypedColumnValue<string>("UId"),
-						["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer")
+						["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer"),
+						["Version"] = p.GetTypedColumnValue<string>("Version")
 					};
 					packageList.Add(package);
 				}

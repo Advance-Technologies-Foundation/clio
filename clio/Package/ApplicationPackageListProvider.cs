@@ -36,10 +36,11 @@ namespace Clio.Package
 		#region Methods: Private
 
 		private PackageInfo CreatePackageInfo(Dictionary<string, string> package) {
-			var descriptor = new PackageDescriptorDto.DescriptorDto() {
+			var descriptor = new PackageDescriptorDto.DescriptorDto {
 				Name = package["Name"],
 				Maintainer = package["Maintainer"],
-				UId = Guid.Parse(package["UId"])
+				UId = Guid.Parse(package["UId"]),
+				PackageVersion = package["Version"]
 			};
 			return new PackageInfo(descriptor,string.Empty, Enumerable.Empty<string>());
 		}
