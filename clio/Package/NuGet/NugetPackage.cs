@@ -1,4 +1,6 @@
-﻿namespace Clio.Project.NuGet
+﻿using System;
+
+namespace Clio.Project.NuGet
 {
 	
 	#region Class: NugetPackage
@@ -24,17 +26,15 @@
 
 		#region Methods: Public
 
-		public bool Equals(NugetPackage packageDependency) {
-			return Equals(packageDependency, this);
+		public override bool Equals(Object nugetPackage) {
+			return Equals(nugetPackage as NugetPackage);
 		}
 
-		public override bool Equals(object obj) {
-			if (obj == null || GetType() != obj.GetType()) {
-				return false;
-			}
-			var nugetPackage = (NugetPackage) obj;
-			return nugetPackage.Name == Name && 
-			       nugetPackage.Version == Version;
+		public bool Equals(NugetPackage nugetPackage) {
+			return object.ReferenceEquals(nugetPackage, this) ||
+			       (!object.ReferenceEquals(nugetPackage, null) &&
+			        Name == nugetPackage.Name &&
+			        Version == nugetPackage.Version);
 		}
 
 		public override int GetHashCode() {
@@ -43,10 +43,16 @@
 		}
 
 		public static bool operator ==(NugetPackage nugetPackage1, NugetPackage nugetPackage2) {
+			if (Object.ReferenceEquals(nugetPackage1, null)) {
+				return Object.ReferenceEquals(nugetPackage2, null);
+			}
 			return nugetPackage1.Equals(nugetPackage2);
 		}
 
 		public static bool operator !=(NugetPackage nugetPackage1, NugetPackage nugetPackage2) {
+			if (Object.ReferenceEquals(nugetPackage1, null)) {
+				return Object.ReferenceEquals(nugetPackage2, null);
+			}
 			return !nugetPackage1.Equals(nugetPackage2);
 		}
 

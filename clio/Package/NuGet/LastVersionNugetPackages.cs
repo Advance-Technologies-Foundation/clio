@@ -20,7 +20,7 @@
 		public NugetPackage Last { get; }
 		public NugetPackage Stable { get; }
 		public bool LastIsStable => Last == Stable;
-		public bool StableIsNull => Stable == null;
+		public bool StableIsNotExists => Stable == null;
 
 		#endregion
 

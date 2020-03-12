@@ -36,7 +36,7 @@ namespace Clio.Command
 			string pkgName = applPkg.Descriptor.Name;
 			string message = $"   {GetNameAndVersion(pkgName, applPkg.Version)} --> " + 
 				$"{GetNameAndVersion(pkgName, lastVersionNugetPackages.Last.Version)}";
-			return lastVersionNugetPackages.LastIsStable || lastVersionNugetPackages.StableIsNull
+			return lastVersionNugetPackages.LastIsStable || lastVersionNugetPackages.StableIsNotExists
 				? message
 				: $"{message}; Stable: {GetNameAndVersion(pkgName, lastVersionNugetPackages.Stable.Version)}";
 		}

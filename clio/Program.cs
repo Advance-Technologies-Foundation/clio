@@ -11,6 +11,7 @@ using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Project;
+using Clio.Project.NuGet;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
@@ -167,7 +168,7 @@ namespace Clio
 			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
 			return new InstallNugetPkgOptions {
 				Name = packageName,
-				Version = "2.0.0.8",
+				Version = PackageVersion.LastVersion,
 				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",
 				DevMode = options.DevMode,
 				Environment = options.Environment,
