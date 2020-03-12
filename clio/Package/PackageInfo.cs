@@ -13,7 +13,7 @@ namespace Clio
 
 		#region Constructors: Public
 
-		public PackageInfo(PackageDescriptorDto.DescriptorDto descriptor, string packagePath, 
+		public PackageInfo(PackageDescriptor descriptor, string packagePath, 
 				IEnumerable<string> filePaths) {
 			Descriptor = descriptor;
 			PackagePath = packagePath;
@@ -27,7 +27,7 @@ namespace Clio
 
 		#region Properties: Public
 
-		public PackageDescriptorDto.DescriptorDto Descriptor { get; }
+		public PackageDescriptor Descriptor { get; }
 		public PackageVersion Version { get; }
 		public string PackagePath  { get; }
 		public IEnumerable<string> FilePaths { get; }
