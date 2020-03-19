@@ -238,7 +238,7 @@ namespace Clio
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
 						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
 						Resolve<IFileSystem>()),
-					(PingAppOptions opts) => Resolve<PingAppCommand>(opts).Execute(opts),
+					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => CreateRemoteCommand<GetPkgListCommand>(opts).Execute(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),

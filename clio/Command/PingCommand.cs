@@ -7,6 +7,8 @@ namespace Clio.Command
 	[Verb("ping-app", Aliases = new string[] { "ping" }, HelpText = "Check current credentional for selected environments")]
 	public class PingAppOptions : EnvironmentNameOptions
 	{
+		[Option('x', "Endpoint", Required = false, HelpText = "Relative path for checked endpoint (by default ise Ping service)")]
+		public string Endpoint { get; set; } = "/ping";
 	}
 
 	public class PingAppCommand : RemoteCommand<PingAppOptions>
@@ -16,12 +18,11 @@ namespace Clio.Command
 		}
 
 		public override int Execute(PingAppOptions options) {
-			try {
-				return Login();
-			} catch (Exception e) {
-				Console.WriteLine(e);
-				return 1;
-			}
+			ServicePath = options.Endpoint;
+			Console.WriteLine($"Ping {ServiceUri}...");
+			return base.Execute(options);
 		}
+
+
 	}
 }
