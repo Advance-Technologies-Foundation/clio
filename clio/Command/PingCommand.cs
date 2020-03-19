@@ -19,7 +19,7 @@ namespace Clio.Command
 
 		public override int Execute(PingAppOptions options) {
 			ServicePath = options.Endpoint;
-			Console.WriteLine($"Ping {ServiceUri}...");
+			Console.WriteLine($"Ping {ServiceUri} ...");
 			return base.Execute(options);
 		}
 
