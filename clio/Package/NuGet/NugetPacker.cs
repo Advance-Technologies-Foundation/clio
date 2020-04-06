@@ -5,8 +5,13 @@ using Clio.Common;
 
 namespace Clio.Project.NuGet
 {
+
+	#region Class: NugetPacker
+
 	public class NugetPacker : INugetPacker
 	{
+
+		#region Fields: Private
 
 		private const string NugetPackProjName = "NugetPackProj.csproj";
 		private readonly IDotnetExecutor _dotnetExecutor;
@@ -14,6 +19,10 @@ namespace Clio.Project.NuGet
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
 		private readonly ILogger _logger;
+
+		#endregion
+
+		#region Constructors: Public
 
 		public NugetPacker(ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor, 
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger) {
@@ -29,9 +38,13 @@ namespace Clio.Project.NuGet
 			_logger = logger;
 		}
 
-		private static void CheckArguments(string nuspecFilePath, string destinationNupkgFilePath) {
+		#endregion
+
+		#region Methods: Private
+
+		private static void CheckArguments(string nuspecFilePath, string destinationNupkgDirectory) {
 			nuspecFilePath.CheckArgumentNullOrWhiteSpace(nameof(nuspecFilePath));
-			destinationNupkgFilePath.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgFilePath));
+			destinationNupkgDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationNupkgDirectory));
 			if (!File.Exists(nuspecFilePath)) {
 				throw new InvalidOperationException($"Invalid nuspec file path '{nuspecFilePath}'");
 			}
@@ -42,56 +55,40 @@ namespace Clio.Project.NuGet
 			File.WriteAllText(nugetPackProjPath, template);
 		}
 
-		private string GetNupkgFilePath(string nugetPackProjPath) {
-			var fileInfo = new FileInfo(nugetPackProjPath);
-			string nupkgFileDirectory = Path.Combine(fileInfo.DirectoryName, "bin", "Debug");
-			string nupkgFilePath = Directory
-				.EnumerateFiles(nupkgFileDirectory, $"*.{NugetConstants.NupkgExtension}")
-				.FirstOrDefault();
-			if (string.IsNullOrWhiteSpace(nupkgFilePath)) {
-				throw new InvalidOperationException("Error packing nuget package");
-			}
-			return nupkgFilePath;
-		}
-
-		private string PackPackage(string nugetPackProjPath, string nuspecFilePath) {
-			string packCommand = $"pack \"{nugetPackProjPath}\" -p:NuspecFile=\"{nuspecFilePath}\"";
+		private string PackPackage(string nugetPackProjPath, string nuspecFilePath, string destinationNupkgDirectory) {
+			string packCommand = $"pack \"{nugetPackProjPath}\" -p:NuspecFile=\"{nuspecFilePath}\"" + 
+				$" --output \"{destinationNupkgDirectory}\" ";
 			return _dotnetExecutor.Execute(packCommand, true);
 		}
- 
-		private void CopyNupkgFileToDestinationDirectory(string sourceNupkgFilePath, string destinationNupkgFilePath) {
-			if (!File.Exists(sourceNupkgFilePath)) {
-				throw new InvalidOperationException($"Invalid nupkg file path '{sourceNupkgFilePath}'");
-			}
-			if (File.Exists(destinationNupkgFilePath)) {
-				File.Delete(destinationNupkgFilePath);
-			}
-			File.Copy(sourceNupkgFilePath, destinationNupkgFilePath);
+
+		private void DeleteTempNetstandardDirectoryIfExists(string destinationNupkgDirectory) {
+			string netstandard20 = Path.Combine(destinationNupkgDirectory, "netstandard2.0");
+			_fileSystem.DeleteDirectoryIfExists(netstandard20);
 		}
 
-		private string ReplaceInOutputResult(string outputResult, string nugetPackProjPath, string sourceNupkgFilePath, 
-				string destinationNupkgFilePath) {
-			return outputResult.Replace(nugetPackProjPath, "nuget file")
-				.Replace(sourceNupkgFilePath, destinationNupkgFilePath);
+		#endregion
+
+		#region Methods: Public
+
+		public string GetNupkgFileName(PackageInfo pkgInfo) {
+			return $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NupkgExtension}";
 		}
 
-		public string GetNupkgFileName(PackageInfo packageInfo) {
-			return $"{packageInfo.Name}.{packageInfo.PackageVersion}.{NugetConstants.NupkgExtension}";
-		}
-
-		public void Pack(string nuspecFilePath, string destinationNupkgFilePath) {
-			CheckArguments(nuspecFilePath, destinationNupkgFilePath);
+		public void Pack(string nuspecFilePath, string destinationNupkgDirectory) {
+			CheckArguments(nuspecFilePath, destinationNupkgDirectory);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
 				CreateNugetPackProj(nugetPackProjPath);
-				string result = PackPackage(nugetPackProjPath, nuspecFilePath);
-				string sourceNupkgFilePath = GetNupkgFilePath(nugetPackProjPath);
-				CopyNupkgFileToDestinationDirectory(sourceNupkgFilePath, destinationNupkgFilePath);
-				result = ReplaceInOutputResult(result, nugetPackProjPath, sourceNupkgFilePath,
-					destinationNupkgFilePath);
-				_logger.WriteLine(result);
+				string packResult = PackPackage(nugetPackProjPath, nuspecFilePath, destinationNupkgDirectory);
+				DeleteTempNetstandardDirectoryIfExists(destinationNupkgDirectory);
+				_logger.WriteLine(packResult);
 			});
 		}
 
+		#endregion
+
 	}
+
+	#endregion
+
 }

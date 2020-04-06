@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
 
@@ -35,11 +36,13 @@ namespace Clio.Package
 		#region Methods: Private
 
 		private PackageInfo CreatePackageInfo(Dictionary<string, string> package) {
-			string name = package["Name"];
-			string maintainer = package["Maintainer"];
-			string uid = package["UId"];
-			return new PackageInfo(name, string.Empty, maintainer, uid, string.Empty, 
-				Enumerable.Empty<string>(), Enumerable.Empty<PackageDependency>());
+			var descriptor = new PackageDescriptor {
+				Name = package["Name"],
+				Maintainer = package["Maintainer"],
+				UId = Guid.Parse(package["UId"]),
+				PackageVersion = package["Version"]
+			};
+			return new PackageInfo(descriptor,string.Empty, Enumerable.Empty<string>());
 		}
 
 		#endregion

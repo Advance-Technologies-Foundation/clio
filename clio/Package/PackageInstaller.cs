@@ -106,7 +106,9 @@ namespace Clio.Package
 		}
 
 		private string GetLogDiff(string currentLog, string completeLog) {
-			return completeLog.Substring(currentLog.Length);
+			return string.IsNullOrWhiteSpace(completeLog) 
+				? string.Empty
+				: completeLog.Substring(currentLog.Length);
 		}
 
 		private string ListenForLogs(object cancellationTokenObject) {

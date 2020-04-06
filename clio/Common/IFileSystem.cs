@@ -18,6 +18,7 @@ namespace Clio.Common
 		string GetDestinationFileDirectory(string filePath, string destinationPath);
 		void CopyDirectory(string source, string destination, bool overwrite);
 		void Copy(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
+		void DeleteFileIfExists(string path);
 		void DeleteDirectoryIfExists(string path);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
 

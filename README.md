@@ -22,6 +22,7 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Compress package](#compress-package)
 	- [Extract package](#extract-package)
 	- [Get package list](#get-package-list)
+	- [Set package version](#set-package-version)
 - [Application](#application)
 	- [Restart application](#restart-application)
 	- [Clear redis database](#clear-redis-database)
@@ -176,6 +177,13 @@ clio get-pkg-list
 for filter results, use -f option
 ```
 clio get-pkg-list -f clio
+```
+
+## Set package version
+
+Set a specified package version into descriptor.json by specified package path.
+```
+clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
 # Application

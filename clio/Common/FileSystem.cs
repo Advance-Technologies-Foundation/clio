@@ -82,6 +82,13 @@ namespace Clio.Common
 			}
 		}
 
+		public void DeleteFileIfExists(string path) {
+			path.CheckArgumentNull(nameof(path));
+			if (File.Exists(path)) {
+				File.Delete(path);
+			}
+		}
+
 		public void DeleteDirectoryIfExists(string path) {
 			path.CheckArgumentNull(nameof(path));
 			if (Directory.Exists(path)) {
