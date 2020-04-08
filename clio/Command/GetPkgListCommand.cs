@@ -43,7 +43,7 @@ namespace Clio.Command
 					Console.WriteLine(row);
 				}
 				Console.WriteLine();
-				Console.WriteLine($"Find {selectedPackages.Count()} packages in {options.Uri}");
+				Console.WriteLine($"Find {selectedPackages.Count()} packages in {EnvironmentSettings.Uri}");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);

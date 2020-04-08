@@ -1,4 +1,5 @@
-﻿using Creatio.Client;
+﻿using System.Threading;
+using Creatio.Client;
 
 namespace Clio.Common
 {
@@ -6,8 +7,8 @@ namespace Clio.Common
 	{
 		string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = 10000);
 		void DownloadFile(string url, string filePath, string requestData);
-		string ExecuteGetRequest(string url, int requestTimeout = 10000);
-		string ExecutePostRequest(string url, string requestData, int requestTimeout = 10000);
+		string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite);
+		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite);
 		void Login();
 		string UploadFile(string url, string filePath);
 	}
@@ -32,11 +33,11 @@ namespace Clio.Common
 			_creatioClient.DownloadFile(url, filePath, requestData);
 		}
 
-		public string ExecuteGetRequest(string url, int requestTimeout = 10000) {
+		public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.ExecuteGetRequest(url, requestTimeout);
 		}
 
-		public string ExecutePostRequest(string url, string requestData, int requestTimeout = 10000) {
+		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
 		}
 
