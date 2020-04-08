@@ -17,15 +17,15 @@ namespace Clio.Common
 	{
 		private readonly CreatioClient _creatioClient;
 
-		public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false, string workspaceId = "0") {
-			_creatioClient = new CreatioClient(appUrl, userName, userPassword, isNetCore, workspaceId);
+		public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false) {
+			_creatioClient = new CreatioClient(appUrl, userName, userPassword, true, isNetCore);
 		}
 
 		public CreatioClientAdapter(CreatioClient creatioClient) {
 			_creatioClient = creatioClient;
 		}
 
-		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = 10000) {
+		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
 		}
 
