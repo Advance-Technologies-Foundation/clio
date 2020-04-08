@@ -21,9 +21,4 @@ namespace Clio.Command.PackageCommand
 			get; set;
 		}
 	}
-
-	class DownloadPackageCommand
-	{
-
-	}
 }

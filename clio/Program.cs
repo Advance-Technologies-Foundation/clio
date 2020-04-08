@@ -220,7 +220,7 @@ namespace Clio
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
 					(PushPkgOptions opts) => Resolve<PushPackageCommand>(opts).Execute(opts),
-					(DeletePkgOptions opts) => CreateCommand<DeletePackageCommand>(opts).Execute(opts),
+					(DeletePkgOptions opts) => Resolve<DeletePackageCommand>(opts).Execute(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
 						new CreatioPkgProjectCreator())).Execute(opts),
