@@ -11,6 +11,7 @@ using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Project;
+using Clio.Project.NuGet;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
@@ -156,18 +157,6 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 		}
 
-
-		//ToDo: move to factory
-
-		private static TCommand CreateBaseRemoteCommand<TCommand>(EnvironmentOptions options,
-				params object[] additionalConstructorArgs) {
-			var settings = GetEnvironmentSettings(options);
-			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, true , settings.IsNetCore);
-			var clientAdapter = new CreatioClientAdapter(creatioClient);
-			var constructorArgs = new object[] { clientAdapter }.Concat(additionalConstructorArgs).ToArray();
-			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
-		}
-
 		//ToDo: move to factory
 		private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
@@ -179,7 +168,7 @@ namespace Clio
 			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
 			return new InstallNugetPkgOptions {
 				Name = packageName,
-				Version = "2.0.0.8",
+				Version = PackageVersion.LastVersion,
 				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",
 				DevMode = options.DevMode,
 				Environment = options.Environment,
@@ -217,12 +206,12 @@ namespace Clio
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
 					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
-					PullPkgOptions,	UpdateCliOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
+					PullPkgOptions,	ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
-					RestoreNugetPkgOptions, InstallNugetPkgOptions>(args)
+					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, CheckNugetUpdateOptions>(args)
 				.MapResult(
-					(ExecuteAssemblyOptions opts) => AssemblyCommand.ExecuteCodeFromAssembly(opts),
+					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
 					(RegAppOptions opts) => CreateCommand<RegAppCommand>(
@@ -231,7 +220,7 @@ namespace Clio
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
 					(PushPkgOptions opts) => Resolve<PushPackageCommand>(opts).Execute(opts),
-					(DeletePkgOptions opts) => CreateBaseRemoteCommand<DeletePackageCommand>(opts).Delete(opts),
+					(DeletePkgOptions opts) => Resolve<DeletePackageCommand>(opts).Execute(opts),
 					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
 						new CreatioPkgProjectCreator())).Execute(opts),
@@ -239,25 +228,26 @@ namespace Clio
 					(RegisterOptions opts) => CreateCommand<RegisterCommand>().Execute(opts),
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
-					(UpdateCliOptions opts) => UpdateCliCommand.UpdateCli(opts),
 					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
 					(InstallGateOptions opts) => Resolve<InstallNugetPackageCommand>(CreateInstallNugetPkgOptions(opts))
 						.Execute(CreateInstallNugetPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
-					(SysSettingsOptions opts) => SysSettingsCommand.SetSysSettings(opts),
-					(FeatureOptions opts) => FeatureCommand.SetFeatureState(opts),
+					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
+					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
 					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
 						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
 						Resolve<IFileSystem>()),
-					(PingAppOptions opts) => Resolve<PingAppCommand>(opts).Execute(opts),
+					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
-					(PkgListOptions opts) => GetPkgListCommand.GetPkgList(opts),
+					(PkgListOptions opts) => CreateRemoteCommand<GetPkgListCommand>(opts).Execute(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					(PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
 					(RestoreNugetPkgOptions opts) => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
 					(InstallNugetPkgOptions opts) => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
+					(SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
+					(CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 
@@ -271,7 +261,8 @@ namespace Clio
 					Code = "Maintainer",
 					Value = CreatioEnvironment.Settings.Maintainer
 				};
-				SysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
+				var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
+				sysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 				UnlockMaintainerPackageInternal();
 				new RestartCommand(new CreatioClientAdapter(CreatioClient), CreatioEnvironment.Settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");

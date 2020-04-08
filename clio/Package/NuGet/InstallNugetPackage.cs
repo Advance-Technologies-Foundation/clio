@@ -10,11 +10,6 @@ namespace Clio.Project.NuGet
 	public class InstallNugetPackage : IInstallNugetPackage
 	{
 
-		#region Constants: Private
-
-
-		#endregion
-
 		#region Fields: Private
 
 		private readonly INuGetManager _nugetManager;
@@ -37,11 +32,6 @@ namespace Clio.Project.NuGet
 			_packageArchiver = packageArchiver;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 		}
-
-		#endregion
-
-		#region Methods: Private
-
 
 		#endregion
 

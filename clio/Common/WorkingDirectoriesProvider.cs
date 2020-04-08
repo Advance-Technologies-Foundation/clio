@@ -14,6 +14,7 @@ namespace Clio.Common
 		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
 		public string TemplateDirectory =>  Path.Combine(ExecutingDirectory, "tpl");
 		public string BaseTempDirectory =>  Path.Combine(Path.GetTempPath(), "clio");
+		public string WindowsNugetToolDirectory =>  Path.Combine(ExecutingDirectory, "tools", "nuget");
 
 		#endregion
 

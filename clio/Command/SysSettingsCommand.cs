@@ -1,6 +1,6 @@
 ﻿using System;
+using Clio.Common;
 using CommandLine;
-using Creatio.Client;
 
 namespace Clio.Command.SysSettingsCommand
 {
@@ -18,39 +18,39 @@ namespace Clio.Command.SysSettingsCommand
 
 	}
 
-	class SysSettingsCommand : BaseRemoteCommand
+	class SysSettingsCommand : RemoteCommand<SysSettingsOptions>
 	{
-		private static string InsertSysSettingsUrl => AppUrl + @"/DataService/json/SyncReply/InsertSysSettingRequest";
-		private static string PostSysSettingsValuesUrl => AppUrl + @"/DataService/json/SyncReply/PostSysSettingsValues";
+		public SysSettingsCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+			: base(applicationClient, settings) {
+		}
 
-		private static void CreateSysSetting(SysSettingsOptions opts) {
+		private string InsertSysSettingsUrl => RootPath + @"/DataService/json/SyncReply/InsertSysSettingRequest";
+		private string PostSysSettingsValuesUrl => RootPath + @"/DataService/json/SyncReply/PostSysSettingsValues";
+
+		private void CreateSysSetting(SysSettingsOptions opts) {
 			Guid id = Guid.NewGuid();
 			string requestData = "{" + string.Format("\"id\":\"{0}\",\"name\":\"{1}\",\"code\":\"{1}\",\"valueTypeName\":\"{2}\",\"isCacheable\":true",
 				id, opts.Code, opts.Type) + "}";
 			try {
-				CreatioClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
+				ApplicationClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
 				Console.WriteLine("SysSettings with code: {0} created.", opts.Code);
 			} catch {
 				Console.WriteLine("SysSettings with code: {0} already exists.", opts.Code);
 			}
 		}
 
-		public static void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
-			if (settings != null) {
-				Configure(settings);
-			}
+		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			string requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
 			try {
-				CreatioClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
+				ApplicationClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
 				Console.WriteLine("SysSettings with code: {0} updated.", opts.Code);
 			} catch {
 				Console.WriteLine("SysSettings with code: {0} is not updated.", opts.Code);
 			}
 		}
 
-		public static int SetSysSettings(SysSettingsOptions opts) {
+		public override int Execute(SysSettingsOptions opts) {
 			try {
-				Configure(opts);
 				CreateSysSetting(opts);
 				UpdateSysSetting(opts);
 			} catch (Exception ex) {
@@ -59,5 +59,6 @@ namespace Clio.Command.SysSettingsCommand
 			}
 			return 0;
 		}
+
 	}
 }

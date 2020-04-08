@@ -9,10 +9,10 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>2.0.0.8</AssemblyVersion>
-	  <FileVersion>2.0.0.8</FileVersion>
-	  <Version>2.0.0.8</Version>
-	  <Description>CLI interface for Creatio platform</Description>
+	  <AssemblyVersion>2.0.0.9</AssemblyVersion>
+	  <FileVersion>2.0.0.9</FileVersion>
+	  <Version>2.0.0.9</Version>
+	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
 	  <PackageLicense>MIT</PackageLicense>
@@ -38,6 +38,9 @@
 
   <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
+    <None Update="tools\nuget\nuget.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -65,9 +68,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="bpmcli.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="clio">

@@ -11,7 +11,6 @@
 		[Test, Category("Unit")]
 		public void Delete_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
 			IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-			DeletePackageCommand deleteCommand = new DeletePackageCommand(applicationClient);
 			var deleteOptions = new DeletePkgOptions {
 				Login = "Test",
 				Password = "Test",
@@ -20,7 +19,10 @@
 				Uri = "http://test.domain.com",
 				Name = "TestPackage"
 			};
-			deleteCommand.Delete(deleteOptions);
+			var settingsRepository = new SettingsRepository();
+			var environment = settingsRepository.GetEnvironment(deleteOptions);
+			DeletePackageCommand deleteCommand = new DeletePackageCommand(applicationClient, environment);
+			deleteCommand.Execute(deleteOptions);
 			applicationClient.Received(1).ExecutePostRequest(
 				deleteOptions.Uri + "/0/ServiceModel/AppInstallerService.svc/DeletePackage",
 				"\"TestPackage\"", Arg.Any<int>());

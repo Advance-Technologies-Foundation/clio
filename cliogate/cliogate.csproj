@@ -29,12 +29,14 @@
     <Compile Remove="Schemas\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="ATF.Repository" Version="1.2.0" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageReference Include="System.CodeDom" Version="4.7.0" />
   </ItemGroup>
   <Choose>
     <When Condition="'$(TargetFramework)'=='netstandard2.0'">
       <ItemGroup>
-        <PackageReference Include="BpmonlineSDK" Version="7.14.4.844-rc" />
+        <PackageReference Include="CreatioSDK" Version="7.15.2.501" />
         <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0" />
         <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
           <Private>False</Private>
@@ -43,12 +45,10 @@
     </When>
     <When Condition="'$(TargetFramework)'=='net472'">
       <ItemGroup>
+        <PackageReference Include="CreatioSDK" Version="7.15.2.501" />
         <Reference Include="System.ServiceModel" />
         <Reference Include="System.ServiceModel.Activation" />
         <Reference Include="System.ServiceModel.Web" />
-      </ItemGroup>
-      <ItemGroup>
-        <PackageReference Include="BpmonlineSDK" Version="7.15.0.634" />
       </ItemGroup>
     </When>
   </Choose>

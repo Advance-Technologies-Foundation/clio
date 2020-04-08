@@ -7,6 +7,7 @@ namespace Clio.Common
 		string ExecutingDirectory { get; }
 		string TemplateDirectory { get; }
 		string BaseTempDirectory { get; }
+		string WindowsNugetToolDirectory { get; } 
 		string GetTemplatePath(string templateName);
 		string CreateTempDirectory();
 		void CreateTempDirectory(Action<string> onCreated);

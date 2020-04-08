@@ -14,6 +14,7 @@ namespace Clio.Project.NuGet
 			string destinationNupkgDirectory, bool overwrite);
 		void RestoreToPackageStorage(string packageName, string version, string nugetSourceUrl,
 			string destinationNupkgDirectory, bool overwrite);
+		IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl);
 
 	}
 }

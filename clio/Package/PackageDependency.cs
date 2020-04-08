@@ -4,13 +4,15 @@
 	public struct PackageDependency
 	{
 
-		public PackageDependency(string name, string packageVersion) {
+		public PackageDependency(string name, string packageVersion, string uid = null) {
 			Name = name;
 			PackageVersion = packageVersion;
+			UId = uid ?? string.Empty;
 		}
 
-		public string Name { get; }
-		public string PackageVersion { get; }
+		public string UId { get; set; }
+		public string PackageVersion { get; set; }
+		public string Name { get; set; }
 
 		public bool Equals(PackageDependency packageDependency) {
 			return Equals(packageDependency, this);
@@ -22,12 +24,13 @@
 			}
 			var dependencyInfo = (PackageDependency) obj;
 			return dependencyInfo.Name == Name && 
-				dependencyInfo.PackageVersion == PackageVersion;
+				dependencyInfo.PackageVersion == PackageVersion &&
+				dependencyInfo.UId == UId;
 			
 		}
 
 		public override int GetHashCode() {
-			var calculation = Name + PackageVersion;
+			var calculation = $"{Name}{PackageVersion}{UId}";
 			return calculation.GetHashCode();
 		}
 
