@@ -48,6 +48,7 @@ namespace Clio.Command.PackageCommand
 			try {
 				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				dto.Descriptor.PackageVersion = options.PackageVersion;
+				dto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
 				_jsonConverter.SerializeObjectToFile(dto, packageDescriptorPath);
 			}
 			catch (FileNotFoundException) {
