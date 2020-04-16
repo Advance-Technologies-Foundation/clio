@@ -12,7 +12,14 @@ namespace Clio
 		string baseUrl = "https://github.com/Advance-Technologies-Foundation/clio/wiki/";
 
 		private string GetCommandHelpUrl(string commandName) {
-			return $"{baseUrl}{commandName}".TrimEnd('/');
+
+			if (commandName.Equals("generate-models", StringComparison.Ordinal)) {
+				return @"https://github.com/kirillkrylov/Creatio.DataService/blob/master/README.md";
+			}
+			else
+			{
+				return $"{baseUrl}{commandName}".TrimEnd('/');
+			}
 		}
 
 		public void ViewHelp(string commandName) {
