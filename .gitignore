@@ -201,6 +201,3 @@ FakesAssemblies/
 
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
-
-# Don't upload build artifacts
-*.gz
