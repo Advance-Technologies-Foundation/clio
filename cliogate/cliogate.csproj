@@ -45,7 +45,7 @@
     </When>
     <When Condition="'$(TargetFramework)'=='net472'">
       <ItemGroup>
-        <PackageReference Include="CreatioSDK" Version="7.15.2.501" />
+        <PackageReference Include="CreatioSDK" Version="7.16.0.4449" />
         <Reference Include="System.ServiceModel" />
         <Reference Include="System.ServiceModel.Activation" />
         <Reference Include="System.ServiceModel.Web" />
@@ -53,9 +53,4 @@
     </When>
   </Choose>
   <!--Move to Package reference, when ATF.Repository will be built against netstandard-->
-  <ItemGroup>
-    <Reference Include="ATF.Repository, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\ATF.Repository.1.1.0\lib\net472\ATF.Repository.dll</HintPath>
-    </Reference>
-  </ItemGroup>
 </Project>
