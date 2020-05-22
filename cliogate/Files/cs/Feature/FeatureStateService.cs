@@ -26,7 +26,7 @@
 				var featureRepo = new FeatureRepository(UserConnection);
 				featureRepo.SetFeatureState(code, state);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 	}

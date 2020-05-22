@@ -37,7 +37,7 @@ namespace cliogate.Files.cs
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				return SQLFunctions.ExecuteSQL(script, UserConnection);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
@@ -57,7 +57,7 @@ namespace cliogate.Files.cs
 				var models = generator.Generate(entitySchema);
 				return JsonConvert.SerializeObject(models, Formatting.Indented);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
@@ -82,7 +82,7 @@ namespace cliogate.Files.cs
 				var json = JsonConvert.SerializeObject(packageList);
 				return json;
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don'nt have permission for operation CanManageSolution");
 			}
 		}
 
@@ -102,7 +102,7 @@ namespace cliogate.Files.cs
 				};
 
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
@@ -114,7 +114,7 @@ namespace cliogate.Files.cs
 				var invalidSchemas = GetEntitySchemasWithNeedUpdateStructure();
 				return CreateInstallUtilities().SaveSchemaDBStructure(invalidSchemas, true);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
