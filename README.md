@@ -78,7 +78,13 @@ More information you can see in [.NET Core Global Tools overview](https://docs.m
 2. Download and extract clio [release](https://github.com/Advance-Technologies-Foundation/clio/releases)
 3. [Register](https://www.architectryan.com/2012/10/02/add-to-the-path-on-mac-os-x-mountain-lion/) clio folder in PATH system variables
 
-In terminal execute command for check success register
+Execute these command in terminal
+```
+cd ~/clio folder/
+chmod 755 clio
+```
+
+Execute command in terminal for success check
 ```
 clio help
 ```
