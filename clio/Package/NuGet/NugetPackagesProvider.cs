@@ -45,8 +45,8 @@ namespace Clio.Project.NuGet
 				.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
 			if (packageItems.Length != 2) {
 				throw new ArgumentException(
-					$"Wrong format the package with version: '{packageWithVersionDescription}'. " + 
-					"The format the package with version mast be: <NamePackage> <VersionPackage>");
+					$"Wrong format for the package with version: '{packageWithVersionDescription}'. " + 
+					"The format of the package with version must be: <NamePackage> <VersionPackage>");
 			}
 			string packageName = packageItems[0].Trim(' ');
 			PackageVersion packageVersion = PackageVersion.ParseVersion(packageItems[1].Trim(' '));
