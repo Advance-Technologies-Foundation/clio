@@ -2,16 +2,16 @@
 
 	<PropertyGroup>
 	  <OutputType>Exe</OutputType>
-	  <TargetFramework>netcoreapp2.2</TargetFramework>
+	  <TargetFramework>netcoreapp3.1</TargetFramework>
 	  <PackAsTool>true</PackAsTool>
 	  <PackageId>clio</PackageId>
 	  <Company>creatio</Company>
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>2.0.0.9</AssemblyVersion>
-	  <FileVersion>2.0.0.9</FileVersion>
-	  <Version>2.0.0.9</Version>
+	  <AssemblyVersion>2.0.0.10</AssemblyVersion>
+	  <FileVersion>2.0.0.10</FileVersion>
+	  <Version>2.0.0.10</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -50,15 +50,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Autofac" Version="5.1.2" />
+    <PackageReference Include="Autofac" Version="5.1.4" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
-    <PackageReference Include="ConsoleTables" Version="2.4.0" />
+    <PackageReference Include="ConsoleTables" Version="2.4.1" />
     <PackageReference Include="creatio.client" Version="1.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="3.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="3.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="3.1.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="3.1.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.3" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageReference Include="System.Json" Version="4.7.0" />
   </ItemGroup>
