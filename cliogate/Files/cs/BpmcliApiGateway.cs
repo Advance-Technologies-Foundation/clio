@@ -89,18 +89,21 @@ namespace cliogate.Files.cs
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public CompilationResult CompileAll() {
+		public CompilationResult CompileWorkspace(bool compileAll = true) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				WorkspaceBuilder workspaceBuilder = WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
 				CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace,
 					out var buildResultType);
 				var configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
-				configurationBuilder.BuildAll();
+				if (compileAll) {
+					configurationBuilder.BuildAll();
+				} else {
+					configurationBuilder.BuildChanged();
+				}
 				return new CompilationResult {
 					Status = buildResultType,
 					CompilerErrors = compilerErrors
 				};
-
 			} else {
 				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
