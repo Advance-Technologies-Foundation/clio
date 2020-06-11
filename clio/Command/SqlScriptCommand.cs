@@ -78,6 +78,8 @@ namespace Clio.Command.SqlScriptCommand
 					result = _sqlScriptExecutor.Execute(sc, ApplicationClient, EnvironmentSettings);
 				}
 				result = GetSqlScriptResult(result, opts.ViewType);
+				Console.OutputEncoding = System.Text.Encoding.UTF8;
+
 				Console.WriteLine(result);
 				if (opts.DestPath != null) {
 					File.WriteAllText(opts.DestPath, result);

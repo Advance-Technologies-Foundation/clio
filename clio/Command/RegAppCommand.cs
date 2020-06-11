@@ -43,9 +43,8 @@ namespace Clio.Command
 					}
 				}
 				_settingsRepository.ConfigureEnvironment(options.Name, environment);
+				Console.WriteLine($"Envronment {options.Name} was configured...");
 				environment = _settingsRepository.GetEnvironment(options);
-				_settingsRepository.ShowSettingsTo(Console.Out, options.Name);
-				Console.WriteLine();
 				Console.WriteLine($"Try login to {environment.Uri} with {environment.Login} credentials ...");
 				var creatioClient = _applicationClientFactory.CreateClient(environment);
 				creatioClient.Login();
