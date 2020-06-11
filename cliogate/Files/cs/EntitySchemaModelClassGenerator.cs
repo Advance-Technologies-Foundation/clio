@@ -29,12 +29,15 @@ namespace cliogate.Files.cs
 			this.entitySchemaManager = entitySchemaManager;
 		}
 
-		private void FindAllRelatedSchemas(string schemaName) {
+		private void FindAllRelatedSchemas(string schemaName,  List<string> columns = null) {
 			if (!relatedSchemas.Contains(schemaName)) {
 				relatedSchemas.Add(schemaName);
 				var schema = entitySchemaManager.GetInstanceByName(schemaName);
 				foreach (var column in schema.Columns) {
 					if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {
+						continue;
+					}
+					if (columns.Count > 0 && !columns.Contains(column.Name)) {
 						continue;
 					}
 					if (column.IsLookupType) {
@@ -44,22 +47,29 @@ namespace cliogate.Files.cs
 			}
 		}
 
-		public Dictionary<string, string> Generate(string entitySchemaName) {
-			FindAllRelatedSchemas(entitySchemaName);
+		public Dictionary<string, string> Generate(string entitySchemaName, List<string> columns) {
+			FindAllRelatedSchemas(entitySchemaName, columns);
 			var result = new Dictionary<string, string>();
-			foreach (var item in relatedSchemas) {
-				result.Add(item, GetSchemaClass(item));
+			foreach (var schemaName in relatedSchemas) {
+				var schemaColumns = new List<string>();
+				if (schemaName == entitySchemaName) {
+					schemaColumns = columns;
+				}
+				result.Add(schemaName, GetSchemaClass(schemaName, schemaColumns));
 			}
 			return result;
 		}
 
-		private string GetSchemaClass(string entitySchemaName) {
+		private string GetSchemaClass(string entitySchemaName, List<string> columns) {
 			var schema = entitySchemaManager.GetInstanceByName(entitySchemaName);
 			string classTemplate = File.ReadAllText($"{tplFolder}\\class-template.tpl");
 
 			var columnsBuilder = new StringBuilder();
 			foreach (var column in schema.Columns) {
 				if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {
+					continue;
+				}
+				if (columns.Count > 0 && !columns.Contains(column.Name)) {
 					continue;
 				}
 				columnsBuilder.Append(GetColumnPart(column));

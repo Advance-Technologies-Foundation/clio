@@ -23,7 +23,7 @@ namespace Clio.Command
 		public override int Execute(UnregAppOptions options) {
 			try {
 				_settingsRepository.RemoveEnvironment(options.Name);
-				_settingsRepository.ShowSettingsTo(Console.Out, string.Empty);
+				Console.WriteLine($"Envronment {options.Name} was deleted...");
 				Console.WriteLine();
 				Console.WriteLine("Done");
 				return 0;

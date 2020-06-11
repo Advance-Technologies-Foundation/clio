@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "get-pkg-list test"
+      "commandLineArgs": "install C:\\Projects\\Tests\\test\\AutoTest"
     }
   }
 }

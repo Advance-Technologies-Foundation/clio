@@ -44,7 +44,7 @@ namespace Clio
 		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
 
 
-		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}";
+		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
 
 		private static CreatioClient CreatioClient
 		{
@@ -281,7 +281,7 @@ namespace Clio
 		private static int AddModels(ItemOptions opts) {
 			try {
 				SetupAppConnection(opts);
-				var models = GetClassModels(opts.ItemName);
+				var models = GetClassModels(opts.ItemName, opts.Fields);
 				var project = new VSProject(opts.DestinationPath, opts.Namespace);
 				foreach (var model in models) {
 					project.AddFile(model.Key, model.Value);
@@ -324,8 +324,8 @@ namespace Clio
 			}
 		}
 
-		private static Dictionary<string, string> GetClassModels(string entitySchemaName) {
-			var url = string.Format(GetEntityModelsUrl, entitySchemaName);
+		private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields) {
+			var url = string.Format(GetEntityModelsUrl, entitySchemaName, fields);
 			string responseFormServer = CreatioClient.ExecuteGetRequest(url);
 			var result = CorrectJson(responseFormServer);
 			return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);

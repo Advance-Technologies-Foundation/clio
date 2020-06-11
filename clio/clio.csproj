@@ -62,10 +62,6 @@
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageReference Include="System.Json" Version="4.7.0" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\updater\updater.csproj" />
-  </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
