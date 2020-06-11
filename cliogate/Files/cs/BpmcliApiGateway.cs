@@ -50,11 +50,15 @@ namespace cliogate.Files.cs
 		}
 
 		[OperationContract]
-		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}", ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.Bare)]
-		public string GetEntitySchemaModels(string entitySchema) {
-			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}/{fields}", ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.Bare)]
+		public string GetEntitySchemaModels(string entitySchema, string fields) {
+if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var generator = new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
-				var models = generator.Generate(entitySchema);
+				var columns = new List<string>();
+				if (!String.IsNullOrEmpty(fields)) {
+					columns = new List<string>(fields.Split(','));
+				}
+				var models = generator.Generate(entitySchema, columns);
 				return JsonConvert.SerializeObject(models, Formatting.Indented);
 			} else {
 				throw new Exception("You don't have permission for operation CanManageSolution");
