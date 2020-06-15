@@ -52,10 +52,10 @@ namespace Clio.Command
 		}
 
 		private void ExecuteRemoteCommand(TEnvironmentOptions options) {
-			ApplicationClient.ExecutePostRequest(ServiceUri, GetResponseData(options));
+			ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options));
 		}
 
-		protected virtual string GetResponseData(TEnvironmentOptions options) {
+		protected virtual string GetRequestData(TEnvironmentOptions options) {
 			return "{}";
 		}
 

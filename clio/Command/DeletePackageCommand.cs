@@ -11,7 +11,7 @@
 
 		protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/DeletePackage";
 
-		protected override string GetResponseData(DeletePkgOptions options) {
+		protected override string GetRequestData(DeletePkgOptions options) {
 			return "\"" + options.Name + "\"";
 		}
 
