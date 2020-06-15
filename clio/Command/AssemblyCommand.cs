@@ -27,7 +27,7 @@ namespace Clio.Command
 			: base(applicationClient, settings) {
 		}
 
-		protected override string GetResponseData(ExecuteAssemblyOptions options) {
+		protected override string GetRequestData(ExecuteAssemblyOptions options) {
 			string filePath = options.Name;
 			string executorType = options.ExecutorType;
 			var fileContent = File.ReadAllBytes(filePath);

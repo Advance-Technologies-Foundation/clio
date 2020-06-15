@@ -93,16 +93,16 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public CompilationResult CompileWorkspace(bool compileAll = true) {
+		public CompilationResult CompileWorkspace(bool compileModified = false) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				WorkspaceBuilder workspaceBuilder = WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
 				CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace,
 					out var buildResultType);
 				var configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
-				if (compileAll) {
-					configurationBuilder.BuildAll();
-				} else {
+				if (compileModified) {
 					configurationBuilder.BuildChanged();
+				} else {
+					configurationBuilder.BuildAll();
 				}
 				return new CompilationResult {
 					Status = buildResultType,
