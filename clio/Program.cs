@@ -209,7 +209,7 @@ namespace Clio
 					PullPkgOptions,	ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
-					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, CheckNugetUpdateOptions>(args)
+					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, CheckNugetUpdateOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -247,6 +247,7 @@ namespace Clio
 					(RestoreNugetPkgOptions opts) => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
 					(InstallNugetPkgOptions opts) => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
 					(SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
+					(GetPackageVersionOptions opts) => Resolve<GetPackageVersionCommand>().Execute(opts),
 					(CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 					errs => 1);
 		}
