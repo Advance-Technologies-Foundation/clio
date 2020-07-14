@@ -25,7 +25,7 @@ namespace Clio.Command
 			: base(applicationClient, settings) {
 		}
 
-		protected override string GetResponseData(FeatureOptions options) {
+		protected override string GetRequestData(FeatureOptions options) {
 			return "{" + $"\"code\":\"{options.Code}\",\"state\":\"{options.State}\"" + "}";
 		}
 
