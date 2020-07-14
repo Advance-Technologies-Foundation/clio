@@ -240,7 +240,7 @@ namespace Clio
 						Resolve<IFileSystem>()),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
-					(PkgListOptions opts) => CreateRemoteCommand<GetPkgListCommand>(opts).Execute(opts),
+					(PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					(PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),

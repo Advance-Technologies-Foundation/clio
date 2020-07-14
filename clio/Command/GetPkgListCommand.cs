@@ -1,49 +1,98 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Clio.Common;
+using Clio.Package;
 using CommandLine;
 using Newtonsoft.Json;
 
 namespace Clio.Command
 {
+
+	#region Class: PkgListOptions
+
 	[Verb("get-pkg-list", Aliases = new[] { "packages" }, HelpText = "Get environments packages")]
 	public class PkgListOptions : EnvironmentNameOptions
 	{
+
+		#region Properties: Public
 
 		[Option('f', "Filter", Required = false, HelpText = "Contains name filter",
 		Default = null)]
 		public string SearchPattern { get; set; } = string.Empty;
 
+		#endregion
+
 	}
 
-	public class GetPkgListCommand : RemoteCommand<PkgListOptions>
+	#endregion
+
+	#region Class: GetPkgListCommand
+
+	public class GetPkgListCommand : Command<PkgListOptions>
 	{
-		public GetPkgListCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings) {
+		#region Fields: Private
+
+		private readonly EnvironmentSettings _environmentSettings;
+		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+
+		#endregion
+
+		#region Constructors: Public
+
+		public GetPkgListCommand(EnvironmentSettings environmentSettings, 
+				IApplicationPackageListProvider applicationPackageListProvider) {
+			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
+			_environmentSettings = environmentSettings;
+			_applicationPackageListProvider = applicationPackageListProvider;
 		}
 
-		protected override string ServicePath => @"/rest/CreatioApiGateway/GetPackages";
+		#endregion
+
+		#region Methods: Private
+
+		private static string[] CreateRow(string nameColumn, string versionColumn, string maintainerColumn) {
+			return new[] { nameColumn, versionColumn, maintainerColumn };
+		}
+
+		private static string[] CreateEmptyRow() {
+			return CreateRow(string.Empty, string.Empty, string.Empty);
+		}
+
+		private static void PrintPackageList(IEnumerable<PackageInfo> packages) {
+			IList<string[]> table = new List<string[]>();
+			table.Add(CreateRow("Name", "Version", "Maintainer"));
+			table.Add(CreateEmptyRow());
+			foreach (PackageInfo pkg in packages) {
+				table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer));
+			}
+			Console.WriteLine();
+			Console.WriteLine(TextUtilities.ConvertTableToString(table));
+			Console.WriteLine();
+		}
+
+		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages, 
+				string searchPattern) {
+			return packages
+				.Where(p => p.Descriptor.Name.ToLower().Contains(searchPattern.ToLower()))
+				.OrderBy(p => p.Descriptor.Name);
+		}
+
+		#endregion
+
+		#region Methods: Public
 
 		public override int Execute(PkgListOptions options) {
 			try {
-				var scriptData = "{}";
-				string responseFormServer = ApplicationClient.ExecutePostRequest(ServiceUri, scriptData);
-				var json = CorrectJson(responseFormServer);
-				var packages = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(json);
-				var selectedPackages = packages.Where(p => p["Name"].ToLower().Contains(options.SearchPattern.ToLower())).OrderBy(p => p["Name"]);
-				if (selectedPackages.Count() > 0) {
-					var row = GetFormatedString("Name", "Maintainer");
-					Console.WriteLine();
-					Console.WriteLine(row);
-					Console.WriteLine();
-				}
-				foreach (var p in selectedPackages) {
-					var row = GetFormatedString(p["Name"], p["Maintainer"]);
-					Console.WriteLine(row);
+				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
+				var filteredPackages = FilterPackages(packages, options.SearchPattern);
+				if (filteredPackages.Any()) {
+					PrintPackageList(filteredPackages);
 				}
 				Console.WriteLine();
-				Console.WriteLine($"Find {selectedPackages.Count()} packages in {EnvironmentSettings.Uri}");
+				Console.WriteLine($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
@@ -51,30 +100,10 @@ namespace Clio.Command
 			}
 		}
 
-		private static string GetFormatedString(params string[] args) {
-			int columnSize = 30;
-			string result = "  ";
-			for (int i = 0; i < args.Length; i++) {
-				int tabSize = columnSize * i - result.Length;
-				for (int j = 0; j < tabSize; j++) {
-					result += " ";
-				}
-				result += args[i];
-			}
-			return result;
-		}
-
-		private static string CorrectJson(string body) {
-			body = body.Replace("\\\\r\\\\n", Environment.NewLine);
-			body = body.Replace("\\\\n", Environment.NewLine);
-			body = body.Replace("\\r\\n", Environment.NewLine);
-			body = body.Replace("\\n", Environment.NewLine);
-			body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
-			body = body.Replace("\\\"", "\"");
-			body = body.Replace("\\\\", "\\");
-			body = body.Trim(new Char[] { '\"' });
-			return body;
-		}
+		#endregion
 
 	}
+
+	#endregion
+
 }
