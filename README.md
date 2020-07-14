@@ -192,6 +192,27 @@ Set a specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
+# NuGet Packages
+
+## Install NuGet package
+
+To install Nuget package to a web application Creatio, use the next command:
+```
+ clio install-nuget-pkg <PACKAGE_NAME:PACKAGE_VERSION>
+```
+you can install Nuget package of last version:
+```
+ clio install-nuget-pkg <PACKAGE_NAME>
+```
+for install several Nuget packages:
+```
+ clio install-nuget-pkg <PACKAGE_NAME_1:PACKAGE_VERSION_1,PACKAGE_NAME_2:PACKAGE_VERSION_2>
+```
+or you can install several Nuget packages of last versions:
+```
+ clio install-nuget-pkg <PACKAGE_NAME_1,PACKAGE_NAME_2>
+```
+
 # Application
 
 ## Restart application

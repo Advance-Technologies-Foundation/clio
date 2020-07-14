@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Collections.Generic;
+using System.IO;
 using Clio.Common;
 using Clio.Package;
 
@@ -37,9 +38,12 @@ namespace Clio.Project.NuGet
 
 		#region Methods: Public
 
-		public void Install(string packageName, string version, string nugetSourceUrl) {
+		public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl) {
 			_workingDirectoriesProvider.CreateTempDirectory(restoreTempDirectory => {
-				_nugetManager.RestoreToDirectory(packageName, version, nugetSourceUrl, restoreTempDirectory, true);
+				foreach (NugetPackageFullName nugetPackageFullName in nugetPackageFullNames) {
+					_nugetManager.RestoreToDirectory(nugetPackageFullName.Name, nugetPackageFullName.Version, 
+						nugetSourceUrl, restoreTempDirectory, true);
+				}
 				_workingDirectoriesProvider.CreateTempDirectory(zipTempDirectory => {
 					var restoreTempDirectoryInfo = new DirectoryInfo(restoreTempDirectory);
 					string packagePath = Path.Combine(zipTempDirectory, 
@@ -48,6 +52,10 @@ namespace Clio.Project.NuGet
 					_packageInstaller.Install(packagePath);
 				});
 			});
+		}
+
+		public void Install(string packageName, string version, string nugetSourceUrl) {
+			Install(new [] { new NugetPackageFullName(packageName, version) } , nugetSourceUrl);
 		}
 
 		#endregion

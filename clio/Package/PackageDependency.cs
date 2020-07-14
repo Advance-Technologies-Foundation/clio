@@ -1,8 +1,14 @@
-﻿namespace Clio
+﻿using Clio.Project.NuGet;
+
+namespace Clio
 {
+
+	#region Struct: NugetPackageFullName
 
 	public struct PackageDependency
 	{
+
+		#region Constructors: Public
 
 		public PackageDependency(string name, string packageVersion, string uid = null) {
 			Name = name;
@@ -10,9 +16,25 @@
 			UId = uid ?? string.Empty;
 		}
 
+		#endregion
+
+		#region Properties: Public
+
 		public string UId { get; set; }
 		public string PackageVersion { get; set; }
 		public string Name { get; set; }
+
+		#endregion
+
+		#region Methods: Public
+
+		public static bool operator ==(PackageDependency packageDependency1, PackageDependency packageDependency2) {
+			return packageDependency1.Equals(packageDependency2);
+		}
+
+		public static bool operator !=(PackageDependency packageDependency1, PackageDependency packageDependency2) {
+			return !packageDependency1.Equals(packageDependency2);
+		}
 
 		public bool Equals(PackageDependency packageDependency) {
 			return Equals(packageDependency, this);
@@ -30,18 +52,17 @@
 		}
 
 		public override int GetHashCode() {
-			var calculation = $"{Name}{PackageVersion}{UId}";
-			return calculation.GetHashCode();
+			return ToString().GetHashCode();
 		}
 
-		public static bool operator ==(PackageDependency packageDependency1, PackageDependency packageDependency2) {
-			return packageDependency1.Equals(packageDependency2);
+		public override string ToString() {
+			return $"{Name}:{PackageVersion}(UId='{UId}')";
 		}
 
-		public static bool operator !=(PackageDependency packageDependency1, PackageDependency packageDependency2) {
-			return !packageDependency1.Equals(packageDependency2);
-		}
+		#endregion
 
 	}
+
+	#endregion
 
 }
