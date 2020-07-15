@@ -24,9 +24,11 @@ namespace Clio.Project.NuGet
 				: PackageVersion.LastVersion;
 		}
 
-		public NugetPackageFullName(string name, string packageVersion) {
+		public NugetPackageFullName(string name, string version) {
 			Name = name;
-			Version = packageVersion;
+			Version = string.IsNullOrWhiteSpace(version)
+				? PackageVersion.LastVersion
+				: version;
 		}
 
 		#endregion
