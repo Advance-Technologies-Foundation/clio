@@ -13,7 +13,7 @@ namespace Clio.Common
 		#region Methods: Public
 
 		public static string ConvertTableToString(IEnumerable<string[]> table, int distanceBetweenColumns = 5, 
-				char pad = ' ', string beginPad = "") {
+				char paddingChar = ' ', string beginPadding = "") {
 			if (!table.Any()) {
 				return string.Empty;
 			}
@@ -24,9 +24,10 @@ namespace Clio.Common
 			}
 			var sb = new StringBuilder();
 			foreach (string[] selectedPackage in table) {
+				sb.Append(beginPadding);
 				for (int i = 0; i < columnsCount; i++) {
-					sb.Append(beginPad);
-					sb.Append(selectedPackage[i].PadRight(columnMaxValueLength[i] + distanceBetweenColumns, pad));
+					int totalWidth = columnMaxValueLength[i] + distanceBetweenColumns;
+					sb.Append(selectedPackage[i].PadRight(totalWidth, paddingChar));
 				}
 				sb.AppendLine();
 			}
