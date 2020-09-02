@@ -68,10 +68,9 @@ namespace Clio.Project.NuGet
 		}
 
 		private string GetLastVersionPackage(string name, string nugetSourceUrl) {
-			string version;
-			LastVersionNugetPackages lastVersionPackage = _nugetPackagesProvider.GetLastVersionPackages(name, nugetSourceUrl);
-			version = lastVersionPackage?.Last.Version.ToString();
-			return version;
+			LastVersionNugetPackages lastVersionPackage = 
+				_nugetPackagesProvider.GetLastVersionPackages(name, nugetSourceUrl);
+			return lastVersionPackage?.Last.Version.ToString();
 		}
 
 		private string RestorePackage(string nugetRestoreProjPath, string nugetSourceUrl, 

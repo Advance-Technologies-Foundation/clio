@@ -129,19 +129,14 @@ namespace Clio.Project.NuGet
 			return applicationPackagesNames.Intersect(nugetPackagesNames);
 		}
 
-		private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<string> applicationPackagesNamesInNuget, 
-				IEnumerable<PackageInfo> applicationPackages, IEnumerable<NugetPackage> nugetPackages) {
+		private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<PackageInfo> applicationPackages,
+			IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget) {
 			var packagesForUpdate = new List<PackageForUpdate>();
-			foreach (string applicationPackageNameInNuget in applicationPackagesNamesInNuget) {
+			foreach (LastVersionNugetPackages lastVersionNugetPackages in appPackagesNamesInNuget) {
 				PackageInfo package = applicationPackages
-					.First(pkg => pkg.Descriptor.Name == applicationPackageNameInNuget);
+					.First(pkg => pkg.Descriptor.Name == lastVersionNugetPackages.Name);
 				if (!PackageVersion.TryParseVersion(package.Descriptor.PackageVersion,
 					out PackageVersion packageVersion)) {
-					continue;
-				}
-				LastVersionNugetPackages lastVersionNugetPackages =
-					_nugetPackagesProvider.GetLastVersionPackages(applicationPackageNameInNuget, nugetPackages);
-				if (lastVersionNugetPackages == null) {
 					continue;
 				}
 				if (lastVersionNugetPackages.Last.Version > packageVersion) {
@@ -206,10 +201,12 @@ namespace Clio.Project.NuGet
 		public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl) {
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
 			IEnumerable<PackageInfo> applicationPackages = _applicationPackageListProvider.GetPackages();
-			IEnumerable<NugetPackage> nugetPackages = _nugetPackagesProvider.GetPackages(nugetSourceUrl);
-			IEnumerable<string> applicationPackagesNamesInNuget = 
-				GetApplicationPackagesNamesInNuget(applicationPackages, nugetPackages);
-			return GetPackagesForUpdate(applicationPackagesNamesInNuget, applicationPackages, nugetPackages);
+			IEnumerable<string> appPackagesNames = applicationPackages
+				.Select(pkg => pkg.Descriptor.Name)
+				.Distinct();
+			IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget =
+				_nugetPackagesProvider.GetLastVersionPackages(appPackagesNames, nugetSourceUrl);
+			return GetPackagesForUpdate(applicationPackages, appPackagesNamesInNuget);
 		}
 
 		#endregion

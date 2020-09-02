@@ -8,7 +8,8 @@
 
 		#region Constructors: Public
 
-		public LastVersionNugetPackages(NugetPackage last, NugetPackage stable) {
+		public LastVersionNugetPackages(string name, NugetPackage last, NugetPackage stable) {
+			Name = name;
 			Last = last;
 			Stable = stable;
 		}
@@ -17,6 +18,7 @@
 
 		#region Properties: Public
 
+		public string Name { get; }
 		public NugetPackage Last { get; }
 		public NugetPackage Stable { get; }
 		public bool LastIsStable => Last == Stable;

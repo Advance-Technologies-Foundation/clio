@@ -12,7 +12,7 @@ namespace Clio.Command
 	{
 
 		[Option('s', "Source", Required = false, HelpText = "Specifies the server URL", 
-			Default = "https://www.nuget.org")]
+			Default = "https://www.nuget.org/api/v2")]
 		public string SourceUrl { get; set; }
 
 	}

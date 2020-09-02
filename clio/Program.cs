@@ -166,7 +166,7 @@ namespace Clio
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options);
 			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
-			var nugetPackageFullName = new NugetPackageFullName(packageName, PackageVersion.LastVersion);
+			var nugetPackageFullName = new NugetPackageFullName(packageName, "2.0.0.11");
 			return new InstallNugetPkgOptions {
 				Names = nugetPackageFullName,
 				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",

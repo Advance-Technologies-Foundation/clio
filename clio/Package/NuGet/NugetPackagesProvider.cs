@@ -1,6 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Xml.Linq;
 using Clio.Common;
 
 namespace Clio.Project.NuGet
@@ -13,93 +18,84 @@ namespace Clio.Project.NuGet
 
 		#region Fields: Private
 
-		private readonly INugetExecutor _nugetExecutor;
-
-		#endregion
-
-		#region Constructors: Public
-
-		public NugetPackagesProvider(INugetExecutor nugetExecutor)
-		{
-			nugetExecutor.CheckArgumentNull(nameof(nugetExecutor));
-			_nugetExecutor = nugetExecutor;
-		}
+		private static readonly Regex _nugetPackageRegex = 
+			new Regex("^\\(Id='(?<Id>.*)',Version='(?<Version>.*)'\\)", RegexOptions.Compiled);
 
 		#endregion
 
 		#region Methods: Private
 
-		private string CorrectNugetSourceUrlForLinux(string nugetSourceUrl)
-		{
-			if (nugetSourceUrl.EndsWith('/'))
-			{
-				return nugetSourceUrl;
+		private async Task<string> GetAllVersionsNugetPackagesXml(string nugetSourceUrl, string packageName) {
+			var findPackagesByIdUrl = $"{nugetSourceUrl.TrimEnd('/')}/FindPackagesById()?id='{packageName}'";
+			using var httpClient = new HttpClient();
+			var response = await httpClient.GetAsync(findPackagesByIdUrl);
+			var allVersionsNugetPackagesXml = await response.Content.ReadAsStringAsync();
+			if (!response.IsSuccessStatusCode) {
+				throw new ArgumentException($"Wrong NuGet server URL: '{nugetSourceUrl}'");
 			}
-
-			return $"{nugetSourceUrl}/";
+			return allVersionsNugetPackagesXml;
 		}
 
-		private NugetPackage ParsePackage(string packageWithVersionDescription) {
-			string[] packageItems = packageWithVersionDescription
-				.Trim(' ')
-				.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-			if (packageItems.Length != 2) {
-				throw new ArgumentException(
-					$"Wrong format the package with version: '{packageWithVersionDescription}'. " + 
-					"The format the package with version mast be: <NamePackage> <VersionPackage>");
+		private static NugetPackage ConvertToNugetPackage(string xmlBase, string nugetPackageDescription) {
+			string nugetPackageInfo = nugetPackageDescription.Replace($"{xmlBase}/Packages", String.Empty);
+			Match nugetPackageMatch = _nugetPackageRegex.Match(nugetPackageInfo);
+			if (!nugetPackageMatch.Success) {
+				throw new InvalidOperationException($"Wrong NuGet package id: '{nugetPackageInfo}'");
 			}
-			string packageName = packageItems[0].Trim(' ');
-			PackageVersion packageVersion = PackageVersion.ParseVersion(packageItems[1].Trim(' '));
-			return new NugetPackage(packageName, packageVersion);
+			return new NugetPackage(nugetPackageMatch.Groups["Id"].Value,
+				PackageVersion.ParseVersion(nugetPackageMatch.Groups["Version"].Value));
 		}
 
-		private IEnumerable<NugetPackage> ParsePackages(string packagesDescription) {
-			return packagesDescription
-				.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
-				.Select(ParsePackage);
+		private static IEnumerable<NugetPackage> DeserializeNugetPackagesXml(string nugetPackagesXml) {
+			XElement rootNode = XElement.Parse(nugetPackagesXml);
+			String xmlBase =  rootNode
+				.Attributes()
+				.FirstOrDefault(att => att.Name.LocalName == "base")?.Value
+				.Trim('/');
+			return rootNode
+				.Elements()
+				.Where(el => el.Name.LocalName == "entry")
+				.Select(el => el.Elements().FirstOrDefault(e => e.Name.LocalName == "id"))
+				.Select(el => ConvertToNugetPackage(xmlBase,(el?.Value)));
 		}
 
-		private NugetPackage GetLastVersionNugetPackage(string packageName, IEnumerable<NugetPackage> nugetPackages) {
-			return nugetPackages
-				.Where(pkg => pkg.Name == packageName)
-				.OrderByDescending(pkg => pkg.Version)
-				.FirstOrDefault();
+		private LastVersionNugetPackages FindLastVersionNugetPackages(AllVersionsNugetPackages packages) {
+			return packages != null 
+				? new LastVersionNugetPackages(packages.Name, packages.Last, packages.Stable)
+				: null;
 		}
 
-		private NugetPackage GetLastStableVersionNugetPackage(string packageName, 
-				IEnumerable<NugetPackage> nugetPackages) {
-			return nugetPackages
-				.Where(pkg => pkg.Name == packageName)
-				.OrderByDescending(pkg => pkg.Version)
-				.FirstOrDefault(pkg => pkg.Version.IsStable);
+		private async Task<AllVersionsNugetPackages> FindAllVersionsNugetPackages(string packageName, 
+			string nugetSourceUrl) {
+			string allVersionsNugetPackagesXml = await GetAllVersionsNugetPackagesXml(nugetSourceUrl, packageName);
+			IEnumerable<NugetPackage> packages = DeserializeNugetPackagesXml(allVersionsNugetPackagesXml);
+			return packages.Count() != 0
+				? new AllVersionsNugetPackages(packageName, packages)
+				: null;
 		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public IEnumerable<NugetPackage> GetPackages(string nugetSourceUrl) {
+		public IEnumerable<LastVersionNugetPackages> GetLastVersionPackages(IEnumerable<string> packagesNames, 
+				string nugetSourceUrl) {
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
-			nugetSourceUrl = CorrectNugetSourceUrlForLinux(nugetSourceUrl);
-			string getlistCommand = $"list -AllVersions  -PreRelease  -Source {nugetSourceUrl}";
-			string packagesDescription = _nugetExecutor.Execute(getlistCommand, true);
-			return ParsePackages(packagesDescription);
-		}
-
-		public LastVersionNugetPackages GetLastVersionPackages(string packageName, IEnumerable<NugetPackage> nugetPackages) {
-			packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-			nugetPackages.CheckArgumentNull(nameof(nugetPackages));
-			NugetPackage last = GetLastVersionNugetPackage(packageName,  nugetPackages);
-			NugetPackage stable = GetLastStableVersionNugetPackage(packageName,  nugetPackages);
-			return last == null ? null : new LastVersionNugetPackages(last, stable);
+			packagesNames.CheckArgumentNull(nameof(packagesNames));
+			Task<AllVersionsNugetPackages>[] tasks = packagesNames
+				.Select(pkgName => FindAllVersionsNugetPackages(pkgName, nugetSourceUrl))
+				.ToArray();
+			Task.WaitAll(tasks, Timeout.Infinite);
+			return tasks
+				.Select(t => FindLastVersionNugetPackages(t.Result))
+				.Where(pkg => pkg != null);
 		}
 
 		public LastVersionNugetPackages GetLastVersionPackages(string packageName, string nugetSourceUrl) {
 			packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
-			nugetSourceUrl = CorrectNugetSourceUrlForLinux(nugetSourceUrl);
-			IEnumerable<NugetPackage> nugetPackages = GetPackages(nugetSourceUrl);
-			return GetLastVersionPackages(packageName, nugetPackages);
+			return GetLastVersionPackages(new string[] { packageName }, nugetSourceUrl)
+				.FirstOrDefault();
 		}
 
 		#endregion
