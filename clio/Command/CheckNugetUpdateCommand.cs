@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
@@ -7,7 +8,7 @@ using CommandLine;
 namespace Clio.Command
 {
 
-	[Verb("check-nuget-update", Aliases = new string[] { "check" }, HelpText = "Check for package updates in NuGet")]
+	[Verb("check-nuget-update", Aliases = new string[] { "check" }, HelpText = "Check for Creatio packages updates in NuGet")]
 	public class CheckNugetUpdateOptions : EnvironmentOptions
 	{
 
@@ -48,10 +49,18 @@ namespace Clio.Command
 			}
 		}
 
+		private static void PrintResult(IEnumerable<PackageForUpdate> packagesForUpdate) {
+			if (packagesForUpdate.Any()) {
+				PrintPackagesForUpdate(packagesForUpdate);
+			} else {
+				Console.WriteLine("No update packages.");
+			}
+		}
+
 		public override int Execute(CheckNugetUpdateOptions options) {
 			try {
 				IEnumerable<PackageForUpdate> packagesForUpdate = _nugetManager.GetPackagesForUpdate(options.SourceUrl);
-				PrintPackagesForUpdate(packagesForUpdate);
+				PrintResult(packagesForUpdate);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

@@ -23,6 +23,12 @@ You can dowload release binaries from [latest release](https://github.com/Advanc
 	- [Extract package](#extract-package)
 	- [Get package list](#get-package-list)
 	- [Set package version](#set-package-version)
+- [NuGet Packages](#nuget-packages)
+	- [Pack NuGet package](#pack-nuget-pkg)
+	- [Push NuGet package](#push-nuget-pkg)
+	- [Restore NuGet package](#restore-nuget-pkg)
+	- [Install NuGet package](#install-nuget-package)
+	- [Check packages updates in NuGet](#check-nuget-update)
 - [Application](#application)
 	- [Restart application](#restart-application)
 	- [Clear redis database](#clear-redis-database)
@@ -194,24 +200,57 @@ clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 
 # NuGet Packages
 
+## Pack NuGet package
+
+To pack creatio package to a NuGet package (*.nupkg), use the next command:
+```
+pack-nuget-pkg <CREATIO_PACKAGE_PATH> [--Dependencies <PACKAGE_NAME_1:PACKAGE_VERSION_1[,PACKAGE_NAME_2:PACKAGE_VERSION_2,...]>] [--NupkgDirectory <NUGET_PACKAGE_PATH>]
+```
+
+## Push NuGet package
+
+To push NuGet package (*.nupkg) to a NuGet repository, use the next command:
+```
+push-nuget-pkg <NUGET_PACKAGE_PATH> --ApiKey <APIKEY_NUGET_REPOSITORY> --Source <URL_NUGET_REPOSITORY>
+```
+
+## Restore NuGet package
+
+To restore NuGet package (*.nupkg) to destination restoring package directory , use the next command:
+```
+restore-nuget-pkg  <PACKAGE_NAME:PACKAGE_VERSION> [--DestinationDirectory <DESTINATION_DIRECTORY>] [--Source <URL_NUGET_REPOSITORY>]
+```
+Default 'DestinationDirectory' argument it's current directory.
+
+Default 'Source' argument: https://www.nuget.org/api/v2
+
 ## Install NuGet package
 
-To install Nuget package to a web application Creatio, use the next command:
+To install NuGet package to a web application Creatio, use the next command:
 ```
- clio install-nuget-pkg <PACKAGE_NAME:PACKAGE_VERSION>
+clio install-nuget-pkg <PACKAGE_NAME:PACKAGE_VERSION> [--Source <URL_NUGET_REPOSITORY>]
 ```
-you can install Nuget package of last version:
+you can install NuGet package of last version:
 ```
- clio install-nuget-pkg <PACKAGE_NAME>
+clio install-nuget-pkg <PACKAGE_NAME> [--Source <URL_NUGET_REPOSITORY>]
 ```
-for install several Nuget packages:
+for install several NuGet packages:
 ```
- clio install-nuget-pkg <PACKAGE_NAME_1:PACKAGE_VERSION_1,PACKAGE_NAME_2:PACKAGE_VERSION_2>
+clio install-nuget-pkg <PACKAGE_NAME_1:PACKAGE_VERSION_1[,PACKAGE_NAME_2:PACKAGE_VERSION_2,...]> [--Source <URL_NUGET_REPOSITORY>]
 ```
-or you can install several Nuget packages of last versions:
+or you can install several NuGet packages of last versions:
 ```
- clio install-nuget-pkg <PACKAGE_NAME_1,PACKAGE_NAME_2>
+clio install-nuget-pkg <PACKAGE_NAME_1[,PACKAGE_NAME_2,...]> [--Source <URL_NUGET_REPOSITORY>]
 ```
+Default 'Source' argument: https://www.nuget.org/api/v2
+
+## Check packages updates in NuGet
+
+To check Creatio packages updates in a NuGet repository, use the next command:
+```
+clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
+```
+Default 'Source' argument: https://www.nuget.org/api/v2
 
 # Application
 

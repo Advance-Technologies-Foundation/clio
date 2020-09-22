@@ -184,19 +184,19 @@ namespace Clio.Project.NuGet
 			_logger.WriteLine(result);
 		}
 
-		public void RestoreToNugetFileStorage(string packageName, string version, string nugetSourceUrl,
-				string destinationNupkgDirectory) =>
-			_nugetPackageRestorer.RestoreToNugetFileStorage(packageName, version, nugetSourceUrl, destinationNupkgDirectory);
+		public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+				string destinationDirectory) =>
+			_nugetPackageRestorer.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, destinationDirectory);
 
-		public void RestoreToDirectory(string packageName, string version, string nugetSourceUrl,
-				string destinationNupkgDirectory, bool overwrite) =>
-			_nugetPackageRestorer.RestoreToDirectory(packageName, version, nugetSourceUrl, destinationNupkgDirectory, 
+		public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+				string destinationDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationDirectory, 
 				overwrite);
 
-		public void RestoreToPackageStorage(string packageName, string version, string nugetSourceUrl,
-			string destinationNupkgDirectory, bool overwrite) =>
-			_nugetPackageRestorer.RestoreToPackageStorage(packageName, version, nugetSourceUrl, 
-				destinationNupkgDirectory, overwrite);
+		public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+			string destinationDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToPackageStorage(nugetPackageFullName, nugetSourceUrl, 
+				destinationDirectory, overwrite);
 
 		public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl) {
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));

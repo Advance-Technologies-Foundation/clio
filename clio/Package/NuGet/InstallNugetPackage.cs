@@ -41,8 +41,7 @@ namespace Clio.Project.NuGet
 		public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl) {
 			_workingDirectoriesProvider.CreateTempDirectory(restoreTempDirectory => {
 				foreach (NugetPackageFullName nugetPackageFullName in nugetPackageFullNames) {
-					_nugetManager.RestoreToDirectory(nugetPackageFullName.Name, nugetPackageFullName.Version, 
-						nugetSourceUrl, restoreTempDirectory, true);
+					_nugetManager.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, restoreTempDirectory, true);
 				}
 				_workingDirectoriesProvider.CreateTempDirectory(zipTempDirectory => {
 					var restoreTempDirectoryInfo = new DirectoryInfo(restoreTempDirectory);
