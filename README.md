@@ -204,8 +204,10 @@ clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 
 To pack creatio package to a NuGet package (*.nupkg), use the next command:
 ```
-pack-nuget-pkg <CREATIO_PACKAGE_PATH> [--Dependencies <PACKAGE_NAME_1:PACKAGE_VERSION_1[,PACKAGE_NAME_2:PACKAGE_VERSION_2,...]>] [--NupkgDirectory <NUGET_PACKAGE_PATH>]
+pack-nuget-pkg <CREATIO_PACKAGE_PATH> [--Dependencies <PACKAGE_NAME_1>[:<PACKAGE_VERSION_1>][,<PACKAGE_NAME_2>[:<PACKAGE_VERSION_2>],...]>] [--NupkgDirectory <NUGET_PACKAGE_PATH>]
 ```
+
+Default 'PACKAGE_VERSION' argument it's last package version.
 
 ## Push NuGet package
 
@@ -218,8 +220,10 @@ push-nuget-pkg <NUGET_PACKAGE_PATH> --ApiKey <APIKEY_NUGET_REPOSITORY> --Source 
 
 To restore NuGet package (*.nupkg) to destination restoring package directory , use the next command:
 ```
-restore-nuget-pkg  <PACKAGE_NAME:PACKAGE_VERSION> [--DestinationDirectory <DESTINATION_DIRECTORY>] [--Source <URL_NUGET_REPOSITORY>]
+restore-nuget-pkg  <PACKAGE_NAME>[:<PACKAGE_VERSION>] [--DestinationDirectory <DESTINATION_DIRECTORY>] [--Source <URL_NUGET_REPOSITORY>]
 ```
+Default 'PACKAGE_VERSION' argument it's last package version.
+
 Default 'DestinationDirectory' argument it's current directory.
 
 Default 'Source' argument: https://www.nuget.org/api/v2
@@ -228,7 +232,7 @@ Default 'Source' argument: https://www.nuget.org/api/v2
 
 To install NuGet package to a web application Creatio, use the next command:
 ```
-clio install-nuget-pkg <PACKAGE_NAME:PACKAGE_VERSION> [--Source <URL_NUGET_REPOSITORY>]
+clio install-nuget-pkg <PACKAGE_NAME>[:<PACKAGE_VERSION>] [--Source <URL_NUGET_REPOSITORY>]
 ```
 you can install NuGet package of last version:
 ```
@@ -236,12 +240,14 @@ clio install-nuget-pkg <PACKAGE_NAME> [--Source <URL_NUGET_REPOSITORY>]
 ```
 for install several NuGet packages:
 ```
-clio install-nuget-pkg <PACKAGE_NAME_1:PACKAGE_VERSION_1[,PACKAGE_NAME_2:PACKAGE_VERSION_2,...]> [--Source <URL_NUGET_REPOSITORY>]
+clio install-nuget-pkg <PACKAGE_NAME_1>[:<PACKAGE_VERSION_1>][,<PACKAGE_NAME_2>[:<PACKAGE_VERSION_2>],...]> [--Source <URL_NUGET_REPOSITORY>]
 ```
 or you can install several NuGet packages of last versions:
 ```
-clio install-nuget-pkg <PACKAGE_NAME_1[,PACKAGE_NAME_2,...]> [--Source <URL_NUGET_REPOSITORY>]
+clio install-nuget-pkg <PACKAGE_NAME_1>[,<PACKAGE_NAME_2>,...]> [--Source <URL_NUGET_REPOSITORY>]
 ```
+Default 'PACKAGE_VERSION' argument it's last package version.
+
 Default 'Source' argument: https://www.nuget.org/api/v2
 
 ## Check packages updates in NuGet
