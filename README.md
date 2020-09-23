@@ -207,7 +207,9 @@ To pack creatio package to a NuGet package (*.nupkg), use the next command:
 pack-nuget-pkg <CREATIO_PACKAGE_PATH> [--Dependencies <PACKAGE_NAME_1>[:<PACKAGE_VERSION_1>][,<PACKAGE_NAME_2>[:<PACKAGE_VERSION_2>],...]>] [--NupkgDirectory <NUGET_PACKAGE_PATH>]
 ```
 
-Default 'PACKAGE_VERSION' argument it's last package version.
+Default value of 'PACKAGE_VERSION' argument it's last package version.
+
+Default value of 'NupkgDirectory' argument it's current directory.
 
 ## Push NuGet package
 
@@ -222,11 +224,11 @@ To restore NuGet package (*.nupkg) to destination restoring package directory , 
 ```
 restore-nuget-pkg  <PACKAGE_NAME>[:<PACKAGE_VERSION>] [--DestinationDirectory <DESTINATION_DIRECTORY>] [--Source <URL_NUGET_REPOSITORY>]
 ```
-Default 'PACKAGE_VERSION' argument it's last package version.
+Default value of 'PACKAGE_VERSION' argument it's last package version.
 
-Default 'DestinationDirectory' argument it's current directory.
+Default value of 'DestinationDirectory' argument it's current directory.
 
-Default 'Source' argument: https://www.nuget.org/api/v2
+Default value of 'Source' argument: https://www.nuget.org/api/v2
 
 ## Install NuGet package
 
@@ -246,9 +248,9 @@ or you can install several NuGet packages of last versions:
 ```
 clio install-nuget-pkg <PACKAGE_NAME_1>[,<PACKAGE_NAME_2>,...]> [--Source <URL_NUGET_REPOSITORY>]
 ```
-Default 'PACKAGE_VERSION' argument it's last package version.
+Default value of 'PACKAGE_VERSION' argument it's last package version.
 
-Default 'Source' argument: https://www.nuget.org/api/v2
+Default value of 'Source' argument: https://www.nuget.org/api/v2
 
 ## Check packages updates in NuGet
 
@@ -256,7 +258,7 @@ To check Creatio packages updates in a NuGet repository, use the next command:
 ```
 clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
 ```
-Default 'Source' argument: https://www.nuget.org/api/v2
+Default value of 'Source' argument: https://www.nuget.org/api/v2
 
 # Application
 
