@@ -1,7 +1,9 @@
-﻿namespace Clio.Package
+﻿using Clio.Common;
+
+namespace Clio.Package
 {
 	public interface IPackageInstaller
 	{
-		void Install(string packagePath, string reportPath = null);
+		bool Install(string packagePath, string reportPath = null);
 	}
 }

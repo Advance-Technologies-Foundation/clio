@@ -30,11 +30,11 @@ namespace Clio.Command
 
 		public override int Execute(PushPkgOptions options) {
 			try {
-				_packageInstaller.Install(options.Name, options.ReportPath);
-				Console.WriteLine("Done");
-				return 0;
+				bool success = _packageInstaller.Install(options.Name, options.ReportPath);
+				Console.WriteLine(success ? "Done" : "Error");
+				return success ? 0 : 1;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				Console.WriteLine(e.StackTrace);
 				return 1;
 			}
 		}
