@@ -24,6 +24,7 @@
 		#endregion
 
 		#region Properties: Private
+
 		private string RootPath => _environmentSettings.IsNetCore
 			? _environmentSettings.Uri 
 			: $@"{_environmentSettings.Uri}/0";

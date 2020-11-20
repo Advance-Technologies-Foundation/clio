@@ -7,6 +7,6 @@ namespace Clio.Project.NuGet
 
 		string GetNupkgFileName(PackageInfo packageInfo); 
 
-		void Pack(string nuspecFilePath, string destinationNupkgFilePath);
+		void Pack(string nuspecFilePath, string destinationNupkgDirectory);
 	}
 }

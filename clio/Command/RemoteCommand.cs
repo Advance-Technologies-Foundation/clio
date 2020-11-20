@@ -13,8 +13,6 @@ namespace Clio.Command
 
 		protected virtual string ServicePath { get; set; }
 
-		protected virtual int RequestTimeout => Timeout.Infinite;
-
 		protected string ServiceUri => RootPath + ServicePath;
 
 		protected IApplicationClient ApplicationClient { get; }
@@ -54,10 +52,10 @@ namespace Clio.Command
 		}
 
 		private void ExecuteRemoteCommand(TEnvironmentOptions options) {
-			ApplicationClient.ExecutePostRequest(ServiceUri, GetResponseData(options), RequestTimeout);
+			ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options));
 		}
 
-		protected string GetResponseData(EnvironmentOptions options) {
+		protected virtual string GetRequestData(TEnvironmentOptions options) {
 			return "{}";
 		}
 

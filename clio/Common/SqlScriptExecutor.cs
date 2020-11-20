@@ -1,4 +1,5 @@
 ﻿using System;
+using Newtonsoft.Json;
 
 namespace Clio.Common
 {
@@ -19,9 +20,15 @@ namespace Clio.Common
 		}
 
 		public string Execute(string sql, IApplicationClient applicationClient, EnvironmentSettings settings) {
-			var scriptData = "{ \"script\":\"" + sql + "\"}";
-			string responseFormServer = applicationClient.ExecutePostRequest(
-				settings.IsNetCore ? settings.Uri + ExecuteSqlScriptUrl : settings.Uri + "/0" + ExecuteSqlScriptUrl, scriptData);
+			var scriptData = new {
+				script = sql
+			};
+			string serializedRequestPayload = JsonConvert.SerializeObject(scriptData);
+			string endpointUri = settings.IsNetCore
+				? settings.Uri + ExecuteSqlScriptUrl
+				: settings.Uri + "/0" + ExecuteSqlScriptUrl;
+			string responseFormServer = applicationClient.ExecutePostRequest(endpointUri,
+				serializedRequestPayload);
 			return CorrectJson(responseFormServer);
 		}
 	}

@@ -76,6 +76,10 @@ namespace Clio
 			HelpText = "Name of the convert instance (or comma separated names)")]
 		public string Name { get; set; }
 
+		[Option('c', "ConvertSourceCode", Required = false, HelpText = "Convert source code schema to files", Default = false)]
+		public bool ConvertSourceCode { get; set; }
+
+
 		[Usage(ApplicationAlias = "clio")]
 		public static IEnumerable<Example> Examples =>
 			new List<Example> {
@@ -110,6 +114,9 @@ namespace Clio
 
 		[Option('n', "Namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
 		public string Namespace { get; set; }
+
+		[Option('f', "Fields", Required = false, HelpText = "Required fields for model class", Default = null)]
+		public string Fields { get; set; }
 	}
 
 	[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Activate developer mode for selected environment")]

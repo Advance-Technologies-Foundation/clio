@@ -2,12 +2,12 @@
 {
 	public interface INugetPackageRestorer
 	{
-		void RestoreToNugetFileStorage(string packageName, string version, string nugetSourceUrl, 
-			string destinationNupkgDirectory);
-		void RestoreToDirectory(string packageName, string version, string nugetSourceUrl,
-			string destinationNupkgDirectory, bool overwrite);
-		void RestoreToPackageStorage(string packageName, string version, string nugetSourceUrl,
-			string destinationNupkgDirectory, bool overwrite);
+		void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl, 
+			string destinationDirectory);
+		void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+			string destinationDirectory, bool overwrite);
+		void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+			string destinationDirectory, bool overwrite);
 
 	}
 }

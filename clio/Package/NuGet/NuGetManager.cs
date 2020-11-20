@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Clio.Common;
+using Clio.Package;
 
 namespace Clio.Project.NuGet
 {
@@ -18,29 +19,35 @@ namespace Clio.Project.NuGet
 		private readonly INuspecFilesGenerator _nuspecFilesGenerator;
 		private readonly INugetPacker _nugetPacker;
 		private readonly INugetPackageRestorer _nugetPackageRestorer;
+		private readonly INugetPackagesProvider _nugetPackagesProvider;
 		private readonly IPackageInfoProvider _packageInfoProvider;
+		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IDotnetExecutor _dotnetExecutor;
 		private readonly IFileSystem _fileSystem;
 		private readonly ILogger _logger;
 		private readonly IEnumerable<string> _isNotEmptyPackageInfoFields = new[] {
-			nameof(PackageInfo.Name),
-			nameof(PackageInfo.Maintainer),
-			nameof(PackageInfo.PackageVersion)
+			nameof(PackageInfo.Descriptor.Name),
+			nameof(PackageInfo.Descriptor.Maintainer),
+			nameof(PackageInfo.Descriptor.PackageVersion)
 		};
 
-	#endregion
+		#endregion
 
 		#region Constructors: Public
 
 		public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker, 
-				INugetPackageRestorer nugetPackageRestorer, IPackageInfoProvider packageInfoProvider, 
+				INugetPackageRestorer nugetPackageRestorer, INugetPackagesProvider nugetPackagesProvider, 
+				IPackageInfoProvider packageInfoProvider, 
+				IApplicationPackageListProvider applicationPackageListProvider,
 				IPackageArchiver packageArchiver, IDotnetExecutor dotnetExecutor, IFileSystem fileSystem, 
 				ILogger logger) {
 			nuspecFilesGenerator.CheckArgumentNull(nameof(nuspecFilesGenerator));
 			nugetPacker.CheckArgumentNull(nameof(nugetPacker));
 			nugetPackageRestorer.CheckArgumentNull(nameof(nugetPackageRestorer));
+			nugetPackagesProvider.CheckArgumentNull(nameof(nugetPackagesProvider));
 			packageInfoProvider.CheckArgumentNull(nameof(packageInfoProvider));
+			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			dotnetExecutor.CheckArgumentNull(nameof(dotnetExecutor));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
@@ -48,7 +55,9 @@ namespace Clio.Project.NuGet
 			_nuspecFilesGenerator = nuspecFilesGenerator;
 			_nugetPacker = nugetPacker;
 			_nugetPackageRestorer = nugetPackageRestorer;
+			_nugetPackagesProvider = nugetPackagesProvider;
 			_packageInfoProvider = packageInfoProvider;
+			_applicationPackageListProvider = applicationPackageListProvider;
 			_packageArchiver = packageArchiver;
 			_dotnetExecutor = dotnetExecutor;
 			_fileSystem = fileSystem;
@@ -88,7 +97,10 @@ namespace Clio.Project.NuGet
 		}
 
 		private void CheckEmptyFieldPackageInfo(PackageInfo packageInfo, string fieldName) {
-			string fieldValue = (string)packageInfo.GetType().GetProperty(fieldName).GetValue(packageInfo);
+			string fieldValue = (string)packageInfo.Descriptor
+				.GetType()
+				.GetProperty(fieldName)
+				.GetValue(packageInfo.Descriptor);
 			if (string.IsNullOrWhiteSpace(fieldValue)) {
 				throw new InvalidOperationException(
 					$"Field: '{fieldName}' mast be is not empty in package descriptor: '{packageInfo.PackageDescriptorPath}'");
@@ -101,6 +113,39 @@ namespace Clio.Project.NuGet
 			}
 		}
 
+		private  IEnumerable<PackageDependency> SetEmptyUIdDependencies(IEnumerable<PackageDependency> dependencies) {
+			return dependencies.Select(dependency => {
+				dependency.UId = string.Empty;
+				return dependency;
+			});
+
+		}
+
+		private static IEnumerable<string> GetApplicationPackagesNamesInNuget(
+				IEnumerable<PackageInfo> applicationPackages, IEnumerable<NugetPackage> nugetPackages) {
+			IEnumerable<string> applicationPackagesNames = 
+				applicationPackages.Select(pkg => pkg.Descriptor.Name);
+			IEnumerable<string> nugetPackagesNames = nugetPackages.Select(pkg => pkg.Name);
+			return applicationPackagesNames.Intersect(nugetPackagesNames);
+		}
+
+		private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<PackageInfo> applicationPackages,
+			IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget) {
+			var packagesForUpdate = new List<PackageForUpdate>();
+			foreach (LastVersionNugetPackages lastVersionNugetPackages in appPackagesNamesInNuget) {
+				PackageInfo package = applicationPackages
+					.First(pkg => pkg.Descriptor.Name == lastVersionNugetPackages.Name);
+				if (!PackageVersion.TryParseVersion(package.Descriptor.PackageVersion,
+					out PackageVersion packageVersion)) {
+					continue;
+				}
+				if (lastVersionNugetPackages.Last.Version > packageVersion) {
+					packagesForUpdate.Add(new PackageForUpdate(lastVersionNugetPackages, package));
+				}
+			}
+			return packagesForUpdate;
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -111,16 +156,17 @@ namespace Clio.Project.NuGet
 			destinationNupkgDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationNupkgDirectory);
 			PackageInfo packageInfo = _packageInfoProvider.GetPackageInfo(packagePath);
 			CheckEmptyFieldsPackageInfo(packageInfo);
-			CheckDependencies(dependencies, packageInfo.PackageDependencies);
+			IEnumerable<PackageDependency> packagesDependencies = 
+				SetEmptyUIdDependencies(packageInfo.Descriptor.DependsOn);
+			CheckDependencies(dependencies, packagesDependencies);
 			string packedPackagePath = Path.Combine(destinationNupkgDirectory, 
-				_packageArchiver.GetPackedPackageFileName(packageInfo.Name));
+				_packageArchiver.GetPackedPackageFileName(packageInfo.Descriptor.Name));
 			string nuspecFilePath = Path.Combine(destinationNupkgDirectory,
 				_nuspecFilesGenerator.GetNuspecFileName(packageInfo));
-			string nupkgFilePath = Path.Combine(destinationNupkgDirectory, _nugetPacker.GetNupkgFileName(packageInfo));
 			try {
 				_packageArchiver.Pack(packagePath, packedPackagePath, skipPdb, true);
 				_nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
-				_nugetPacker.Pack(nuspecFilePath, nupkgFilePath);
+				_nugetPacker.Pack(nuspecFilePath, destinationNupkgDirectory);
 			}
 			finally {
 				_fileSystem.DeleteFileIfExists(nuspecFilePath);
@@ -138,19 +184,30 @@ namespace Clio.Project.NuGet
 			_logger.WriteLine(result);
 		}
 
-		public void RestoreToNugetFileStorage(string packageName, string version, string nugetSourceUrl,
-				string destinationNupkgDirectory) =>
-			_nugetPackageRestorer.RestoreToNugetFileStorage(packageName, version, nugetSourceUrl, destinationNupkgDirectory);
+		public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+				string destinationDirectory) =>
+			_nugetPackageRestorer.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, destinationDirectory);
 
-		public void RestoreToDirectory(string packageName, string version, string nugetSourceUrl,
-				string destinationNupkgDirectory, bool overwrite) =>
-			_nugetPackageRestorer.RestoreToDirectory(packageName, version, nugetSourceUrl, destinationNupkgDirectory, 
+		public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+				string destinationDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationDirectory, 
 				overwrite);
 
-		public void RestoreToPackageStorage(string packageName, string version, string nugetSourceUrl,
-			string destinationNupkgDirectory, bool overwrite) =>
-			_nugetPackageRestorer.RestoreToPackageStorage(packageName, version, nugetSourceUrl, 
-				destinationNupkgDirectory, overwrite);
+		public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+			string destinationDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToPackageStorage(nugetPackageFullName, nugetSourceUrl, 
+				destinationDirectory, overwrite);
+
+		public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl) {
+			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
+			IEnumerable<PackageInfo> applicationPackages = _applicationPackageListProvider.GetPackages();
+			IEnumerable<string> appPackagesNames = applicationPackages
+				.Select(pkg => pkg.Descriptor.Name)
+				.Distinct();
+			IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget =
+				_nugetPackagesProvider.GetLastVersionPackages(appPackagesNames, nugetSourceUrl);
+			return GetPackagesForUpdate(applicationPackages, appPackagesNamesInNuget);
+		}
 
 		#endregion
 

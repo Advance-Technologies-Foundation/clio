@@ -37,7 +37,7 @@ namespace cliogate.Files.cs
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				return SQLFunctions.ExecuteSQL(script, UserConnection);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
@@ -50,14 +50,18 @@ namespace cliogate.Files.cs
 		}
 
 		[OperationContract]
-		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}", ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.Bare)]
-		public string GetEntitySchemaModels(string entitySchema) {
-			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}/{fields}", ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.Bare)]
+		public string GetEntitySchemaModels(string entitySchema, string fields) {
+if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var generator = new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
-				var models = generator.Generate(entitySchema);
+				var columns = new List<string>();
+				if (!String.IsNullOrEmpty(fields)) {
+					columns = new List<string>(fields.Split(','));
+				}
+				var models = generator.Generate(entitySchema, columns);
 				return JsonConvert.SerializeObject(models, Formatting.Indented);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
@@ -74,34 +78,38 @@ namespace cliogate.Files.cs
 					var package = new Dictionary<string, string> {
 						["Name"] = p.PrimaryDisplayColumnValue,
 						["UId"] = p.GetTypedColumnValue<string>("UId"),
-						["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer")
+						["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer"),
+						["Version"] = p.GetTypedColumnValue<string>("Version")
 					};
 					packageList.Add(package);
 				}
 				var json = JsonConvert.SerializeObject(packageList);
 				return json;
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don'nt have permission for operation CanManageSolution");
 			}
 		}
 
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public CompilationResult CompileAll() {
+		public CompilationResult CompileWorkspace(bool compileModified = false) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				WorkspaceBuilder workspaceBuilder = WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
 				CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace,
 					out var buildResultType);
 				var configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
-				configurationBuilder.BuildAll();
+				if (compileModified) {
+					configurationBuilder.BuildChanged();
+				} else {
+					configurationBuilder.BuildAll();
+				}
 				return new CompilationResult {
 					Status = buildResultType,
 					CompilerErrors = compilerErrors
 				};
-
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 
@@ -113,7 +121,7 @@ namespace cliogate.Files.cs
 				var invalidSchemas = GetEntitySchemasWithNeedUpdateStructure();
 				return CreateInstallUtilities().SaveSchemaDBStructure(invalidSchemas, true);
 			} else {
-				throw new Exception("You don`n have permission for operation CanManageSolution");
+				throw new Exception("You don't have permission for operation CanManageSolution");
 			}
 		}
 

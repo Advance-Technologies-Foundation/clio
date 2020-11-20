@@ -16,23 +16,27 @@ namespace Clio
 
 		internal static int Convert(ConvertOptions options) {
 			try {
-				var names = new List<string>();
+				var packagePathes = new List<string>();
 				if (options.Path == null) {
 					options.Path = Environment.CurrentDirectory;
 				}
 				if (String.IsNullOrEmpty(options.Name)) {
 					DirectoryInfo info = new DirectoryInfo(options.Path);
+					if (File.Exists(Path.Combine(info.FullName, prefix, "descriptor.json"))) {
+						packagePathes.Add(info.FullName);
+					}
 					foreach (var directory in info.GetDirectories()) {
 						if (File.Exists(Path.Combine(directory.FullName, prefix, "descriptor.json"))) {
-							names.Add(directory.Name);
+							packagePathes.Add(directory.FullName);
 						}
 					}
 				} else {
-					names = options.Name.Split(',').Select((a) => a.Trim()).ToList();
+					packagePathes = options.Name.Split(',').Select((a) => a.Trim()).ToList();
 				}
-				foreach (var name in names) {
+				foreach (var packagePath in packagePathes) {
 					ConvertOptions convertOptions = new ConvertOptions {
-						Path = Path.Combine(options.Path, name)
+						Path = packagePath,
+						ConvertSourceCode = options.ConvertSourceCode
 					};
 					if (ConvertPackage(convertOptions) == 1) {
 						return 1;
@@ -63,7 +67,7 @@ namespace Clio
 				ZipFile.CreateFromDirectory(packagePath, backupPath);
 				Console.WriteLine("Created backup package '{0}'.", packageName);
 
-				var fileNames = MoveCsFiles(packagePath);
+				var fileNames = options.ConvertSourceCode ? MoveCsFiles(packagePath) : new List<string>();
 				CorrectingFiles(packagePath);
 				CreateProjectInfo(packagePath, packageName, fileNames);
 				Console.WriteLine("Package '{0}' converted.", packageName);
@@ -86,6 +90,9 @@ namespace Clio
 			var resourcePath = Path.Combine(path, "Resources");
 			var schemasPath = Path.Combine(path, "Schemas");
 			var names = new List<string>();
+			if (!Directory.Exists(csFilesPath)) {
+				Directory.CreateDirectory(csFilesPath);
+			}
 			var csFilesDir = new DirectoryInfo(csFilesPath);
 			foreach (var file in csFilesDir.GetFiles("*.cs")) {
 				var name = file.Name.Split('.')[0];

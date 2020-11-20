@@ -12,13 +12,6 @@ using CommandLine;
 namespace Clio.Command.UpdateCliCommand
 {
 
-	[Verb("update-cli", Aliases = new string[] { "update" }, HelpText = "Update clio to new available version")]
-	internal class UpdateCliOptions
-	{
-		[Option('v', "CurrentVersion", Required = false, Default = false, HelpText = "Show current version")]
-		public bool CurrentVersion { get; set; }
-	}
-
 	class UpdateCliCommand
 	{
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
@@ -27,55 +20,14 @@ namespace Clio.Command.UpdateCliCommand
 			Console.WriteLine($"You should consider upgrading via the \'dotnet tool update clio -g\' command.", ConsoleColor.DarkYellow);
 		}
 
-		public static int UpdateCli(UpdateCliOptions options) {
-			if (OSPlatformChecker.IsWindowsEnvironment()) {
-				ShowNugetUpdateMessage();
-				return 1;
-			}
-			try {
-				var url = GetLastReleaseUrl();
-				var dir = AppDomain.CurrentDomain.BaseDirectory;
-				string updaterDirPath = Path.Combine(dir, "Update");
-				string tempDirPath = Path.Combine(dir, "Update", "Temp");
-				string filePath = Path.Combine(updaterDirPath, "update.zip");
-				string updaterName = "updater.dll";
-				Directory.CreateDirectory(tempDirPath);
-				if (options.CurrentVersion) {
-					var currentVersion = GetCurrentVersion();
-					Console.WriteLine($"You are using clio version {currentVersion}.");
-				}
-				Console.WriteLine("Download update.");
-				using (var client = new WebClient()) {
-					client.DownloadFile(url, filePath);
-				}
-				ZipFile.ExtractToDirectory(filePath, tempDirPath, true);
-				var updaterFile = new FileInfo(Path.Combine(tempDirPath, updaterName));
-				updaterFile.CopyTo(Path.Combine(dir, updaterFile.Name), true);
-				var updateCmdPath = Path.Combine(dir, "update.cmd");
-				var proc = new Process { StartInfo = { FileName = updateCmdPath } };
-				Console.WriteLine("Start update.");
-				proc.Start();
-				return 0;
-			} catch (Exception) {
-				Console.WriteLine("Update error.");
-				return 1;
-			}
-		}
-
 		public static void CheckUpdate() {
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersion();
 			if (currentVersion != latestVersion) {
 				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
-				if (OSPlatformChecker.IsWindowsEnvironment()) {
-					ShowNugetUpdateMessage();
-				} else {
-					Console.WriteLine( $"You should consider upgrading via the \'clio update-cli\' command.", ConsoleColor.DarkYellow);
-				}
+				ShowNugetUpdateMessage();
 			}
 		}
-
-
 
 		private static string GetLastReleaseUrl() {
 			System.Threading.Tasks.Task<byte[]> body;

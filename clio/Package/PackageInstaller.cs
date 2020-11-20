@@ -5,6 +5,8 @@ using System.Threading;
 using Clio.WebApplication;
 using Clio.Common;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Creatio.Client;
 
 namespace Clio.Package
 {
@@ -37,15 +39,17 @@ namespace Clio.Package
 		private readonly ILogger _logger;
 
 		private readonly IApplication _application;
+		private string _reportPath;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PackageInstaller(EnvironmentSettings environmentSettings, 
-				IApplicationClientFactory applicationClientFactory, IApplication application, 
-				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor, 
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger) {
+		public PackageInstaller(EnvironmentSettings environmentSettings,
+				IApplicationClientFactory applicationClientFactory, IApplication application,
+				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
+				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger)
+		{
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			application.CheckArgumentNull(nameof(application));
@@ -64,30 +68,39 @@ namespace Clio.Package
 			_applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
 			_applicationClientForLog = _applicationClientFactory.CreateClient(_environmentSettings);
 			_developerModeEnabled = _environmentSettings.DeveloperModeEnabled.HasValue &&
-			                        _environmentSettings.DeveloperModeEnabled.Value;
+									_environmentSettings.DeveloperModeEnabled.Value;
 		}
 
 		#endregion
 
 		#region Methods: Private
 
-		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url); 
+		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url);
 
-		private void UnlockMaintainerPackageInternal() {
+		private void UnlockMaintainerPackageInternal()
+		{
 			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{_environmentSettings.Maintainer}'";
 			_scriptExecutor.Execute(script, _applicationClient, _environmentSettings);
 		}
 
-		private void SaveLogFile(string logText, string reportPath) {
-			if (File.Exists(reportPath)) {
-				File.Delete(reportPath);
-			} else if (Directory.Exists(reportPath)) {
-				reportPath = Path.Combine(reportPath, DefLogFileName);
+		private void SaveLogFile(string logText, string reportPath)
+		{
+			if (reportPath != null && !string.IsNullOrWhiteSpace(logText))
+			{
+				if (File.Exists(reportPath))
+				{
+					File.Delete(reportPath);
+				}
+				else if (Directory.Exists(reportPath))
+				{
+					reportPath = Path.Combine(reportPath, DefLogFileName);
+				}
+				File.WriteAllText(reportPath, logText, Encoding.UTF8);
 			}
-			File.WriteAllText(reportPath, logText, Encoding.UTF8);
 		}
 
-		private string UploadPackage(string filePath) {
+		private string UploadPackage(string filePath)
+		{
 			_logger.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string packageName = fileInfo.Name;
@@ -96,104 +109,126 @@ namespace Clio.Package
 			return packageName;
 		}
 
-		private string GetInstallLog() {
-			try {
-				return _applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl), 3000);
+		private string GetInstallLog()
+		{
+			try
+			{
+				return _applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
 			}
-			catch (Exception) {
+			catch (Exception ex)
+			{
 			}
-			return string.Empty;
+			return String.Empty;
 		}
 
-		private string GetLogDiff(string currentLog, string completeLog) {
-			return string.IsNullOrWhiteSpace(completeLog) 
+		private string GetLogDiff(string currentLog, string completeLog)
+		{
+			return string.IsNullOrWhiteSpace(completeLog)
 				? string.Empty
-				: completeLog.Substring(currentLog.Length);
+				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
 		}
 
-		private string ListenForLogs(object cancellationTokenObject) {
+		private string ListenForLogs(object cancellationTokenObject)
+		{
 			var cancellationToken = (CancellationToken)cancellationTokenObject;
 			var currentLogContent = string.Empty;
-			while (!cancellationToken.IsCancellationRequested) {
-				try {
+			while (!cancellationToken.IsCancellationRequested)
+			{
+				try
+				{
 					var completeLog = GetInstallLog();
 					var output = GetLogDiff(currentLogContent, completeLog);
-					if (!string.IsNullOrWhiteSpace(output)) {
+					if (!string.IsNullOrWhiteSpace(output))
+					{
 						_logger.Write(output);
 						currentLogContent = completeLog;
+						if (!string.IsNullOrWhiteSpace(_reportPath)) SaveLogFile(currentLogContent, _reportPath);
 					}
-					Thread.Sleep(500);
-				} catch (System.Exception e) {
+					Thread.Sleep(3000);
+				}
+				catch (System.Exception e)
+				{
 					_logger.WriteLine(e.ToString());
 				}
 			}
 			return currentLogContent;
 		}
-		
-		private void InstallPackageOnServer(string fileName) {
-			_applicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), $"\"{fileName}\"", Timeout.Infinite);
+
+		private string InstallPackageOnServer(string fileName)
+		{
+			return _applicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), $"\"{fileName}\"", Timeout.Infinite);
 		}
-		
-		private string InstallPackageOnServerWithLogListener(string fileName) {
+
+		private (bool, string) InstallPackageOnServerWithLogListener(string fileName)
+		{
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
 			var cancellationTokenSource = new CancellationTokenSource();
 			var log = string.Empty;
 			var task = Task.Factory.StartNew(
 				(cancellationToken) => log = ListenForLogs(cancellationToken), cancellationTokenSource.Token);
-			InstallPackageOnServer(fileName);
+			string result = InstallPackageOnServer(fileName);
+			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
 			cancellationTokenSource.Cancel();
 			task.Wait();
 			var completeInstallLog = GetInstallLog();
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			return completeInstallLog;
+			return (response != null && response.Success || response == null, completeInstallLog);
 		}
 
-		private string InstallPackedPackage(string filePath) {
+		private (bool, string) InstallPackedPackage(string filePath)
+		{
 			string packageName = UploadPackage(filePath);
-			string logText = InstallPackageOnServerWithLogListener(packageName);
+			(bool success, string logText) = InstallPackageOnServerWithLogListener(packageName);
 			if (_developerModeEnabled) {
 				UnlockMaintainerPackageInternal();
 				_application.Restart();
 			}
-			return logText;
+			return (success, logText);
 		}
 
-		private string InstallPackageFromFolder(string packageFolderPath) {
+		private (bool, string) InstallPackageFromFolder(string packageFolderPath)
+		{
 			var packedFilePath = $"{packageFolderPath}.gz";
 			_packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
+			bool success = false;
 			string logText;
 			try {
-				logText = InstallPackedPackage(packedFilePath);
-			} finally {
+				(success, logText) = InstallPackedPackage(packedFilePath);
+			}
+			finally {
 				File.Delete(packedFilePath);
 			}
-			return logText;
+			return (success, logText);
 		}
 
-		private string InstallPackage(string packagePackedFileOrFolderPath) {
+		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath)
+		{
+			bool success = false;
 			string logText = null;
 			if (File.Exists(packagePackedFileOrFolderPath)) {
-				logText = InstallPackedPackage(packagePackedFileOrFolderPath);
-			} else if (Directory.Exists(packagePackedFileOrFolderPath)) {
-				logText = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath);
-			} else {
+				(success, logText) = InstallPackedPackage(packagePackedFileOrFolderPath);
+			}
+			else if (Directory.Exists(packagePackedFileOrFolderPath)) {
+				(success, logText) = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath);
+			}
+			else {
 				_logger.WriteLine($"Specified package not found by path {packagePackedFileOrFolderPath}");
 			}
-			return logText;
+			return (success, logText);
 		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public void Install(string packagePath, string reportPath = null) {
+		public bool Install(string packagePath, string reportPath = null)
+		{
 			packagePath = _fileSystem.GetCurrentDirectoryIfEmpty(packagePath);
-			string logText = InstallPackage(packagePath);
-			if (string.IsNullOrWhiteSpace(reportPath) || string.IsNullOrWhiteSpace(logText)) {
-				return;
-			}
+			_reportPath = reportPath;
+			(bool success, string logText) = InstallPackage(packagePath);
 			SaveLogFile(logText, reportPath);
+			return success;
 		}
 
 		#endregion

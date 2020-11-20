@@ -1,4 +1,5 @@
-﻿using Creatio.Client;
+﻿using System.Threading;
+using Creatio.Client;
 
 namespace Clio.Common
 {
@@ -6,8 +7,8 @@ namespace Clio.Common
 	{
 		string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = 10000);
 		void DownloadFile(string url, string filePath, string requestData);
-		string ExecuteGetRequest(string url, int requestTimeout = 10000);
-		string ExecutePostRequest(string url, string requestData, int requestTimeout = 10000);
+		string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite);
+		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite);
 		void Login();
 		string UploadFile(string url, string filePath);
 	}
@@ -16,15 +17,15 @@ namespace Clio.Common
 	{
 		private readonly CreatioClient _creatioClient;
 
-		public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false, string workspaceId = "0") {
-			_creatioClient = new CreatioClient(appUrl, userName, userPassword, isNetCore, workspaceId);
+		public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false) {
+			_creatioClient = new CreatioClient(appUrl, userName, userPassword, true, isNetCore);
 		}
 
 		public CreatioClientAdapter(CreatioClient creatioClient) {
 			_creatioClient = creatioClient;
 		}
 
-		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = 10000) {
+		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
 		}
 
@@ -32,11 +33,11 @@ namespace Clio.Common
 			_creatioClient.DownloadFile(url, filePath, requestData);
 		}
 
-		public string ExecuteGetRequest(string url, int requestTimeout = 10000) {
+		public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.ExecuteGetRequest(url, requestTimeout);
 		}
 
-		public string ExecutePostRequest(string url, string requestData, int requestTimeout = 10000) {
+		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
 		}
 

@@ -54,6 +54,8 @@ COMMANDS
 
     restore-nuget-pkg       restore     Restore NuGet package to a folder 
 
+    set-pkg-version			pkgversion	Set package version
+
     install-nuget-pkg       installng   Restore NuGet package to  
                                         a web application (website)
 

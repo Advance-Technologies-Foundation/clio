@@ -3,19 +3,34 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Clio.Common;
+using Clio.Package;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Clio
 {
+
+	#region Class: InstallNugetPackage
+
 	public class PackageInfoProvider : IPackageInfoProvider
 	{
 
-		private PackageDependency CreateDependencyInfo(JToken jtokenDependency) {
-			string name = (string)jtokenDependency["Name"];
-			string packageVersion = (string)jtokenDependency["PackageVersion"] ?? string.Empty;
-			return new PackageDependency(name, packageVersion);
+		#region Fields: Private
+
+		protected readonly IJsonConverter _jsonConverter;
+
+		#endregion
+
+		#region Constructors: Public
+
+		public PackageInfoProvider(IJsonConverter jsonConverter) {
+			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
+			_jsonConverter = jsonConverter;
 		}
+
+		#endregion
+
+		#region Methods: Public
 
 		public PackageInfo GetPackageInfo(string packagePath) {
 			packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
@@ -24,23 +39,21 @@ namespace Clio
 				throw new Exception($"Package descriptor not found by path: '{packageDescriptorPath}'"); 
 			}
 			try {
-				string json = File.ReadAllText(packageDescriptorPath);
-				JObject descriptorJson = JsonConvert.DeserializeObject<JObject>(json);
-				JToken descriptor = descriptorJson["Descriptor"];
-				string name = (string)descriptor["Name"];
-				string packageVersion = (string)descriptor["PackageVersion"] ?? string.Empty;
-				string maintainer = (string)descriptor["Maintainer"];
-				string uid = (string)descriptor["UId"];
-				JToken dependsOn = descriptor["DependsOn"];
-				IEnumerable<PackageDependency> depends = dependsOn.Select(CreateDependencyInfo);
+				PackageDescriptorDto packageDescriptorDto = 
+					_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				IEnumerable<string> filePaths = Directory
 					.EnumerateFiles(packagePath, "*.*", SearchOption.AllDirectories);
-				return new PackageInfo(name, packageVersion, maintainer, uid, packagePath, filePaths, depends);
+				return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths);
 			}
 			catch (Exception ex) {
 				throw new Exception($"Package descriptor is wrong: '{ex.Message}'");
 			}
 		}
 
+		#endregion
+
 	}
+
+	#endregion
+
 }

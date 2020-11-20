@@ -1,2 +1,2 @@
 @echo off
-dotnet %~dp0clio.dll %*
+dotnet "%~dp0clio.dll" %*
