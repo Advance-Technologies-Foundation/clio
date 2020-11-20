@@ -103,7 +103,7 @@ namespace Clio.Project.NuGet
 				.GetValue(packageInfo.Descriptor);
 			if (string.IsNullOrWhiteSpace(fieldValue)) {
 				throw new InvalidOperationException(
-					$"Field: '{fieldName}' mast be is not empty in package descriptor: '{packageInfo.PackageDescriptorPath}'");
+					$"Field: '{fieldName}' must not be empty in package descriptor: '{packageInfo.PackageDescriptorPath}'");
 			}
 		}
 
