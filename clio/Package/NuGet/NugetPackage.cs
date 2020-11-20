@@ -2,7 +2,7 @@
 
 namespace Clio.Project.NuGet
 {
-	
+
 	#region Class: NugetPackage
 
 	public class NugetPackage

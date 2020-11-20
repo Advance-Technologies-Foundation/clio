@@ -129,19 +129,14 @@ namespace Clio.Project.NuGet
 			return applicationPackagesNames.Intersect(nugetPackagesNames);
 		}
 
-		private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<string> applicationPackagesNamesInNuget, 
-				IEnumerable<PackageInfo> applicationPackages, IEnumerable<NugetPackage> nugetPackages) {
+		private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<PackageInfo> applicationPackages,
+			IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget) {
 			var packagesForUpdate = new List<PackageForUpdate>();
-			foreach (string applicationPackageNameInNuget in applicationPackagesNamesInNuget) {
+			foreach (LastVersionNugetPackages lastVersionNugetPackages in appPackagesNamesInNuget) {
 				PackageInfo package = applicationPackages
-					.First(pkg => pkg.Descriptor.Name == applicationPackageNameInNuget);
+					.First(pkg => pkg.Descriptor.Name == lastVersionNugetPackages.Name);
 				if (!PackageVersion.TryParseVersion(package.Descriptor.PackageVersion,
 					out PackageVersion packageVersion)) {
-					continue;
-				}
-				LastVersionNugetPackages lastVersionNugetPackages =
-					_nugetPackagesProvider.GetLastVersionPackages(applicationPackageNameInNuget, nugetPackages);
-				if (lastVersionNugetPackages == null) {
 					continue;
 				}
 				if (lastVersionNugetPackages.Last.Version > packageVersion) {
@@ -189,27 +184,29 @@ namespace Clio.Project.NuGet
 			_logger.WriteLine(result);
 		}
 
-		public void RestoreToNugetFileStorage(string packageName, string version, string nugetSourceUrl,
-				string destinationNupkgDirectory) =>
-			_nugetPackageRestorer.RestoreToNugetFileStorage(packageName, version, nugetSourceUrl, destinationNupkgDirectory);
+		public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+				string destinationDirectory) =>
+			_nugetPackageRestorer.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, destinationDirectory);
 
-		public void RestoreToDirectory(string packageName, string version, string nugetSourceUrl,
-				string destinationNupkgDirectory, bool overwrite) =>
-			_nugetPackageRestorer.RestoreToDirectory(packageName, version, nugetSourceUrl, destinationNupkgDirectory, 
+		public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+				string destinationDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationDirectory, 
 				overwrite);
 
-		public void RestoreToPackageStorage(string packageName, string version, string nugetSourceUrl,
-			string destinationNupkgDirectory, bool overwrite) =>
-			_nugetPackageRestorer.RestoreToPackageStorage(packageName, version, nugetSourceUrl, 
-				destinationNupkgDirectory, overwrite);
+		public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+			string destinationDirectory, bool overwrite) =>
+			_nugetPackageRestorer.RestoreToPackageStorage(nugetPackageFullName, nugetSourceUrl, 
+				destinationDirectory, overwrite);
 
 		public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl) {
 			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
 			IEnumerable<PackageInfo> applicationPackages = _applicationPackageListProvider.GetPackages();
-			IEnumerable<NugetPackage> nugetPackages = _nugetPackagesProvider.GetPackages(nugetSourceUrl);
-			IEnumerable<string> applicationPackagesNamesInNuget = 
-				GetApplicationPackagesNamesInNuget(applicationPackages, nugetPackages);
-			return GetPackagesForUpdate(applicationPackagesNamesInNuget, applicationPackages, nugetPackages);
+			IEnumerable<string> appPackagesNames = applicationPackages
+				.Select(pkg => pkg.Descriptor.Name)
+				.Distinct();
+			IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget =
+				_nugetPackagesProvider.GetLastVersionPackages(appPackagesNames, nugetSourceUrl);
+			return GetPackagesForUpdate(applicationPackages, appPackagesNamesInNuget);
 		}
 
 		#endregion

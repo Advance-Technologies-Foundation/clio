@@ -11,15 +11,11 @@ namespace Clio.Command
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 
-		[Option('n', "NupkgDirectory", Required = false, HelpText = "Nupkg package directory")]
-		public string NupkgDirectory { get; set; }
-
-		[Option('v', "Version", Required = false, HelpText = "Version NuGet package", 
-			Default = PackageVersion.LastVersion)]
-		public string Version { get; set; }
+		[Option('d', "DestinationDirectory", Required = false, HelpText = "Destination restoring package directory")]
+		public string DestinationDirectory { get; set; }
 
 		[Option('s', "Source", Required = false, HelpText = "Specifies the server URL", 
-			Default = "https://www.nuget.org")]
+			Default = "https://www.nuget.org/api/v2")]
 		public string SourceUrl { get; set; }
 
 	}
@@ -35,8 +31,8 @@ namespace Clio.Command
 
 		public override int Execute(RestoreNugetPkgOptions options) {
 			try {
-				_nugetManager.RestoreToPackageStorage(options.Name, options.Version, options.SourceUrl, 
-					options.NupkgDirectory, true);
+				_nugetManager.RestoreToPackageStorage(new NugetPackageFullName(options.Name), options.SourceUrl, 
+					options.DestinationDirectory, true);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

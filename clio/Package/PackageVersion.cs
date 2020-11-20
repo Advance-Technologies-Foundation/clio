@@ -4,7 +4,7 @@ using Clio.Common;
 namespace Clio.Project.NuGet
 {
 	
-	#region Class: NugetPackageVersion
+	#region Class: PackageVersion
 
 	public class PackageVersion : ICloneable, IComparable
 	{
@@ -50,21 +50,18 @@ namespace Clio.Project.NuGet
 
 		#region Methods: Public
 
-		public static PackageVersion ParseVersion(string versionDescription) {
-			versionDescription.CheckArgumentNullOrWhiteSpace(nameof(versionDescription));
-			string[] versionItems = versionDescription
-				.Trim(' ')
-				.Split(new[] { '-' }, StringSplitOptions.RemoveEmptyEntries);
-			if (versionItems.Length == 0 || versionItems.Length > 2) {
-				throw new ArgumentException(
-					$"Wrong format the nuget version: '{versionDescription}'. " + 
-					"The format the nuget version mast be: <Version>[-<Suffix>]");
-			}
-			Version version = new Version(versionItems[0].Trim(' '));
-			string suffix = versionItems.Length == 2
-				? versionItems[1].Trim(' ') 
+		public static PackageVersion ParseVersion(string fullVersionDescription) {
+			fullVersionDescription.CheckArgumentNullOrWhiteSpace(nameof(fullVersionDescription));
+			fullVersionDescription = fullVersionDescription.Trim();
+			int index = fullVersionDescription.IndexOf('-');
+			string versionDescription = index > 0
+				? fullVersionDescription.Substring(0, index)
+				: fullVersionDescription;
+			string suffix = index > 0
+				? fullVersionDescription.Substring(index + 1, fullVersionDescription.Length - index - 1)
 				: string.Empty;
-			return new PackageVersion(version, suffix);
+			Version version = new Version(versionDescription.Trim());
+			return new PackageVersion(version, suffix.Trim());
 		}
 
 		public static bool TryParseVersion(string versionDescription, out PackageVersion packageVersion) {

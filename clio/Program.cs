@@ -166,9 +166,9 @@ namespace Clio
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options);
 			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
+			var nugetPackageFullName = new NugetPackageFullName(packageName, PackageVersion.LastVersion);
 			return new InstallNugetPkgOptions {
-				Name = packageName,
-				Version = PackageVersion.LastVersion,
+				Names = nugetPackageFullName,
 				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",
 				DevMode = options.DevMode,
 				Environment = options.Environment,
@@ -209,7 +209,7 @@ namespace Clio
 					PullPkgOptions,	ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
-					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, CheckNugetUpdateOptions>(args)
+					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, CheckNugetUpdateOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -240,13 +240,14 @@ namespace Clio
 						Resolve<IFileSystem>()),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
-					(PkgListOptions opts) => CreateRemoteCommand<GetPkgListCommand>(opts).Execute(opts),
+					(PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					(PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
 					(RestoreNugetPkgOptions opts) => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
 					(InstallNugetPkgOptions opts) => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
 					(SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
+					(GetPackageVersionOptions opts) => Resolve<GetPackageVersionCommand>().Execute(opts),
 					(CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 					errs => 1);
 		}
