@@ -15,8 +15,13 @@ namespace Clio
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
 				.AsImplementedInterfaces();
 			if (settings != null) {
-				containerBuilder.RegisterInstance(new CreatioClientAdapter(settings.Uri, settings.Login, 
+				if (string.IsNullOrEmpty(settings.ClientId)) {
+					containerBuilder.RegisterInstance(new CreatioClientAdapter(settings.Uri, settings.Login,
 					settings.Password, settings.IsNetCore)).As<IApplicationClient>();
+				} else {
+					containerBuilder.RegisterInstance(new CreatioClientAdapter(settings.Uri, settings.ClientId,
+					settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore)).As<IApplicationClient>();
+				}
 				containerBuilder.RegisterInstance(settings);
 			}
 			containerBuilder.RegisterType<PushPackageCommand>();
