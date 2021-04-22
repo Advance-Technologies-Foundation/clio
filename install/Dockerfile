@@ -1,8 +1,7 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:3.1 as base
+﻿FROM mcr.microsoft.com/dotnet/sdk:3.1 as base
 WORKDIR /app
-EXPOSE 80
 
-FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:3.1 AS build
 WORKDIR /app
 
 COPY clio clio
