@@ -36,6 +36,11 @@ EXAMPLE
     clio push-pkg package.gz
         install package from .gz packages you can use command
 
+    clio push-pkg package.gz --InstallSqlScript false --InstallPackageData false 
+            --ContinueIfError true --SkipConstraints false --SkipValidateActions false
+            --ExecuteValidateActions false --IsForceUpdateAllColumns false
+        install package from .gz packages, with options, you can use command
+
     clio push-pkg C:\Packages\package.gz
         install package from .gz packages you can use command
 
