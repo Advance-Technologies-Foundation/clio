@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "install C:\\Projects\\Tests\\test\\AutoTest"
+      "commandLineArgs": "pull-pkg UA_SupplyChain -u https://alternativeway.creatio.com -l TechUser -z False -p NJpnysk8dnmpD2A@ -d C:\\Projects\\UA_SupplyChain\\packages\\UA_SupplyChain.zip"
     }
   }
 }

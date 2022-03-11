@@ -20,5 +20,13 @@ namespace Clio.Command.PackageCommand
 		public string DestPath {
 			get; set;
 		}
+
+		[Option('z', "AutoUnzip", Required = false,
+			HelpText = "auto unzip package after download", Default = true)]
+		public string AutoUnzip
+		{
+			get; set;
+		}
+
 	}
 }
