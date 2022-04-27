@@ -40,6 +40,10 @@ namespace Clio.Common
 			Directory.CreateDirectory(directoryPath);
 		}
 
+		public string GetCurrentDirectory() {
+			return Directory.GetCurrentDirectory();
+		}
+
 		public string GetCurrentDirectoryIfEmpty(string directory) {
 			return string.IsNullOrWhiteSpace(directory)
 				? Directory.GetCurrentDirectory()
@@ -101,6 +105,10 @@ namespace Clio.Common
 			int rootDirectoryPathLength = rootDirectoryPath.Length;
 			string relativePath = path.Substring(rootDirectoryPathLength);
 			return relativePath;
+		}
+
+		public void WriteAllTextToFile(string path, string contents) {
+			File.WriteAllText(path, contents);
 		}
 
 		#endregion
