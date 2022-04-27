@@ -1,9 +1,8 @@
-using System;
-
-namespace Clio.Project
+namespace Clio.Workspace
 {
+	using System;
 
-	#region Class: SolutionCreator
+	#region Class: SolutionProject
 
 	public class SolutionProject
 	{
@@ -13,8 +12,8 @@ namespace Clio.Project
 		public SolutionProject(string name, string path, Guid id, Guid uId) {
 			Name = name;
 			Path = path;
-			Id = id.ToString().ToUpper();
-			UId = uId.ToString().ToUpper();
+			Id = id;
+			UId = uId;
 		}
 
 		public SolutionProject(string name, string path) : this(name, path, Guid.NewGuid(), Guid.NewGuid()) {
@@ -26,8 +25,8 @@ namespace Clio.Project
 
 		public string Name { get; }
 		public string Path { get; }
-		public string Id { get; }
-		public string UId { get; }
+		public Guid Id { get; }
+		public Guid UId { get; }
 
 		#endregion
 

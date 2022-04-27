@@ -1,7 +1,6 @@
-using System.Collections.Generic;
-
-namespace Clio.Project
+namespace Clio.Workspace
 {
+	using System.Collections.Generic;
 
 	#region Interface: ISolutionCreator
 

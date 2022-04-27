@@ -1,10 +1,8 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
-using Clio.Common;
-
-namespace Clio.Project
+namespace Clio.Workspace
 {
+	using System.Collections.Generic;
+	using System.Text;
+	using Clio.Common;
 
 	#region Class: SolutionCreator
 
