@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace Clio.Command
 {
 	using System;
@@ -61,31 +59,10 @@ namespace Clio.Command
 
 		#region Methods: Public
 
-		public override int Execute(CreateOpenProjectFileOptions options) {
+		public override int Execute(CreateWorkspaceCommandOptions options) {
 			try
 			{
-				string rootPath = _fileSystem.GetCurrentDirectory();
-				IEnumerable<SolutionProject> solutionProject = FindSolutionProjects(rootPath);
-				// const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
-				// const string packageName = "CreatioSDK";
-				// const string nugetFolderName = ".nuget";
-				// const string solutionName = "CreatioPackages.sln";
-				// const string packagesFolderName = "packages";
-				// string nugetCreatioSdkVersion = options.Version;
-				// NugetPackageFullName nugetPackageFullName = new NugetPackageFullName() {
-				// 	Name = packageName,
-				// 	Version = nugetCreatioSdkVersion
-				// };
-				// SolutionProject[] solutionProjects = new[] {
-				// 	new SolutionProject("A1", @"packages\A1\Files\A1.csproj"),
-				// 	new SolutionProject("A2", @"packages\A2\Files\A2.csproj"),
-				// 	new SolutionProject("A3", @"packages\A3\Files\A3.csproj"),
-				// };
-				//string solutionPath = Path.Combine(_fileSystem.GetCurrentDirectory(), solutionName);
-				// _solutionCreator.Create(solutionPath, solutionProjects);
-				// string baseNugetLibPath = Path.Combine(_fileSystem.GetCurrentDirectory(), nugetFolderName);
-				// _nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, baseNugetLibPath);
-				// _openSolutionCreator.Create(solutionName, nugetFolderName, nugetCreatioSdkVersion);
+
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

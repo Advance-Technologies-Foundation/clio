@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Clio.Environment
+namespace Clio.UserEnvironment
 {
 	
 	public class WorkspaceSettings
