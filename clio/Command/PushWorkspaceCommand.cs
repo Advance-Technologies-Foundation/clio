@@ -1,7 +1,7 @@
 using System.IO;
 using Clio.Common;
 using Clio.Package;
-using Clio.UserEnvironment;
+using Clio.Workspace;
 
 namespace Clio.Command
 {

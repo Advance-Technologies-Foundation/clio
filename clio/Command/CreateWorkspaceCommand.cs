@@ -1,9 +1,7 @@
 namespace Clio.Command
 {
 	using System;
-	using System.IO;
 	using Clio.Common;
-	using Clio.Project;
 	using Clio.Project.NuGet;
 	using CommandLine;
 
@@ -30,24 +28,14 @@ namespace Clio.Command
 
 		#region Fields: Private
 
-		private readonly INuGetManager _nugetManager;
 		private readonly IFileSystem _fileSystem;
-		private readonly IOpenSolutionCreator _openSolutionCreator;
-		private readonly ISolutionCreator _solutionCreator;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CreateWorkspaceCommand(INuGetManager nugetManager, IOpenSolutionCreator openSolutionCreator,
-				ISolutionCreator solutionCreator, IFileSystem fileSystem) {
-			nugetManager.CheckArgumentNull(nameof(nugetManager));
-			openSolutionCreator.CheckArgumentNull(nameof(openSolutionCreator));
-			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
+		public CreateWorkspaceCommand(IFileSystem fileSystem) {
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
-			_nugetManager = nugetManager;
-			_openSolutionCreator = openSolutionCreator;
-			_solutionCreator = solutionCreator;
 			_fileSystem = fileSystem;
 		}
 
@@ -62,7 +50,7 @@ namespace Clio.Command
 		public override int Execute(CreateWorkspaceCommandOptions options) {
 			try
 			{
-
+				string rootPath = _fileSystem.GetCurrentDirectory();
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
