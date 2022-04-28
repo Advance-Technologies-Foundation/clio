@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Clio.Package
 {
 
-	#region Interface: IWorkspace
+	#region Interface: IPackageDownloader
 
 	public interface IPackageDownloader
 	{

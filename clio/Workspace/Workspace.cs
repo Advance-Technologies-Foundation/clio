@@ -1,10 +1,10 @@
-using System;
-using System.IO;
-using Clio.Common;
-using Clio.Package;
-
 namespace Clio.Workspace
 {
+	using System;
+	using System.IO;
+	using Clio.Common;
+	using Clio.Package;
+	using Clio.Project.NuGet;
 
 	#region Class: Workspace
 
@@ -26,6 +26,7 @@ namespace Clio.Workspace
 		private readonly IPackageDownloader _packageDownloader;
 		private readonly IPackageInstaller _packageInstaller;
 		private readonly IPackageArchiver _packageArchiver;
+		private readonly ICreatioSDK _creatioSDK;
 		private readonly IFileSystem _fileSystem;
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -37,13 +38,14 @@ namespace Clio.Workspace
 
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspaceRestorer workspaceRestorer,
 				IPackageDownloader packageDownloader, IPackageInstaller packageInstaller, 
-				IPackageArchiver packageArchiver, IJsonConverter jsonConverter, 
+				IPackageArchiver packageArchiver, ICreatioSDK creatioSDK, IJsonConverter jsonConverter, 
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
 			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
 			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
+			creatioSDK.CheckArgumentNull(nameof(creatioSDK));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
@@ -52,6 +54,7 @@ namespace Clio.Workspace
 			_packageDownloader = packageDownloader;
 			_packageInstaller = packageInstaller;
 			_packageArchiver = packageArchiver;
+			_creatioSDK = creatioSDK;
 			_jsonConverter = jsonConverter;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
