@@ -136,7 +136,8 @@ namespace Clio
 		private static void UnZipPackages(string zipFilePath) {
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 			var fileInfo = new FileInfo(zipFilePath);
-			packageArchiver.UnZipPackages(zipFilePath, true, false, fileInfo.DirectoryName);
+			packageArchiver.UnZipPackages(zipFilePath, true, false, false,
+				fileInfo.DirectoryName);
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
@@ -222,7 +223,8 @@ namespace Clio
 					PullPkgOptions,	ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
-					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, CheckNugetUpdateOptions>(args)
+					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
+					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -262,6 +264,9 @@ namespace Clio
 					(SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
 					(GetPackageVersionOptions opts) => Resolve<GetPackageVersionCommand>().Execute(opts),
 					(CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
+					(RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
+					(CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
+					(PushWorkspaceCommandOptions opts) => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

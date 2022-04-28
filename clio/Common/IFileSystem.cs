@@ -12,6 +12,7 @@ namespace Clio.Common
 
 		void CheckOrDeleteExistsFile(string filePath, bool delete);
 		void CheckOrDeleteExistsDirectory(string directoryPath, bool delete);
+		void OverwriteExistsDirectory(string directoryPath);
 		void CheckOrOverwriteExistsDirectory(string directoryPath, bool overwrite);
 		string GetCurrentDirectoryIfEmpty(string directory);
 		string ExtractNameFromPath(string path);
@@ -21,6 +22,7 @@ namespace Clio.Common
 		void DeleteFileIfExists(string path);
 		void DeleteDirectoryIfExists(string path);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
+		void WriteAllTextToFile(string path, string contents);
 
 		#endregion
 

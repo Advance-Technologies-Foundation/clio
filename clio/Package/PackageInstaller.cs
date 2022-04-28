@@ -19,6 +19,7 @@ namespace Clio.Package
 		#region Constants: Private
 
 		private const string InstallUrl = @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
+		private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
 		private const string InstallLogUrl = @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private const string DefLogFileName = "cliolog.txt";
@@ -57,6 +58,7 @@ namespace Clio.Package
 			scriptExecutor.CheckArgumentNull(nameof(scriptExecutor));
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			logger.CheckArgumentNull(nameof(logger));
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
 			_application = application;
@@ -154,20 +156,38 @@ namespace Clio.Package
 			return currentLogContent;
 		}
 
-		private string InstallPackageOnServer(string fileName)
-		{
-			return _applicationClient.ExecutePostRequest(GetCompleteUrl(InstallUrl), $"\"{fileName}\"", Timeout.Infinite);
+		private string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions) =>
+			packageInstallOptions == null
+				? $"\"{fileName}\""
+				: $" {{ \"zipPackageName\": \"{fileName}\", " +
+				  "\"packageInstallOptions\": { " +
+				  $"\"installSqlScript\": \"{packageInstallOptions.InstallSqlScript.ToString().ToLower()}\", " +
+				  $"\"installPackageData\": \"{packageInstallOptions.InstallPackageData.ToString().ToLower()}\", " +
+				  $"\"continueIfError\": \"{packageInstallOptions.ContinueIfError.ToString().ToLower()}\", " +
+				  $"\"skipConstraints\": \"{packageInstallOptions.SkipConstraints.ToString().ToLower()}\", " +
+				  $"\"skipValidateActions\": \"{packageInstallOptions.SkipValidateActions.ToString().ToLower()}\", " +
+				  $"\"executeValidateActions\": \"{packageInstallOptions.ExecuteValidateActions.ToString().ToLower()}\", " +
+				  $"\"isForceUpdateAllColumns\": \"{packageInstallOptions.IsForceUpdateAllColumns.ToString().ToLower()}\"  " +
+				  " } }";
+
+		private string InstallPackageOnServer(string fileName, PackageInstallOptions packageInstallOptions) {
+			string installUrl = packageInstallOptions == null 
+				? InstallUrl 
+				: InstallWithOptionsUrl;
+			return _applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl), 
+				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}
 
-		private (bool, string) InstallPackageOnServerWithLogListener(string fileName)
-		{
+		private (bool, string) InstallPackageOnServerWithLogListener(string fileName, 
+				PackageInstallOptions packageInstallOptions) {
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
 			var cancellationTokenSource = new CancellationTokenSource();
 			var log = string.Empty;
 			var task = Task.Factory.StartNew(
 				(cancellationToken) => log = ListenForLogs(cancellationToken), cancellationTokenSource.Token);
-			string result = InstallPackageOnServer(fileName);
+
+			string result = InstallPackageOnServer(fileName, packageInstallOptions);
 			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
 			cancellationTokenSource.Cancel();
 			task.Wait();
@@ -176,10 +196,9 @@ namespace Clio.Package
 			return (response != null && response.Success || response == null, completeInstallLog);
 		}
 
-		private (bool, string) InstallPackedPackage(string filePath)
-		{
+		private (bool, string) InstallPackedPackage(string filePath, PackageInstallOptions packageInstallOptions) {
 			string packageName = UploadPackage(filePath);
-			(bool success, string logText) = InstallPackageOnServerWithLogListener(packageName);
+			(bool success, string logText) = InstallPackageOnServerWithLogListener(packageName, packageInstallOptions);
 			if (_developerModeEnabled) {
 				UnlockMaintainerPackageInternal();
 				_application.Restart();
@@ -187,14 +206,14 @@ namespace Clio.Package
 			return (success, logText);
 		}
 
-		private (bool, string) InstallPackageFromFolder(string packageFolderPath)
-		{
+		private (bool, string) InstallPackageFromFolder(string packageFolderPath, 
+			PackageInstallOptions packageInstallOptions) {
 			var packedFilePath = $"{packageFolderPath}.gz";
 			_packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
 			bool success = false;
 			string logText;
 			try {
-				(success, logText) = InstallPackedPackage(packedFilePath);
+				(success, logText) = InstallPackedPackage(packedFilePath, packageInstallOptions);
 			}
 			finally {
 				File.Delete(packedFilePath);
@@ -202,15 +221,17 @@ namespace Clio.Package
 			return (success, logText);
 		}
 
-		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath)
-		{
+
+		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath, 
+			PackageInstallOptions packageInstallOptions) {
 			bool success = false;
 			string logText = null;
 			if (File.Exists(packagePackedFileOrFolderPath)) {
-				(success, logText) = InstallPackedPackage(packagePackedFileOrFolderPath);
+				(success, logText) = InstallPackedPackage(packagePackedFileOrFolderPath, packageInstallOptions);
 			}
 			else if (Directory.Exists(packagePackedFileOrFolderPath)) {
-				(success, logText) = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath);
+				(success, logText) = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath,
+					packageInstallOptions);
 			}
 			else {
 				_logger.WriteLine($"Specified package not found by path {packagePackedFileOrFolderPath}");
@@ -222,11 +243,11 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public bool Install(string packagePath, string reportPath = null)
-		{
+		public bool Install(string packagePath, PackageInstallOptions packageInstallOptions = null, 
+				string reportPath = null) {
 			packagePath = _fileSystem.GetCurrentDirectoryIfEmpty(packagePath);
 			_reportPath = reportPath;
-			(bool success, string logText) = InstallPackage(packagePath);
+			(bool success, string logText) = InstallPackage(packagePath, packageInstallOptions);
 			SaveLogFile(logText, reportPath);
 			return success;
 		}
