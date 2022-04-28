@@ -1,5 +1,6 @@
 namespace Clio.Workspace
 {
+	using System;
 	using System.IO;
 	using Clio.Common;
 
@@ -36,13 +37,13 @@ namespace Clio.Workspace
 		}
 
 		private void CreateOpenSolutionCmd(string rootPath, string solutionName, string nugetFolderName, 
-				string nugetVersion, bool isFramework) {
+				Version nugetVersion, bool isFramework) {
 			string openSolutionCmdFileName = isFramework ? "OpenSolution.cmd" : "OpenNetCoreSolution.cmd";
 			string openProjectCmdPath = Path.Combine(rootPath, openSolutionCmdFileName);
 			string template = _templateProvider.GetTemplate("OpenSolution.cmd");
 			string nugetTargetFramework = isFramework ? "net40" : "netstandard2.0";
-			string coreLibPath = Path.Combine("..", "..", "..", nugetFolderName, "creatiosdk", nugetVersion,
-				"lib", nugetTargetFramework);
+			string coreLibPath = Path.Combine("..", "..", "..", nugetFolderName, "creatiosdk", 
+				nugetVersion.ToString(), "lib", nugetTargetFramework);
 			string coreTargetFramework = isFramework ? "net472" : "netstandard2.0";
 			string content = ReplaceMacro(template, solutionName, coreLibPath, coreTargetFramework);
 			_fileSystem.WriteAllTextToFile(openProjectCmdPath, content);
@@ -54,7 +55,7 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		public void Create(string rootPath, string solutionName, string nugetFolderName, 
-				string nugetCreatioSdkVersion) {
+				Version nugetCreatioSdkVersion) {
 			CreateOpenSolutionCmd(rootPath, solutionName, nugetFolderName, nugetCreatioSdkVersion, true);
 			CreateOpenSolutionCmd(rootPath, solutionName, nugetFolderName, nugetCreatioSdkVersion, false);
 		}

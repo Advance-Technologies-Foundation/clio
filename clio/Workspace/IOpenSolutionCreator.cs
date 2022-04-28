@@ -1,5 +1,6 @@
 namespace Clio.Workspace
 {
+	using System;
 
 	#region Interface: IOpenSolutionCreator
 
@@ -8,7 +9,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		void Create(string rootPath, string solutionName, string nugetFolderName, string nugetCreatioSdkVersion);
+		void Create(string rootPath, string solutionName, string nugetFolderName, Version nugetCreatioSdkVersion);
 
 		#endregion
 

@@ -17,7 +17,7 @@ namespace Clio.Workspace
 		public Dictionary<string, WorkspaceEnvironment> Environments { get; set; } =
 			new Dictionary<string, WorkspaceEnvironment>();
 		public string[] Packages { get; set; } = {};
-		public string ApplicationVersion { get; set; }
+		public Version ApplicationVersion { get; set; }
 		[JsonIgnore]
 		public string RootPath { get; set; }
 

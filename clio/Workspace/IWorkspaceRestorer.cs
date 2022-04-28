@@ -1,5 +1,7 @@
 namespace Clio.Workspace
 {
+	using System;
+
 	#region Interface: IWorkspaceRestorer
 
 	public interface IWorkspaceRestorer
@@ -7,7 +9,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		void Restore(string nugetCreatioSdkVersion);
+		void Restore(Version nugetCreatioSdkVersion);
 
 		#endregion
 

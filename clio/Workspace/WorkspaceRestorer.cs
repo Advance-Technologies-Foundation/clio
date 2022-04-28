@@ -1,5 +1,6 @@
 namespace Clio.Workspace
 {
+	using System;
 	using System.Collections.Generic;
 	using System.IO;
 	using System.Linq;
@@ -83,12 +84,12 @@ namespace Clio.Workspace
 			return solutionProjects;
 		}
 
-		private void RestoreNugetCreatioSdk(string nugetCreatioSdkVersion) {
+		private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion) {
 			const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
 			const string packageName = "CreatioSDK";
 			NugetPackageFullName nugetPackageFullName = new NugetPackageFullName() {
 				Name = packageName,
-				Version = nugetCreatioSdkVersion
+				Version = nugetCreatioSdkVersion.ToString()
 			};
 			string baseNugetLibPath = Path.Combine(_rootPath, NugetFolderName);
 			_nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, baseNugetLibPath);
@@ -100,7 +101,7 @@ namespace Clio.Workspace
 			_solutionCreator.Create(solutionPath, solutionProjects);
 		}
 
-		private void CreateOpenSolutionCmd(string nugetCreatioSdkVersion) {
+		private void CreateOpenSolutionCmd(Version nugetCreatioSdkVersion) {
 			_openSolutionCreator.Create(_rootPath, SolutionName, NugetFolderName, nugetCreatioSdkVersion);
 		}
 
@@ -109,7 +110,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		public void Restore(string nugetCreatioSdkVersion) {
+		public void Restore(Version nugetCreatioSdkVersion) {
 			RestoreNugetCreatioSdk(nugetCreatioSdkVersion);
 			CreateSolution();
 			CreateOpenSolutionCmd(nugetCreatioSdkVersion);
