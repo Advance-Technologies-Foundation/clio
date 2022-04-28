@@ -24,6 +24,8 @@ namespace Clio.Workspace
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IWorkspaceRestorer _workspaceRestorer;
 		private readonly IPackageDownloader _packageDownloader;
+		private readonly IPackageInstaller _packageInstaller;
+		private readonly IPackageArchiver _packageArchiver;
 		private readonly IFileSystem _fileSystem;
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -34,17 +36,22 @@ namespace Clio.Workspace
 		#region Constructors: Public
 
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspaceRestorer workspaceRestorer,
-				IPackageDownloader packageDownloader, IJsonConverter jsonConverter, 
+				IPackageDownloader packageDownloader, IPackageInstaller packageInstaller, 
+				IPackageArchiver packageArchiver, IJsonConverter jsonConverter, 
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
 			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
+			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
+			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_environmentSettings = environmentSettings;
 			_workspaceRestorer = workspaceRestorer;
 			_packageDownloader = packageDownloader;
+			_packageInstaller = packageInstaller;
+			_packageArchiver = packageArchiver;
 			_jsonConverter = jsonConverter;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
@@ -113,6 +120,24 @@ namespace Clio.Workspace
 		public void Restore(string workspaceEnvironmentName) {
 			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, PackagesPath);
 			_workspaceRestorer.Restore(WorkspaceSettings.ApplicationVersion);
+		}
+
+		public void Install(string workspaceEnvironmentName) {
+			WorkspaceSettings workspaceSettings = WorkspaceSettings;
+			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+				string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
+				Directory.CreateDirectory(rootPackedPackagePath);
+				foreach (string packageName in workspaceSettings.Packages) {
+					string packagePath = Path.Combine(workspaceSettings.RootPath, PackagesFolderName, packageName);
+					string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
+					_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
+				}
+				string applicationZip = Path.Combine(tempDirectory, $"{workspaceSettings.Name}.zip");
+				_packageArchiver.ZipPackages(rootPackedPackagePath, 
+					applicationZip, true);
+				_packageInstaller.Install(applicationZip);
+			});
+
 		}
 
 		#endregion
