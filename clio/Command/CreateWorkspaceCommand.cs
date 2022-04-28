@@ -8,18 +8,16 @@ namespace Clio.Command
 	using Clio.Project.NuGet;
 	using CommandLine;
 
-	#region Class: CreateOpenProjectFileOptions
+	#region Class: CreateWorkspaceCommandOptions
 
 	[Verb("create-workspace", Aliases = new string[] { "createw" }, HelpText = "Create open project cmd file")]
 	public class CreateWorkspaceCommandOptions : EnvironmentOptions
 	{
-
-		
 	}
 
 	#endregion
 
-	#region Class: CreateOpenProjectFileOptions
+	#region Class: CreateWorkspaceCommand
 
 	public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>
 	{

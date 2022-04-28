@@ -32,7 +32,7 @@ namespace Clio
 			containerBuilder.RegisterType<CheckNugetUpdateCommand>();
 			containerBuilder.RegisterType<DeletePackageCommand>();
 			containerBuilder.RegisterType<GetPkgListCommand>();
-			containerBuilder.RegisterType<CreateOpenProjectFileCommand>();
+			containerBuilder.RegisterType<RestoreWorkspaceCommand>();
 			containerBuilder.RegisterType<CreateWorkspaceCommand>();
 			return containerBuilder.Build();
 		}
