@@ -14,10 +14,11 @@ namespace Clio.Common
 		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
 		public string TemplateDirectory =>  Path.Combine(ExecutingDirectory, "tpl");
 		public string BaseTempDirectory =>  Path.Combine(Path.GetTempPath(), "clio");
+		public string CurrentDirectory => Directory.GetCurrentDirectory();
 
 		#endregion
 
-		#region Methods: Public
+		#region Methods: Private
 
 		private void DeleteDirectoryIfExists(string path) {
 			path.CheckArgumentNull(nameof(path));
