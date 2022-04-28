@@ -92,7 +92,7 @@ namespace Clio.Workspace
 		private WorkspaceSettings CreateDefaultWorkspaceSettings() {
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings() {
 				Name = "",
-				ApplicationVersion = ""
+				ApplicationVersion = new Version(0, 0, 0, 0)
 			};
 			workspaceSettings.Environments.Add("", new WorkspaceEnvironment());
 			return workspaceSettings;
@@ -107,6 +107,9 @@ namespace Clio.Workspace
 		}
 
 		private void CreateWorkspaceSettingsFile() {
+			if (File.Exists(WorkspaceSettingsPath)) {
+				return;
+			}
 			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings();
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
 		}
@@ -121,8 +124,9 @@ namespace Clio.Workspace
 		}
 
 		public void Restore(string workspaceEnvironmentName) {
+			Version creatioSdkVersion = _creatioSDK.FindSdkVersion(WorkspaceSettings.ApplicationVersion);
 			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, PackagesPath);
-			_workspaceRestorer.Restore(WorkspaceSettings.ApplicationVersion);
+			_workspaceRestorer.Restore(creatioSdkVersion);
 		}
 
 		public void Install(string workspaceEnvironmentName) {
