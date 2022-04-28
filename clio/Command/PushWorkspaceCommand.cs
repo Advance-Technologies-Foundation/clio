@@ -68,6 +68,7 @@ namespace Clio.Command
 				WorkspaceSettings workspaceSettings = _workspace.WorkspaceSettings;
 				_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 					string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
+					Directory.CreateDirectory(rootPackedPackagePath);
 					foreach (string packageName in workspaceSettings.Packages) {
 						string packagePath = Path.Combine(workspaceSettings.RootPath, PackagesFolderName, packageName);
 						string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
