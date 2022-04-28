@@ -15,6 +15,6 @@ namespace Clio
 		void Unpack(IEnumerable<string> packedPackagesPaths, bool overwrite, string destinationPath = null);
 		void ZipPackages(string sourceGzipFilesFolderPaths, string destinationArchiveFileName, bool overwrite);
 		void UnZipPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true, 
-			string destinationPath = null);
+			bool unpackIsSameFolder = false, string destinationPath = null);
 	}
 }

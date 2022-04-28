@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Clio.Common;
+using Clio.Package;
 
 namespace Clio.Workspace
 {
@@ -12,6 +13,7 @@ namespace Clio.Workspace
 
 		#region Constants: Private
 
+		private const string PackagesFolderName = "packages";
 		private const string ClioDirectoryName = ".clio";
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 
@@ -21,6 +23,7 @@ namespace Clio.Workspace
 
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IWorkspaceRestorer _workspaceRestorer;
+		private readonly IPackageDownloader _packageDownloader;
 		private readonly IFileSystem _fileSystem;
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -31,15 +34,17 @@ namespace Clio.Workspace
 		#region Constructors: Public
 
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspaceRestorer workspaceRestorer,
-				IJsonConverter jsonConverter, IWorkingDirectoriesProvider workingDirectoriesProvider, 
-				IFileSystem fileSystem) {
+				IPackageDownloader packageDownloader, IJsonConverter jsonConverter, 
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
+			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_environmentSettings = environmentSettings;
 			_workspaceRestorer = workspaceRestorer;
+			_packageDownloader = packageDownloader;
 			_jsonConverter = jsonConverter;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
@@ -51,7 +56,8 @@ namespace Clio.Workspace
 
 		#region Properties: Private
 
-		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson); 
+		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson);
+		private string PackagesPath => Path.Combine(WorkspaceSettings.RootPath, PackagesFolderName);
 
 		#endregion
 
@@ -64,8 +70,14 @@ namespace Clio.Workspace
 
 		#region Methods: Private
 
-		private WorkspaceSettings ReadWorkspaceSettings() =>
-			_jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
+		private WorkspaceSettings ReadWorkspaceSettings() {
+			var workspaceSettings = _jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
+			if (workspaceSettings != null) {
+				workspaceSettings.RootPath = _rootPath;
+			}
+			return workspaceSettings;
+		}
+		
 
 		private WorkspaceSettings CreateDefaultWorkspaceSettings() {
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings() {
@@ -99,7 +111,8 @@ namespace Clio.Workspace
 		}
 
 		public void Restore(string workspaceEnvironmentName) {
-			//_workspaceRestorer.Restore(WorkspaceSettings.ApplicationVersion);
+			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, PackagesPath);
+			_workspaceRestorer.Restore(WorkspaceSettings.ApplicationVersion);
 		}
 
 		#endregion

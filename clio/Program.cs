@@ -136,7 +136,8 @@ namespace Clio
 		private static void UnZipPackages(string zipFilePath) {
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 			var fileInfo = new FileInfo(zipFilePath);
-			packageArchiver.UnZipPackages(zipFilePath, true, false, fileInfo.DirectoryName);
+			packageArchiver.UnZipPackages(zipFilePath, true, false, false,
+				fileInfo.DirectoryName);
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
