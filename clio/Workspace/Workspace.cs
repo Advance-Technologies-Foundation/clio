@@ -20,6 +20,7 @@ namespace Clio.Workspace
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
+		private readonly IWorkspaceRestorer _workspaceRestorer;
 		private readonly IFileSystem _fileSystem;
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -29,13 +30,16 @@ namespace Clio.Workspace
 
 		#region Constructors: Public
 
-		public Workspace(EnvironmentSettings environmentSettings, IJsonConverter jsonConverter, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
+		public Workspace(EnvironmentSettings environmentSettings, IWorkspaceRestorer workspaceRestorer,
+				IJsonConverter jsonConverter, IWorkingDirectoriesProvider workingDirectoriesProvider, 
+				IFileSystem fileSystem) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_environmentSettings = environmentSettings;
+			_workspaceRestorer = workspaceRestorer;
 			_jsonConverter = jsonConverter;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
@@ -66,6 +70,7 @@ namespace Clio.Workspace
 		private WorkspaceSettings CreateDefaultWorkspaceSettings() {
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings() {
 				Name = "",
+				ApplicationVersion = ""
 			};
 			workspaceSettings.Environments.Add("", new WorkspaceEnvironment());
 			return workspaceSettings;
@@ -91,6 +96,10 @@ namespace Clio.Workspace
 		public void Create() {
 			CreateClioDirectory();
 			CreateWorkspaceSettingsFile();
+		}
+
+		public void Restore(string workspaceEnvironmentName) {
+			//_workspaceRestorer.Restore(WorkspaceSettings.ApplicationVersion);
 		}
 
 		#endregion

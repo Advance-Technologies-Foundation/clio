@@ -58,6 +58,7 @@ namespace Clio.Package
 			scriptExecutor.CheckArgumentNull(nameof(scriptExecutor));
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			logger.CheckArgumentNull(nameof(logger));
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
 			_application = application;

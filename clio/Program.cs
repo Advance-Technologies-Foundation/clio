@@ -220,7 +220,7 @@ namespace Clio
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
-					CheckNugetUpdateOptions, CreateOpenProjectFileOptions, CreateWorkspaceCommandOptions>(args)
+					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -260,7 +260,7 @@ namespace Clio
 					(SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
 					(GetPackageVersionOptions opts) => Resolve<GetPackageVersionCommand>().Execute(opts),
 					(CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
-					(CreateOpenProjectFileOptions opts) => Resolve<CreateOpenProjectFileCommand>(opts).Execute(opts),
+					(RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 					(CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 					errs => 1);
 		}
