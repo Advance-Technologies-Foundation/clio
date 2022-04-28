@@ -144,7 +144,7 @@ namespace Clio
 				SetupAppConnection(options);
 				string destPath = options.DestPath ?? Path.Combine(Path.GetTempPath(), "packages.zip");
 				DownloadZipPackagesInternal(options.Name, destPath);
-				if (options.AutoUnzip.ToLower() == "true")
+				if (options.Unzip)
 				{
 					UnZipPackages(destPath);
 				}

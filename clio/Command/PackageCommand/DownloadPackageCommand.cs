@@ -21,10 +21,7 @@ namespace Clio.Command.PackageCommand
 			get; set;
 		}
 
-		[Option('z', "AutoUnzip", Required = false,
-			HelpText = "auto unzip package after download", Default = true)]
-		public string AutoUnzip
-		{
+		public bool Unzip {
 			get; set;
 		}
 
