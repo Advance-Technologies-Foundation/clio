@@ -45,10 +45,6 @@ namespace Clio.Command
 
 		#endregion
 
-		#region Methods: Private
-
-		#endregion
-
 		#region Methods: Public
 
 		public override int Execute(PushWorkspaceCommandOptions options) {
