@@ -34,6 +34,15 @@ namespace Clio.Common
 			}
 		}
 
+		public void OverwriteExistsDirectory(string directoryPath) {
+			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+			if (!Directory.Exists(directoryPath)) {
+				return;
+			}
+			Directory.Delete(directoryPath, true);
+			Directory.CreateDirectory(directoryPath);
+		}
+
 		public void CheckOrOverwriteExistsDirectory(string directoryPath, bool overwrite) {
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
 			CheckOrDeleteExistsDirectory(directoryPath, overwrite);

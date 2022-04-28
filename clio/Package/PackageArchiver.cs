@@ -163,12 +163,16 @@ namespace Clio
 		}
 
 		public void UnZipPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true, 
-				string destinationPath = null) {
+				bool unpackIsSameFolder = false, string destinationPath = null) {
 			CheckUnZipPackagesArgument(zipFilePath);
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
-			string targetDirectoryPath = _fileSystem.GetDestinationFileDirectory(zipFilePath, destinationPath);
-			_fileSystem.CheckOrOverwriteExistsDirectory(targetDirectoryPath, overwrite);
+			string targetDirectoryPath = unpackIsSameFolder
+				? destinationPath
+				: _fileSystem.GetDestinationFileDirectory(zipFilePath, destinationPath);
+			if (overwrite) {
+				_fileSystem.OverwriteExistsDirectory(targetDirectoryPath);
+			}
 			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
 			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath);
 			 Unpack(packedPackagesPaths, true, targetDirectoryPath);
