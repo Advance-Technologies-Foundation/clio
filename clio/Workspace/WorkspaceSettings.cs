@@ -1,3 +1,7 @@
+using System;
+using System.IO;
+using Newtonsoft.Json;
+
 namespace Clio.Workspace
 {
 	using System.Collections.Generic;
@@ -10,9 +14,11 @@ namespace Clio.Workspace
 		#region Properties: Public
 
 		public string Name { get; set; }
+		public Dictionary<string, WorkspaceEnvironment> Environments { get; set; } =
+			new Dictionary<string, WorkspaceEnvironment>();
+		public string[] Packages { get; set; } = {};
+		[JsonIgnore]
 		public string RootPath { get; set; }
-		public Dictionary<string, EnvironmentOptions> Environments { get; set; }
-		public string[] Packages { get; set; }
 
 		#endregion
 
