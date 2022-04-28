@@ -1,3 +1,6 @@
+using System.IO;
+using Clio.Workspace;
+
 namespace Clio.Command
 {
 	using System;
@@ -28,15 +31,22 @@ namespace Clio.Command
 
 		#region Fields: Private
 
+		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IFileSystem _fileSystem;
+		private readonly IJsonConverter _jsonConverter;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CreateWorkspaceCommand(IFileSystem fileSystem) {
+		public CreateWorkspaceCommand(EnvironmentSettings environmentSettings, IFileSystem fileSystem, 
+				IJsonConverter jsonConverter) {
+			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
+			_environmentSettings = environmentSettings;
 			_fileSystem = fileSystem;
+			_jsonConverter = jsonConverter;
 		}
 
 		#endregion
@@ -51,6 +61,12 @@ namespace Clio.Command
 			try
 			{
 				string rootPath = _fileSystem.GetCurrentDirectory();
+				WorkspaceSettings workspaceSettings = new WorkspaceSettings() {
+					Name = "workspaceName",
+				};
+				workspaceSettings.Environments.Add("Name", new WorkspaceEnvironment());
+				string jsonPath = Path.Combine(rootPath, $"workspaceSettings.json");
+				_jsonConverter.SerializeObjectToFile(workspaceSettings, jsonPath);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

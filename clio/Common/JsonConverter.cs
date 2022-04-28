@@ -1,9 +1,8 @@
-﻿using System;
-using System.IO;
-using Newtonsoft.Json;
-
-namespace Clio.Common
+﻿namespace Clio.Common
 {
+	using System;
+	using System.IO;
+	using Newtonsoft.Json;
 
 	#region Class: JsonConverter
 	
@@ -38,7 +37,8 @@ namespace Clio.Common
 
 		public void SerializeObjectToFile<T>(T value, string jsonPath) {
 			if (!File.Exists(jsonPath)) {
-				File.Create(jsonPath);
+				FileStream fileStream = File.Create(jsonPath);
+				fileStream.Close();
 			}
 			File.WriteAllText(jsonPath, JsonConvert.SerializeObject(value, Formatting.Indented));
 		}
