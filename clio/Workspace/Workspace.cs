@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Clio.Common;
 
@@ -8,6 +9,13 @@ namespace Clio.Workspace
 
 	public class Workspace : IWorkspace
 	{
+
+		#region Constants: Private
+
+		private const string ClioDirectoryName = ".clio";
+		private const string WorkspaceSettingsJson = "workspaceSettings.json";
+
+		#endregion
 
 		#region Fields: Private
 
@@ -32,23 +40,28 @@ namespace Clio.Workspace
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_rootPath = _workingDirectoriesProvider.CurrentDirectory;
+			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
 		}
 
 		#endregion
 
 		#region Properties: Private
 
-
+		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson); 
 
 		#endregion
 
 		#region Properties: Public
 
-		public WorkspaceSettings WorkspaceSettings { get; }
+		private readonly Lazy<WorkspaceSettings> _workspaceSettings;
+		public WorkspaceSettings WorkspaceSettings => _workspaceSettings.Value;
 
 		#endregion
 
-		#region Methods: Public
+		#region Methods: Private
+
+		private WorkspaceSettings ReadWorkspaceSettings() =>
+			_jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
 
 		private WorkspaceSettings CreateDefaultWorkspaceSettings() {
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings() {
@@ -59,6 +72,16 @@ namespace Clio.Workspace
 		}
 
 		private void CreateClioDirectory() {
+			string clioDirectoryPath = Path.Combine(_rootPath, ClioDirectoryName);
+			if (Directory.Exists(clioDirectoryPath)) {
+				return;
+			}
+			Directory.CreateDirectory(clioDirectoryPath);
+		}
+
+		private void CreateWorkspaceSettingsFile() {
+			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings();
+			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
 		}
 
 		#endregion
@@ -66,9 +89,8 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		public void Create() {
-			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings();
-			string jsonPath = Path.Combine(_rootPath, $"workspaceSettings.json");
-			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, jsonPath);
+			CreateClioDirectory();
+			CreateWorkspaceSettingsFile();
 		}
 
 		#endregion
