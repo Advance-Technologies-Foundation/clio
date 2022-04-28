@@ -5,7 +5,7 @@ namespace Clio.Project.NuGet
 
 	#region Class: CreatioSDK
 
-	public class CreatioSDK
+	public class CreatioSDK : ICreatioSDK
 	{
 
 		#region Fields: Private
