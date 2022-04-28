@@ -34,6 +34,7 @@ namespace Clio
 			containerBuilder.RegisterType<GetPkgListCommand>();
 			containerBuilder.RegisterType<RestoreWorkspaceCommand>();
 			containerBuilder.RegisterType<CreateWorkspaceCommand>();
+			containerBuilder.RegisterType<PushWorkspaceCommand>();
 			return containerBuilder.Build();
 		}
 	}

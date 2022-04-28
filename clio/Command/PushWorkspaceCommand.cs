@@ -34,22 +34,24 @@ namespace Clio.Command
 		private readonly IPackageInstaller _packageInstaller;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		private readonly WorkspaceSettings _workspaceSettings = new WorkspaceSettings();
+		private readonly IWorkspace _workspace;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public PushWorkspaceCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller, 
-				IPackageArchiver packageArchiver, IWorkingDirectoriesProvider workingDirectoriesProvider) {
+				IPackageArchiver packageArchiver, IWorkingDirectoriesProvider workingDirectoriesProvider, IWorkspace workspace) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
+			workspace.CheckArgumentNull(nameof(workspace));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			_environmentSettings = environmentSettings;
 			_packageInstaller = packageInstaller;
 			_packageArchiver = packageArchiver;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_workspace = workspace;
 		}
 
 		#endregion
@@ -63,14 +65,15 @@ namespace Clio.Command
 		public override int Execute(PushWorkspaceCommandOptions options) {
 			try
 			{
+				WorkspaceSettings workspaceSettings = _workspace.WorkspaceSettings;
 				_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-					string rootPackedPackagePath = Path.Combine(tempDirectory, _workspaceSettings.Name);
-					foreach (string packageName in _workspaceSettings.Packages) {
-						string packagePath = Path.Combine(_workspaceSettings.RootPath, PackagesFolderName, packageName);
+					string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
+					foreach (string packageName in workspaceSettings.Packages) {
+						string packagePath = Path.Combine(workspaceSettings.RootPath, PackagesFolderName, packageName);
 						string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 						_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 					}
-					string applicationZip = Path.Combine(tempDirectory, $"{_workspaceSettings.Name}.zip");
+					string applicationZip = Path.Combine(tempDirectory, $"{workspaceSettings.Name}.zip");
 					_packageArchiver.ZipPackages(rootPackedPackagePath, 
 						applicationZip, true);
 					_packageInstaller.Install(applicationZip);
