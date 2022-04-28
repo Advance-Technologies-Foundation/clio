@@ -13,6 +13,14 @@ namespace Clio.Command
 	[Verb("push-workspace", Aliases = new string[] { "pushw" }, HelpText = "Push workspace to selected environment")]
 	public class PushWorkspaceCommandOptions : EnvironmentOptions
 	{
+
+		#region Properties: Public
+
+		[Value(0, MetaName = "WorkspaceEnvironmentName", Required = true, HelpText = "Workspace environment name")]
+		public string WorkspaceEnvironmentName { get; set; }
+
+		#endregion
+
 	}
 
 	#endregion
@@ -22,35 +30,16 @@ namespace Clio.Command
 	public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
 	{
 
-		#region Constants: Private
-
-		private const string PackagesFolderName = "packages";
-
-		#endregion
-
 		#region Fields: Private
 
-		private EnvironmentSettings _environmentSettings;
-		private readonly IPackageInstaller _packageInstaller;
-		private readonly IPackageArchiver _packageArchiver;
-		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IWorkspace _workspace;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PushWorkspaceCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller, 
-				IPackageArchiver packageArchiver, IWorkingDirectoriesProvider workingDirectoriesProvider, IWorkspace workspace) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
-			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
+		public PushWorkspaceCommand(IWorkspace workspace) {
 			workspace.CheckArgumentNull(nameof(workspace));
-			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
-			_environmentSettings = environmentSettings;
-			_packageInstaller = packageInstaller;
-			_packageArchiver = packageArchiver;
-			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_workspace = workspace;
 		}
 
@@ -65,20 +54,7 @@ namespace Clio.Command
 		public override int Execute(PushWorkspaceCommandOptions options) {
 			try
 			{
-				WorkspaceSettings workspaceSettings = _workspace.WorkspaceSettings;
-				_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-					string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
-					Directory.CreateDirectory(rootPackedPackagePath);
-					foreach (string packageName in workspaceSettings.Packages) {
-						string packagePath = Path.Combine(workspaceSettings.RootPath, PackagesFolderName, packageName);
-						string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
-						_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
-					}
-					string applicationZip = Path.Combine(tempDirectory, $"{workspaceSettings.Name}.zip");
-					_packageArchiver.ZipPackages(rootPackedPackagePath, 
-						applicationZip, true);
-					_packageInstaller.Install(applicationZip);
-				});
+				_workspace.Install(options.WorkspaceEnvironmentName);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

@@ -15,6 +15,7 @@ namespace Clio.Workspace
 
 		void Create();
 		void Restore(string workspaceEnvironmentName);
+		void Install(string workspaceEnvironmentName);
 
 		#endregion
 
