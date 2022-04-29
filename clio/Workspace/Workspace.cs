@@ -67,7 +67,7 @@ namespace Clio.Workspace
 		#region Properties: Private
 
 		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson);
-		private string PackagesPath => Path.Combine(WorkspaceSettings.RootPath, PackagesFolderName);
+		private string PackagesPath => Path.Combine(_rootPath, PackagesFolderName);
 
 		#endregion
 
@@ -126,7 +126,7 @@ namespace Clio.Workspace
 		public void Restore(string workspaceEnvironmentName) {
 			Version creatioSdkVersion = _creatioSDK.FindSdkVersion(WorkspaceSettings.ApplicationVersion);
 			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, PackagesPath);
-			_workspaceRestorer.Restore(creatioSdkVersion);
+			_workspaceRestorer.Restore(_rootPath, creatioSdkVersion);
 		}
 
 		public void Install(string workspaceEnvironmentName) {
@@ -135,7 +135,7 @@ namespace Clio.Workspace
 				string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
 				Directory.CreateDirectory(rootPackedPackagePath);
 				foreach (string packageName in workspaceSettings.Packages) {
-					string packagePath = Path.Combine(workspaceSettings.RootPath, PackagesFolderName, packageName);
+					string packagePath = Path.Combine(_rootPath, PackagesFolderName, packageName);
 					string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 					_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 				}
