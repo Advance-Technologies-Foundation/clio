@@ -57,7 +57,6 @@ namespace Clio.Workspace
 		public void Create(string rootPath, string solutionName, string nugetFolderName, 
 				Version nugetCreatioSdkVersion) {
 			CreateOpenSolutionCmd(rootPath, solutionName, nugetFolderName, nugetCreatioSdkVersion, true);
-			CreateOpenSolutionCmd(rootPath, solutionName, nugetFolderName, nugetCreatioSdkVersion, false);
 		}
 
 		#endregion

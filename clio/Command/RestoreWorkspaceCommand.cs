@@ -13,7 +13,6 @@ namespace Clio.Command
 
 		#region Properties: Public
 
-		[Value(0, MetaName = "WorkspaceEnvironmentName", Required = true, HelpText = "Workspace environment name")]
 		public string WorkspaceEnvironmentName { get; set; }
 
 		#endregion
