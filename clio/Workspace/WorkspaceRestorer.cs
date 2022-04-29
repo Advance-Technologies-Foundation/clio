@@ -1,5 +1,6 @@
 namespace Clio.Workspace
 {
+	using System;
 	using System.Collections.Generic;
 	using System.IO;
 	using System.Linq;
@@ -26,27 +27,21 @@ namespace Clio.Workspace
 		private readonly IFileSystem _fileSystem;
 		private readonly IOpenSolutionCreator _openSolutionCreator;
 		private readonly ISolutionCreator _solutionCreator;
-		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		private readonly string _rootPath;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public WorkspaceRestorer(INuGetManager nugetManager, IOpenSolutionCreator openSolutionCreator,
-				ISolutionCreator solutionCreator, IWorkingDirectoriesProvider workingDirectoriesProvider,
-				IFileSystem fileSystem) {
+				ISolutionCreator solutionCreator, IFileSystem fileSystem) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			openSolutionCreator.CheckArgumentNull(nameof(openSolutionCreator));
 			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
-			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_nugetManager = nugetManager;
 			_openSolutionCreator = openSolutionCreator;
 			_solutionCreator = solutionCreator;
-			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
-			_rootPath = _workingDirectoriesProvider.CurrentDirectory;
 		}
 
 		#endregion
@@ -83,25 +78,25 @@ namespace Clio.Workspace
 			return solutionProjects;
 		}
 
-		private void RestoreNugetCreatioSdk(string nugetCreatioSdkVersion) {
+		private void RestoreNugetCreatioSdk(string rootPath, Version nugetCreatioSdkVersion) {
 			const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
 			const string packageName = "CreatioSDK";
 			NugetPackageFullName nugetPackageFullName = new NugetPackageFullName() {
 				Name = packageName,
-				Version = nugetCreatioSdkVersion
+				Version = nugetCreatioSdkVersion.ToString()
 			};
-			string baseNugetLibPath = Path.Combine(_rootPath, NugetFolderName);
+			string baseNugetLibPath = Path.Combine(rootPath, NugetFolderName);
 			_nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, baseNugetLibPath);
 		}
 
-		private void CreateSolution() {
-			IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects(_rootPath);
-			string solutionPath = Path.Combine(_rootPath, SolutionName);
+		private void CreateSolution(string rootPath) {
+			IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects(rootPath);
+			string solutionPath = Path.Combine(rootPath, SolutionName);
 			_solutionCreator.Create(solutionPath, solutionProjects);
 		}
 
-		private void CreateOpenSolutionCmd(string nugetCreatioSdkVersion) {
-			_openSolutionCreator.Create(_rootPath, SolutionName, NugetFolderName, nugetCreatioSdkVersion);
+		private void CreateOpenSolutionCmd(string rootPath, Version nugetCreatioSdkVersion) {
+			_openSolutionCreator.Create(rootPath, SolutionName, NugetFolderName, nugetCreatioSdkVersion);
 		}
 
 		#endregion
@@ -109,10 +104,10 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		public void Restore(string nugetCreatioSdkVersion) {
-			RestoreNugetCreatioSdk(nugetCreatioSdkVersion);
-			CreateSolution();
-			CreateOpenSolutionCmd(nugetCreatioSdkVersion);
+		public void Restore(string rootPath, Version nugetCreatioSdkVersion) {
+			RestoreNugetCreatioSdk(rootPath, nugetCreatioSdkVersion);
+			CreateSolution(rootPath);
+			CreateOpenSolutionCmd(rootPath, nugetCreatioSdkVersion);
 		}
 
 		#endregion

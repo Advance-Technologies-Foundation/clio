@@ -67,7 +67,7 @@ namespace Clio.Workspace
 		#region Properties: Private
 
 		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson);
-		private string PackagesPath => Path.Combine(WorkspaceSettings.RootPath, PackagesFolderName);
+		private string PackagesPath => Path.Combine(_rootPath, PackagesFolderName);
 
 		#endregion
 
@@ -92,7 +92,7 @@ namespace Clio.Workspace
 		private WorkspaceSettings CreateDefaultWorkspaceSettings() {
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings() {
 				Name = "",
-				ApplicationVersion = ""
+				ApplicationVersion = new Version(0, 0, 0, 0)
 			};
 			workspaceSettings.Environments.Add("", new WorkspaceEnvironment());
 			return workspaceSettings;
@@ -107,6 +107,9 @@ namespace Clio.Workspace
 		}
 
 		private void CreateWorkspaceSettingsFile() {
+			if (File.Exists(WorkspaceSettingsPath)) {
+				return;
+			}
 			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings();
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
 		}
@@ -121,8 +124,9 @@ namespace Clio.Workspace
 		}
 
 		public void Restore(string workspaceEnvironmentName) {
+			Version creatioSdkVersion = _creatioSDK.FindSdkVersion(WorkspaceSettings.ApplicationVersion);
 			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, PackagesPath);
-			_workspaceRestorer.Restore(WorkspaceSettings.ApplicationVersion);
+			_workspaceRestorer.Restore(_rootPath, creatioSdkVersion);
 		}
 
 		public void Install(string workspaceEnvironmentName) {
@@ -131,7 +135,7 @@ namespace Clio.Workspace
 				string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
 				Directory.CreateDirectory(rootPackedPackagePath);
 				foreach (string packageName in workspaceSettings.Packages) {
-					string packagePath = Path.Combine(workspaceSettings.RootPath, PackagesFolderName, packageName);
+					string packagePath = Path.Combine(_rootPath, PackagesFolderName, packageName);
 					string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 					_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 				}
