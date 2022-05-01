@@ -3,9 +3,9 @@ namespace Clio.Project.NuGet
 	using System;
 	using System.Linq;
 
-	#region Class: CreatioSDK
+	#region Class: CreatioSdk
 
-	public class CreatioSDK : ICreatioSDK
+	public class CreatioSdk : ICreatioSdk
 	{
 
 		#region Fields: Private

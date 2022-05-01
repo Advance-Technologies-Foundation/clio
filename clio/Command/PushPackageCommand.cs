@@ -1,17 +1,18 @@
-﻿using System;
-using System.IO;
-using System.Text;
-using System.Threading;
-using Clio.Common;
-using Clio.Package;
-using Clio.UserEnvironment;
-using CommandLine;
-
-namespace Clio.Command
+﻿namespace Clio.Command
 {
+	using System;
+	using Clio.Common;
+	using Clio.Package;
+	using CommandLine;
+
+	#region Class: PushPkgOptions
+
 	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
 	public class PushPkgOptions : EnvironmentOptions
 	{
+
+		#region Properties: Public
+
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
 		public string Name { get; set; }
 
@@ -39,17 +40,37 @@ namespace Clio.Command
 		[Option("IsForceUpdateAllColumns", Required = false, HelpText = "Is force update all columns")]
 		public bool? IsForceUpdateAllColumns { get; set; }
 
+		#endregion
+
 	}
+
+	#endregion
+
+	#region Class: PushPackageCommand
 
 	public class PushPackageCommand : Command<PushPkgOptions>
 	{
-		public PushPackageCommand(IPackageInstaller packageInstaller) {
-			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
-			_packageInstaller = packageInstaller;
 
-		}
+		#region Fields: Private
+
+		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IPackageInstaller _packageInstaller;
 		private readonly PackageInstallOptions _packageInstallOptionsDefault = new PackageInstallOptions();
+
+		#endregion
+
+		#region Constructors: Public
+
+		public PushPackageCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller) {
+			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
+			_environmentSettings = environmentSettings;
+			_packageInstaller = packageInstaller;
+		}
+
+		#endregion
+
+		#region Methods: Private
 
 		private PackageInstallOptions ExtractPackageInstallOptions(PushPkgOptions options) {
 				var packageInstallOptions = new PackageInstallOptions {
@@ -66,10 +87,15 @@ namespace Clio.Command
 					: packageInstallOptions;
 		}
 
+		#endregion
+
+		#region Methods: Public
+
 		public override int Execute(PushPkgOptions options) {
 			try {
 				PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
-				bool success = _packageInstaller.Install(options.Name, packageInstallOptions, options.ReportPath);
+				bool success = _packageInstaller.Install(options.Name, _environmentSettings,
+					packageInstallOptions, options.ReportPath);
 				Console.WriteLine(success ? "Done" : "Error");
 				return success ? 0 : 1;
 			} catch (Exception e) {
@@ -77,5 +103,11 @@ namespace Clio.Command
 				return 1;
 			}
 		}
+
+		#endregion
+
 	}
+
+	#endregion
+
 }

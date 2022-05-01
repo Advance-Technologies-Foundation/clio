@@ -219,6 +219,11 @@ namespace Clio
 			return _settings.Environments.ContainsKey(name);
 		}
 
+		public string FindEnvironmentNameByUri(string uri) {
+			string safeUri = uri.TrimEnd('/');
+			return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
+		}
+
 		internal bool GetAutoupdate() {
 			return _settings.Autoupdate;
 		}
