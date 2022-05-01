@@ -9,6 +9,7 @@ using System.ServiceModel.Web;
 using ClioGate.Functions.SQL;
 using Newtonsoft.Json;
 using Terrasoft.Core.ConfigurationBuild;
+using Terrasoft.Core.DB;
 using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.Core.Packages;
@@ -86,6 +87,24 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 				var json = JsonConvert.SerializeObject(packageList);
 				return json;
 			} else {
+				throw new Exception("You don'nt have permission for operation CanManageSolution");
+			}
+		}
+
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "ResetSchemaChangeState",
+			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+			ResponseFormat = WebMessageFormat.Json)]
+		public bool ResetSchemaChangeState(string maintainer) {
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				Update update = new Update(UserConnection, "SysSchema")
+					.Set("IsChanged", Column.Parameter(false, "Boolean"))
+					.Where("SysPackageId").In(new Select(UserConnection).Column("Id").From("SysPackage")
+				.Where("SysPackage", "Maintainer").IsEqual(Column.Parameter(maintainer))) as Update;
+				update.Execute();
+				return true;
+			}
+			else {
 				throw new Exception("You don'nt have permission for operation CanManageSolution");
 			}
 		}

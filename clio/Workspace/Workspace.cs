@@ -31,6 +31,7 @@ namespace Clio.Workspace
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly string _rootPath;
+		private readonly IApplicationClient _applicationClient;
 
 		#endregion
 
@@ -39,7 +40,8 @@ namespace Clio.Workspace
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspaceRestorer workspaceRestorer,
 				IPackageDownloader packageDownloader, IPackageInstaller packageInstaller, 
 				IPackageArchiver packageArchiver, ICreatioSDK creatioSDK, IJsonConverter jsonConverter, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
+				IApplicationClient applicationClient) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
 			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
@@ -49,6 +51,7 @@ namespace Clio.Workspace
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			applicationClient.CheckArgumentNull(nameof(applicationClient));
 			_environmentSettings = environmentSettings;
 			_workspaceRestorer = workspaceRestorer;
 			_packageDownloader = packageDownloader;
@@ -60,6 +63,7 @@ namespace Clio.Workspace
 			_fileSystem = fileSystem;
 			_rootPath = _workingDirectoriesProvider.CurrentDirectory;
 			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+			_applicationClient = applicationClient;
 		}
 
 		#endregion
@@ -68,6 +72,9 @@ namespace Clio.Workspace
 
 		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson);
 		private string PackagesPath => Path.Combine(_rootPath, PackagesFolderName);
+		protected string RootPath => _environmentSettings.IsNetCore
+			? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
+		protected string ResetSchemaChangeStateServicePath => @"/rest/CreatioApiGateway/ResetSchemaChangeState";
 
 		#endregion
 
@@ -139,6 +146,9 @@ namespace Clio.Workspace
 					string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 					_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 				}
+				_applicationClient.Login();
+				_applicationClient.ExecutePostRequest(RootPath + ResetSchemaChangeStateServicePath,
+					"{\"maintainer\":\"" + _environmentSettings.Maintainer + "\"}");
 				string applicationZip = Path.Combine(tempDirectory, $"{workspaceSettings.Name}.zip");
 				_packageArchiver.ZipPackages(rootPackedPackagePath, 
 					applicationZip, true);
