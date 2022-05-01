@@ -5,7 +5,6 @@ namespace Clio.Workspace
 	using System.IO;
 	using System.Linq;
 	using Clio.Common;
-	using Clio.Project;
 	using Clio.Project.NuGet;
 
 	#region Class: WorkspaceSettings

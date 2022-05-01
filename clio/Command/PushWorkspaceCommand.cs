@@ -1,11 +1,8 @@
-using System.IO;
-using Clio.Common;
-using Clio.Package;
-using Clio.Workspace;
-
 namespace Clio.Command
 {
 	using System;
+	using Clio.Common;
+	using Clio.Workspace;
 	using CommandLine;
 
 	#region Class: PushWorkspaceCommandOptions

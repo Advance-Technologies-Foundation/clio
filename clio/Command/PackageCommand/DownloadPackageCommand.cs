@@ -1,11 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using CommandLine;
-
-namespace Clio.Command.PackageCommand
+﻿namespace Clio.Command.PackageCommand
 {
-
+	using CommandLine;
 
 	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
 	internal class PullPkgOptions : EnvironmentOptions

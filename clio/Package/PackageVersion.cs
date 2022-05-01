@@ -1,9 +1,8 @@
-﻿using System;
-using Clio.Common;
-
-namespace Clio.Project.NuGet
+﻿namespace Clio.Project.NuGet
 {
-	
+	using System;
+	using Clio.Common;
+
 	#region Class: PackageVersion
 
 	public class PackageVersion : ICloneable, IComparable
