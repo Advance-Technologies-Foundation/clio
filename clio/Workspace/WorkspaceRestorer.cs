@@ -12,17 +12,10 @@ namespace Clio.Workspace
 	public class WorkspaceRestorer : IWorkspaceRestorer
 	{
 
-		#region Constants: Private
-
-		private const string PackagesFolderName = "packages";
-		private const string NugetFolderName = ".nuget";
-		private const string SolutionName = "CreatioPackages.sln";
-
-		#endregion
-
 		#region Fields: Private
 
 		private readonly INuGetManager _nugetManager;
+		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IFileSystem _fileSystem;
 		private readonly IOpenSolutionCreator _openSolutionCreator;
 		private readonly ISolutionCreator _solutionCreator;
@@ -31,13 +24,15 @@ namespace Clio.Workspace
 
 		#region Constructors: Public
 
-		public WorkspaceRestorer(INuGetManager nugetManager, IOpenSolutionCreator openSolutionCreator,
-				ISolutionCreator solutionCreator, IFileSystem fileSystem) {
+		public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
+				IOpenSolutionCreator openSolutionCreator, ISolutionCreator solutionCreator, IFileSystem fileSystem) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
+			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			openSolutionCreator.CheckArgumentNull(nameof(openSolutionCreator));
 			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_nugetManager = nugetManager;
+			_workspacePathBuilder = workspacePathBuilder;
 			_openSolutionCreator = openSolutionCreator;
 			_solutionCreator = solutionCreator;
 			_fileSystem = fileSystem;
@@ -57,12 +52,8 @@ namespace Clio.Workspace
 				.Select(packageDirectoryInfo => packageDirectoryInfo.Name);
 		}
 
-		private string ConvertToRelativePath(string path, string rootDirectoryPath) =>
-			_fileSystem.ConvertToRelativePath(path, rootDirectoryPath)
-				.TrimStart(Path.DirectorySeparatorChar);
-
 		private IEnumerable<SolutionProject> FindSolutionProjects(string rootPath) {
-			string packagesPath = Path.Combine(rootPath, PackagesFolderName);
+			string packagesPath = _workspacePathBuilder.BuildPackagesDirectoryPath(rootPath);
 			var packagesNames = GetPackagesNames(packagesPath);
 			IList<SolutionProject> solutionProjects = new List<SolutionProject>();
 			foreach (string packageName in packagesNames) {
@@ -70,7 +61,8 @@ namespace Clio.Workspace
 				if (!File.Exists(standaloneProjectPath)) {
 					continue;
 				}
-				string relativeStandaloneProjectPath = ConvertToRelativePath(standaloneProjectPath, rootPath);
+				string relativeStandaloneProjectPath = Path.Combine("..", 
+					_fileSystem.ConvertToRelativePath(standaloneProjectPath, rootPath));
 				SolutionProject solutionProject = new SolutionProject(packageName, relativeStandaloneProjectPath);
 				solutionProjects.Add(solutionProject);
 			}
@@ -84,18 +76,19 @@ namespace Clio.Workspace
 				Name = packageName,
 				Version = nugetCreatioSdkVersion.ToString()
 			};
-			string baseNugetLibPath = Path.Combine(rootPath, NugetFolderName);
+			string baseNugetLibPath = _workspacePathBuilder.BuildNugetFolderPath(rootPath);;
 			_nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, baseNugetLibPath);
 		}
 
 		private void CreateSolution(string rootPath) {
+			string clioDirectoryPath = _workspacePathBuilder.BuildClioDirectoryPath(rootPath);
 			IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects(rootPath);
-			string solutionPath = Path.Combine(rootPath, SolutionName);
+			string solutionPath = _workspacePathBuilder.BuildSolutionPath(clioDirectoryPath);
 			_solutionCreator.Create(solutionPath, solutionProjects);
 		}
 
 		private void CreateOpenSolutionCmd(string rootPath, Version nugetCreatioSdkVersion) {
-			_openSolutionCreator.Create(rootPath, SolutionName, NugetFolderName, nugetCreatioSdkVersion);
+			_openSolutionCreator.Create(rootPath, nugetCreatioSdkVersion);
 		}
 
 		#endregion

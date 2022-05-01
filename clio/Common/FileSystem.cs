@@ -109,7 +109,7 @@ namespace Clio.Common
 			rootDirectoryPath = rootDirectoryPath.TrimEnd(Path.DirectorySeparatorChar);
 			int rootDirectoryPathLength = rootDirectoryPath.Length;
 			string relativePath = path.Substring(rootDirectoryPathLength);
-			return relativePath;
+			return relativePath.TrimStart(Path.DirectorySeparatorChar);
 		}
 
 		public void WriteAllTextToFile(string path, string contents) {
