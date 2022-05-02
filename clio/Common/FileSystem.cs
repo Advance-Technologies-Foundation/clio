@@ -116,10 +116,6 @@ namespace Clio.Common
 			File.WriteAllText(path, contents);
 		}
 
-		public void WriteAllTextToFile(string path, string contents) {
-			File.WriteAllText(path, contents);
-		}
-
 		#endregion
 
 	}
