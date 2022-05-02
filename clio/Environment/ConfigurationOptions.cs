@@ -212,7 +212,6 @@ namespace Clio
 			result.AuthAppUri = _settings.AuthAppUri;
 			result.ClientId = _settings.ClientId;
 			result.ClientSecret = _settings.ClientSecret;
-
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
 			if (_settings.Safe.HasValue && _settings.Safe.Value) {
