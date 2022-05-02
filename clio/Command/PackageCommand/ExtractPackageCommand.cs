@@ -49,23 +49,54 @@ namespace Сlio.Command.PackageCommand
 			return overwrite;
 		}
 
+		private static bool CheckDirectory(string dir, out FileInfo[] files) {
+			bool result = false;
+			files = null;
+			if (Directory.Exists(dir)) {
+				DirectoryInfo directoryInfo = new DirectoryInfo(dir);
+				files = directoryInfo.GetFiles("*.gz");
+				result = files.Length > 0;
+			}
+			return result;
+		}
+
 		#endregion
 
 		#region Methods: Public
 
 		public static int ExtractPackage(UnzipPkgOptions options, IPackageArchiver packageArchiver, 
 				IPackageUtilities packageUtilities, IFileSystem fileSystem) {
-			var packagePath = GetCorrectedPackagePath(options);
-			var destinationDirectory = fileSystem.GetCurrentDirectoryIfEmpty(options.DestinationPath);
-			string packageName = fileSystem.ExtractNameFromPath(packagePath);
-			var destinationPackagePath = Path.Combine(destinationDirectory, packageName);
-			try {
-				Console.WriteLine($"Start unzip package ({packageName}).");
-				var overwrite = ShowDialogOverwriteDestinationPackageDir(destinationPackagePath);
-				packageArchiver.Unpack(packagePath, overwrite, destinationDirectory);
-				Console.WriteLine($"Unzip package ({packageName}) completed.");
+			try
+			{
+				FileInfo[] pkgFiles;
+				if (CheckDirectory(options.Name, out pkgFiles))
+				{
+                    foreach (var item in pkgFiles)
+                    {
+						var destinationDirectory = fileSystem.GetCurrentDirectoryIfEmpty(options.DestinationPath);
+						string packageName = fileSystem.ExtractNameFromPath(item.FullName);
+						var destinationPackagePath = Path.Combine(destinationDirectory, packageName);
+						Console.WriteLine($"Start unzip package ({packageName}).");
+						var overwrite = ShowDialogOverwriteDestinationPackageDir(destinationPackagePath);
+						packageArchiver.Unpack(item.FullName, overwrite, destinationDirectory);
+						Console.WriteLine($"Unzip package ({packageName}) completed.");
+					}
+				}
+				else
+				{
+					var packagePath = GetCorrectedPackagePath(options);
+					var destinationDirectory = fileSystem.GetCurrentDirectoryIfEmpty(options.DestinationPath);
+					string packageName = fileSystem.ExtractNameFromPath(packagePath);
+					var destinationPackagePath = Path.Combine(destinationDirectory, packageName);
+					Console.WriteLine($"Start unzip package ({packageName}).");
+					var overwrite = ShowDialogOverwriteDestinationPackageDir(destinationPackagePath);
+					packageArchiver.Unpack(packagePath, overwrite, destinationDirectory);
+					Console.WriteLine($"Unzip package ({packageName}) completed.");
+				}
 				return 0;
-			} catch (Exception e) {
+			}
+			catch (Exception e)
+			{
 				Console.WriteLine($"{e.Message}");
 				return 1;
 			}

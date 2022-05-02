@@ -15,5 +15,10 @@
 		public string DestPath {
 			get; set;
 		}
+
+		public bool Unzip {
+			get; set;
+		}
+
 	}
 }

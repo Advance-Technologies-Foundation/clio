@@ -135,6 +135,9 @@
     <None Update="tpl\entity-listener-template.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="tpl\OpenSolution.cmd.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="tpl\service-template.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
