@@ -10,14 +10,6 @@ namespace Clio.Command
 	[Verb("restore-workspace", Aliases = new string[] { "restorew" }, HelpText = "Restore clio workspace")]
 	public class RestoreWorkspaceOptions : EnvironmentOptions
 	{
-
-		#region Properties: Public
-
-		[Value(0, MetaName = "WorkspaceEnvironmentName", Required = true, HelpText = "Workspace environment name")]
-		public string WorkspaceEnvironmentName { get; set; }
-
-		#endregion
-
 	}
 
 	#endregion
@@ -46,7 +38,7 @@ namespace Clio.Command
 
 		public override int Execute(RestoreWorkspaceOptions options) {
 			try {
-				_workspace.Restore(options.WorkspaceEnvironmentName);
+				_workspace.Restore();
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

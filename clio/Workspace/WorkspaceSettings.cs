@@ -11,13 +11,8 @@ namespace Clio.Workspace
 
 		#region Properties: Public
 
-		public string Name { get; set; }
-		public Dictionary<string, WorkspaceEnvironment> Environments { get; set; } =
-			new Dictionary<string, WorkspaceEnvironment>();
 		public string[] Packages { get; set; } = {};
 		public Version ApplicationVersion { get; set; }
-		[JsonIgnore]
-		public string RootPath { get; set; }
 
 		#endregion
 

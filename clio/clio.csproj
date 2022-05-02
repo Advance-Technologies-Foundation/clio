@@ -38,6 +38,12 @@
 
   <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
+    <None Update="cliogate\cliogate.gz">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="cliogate\cliogate_netcore.gz">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -64,9 +70,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="clio">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="cliogate\netframework\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="cliogate\netstandard\cliogate.gz">

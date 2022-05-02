@@ -10,14 +10,6 @@ namespace Clio.Command
 	[Verb("push-workspace", Aliases = new string[] { "pushw" }, HelpText = "Push workspace to selected environment")]
 	public class PushWorkspaceCommandOptions : EnvironmentOptions
 	{
-
-		#region Properties: Public
-
-		[Value(0, MetaName = "WorkspaceEnvironmentName", Required = true, HelpText = "Workspace environment name")]
-		public string WorkspaceEnvironmentName { get; set; }
-
-		#endregion
-
 	}
 
 	#endregion
@@ -47,7 +39,7 @@ namespace Clio.Command
 		public override int Execute(PushWorkspaceCommandOptions options) {
 			try
 			{
-				_workspace.Install(options.WorkspaceEnvironmentName);
+				_workspace.Install();
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

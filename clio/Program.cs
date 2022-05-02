@@ -10,6 +10,7 @@ using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
+using Clio.Package;
 using Clio.Project;
 using Clio.Project.NuGet;
 using Clio.UserEnvironment;
@@ -195,6 +196,19 @@ namespace Clio
 			};
 		}
 
+		private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
+			var settingsRepository = new SettingsRepository();
+			var settings = settingsRepository.GetEnvironment(options);
+			//var packageInstaller = Resolve<IPackageInstaller>(options);
+			var workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
+			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
+			string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
+				$"{packageName}.gz");
+			return new PushPkgOptions {
+				Name = packagePath
+			};
+		}
+
 		private static T Resolve<T>(EnvironmentOptions options = null) {
 			EnvironmentSettings settings = null; 
 			if (options != null) {
@@ -245,8 +259,8 @@ namespace Clio
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
-					(InstallGateOptions opts) => Resolve<InstallNugetPackageCommand>(CreateInstallNugetPkgOptions(opts))
-						.Execute(CreateInstallNugetPkgOptions(opts)),
+					(InstallGateOptions opts) => Resolve<PushPackageCommand>(CreatePushPkgOptions(opts))
+						.Execute(CreatePushPkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),

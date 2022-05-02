@@ -51,10 +51,16 @@ namespace Clio.Project.NuGet
 
 		#endregion
 
+		#region Properties: Public
+
+		public Version LastVersion => _versions[0];
+
+		#endregion
+
 		#region Methods: Public
 
 		public Version FindSdkVersion(Version applicationVersion) => _versions
-			.LastOrDefault(sdkVersion => sdkVersion >= applicationVersion) ?? _versions[0];
+			.LastOrDefault(sdkVersion => sdkVersion >= applicationVersion) ?? LastVersion;
 
 		#endregion
 

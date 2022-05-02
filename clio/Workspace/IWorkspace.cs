@@ -14,8 +14,8 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		void Create();
-		void Restore(string workspaceEnvironmentName);
-		void Install(string workspaceEnvironmentName);
+		void Restore();
+		void Install(string creatioPackagesZipName = null);
 
 		#endregion
 

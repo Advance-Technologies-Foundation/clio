@@ -95,12 +95,12 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 		[WebInvoke(Method = "POST", UriTemplate = "ResetSchemaChangeState",
 			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
 			ResponseFormat = WebMessageFormat.Json)]
-		public bool ResetSchemaChangeState(string maintainer) {
+		public bool ResetSchemaChangeState(string packageName) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				Update update = new Update(UserConnection, "SysSchema")
 					.Set("IsChanged", Column.Parameter(false, "Boolean"))
 					.Where("SysPackageId").In(new Select(UserConnection).Column("Id").From("SysPackage")
-				.Where("SysPackage", "Maintainer").IsEqual(Column.Parameter(maintainer))) as Update;
+				.Where("SysPackage", "Name").IsEqual(Column.Parameter(packageName))) as Update;
 				update.Execute();
 				return true;
 			}
