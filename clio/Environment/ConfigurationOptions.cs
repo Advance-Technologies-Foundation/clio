@@ -52,9 +52,12 @@ namespace Clio
 
 		[JsonIgnore]
 		public bool IsDevMode { get => DeveloperModeEnabled ?? false; }
-        public string ClientId { get; internal set; }
-        public string ClientSecret { get; internal set; }
-        public string AuthAppUri { get; internal set; }
+        
+		public string ClientId { get; internal set; }
+        
+		public string ClientSecret { get; internal set; }
+        
+		public string AuthAppUri { get; internal set; }
     }
 
 	public class Settings
