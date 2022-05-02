@@ -1,5 +1,5 @@
-﻿using System.Threading;
-using Creatio.Client;
+﻿using Creatio.Client;
+using System.Threading;
 
 namespace Clio.Common
 {
@@ -19,6 +19,10 @@ namespace Clio.Common
 
 		public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false) {
 			_creatioClient = new CreatioClient(appUrl, userName, userPassword, true, isNetCore);
+		}
+
+		public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string AuthAppUrl, bool isNetCore = false) {
+			_creatioClient = CreatioClient.CreateOAuth20Client(appUrl, AuthAppUrl, clientId, clientSecret, isNetCore);
 		}
 
 		public CreatioClientAdapter(CreatioClient creatioClient) {

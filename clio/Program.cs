@@ -27,6 +27,9 @@ namespace Clio
 		private static string UserName => CreatioEnvironment.Settings.Login;
 		private static string UserPassword => CreatioEnvironment.Settings.Password;
 		private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
+		private static string ClientId => CreatioEnvironment.Settings.ClientId;
+		private static string ClientSecret => CreatioEnvironment.Settings.ClientSecret;
+		private static string AuthAppUrl => CreatioEnvironment.Settings.AuthAppUri;
 		private static string AppUrl
 		{
 			get
@@ -48,7 +51,14 @@ namespace Clio
 
 		private static CreatioClient CreatioClient
 		{
-			get => new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
+			get {
+				if (string.IsNullOrEmpty(ClientId)) {
+					return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
+				}
+				else {
+					return CreatioClient.CreateOAuth20Client(Url, AuthAppUrl, ClientId, ClientSecret, CreatioEnvironment.IsNetCore);
+				}
+			}
 		}
 
 		public static bool Safe { get; private set; } = true;

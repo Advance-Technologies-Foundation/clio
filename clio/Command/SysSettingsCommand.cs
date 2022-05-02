@@ -40,8 +40,17 @@ namespace Clio.Command.SysSettingsCommand
 		}
 
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
-			string requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
 			try {
+				string requestData = string.Empty;
+				if (opts.Type.Contains("Text"))
+				{
+					//Enclosed opts.Value in "", otherwise update fails for all text settings
+					requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":\"{1}\"", opts.Code, opts.Value) + "}}";
+				}
+				else
+				{
+					requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
+				}
 				ApplicationClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
 				Console.WriteLine("SysSettings with code: {0} updated.", opts.Code);
 			} catch {
