@@ -12,20 +12,16 @@ namespace Clio.Workspace
 		#region Fields: Private
 
 		private readonly ITemplateProvider _templateProvider;
-		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IFileSystem _fileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public OpenSolutionCreator(ITemplateProvider templateProvider, IWorkspacePathBuilder workspacePathBuilder,
-				IFileSystem fileSystem) {
+		public OpenSolutionCreator(ITemplateProvider templateProvider, IFileSystem fileSystem) {
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
-			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_templateProvider = templateProvider;
-			_workspacePathBuilder = workspacePathBuilder;
 			_fileSystem = fileSystem;
 		}
 
@@ -33,49 +29,34 @@ namespace Clio.Workspace
 
 		#region Methods: Private
 
-		private string ReplaceMacro(string template, string solutionRelativePath, string coreLibPath, 
+		private string ReplaceMacro(string template, string solutionName, string coreLibPath, 
 				string coreTargetFramework) {
 			return template.Replace("$CoreLibPath$", coreLibPath)
 				.Replace("$CoreTargetFramework$", coreTargetFramework)
-				.Replace("$SolutionRelativePath$", solutionRelativePath);
+				.Replace("$SolutionName$", solutionName);
 		}
 
-		private void CreateOpenSolutionCmd(string path, string openSolutionCmdFileName, string solutionRelativePath, 
-				string creatioSdkRelativePath, string coreTargetFramework) {
-			string openProjectCmdPath = Path.Combine(path, openSolutionCmdFileName);
+		private void CreateOpenSolutionCmd(string rootPath, string solutionName, string nugetFolderName, 
+				Version nugetVersion, bool isFramework) {
+			string openSolutionCmdFileName = isFramework ? "OpenSolution.cmd" : "OpenNetCoreSolution.cmd";
+			string openProjectCmdPath = Path.Combine(rootPath, openSolutionCmdFileName);
 			string template = _templateProvider.GetTemplate("OpenSolution.cmd");
-			string coreLibPath = Path.Combine("..", "..", "..", creatioSdkRelativePath);
-			string content = ReplaceMacro(template, solutionRelativePath, coreLibPath, coreTargetFramework);
+			string nugetTargetFramework = isFramework ? "net40" : "netstandard2.0";
+			string coreLibPath = Path.Combine("..", "..", "..", nugetFolderName, "creatiosdk", 
+				nugetVersion.ToString(), "lib", nugetTargetFramework);
+			string coreTargetFramework = isFramework ? "net472" : "netstandard2.0";
+			string content = ReplaceMacro(template, solutionName, coreLibPath, coreTargetFramework);
 			_fileSystem.WriteAllTextToFile(openProjectCmdPath, content);
 		}
 
-		private void CreateFrameworkOpenSolutionCmd(string rootPath, Version nugetVersion) {
-			string clioDirectoryPath = _workspacePathBuilder.BuildClioDirectoryPath(rootPath);
-			string solutionPath = _workspacePathBuilder.BuildSolutionPath(clioDirectoryPath);
-			string solutionRelativePath = _fileSystem.ConvertToRelativePath(solutionPath, rootPath);
-			string coreCreatioSdkPath = _workspacePathBuilder.BuildFrameworkCreatioSdkPath(rootPath, nugetVersion);
-			string creatioSdkRelativePath = _fileSystem.ConvertToRelativePath(coreCreatioSdkPath, rootPath);
-			CreateOpenSolutionCmd(rootPath, "OpenFrameworkSolution.cmd",
-				solutionRelativePath, creatioSdkRelativePath, "net472");
-		}
-
-		private void CreateCoreOpenSolutionCmd(string rootPath, Version nugetVersion) {
-			string clioDirectoryPath = _workspacePathBuilder.BuildClioDirectoryPath(rootPath);
-			string solutionPath = _workspacePathBuilder.BuildSolutionPath(rootPath);
-			string solutionRelativePath = _fileSystem.ConvertToRelativePath(solutionPath, rootPath);
-			string coreCreatioSdkPath = _workspacePathBuilder.BuildCoreCreatioSdkPath(rootPath, nugetVersion);
-			string creatioSdkRelativePath = _fileSystem.ConvertToRelativePath(coreCreatioSdkPath, rootPath);
-			CreateOpenSolutionCmd(clioDirectoryPath, "OpenNetCoreSolution.cmd",
-				solutionRelativePath, creatioSdkRelativePath, "netstandard2.0");
-		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public void Create(string rootPath, Version nugetCreatioSdkVersion) {
-			CreateFrameworkOpenSolutionCmd(rootPath, nugetCreatioSdkVersion);
-			CreateCoreOpenSolutionCmd(rootPath, nugetCreatioSdkVersion);
+		public void Create(string rootPath, string solutionName, string nugetFolderName, 
+				Version nugetCreatioSdkVersion) {
+			CreateOpenSolutionCmd(rootPath, solutionName, nugetFolderName, nugetCreatioSdkVersion, true);
 		}
 
 		#endregion

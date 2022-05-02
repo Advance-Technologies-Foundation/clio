@@ -1,5 +1,3 @@
-using Clio.UserEnvironment;
-
 namespace Clio.Workspace
 {
 	using System;
@@ -13,61 +11,70 @@ namespace Clio.Workspace
 	public class Workspace : IWorkspace
 	{
 
+		#region Constants: Private
+
+		private const string PackagesFolderName = "packages";
+		private const string ClioDirectoryName = ".clio";
+		private const string WorkspaceSettingsJson = "workspaceSettings.json";
+
+		#endregion
+
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
-		private readonly ISettingsRepository _settingsRepository;
-		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IWorkspaceRestorer _workspaceRestorer;
 		private readonly IPackageDownloader _packageDownloader;
 		private readonly IPackageInstaller _packageInstaller;
 		private readonly IPackageArchiver _packageArchiver;
-		private readonly ICreatioSdk _creatioSdk;
+		private readonly ICreatioSDK _creatioSDK;
+		private readonly IFileSystem _fileSystem;
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly string _rootPath;
+		private readonly IApplicationClient _applicationClient;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public Workspace(EnvironmentSettings environmentSettings, ISettingsRepository settingsRepository, 
-				IWorkspacePathBuilder workspacePathBuilder, IWorkspaceRestorer workspaceRestorer,
+		public Workspace(EnvironmentSettings environmentSettings, IWorkspaceRestorer workspaceRestorer,
 				IPackageDownloader packageDownloader, IPackageInstaller packageInstaller, 
-				IPackageArchiver packageArchiver, ICreatioSdk creatioSdk, IJsonConverter jsonConverter,
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
+				IPackageArchiver packageArchiver, ICreatioSDK creatioSDK, IJsonConverter jsonConverter, 
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
+				IApplicationClient applicationClient) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			settingsRepository.CheckArgumentNull(nameof(settingsRepository));
-			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
 			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
 			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
-			creatioSdk.CheckArgumentNull(nameof(creatioSdk));
+			creatioSDK.CheckArgumentNull(nameof(creatioSDK));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			applicationClient.CheckArgumentNull(nameof(applicationClient));
 			_environmentSettings = environmentSettings;
-			_settingsRepository = settingsRepository;
-			_workspacePathBuilder = workspacePathBuilder;
 			_workspaceRestorer = workspaceRestorer;
 			_packageDownloader = packageDownloader;
 			_packageInstaller = packageInstaller;
 			_packageArchiver = packageArchiver;
-			_creatioSdk = creatioSdk;
+			_creatioSDK = creatioSDK;
 			_jsonConverter = jsonConverter;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
-			_rootPath = GetRootPath();
+			_fileSystem = fileSystem;
+			_rootPath = _workingDirectoriesProvider.CurrentDirectory;
 			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+			_applicationClient = applicationClient;
 		}
 
 		#endregion
 
 		#region Properties: Private
 
-		private string WorkspaceSettingsPath => _workspacePathBuilder.BuildWorkspaceSettingsPath(_rootPath);
-		private string PackagesPath => _workspacePathBuilder.BuildPackagesDirectoryPath(_rootPath);
-		private string ClioDirectoryPath => _workspacePathBuilder.BuildClioDirectoryPath(_rootPath);
+		private string WorkspaceSettingsPath => Path.Combine(_rootPath, ClioDirectoryName, WorkspaceSettingsJson);
+		private string PackagesPath => Path.Combine(_rootPath, PackagesFolderName);
+		protected string RootPath => _environmentSettings.IsNetCore
+			? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
+		protected string ResetSchemaChangeStateServicePath => @"/rest/CreatioApiGateway/ResetSchemaChangeState";
 
 		#endregion
 
@@ -79,22 +86,6 @@ namespace Clio.Workspace
 		#endregion
 
 		#region Methods: Private
-
-		private string GetRootPath() {
-			string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
-			DirectoryInfo directoryInfo = new DirectoryInfo(currentDirectory);
-			while (true) {
-				string presumablyClioDirectoryPath = 
-					_workspacePathBuilder.BuildClioDirectoryPath(directoryInfo.FullName); 
-				if (Directory.Exists(presumablyClioDirectoryPath)) {
-					return directoryInfo.FullName;
-				}
-				if (directoryInfo.Parent == null) {
-					return currentDirectory;
-				}
-				directoryInfo = directoryInfo.Parent;
-			}
-		}
 
 		private WorkspaceSettings ReadWorkspaceSettings() {
 			var workspaceSettings = _jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
@@ -115,10 +106,11 @@ namespace Clio.Workspace
 		}
 
 		private void CreateClioDirectory() {
-			if (Directory.Exists(ClioDirectoryPath)) {
+			string clioDirectoryPath = Path.Combine(_rootPath, ClioDirectoryName);
+			if (Directory.Exists(clioDirectoryPath)) {
 				return;
 			}
-			Directory.CreateDirectory(ClioDirectoryPath);
+			Directory.CreateDirectory(clioDirectoryPath);
 		}
 
 		private void CreateWorkspaceSettingsFile() {
@@ -127,17 +119,6 @@ namespace Clio.Workspace
 			}
 			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings();
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
-		}
-
-		private EnvironmentSettings GetEnvironmentSettings(string workspaceEnvironmentName) {
-			if (WorkspaceSettings.Environments.TryGetValue(workspaceEnvironmentName,
-				out WorkspaceEnvironment workspaceEnvironment)) {
-				string environmentName = _settingsRepository.FindEnvironmentNameByUri(workspaceEnvironment.Uri);
-				if (environmentName != null) {
-					return _settingsRepository.GetEnvironment(environmentName);
-				}
-			}
-			return _environmentSettings;
 		}
 
 		#endregion
@@ -150,28 +131,30 @@ namespace Clio.Workspace
 		}
 
 		public void Restore(string workspaceEnvironmentName) {
-			EnvironmentSettings environmentSettings = GetEnvironmentSettings(workspaceEnvironmentName);
-			Version creatioSdkVersion = _creatioSdk.FindSdkVersion(WorkspaceSettings.ApplicationVersion);
-			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, environmentSettings, PackagesPath);
+			Version creatioSdkVersion = _creatioSDK.FindSdkVersion(WorkspaceSettings.ApplicationVersion);
+			_packageDownloader.DownloadPackages(WorkspaceSettings.Packages, PackagesPath);
 			_workspaceRestorer.Restore(_rootPath, creatioSdkVersion);
 		}
 
 		public void Install(string workspaceEnvironmentName) {
-			EnvironmentSettings environmentSettings = GetEnvironmentSettings(workspaceEnvironmentName);
 			WorkspaceSettings workspaceSettings = WorkspaceSettings;
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				string rootPackedPackagePath = Path.Combine(tempDirectory, workspaceSettings.Name);
 				Directory.CreateDirectory(rootPackedPackagePath);
 				foreach (string packageName in workspaceSettings.Packages) {
-					string packagePath = Path.Combine(PackagesPath, packageName);
+					string packagePath = Path.Combine(_rootPath, PackagesFolderName, packageName);
 					string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 					_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 				}
+				_applicationClient.Login();
+				_applicationClient.ExecutePostRequest(RootPath + ResetSchemaChangeStateServicePath,
+					"{\"maintainer\":\"" + _environmentSettings.Maintainer + "\"}");
 				string applicationZip = Path.Combine(tempDirectory, $"{workspaceSettings.Name}.zip");
 				_packageArchiver.ZipPackages(rootPackedPackagePath, 
 					applicationZip, true);
-				_packageInstaller.Install(applicationZip, environmentSettings);
+				_packageInstaller.Install(applicationZip);
 			});
+
 		}
 
 		#endregion

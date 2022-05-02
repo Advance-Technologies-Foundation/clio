@@ -2,9 +2,9 @@ namespace Clio.Project.NuGet
 {
 	using System;
 
-	#region Interface: ICreatioSdk
+	#region Interface: IPackageDownloader
 
-	public interface ICreatioSdk
+	public interface ICreatioSDK
 	{
 
 		#region Methods: Public

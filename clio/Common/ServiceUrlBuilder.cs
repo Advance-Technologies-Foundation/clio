@@ -23,19 +23,17 @@
 
 		#endregion
 
-		#region Methods: Private
+		#region Properties: Private
 
-		private string GetRootPath(EnvironmentSettings environmentSettings) => environmentSettings.IsNetCore
-			? environmentSettings.Uri 
-			: $@"{environmentSettings.Uri}/0";
+		private string RootPath => _environmentSettings.IsNetCore
+			? _environmentSettings.Uri 
+			: $@"{_environmentSettings.Uri}/0";
 
 		#endregion
-
+		
 		#region Methods: Public
 
-		public string Build(string serviceEndpoint) => $"{GetRootPath(_environmentSettings)}{serviceEndpoint}";
-		public string Build(string serviceEndpoint, EnvironmentSettings environmentSettings) => 
-			$"{GetRootPath(environmentSettings)}{serviceEndpoint}";
+		public string Build(string serviceEndpoint) => $"{RootPath}{serviceEndpoint}";
 
 		#endregion
 
