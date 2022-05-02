@@ -1,10 +1,9 @@
-﻿using System.Collections.Generic;
-using System.IO;
-using Clio.Common;
-using Clio.Package;
-
-namespace Clio.Project.NuGet
+﻿namespace Clio.Project.NuGet
 {
+	using System.Collections.Generic;
+	using System.IO;
+	using Clio.Common;
+	using Clio.Package;
 
 	#region Class: InstallNugetPackage
 
@@ -13,6 +12,7 @@ namespace Clio.Project.NuGet
 
 		#region Fields: Private
 
+		private readonly EnvironmentSettings _environmentSettings;
 		private readonly INuGetManager _nugetManager;
 		private readonly IPackageInstaller _packageInstaller;
 		private readonly IPackageArchiver _packageArchiver;
@@ -22,12 +22,15 @@ namespace Clio.Project.NuGet
 
 		#region Constructors: Public
 
-		public InstallNugetPackage(INuGetManager nugetManager, IPackageInstaller packageInstaller, 
-				IPackageArchiver packageArchiver, IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		public InstallNugetPackage(EnvironmentSettings environmentSettings, INuGetManager nugetManager,
+				IPackageInstaller packageInstaller, IPackageArchiver packageArchiver, 
+				IWorkingDirectoriesProvider workingDirectoriesProvider) {
+			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+			_environmentSettings = environmentSettings;
 			_nugetManager = nugetManager;
 			_packageInstaller = packageInstaller;
 			_packageArchiver = packageArchiver;
@@ -48,7 +51,7 @@ namespace Clio.Project.NuGet
 					string packagePath = Path.Combine(zipTempDirectory, 
 						_packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));
 					_packageArchiver.ZipPackages(restoreTempDirectory, packagePath, true);
-					_packageInstaller.Install(packagePath);
+					_packageInstaller.Install(packagePath, _environmentSettings);
 				});
 			});
 		}

@@ -1,9 +1,7 @@
-using System;
-using System.IO;
-using Newtonsoft.Json;
-
 namespace Clio.Workspace
 {
+	using System;
+	using Newtonsoft.Json;
 	using System.Collections.Generic;
 
 	#region Class: WorkspaceSettings

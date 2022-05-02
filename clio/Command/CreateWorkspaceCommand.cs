@@ -1,11 +1,8 @@
-using System.IO;
-using Clio.Workspace;
-
 namespace Clio.Command
 {
 	using System;
 	using Clio.Common;
-	using Clio.Project.NuGet;
+	using Clio.Workspace;
 	using CommandLine;
 
 	#region Class: CreateWorkspaceCommandOptions

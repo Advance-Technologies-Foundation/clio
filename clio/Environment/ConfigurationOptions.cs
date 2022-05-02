@@ -23,12 +23,6 @@ namespace Clio
 
 		public bool IsNetCore { get; set; }
 
-		public string ClientId { get; set; }
-
-		public string ClientSecret { get; set; }
-
-		public string AuthAppUri { get; set; }
-
 		internal void Merge(EnvironmentSettings environment) {
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
@@ -49,9 +43,6 @@ namespace Clio
 				DeveloperModeEnabled = environment.DeveloperModeEnabled;
 			}
 			IsNetCore = environment.IsNetCore;
-			ClientId = environment.ClientId;
-			ClientSecret = environment.ClientSecret;
-			AuthAppUri = environment.AuthAppUri;
 		}
 
 		public bool? Safe { get; set; }
@@ -209,10 +200,6 @@ namespace Clio
 			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? _settings.DeveloperModeEnabled;
 			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
-			result.AuthAppUri = _settings.AuthAppUri;
-			result.ClientId = _settings.ClientId;
-			result.ClientSecret = _settings.ClientSecret;
-
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
 			if (_settings.Safe.HasValue && _settings.Safe.Value) {
@@ -230,6 +217,11 @@ namespace Clio
 
 		public bool IsEnvironmentExists(string name) {
 			return _settings.Environments.ContainsKey(name);
+		}
+
+		public string FindEnvironmentNameByUri(string uri) {
+			string safeUri = uri.TrimEnd('/');
+			return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
 		}
 
 		internal bool GetAutoupdate() {

@@ -84,7 +84,7 @@ namespace Clio.Common
 
 		private void PackToGZip(string filePath, string rootDirectoryPath, GZipStream zipStream) {
 			var relativeFilePath = _fileSystem.ConvertToRelativePath(filePath, rootDirectoryPath);
-			WriteFileName(relativeFilePath.TrimStart(Path.DirectorySeparatorChar), zipStream);
+			WriteFileName(relativeFilePath, zipStream);
 			WriteFileContent(filePath, zipStream);
 		}
 

@@ -67,6 +67,7 @@ namespace Clio
 			var settingsRepository = new SettingsRepository();
 			CreatioEnvironment.EnvironmentName = options.Environment;
 			CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
+			ICreatioEnvironment creatioEnvironment = Resolve<ICreatioEnvironment>();
 		}
 
 		private static void MessageToConsole(string text, ConsoleColor color) {
