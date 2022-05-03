@@ -55,7 +55,7 @@ namespace Clio.Workspace
 			string solutionRelativePath = _fileSystem.ConvertToRelativePath(solutionPath, rootPath);
 			string coreCreatioSdkPath = _workspacePathBuilder.BuildFrameworkCreatioSdkPath(rootPath, nugetVersion);
 			string creatioSdkRelativePath = _fileSystem.ConvertToRelativePath(coreCreatioSdkPath, rootPath);
-			CreateOpenSolutionCmd(rootPath, "OpenFrameworkSolution.cmd",
+			CreateOpenSolutionCmd(rootPath, "OpenSolution.cmd",
 				solutionRelativePath, creatioSdkRelativePath, "net472");
 		}
 

@@ -178,34 +178,21 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 		}
 
-		private static InstallNugetPkgOptions CreateInstallNugetPkgOptions(InstallGateOptions options) {
-			var settingsRepository = new SettingsRepository();
-			var settings = settingsRepository.GetEnvironment(options);
-			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
-			var nugetPackageFullName = new NugetPackageFullName(packageName, PackageVersion.LastVersion);
-			return new InstallNugetPkgOptions {
-				Names = nugetPackageFullName,
-				SourceUrl = "https://ts1-infr-nexus.bpmonline.com:8443/repository/developer-sdk",
-				DevMode = options.DevMode,
-				Environment = options.Environment,
-				IsNetCore = options.IsNetCore,
-				Login = options.Login,
-				Maintainer = options.Maintainer,
-				Password = options.Password,
-				Safe = options.Safe
-			};
-		}
-
 		private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
 			var settingsRepository = new SettingsRepository();
 			var settings = settingsRepository.GetEnvironment(options);
-			//var packageInstaller = Resolve<IPackageInstaller>(options);
 			var workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
 			string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
 			string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
 				$"{packageName}.gz");
 			return new PushPkgOptions {
-				Name = packagePath
+				Environment = options.Environment,
+				Name = packagePath,
+				Login = options.Login,
+				Uri = options.Uri,
+				Password = options.Password,
+				Maintainer = options.Maintainer,
+				IsNetCore = options.IsNetCore
 			};
 		}
 

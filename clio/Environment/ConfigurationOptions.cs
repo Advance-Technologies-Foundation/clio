@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Clio.UserEnvironment;
+using Clio.Utilities;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
@@ -265,6 +266,10 @@ namespace Clio
 			}
 		}
 
-	}
+        public void OpenSettingsFile()
+        {
+			FileManager.OpenFile(AppSettingsFilePath);
+		}
+    }
 
 }

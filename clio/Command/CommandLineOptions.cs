@@ -93,10 +93,8 @@ namespace Clio
 	}
 
 	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install clio api gateway to application")]
-	internal class InstallGateOptions : EnvironmentOptions
+	internal class InstallGateOptions : EnvironmentNameOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get => Environment; set { Environment = value; } }
 	}
 
 	[Verb("add-item", Aliases = new string[] { "create" }, HelpText = "Create item in project")]

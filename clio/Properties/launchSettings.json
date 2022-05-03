@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "push-workspace"
+      "commandLineArgs": "install-gate demo"
     }
   }
 }
