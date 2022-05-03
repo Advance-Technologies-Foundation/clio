@@ -42,30 +42,33 @@ docker run -it --rm clio reg-web-app -help
   - [Extract package](#extract-package)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
-- [NuGet Packages](#nuget-packages)
 
+- [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
   - [Restore NuGet package](#restore-nuget-package)
   - [Install NuGet package](#install-nuget-package)
   - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
-- [Application](#application)
 
+- [Application](#application)
   - [Restart application](#restart-application)
   - [Clear redis database](#clear-redis-database)
-- [Environment settings](#environment-settings)
 
+- [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
   - [Check environment](#check-environment)
   - [View application options](#view-application-options)
   - [Open application](#open-application)
   - [Ping application](#ping-application)
+
 - [Using for CI/CD systems](#using-for-cicd-systems)
+
 - [Development](#development)
   -----------
 
 
+  - [Workspaces](#workspaces)
   - [Convert existing package to project](#convert-existing-package-to-project)
   - [Execute assembly](#execute-assembly)
   - [References](#references)
