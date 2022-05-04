@@ -481,7 +481,7 @@ clio restart -u http://mysite.creatio.com -l administrator -p password
 
 For connect proffesional developer tools and Creatio no-code designers, you can organanize development flow in you local file system in **workspace.**
 
-https://user-images.githubusercontent.com/26967647/166842169-398d30c8-1442-434e-9e3d-298da32e5c74.mp4
+https://user-images.githubusercontent.com/26967647/166842902-566af234-f9ad-48fb-82c1-0a0302bc5b3c.mp4
 
 Create workspace in local directory, execute create-workspace command in you
 
