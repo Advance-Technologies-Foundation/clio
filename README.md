@@ -25,9 +25,48 @@ docker run -it --rm clio reg-web-app -help
 
 - [Introduction](#introduction)
 - [Installation and features](#installation-and-features)
+  - [Run with docker](#run-with-docker)
+    - [Build](#build)
+    - [Run](#run)
 - [Content table](#content-table)
+  - [- Development](#--development)
 - [Arguments](#arguments)
 - [Register and unregister](#register-and-unregister)
+  - [Windows](#windows)
+  - [MacOS](#macos)
+  - [Help and examples](#help-and-examples)
+- [Packages](#packages)
+  - [Creating new package](#creating-new-package)
+  - [Installing package](#installing-package)
+  - [Pull package from remote application](#pull-package-from-remote-application)
+  - [Delete package](#delete-package)
+  - [Compress package](#compress-package)
+  - [Extract package](#extract-package)
+  - [Get package list](#get-package-list)
+  - [Set package version](#set-package-version)
+- [NuGet Packages](#nuget-packages)
+  - [Pack NuGet package](#pack-nuget-package)
+  - [Push NuGet package](#push-nuget-package)
+  - [Restore NuGet package](#restore-nuget-package)
+  - [Install NuGet package](#install-nuget-package)
+  - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
+- [Application](#application)
+  - [Restart application](#restart-application)
+  - [Clear redis database](#clear-redis-database)
+- [Environment settings](#environment-settings)
+  - [Create/Update an environment](#createupdate-an-environment)
+  - [Delete the existing environment](#delete-the-existing-environment)
+  - [Check environment](#check-environment)
+  - [View application options](#view-application-options)
+  - [Open application](#open-application)
+  - [Ping application](#ping-application)
+- [Using for CI/CD systems](#using-for-cicd-systems)
+- [Development](#development)
+  - [Workspaces](#workspaces)
+  - [Convert package](#convert-package)
+  - [Execute assembly](#execute-assembly)
+  - [References](#references)
+  - [Execute custom SQL script](#execute-custom-sql-script)
 
   - [Windows](#windows)
   - [MacOS](#macos)
@@ -441,6 +480,8 @@ clio restart -u http://mysite.creatio.com -l administrator -p password
 ## Workspaces
 
 For connect proffesional developer tools and Creatio no-code designers, you can organanize development flow in you local file system in **workspace.**
+
+https://github.com/Advance-Technologies-Foundation/clio/blob/master/resources/img/clio_workspaces_tutorial.mp4
 
 Create workspace in local directory, execute create-workspace command in you
 
