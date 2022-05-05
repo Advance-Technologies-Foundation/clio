@@ -8,6 +8,7 @@ using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
 using ClioGate.Functions.SQL;
 using Newtonsoft.Json;
+using Terrasoft.Core.Configuration;
 using Terrasoft.Core.ConfigurationBuild;
 using Terrasoft.Core.DB;
 using Terrasoft.Core.Entities;
@@ -69,11 +70,17 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "GetPackages", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string GetPackages() {
+		public string GetPackages(bool isCustomer = false) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var packageList = new List<Dictionary<string, string>>();
 				var esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
 				esq.AddAllSchemaColumns();
+				if (isCustomer) {
+                    var maintainerName = SysSettings.GetValue<string>(UserConnection, "Maintainer", string.Empty);
+                    IEntitySchemaQueryFilterItem maintainerNameFilter =
+                        esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Name", maintainerName);
+                    esq.Filters.Add(maintainerNameFilter);
+                }
 				var packages = esq.GetEntityCollection(UserConnection);
 				foreach (var p in packages) {
 					var package = new Dictionary<string, string> {
