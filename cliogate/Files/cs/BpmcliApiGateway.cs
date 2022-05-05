@@ -76,9 +76,9 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 				var esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
 				esq.AddAllSchemaColumns();
 				if (isCustomer) {
-                    var maintainerName = SysSettings.GetValue<string>(UserConnection, "Maintainer", string.Empty);
+                    var maintainerName = SysSettings.GetValue(UserConnection, "Maintainer", string.Empty);
                     IEntitySchemaQueryFilterItem maintainerNameFilter =
-                        esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Name", maintainerName);
+                        esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Maintainer", maintainerName);
                     esq.Filters.Add(maintainerNameFilter);
                 }
 				var packages = esq.GetEntityCollection(UserConnection);
