@@ -3,8 +3,10 @@ using Clio.UserEnvironment;
 namespace Clio.Workspace
 {
 	using System;
-	using System.IO;
-	using Clio.Common;
+    using System.Collections.Generic;
+    using System.IO;
+    using System.Linq;
+    using Clio.Common;
 	using Clio.Package;
 	using Clio.Project.NuGet;
 
@@ -36,6 +38,7 @@ namespace Clio.Workspace
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly string _rootPath;
+		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 
 		#endregion
 
@@ -46,7 +49,7 @@ namespace Clio.Workspace
 				IPackageDownloader packageDownloader, IPackageInstaller packageInstaller, 
 				IPackageArchiver packageArchiver, IServiceUrlBuilder serviceUrlBuilder, ICreatioSdk creatioSdk, 
 				IJsonConverter jsonConverter, IWorkingDirectoriesProvider workingDirectoriesProvider, 
-				IFileSystem fileSystem) {
+				IFileSystem fileSystem, IApplicationPackageListProvider applicationPackageListProvider) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
@@ -59,6 +62,7 @@ namespace Clio.Workspace
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			_environmentSettings = environmentSettings;
 			_workspacePathBuilder = workspacePathBuilder;
 			_applicationClientFactory = applicationClientFactory;
@@ -72,6 +76,7 @@ namespace Clio.Workspace
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_rootPath = GetRootPath();
 			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+			_applicationPackageListProvider = applicationPackageListProvider;
 		}
 
 		#endregion
@@ -112,10 +117,11 @@ namespace Clio.Workspace
 		private WorkspaceSettings ReadWorkspaceSettings() =>
 			_jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
 
-		private WorkspaceSettings CreateDefaultWorkspaceSettings() {
+		private WorkspaceSettings CreateDefaultWorkspaceSettings(string[] packages) {
 			Version lv = _creatioSdk.LastVersion;
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings {
-				ApplicationVersion = new Version(lv.Major, lv.Minor, lv.Build)
+				ApplicationVersion = new Version(lv.Major, lv.Minor, lv.Build),
+				Packages = packages
 			};
 			return workspaceSettings;
 		}
@@ -127,11 +133,17 @@ namespace Clio.Workspace
 			Directory.CreateDirectory(ClioDirectoryPath);
 		}
 
-		private void CreateWorkspaceSettingsFile() {
+		private void CreateWorkspaceSettingsFile(bool isAddingPackageNames = false) {
 			if (File.Exists(WorkspaceSettingsPath)) {
 				return;
 			}
-			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings();
+			string[] packages = new string[] { };
+			if (isAddingPackageNames) {
+				IEnumerable<PackageInfo> packagesInfo =
+					_applicationPackageListProvider.GetPackages("{\"isCustomer\": \"true\"}");
+				packages = packagesInfo.Select(s => s.Descriptor.Name).ToArray();
+			}
+			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings(packages);
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
 		}
 
@@ -139,9 +151,9 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		public void Create() {
+		public void Create(bool isAddingPackageNames = false) {
 			CreateClioDirectory();
-			CreateWorkspaceSettingsFile();
+			CreateWorkspaceSettingsFile(isAddingPackageNames);
 		}
 
 		public void Restore() {

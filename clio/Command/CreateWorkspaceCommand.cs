@@ -41,9 +41,13 @@ namespace Clio.Command
 		#region Methods: Public
 
 		public override int Execute(CreateWorkspaceCommandOptions options) {
-			try
-			{
-				_workspace.Create();
+			try {
+				if (options.Environment == null) {
+					_workspace.Create();
+				} else {
+					_workspace.Create(true);
+					_workspace.Restore();
+				}
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "install-gate demo"
+      "commandLineArgs": "createw -e dev"
     }
   }
 }
