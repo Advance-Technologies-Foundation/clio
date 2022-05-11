@@ -483,13 +483,19 @@ For connect proffesional developer tools and Creatio no-code designers, you can 
 
 https://user-images.githubusercontent.com/26967647/166842902-566af234-f9ad-48fb-82c1-0a0302bc5b3c.mp4
 
-Create workspace in local directory, execute create-workspace command in you
+Create workspace in local directory, execute create-workspace command 
 
 ```
 C:\Demo> clio create-workspace
 ```
 
 In directory **.clio** specify you packages
+
+Create workspace in local directory with all editable packages from environment, execute create-workspace command with argument -e <Environment name>
+
+```
+C:\Demo> clio create-workspace -e demo
+```
 
 Restore packages in you file system via command from selected environmet
 
