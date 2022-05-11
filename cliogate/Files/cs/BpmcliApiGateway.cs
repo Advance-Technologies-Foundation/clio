@@ -80,11 +80,14 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 					var customPackageUId = SysSettings.GetValue(UserConnection, "CustomPackageUId", Guid.Empty);
 					IEntitySchemaQueryFilterItem maintainerNameFilter =
                         esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Maintainer", maintainerName);
-					IEntitySchemaQueryFilterItem NameNotEqualCustomFilter =
+					IEntitySchemaQueryFilterItem nameNotEqualCustomFilter =
 						esq.CreateFilterWithParameters(FilterComparisonType.NotEqual, "UId", customPackageUId);
+					IEntitySchemaQueryFilterItem installTypeFilter =
+						esq.CreateFilterWithParameters(FilterComparisonType.Equal, "InstallType", 0);
 					esq.Filters.Add(maintainerNameFilter);
-					esq.Filters.Add(NameNotEqualCustomFilter);
-                }
+					esq.Filters.Add(nameNotEqualCustomFilter);
+					esq.Filters.Add(installTypeFilter);
+				}
 				var packages = esq.GetEntityCollection(UserConnection);
 				foreach (var p in packages) {
 					var package = new Dictionary<string, string> {
