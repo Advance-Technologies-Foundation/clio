@@ -6,7 +6,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("register", HelpText = "Register clio in global environment", Hidden = true)]
+	[Verb("register", HelpText = "Register clio commands in context menu ")]
 	internal class RegisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
@@ -18,7 +18,7 @@ namespace Clio.Command
 
 	}
 
-	[Verb("unregister", HelpText = "Unregister clio in global environment", Hidden = true)]
+	[Verb("unregister", HelpText = "Unregister clio commands in context menu")]
 	internal class UnregisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
