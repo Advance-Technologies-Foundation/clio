@@ -29,10 +29,10 @@ docker run -it --rm clio reg-web-app -help
     - [Build](#build)
     - [Run](#run)
 - [Content table](#content-table)
-  - [- Development](#--development)
 - [Arguments](#arguments)
 - [Register and unregister](#register-and-unregister)
   - [Windows](#windows)
+  - [Context menu](#context-menu)
   - [MacOS](#macos)
   - [Help and examples](#help-and-examples)
 - [Packages](#packages)
@@ -67,12 +67,10 @@ docker run -it --rm clio reg-web-app -help
   - [Execute assembly](#execute-assembly)
   - [References](#references)
   - [Execute custom SQL script](#execute-custom-sql-script)
-
   - [Windows](#windows)
   - [MacOS](#macos)
   - [Help and examples](#help-and-examples)
 - [Packages](#packages)
-
   - [Creating new package](#creating-new-package)
   - [Installing package](#installing-package)
   - [Pull package from remote application](#pull-package-from-remote-application)
@@ -81,18 +79,15 @@ docker run -it --rm clio reg-web-app -help
   - [Extract package](#extract-package)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
-
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
   - [Restore NuGet package](#restore-nuget-package)
   - [Install NuGet package](#install-nuget-package)
   - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
-
 - [Application](#application)
   - [Restart application](#restart-application)
   - [Clear redis database](#clear-redis-database)
-
 - [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
@@ -100,13 +95,9 @@ docker run -it --rm clio reg-web-app -help
   - [View application options](#view-application-options)
   - [Open application](#open-application)
   - [Ping application](#ping-application)
-
 - [Using for CI/CD systems](#using-for-cicd-systems)
-
 - [Development](#development)
   -----------
-
-
   - [Workspaces](#workspaces)
   - [Convert existing package to project](#convert-existing-package-to-project)
   - [Execute assembly](#execute-assembly)
@@ -148,6 +139,17 @@ dotnet tool uninstall clio -g
 ```
 
 More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
+
+## Context menu
+
+```
+clio register
+```
+https://user-images.githubusercontent.com/26967647/169416137-351674ca-0bd2-44f1-83af-df4557bd02fd.mp4
+
+```
+clio unregister
+```
 
 ## MacOS
 
