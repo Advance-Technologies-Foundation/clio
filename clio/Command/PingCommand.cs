@@ -18,7 +18,7 @@ namespace Clio.Command
 		}
 
 		public override int Execute(PingAppOptions options) {
-			ServicePath = options.Endpoint;
+			ServicePath = EnvironmentSettings.IsNetCore ? string.Empty : options.Endpoint;
 			Console.WriteLine($"Ping {ServiceUri} ...");
 			return base.Execute(options);
 		}
