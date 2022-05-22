@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Diagnostics;
+using System.IO;
 using Clio.UserEnvironment;
 using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("register", HelpText = "Register clio in global environment", Hidden = true)]
+	[Verb("register", HelpText = "Register clio commands in context menu ")]
 	internal class RegisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
@@ -16,7 +18,7 @@ namespace Clio.Command
 
 	}
 
-	[Verb("unregister", HelpText = "Unregister clio in global environment", Hidden = true)]
+	[Verb("unregister", HelpText = "Unregister clio commands in context menu")]
 	internal class UnregisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
@@ -35,12 +37,21 @@ namespace Clio.Command
 
 		public override int Execute(RegisterOptions options) {
 			try {
-				var creatioEnv = new CreatioEnvironment();
-				string path = string.IsNullOrEmpty(options.Path) ? Environment.CurrentDirectory : options.Path;
-				IResult result = options.Target == "m"
-					? creatioEnv.MachineRegisterPath(path)
-					: creatioEnv.UserRegisterPath(path);
-				result.ShowMessagesTo(Console.Out);
+				string folder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+				string appDataClioFolderPath = Path.Combine(folder, "clio");
+				Directory.CreateDirectory(appDataClioFolderPath);
+				var environment = new CreatioEnvironment();
+				var clioIconPath = Path.Combine(environment.GetAssemblyFolderPath(), "img");
+				var imgFolder = new DirectoryInfo(clioIconPath);
+				var allImgFiles = imgFolder.GetFiles();
+				foreach (var imgFile in allImgFiles)
+				{
+					var destImgFilePath = Path.Combine(appDataClioFolderPath, imgFile.Name);
+					imgFile.CopyTo(destImgFilePath, true);
+				}
+				string reg_file_name = Path.Combine(environment.GetAssemblyFolderPath(), "reg", "clio_context_menu_win.reg");
+				Process.Start(new ProcessStartInfo("cmd", $"/c reg import  {reg_file_name}") { CreateNoWindow = true });
+				Console.WriteLine("Clio context menu successfully registered");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
@@ -53,11 +64,9 @@ namespace Clio.Command
 	{
 		public override int Execute(UnregisterOptions options) {
 			try {
-				var creatioEnv = new CreatioEnvironment();
-				IResult result = options.Target == "m"
-					? creatioEnv.MachineUnregisterPath()
-					: creatioEnv.UserUnregisterPath();
-				result.ShowMessagesTo(Console.Out);
+				Process.Start(new ProcessStartInfo("cmd", $"/c reg delete HKEY_CLASSES_ROOT\\Folder\\shell\\clio /f"));
+				Process.Start(new ProcessStartInfo("cmd", $"/c reg delete HKEY_CLASSES_ROOT\\*\\shell\\clio /f"));
+				Console.WriteLine("Clio context menu successfully unregistered");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
