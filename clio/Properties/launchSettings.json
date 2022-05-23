@@ -2,7 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "createw -e dev"
+      "commandLineArgs": "push-workspace",
+      "workingDirectory": "E:\\1"
     }
   }
 }

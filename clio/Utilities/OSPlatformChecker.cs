@@ -2,9 +2,37 @@
 
 namespace Clio.Utilities
 {
-	class OSPlatformChecker
+
+	#region Interface: IOSPlatformChecker
+
+	public interface IOSPlatformChecker
 	{
-		public static bool IsWindowsEnvironment() {
+
+		#region Methods: Public
+
+		bool IsWindowsEnvironment { get; }
+
+		#endregion
+
+	}
+
+	#endregion
+
+	#region Class: OSPlatformChecker
+
+	public class OSPlatformChecker : IOSPlatformChecker
+	{
+
+
+		#region Properties: Public
+
+		public bool IsWindowsEnvironment => GetIsWindowsEnvironment();
+
+		#endregion
+
+		#region Methods: Public
+
+		public static bool GetIsWindowsEnvironment() {
 			switch (Environment.OSVersion.Platform) {
 				case PlatformID.Win32NT:
 				case PlatformID.Win32S:
@@ -15,5 +43,11 @@ namespace Clio.Utilities
 					return false;
 			}
 		}
+
+		#endregion
+
 	}
+
+	#endregion
+
 }

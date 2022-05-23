@@ -49,21 +49,23 @@ namespace Clio.Workspace
 			_fileSystem.WriteAllTextToFile(openProjectCmdPath, content);
 		}
 
-		private void CreateFrameworkOpenSolutionCmd(string rootPath, Version nugetVersion) {
-			string clioDirectoryPath = _workspacePathBuilder.BuildClioDirectoryPath(rootPath);
-			string solutionPath = _workspacePathBuilder.BuildSolutionPath(clioDirectoryPath);
+		private void CreateFrameworkOpenSolutionCmd(Version nugetVersion) {
+			string rootPath = _workspacePathBuilder.RootPath;
+			string clioDirectoryPath = _workspacePathBuilder.ClioDirectoryPath;
+			string solutionPath = _workspacePathBuilder.SolutionPath;
 			string solutionRelativePath = _fileSystem.ConvertToRelativePath(solutionPath, rootPath);
-			string coreCreatioSdkPath = _workspacePathBuilder.BuildFrameworkCreatioSdkPath(rootPath, nugetVersion);
+			string coreCreatioSdkPath = _workspacePathBuilder.BuildFrameworkCreatioSdkPath(nugetVersion);
 			string creatioSdkRelativePath = _fileSystem.ConvertToRelativePath(coreCreatioSdkPath, rootPath);
 			CreateOpenSolutionCmd(rootPath, "OpenSolution.cmd",
 				solutionRelativePath, creatioSdkRelativePath, "net472");
 		}
 
-		private void CreateCoreOpenSolutionCmd(string rootPath, Version nugetVersion) {
-			string clioDirectoryPath = _workspacePathBuilder.BuildClioDirectoryPath(rootPath);
-			string solutionPath = _workspacePathBuilder.BuildSolutionPath(rootPath);
-			string solutionRelativePath = _fileSystem.ConvertToRelativePath(solutionPath, rootPath);
-			string coreCreatioSdkPath = _workspacePathBuilder.BuildCoreCreatioSdkPath(rootPath, nugetVersion);
+		private void CreateCoreOpenSolutionCmd(Version nugetVersion) {
+			string rootPath = _workspacePathBuilder.RootPath;
+			string clioDirectoryPath = _workspacePathBuilder.ClioDirectoryPath;
+			string solutionPath = _workspacePathBuilder.SolutionPath;
+			string solutionRelativePath = _fileSystem.ConvertToRelativePath(solutionPath, clioDirectoryPath);
+			string coreCreatioSdkPath = _workspacePathBuilder.BuildCoreCreatioSdkPath(nugetVersion);
 			string creatioSdkRelativePath = _fileSystem.ConvertToRelativePath(coreCreatioSdkPath, rootPath);
 			CreateOpenSolutionCmd(clioDirectoryPath, "OpenNetCoreSolution.cmd",
 				solutionRelativePath, creatioSdkRelativePath, "netstandard2.0");
@@ -73,9 +75,9 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		public void Create(string rootPath, Version nugetCreatioSdkVersion) {
-			CreateFrameworkOpenSolutionCmd(rootPath, nugetCreatioSdkVersion);
-			CreateCoreOpenSolutionCmd(rootPath, nugetCreatioSdkVersion);
+		public void Create(Version nugetCreatioSdkVersion) {
+			CreateFrameworkOpenSolutionCmd(nugetCreatioSdkVersion);
+			CreateCoreOpenSolutionCmd(nugetCreatioSdkVersion);
 		}
 
 		#endregion

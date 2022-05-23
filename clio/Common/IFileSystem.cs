@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 
 namespace Clio.Common
 {
@@ -23,6 +24,10 @@ namespace Clio.Common
 		void DeleteDirectoryIfExists(string path);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
 		void WriteAllTextToFile(string path, string contents);
+		DirectoryInfo CreateDirectory(string path) => Directory.CreateDirectory(path);
+		bool DirectoryExists(string path);
+		bool FileExists(string path);
+
 
 		#endregion
 

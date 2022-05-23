@@ -9,7 +9,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		void Restore(string rootPath, Version nugetCreatioSdkVersion);
+		void Restore(Version nugetCreatioSdkVersion);
 
 		#endregion
 

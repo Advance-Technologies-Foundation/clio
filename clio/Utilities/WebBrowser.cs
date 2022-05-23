@@ -8,7 +8,7 @@ namespace Clio.Utilities
 {
 	class WebBrowser
 	{
-		public static bool Enabled { get => OSPlatformChecker.IsWindowsEnvironment(); }
+		public static bool Enabled { get => OSPlatformChecker.GetIsWindowsEnvironment(); }
 
 		public static bool CheckUrl(string url) {
 			UriBuilder uriBuilder = new UriBuilder(url);
@@ -18,7 +18,7 @@ namespace Clio.Utilities
 		}
 
 		public static void OpenUrl(string url) {
-			if (OSPlatformChecker.IsWindowsEnvironment()) {
+			if (OSPlatformChecker.GetIsWindowsEnvironment()) {
 				Console.WriteLine($"Open {url}...");
 				Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
 			} else {

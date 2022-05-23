@@ -7,7 +7,7 @@ namespace Clio.Utilities
     {
 		public static void OpenFile(string filePath)
 		{
-			if (OSPlatformChecker.IsWindowsEnvironment())
+			if (OSPlatformChecker.GetIsWindowsEnvironment())
 			{
 				Console.WriteLine($"Open {filePath}...");
 				Process.Start(new ProcessStartInfo("cmd", $"/c start {filePath}") { CreateNoWindow = true });

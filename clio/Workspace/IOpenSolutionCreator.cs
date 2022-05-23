@@ -9,7 +9,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		void Create(string rootPath, Version nugetCreatioSdkVersion);
+		void Create(Version nugetCreatioSdkVersion);
 
 		#endregion
 

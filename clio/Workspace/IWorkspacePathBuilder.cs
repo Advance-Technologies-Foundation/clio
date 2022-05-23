@@ -8,21 +8,27 @@ namespace Clio.Workspace
 	public interface IWorkspacePathBuilder
 	{
 
+		#region Properties: Public
+
+		string RootPath { get; }
+
+		public string ClioDirectoryPath { get; }
+
+		public string WorkspaceSettingsPath { get; }
+
+		public string PackagesDirectoryPath { get; }
+
+		public string SolutionPath { get; }
+
+		public string NugetFolderPath { get; }
+
+		#endregion
+
 		#region Methods: Public
 
-		string BuildClioDirectoryPath(string rootPath);
+		public string BuildFrameworkCreatioSdkPath(Version nugetVersion);
 
-		string BuildWorkspaceSettingsPath(string rootPath);
-
-		string BuildPackagesDirectoryPath(string rootPath);
-
-		string BuildSolutionPath(string rootPath);
-
-		string BuildNugetFolderPath(string rootPath);
-
-		public string BuildFrameworkCreatioSdkPath(string rootPath, Version nugetVersion);
-
-		public string BuildCoreCreatioSdkPath(string rootPath, Version nugetVersion);
+		public string BuildCoreCreatioSdkPath(Version nugetVersion);
 
 
 		#endregion

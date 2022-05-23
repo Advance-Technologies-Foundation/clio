@@ -116,6 +116,12 @@ namespace Clio.Common
 			File.WriteAllText(path, contents);
 		}
 
+		public DirectoryInfo CreateDirectory(string path) => Directory.CreateDirectory(path);
+
+		public bool DirectoryExists(string path) => Directory.Exists(path);
+
+		public bool FileExists(string path) => File.Exists(path);
+
 		#endregion
 
 	}
