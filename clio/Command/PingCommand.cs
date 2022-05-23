@@ -17,12 +17,17 @@ namespace Clio.Command
 			: base(applicationClient, settings) {
 		}
 
-		public override int Execute(PingAppOptions options) {
-			ServicePath = EnvironmentSettings.IsNetCore ? string.Empty : options.Endpoint;
-			Console.WriteLine($"Ping {ServiceUri} ...");
-			return base.Execute(options);
+		private int ExecuteGetRequest() {
+			ApplicationClient.ExecuteGetRequest(RootPath);
+			Console.WriteLine("Done");
+			return 0;
 		}
 
+		public override int Execute(PingAppOptions options) {
+			ServicePath = options.Endpoint;
+			Console.WriteLine($"Ping {ServiceUri} ...");
+			return EnvironmentSettings.IsNetCore ? ExecuteGetRequest() : base.Execute(options);
+		}
 
 	}
 }
