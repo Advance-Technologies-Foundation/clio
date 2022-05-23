@@ -112,6 +112,11 @@ namespace Clio.Workspace
 			return applicationZip;
 		}
 
+
+		private void InstallApplication(string applicationZip) {
+			_packageInstaller.Install(applicationZip, _environmentSettings);
+		}
+
 		private void BuildStandalonePackagesIfNeeded() {
 			if (_osPlatformChecker.IsWindowsEnvironment || _environmentSettings.IsNetCore) {
 				return;
@@ -135,7 +140,7 @@ namespace Clio.Workspace
 					ResetSchemaChangeStateServiceUrl(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
-				_packageInstaller.Install(applicationZip, _environmentSettings);
+				InstallApplication(applicationZip);
 				BuildStandalonePackagesIfNeeded();
 			});
 		}
