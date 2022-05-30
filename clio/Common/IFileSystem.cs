@@ -12,22 +12,31 @@ namespace Clio.Common
 		#region Methods: Public
 
 		void CheckOrDeleteExistsFile(string filePath, bool delete);
-		void CheckOrDeleteExistsDirectory(string directoryPath, bool delete);
-		void OverwriteExistsDirectory(string directoryPath);
+		void CopyFiles(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
+		bool DeleteFile(string filePath);
+		bool DeleteFileIfExists(string filePath);
+		bool ExistsFile(string filePath);
+		string ExtractNameFromPath(string filePath);
+		string[] GetFiles(string filePath);
+		string[] GetFiles(string filePath, string searchPattern, SearchOption searchOption);
+		bool IsReadOnlyFile(string filePath);
+		void ResetFileReadOnlyAttribute(string filePath);
+		void WriteAllTextToFile(string filePath, string contents);
+		void CheckOrClearExistsDirectory(string directoryPath, bool overwrite);
 		void CheckOrOverwriteExistsDirectory(string directoryPath, bool overwrite);
-		string GetCurrentDirectoryIfEmpty(string directory);
-		string ExtractNameFromPath(string path);
-		string GetDestinationFileDirectory(string filePath, string destinationPath);
+		void ClearDirectory(string directoryPath);
 		void CopyDirectory(string source, string destination, bool overwrite);
-		void Copy(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
-		void DeleteFileIfExists(string path);
-		void DeleteDirectoryIfExists(string path);
+		DirectoryInfo CreateDirectory(string directoryPath);
+		void DeleteDirectory(string directoryPath);
+		void DeleteDirectory(string directoryPath, bool recursive);
+		void DeleteDirectoryIfExists(string directoryPath);
+		bool ExistsDirectory(string directoryPath);
+		string GetCurrentDirectoryIfEmpty(string directoryPath);
+		string GetDestinationFileDirectory(string filePath, string destinationPath);
+		string[] GetDirectories(string directoryPath);
+		void OverwriteExistsDirectory(string directoryPath);
+		void SafeDeleteDirectory(string directoryPath);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
-		void WriteAllTextToFile(string path, string contents);
-		DirectoryInfo CreateDirectory(string path) => Directory.CreateDirectory(path);
-		bool DirectoryExists(string path);
-		bool FileExists(string path);
-
 
 		#endregion
 

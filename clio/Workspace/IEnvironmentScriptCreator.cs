@@ -2,9 +2,9 @@ namespace Clio.Workspace
 {
 	using System;
 
-	#region Interface: IOpenSolutionCreator
+	#region Interface: IEnvironmentScriptCreator
 
-	public interface IOpenSolutionCreator
+	public interface IEnvironmentScriptCreator
 	{
 
 		#region Methods: Public

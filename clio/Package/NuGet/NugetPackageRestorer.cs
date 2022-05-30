@@ -27,7 +27,7 @@ namespace Clio.Project.NuGet
 
 		#region Constructors: Public
 
-		public NugetPackageRestorer(INugetPackagesProvider nugetPackagesProvider, IPackageArchiver packageArchiver, 
+		public NugetPackageRestorer(INugetPackagesProvider nugetPackagesProvider, IPackageArchiver packageArchiver,
 				ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor,
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger) {
 			nugetPackagesProvider.CheckArgumentNull(nameof(nugetPackagesProvider));
@@ -67,14 +67,14 @@ namespace Clio.Project.NuGet
 		}
 
 		private string GetLastVersionPackage(string name, string nugetSourceUrl) {
-			LastVersionNugetPackages lastVersionPackage = 
+			LastVersionNugetPackages lastVersionPackage =
 				_nugetPackagesProvider.GetLastVersionPackages(name, nugetSourceUrl);
 			return lastVersionPackage?.Last.Version.ToString();
 		}
 
-		private string RestorePackage(string nugetRestoreProjPath, string nugetSourceUrl, 
+		private string RestorePackage(string nugetRestoreProjPath, string nugetSourceUrl,
 				string destinationNupkgDirectory) {
-			string packCommand = $"restore \"{nugetRestoreProjPath}\" --source {nugetSourceUrl} " + 
+			string packCommand = $"restore \"{nugetRestoreProjPath}\" --source {nugetSourceUrl} " +
 				$"--packages \"{destinationNupkgDirectory}\" --force --no-cache";
 			return _dotnetExecutor.Execute(packCommand, true);
 		}
@@ -82,7 +82,7 @@ namespace Clio.Project.NuGet
 		private string Restore(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl, string destinationDirectory) {
 			destinationDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationDirectory);
 			return _workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-				string version = nugetPackageFullName.Version == PackageVersion.LastVersion 
+				string version = nugetPackageFullName.Version == PackageVersion.LastVersion
 					? GetLastVersionPackage(nugetPackageFullName.Name, nugetSourceUrl)
 					: nugetPackageFullName.Version;
 				string nugetRestoreProjPath = Path.Combine(tempDirectory, NugetRestoreProjName);
@@ -100,7 +100,7 @@ namespace Clio.Project.NuGet
 				result = Restore(nugetPackageFullName, nugetSourceUrl, restoreTempDirectory)
 					.Replace(restoreTempDirectory, $"{destinationNupkgDirectory}");
 				_logger.WriteLine(result);
-				IEnumerable<string> gzipPackedPackagesFiles = 
+				IEnumerable<string> gzipPackedPackagesFiles =
 					_packageArchiver.FindGzipPackedPackagesFiles(restoreTempDirectory);
 				onRestored(gzipPackedPackagesFiles);
 			});
@@ -110,7 +110,7 @@ namespace Clio.Project.NuGet
 
 		#region Methods: Public
 
-		public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl, 
+		public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
 				string destinationNupkgDirectory) {
 			CheckArguments(nugetPackageFullName, nugetSourceUrl);
 			string result = Restore(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory);
@@ -122,7 +122,7 @@ namespace Clio.Project.NuGet
 			CheckArguments(nugetPackageFullName, nugetSourceUrl);
 			RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
 				gzipPackedPackagesFiles => {
-					_fileSystem.Copy(gzipPackedPackagesFiles, destinationNupkgDirectory, overwrite);
+					_fileSystem.CopyFiles(gzipPackedPackagesFiles, destinationNupkgDirectory, overwrite);
 				});
 		}
 

@@ -62,7 +62,7 @@ namespace Clio.Package
 			IList<StandalonePackageProject> projects = new List<StandalonePackageProject>();
 			foreach (string packageName in packagesNames) {
 				string standaloneProjectPath = BuildStandaloneProjectPath(packagesPath, packageName);
-				if (!_fileSystem.FileExists(standaloneProjectPath)) {
+				if (!_fileSystem.ExistsFile(standaloneProjectPath)) {
 					continue;
 				}
 				var standalonePackageProject = new StandalonePackageProject(packageName, standaloneProjectPath);

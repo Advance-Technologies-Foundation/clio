@@ -16,6 +16,7 @@ namespace Clio.Workspace
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 		private const string SolutionName = "CreatioPackages.sln";
 		private const string NugetFolderName = ".nuget";
+		private const string SolutionFolderPathName = ".solution";
 
 		#endregion
 
@@ -51,9 +52,11 @@ namespace Clio.Workspace
 
 		public string PackagesDirectoryPath => Path.Combine(RootPath, PackagesFolderName);
 
-		public string SolutionPath => Path.Combine(ClioDirectoryPath, SolutionName);
+		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderPathName);
+		public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
 
 		public string NugetFolderPath => Path.Combine(RootPath, NugetFolderName);
+
 
 		#endregion
 
@@ -64,8 +67,8 @@ namespace Clio.Workspace
 			string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
 			DirectoryInfo directoryInfo = new DirectoryInfo(currentDirectory);
 			while (true) {
-				string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName); 
-				if (_fileSystem.DirectoryExists(presumablyClioDirectoryPath)) {
+				string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
+				if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath)) {
 					return directoryInfo.FullName;
 				}
 				if (directoryInfo.Parent == null) {
@@ -81,14 +84,19 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-
-		public string BuildFrameworkCreatioSdkPath(Version nugetVersion) => 
-			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib", 
+		public string BuildFrameworkCreatioSdkPath(Version nugetVersion) =>
+			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
 				"net40");
 
-		public string BuildCoreCreatioSdkPath(Version nugetVersion) => 
-			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib", 
+		public string BuildCoreCreatioSdkPath(Version nugetVersion) =>
+			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
 				"netstandard2.0");
+
+		public string BuildRelativePathRegardingPackageProjectPath(string destinationPath) {
+			string templatePackageProjectRelativeDirectoryPath =
+				Path.Combine(PackagesDirectoryPath, "PackageName", "Files");
+			return Path.GetRelativePath(templatePackageProjectRelativeDirectoryPath, destinationPath);
+		}
 
 		#endregion
 

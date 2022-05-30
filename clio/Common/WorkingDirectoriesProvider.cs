@@ -10,7 +10,7 @@ namespace Clio.Common
 	{
 
 		#region Properties: Public
-		
+
 		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
 		public string TemplateDirectory =>  Path.Combine(ExecutingDirectory, "tpl");
 		public string BaseTempDirectory =>  Path.Combine(Path.GetTempPath(), "clio");
@@ -34,6 +34,11 @@ namespace Clio.Common
 		public string GetTemplatePath(string templateName) {
 			templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
 			return Path.Combine(TemplateDirectory, $"{templateName}.tpl");
+		}
+
+		public string GetTemplateFolderPath(string templateFolderName) {
+			templateFolderName.CheckArgumentNullOrWhiteSpace(nameof(templateFolderName));
+			return Path.Combine(TemplateDirectory, templateFolderName);
 		}
 
 		public string CreateTempDirectory() {
