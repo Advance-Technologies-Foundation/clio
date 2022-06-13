@@ -76,9 +76,8 @@
 			_applicationClientFactory.CreateClient(environmentSettings);
 
 		private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings) {
-			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{environmentSettings.Maintainer}'";
 			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			_scriptExecutor.Execute(script, applicationClient, environmentSettings);
+			applicationClient.CallConfigurationService("CreatioApiGateway", "UnlockPackages", "{}") ;
 		}
 
 		private void SaveLogFile(string logText, string reportPath) {

@@ -124,6 +124,27 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 		}
 
 		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "UnlockPackages",
+			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+			ResponseFormat = WebMessageFormat.Json)]
+		public bool UnlockPackages()
+		{
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
+			{
+				var maintainerCode = SysSettings.GetValue<string>(UserConnection, "Maintainer", "NonImplemented");
+				Update update = new Update(UserConnection, "SysPackage")
+					.Set("InstallType", Column.Parameter(0, "Integer"))
+					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode)) as Update;
+				update.Execute();
+				return true;
+			}
+			else
+			{
+				throw new Exception("You don'nt have permission for operation CanManageSolution");
+			}
+		}
+
+		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 		RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
 		public CompilationResult CompileWorkspace(bool compileModified = false) {
