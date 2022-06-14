@@ -201,35 +201,4 @@ FakesAssemblies/
 
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
-.sonarqube/conf/Sonar-cs-none.ruleset
-.sonarqube/conf/Sonar-cs.ruleset
-.sonarqube/conf/Sonar-vbnet-none.ruleset
-.sonarqube/conf/Sonar-vbnet.ruleset
-.sonarqube/conf/SonarQubeAnalysisConfig.xml
-.sonarqube/conf/0/FilesToAnalyze.txt
-.sonarqube/conf/0/ProjectOutFolderPath.txt
-.sonarqube/conf/0/SonarProjectConfig.xml
-.sonarqube/conf/1/FilesToAnalyze.txt
-.sonarqube/conf/1/ProjectOutFolderPath.txt
-.sonarqube/conf/1/SonarProjectConfig.xml
-.sonarqube/conf/2/FilesToAnalyze.txt
-.sonarqube/conf/cs/SonarLint.xml
-.sonarqube/conf/vbnet/SonarLint.xml
-.sonarqube/out/sonar-project.properties
-.sonarqube/out/.sonar/.sonar_lock
-.sonarqube/out/.sonar/report-task.txt
-.sonarqube/out/0/Issues.json
-.sonarqube/out/0/ProjectInfo.xml
-.sonarqube/out/0/output-cs/file-metadata.pb
-.sonarqube/out/0/output-cs/metrics.pb
-.sonarqube/out/0/output-cs/symrefs.pb
-.sonarqube/out/0/output-cs/token-cpd.pb
-.sonarqube/out/0/output-cs/token-type.pb
-.sonarqube/out/1/Issues.json
-.sonarqube/out/1/ProjectInfo.xml
-.sonarqube/out/1/output-cs/file-metadata.pb
-.sonarqube/out/1/output-cs/metrics.pb
-.sonarqube/out/1/output-cs/symrefs.pb
-.sonarqube/out/1/output-cs/token-cpd.pb
-.sonarqube/out/1/output-cs/token-type.pb
-.sonarqube/out/2/ProjectInfo.xml
+.sonarqube
