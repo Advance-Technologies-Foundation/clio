@@ -40,7 +40,8 @@ namespace Clio.Tests.Command
 			var settingsRepository = Substitute.For<ISettingsRepository>();
 			settingsRepository.IsEnvironmentExists(name).Returns(true);
 			var options = new RegAppOptions {
-				ActiveEnvironment = name
+				ActiveEnvironment = name,
+				Name = name
 			};
 			var clientFactory = Substitute.For<IApplicationClientFactory>();
 			var command = new RegAppCommand(settingsRepository, clientFactory);
