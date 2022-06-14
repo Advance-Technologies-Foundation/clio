@@ -22,6 +22,7 @@ jobs:
           dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
           /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
           /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
+          dotnet build-server shutdown;
       - name: Build and analyze
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
@@ -29,9 +30,8 @@ jobs:
         shell: powershell
         run: |
           dotnet sonarscanner begin `
-            /k:"clio" `
-            /d:sonar.host.url="https://sonarqube-rnd.creatio.com" `
-            /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
-            /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
+            /k:"clio" /d:sonar.host.url="https://sonarqube-rnd.creatio.com" `
+            /d:sonar.login="${{ secrets.SONAR_TOKEN }}" /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
+          dotnet build-server shutdown;
           dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
