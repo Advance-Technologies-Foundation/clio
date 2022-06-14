@@ -52,8 +52,7 @@ jobs:
         shell: powershell
         run: |
           .\.sonar\scanner\dotnet-sonarscanner begin `
-            /k:"kirillkrylov_clio" `
-            /o:"kirillkrylov" `
+            /k:"clio" `
             /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
             /d:sonar.host.url="https://sonarqube-rnd.creatio.com" `
             /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
