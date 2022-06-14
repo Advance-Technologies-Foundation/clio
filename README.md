@@ -1,3 +1,9 @@
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=kirillkrylov_clio&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=kirillkrylov_clio) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=kirillkrylov_clio&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=kirillkrylov_clio) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=kirillkrylov_clio&metric=coverage)](https://sonarcloud.io/summary/new_code?id=kirillkrylov_clio)
+
+
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=kirillkrylov_clio&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=kirillkrylov_clio) [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=kirillkrylov_clio&metric=bugs)](https://sonarcloud.io/summary/new_code?id=kirillkrylov_clio) [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=kirillkrylov_clio&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=kirillkrylov_clio)
+
+***
 # Introduction
 
 Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
