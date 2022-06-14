@@ -43,7 +43,7 @@ namespace Clio.Common
 			zipStream.Write(bytes, 0, bytes.Length);
 		}
 
-		private static string ReadFileName(GZipStream zipStream) {
+		private string ReadFileRelativePath(GZipStream zipStream) {
 			var bytes = new byte[sizeof(int)];
 			int readed = zipStream.Read(bytes, 0, sizeof(int));
 			if (readed < sizeof(int)) {
@@ -51,13 +51,13 @@ namespace Clio.Common
 			}
 			int fileNameLength = BitConverter.ToInt32(bytes, 0);
 			bytes = new byte[sizeof(char)];
-			var sb = new StringBuilder();
+			var stringBuilder = new StringBuilder();
 			for (int i = 0; i < fileNameLength; i++) {
 				zipStream.Read(bytes, 0, sizeof(char));
 				char c = BitConverter.ToChar(bytes, 0);
-				sb.Append(c);
+				stringBuilder.Append(c);
 			}
-			return sb.ToString();
+			return _fileSystem.NormalizeFilePathByPlatform(stringBuilder.ToString());
 		}
 
 		private static void ReadFileContent(string targetFilePath, GZipStream zipStream) {
@@ -94,11 +94,11 @@ namespace Clio.Common
 		}
 
 		private bool UnpackFromGZip(string destinationDirectory, GZipStream zipStream) {
-			string fileName = ReadFileName(zipStream);
-			if (string.IsNullOrEmpty(fileName)) {
+			string fileRelativePath = ReadFileRelativePath(zipStream);
+			if (string.IsNullOrEmpty(fileRelativePath)) {
 				return false;
 			}
-			ReadFileContent(Path.Combine(destinationDirectory, fileName), zipStream);
+			ReadFileContent(Path.Combine(destinationDirectory, fileRelativePath), zipStream);
 			return true;
 		}
 

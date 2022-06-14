@@ -37,6 +37,7 @@ namespace Clio.Common
 		void OverwriteExistsDirectory(string directoryPath);
 		void SafeDeleteDirectory(string directoryPath);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
+		string NormalizeFilePathByPlatform(string filePath);
 
 		#endregion
 

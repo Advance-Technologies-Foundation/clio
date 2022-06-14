@@ -13,10 +13,11 @@ namespace Clio.Workspace
 		string RootPath { get; }
 		string ClioDirectoryPath { get; }
 		string WorkspaceSettingsPath { get; }
-		string PackagesDirectoryPath { get; }
+		string PackagesFolderPath { get; }
 		string SolutionFolderPath { get; }
 		string SolutionPath { get; }
 		string NugetFolderPath { get; }
+		string TasksFolderPath { get; }
 
 		#endregion
 

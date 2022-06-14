@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "restore-workspace",
+      "commandLineArgs": "show-web-app-list",
       "workingDirectory": "E:\\1"
     }
   }

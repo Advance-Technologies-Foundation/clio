@@ -16,7 +16,8 @@ namespace Clio.Workspace
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 		private const string SolutionName = "CreatioPackages.sln";
 		private const string NugetFolderName = ".nuget";
-		private const string SolutionFolderPathName = ".solution";
+		private const string SolutionFolderName = ".solution";
+		private const string TasksFolderName = "tasks";
 
 		#endregion
 
@@ -50,13 +51,13 @@ namespace Clio.Workspace
 
 		public string WorkspaceSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceSettingsJson);
 
-		public string PackagesDirectoryPath => Path.Combine(RootPath, PackagesFolderName);
+		public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
 
-		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderPathName);
+		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);
 		public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
 
 		public string NugetFolderPath => Path.Combine(RootPath, NugetFolderName);
-
+		public string TasksFolderPath => Path.Combine(RootPath, TasksFolderName);
 
 		#endregion
 
@@ -94,7 +95,7 @@ namespace Clio.Workspace
 
 		public string BuildRelativePathRegardingPackageProjectPath(string destinationPath) {
 			string templatePackageProjectRelativeDirectoryPath =
-				Path.Combine(PackagesDirectoryPath, "PackageName", "Files");
+				Path.Combine(PackagesFolderPath, "PackageName", "Files");
 			return Path.GetRelativePath(templatePackageProjectRelativeDirectoryPath, destinationPath);
 		}
 

@@ -54,7 +54,7 @@ namespace Clio.Workspace
 		private IEnumerable<SolutionProject> FindSolutionProjects() {
 			IList<SolutionProject> solutionProjects = new List<SolutionProject>();
 			IEnumerable<StandalonePackageProject> standalonePackageProjects = _standalonePackageFileManager
-				.FindStandalonePackageProjects(_workspacePathBuilder.PackagesDirectoryPath);
+				.FindStandalonePackageProjects(_workspacePathBuilder.PackagesFolderPath);
 			string solutionFolderPath = _workspacePathBuilder.SolutionFolderPath;
 			foreach (StandalonePackageProject standalonePackageProject in standalonePackageProjects) {
 				string relativeStandaloneProjectPath =
@@ -94,7 +94,7 @@ namespace Clio.Workspace
 		public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings) {
 			Version creatioSdkVersion = _creatioSdk.FindSdkVersion(workspaceSettings.ApplicationVersion);
 			_packageDownloader.DownloadPackages(workspaceSettings.Packages, environmentSettings,
-				_workspacePathBuilder.PackagesDirectoryPath);
+				_workspacePathBuilder.PackagesFolderPath);
 			RestoreNugetCreatioSdk(creatioSdkVersion);
 			CreateSolution();
 			CreateEnvironmentScript(creatioSdkVersion);

@@ -4,6 +4,7 @@ using System.Linq;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project.NuGet;
+using Clio.Utilities;
 
 namespace Clio.Workspace
 {
@@ -36,6 +37,8 @@ namespace Clio.Workspace
 		private readonly IJsonConverter _jsonConverter;
 		private readonly IFileSystem _fileSystem;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+		private readonly IExecutablePermissionsActualizer _executablePermissionsActualizer;
+		private readonly IOSPlatformChecker _osPlatformChecker;
 
 		#endregion
 
@@ -43,19 +46,25 @@ namespace Clio.Workspace
 
 		public WorkspaceCreator(IWorkspacePathBuilder workspacePathBuilder, ICreatioSdk creatioSdk,
 				ITemplateProvider templateProvider, IJsonConverter jsonConverter, IFileSystem fileSystem,
-				IApplicationPackageListProvider applicationPackageListProvider) {
+				IApplicationPackageListProvider applicationPackageListProvider, 
+				IExecutablePermissionsActualizer executablePermissionsActualizer,
+				IOSPlatformChecker osPlatformChecker) {
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			creatioSdk.CheckArgumentNull(nameof(creatioSdk));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
+			executablePermissionsActualizer.CheckArgumentNull(nameof(executablePermissionsActualizer));
+			osPlatformChecker.CheckArgumentNull(nameof(osPlatformChecker));
 			_workspacePathBuilder = workspacePathBuilder;
 			_creatioSdk = creatioSdk;
 			_templateProvider = templateProvider;
 			_jsonConverter = jsonConverter;
 			_fileSystem = fileSystem;
 			_applicationPackageListProvider = applicationPackageListProvider;
+			_executablePermissionsActualizer = executablePermissionsActualizer;
+			_osPlatformChecker = osPlatformChecker;
 		}
 
 		#endregion
@@ -64,7 +73,6 @@ namespace Clio.Workspace
 
 		private string RootPath => _workspacePathBuilder.RootPath;
 		private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
-		private string ClioDirectoryPath => _workspacePathBuilder.ClioDirectoryPath;
 
 		#endregion
 
@@ -93,6 +101,11 @@ namespace Clio.Workspace
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
 		}
 
+		private void ActualizeExecutablePermissions() {
+			_executablePermissionsActualizer.Actualize(_workspacePathBuilder.SolutionFolderPath);
+			_executablePermissionsActualizer.Actualize(_workspacePathBuilder.TasksFolderPath);
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -100,7 +113,10 @@ namespace Clio.Workspace
 		public void Create(bool isAddingPackageNames = false) {
 			_templateProvider.CopyTemplateFolder("workspace", RootPath);
 			CreateWorkspaceSettingsFile(isAddingPackageNames);
-
+			if (_osPlatformChecker.IsWindowsEnvironment) {
+				return;
+			}
+			ActualizeExecutablePermissions();
 		}
 
 		#endregion

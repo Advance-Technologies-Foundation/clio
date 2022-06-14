@@ -94,7 +94,7 @@ namespace Clio.Workspace
 				"{\"packageName\":\"" + packageName + "\"}");
 
 		private void PackPackage(string packageName, string rootPackedPackagePath) {
-			string packagePath = Path.Combine(_workspacePathBuilder.PackagesDirectoryPath, packageName);
+			string packagePath = Path.Combine(_workspacePathBuilder.PackagesFolderPath, packageName);
 			string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 			_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 		}
@@ -122,7 +122,7 @@ namespace Clio.Workspace
 				return;
 			}
 			IEnumerable<string> standalonePackagesNames = _standalonePackageFileManager
-				.FindStandalonePackagesNames(_workspacePathBuilder.PackagesDirectoryPath);
+				.FindStandalonePackagesNames(_workspacePathBuilder.PackagesFolderPath);
 			_packageBuilder.Build(standalonePackagesNames);
 		}
 

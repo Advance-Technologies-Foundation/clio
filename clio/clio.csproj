@@ -62,13 +62,19 @@
     <Content Include="tpl\workspace\.solution\set-netcore-environment.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="tpl\workspace\.solution\set-netcore-environment.sh">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="tpl\workspace\.vscode\keybinding.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\build-framework.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="tpl\workspace\tasks\build-netcore-build.cmd">
+    <Content Include="tpl\workspace\tasks\build-netcore.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\tasks\build-netcore.sh">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\open-solution-framework.cmd">

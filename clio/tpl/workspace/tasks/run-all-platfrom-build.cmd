@@ -1,2 +1,2 @@
 call build-framework.cmd
-call build-netcore-build.cmd
+call build-netcore.cmd

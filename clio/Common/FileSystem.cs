@@ -192,6 +192,15 @@ namespace Clio.Common
 			return relativePath.TrimStart(Path.DirectorySeparatorChar);
 		}
 
+		public string NormalizeFilePathByPlatform(string filePath) {
+			if (string.IsNullOrWhiteSpace(filePath)) {
+				return filePath;
+			}
+			string[] filePathItem = filePath.Split(new char[] { '\\', '/' }, StringSplitOptions.None);
+			return Path.Combine(filePathItem);
+		}
+
+
 		#endregion
 
 	}

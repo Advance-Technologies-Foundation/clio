@@ -100,7 +100,7 @@ namespace Clio
 			{
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
-						"LOCALAPPDATA" : "Home");
+						"LOCALAPPDATA" : "HOME");
 				var assy = Assembly.GetEntryAssembly();
 				var companyName = assy.GetCustomAttributes<AssemblyCompanyAttribute>()
 					.FirstOrDefault();
