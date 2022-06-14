@@ -10,9 +10,7 @@ using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
-using Clio.Package;
 using Clio.Project;
-using Clio.Project.NuGet;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
@@ -269,6 +267,7 @@ namespace Clio
 					(RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 					(CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 					(PushWorkspaceCommandOptions opts) => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
+					(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

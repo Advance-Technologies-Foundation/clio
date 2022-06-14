@@ -13,7 +13,7 @@ namespace Clio
 		#region Methods: Public
 
 		public static TResult MapResult<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18,
-			T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, TResult>(
+			T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, T37, TResult>(
 			this ParserResult<object> result,
 			Func<T1, TResult> parsedFunc1,
 			Func<T2, TResult> parsedFunc2,
@@ -51,6 +51,7 @@ namespace Clio
 			Func<T34, TResult> parsedFunc34,
 			Func<T35, TResult> parsedFunc35,
 			Func<T36, TResult> parsedFunc36,
+			Func<T37, TResult> parsedFunc37,
 			Func<IEnumerable<Error>, TResult> notParsedFunc)
 		{
 			if (!(result is Parsed<object> parsed))
@@ -127,6 +128,8 @@ namespace Clio
 				return parsedFunc35((T35)parsed.Value);
 			if (parsed.Value is T36)
 				return parsedFunc36((T36)parsed.Value);
+			if (parsed.Value is T37)
+				return parsedFunc37((T37)parsed.Value);
 			throw new InvalidOperationException();
 		}
 

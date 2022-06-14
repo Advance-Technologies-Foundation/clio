@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System.IO;
+using System.Threading;
 using Clio.Common;
 
 namespace Clio.WebApplication
@@ -14,12 +15,13 @@ namespace Clio.WebApplication
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
+        private readonly string uploadLicenseServiceUrl = "/ServiceModel/LicenseService.svc/UploadLicenses";
 
-		#endregion
+        #endregion
 
-		#region Constructors: Public
+        #region Constructors: Public
 
-		public Application(EnvironmentSettings environmentSettings, IApplicationClient applicationClient,
+        public Application(EnvironmentSettings environmentSettings, IApplicationClient applicationClient,
 				IServiceUrlBuilder serviceUrlBuilder) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClient.CheckArgumentNull(nameof(applicationClient));
@@ -44,6 +46,12 @@ namespace Clio.WebApplication
 				? @"/ServiceModel/AppInstallerService.svc/RestartApp" 
 				: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 			_applicationClient.ExecutePostRequest(GetCompleteUrl(servicePath), "{}", Timeout.Infinite);
+		}
+
+		public void LoadLicense(string licenseFilePath) {
+			var fileData = File.ReadAllText(licenseFilePath);
+			string licData = $"{{ \"licData\":\"{fileData}\"}}";
+			_applicationClient.ExecutePostRequest(uploadLicenseServiceUrl, licenseFilePath);
 		}
 
 		#endregion
