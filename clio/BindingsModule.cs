@@ -40,6 +40,8 @@ namespace Clio
 			containerBuilder.RegisterType<RestoreWorkspaceCommand>();
 			containerBuilder.RegisterType<CreateWorkspaceCommand>();
 			containerBuilder.RegisterType<PushWorkspaceCommand>();
+			containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
+			containerBuilder.RegisterType<LoadPackagesToDbCommand>();
 			return containerBuilder.Build();
 		}
 	}
