@@ -34,7 +34,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ATF.Repository" Version="1.2.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="System.CodeDom" Version="4.7.0" />
   </ItemGroup>
   <Choose>
