@@ -11,6 +11,9 @@ namespace Clio.Project.NuGet
 		#region Fields: Private
 
 		private readonly Version[] _versions = {
+			new Version("8.0.3.1759"),
+			new Version("8.0.2.2425"),
+			new Version("8.0.1.1993"),
 			new Version("8.0.0.5484"),
 			new Version("7.18.5.1500"),
 			new Version("7.18.4.1534"),

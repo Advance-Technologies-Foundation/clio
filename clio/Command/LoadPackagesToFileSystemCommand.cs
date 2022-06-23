@@ -7,7 +7,7 @@ namespace Clio.Command
 
 	#region Class: LoadPackagesToFileSystemOptions
 
-	[Verb("pkg-to-file-system", Aliases = new string[] { "pkgtofsystem" }, 
+	[Verb("pkg-to-file-system", Aliases = new string[] { "tofs", "2fs" },
 		HelpText = "Load packages to file system on a web application")]
 	public class LoadPackagesToFileSystemOptions : EnvironmentOptions
 	{
