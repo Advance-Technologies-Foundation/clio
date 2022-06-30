@@ -225,7 +225,7 @@ namespace Clio
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
 					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
-					LoadPackagesToFileSystemOptions, LoadPackagesToDbOptions>(args)
+					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -272,6 +272,7 @@ namespace Clio
 					(LoadPackagesToFileSystemOptions opts) => Resolve<LoadPackagesToFileSystemCommand>(opts)
 						.Execute(opts),
 					(LoadPackagesToDbOptions opts) => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
+					(UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

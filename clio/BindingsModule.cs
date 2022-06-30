@@ -42,6 +42,7 @@ namespace Clio
 			containerBuilder.RegisterType<PushWorkspaceCommand>();
 			containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
 			containerBuilder.RegisterType<LoadPackagesToDbCommand>();
+			containerBuilder.RegisterType<UploadLicensesCommand>();
 			return containerBuilder.Build();
 		}
 	}
