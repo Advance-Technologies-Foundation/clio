@@ -1,0 +1,38 @@
+name: Build
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name: Build
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Test Solution
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: powershell
+        run: |
+          dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+          /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
+          /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
+          dotnet build-server shutdown;
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_URL: ${{ secrets.SONAR_URL }}
+        shell: powershell
+        run: |
+          dotnet sonarscanner begin `
+            /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
+            /d:sonar.login="${{ secrets.SONAR_TOKEN }}" /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
+          dotnet build .\clio\clio.csproj -c Release --no-incremental;
+          dotnet build-server shutdown;
+          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
