@@ -51,6 +51,7 @@ docker run -it --rm clio reg-web-app -help
   - [Install NuGet package](#install-nuget-package)
   - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
 - [Application](#application)
+  - [Upload Licenses](#upload-licenses)
   - [Restart application](#restart-application)
   - [Clear redis database](#clear-redis-database)
 - [Environment settings](#environment-settings)
@@ -86,6 +87,7 @@ docker run -it --rm clio reg-web-app -help
   - [Install NuGet package](#install-nuget-package)
   - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
 - [Application](#application)
+  - [Upload Licenses](#upload-licenses)
   - [Restart application](#restart-application)
   - [Clear redis database](#clear-redis-database)
 - [Environment settings](#environment-settings)
@@ -378,6 +380,18 @@ clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
 Default value of 'Source' argument: https://www.nuget.org/api/v2
 
 # Application
+
+## Upload licenses
+
+To upload licenses to Creatio application, use the next command for default environment:
+
+```
+clio lic <File Path>
+```
+
+```
+clio lic <File Path> -e <ENVIRONMENT_NAME>
+```
 
 ## Restart application
 
