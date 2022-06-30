@@ -42,7 +42,7 @@ docker run -it --rm clio reg-web-app -help
   - [Delete package](#delete-package)
   - [Compress package](#compress-package)
   - [Extract package](#extract-package)
-  - [Get package list](#get-package-list #get-pkg-list)
+  - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
