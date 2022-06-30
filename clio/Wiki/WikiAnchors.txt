@@ -1,1 +1,10 @@
 ﻿get-package-list:get-pkg-list,packages
+environment-settings:cfg,reg-web-app,unreg-web-app,reg,unreg
+workspaces:push-workspace,restore-workspace,create-workspace
+ping-application:ping-app
+restart-application:restart-web-app
+clear-redis-database:clear-redis-db
+extract-package:extract-pkg-zip
+compress-package:generate-pkg-zip
+installing-package:push-pkg
+pull-package-from-remote-application:pull-pkg
