@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - master
-      - feature/actions
-      - k.krylov
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
