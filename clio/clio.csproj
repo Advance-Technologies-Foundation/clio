@@ -219,5 +219,8 @@
     <None Update="tpl\OpenSolution.cmd.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Wiki\WikiAnchors.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

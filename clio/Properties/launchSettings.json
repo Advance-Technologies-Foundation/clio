@@ -2,8 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "pkg-to-db",
-      "workingDirectory": "E:\\1"
+      "commandLineArgs": "get-pkg-list --help",
+      "workingDirectory": "C:\\Temp"
     }
   }
 }

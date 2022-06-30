@@ -92,7 +92,7 @@ namespace Clio
 			};
 	}
 
-	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate" }, HelpText = "Install clio api gateway to application")]
+	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate", "installgate" }, HelpText = "Install clio api gateway to application")]
 	internal class InstallGateOptions : EnvironmentNameOptions
 	{
 	}
