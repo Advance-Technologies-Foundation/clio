@@ -225,7 +225,7 @@ namespace Clio
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
 					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
-					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions>(args)
+					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -268,11 +268,12 @@ namespace Clio
 					(RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 					(CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 					(PushWorkspaceCommandOptions opts) => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
-					(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
+					//(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					(LoadPackagesToFileSystemOptions opts) => Resolve<LoadPackagesToFileSystemCommand>(opts)
 						.Execute(opts),
 					(LoadPackagesToDbOptions opts) => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
 					(UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+					(HealthCheckOptions opts) => Resolve<HealthCheckCommand>(opts).Execute(opts),
 					errs => 1);
 		}
 

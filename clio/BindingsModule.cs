@@ -43,6 +43,7 @@ namespace Clio
 			containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
 			containerBuilder.RegisterType<LoadPackagesToDbCommand>();
 			containerBuilder.RegisterType<UploadLicensesCommand>();
+			containerBuilder.RegisterType<HealthCheckCommand>();
 			return containerBuilder.Build();
 		}
 	}
