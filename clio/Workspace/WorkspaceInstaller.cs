@@ -1,3 +1,4 @@
+using System;
 using Clio.Utilities;
 
 namespace Clio.Workspace
@@ -45,7 +46,7 @@ namespace Clio.Workspace
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
 		private readonly IOSPlatformChecker _osPlatformChecker;
-		private readonly IApplicationClient _applicationClient;
+		private readonly Lazy<IApplicationClient> _applicationClientLazy;
 		private readonly string _resetSchemaChangeStateServiceUrl;
 
 		#endregion
@@ -79,18 +80,29 @@ namespace Clio.Workspace
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_osPlatformChecker = osPlatformChecker;
-			_applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
-			_applicationClient.Login();
+			_applicationClientLazy = new Lazy<IApplicationClient>(CreateApplicationClient);
 			_resetSchemaChangeStateServiceUrl = serviceUrlBuilder.Build(ResetSchemaChangeStateServicePath);
 
 		}
 
 		#endregion
 
+		#region Properties: Private
+
+		private IApplicationClient ApplicationClient => _applicationClientLazy.Value;
+
+		#endregion
+
 		#region Methods: Private
 
+		private IApplicationClient CreateApplicationClient() {
+			IApplicationClient applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
+			applicationClient.Login();
+			return applicationClient;
+		}
+
 		private void ResetSchemaChangeStateServiceUrl(string packageName) =>
-			_applicationClient.ExecutePostRequest(_resetSchemaChangeStateServiceUrl,
+			ApplicationClient.ExecutePostRequest(_resetSchemaChangeStateServiceUrl,
 				"{\"packageName\":\"" + packageName + "\"}");
 
 		private void PackPackage(string packageName, string rootPackedPackagePath) {
