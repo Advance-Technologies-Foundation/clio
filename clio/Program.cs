@@ -223,10 +223,10 @@ namespace Clio
 					UnregisterOptions, PullPkgOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
-					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions,
-					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions,
-					PushWorkspaceCommandOptions, LoadPackagesToFileSystemOptions, UploadLicensesOptions,
-					LoadPackagesToDbOptions, AddPackageOptions>(args)
+					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
+					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
+					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
+          AddPackageOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -269,11 +269,12 @@ namespace Clio
 					(RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 					(CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 					(PushWorkspaceCommandOptions opts) => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
-					(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
+					//(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					(LoadPackagesToFileSystemOptions opts) => Resolve<LoadPackagesToFileSystemCommand>(opts)
 						.Execute(opts),
 					(LoadPackagesToDbOptions opts) => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
 					(UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+					(HealthCheckOptions opts) => Resolve<HealthCheckCommand>(opts).Execute(opts),
 					(AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
 					errs => 1);
 					
