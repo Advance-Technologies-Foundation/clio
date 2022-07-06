@@ -61,7 +61,7 @@ docker run -it --rm clio reg-web-app -help
   - [View application options](#view-application-options)
   - [Open application](#open-application)
   - [Ping application](#ping-application)
-  - [Healthcheck](#ping-application)
+  - [Healthcheck](#healthcheck)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
   - [Workspaces](#workspaces)
