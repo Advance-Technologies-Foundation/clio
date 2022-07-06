@@ -486,7 +486,8 @@ clio ping <ENVIRONMENT NAME>
 
 ## Healthcheck
 
-Check application health
+Check application's health
+
 
 ```ps
 clio hc <ENVIRONMENT NAME>
