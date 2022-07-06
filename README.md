@@ -486,10 +486,10 @@ clio ping <ENVIRONMENT NAME>
 
 ## Healthcheck
 
-Check application's health
+Check application health
 
 
-```ps
+```
 clio hc <ENVIRONMENT NAME>
 ```
 
