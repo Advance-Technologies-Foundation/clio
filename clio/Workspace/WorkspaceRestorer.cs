@@ -17,8 +17,7 @@ namespace Clio.Workspace
 		private readonly INuGetManager _nugetManager;
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IEnvironmentScriptCreator _environmentScriptCreator;
-		private readonly ISolutionCreator _solutionCreator;
-		private readonly IStandalonePackageFileManager _standalonePackageFileManager;
+		private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
 		private readonly IPackageDownloader _packageDownloader;
 		private readonly ICreatioSdk _creatioSdk;
 
@@ -28,21 +27,18 @@ namespace Clio.Workspace
 		#region Constructors: Public
 
 		public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
-				IEnvironmentScriptCreator environmentScriptCreator, ISolutionCreator solutionCreator,
-				IStandalonePackageFileManager standalonePackageFileManager, IPackageDownloader packageDownloader,
-				ICreatioSdk creatioSdk) {
+				IEnvironmentScriptCreator environmentScriptCreator, IWorkspaceSolutionCreator workspaceSolutionCreator,
+				IPackageDownloader packageDownloader, ICreatioSdk creatioSdk) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			environmentScriptCreator.CheckArgumentNull(nameof(environmentScriptCreator));
-			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
-			standalonePackageFileManager.CheckArgumentNull(nameof(standalonePackageFileManager));
+			workspaceSolutionCreator.CheckArgumentNull(nameof(workspaceSolutionCreator));
 			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
 			creatioSdk.CheckArgumentNull(nameof(creatioSdk));
 			_nugetManager = nugetManager;
 			_workspacePathBuilder = workspacePathBuilder;
 			_environmentScriptCreator = environmentScriptCreator;
-			_solutionCreator = solutionCreator;
-			_standalonePackageFileManager = standalonePackageFileManager;
+			_workspaceSolutionCreator = workspaceSolutionCreator;
 			_packageDownloader = packageDownloader;
 			_creatioSdk = creatioSdk;
 		}
@@ -50,21 +46,6 @@ namespace Clio.Workspace
 		#endregion
 
 		#region Methods: Private
-
-		private IEnumerable<SolutionProject> FindSolutionProjects() {
-			IList<SolutionProject> solutionProjects = new List<SolutionProject>();
-			IEnumerable<StandalonePackageProject> standalonePackageProjects = _standalonePackageFileManager
-				.FindStandalonePackageProjects(_workspacePathBuilder.PackagesFolderPath);
-			string solutionFolderPath = _workspacePathBuilder.SolutionFolderPath;
-			foreach (StandalonePackageProject standalonePackageProject in standalonePackageProjects) {
-				string relativeStandaloneProjectPath =
-					Path.GetRelativePath(solutionFolderPath, standalonePackageProject.Path);
-				SolutionProject solutionProject =
-					new SolutionProject(standalonePackageProject.PackageName, relativeStandaloneProjectPath);
-				solutionProjects.Add(solutionProject);
-			}
-			return solutionProjects;
-		}
 
 		private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion) {
 			const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
@@ -78,8 +59,7 @@ namespace Clio.Workspace
 		}
 
 		private void CreateSolution() {
-			IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects();
-			_solutionCreator.Create(_workspacePathBuilder.SolutionPath, solutionProjects);
+			_workspaceSolutionCreator.Create();
 		}
 
 		private void CreateEnvironmentScript(Version nugetCreatioSdkVersion) {

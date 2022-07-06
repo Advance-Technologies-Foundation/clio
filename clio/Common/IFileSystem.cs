@@ -20,6 +20,7 @@ namespace Clio.Common
 		string[] GetFiles(string filePath);
 		string[] GetFiles(string filePath, string searchPattern, SearchOption searchOption);
 		bool IsReadOnlyFile(string filePath);
+		void MoveFile(string oldFilePath, string newFilePath);
 		void ResetFileReadOnlyAttribute(string filePath);
 		void WriteAllTextToFile(string filePath, string contents);
 		void CheckOrClearExistsDirectory(string directoryPath, bool overwrite);

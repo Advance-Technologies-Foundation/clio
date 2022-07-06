@@ -1,3 +1,5 @@
+using System.Threading;
+
 namespace Clio.Workspace
 {
 	using System;
@@ -36,7 +38,7 @@ namespace Clio.Workspace
 			_workspaceRestorer = workspaceRestorer;
 			_workspaceInstaller = workspaceInstaller;
 			_jsonConverter = jsonConverter;
-			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+			ResetLazyWorkspaceSettings();
 		}
 
 		#endregion
@@ -50,13 +52,16 @@ namespace Clio.Workspace
 
 		#region Properties: Public
 
-		private readonly Lazy<WorkspaceSettings> _workspaceSettings;
+		private Lazy<WorkspaceSettings> _workspaceSettings;
 		public WorkspaceSettings WorkspaceSettings => _workspaceSettings.Value;
 
 		#endregion
 
 		#region Methods: Private
 
+		private void ResetLazyWorkspaceSettings() {
+			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+		}
 
 		private WorkspaceSettings ReadWorkspaceSettings() =>
 			_jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
@@ -64,6 +69,11 @@ namespace Clio.Workspace
 		#endregion
 
 		#region Methods: Public
+
+		public void SaveWorkspaceSettings() {
+			_jsonConverter.SerializeObjectToFile(WorkspaceSettings, WorkspaceSettingsPath);
+			ResetLazyWorkspaceSettings();
+		}
 
 		public void Create(bool isAddingPackageNames = false) {
 			_workspaceCreator.Create(isAddingPackageNames);

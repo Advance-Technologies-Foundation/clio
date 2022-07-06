@@ -11,7 +11,7 @@ namespace Clio.Workspace
 
 		#region Properties: Public
 
-		public string[] Packages { get; set; } = {};
+		public IList<string> Packages { get; set; } = new List<string>();
 		public Version ApplicationVersion { get; set; }
 
 		#endregion

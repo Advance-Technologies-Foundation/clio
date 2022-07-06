@@ -219,13 +219,14 @@ namespace Clio
 			Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
 			return Parser.Default.ParseArguments<ExecuteAssemblyOptions, RestartOptions, ClearRedisOptions,
 					RegAppOptions, AppListOptions, UnregAppOptions, GeneratePkgZipOptions, PushPkgOptions,
-					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions, UnregisterOptions,
-					PullPkgOptions,	ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
+					DeletePkgOptions, ReferenceOptions, NewPkgOptions, ConvertOptions, RegisterOptions,
+					UnregisterOptions, PullPkgOptions, ExecuteSqlScriptOptions, InstallGateOptions, ItemOptions,
 					DeveloperModeOptions, SysSettingsOptions, FeatureOptions, UnzipPkgOptions, PingAppOptions,
 					OpenAppOptions, PkgListOptions, CompileOptions, PushNuGetPkgsOptions, PackNuGetPkgOptions,
-					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
-					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
-					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions>(args)
+					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions,
+					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions,
+					PushWorkspaceCommandOptions, LoadPackagesToFileSystemOptions, UploadLicensesOptions,
+					LoadPackagesToDbOptions, AddPackageOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -273,7 +274,9 @@ namespace Clio
 						.Execute(opts),
 					(LoadPackagesToDbOptions opts) => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
 					(UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+					(AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
 					errs => 1);
+					
 		}
 
 		private static int SetDeveloperMode(DeveloperModeOptions opts) {

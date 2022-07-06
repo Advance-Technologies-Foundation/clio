@@ -76,6 +76,9 @@ namespace Clio.Common
 			return (File.GetAttributes(filePath) & FileAttributes.ReadOnly) == FileAttributes.ReadOnly;
 		}
 
+		public void MoveFile(string oldFilePath, string newFilePath) =>
+			File.Move(oldFilePath, newFilePath);
+
 		public void ResetFileReadOnlyAttribute(string filePath) {
 			if (!File.Exists(filePath)) {
 				return;
