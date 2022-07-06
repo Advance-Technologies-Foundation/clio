@@ -13,6 +13,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
+		void SaveWorkspaceSettings();
 		void Create(bool isAddedPackageNames = false);
 		void Restore();
 		void Install(string creatioPackagesZipName = null);

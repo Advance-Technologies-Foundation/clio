@@ -12,6 +12,8 @@ namespace Clio.Package
 
 		#region Methods: Public
 
+		string BuildFilesPath(string packagesPath, string packageName);
+		string BuildStandaloneProjectPath(string packagesPath, string packageName);
 		IEnumerable<StandalonePackageProject> FindStandalonePackageProjects(string packagesPath);
 		IEnumerable<string> FindStandalonePackagesNames(string packagesPath);
 
@@ -43,9 +45,6 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private static string BuildStandaloneProjectPath(string packagesPath, string packageName) =>
-			Path.Combine(packagesPath, packageName, "Files", $"{packageName}.csproj");
-
 		private static IEnumerable<string> GetPackagesNames(string packagesPath) {
 			DirectoryInfo packagesDirectoryInfo = new DirectoryInfo(packagesPath);
 			return packagesDirectoryInfo
@@ -56,6 +55,12 @@ namespace Clio.Package
 		#endregion
 
 		#region Methods: Public
+
+		public string BuildFilesPath(string packagesPath, string packageName) =>
+			Path.Combine(packagesPath, packageName, "Files");
+
+		public string BuildStandaloneProjectPath(string packagesPath, string packageName) =>
+			Path.Combine(packagesPath, packageName, "Files", $"{packageName}.csproj");
 
 		public IEnumerable<StandalonePackageProject> FindStandalonePackageProjects(string packagesPath) {
 			var packagesNames = GetPackagesNames(packagesPath);

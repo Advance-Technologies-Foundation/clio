@@ -13,15 +13,12 @@ namespace Clio.Package
 		#region Properties: Public
 
 		public Guid UId { get; set; }
-
 		public string PackageVersion { get; set; }
-
 		public string Name { get; set; }
-
+		public PackageType Type { get; set; } = PackageType.General;
+		public string ProjectPath { get; set; } = string.Empty;
 		public string ModifiedOnUtc { get; set; }
-
 		public string Maintainer { get; set; }
-
 		public IList<PackageDependency> DependsOn { get; set; }
 
 		#endregion
