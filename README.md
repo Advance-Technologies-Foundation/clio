@@ -61,6 +61,7 @@ docker run -it --rm clio reg-web-app -help
   - [View application options](#view-application-options)
   - [Open application](#open-application)
   - [Ping application](#ping-application)
+  - [Healthcheck](#ping-application)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
   - [Workspaces](#workspaces)
@@ -482,6 +483,24 @@ For check options fort selected environment use next command
 ```
 clio ping <ENVIRONMENT NAME>
 ```
+
+## Healthcheck
+
+Check application's health
+
+
+```ps
+clio hc <ENVIRONMENT NAME>
+```
+
+```
+clio healthcheck <ENVIRONMENT NAME> -a true -h true
+```
+
+```
+clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
+```
+
 
 # Using for CI/CD systems
 
