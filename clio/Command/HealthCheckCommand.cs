@@ -5,7 +5,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("healthcheck", Aliases = new string[] { "hc" }, HelpText = "Healthcheck monitoring")]
+	[Verb("healthcheck", Aliases = new [] { "hc" }, HelpText = "Healthcheck monitoring")]
 	public class HealthCheckOptions : EnvironmentNameOptions
 	{
 		[Option('h', "WebHost", Required = false, HelpText = "Check web-host", Separator= ' ')]
@@ -36,7 +36,6 @@ namespace Clio.Command
 			}
 			catch (WebException ex)
 			{
-				var x = ex;
 				var originalColor = Console.ForegroundColor;
 				Console.ForegroundColor = ConsoleColor.Red;
 				Console.WriteLine("\tError: {0}",ex.Message);
