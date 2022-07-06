@@ -2,8 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "add-package NewPackage",
-      "workingDirectory": "E:\\1"
+      "commandLineArgs": "get-pkg-list --help",
+      "workingDirectory": "C:\\Temp"
     }
   }
 }
