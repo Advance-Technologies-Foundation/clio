@@ -2,7 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "healthcheck salesloft -a true -h false"
+      "commandLineArgs": "unlock-package CSP",
+      "workingDirectory": "E:\\1"
     }
   }
 }

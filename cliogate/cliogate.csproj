@@ -1,8 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net472</TargetFrameworks>
+    <TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
     <ProjectGuid>{E24226F9-C177-458F-AF34-9338E2699983}</ProjectGuid>
-    <OutputPath>Files\Bin\</OutputPath>
+    <OutputPath Condition="'$(TargetFramework)' == 'net472'">Files\Bin\</OutputPath>
+    <OutputPath Condition="'$(TargetFramework)' == 'netstandard2.0'">Files\Bin\netstandard\</OutputPath>
+    <AssemblyName Condition="'$(TargetFramework)' == 'net472'">cliogate</AssemblyName>
+    <AssemblyName Condition="'$(TargetFramework)' == 'netstandard2.0'">cliogate_netcore</AssemblyName>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
@@ -33,14 +36,14 @@
     <Compile Remove="Schemas\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="1.2.0" />
+    <PackageReference Include="CreatioSDK" Version="7.17.4.2265" />
+    <PackageReference Include="ATF.Repository" Version="2.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="System.CodeDom" Version="4.7.0" />
   </ItemGroup>
   <Choose>
     <When Condition="'$(TargetFramework)'=='netstandard2.0'">
       <ItemGroup>
-        <PackageReference Include="CreatioSDK" Version="7.15.2.501" />
         <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0" />
         <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
           <Private>False</Private>
@@ -49,7 +52,6 @@
     </When>
     <When Condition="'$(TargetFramework)'=='net472'">
       <ItemGroup>
-        <PackageReference Include="CreatioSDK" Version="7.16.0.4449" />
         <Reference Include="System.ServiceModel" />
         <Reference Include="System.ServiceModel.Activation" />
         <Reference Include="System.ServiceModel.Web" />

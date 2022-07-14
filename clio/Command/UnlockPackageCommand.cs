@@ -4,10 +4,10 @@ namespace Clio.Command
 	using CommandLine;
 	using Clio.Package;
 
-	#region Class: AddPackageOptions
+	#region Class: UnlockPackageOptions
 
-	[Verb("add-package", Aliases = new string[] { "ap" }, HelpText = "Add package to workspace or local folder")]
-	public class AddPackageOptions : EnvironmentOptions
+	[Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
+	public class UnlockPackageOptions : EnvironmentOptions
 	{
 
 		#region Properties: Public
@@ -21,30 +21,30 @@ namespace Clio.Command
 
 	#endregion
 
-	#region Class: AddPackageCommand
+	#region Class: UnlockPackageCommand
 
-	public class AddPackageCommand : Command<AddPackageOptions>
+	public class UnlockPackageCommand : Command<UnlockPackageOptions>
 	{
 
 		#region Fields: Private
 
-		private readonly IPackageCreator _packageCreator;
+		private readonly IPackageUnlocker _packageUnlocker;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public AddPackageCommand(IPackageCreator packageCreator) {
-			_packageCreator = packageCreator;
+		public UnlockPackageCommand(IPackageUnlocker packageUnlocker) {
+			_packageUnlocker = packageUnlocker;
 		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public override int Execute(AddPackageOptions options) {
+		public override int Execute(UnlockPackageOptions options) {
 			try {
-				_packageCreator.Create(options.Name);
+				_packageUnlocker.Unlock(new []{ options.Name });
 				Console.WriteLine();
 				Console.WriteLine("Done");
 				return 0;

@@ -2,6 +2,7 @@
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
@@ -127,19 +128,19 @@ if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
 		[WebInvoke(Method = "POST", UriTemplate = "UnlockPackages",
 			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
 			ResponseFormat = WebMessageFormat.Json)]
-		public bool UnlockPackages()
-		{
-			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
-			{
+		public bool UnlockPackages(string[] unlockPackages = null) {
+			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var maintainerCode = SysSettings.GetValue<string>(UserConnection, "Maintainer", "NonImplemented");
-				Update update = new Update(UserConnection, "SysPackage")
+				Query query = new Update(UserConnection, "SysPackage")
 					.Set("InstallType", Column.Parameter(0, "Integer"))
 					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode)) as Update;
+				if (unlockPackages != null && unlockPackages.Any()) {
+					query = query.And("Name").In(Column.Parameters((IEnumerable<string>)unlockPackages));
+				}
+				Update update = query as Update;
 				update.Execute();
 				return true;
-			}
-			else
-			{
+			} else {
 				throw new Exception("You don'nt have permission for operation CanManageSolution");
 			}
 		}
