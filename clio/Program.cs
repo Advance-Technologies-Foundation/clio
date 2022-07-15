@@ -143,7 +143,7 @@ namespace Clio
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
 				SetupAppConnection(options);
-				string destPath = options.DestPath ?? Path.Combine(Path.GetTempPath(), "packages.zip");
+				string destPath = options.DestPath ?? (options.Name.Contains(",") ? "packages.zip" : options.Name + ".gz");
 				DownloadZipPackagesInternal(options.Name, destPath);
 				if (options.Unzip)
 				{
