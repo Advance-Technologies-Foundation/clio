@@ -1,8 +1,7 @@
 dotnet build .\clio\clio.csproj -c Release --no-incremental
 
-
-dotnet build .\cliogate\cliogate.csproj -c Release -f net472 --no-incremental
-dotnet build .\cliogate\cliogate.csproj -c Release -f netstandard2.0 --no-incremental
+dotnet build .\cliogate\cliogate.csproj -c Release -f net472 -p:TargetFrameworks=net472  --no-incremental
+dotnet build .\cliogate\cliogate.csproj -c Release -f netstandard2.0 -p:TargetFrameworks=netstandard2.0 --no-incremental
 
 New-Item ".\cliogate\.temp" -ItemType Directory -Force
 dotnet build .\cliogate\cliogate.csproj --output ".\cliogate\.temp" -p:CopyLocalLockFileAssemblies=true
