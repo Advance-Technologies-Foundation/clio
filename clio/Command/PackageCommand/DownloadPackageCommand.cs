@@ -16,6 +16,8 @@
 			get; set;
 		}
 
+		[Option('r', "UnZip", Required = false,
+			HelpText = "Unzip archive file.", Default = null)]
 		public bool Unzip {
 			get; set;
 		}
