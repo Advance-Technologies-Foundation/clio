@@ -135,9 +135,12 @@ namespace Clio
 
 		private static void UnZipPackages(string zipFilePath) {
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-			var fileInfo = new FileInfo(zipFilePath);
-			packageArchiver.UnZipPackages(zipFilePath, true, false, false,
-				fileInfo.DirectoryName);
+			packageArchiver.ExtractPackages(zipFilePath, true, true, false, "");
+		}
+
+		private static void UnZip(string zipFilePath) {
+			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
+			packageArchiver.UnZip(zipFilePath, true, "");
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
@@ -145,9 +148,10 @@ namespace Clio
 				SetupAppConnection(options);
 				string destPath = options.DestPath ?? Path.Combine(Path.GetTempPath(), "packages.zip");
 				DownloadZipPackagesInternal(options.Name, destPath);
-				if (options.Unzip)
-				{
+				if (options.Unzip) {
 					UnZipPackages(destPath);
+				} else {
+					UnZip(destPath);
 				}
 				Console.WriteLine("Done");
 				return 0;
@@ -226,7 +230,7 @@ namespace Clio
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
 					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
 					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
-          AddPackageOptions>(args)
+					AddPackageOptions, UnlockPackageOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -276,6 +280,7 @@ namespace Clio
 					(UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
 					(HealthCheckOptions opts) => Resolve<HealthCheckCommand>(opts).Execute(opts),
 					(AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
+					(UnlockPackageOptions opts) => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 					errs => 1);
 					
 		}

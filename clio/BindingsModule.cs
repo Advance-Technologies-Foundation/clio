@@ -45,6 +45,7 @@ namespace Clio
 			containerBuilder.RegisterType<UploadLicensesCommand>();
 			containerBuilder.RegisterType<HealthCheckCommand>();
 			containerBuilder.RegisterType<AddPackageCommand>();
+			containerBuilder.RegisterType<UnlockPackageCommand>();
 			return containerBuilder.Build();
 		}
 	}

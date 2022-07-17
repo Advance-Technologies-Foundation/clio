@@ -174,6 +174,30 @@ namespace Clio
 			}
 		}
 
+		public void ExtractPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true,
+				bool unpackIsSameFolder = false, string destinationPath = null) {
+			CheckUnZipPackagesArgument(zipFilePath);
+			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
+			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
+			string targetDirectoryPath = unpackIsSameFolder
+				? destinationPath
+				: Environment.CurrentDirectory;
+			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
+			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath);
+			Unpack(packedPackagesPaths, true, targetDirectoryPath);
+			if (deleteGzFiles) {
+				DeletePackedPackages(packedPackagesPaths);
+			}
+		}
+
+		public void UnZip(string zipFilePath, bool overwrite, string destinationPath = null) {
+			CheckUnZipPackagesArgument(zipFilePath);
+			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
+			ZipFile.ExtractToDirectory(zipFilePath, Environment.CurrentDirectory);
+		}
+
+
+
 		#endregion
 
 	}
