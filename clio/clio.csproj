@@ -207,6 +207,9 @@
     <None Update="tpl\entity-listener-template.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="tpl\jsonschema\schema.json.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="tpl\set-environment.cmd.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
