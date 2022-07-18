@@ -1,9 +1,10 @@
 ﻿namespace Clio.Tests.Command
 {
-    using System.Threading;
+	using System.Threading;
 	using Autofac;
 	using Clio.Command;
 	using Clio.Common;
+	using Clio.Querry;
 	using NSubstitute;
 	using NUnit.Framework;
 

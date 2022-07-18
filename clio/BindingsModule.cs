@@ -3,6 +3,7 @@ using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
+using Clio.Querry;
 using System.Reflection;
 
 namespace Clio
@@ -46,6 +47,7 @@ namespace Clio
 			containerBuilder.RegisterType<HealthCheckCommand>();
 			containerBuilder.RegisterType<AddPackageCommand>();
 			containerBuilder.RegisterType<UnlockPackageCommand>();
+			containerBuilder.RegisterType<DataServiceQuerry>();
 			return containerBuilder.Build();
 		}
 	}

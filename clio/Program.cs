@@ -11,6 +11,7 @@ using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Project;
+using Clio.Querry;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
@@ -230,7 +231,7 @@ namespace Clio
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
 					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
 					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
-					AddPackageOptions, UnlockPackageOptions>(args)
+					AddPackageOptions, UnlockPackageOptions, DataServiceQuerryOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -281,6 +282,7 @@ namespace Clio
 					(HealthCheckOptions opts) => Resolve<HealthCheckCommand>(opts).Execute(opts),
 					(AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
 					(UnlockPackageOptions opts) => Resolve<UnlockPackageCommand>(opts).Execute(opts),
+					(DataServiceQuerryOptions opts) => Resolve<DataServiceQuerry>(opts).Execute(opts),
 					errs => 1);
 					
 		}
