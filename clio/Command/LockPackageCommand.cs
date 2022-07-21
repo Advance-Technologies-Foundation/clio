@@ -3,14 +3,19 @@ using System.Linq;
 
 namespace Clio.Command
 {
+	
+}
+
+namespace Clio.Command
+{
 	using System;
 	using CommandLine;
 	using Clio.Package;
 
-	#region Class: UnlockPackageOptions
+	#region Class: LockPackageOptions
 
-	[Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
-	public class UnlockPackageOptions : EnvironmentOptions
+	[Verb("lock-package", Aliases = new string[] { "lp" }, HelpText = "Lock package")]
+	public class LockPackageOptions : EnvironmentOptions
 	{
 
 		#region Properties: Public
@@ -24,9 +29,9 @@ namespace Clio.Command
 
 	#endregion
 
-	#region Class: UnlockPackageCommand
+	#region Class: LockPackageCommand
 
-	public class UnlockPackageCommand : Command<UnlockPackageOptions>
+	public class LockPackageCommand : Command<LockPackageOptions>
 	{
 
 		#region Fields: Private
@@ -37,7 +42,7 @@ namespace Clio.Command
 
 		#region Constructors: Public
 
-		public UnlockPackageCommand(IPackageLockManager packageLockManager) {
+		public LockPackageCommand(IPackageLockManager packageLockManager) {
 			_packageLockManager = packageLockManager;
 		}
 
@@ -45,7 +50,7 @@ namespace Clio.Command
 
 		#region Methods: Private
 
-		public IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
+		public IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
 			string.IsNullOrWhiteSpace(options.Name)
 				? Enumerable.Empty<string>()
 				: new[] { options.Name }; 
@@ -54,9 +59,9 @@ namespace Clio.Command
 
 		#region Methods: Public
 
-		public override int Execute(UnlockPackageOptions options) {
+		public override int Execute(LockPackageOptions options) {
 			try {
-				_packageLockManager.Unlock(GetPackagesNames(options));
+				_packageLockManager.Lock(GetPackagesNames(options));
 				Console.WriteLine();
 				Console.WriteLine("Done");
 				return 0;
