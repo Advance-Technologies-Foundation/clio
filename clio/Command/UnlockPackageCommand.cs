@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
-
 namespace Clio.Command
 {
 	using System;
@@ -15,7 +12,7 @@ namespace Clio.Command
 
 		#region Properties: Public
 
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
+		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 
 		#endregion
@@ -31,24 +28,15 @@ namespace Clio.Command
 
 		#region Fields: Private
 
-		private readonly IPackageLockManager _packageLockManager;
+		private readonly IPackageUnlocker _packageUnlocker;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public UnlockPackageCommand(IPackageLockManager packageLockManager) {
-			_packageLockManager = packageLockManager;
+		public UnlockPackageCommand(IPackageUnlocker packageUnlocker) {
+			_packageUnlocker = packageUnlocker;
 		}
-
-		#endregion
-
-		#region Methods: Private
-
-		public IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
-			string.IsNullOrWhiteSpace(options.Name)
-				? Enumerable.Empty<string>()
-				: new[] { options.Name }; 
 
 		#endregion
 
@@ -56,7 +44,7 @@ namespace Clio.Command
 
 		public override int Execute(UnlockPackageOptions options) {
 			try {
-				_packageLockManager.Unlock(GetPackagesNames(options));
+				_packageUnlocker.Unlock(new []{ options.Name });
 				Console.WriteLine();
 				Console.WriteLine("Done");
 				return 0;

@@ -4,15 +4,14 @@ namespace Clio.Package
 	using System.Linq;
 	using Clio.Common;
 
-	#region Interface: IPackageLockManager
+	#region Interface: IPackageDownloader
 
-	public interface IPackageLockManager
+	public interface IPackageUnlocker
 	{
 
 		#region Methods: Public
 
 		void Unlock(IEnumerable<string> packages);
-		void Lock(IEnumerable<string> packages);
 
 		#endregion
 
@@ -20,9 +19,9 @@ namespace Clio.Package
 
 	#endregion
 
-	#region Class: PackageLockManager
+	#region Class: PackageUnlocker
 
-	public class PackageLockManager : IPackageLockManager
+	public class PackageUnlocker : IPackageUnlocker
 	{
 
 		#region Fields: Private
@@ -34,7 +33,7 @@ namespace Clio.Package
 		
 		#region Constructors: Public
 
-		public PackageLockManager(EnvironmentSettings environmentSettings, IApplicationClientFactory applicationClientFactory) {
+		public PackageUnlocker(EnvironmentSettings environmentSettings, IApplicationClientFactory applicationClientFactory) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			_environmentSettings = environmentSettings;
@@ -48,8 +47,8 @@ namespace Clio.Package
 		private IApplicationClient CreateApplicationClient() =>
 			_applicationClientFactory.CreateClient(_environmentSettings);
 
-		private string GetRequestData(string argumentName, IEnumerable<string> packages) =>
-			"{\"" + argumentName + "\":[" + string.Join(",", packages.Select(pkg => $"\"{pkg.Trim()}\"")) + "]}";
+		private string GetRequestData(IEnumerable<string> packages) =>
+			"{\"unlockPackages\":[" + string.Join(",", packages.Select(pkg => $"\"{pkg.Trim()}\"")) + "]}";
 
 
 		#endregion
@@ -58,14 +57,8 @@ namespace Clio.Package
 
 		public void Unlock(IEnumerable<string> packages) {
 			IApplicationClient applicationClient = CreateApplicationClient();
-			string requestData = GetRequestData("unlockPackages", packages);
+			string requestData = GetRequestData(packages);
 			applicationClient.CallConfigurationService("CreatioApiGateway", "UnlockPackages", requestData) ;
-		}
-
-		public void Lock(IEnumerable<string> packages) {
-			IApplicationClient applicationClient = CreateApplicationClient();
-			string requestData = GetRequestData("lockPackages", packages);
-			applicationClient.CallConfigurationService("CreatioApiGateway", "LockPackages", requestData) ;
 		}
 
 		#endregion
