@@ -57,7 +57,7 @@ namespace Clio
 
 		public bool? Safe { get; set; }
 
-
+		
 		public bool? DeveloperModeEnabled { get; set; }
 
 		[JsonIgnore]
@@ -70,6 +70,9 @@ namespace Clio
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
 		}
+
+		[JsonProperty("$schema")]
+		public string Schema { get; set; }
 
 		public string ActiveEnvironmentKey { get; set; }
 
@@ -91,6 +94,7 @@ namespace Clio
 	public class SettingsRepository : ISettingsRepository
 	{
 		private const string FileName = "appsettings.json";
+		private const string SchemaFileName = "schema.json";
 
 		private Settings _settings;
 
@@ -114,6 +118,7 @@ namespace Clio
 		}
 
 		private string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
+		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		public SettingsRepository() {
 			InitializeSettingsFile();
@@ -147,13 +152,26 @@ namespace Clio
 		}
 
 		private void InitDefaultSettings() {
-			_settings = new Settings();
+			_settings = new Settings();	
 			_settings.Environments.Add("dev", new EnvironmentSettings() {
 				Login = "Supervisor",
 				Password = "Supervisor",
 				Uri = "http://localhost"
 			});
 			_settings.ActiveEnvironmentKey = "dev";
+			_settings.Schema = "./schema.json";
+			SaveSchema();
+		}
+
+		/// <summary>
+		/// Creates json schema file.
+		/// This file is used by intelisence in vs code and other json editors.
+		/// </summary>
+		private void SaveSchema(){
+			var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+			var tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
+			var tplContect = File.ReadAllText(tplPath);
+			File.WriteAllText(SchemaFilePath, tplContect);
 		}
 
 		private void Save() {
@@ -164,6 +182,11 @@ namespace Clio
 				};
 				serializer.Serialize(fileWriter, _settings);
 			}
+
+			if(!File.Exists(SchemaFilePath)){
+				SaveSchema();
+			}
+
 		}
 
 		public void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
