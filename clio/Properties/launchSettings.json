@@ -2,7 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "download ESN -e oauth"
+      "commandLineArgs": "download Calendar -e oauth",
+      "workingDirectory": "C:\\Temp\\FreedomComponent\\packages"
     }
   }
 }
