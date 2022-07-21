@@ -135,23 +135,19 @@ namespace Clio
 
 		private static void UnZipPackages(string zipFilePath) {
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-			packageArchiver.ExtractPackages(zipFilePath, true, true, false, "");
-		}
-
-		private static void UnZip(string zipFilePath) {
-			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-			packageArchiver.UnZip(zipFilePath, true, "");
+			var fileInfo = new FileInfo(zipFilePath);
+			packageArchiver.UnZipPackages(zipFilePath, true, false, false,
+				fileInfo.DirectoryName);
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options) {
 			try {
 				SetupAppConnection(options);
-				string destPath = options.DestPath ?? Path.Combine(Path.GetTempPath(), "packages.zip");
+				string destPath = options.DestPath ?? (options.Name.Contains(",") ? "packages.zip" : options.Name + ".gz");
 				DownloadZipPackagesInternal(options.Name, destPath);
-				if (options.Unzip) {
+				if (options.Unzip)
+				{
 					UnZipPackages(destPath);
-				} else {
-					UnZip(destPath);
 				}
 				Console.WriteLine("Done");
 				return 0;
