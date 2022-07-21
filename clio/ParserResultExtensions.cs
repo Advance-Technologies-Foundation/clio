@@ -14,7 +14,7 @@ namespace Clio
 
 		public static TResult MapResult<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18,
 				T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, T37, T38, T39,
-				T40, T41, T42, T43,
+				T40, T41, T42, T43,T44,
 				TResult>(
 			this ParserResult<object> result,
 			Func<T1, TResult> parsedFunc1,
@@ -60,6 +60,7 @@ namespace Clio
 			Func<T41, TResult> parsedFunc41,
 			Func<T42, TResult> parsedFunc42,
 			Func<T43, TResult> parsedFunc43,
+			Func<T44, TResult> parsedFunc44,
 			Func<IEnumerable<Error>, TResult> notParsedFunc)
 		{
 			if (!(result is Parsed<object> parsed))
@@ -150,6 +151,8 @@ namespace Clio
 				return parsedFunc42((T42)parsed.Value);
 			if (parsed.Value is T43)
 				return parsedFunc43((T43)parsed.Value);
+			if (parsed.Value is T44)
+				return parsedFunc44((T44)parsed.Value);
 			throw new InvalidOperationException();
 		}
 
