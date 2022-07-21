@@ -47,7 +47,7 @@ namespace Clio
 			containerBuilder.RegisterType<HealthCheckCommand>();
 			containerBuilder.RegisterType<AddPackageCommand>();
 			containerBuilder.RegisterType<UnlockPackageCommand>();
-			containerBuilder.RegisterType<DataServiceQuerry>();
+			containerBuilder.RegisterType<LockPackageCommand>();
 			return containerBuilder.Build();
 		}
 	}
