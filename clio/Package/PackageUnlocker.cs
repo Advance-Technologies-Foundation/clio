@@ -11,8 +11,11 @@ namespace Clio.Package
 
 		#region Methods: Public
 
+		void Unlock();
+		void Lock();
 		void Unlock(IEnumerable<string> packages);
 		void Lock(IEnumerable<string> packages);
+
 
 		#endregion
 
@@ -62,11 +65,15 @@ namespace Clio.Package
 			applicationClient.CallConfigurationService("CreatioApiGateway", "UnlockPackages", requestData) ;
 		}
 
+		public void Unlock() => Unlock(Enumerable.Empty<string>());
+
 		public void Lock(IEnumerable<string> packages) {
 			IApplicationClient applicationClient = CreateApplicationClient();
 			string requestData = GetRequestData("lockPackages", packages);
 			applicationClient.CallConfigurationService("CreatioApiGateway", "LockPackages", requestData) ;
 		}
+
+		public void Lock() => Lock(Enumerable.Empty<string>());
 
 		#endregion
 

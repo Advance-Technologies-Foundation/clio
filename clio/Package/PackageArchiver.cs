@@ -183,7 +183,7 @@ namespace Clio
 				? destinationPath
 				: Environment.CurrentDirectory;
 			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
-			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath);
+			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath, "*.gz");
 			Unpack(packedPackagesPaths, true, targetDirectoryPath);
 			if (deleteGzFiles) {
 				DeletePackedPackages(packedPackagesPaths);

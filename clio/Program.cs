@@ -10,6 +10,7 @@ using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
+using Clio.Package;
 using Clio.Project;
 using Clio.Querry;
 using Clio.UserEnvironment;
@@ -301,7 +302,7 @@ namespace Clio
 				};
 				var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
 				sysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
-				UnlockMaintainerPackageInternal();
+				UnlockMaintainerPackageInternal(opts);
 				new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");
 				return 0;
@@ -311,9 +312,9 @@ namespace Clio
 			}
 		}
 
-		private static void UnlockMaintainerPackageInternal() {
-			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{CreatioEnvironment.Settings.Maintainer}'";
-			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings);
+		private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions) {
+			IPackageLockManager packageLockManager = Resolve<IPackageLockManager>(environmentOptions);
+			packageLockManager.Unlock();
 		}
 
 		private static int AddModels(ItemOptions opts) {
