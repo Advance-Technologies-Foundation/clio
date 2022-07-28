@@ -4,13 +4,19 @@
     <ProjectGuid>{E24226F9-C177-458F-AF34-9338E2699983}</ProjectGuid>
     <OutputPath Condition="'$(TargetFramework)' == 'net472'">Files\Bin\</OutputPath>
     <OutputPath Condition="'$(TargetFramework)' == 'netstandard2.0'">Files\Bin\netstandard\</OutputPath>
-    <AssemblyName Condition="'$(TargetFramework)' == 'net472'">cliogate</AssemblyName>
-    <AssemblyName Condition="'$(TargetFramework)' == 'netstandard2.0'">cliogate_netcore</AssemblyName>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
+  <Choose>
+    <When Condition="'$(AssemblyName)'!=''">
+      <PropertyGroup>
+        <AssemblyName Condition="'$(TargetFramework)' == 'net472'">cliogate</AssemblyName>
+        <AssemblyName Condition="'$(TargetFramework)' == 'netstandard2.0'">cliogate_netcore</AssemblyName>
+      </PropertyGroup>
+    </When>
+  </Choose>
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net472|AnyCPU'">
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
@@ -28,9 +34,7 @@
   </ItemGroup>
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
-    <None Include="app.config" />
     <None Include="descriptor.json" />
-    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Schemas\**\*.cs" />

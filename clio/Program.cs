@@ -10,7 +10,9 @@ using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
+using Clio.Package;
 using Clio.Project;
+using Clio.Querry;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
@@ -48,7 +50,7 @@ namespace Clio
 
 		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
 
-		private static CreatioClient CreatioClient
+		private static CreatioClient _creatioClientInstance
 		{
 			get {
 				if (string.IsNullOrEmpty(ClientId)) {
@@ -101,7 +103,7 @@ namespace Clio
 		private static Version GetAppApiVersion() {
 			var apiVersion = new Version("0.0.0.0");
 			try {
-				string appVersionResponse = CreatioClient.ExecuteGetRequest(ApiVersionUrl).Trim('"');
+				string appVersionResponse = _creatioClientInstance.ExecuteGetRequest(ApiVersionUrl).Trim('"');
 				apiVersion = new Version(appVersionResponse);
 			} catch (Exception) {
 			}
@@ -113,7 +115,7 @@ namespace Clio
 				Console.WriteLine("Start download packages ({0}).", packageName);
 				var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 				string requestData = "[" + packageNames + "]";
-				CreatioClient.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
+				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
 			} catch (Exception) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
@@ -169,7 +171,8 @@ namespace Clio
 		private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 				params object[] additionalConstructorArgs) {
 			var settings = GetEnvironmentSettings(options);
-			var creatioClient = new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore);
+			var creatioClient = string.IsNullOrEmpty(settings.ClientId) ? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore) :
+					CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore);
 			var clientAdapter = new CreatioClientAdapter(creatioClient);
 			var constructorArgs = new object[] { clientAdapter, settings }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
@@ -230,7 +233,7 @@ namespace Clio
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
 					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
 					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
-					AddPackageOptions, UnlockPackageOptions, LockPackageOptions>(args)
+					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -282,6 +285,7 @@ namespace Clio
 					(AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
 					(UnlockPackageOptions opts) => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 					(LockPackageOptions opts) => Resolve<LockPackageCommand>(opts).Execute(opts),
+					(DataServiceQuerryOptions opts) => Resolve<DataServiceQuerry>(opts).Execute(opts),
 					errs => 1);
 					
 		}
@@ -298,8 +302,8 @@ namespace Clio
 				};
 				var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
 				sysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
-				UnlockMaintainerPackageInternal();
-				new RestartCommand(new CreatioClientAdapter(CreatioClient), CreatioEnvironment.Settings).Execute(new RestartOptions());
+				UnlockMaintainerPackageInternal(opts);
+				new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
@@ -308,9 +312,9 @@ namespace Clio
 			}
 		}
 
-		private static void UnlockMaintainerPackageInternal() {
-			var script = $"UPDATE SysPackage SET InstallType = 0 WHERE Maintainer = '{CreatioEnvironment.Settings.Maintainer}'";
-			new SqlScriptExecutor().Execute(script, new CreatioClientAdapter(CreatioClient), CreatioEnvironment.Settings);
+		private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions) {
+			IPackageLockManager packageLockManager = Resolve<IPackageLockManager>(environmentOptions);
+			packageLockManager.Unlock();
 		}
 
 		private static int AddModels(ItemOptions opts) {
@@ -361,7 +365,7 @@ namespace Clio
 
 		private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields) {
 			var url = string.Format(GetEntityModelsUrl, entitySchemaName, fields);
-			string responseFormServer = CreatioClient.ExecuteGetRequest(url);
+			string responseFormServer = _creatioClientInstance.ExecuteGetRequest(url);
 			var result = CorrectJson(responseFormServer);
 			return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 		}

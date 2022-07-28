@@ -106,6 +106,7 @@ docker run -it --rm clio reg-web-app -help
   - [Execute assembly](#execute-assembly)
   - [References](#references)
   - [Execute custom SQL script](#execute-custom-sql-script)
+  - [Execute dataservice request](#dataservice)
 
 # Arguments
 
@@ -596,4 +597,45 @@ Executes custom SQL script from specified file
 
 ```
 execute-sql-script -f c:\Path to file\file.sql
+```
+
+## DataService
+
+Execute dataservice requests on a web application.
+
+|Key |Value           |Description|
+|:--:|:---------------|:----------------------------------------|
+| -t | Operation Type | One of [select, insert, update, delete]
+| -f | Input filename | File in json format that contacins request payload
+| -d | Output filename| File where result of the operation will be saved
+| -v | Variables to substitute| List of key-value pairs to substitute in an input file
+
+
+
+
+Execute dataservice request with variable substitution.
+```json
+{
+	"rootSchemaName": "{{rootSchemaName}}",
+	"operationType": 0,
+	"includeProcessExecutionData": true,
+	"columns": {
+		"items": {
+			"Id": {
+				"caption": "",
+				"orderDirection": 0,
+				"orderPosition": -1,
+				"isVisible": true,
+				"expression": {
+					"expressionType": 0,
+					"columnPath": "{{IdVar}}"
+				}
+			}
+		}
+	}
+}
+```
+	
+```
+ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v rootSchemaName=Contact;IdVar=Id
 ```

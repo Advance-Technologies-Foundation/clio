@@ -1,4 +1,5 @@
 ﻿using Creatio.Client;
+using System;
 using System.Threading;
 
 namespace Clio.Common
@@ -52,5 +53,10 @@ namespace Clio.Common
 		public string UploadFile(string url, string filePath) {
 			return _creatioClient.UploadFile(url, filePath);
 		}
-	}
+
+        internal T As<T>()
+        {
+            throw new NotImplementedException();
+        }
+    }
 }

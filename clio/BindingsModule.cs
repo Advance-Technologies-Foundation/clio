@@ -3,6 +3,7 @@ using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
+using Clio.Querry;
 using System.Reflection;
 
 namespace Clio
@@ -15,13 +16,8 @@ namespace Clio
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
 				.AsImplementedInterfaces();
 			if (settings != null) {
-				if (string.IsNullOrEmpty(settings.ClientId)) {
-					containerBuilder.RegisterInstance(new CreatioClientAdapter(settings.Uri, settings.Login,
-					settings.Password, settings.IsNetCore)).As<IApplicationClient>();
-				} else {
-					containerBuilder.RegisterInstance(new CreatioClientAdapter(settings.Uri, settings.ClientId,
-					settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore)).As<IApplicationClient>();
-				}
+				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
+				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
 			}
 			containerBuilder.RegisterType<PushPackageCommand>();
@@ -47,6 +43,7 @@ namespace Clio
 			containerBuilder.RegisterType<AddPackageCommand>();
 			containerBuilder.RegisterType<UnlockPackageCommand>();
 			containerBuilder.RegisterType<LockPackageCommand>();
+			containerBuilder.RegisterType<DataServiceQuerry>();
 			return containerBuilder.Build();
 		}
 	}
