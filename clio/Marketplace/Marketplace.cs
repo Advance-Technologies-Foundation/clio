@@ -41,7 +41,7 @@
 			await GetMrkModelById(id);
 			var dir = _workingDirectoriesProvider.BaseTempDirectory;
 
-			var filename = _model.FileLink.Segments[_model.FileLink.Segments.Length - 1];
+			var filename = _model.FileLink.Segments[^1];
 			var fullpath = Path.Combine(dir, filename);
 			Console.WriteLine(fullpath);
 			var bites = await _httpClient.GetByteArrayAsync(_model.FileLink.PathAndQuery);

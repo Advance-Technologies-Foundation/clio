@@ -46,6 +46,7 @@ namespace Clio
 			containerBuilder.RegisterType<DataServiceQuerry>();
 			containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
 			containerBuilder.RegisterType<Marketplace>();
+			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
 			return containerBuilder.Build();
 		}
 	}

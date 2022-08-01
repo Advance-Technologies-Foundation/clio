@@ -233,7 +233,8 @@ namespace Clio
 					RestoreNugetPkgOptions, InstallNugetPkgOptions, SetPackageVersionOptions, GetPackageVersionOptions, 
 					CheckNugetUpdateOptions, RestoreWorkspaceOptions, CreateWorkspaceCommandOptions, PushWorkspaceCommandOptions,
 					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
-					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions, RestoreFromPackageBackupOptions>(args)
+					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions, 
+					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -287,6 +288,7 @@ namespace Clio
 					(LockPackageOptions opts) => Resolve<LockPackageCommand>(opts).Execute(opts),
 					(DataServiceQuerryOptions opts) => Resolve<DataServiceQuerry>(opts).Execute(opts),
 					(RestoreFromPackageBackupOptions opts) => Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
+					(GetMarketplaceCatalogOptions opts) => Resolve<GetMarketplacecatalogCommand>(opts).Execute(opts),
 					errs => 1);
 					
 		}

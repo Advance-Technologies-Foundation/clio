@@ -2,7 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "push-pkg --MrktId 22966"
+      "commandLineArgs": "catalog -n Data"
     }
   }
 }

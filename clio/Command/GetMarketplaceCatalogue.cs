@@ -1,0 +1,143 @@
+namespace Clio.Command
+{
+	using CommandLine;
+	using System;
+	using System.Collections.Generic;
+	using System.Linq;
+	using System.Net.Http;
+	using System.Text.Json.Serialization;
+	using System.Threading.Tasks;
+
+	[Verb("get-catalog", Aliases = new string[] { "catalog" }, HelpText = "List marketplace applications")]
+	public class GetMarketplaceCatalogOptions : EnvironmentOptions
+	{
+		[Option('n', "Name", Required = false, HelpText = "Application or package name")]
+		public string Name { get; set; }
+	}
+
+	public class GetMarketplacecatalogCommand : Command<GetMarketplaceCatalogOptions>
+	{
+		private readonly HttpClient _httpClient;
+		const string _baseUri = "https://marketplace.creatio.com";
+		private IList<Application> _apps;
+
+		public GetMarketplacecatalogCommand()
+		{
+			_httpClient = new HttpClient()
+			{
+				BaseAddress = new Uri(_baseUri)
+			};
+		}
+
+		public override int Execute(GetMarketplaceCatalogOptions options)
+		{
+			IList<Application> apps = default;
+			Task.Run(async () =>
+			{
+				await GetAppsAsync();
+			}).Wait();
+
+			Console.WriteLine($"MrktId:\tApplication title");
+			foreach (var app in _apps.Select(a=> a.Attributes))
+			{
+				var defColor = Console.ForegroundColor;
+				if(options.Name is object && app.Title.Contains(options.Name))
+				{
+					Console.ForegroundColor = ConsoleColor.Green;
+				}
+				Console.WriteLine($"{app.ContentId}:\t{app.Title}");
+				Console.ForegroundColor = defColor;
+			}
+			return 0;
+		}
+
+		public async Task GetAppsAsync()
+		{
+			List<Application> apps = new List<Application>();
+			int offset = 0;
+			Dto dto = default;
+			do
+			{
+				string uri = $"/jsonapi/node/application?page[limit]=50&page[offset]={offset}&filter[datefilter][condition][path]=changed&filter[datefilter][condition][operator]=>=&filter[datefilter][condition][value]=0&fields[node--application]=title,created,changed,field_app_name,moderation_state,drupal_internal__nid,field_installation_type";
+				var message = new HttpRequestMessage()
+				{
+					Method = HttpMethod.Get,
+					RequestUri = new Uri(uri, UriKind.Relative)
+				};
+
+				HttpResponseMessage response = await _httpClient.SendAsync(message).ConfigureAwait(false);
+				var strContent = await response.Content.ReadAsStringAsync();
+				dto = System.Text.Json.JsonSerializer.Deserialize<Dto>(strContent);
+				offset += 50;
+				apps.AddRange(dto.Applications.Where(a => a.Attributes.Status == "published"));
+
+			}
+			while (dto.Applications is object && dto.Applications.Count != 0);
+			_apps = apps;
+		}
+
+	}
+
+	public class Dto
+	{
+		[JsonPropertyName("links")]
+		public object Links { get; set; }
+
+		[JsonPropertyName("jsonapi")]
+		public object JsonApi { get; set; }
+
+		[JsonPropertyName("data")]
+		public IList<Application> Applications { get; set; }
+	}
+
+	public class Application
+	{
+		[JsonPropertyName("type")]
+		public string Type { get; set; }
+
+		[JsonPropertyName("id")]
+		public Guid Id { get; set; }
+
+		[JsonPropertyName("links")]
+		public Links Links { get; set; }
+
+		[JsonPropertyName("attributes")]
+		public Attributes Attributes { get; set; }
+
+	}
+
+	public class Attributes
+	{
+		[JsonPropertyName("title")]
+		public string Title { get; set; }
+
+		[JsonPropertyName("created")]
+		public DateTime Created { get; set; }
+
+		[JsonPropertyName("changed")]
+		public DateTime Changed { get; set; }
+
+		[JsonPropertyName("moderation_state")]
+		public string Status { get; set; }
+
+		[JsonPropertyName("field_app_name")]
+		public string Name { get; set; }
+
+
+		[JsonPropertyName("drupal_internal__nid")]
+		public int ContentId { get; set; }
+
+	}
+
+	public class Links
+	{
+		[JsonPropertyName("self")]
+		public Self Self { get; set; }
+	}
+
+	public class Self
+	{
+		[JsonPropertyName("href")]
+		public Uri Href { get; set; }
+	}
+}
