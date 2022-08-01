@@ -40,8 +40,8 @@
 		[Option("IsForceUpdateAllColumns", Required = false, HelpText = "Is force update all columns")]
 		public bool? IsForceUpdateAllColumns { get; set; }
 
-		[Option("MrktId", Required = false, HelpText = "Marketplace application id")]
-		public int? MrktId { get; set; }
+		[Option("id", Required = false, HelpText = "Marketplace application id")]
+		public int? MarketplaceId { get; set; }
 
 		#endregion
 
@@ -99,7 +99,7 @@
 			bool success = false;
 			try
 			{
-				if (options.MrktId is object && options.MrktId is int value)
+				if (options.MarketplaceId is object && options.MarketplaceId is int value)
 				{
 					string fullPath = string.Empty;
 					Task.Run(async () =>

@@ -1,5 +1,6 @@
 namespace Clio.Command
 {
+	using Clio.Common;
 	using CommandLine;
 	using System;
 	using System.Collections.Generic;
@@ -8,7 +9,7 @@ namespace Clio.Command
 	using System.Text.Json.Serialization;
 	using System.Threading.Tasks;
 
-	[Verb("get-catalog", Aliases = new string[] { "catalog" }, HelpText = "List marketplace applications")]
+	[Verb("marketplace-catalog", Aliases = new string[] { "catalog" }, HelpText = "List marketplace applications")]
 	public class GetMarketplaceCatalogOptions : EnvironmentOptions
 	{
 		[Option('n', "Name", Required = false, HelpText = "Application or package name")]
@@ -37,19 +38,31 @@ namespace Clio.Command
 				await GetAppsAsync();
 			}).Wait();
 
-			Console.WriteLine($"MrktId:\tApplication title");
-			foreach (var app in _apps.Select(a=> a.Attributes))
+			IList<string[]> table = new List<string[]>();
+			table.Add(CreateRow("Marketplace Id", "Application title"));
+			table.Add(CreateEmptyRow());
+			
+			foreach (var app in _apps
+				.Where(a => a.Attributes.Title?.Contains(options.Name??"") ?? false)
+				.OrderBy(appp => appp.Attributes.Title))
 			{
-				var defColor = Console.ForegroundColor;
-				if(options.Name is object && app.Title.Contains(options.Name))
-				{
-					Console.ForegroundColor = ConsoleColor.Green;
-				}
-				Console.WriteLine($"{app.ContentId}:\t{app.Title}");
-				Console.ForegroundColor = defColor;
+				table.Add(CreateRow(app.Attributes.ContentId.ToString(), app.Attributes.Title));
 			}
+			Console.WriteLine();
+			Console.WriteLine(TextUtilities.ConvertTableToString(table));
+			Console.WriteLine();
 			return 0;
 		}
+		private static string[] CreateRow(string nameColumn, string versionColumn)
+		{
+			return new[] { nameColumn, versionColumn };
+		}
+
+		private static string[] CreateEmptyRow()
+		{
+			return CreateRow(string.Empty, string.Empty);
+		}
+
 
 		public async Task GetAppsAsync()
 		{
