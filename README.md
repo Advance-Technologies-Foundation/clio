@@ -231,6 +231,12 @@ for get installation log file specify report path parameter
 clio push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
+install from marketplace.creatio.com
+
+```
+clio push-pkg --MrktId 22966
+```
+
 ## Pull package from remote application
 
 For download package to local file system from application use command:
