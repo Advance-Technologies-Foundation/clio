@@ -42,6 +42,7 @@ docker run -it --rm clio reg-web-app -help
   - [Delete package](#delete-package)
   - [Compress package](#compress-package)
   - [Extract package](#extract-package)
+  - [Restore configuration](#restore-configuration)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
 - [NuGet Packages](#nuget-packages)
@@ -79,6 +80,7 @@ docker run -it --rm clio reg-web-app -help
   - [Delete package](#delete-package)
   - [Compress package](#compress-package)
   - [Extract package](#extract-package)
+  - [Restore configuration](#restore-configuration)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
   - [Get Marketplace catalog](#get-catalog)
@@ -288,6 +290,25 @@ For package from  *.gz archive
 
 ```
 clio extract-pkg-zip <package>.gz -d c:\Pkg\<package>
+```
+
+## Restore configuration
+
+Restore configuration
+
+```
+clio restore-configuration
+```
+Restore configuration without rollback data
+
+```
+clio restore-configuration -d
+```
+
+Restore configuration without sql backward compatibility check
+
+```
+clio restore-configuration -f
 ```
 
 ## Get package list
