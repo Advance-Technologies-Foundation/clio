@@ -5,7 +5,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("restore-nuget-pkg", Aliases = new string[] { "restore" }, HelpText = "Restore NuGet package to a folder")]
+	[Verb("restore-nuget-pkg", Aliases = new string[] { "restore-nuget", "rn" }, HelpText = "Restore NuGet package to a folder")]
 	public class RestoreNugetPkgOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]

@@ -5,20 +5,20 @@
 
 	#region Class: RestoreFromPackageBackupOptions
 
-	[Verb("restore-package", Aliases = new string[] { "rp" }, HelpText = "Restore package")]
+	[Verb("restore-configuration", Aliases = new string[] { "restore", "rc" }, HelpText = "Restore configuration from last backup")]
 	public class RestoreFromPackageBackupOptions : EnvironmentOptions
 	{
 
 		#region Properties: Public
 
-		[Option("ipd", Required = false,
-			HelpText ="Install package data", Default = false)]
+		[Option('d', "skip-rollback-data", Required = false,
+			HelpText ="Skip rollback data", Default = false)]
 		public bool InstallPackageData {
 			get; set;
 		}
 
-		[Option("ignireCheck", Required = false,
-			HelpText = "Ignore sql script backward compatibility check", Default = false)]
+		[Option('f', "force", Required = false,
+			HelpText = "Restore configuration without sql backward compatibility check", Default = false)]
 		public bool IgnoreSqlScriptBackwardCompatibilityCheck {
 			get; set;
 		}
