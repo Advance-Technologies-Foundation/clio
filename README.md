@@ -81,7 +81,7 @@ docker run -it --rm clio reg-web-app -help
   - [Extract package](#extract-package)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
-  - [Get Marketplace catalog](#get-catalog)
+  - [Get Marketplace catalog](#marketplace-catalog)
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
@@ -312,7 +312,7 @@ Set a specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
-## Get Catalog
+## Marketplace Catalog
 
 List marketplace applications
 ```
