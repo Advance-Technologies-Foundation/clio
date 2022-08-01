@@ -12,7 +12,7 @@
 		#region Properties: Public
 
 		[Option("ipd", Required = false,
-			HelpText ="Is install package data", Default = false)]
+			HelpText ="Install package data", Default = false)]
 		public bool InstallPackageData {
 			get; set;
 		}
@@ -42,8 +42,9 @@
 		protected override string ServicePath => @"/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup";
 
 		protected override string GetRequestData(RestoreFromPackageBackupOptions options) {
-			return "{\"installPackageData\": " + options.InstallPackageData +
-				", \"ignoreSqlScriptBackwardCompatibilityCheck\": " + options.IgnoreSqlScriptBackwardCompatibilityCheck + "}";
+			return "{\"installPackageData\": " + options.InstallPackageData.ToString().ToLower() +
+				", \"ignoreSqlScriptBackwardCompatibilityCheck\": " +
+				options.IgnoreSqlScriptBackwardCompatibilityCheck.ToString().ToLower() + "}";
 		}
 
 	}

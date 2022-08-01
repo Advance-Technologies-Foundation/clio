@@ -44,6 +44,7 @@ namespace Clio
 			containerBuilder.RegisterType<UnlockPackageCommand>();
 			containerBuilder.RegisterType<LockPackageCommand>();
 			containerBuilder.RegisterType<DataServiceQuerry>();
+			containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
 			return containerBuilder.Build();
 		}
 	}
