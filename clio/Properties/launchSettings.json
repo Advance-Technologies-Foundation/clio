@@ -2,8 +2,7 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "download Calendar -e oauth",
-      "workingDirectory": "C:\\Temp\\FreedomComponent\\packages"
+      "commandLineArgs": "catalog -n Data"
     }
   }
 }

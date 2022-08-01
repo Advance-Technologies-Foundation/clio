@@ -81,6 +81,7 @@ docker run -it --rm clio reg-web-app -help
   - [Extract package](#extract-package)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
+  - [Get Marketplace catalog](#get-catalog)
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
@@ -231,6 +232,12 @@ for get installation log file specify report path parameter
 clio push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
+install from marketplace.creatio.com
+
+```
+clio push-pkg --MrktId 22966
+```
+
 ## Pull package from remote application
 
 For download package to local file system from application use command:
@@ -303,6 +310,18 @@ Set a specified package version into descriptor.json by specified package path.
 
 ```
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
+```
+
+## Get Catalog
+
+List marketplace applications
+```
+clio catalog
+```
+
+List marketplace applications and highlight search words
+```
+clio catalog -n Data
 ```
 
 # NuGet Packages
