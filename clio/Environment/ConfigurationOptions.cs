@@ -72,7 +72,7 @@ namespace Clio
 		}
 
 		[JsonProperty("$schema")]
-		public string Schema { get; set; }
+		public string Schema  => "./schema.json";
 
 		public string ActiveEnvironmentKey { get; set; }
 
@@ -159,7 +159,7 @@ namespace Clio
 				Uri = "http://localhost"
 			});
 			_settings.ActiveEnvironmentKey = "dev";
-			_settings.Schema = "./schema.json";
+			//_settings.Schema = "./schema.json";
 			SaveSchema();
 		}
 
@@ -180,6 +180,8 @@ namespace Clio
 					Formatting = Formatting.Indented,
 					NullValueHandling = NullValueHandling.Ignore
 				};
+
+				//_settings.Schema = 
 				serializer.Serialize(fileWriter, _settings);
 			}
 
