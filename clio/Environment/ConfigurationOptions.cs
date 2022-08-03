@@ -159,7 +159,6 @@ namespace Clio
 				Uri = "http://localhost"
 			});
 			_settings.ActiveEnvironmentKey = "dev";
-			//_settings.Schema = "./schema.json";
 			SaveSchema();
 		}
 
