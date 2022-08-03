@@ -43,7 +43,8 @@ namespace Clio.Command
 			table.Add(CreateEmptyRow());
 			
 			foreach (var app in _apps
-				.Where(a => a.Attributes.Title?.Contains(options.Name??"") ?? false)
+				.Where(a => a.Attributes.Title.ToLower()?
+				.Contains(options.Name.ToLower()??"") ?? false)
 				.OrderBy(appp => appp.Attributes.Title))
 			{
 				table.Add(CreateRow(app.Attributes.ContentId.ToString(), app.Attributes.Title));
