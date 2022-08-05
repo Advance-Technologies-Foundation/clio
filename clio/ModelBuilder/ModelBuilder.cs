@@ -18,7 +18,7 @@ namespace Clio
 
 		private string EntitySchemaManagerRequestUrl => _appUrl + @"/DataService/json/SyncReply/EntitySchemaManagerRequest";
 		private string RuntimeEntitySchemaRequestUrl => _appUrl + @"/DataService/json/SyncReply/RuntimeEntitySchemaRequest";
-		Dictionary<string, Schema> Schemas = new Dictionary<string, Schema>();
+		private readonly Dictionary<string, Schema> _schemas = new Dictionary<string, Schema>();
 
 		public ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts)
 		{
@@ -31,12 +31,12 @@ namespace Clio
 		{
 			GetEntitySchemasAsync();
 
-			Parallel.ForEach(Schemas, new ParallelOptions(){ MaxDegreeOfParallelism = 16}, 
+			Parallel.ForEach(_schemas, new ParallelOptions(){ MaxDegreeOfParallelism = 16}, 
 			a=>{
 				GetRuntimeEntitySchema(a);
 			});
 
-			foreach (var schema in Schemas)
+			foreach (var schema in _schemas)
 			{
 				var di = new DirectoryInfo(_opts.DestinationPath);
 				if(!di.Exists)
@@ -55,8 +55,8 @@ namespace Clio
 			var col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson);
 			foreach (var item in col.Collection)
 			{
-				if(!Schemas.ContainsKey(item.Name)){
-					Schemas.Add(item.Name,new Schema
+				if(!_schemas.ContainsKey(item.Name)){
+					_schemas.Add(item.Name,new Schema
 					{
 						Name = item.Name,
 					});
