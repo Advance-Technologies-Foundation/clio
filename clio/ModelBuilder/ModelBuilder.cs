@@ -38,6 +38,12 @@ namespace Clio
 
 			foreach (var schema in Schemas)
 			{
+				var di = new DirectoryInfo(_opts.DestinationPath);
+				if(!di.Exists)
+				{
+					di.Create();
+				}
+
 				var filePath = Path.Combine(_opts.DestinationPath, schema.Key + ".cs");
 				File.WriteAllText(filePath, CreateClassFileText(schema));
 			}
