@@ -4,6 +4,7 @@
 	using CommandLine;
 	using System;
 	using System.IO;
+	using System.Text.RegularExpressions;
 
 	#region Class: RestoreFromPackageBackupOptions
 
@@ -50,6 +51,11 @@
 
 		public int Execute(CreateUiProjectOptions options, IFileSystem fileSystem) {
 			try {
+				var namePattern = new Regex("^([0-9a-z_]+)$");
+				if (!namePattern.IsMatch(options.Name)) {
+					Console.WriteLine("Not correct project name. Use only 'snake_case' format");
+					return 1;
+				}
 				var settings = new SettingsRepository().GetEnvironment();
 				var projectsPath = Path.Combine(Environment.CurrentDirectory, projectsDirectoryName);
 				var packagesPath = Path.Combine(Environment.CurrentDirectory, packagesDirectoryName);
