@@ -115,6 +115,12 @@ namespace Clio
 
 		[Option('f', "Fields", Required = false, HelpText = "Required fields for model class", Default = null)]
 		public string Fields { get; set; }
+
+		[Option('a', "All", Required = false, HelpText = "Create all models", Default = true)]
+		public bool CreateAll { get; set; }
+		
+		[Option('x', "Culture", Required = false, HelpText = "Description custure", Default = "en-US")]
+		public string Culture{ get; set; }
 	}
 
 	[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Activate developer mode for selected environment")]

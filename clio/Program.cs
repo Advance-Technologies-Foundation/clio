@@ -321,6 +321,16 @@ namespace Clio
 		}
 
 		private static int AddModels(ItemOptions opts) {
+
+			if (opts.CreateAll)
+			{
+				Console.WriteLine("Generating models...");
+				SetupAppConnection(opts);
+				ModelBuilder mb = new ModelBuilder(_creatioClientInstance, AppUrl, opts);
+				mb.GetModels();
+				return 0;
+			}
+
 			try {
 				SetupAppConnection(opts);
 				var models = GetClassModels(opts.ItemName, opts.Fields);
