@@ -63,16 +63,15 @@ docker run -it --rm clio reg-web-app -help
   - [Open application](#open-application)
   - [Ping application](#ping-application)
   - [Healthcheck](#healthcheck)
-- [Using for CI/CD systems](#using-for-cicd-systems)
 - [Development](#development)
   - [Workspaces](#workspaces)
   - [Convert package](#convert-package)
   - [Execute assembly](#execute-assembly)
   - [References](#references)
   - [Execute custom SQL script](#execute-custom-sql-script)
-  - [Windows](#windows)
-  - [MacOS](#macos)
+  - [Execute dataservice request](#dataservice)
   - [Help and examples](#help-and-examples)
+  - [Add item](#add-item)
 - [Packages](#packages)
   - [Creating new package](#creating-new-package)
   - [Installing package](#installing-package)
@@ -90,10 +89,6 @@ docker run -it --rm clio reg-web-app -help
   - [Restore NuGet package](#restore-nuget-package)
   - [Install NuGet package](#install-nuget-package)
   - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
-- [Application](#application)
-  - [Upload Licenses](#upload-licenses)
-  - [Restart application](#restart-application)
-  - [Clear redis database](#clear-redis-database)
 - [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
@@ -102,14 +97,6 @@ docker run -it --rm clio reg-web-app -help
   - [Open application](#open-application)
   - [Ping application](#ping-application)
 - [Using for CI/CD systems](#using-for-cicd-systems)
-- [Development](#development)
-  -----------
-  - [Workspaces](#workspaces)
-  - [Convert existing package to project](#convert-existing-package-to-project)
-  - [Execute assembly](#execute-assembly)
-  - [References](#references)
-  - [Execute custom SQL script](#execute-custom-sql-script)
-  - [Execute dataservice request](#dataservice)
 
 # Arguments
 
@@ -179,7 +166,7 @@ clio help
 
 ## Help and examples
 
-For display available commands use:
+To display available commands use:
 
 ```
 clio help
@@ -543,14 +530,6 @@ clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 ```
 
 
-# Using for CI/CD systems
-
-In CI/CD systems, you can specify configuration options directly when calling command:
-
-```
-clio restart -u http://mysite.creatio.com -l administrator -p password
-```
-
 # Development
 
 ## Workspaces
@@ -677,5 +656,51 @@ Execute dataservice request with variable substitution.
 ```
 	
 ```
-ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v rootSchemaName=Contact;IdVar=Id
+clio ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v rootSchemaName=Contact;IdVar=Id
 ```
+
+## Add item
+Create item in project
+```
+clio <ITEM-TYPE> <ITEM-NAME> <OPTIONS>
+```
+
+Add web service template to project
+```
+clio add-item service test
+``` 
+
+Add entity-listener template to project
+```
+clio add-item entity-listener test
+``` 
+
+Generate AFT model for `Contact` entity with `Name` and `Email` fields, set namespace to `MyNameSpace` and save to `current directory`
+```
+clio add-item model Contact -f Name,Email -n MyNameSpace -d .
+```
+
+Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set `ATF.Repository.Models` namespace and save them to `C:\MyModels`
+```
+add-item model --All "true" --Culture en-US -n "ATF.Repository.Models" -d C:\MyModels
+```
+
+OPTIONS
+|Short name|Long name|Description
+|:--:|:--|:--|:--
+d|DestinationPath|Path to source directory
+n|Namespace|Name space for service classes and ATF models
+f|Fields|Required fields for ATF model class
+a|All|Create ATF models for all Entities
+x|Culture|Description culture
+
+# Using for CI/CD systems
+
+In CI/CD systems, you can specify configuration options when calling commands:
+
+```
+clio restart -u http://mysite.creatio.com -l administrator -p password
+```
+
+
+
