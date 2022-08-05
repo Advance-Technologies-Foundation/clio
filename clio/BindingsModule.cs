@@ -47,6 +47,7 @@ namespace Clio
 			containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
 			containerBuilder.RegisterType<Marketplace>();
 			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
+			containerBuilder.RegisterType<CreateUiProjectCommand>();
 			return containerBuilder.Build();
 		}
 	}

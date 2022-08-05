@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>3.0.1.17</AssemblyVersion>
-	  <FileVersion>3.0.1.16</FileVersion>
-	  <Version>3.0.1.17</Version>
+	  <AssemblyVersion>3.0.1.18</AssemblyVersion>
+	  <FileVersion>3.0.1.18</FileVersion>
+	  <Version>3.0.1.18</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -38,6 +38,28 @@
 
   <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
+    <None Remove="tpl\ui-project\.browserslistrc" />
+    <None Remove="tpl\ui-project\.editorconfig" />
+    <None Remove="tpl\ui-project\angular.json" />
+    <None Remove="tpl\ui-project\karma.conf.js" />
+    <None Remove="tpl\ui-project\package.json" />
+    <None Remove="tpl\ui-project\README.md" />
+    <None Remove="tpl\ui-project\src\app\app.module.ts" />
+    <None Remove="tpl\ui-project\src\app\view-elements\.gitkeep" />
+    <None Remove="tpl\ui-project\src\assets\.gitkeep" />
+    <None Remove="tpl\ui-project\src\bootstrap.ts" />
+    <None Remove="tpl\ui-project\src\environments\environment.prod.ts" />
+    <None Remove="tpl\ui-project\src\environments\environment.ts" />
+    <None Remove="tpl\ui-project\src\favicon.ico" />
+    <None Remove="tpl\ui-project\src\index.html" />
+    <None Remove="tpl\ui-project\src\main.ts" />
+    <None Remove="tpl\ui-project\src\polyfills.ts" />
+    <None Remove="tpl\ui-project\src\styles.scss" />
+    <None Remove="tpl\ui-project\src\test.ts" />
+    <None Remove="tpl\ui-project\tsconfig.app.json" />
+    <None Remove="tpl\ui-project\tsconfig.json" />
+    <None Remove="tpl\ui-project\tsconfig.spec.json" />
+    <None Remove="tpl\ui-project\webpack.config.js" />
     <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -57,6 +79,72 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\package\Files\src\js\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\.browserslistrc">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\.editorconfig">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\angular.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\karma.conf.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\package.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\app\app.module.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\app\view-elements\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\assets\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\bootstrap.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\environments\environment.prod.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\environments\environment.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\favicon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\index.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\main.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\polyfills.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\styles.scss">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\src\test.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\tsconfig.app.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\tsconfig.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\tsconfig.spec.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\webpack.config.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.clio\placeholder.txt">
