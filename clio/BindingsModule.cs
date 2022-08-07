@@ -3,7 +3,11 @@ using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
+using Clio.Package;
+using Clio.Project.NuGet;
 using Clio.Querry;
+using Clio.Utilities;
+using Clio.Workspace;
 using System.Reflection;
 
 namespace Clio
@@ -48,6 +52,13 @@ namespace Clio
 			containerBuilder.RegisterType<Marketplace>();
 			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
+
+			//TODO: Uncomment line 56 if ok
+			//containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSDK>();
+			containerBuilder.RegisterInstance(new CreatioSdk()).As<ICreatioSDK>();
+
+
+
 			return containerBuilder.Build();
 		}
 	}

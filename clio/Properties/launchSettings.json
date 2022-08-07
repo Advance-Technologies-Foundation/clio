@@ -2,7 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "add-item model --All \"true\" --Culture en-US -n \"ATF.Repository.Models\" -d C:\\MyModels2"
+      "commandLineArgs": "createw",
+      "workingDirectory": "C:\\5"
     }
   }
 }

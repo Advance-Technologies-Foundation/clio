@@ -16,9 +16,13 @@ namespace Clio
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
+		public const string IgnoreFileName = ".clioignore";
+
+
 		public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
 		public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
 		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
+		public static string IgnoreFileTpl => $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
 
 		private readonly string[] _pkgDirectories = { "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
 
@@ -138,6 +142,13 @@ namespace Clio
 			File.Create(filePath).Dispose();
 			return this;
 		}
+		protected CreatioPackage CreateIgnoreFile()
+		{
+			GetTplPath(IgnoreFileTpl, out string fullPath);
+			File.Copy(fullPath, Path.Combine(FullPath,".clioignore"), true);
+			
+			return this;
+		}
 
 		protected CreatioPackage CreateAssemblyInfo() {
 			Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
@@ -160,7 +171,8 @@ namespace Clio
 				.CreateSolution()
 				.CreatePackageConfig()
 				.CreateAssemblyInfo()
-				.CreateEmptyClass();
+				.CreateEmptyClass()
+				.CreateIgnoreFile();
 			return this;
 		}
 

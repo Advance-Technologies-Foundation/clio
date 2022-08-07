@@ -63,8 +63,41 @@ namespace Clio
 			var files = Directory
 				.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
 				.Where(name => !name.EndsWith(".pdb") || !skipPdb);
-			return files;
+			return ApplyClioIgnore(files);
+
 		}
+
+		private static IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files)
+		{
+			//return if .clioignore is missing
+			if (!files.Any(f => f.EndsWith(".clioignore"))) return files;
+
+			var ignoreFiles = files.Where(f => f.EndsWith(".clioignore")).ToList();
+
+			List<string> filteredFiles = new List<string>();
+			var ignore = new Ignore.Ignore();
+			foreach (var ignoreFile in ignoreFiles)
+			{
+				FileInfo ignoreFi = new FileInfo(ignoreFile);
+				var ignoreDir = ignoreFi.Directory.FullName;
+				var filesToCheck = files.Where(f => f.StartsWith(ignoreDir)).ToList();
+
+				ignore.OriginalRules.Clear();
+				var ignoreContent = File.ReadAllLines(ignoreFiles.FirstOrDefault());
+				ignore.Add(ignoreContent);
+
+				foreach (var item in filesToCheck)
+				{
+					Uri fUri = new Uri(item);
+					if (!ignore.IsIgnored(fUri.ToString()))
+					{
+						filteredFiles.Add(item);
+					}
+				}
+			}
+			return filteredFiles;
+		}
+
 
 		private static void CheckZipPackagesArgument(string sourceGzipFilesFolderPaths, 
 				string destinationArchiveFileName) {
