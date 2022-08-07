@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Clio.Project.NuGet;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -9,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace Clio.Package.NuGet
 {
-	public class CreatioSdkOnline : ICreatioSDK
+	public class CreatioSdkOnline : ICreatioSdk
 	{
 		private readonly List<Version> _versions = new List<Version>();
 		public Version LastVersion => _versions[0];
