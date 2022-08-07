@@ -52,13 +52,6 @@ namespace Clio
 			containerBuilder.RegisterType<Marketplace>();
 			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
-
-			//TODO: Uncomment line 56 if ok
-			//containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSdk>();
-			containerBuilder.RegisterInstance(new CreatioSdk()).As<ICreatioSdk>();
-
-
-
 			return containerBuilder.Build();
 		}
 	}

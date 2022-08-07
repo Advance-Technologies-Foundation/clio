@@ -1,0 +1,7 @@
+**/obj
+**/Files/Bin/**/Quartz.dll
+**/Files/Bin/**/ServiceStack.Interfaces.dll
+**/Files/Bin/**/Terrasoft*.dll
+**/Files/Bin/**/Creatio.FeatureToggling.dll
+**/Files/Bin/**/Common.Logging.Core.dll
+**/Files/Bin/**/Common.Logging.dll
