@@ -14,7 +14,7 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		void Create(string packageName, string projectName, string vendorPrefix);
+		void Create(string projectName, string packageName, string vendorPrefix);
 
 		#endregion
 
@@ -83,7 +83,7 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private void UpdateTemplateInfo(string projectPath, string fileName, string packageName, string projectName, 
+		private void UpdateTemplateInfo(string projectPath, string fileName, string projectName, string packageName,
 				string vendorPrefix) {
 			string filePath = Path.Combine(projectPath, fileName);
 			string tplContent = _fileSystem.ReadAllText(filePath);
@@ -98,13 +98,13 @@ namespace Clio.Package
 			_packageCreator.Create(PackagesPath, packageName);
 		}
 
-		private void CreateProject(string packageName, string projectName, string vendorPrefix) {
+		private void CreateProject(string projectName, string packageName, string vendorPrefix) {
 			_fileSystem.CreateDirectoryIfNotExists(ProjectsPath);
 			var projectPath = Path.Combine(ProjectsPath, projectName);
 			_templateProvider.CopyTemplateFolder("ui-project", projectPath);
-			UpdateTemplateInfo(projectPath, angularFileName, packageName, projectName, vendorPrefix);
-			UpdateTemplateInfo(projectPath, packageFileName, packageName, projectName, vendorPrefix);
-			UpdateTemplateInfo(projectPath, webpackConfigFileName, packageName, projectName, vendorPrefix);
+			UpdateTemplateInfo(projectPath, angularFileName, projectName, packageName, vendorPrefix);
+			UpdateTemplateInfo(projectPath, packageFileName, projectName, packageName, vendorPrefix);
+			UpdateTemplateInfo(projectPath, webpackConfigFileName, projectName, packageName, vendorPrefix);
 		}
 
 		private void CheckCorrectProjectName(string projectName) {
@@ -119,10 +119,10 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public void Create(string packageName, string projectName, string vendorPrefix) {
+		public void Create(string projectName, string packageName, string vendorPrefix) {
 			CheckCorrectProjectName(projectName);
 			CreatePackage(packageName);
-			CreateProject(packageName, projectName, vendorPrefix);
+			CreateProject(projectName, packageName, vendorPrefix);
 		}
 
 		#endregion
