@@ -54,8 +54,8 @@ namespace Clio
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
 
 			//TODO: Uncomment line 56 if ok
-			//containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSDK>();
-			containerBuilder.RegisterInstance(new CreatioSdk()).As<ICreatioSDK>();
+			//containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSdk>();
+			containerBuilder.RegisterInstance(new CreatioSdk()).As<ICreatioSdk>();
 
 
 
