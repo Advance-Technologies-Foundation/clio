@@ -14,6 +14,7 @@ namespace Clio.Workspace
 		string ClioDirectoryPath { get; }
 		string WorkspaceSettingsPath { get; }
 		string PackagesFolderPath { get; }
+		string ProjectsFolderPath { get; }
 		string SolutionFolderPath { get; }
 		string SolutionPath { get; }
 		string NugetFolderPath { get; }

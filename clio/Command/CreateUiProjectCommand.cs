@@ -1,10 +1,9 @@
 ﻿namespace Clio.Command
 {
 	using Clio.Common;
+	using Clio.Package;
 	using CommandLine;
 	using System;
-	using System.IO;
-	using System.Text.RegularExpressions;
 
 	#region Class: RestoreFromPackageBackupOptions
 
@@ -15,7 +14,7 @@
 		#region Properties: Public
 
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Project name")]
-		public string Name {
+		public string ProjectName {
 			get; set;
 		}
 
@@ -38,65 +37,42 @@
 	#endregion
 
 
-	#region Class: RestoreFromPackageBackupCommand
+	#region Class: CreateUiProjectCommand
 
 	internal class CreateUiProjectCommand
 	{
 
-		private const string packagesDirectoryName = "packages";
-		private const string projectsDirectoryName = "projects";
-		private const string angularFileName = "angular.json";
-		private const string packageFileName = "package.json";
-		private const string webpackConfigFileName = "webpack.config.js";
+		#region Fields: Private
 
-		public int Execute(CreateUiProjectOptions options, IFileSystem fileSystem) {
+		private readonly IUiProjectCreator _uiProjectCreator;
+
+
+		#endregion
+
+		#region Constructors: Public
+
+		public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator) {
+			uiProjectCreator.CheckArgumentNull(nameof(uiProjectCreator));
+			_uiProjectCreator= uiProjectCreator;
+			
+		}
+
+		#endregion
+
+		#region Methods: Public
+
+		public int Execute(CreateUiProjectOptions options) {
 			try {
-				var namePattern = new Regex("^([0-9a-z_]+)$");
-				if (!namePattern.IsMatch(options.Name)) {
-					Console.WriteLine("Not correct project name. Use only 'snake_case' format");
-					return 1;
-				}
-				var settings = new SettingsRepository().GetEnvironment();
-				var projectsPath = Path.Combine(Environment.CurrentDirectory, projectsDirectoryName);
-				var packagesPath = Path.Combine(Environment.CurrentDirectory, packagesDirectoryName);
-				var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-				var tplPath = Path.Combine(baseDir, "tpl", "ui-project");
-				if (!Directory.Exists(projectsPath)) {
-					Directory.CreateDirectory(projectsPath);
-				}
-				if (!Directory.Exists(packagesPath)) {
-					Directory.CreateDirectory(packagesPath);
-				}
-				var currentProjectPath = Path.Combine(projectsPath, options.Name);
-				fileSystem.CopyDirectory(tplPath, currentProjectPath, false);
-				// 
-				string realCurrentDirectory = Environment.CurrentDirectory;
-				Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, packagesDirectoryName);
-				CreatioPackage package = CreatioPackage.CreatePackage(options.PackageName, settings.Maintainer);
-				package.Create();
-				Environment.CurrentDirectory = realCurrentDirectory;
-				//
-				var angularFilePath = Path.Combine(currentProjectPath, angularFileName);
-				var packageFilePath = Path.Combine(currentProjectPath, packageFileName);
-				var webpackConfigFilePath = Path.Combine(currentProjectPath, webpackConfigFileName);
-				UpdateTemplateInfo(angularFilePath, options);
-				UpdateTemplateInfo(packageFilePath, options);
-				UpdateTemplateInfo(webpackConfigFilePath, options);
+				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix);
 				Console.WriteLine("Done");
 				return 0;
-			} catch (Exception) {
+			} catch (Exception e) {
+				Console.WriteLine(e.Message);
 				return 1;
 			}
 		}
 
-		private void UpdateTemplateInfo(string path, CreateUiProjectOptions options) {
-			var tplContent = File.ReadAllText(path);
-			tplContent = tplContent.Replace("<%vendorPrefix%>", options.VendorPrefix);
-			tplContent = tplContent.Replace("<%projectName%>", options.Name);
-			tplContent = tplContent.Replace("<%distPath%>",
-				$"{Path.Combine("../", "packages/", options.PackageName + "/", "Files/", "src/","js/",options.Name)}");
-			File.WriteAllText(path, tplContent);
-		}
+		#endregion
 
 	}
 
