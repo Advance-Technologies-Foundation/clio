@@ -14,7 +14,8 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public void Create(string packageName);
+		void Create(string packageName);
+		void Create(string packagesPath, string packageName);
 
 		#endregion
 
@@ -133,6 +134,10 @@ namespace Clio.Package
 
 		public void Create(string packageName) {
 			var packagesPath = GetPackagesPath();
+			Create(packagesPath, packageName);
+		}
+
+		public void Create(string packagesPath, string packageName) {
 			CreatePackageIfNotExists(packagesPath, packageName);
 			AddPackageToWorkspaceIfNeeded(packageName);
 		}
