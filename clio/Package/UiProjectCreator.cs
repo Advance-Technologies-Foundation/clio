@@ -102,7 +102,7 @@
 			tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix);
 			tplContent = tplContent.Replace("<%projectName%>", projectName);
 			tplContent = tplContent.Replace("<%distPath%>",
-				$"{Path.Combine("../", "packages/", packageName + "/", "Files/", "src/","js/", projectName)}");
+				$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/","js/", projectName)}");
 			_fileSystem.WriteAllTextToFile(filePath, tplContent);
 		}
 
