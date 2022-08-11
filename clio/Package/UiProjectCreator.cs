@@ -1,8 +1,9 @@
-﻿using System;
-
-namespace Clio.Package
+﻿namespace Clio.Package
 {
+	using System;
+	using System.Collections.Generic;
 	using System.IO;
+	using System.Linq;
 	using System.Text.RegularExpressions;
 	using Clio.Common;
 	using Clio.Workspace;
@@ -14,7 +15,8 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		void Create(string projectName, string packageName, string vendorPrefix);
+		void Create(string projectName, string packageName, string vendorPrefix, 
+			Func<string, bool> enableDownloadPackage);
 
 		#endregion
 
@@ -39,8 +41,11 @@ namespace Clio.Package
 
 		#region Fields: Private
 
+		private readonly EnvironmentSettings _environmentSettings;
+		private readonly IWorkspace _workspace;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IPackageCreator _packageCreator;
+		private readonly IPackageDownloader _packageDownloader;
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -50,17 +55,24 @@ namespace Clio.Package
 
 		#region Constructors: Public
 
-		public UiProjectCreator(IApplicationPackageListProvider applicationPackageListProvider, 
-				IPackageCreator packageCreator, IWorkspacePathBuilder workspacePathBuilder,
+		public UiProjectCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
+				IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
+				IPackageDownloader packageDownloader, IWorkspacePathBuilder workspacePathBuilder,
 				ITemplateProvider templateProvider, IWorkingDirectoriesProvider workingDirectoriesProvider,
 				IFileSystem fileSystem) {
+			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+			workspace.CheckArgumentNull(nameof(workspace));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			packageCreator.CheckArgumentNull(nameof(packageCreator));
+			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			_environmentSettings = environmentSettings;
+			_workspace = workspace;
 			_applicationPackageListProvider = applicationPackageListProvider;
 			_packageCreator = packageCreator;
+			_packageDownloader = packageDownloader;
 			_workspacePathBuilder = workspacePathBuilder;
 			_templateProvider = templateProvider;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
@@ -71,7 +83,7 @@ namespace Clio.Package
 
 		#region Properties: Private
 
-		private bool IsWorkspace => _fileSystem.ExistsFile(_workspacePathBuilder.WorkspaceSettingsPath);
+		private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 		private string PackagesPath => IsWorkspace
 				? _workspacePathBuilder.PackagesFolderPath
 				: Path.Combine(_workingDirectoriesProvider.CurrentDirectory, packagesDirectoryName);
@@ -115,13 +127,32 @@ namespace Clio.Package
 			throw new ArgumentException("Not correct project name. Use only 'snake_case' format");
 		}
 
+		private PackageInfo FindExistingPackage(string packageName) {
+			try {
+				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
+				var package = packages.FirstOrDefault(p =>
+					p.Descriptor.Name.Equals(packageName, StringComparison.InvariantCultureIgnoreCase));
+				return package;
+			} catch (Exception e) {
+				return null;
+			}
+		}
+
 		#endregion
 
 		#region Methods: Public
 
-		public void Create(string projectName, string packageName, string vendorPrefix) {
+		public void Create(string projectName, string packageName, string vendorPrefix,
+				Func<string, bool> enableDownloadPackage) {
 			CheckCorrectProjectName(projectName);
-			CreatePackage(packageName);
+			var package = FindExistingPackage(packageName);
+			if (package != null && enableDownloadPackage(packageName)) {
+				_packageDownloader.DownloadPackage(packageName, _environmentSettings,
+					_workspacePathBuilder.PackagesFolderPath);
+				_workspace.AddPackageIfNeeded(packageName);
+			} else {
+				CreatePackage(packageName);
+			}
 			CreateProject(projectName, packageName, vendorPrefix);
 		}
 

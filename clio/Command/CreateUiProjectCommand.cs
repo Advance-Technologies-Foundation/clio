@@ -5,9 +5,10 @@
 	using CommandLine;
 	using System;
 
-	#region Class: RestoreFromPackageBackupOptions
+	#region Class: CreateUiProjectOptions
 
-	[Verb("create-ui-project", Aliases = new string[] { "createup"}, HelpText = "Create UI project")]
+	[Verb("new-ui-project", Aliases = new string[] { "create-ui-project", "new-ui", "createup", "uiproject", "ui"},
+		HelpText = "Add new UI project")]
 	public class CreateUiProjectOptions : EnvironmentOptions
 	{
 
@@ -19,7 +20,7 @@
 		}
 
 		[Option("vendor-prefix", Required = true,
-			HelpText ="Skip rollback data")]
+			HelpText ="Vendor prefix")]
 		public string VendorPrefix {
 			get; set;
 		}
@@ -61,9 +62,23 @@
 
 		#region Methods: Public
 
+		private static bool EnableDownloadPackage(string packageName) {
+			Console.WriteLine($"Do you wont download package [{packageName}] ? (y/n):");
+			string result;
+			do {
+				result = Console.ReadLine().Trim().ToLower();
+			} while (result != "y" && result != "n");
+			return result == "y";
+		}
+
+		#endregion
+
+		#region Methods: Public
+
 		public int Execute(CreateUiProjectOptions options) {
 			try {
-				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix);
+				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix,
+					EnableDownloadPackage);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
