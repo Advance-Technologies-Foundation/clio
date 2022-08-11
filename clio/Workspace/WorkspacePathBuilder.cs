@@ -47,7 +47,7 @@ namespace Clio.Workspace
 
 		private readonly Lazy<string> _rootPathLazy;
 		public string RootPath => _rootPathLazy.Value;
-
+		public bool IsWorkspace => _fileSystem.ExistsFile(WorkspaceSettingsPath);
 		public string ClioDirectoryPath => Path.Combine(RootPath, ClioDirectoryName);
 
 		public string WorkspaceSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceSettingsJson);

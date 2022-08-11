@@ -8,6 +8,7 @@ namespace Clio.Workspace
 		#region Properties: Public
 
 		WorkspaceSettings WorkspaceSettings { get; }
+		bool IsWorkspace { get; }
 
 		#endregion
 
@@ -17,6 +18,7 @@ namespace Clio.Workspace
 		void Create(bool isAddedPackageNames = false);
 		void Restore();
 		void Install(string creatioPackagesZipName = null);
+		void AddPackageIfNeeded(string packageName);
 
 		#endregion
 
