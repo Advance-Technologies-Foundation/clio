@@ -19,7 +19,7 @@
 			get; set;
 		}
 
-		[Option("vendor-prefix", Required = true,
+		[Option('v', "vendor-prefix", Required = true,
 			HelpText ="Vendor prefix")]
 		public string VendorPrefix {
 			get; set;

@@ -102,9 +102,6 @@
     <Content Include="tpl\ui-project\src\app\app.module.ts">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="tpl\ui-project\src\app\view-elements\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
     <Content Include="tpl\ui-project\src\assets\.gitkeep">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -199,6 +196,22 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\package\SqlScripts\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\demo\demo-icon.svg" />
+    <Content Include="tpl\ui-project\src\app\view-elements\demo\demo-icon.svg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\demo\demo.component.ts" />
+    <Content Include="tpl\ui-project\src\app\view-elements\demo\demo.component.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\demo\index.ts" />
+    <Content Include="tpl\ui-project\src\app\view-elements\demo\index.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\index.ts" />
+    <Content Include="tpl\ui-project\src\app\view-elements\index.ts">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
