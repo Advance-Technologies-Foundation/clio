@@ -117,6 +117,10 @@
 			UpdateTemplateInfo(projectPath, angularFileName, projectName, packageName, vendorPrefix);
 			UpdateTemplateInfo(projectPath, packageFileName, projectName, packageName, vendorPrefix);
 			UpdateTemplateInfo(projectPath, webpackConfigFileName, projectName, packageName, vendorPrefix);
+			string filePath = Path.Combine(projectPath, "src", "app");
+			UpdateTemplateInfo(filePath, "app.module.ts", projectName, packageName, vendorPrefix);
+			filePath = Path.Combine(projectPath, "src", "app", "view-elements", "demo");
+			UpdateTemplateInfo(filePath, "demo.component.ts", projectName, packageName, vendorPrefix);
 		}
 
 		private void CheckCorrectProjectName(string projectName) {
