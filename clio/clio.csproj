@@ -11,7 +11,7 @@
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <AssemblyVersion>3.0.1.18</AssemblyVersion>
 	  <FileVersion>3.0.1.18</FileVersion>
-	  <Version>3.0.1.18</Version>
+	  <Version>3.0.1.20</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
