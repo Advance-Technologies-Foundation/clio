@@ -111,8 +111,9 @@ namespace Clio
 				.Append("\t").Append("/// ").AppendLine(schema.Value.Description)
 				.Append("\t").AppendLine("/// </summary>");
 			}
+			sb.Append("\t").AppendLine("[ExcludeFromCodeCoverage]");
 			sb.Append("\t").Append("[Schema(\"").Append(schema.Value.Name).AppendLine("\")]")
-				.Append("\t").Append("internal class ").Append(schema.Value.Name).AppendLine(": BaseModel")
+				.Append("\t").Append("public class ").Append(schema.Value.Name).AppendLine(": BaseModel")
 				.Append("\t").AppendLine("{")
 				.AppendLine();
 			foreach (var column in schema.Value.Columns)
