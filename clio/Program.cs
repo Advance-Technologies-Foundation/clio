@@ -297,7 +297,28 @@ namespace Clio
 					(CreateUiProjectOptions opts) => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
 					(DownloadConfigurationCommandOptions opts) => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),
 					(DeployCommandOptions opts) => Resolve<DeployCommand>(opts).Execute(opts),
-					errs => 1);
+					HandleParseError);
+		}
+
+		private static int HandleParseError(IEnumerable<Error> errs)
+		{
+			var exitCode = 1;
+
+			var notRealErrors = new List<ErrorType>()
+			{
+				ErrorType.VersionRequestedError,
+				ErrorType.HelpRequestedError,
+				ErrorType.HelpVerbRequestedError,
+			};
+
+			var isNotRealError = errs.Select(err => err.Tag)
+				.Intersect(notRealErrors)
+				.Any();
+
+			if (isNotRealError)
+				exitCode = 0;
+
+			return exitCode;
 		}
 
 		private static int SetDeveloperMode(DeveloperModeOptions opts) {
