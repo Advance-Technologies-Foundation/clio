@@ -49,7 +49,9 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public IEnumerable<PackageInfo> GetPackages(string scriptData = "{}") {
+		public IEnumerable<PackageInfo> GetPackages() => GetPackages("{}");
+
+		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
 			string responseFormServer = _applicationClient.ExecutePostRequest(_packagesListServiceUrl, scriptData);
 			var json = _jsonConverter.CorrectJson(responseFormServer);
 			var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);

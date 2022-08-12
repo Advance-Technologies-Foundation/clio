@@ -17,6 +17,7 @@ namespace Clio.Workspace
 		private readonly IWorkspaceCreator _workspaceCreator;
 		private readonly IWorkspaceRestorer _workspaceRestorer;
 		private readonly IWorkspaceInstaller _workspaceInstaller;
+		private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
 		private readonly IJsonConverter _jsonConverter;
 
 		#endregion
@@ -25,18 +26,21 @@ namespace Clio.Workspace
 
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
 				IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
-				IWorkspaceInstaller workspaceInstaller, IJsonConverter jsonConverter) {
+				IWorkspaceInstaller workspaceInstaller, IWorkspaceSolutionCreator workspaceSolutionCreator,
+				IJsonConverter jsonConverter) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			workspaceCreator.CheckArgumentNull(nameof(workspaceCreator));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
 			workspaceInstaller.CheckArgumentNull(nameof(workspaceInstaller));
+			workspaceSolutionCreator.CheckArgumentNull(nameof(workspaceSolutionCreator));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			_environmentSettings = environmentSettings;
 			_workspacePathBuilder = workspacePathBuilder;
 			_workspaceCreator = workspaceCreator;
 			_workspaceRestorer = workspaceRestorer;
 			_workspaceInstaller = workspaceInstaller;
+			_workspaceSolutionCreator = workspaceSolutionCreator;
 			_jsonConverter = jsonConverter;
 			ResetLazyWorkspaceSettings();
 		}
@@ -47,13 +51,13 @@ namespace Clio.Workspace
 
 		private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
 
-
 		#endregion
 
 		#region Properties: Public
 
 		private Lazy<WorkspaceSettings> _workspaceSettings;
 		public WorkspaceSettings WorkspaceSettings => _workspaceSettings.Value;
+		public bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 
 		#endregion
 
@@ -85,6 +89,20 @@ namespace Clio.Workspace
 
 		public void Install(string creatioPackagesZipName = null) =>
 			_workspaceInstaller.Install(WorkspaceSettings.Packages, creatioPackagesZipName);
+
+		public void AddPackageIfNeeded(string packageName) {
+			if (!IsWorkspace) {
+				return;
+			}
+			var workspacePackages = WorkspaceSettings.Packages;
+			if (workspacePackages.Contains(packageName)) {
+				return;
+			}
+			workspacePackages.Add(packageName);
+			SaveWorkspaceSettings();
+			_workspaceSolutionCreator.Create();
+		}
+
 
 		#endregion
 

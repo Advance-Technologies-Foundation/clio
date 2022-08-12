@@ -14,7 +14,8 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public void Create(string packageName);
+		void Create(string packageName);
+		void Create(string packagesPath, string packageName);
 
 		#endregion
 
@@ -69,6 +70,12 @@ namespace Clio.Package
 		}
 		#endregion
 
+		#region Properties: Private
+
+		private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
+
+		#endregion
+
 		#region Methods: Private
 
 		private PackageDescriptorDto CreatePackageDescriptor(string packageName, bool isStandalonePackage = true) =>
@@ -110,12 +117,12 @@ namespace Clio.Package
 		}
 
 		private string GetPackagesPath() =>
-			_fileSystem.ExistsFile(_workspacePathBuilder.WorkspaceSettingsPath)
+			IsWorkspace
 				? _workspacePathBuilder.PackagesFolderPath
 				: _workingDirectoriesProvider.CurrentDirectory;
 
 		private void AddPackageToWorkspaceIfNeeded(string packageName) {
-			if (!_fileSystem.ExistsFile(_workspacePathBuilder.WorkspaceSettingsPath)) {
+			if (!IsWorkspace) {
 				return;
 			}
 			var workspacePackages = _workspace.WorkspaceSettings.Packages;
@@ -133,6 +140,10 @@ namespace Clio.Package
 
 		public void Create(string packageName) {
 			var packagesPath = GetPackagesPath();
+			Create(packagesPath, packageName);
+		}
+
+		public void Create(string packagesPath, string packageName) {
 			CreatePackageIfNotExists(packagesPath, packageName);
 			AddPackageToWorkspaceIfNeeded(packageName);
 		}

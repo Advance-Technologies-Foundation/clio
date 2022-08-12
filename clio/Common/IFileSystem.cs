@@ -22,12 +22,14 @@ namespace Clio.Common
 		bool IsReadOnlyFile(string filePath);
 		void MoveFile(string oldFilePath, string newFilePath);
 		void ResetFileReadOnlyAttribute(string filePath);
+		string ReadAllText(string filePath);
 		void WriteAllTextToFile(string filePath, string contents);
 		void CheckOrClearExistsDirectory(string directoryPath, bool overwrite);
 		void CheckOrOverwriteExistsDirectory(string directoryPath, bool overwrite);
 		void ClearDirectory(string directoryPath);
 		void CopyDirectory(string source, string destination, bool overwrite);
 		DirectoryInfo CreateDirectory(string directoryPath);
+		void CreateDirectoryIfNotExists(string directoryPath);
 		void DeleteDirectory(string directoryPath);
 		void DeleteDirectory(string directoryPath, bool recursive);
 		void DeleteDirectoryIfExists(string directoryPath);

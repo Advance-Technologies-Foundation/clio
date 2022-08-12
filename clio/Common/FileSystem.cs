@@ -88,6 +88,8 @@ namespace Clio.Common
 			}
 		}
 
+		public string ReadAllText(string filePath) => File.ReadAllText(filePath);
+
 		public void WriteAllTextToFile(string filePath, string contents) {
 			File.WriteAllText(filePath, contents);
 		}
@@ -133,6 +135,13 @@ namespace Clio.Common
 		}
 
 		public DirectoryInfo CreateDirectory(string directoryPath) => Directory.CreateDirectory(directoryPath);
+
+		public void CreateDirectoryIfNotExists(string directoryPath) {
+			if (Directory.Exists(directoryPath)) {
+				return;
+			}
+			Directory.CreateDirectory(directoryPath);
+		}
 
 		public void DeleteDirectory(string directoryPath) {
 			DeleteDirectory(directoryPath, false);

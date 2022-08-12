@@ -11,7 +11,7 @@
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <AssemblyVersion>3.0.1.18</AssemblyVersion>
 	  <FileVersion>3.0.1.18</FileVersion>
-	  <Version>3.0.1.18</Version>
+	  <Version>3.0.1.20</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -104,9 +104,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\ui-project\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui-project\src\app\view-elements\.gitkeep">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\ui-project\src\assets\.gitkeep">
@@ -203,6 +200,22 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\package\SqlScripts\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\demo\demo-icon.svg" />
+    <Content Include="tpl\ui-project\src\app\view-elements\demo\demo-icon.svg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\demo\demo.component.ts" />
+    <Content Include="tpl\ui-project\src\app\view-elements\demo\demo.component.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\demo\index.ts" />
+    <Content Include="tpl\ui-project\src\app\view-elements\demo\index.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project\src\app\view-elements\index.ts" />
+    <Content Include="tpl\ui-project\src\app\view-elements\index.ts">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

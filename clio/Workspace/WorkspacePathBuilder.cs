@@ -12,6 +12,7 @@ namespace Clio.Workspace
 		#region Constants: Private
 
 		private const string PackagesFolderName = "packages";
+		private const string ProjectsFolderName = "projects";
 		private const string ClioDirectoryName = ".clio";
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 		private const string SolutionName = "CreatioPackages.sln";
@@ -46,12 +47,13 @@ namespace Clio.Workspace
 
 		private readonly Lazy<string> _rootPathLazy;
 		public string RootPath => _rootPathLazy.Value;
-
+		public bool IsWorkspace => _fileSystem.ExistsFile(WorkspaceSettingsPath);
 		public string ClioDirectoryPath => Path.Combine(RootPath, ClioDirectoryName);
 
 		public string WorkspaceSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceSettingsJson);
 
 		public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
+		public string ProjectsFolderPath => Path.Combine(RootPath, ProjectsFolderName);
 
 		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);
 		public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
