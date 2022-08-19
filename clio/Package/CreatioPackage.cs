@@ -1,8 +1,7 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
-using Clio.Common;
+﻿using Clio.Common;
 using Newtonsoft.Json;
+using System;
+using System.IO;
 
 namespace Clio
 {
@@ -16,9 +15,13 @@ namespace Clio
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
+		public const string IgnoreFileName = ".clioignore";
+
+
 		public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
 		public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
 		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
+		public static string IgnoreFileTpl => $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
 
 		private readonly string[] _pkgDirectories = { "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
 

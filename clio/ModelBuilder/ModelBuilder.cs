@@ -98,6 +98,7 @@ namespace Clio
 			sb.AppendLine("using ATF.Repository;")
 				.AppendLine("using ATF.Repository.Attributes;")
 				.AppendLine("using System;")
+				.AppendLine("using System.Diagnostics.CodeAnalysis;")
 				.AppendLine()
 				.Append("namespace ").AppendLine(_opts.Namespace)
 				.AppendLine("{")
