@@ -218,6 +218,94 @@
     <Content Include="tpl\ui-project\src\app\view-elements\index.ts">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="tpl\ui-project-Empty\src\app\view-elements\.gitkeep" />
+    <Content Include="tpl\ui-project-Empty\src\app\view-elements\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\app\app.module.ts" />
+    <Content Include="tpl\ui-project-Empty\src\app\app.module.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\assets\.gitkeep" />
+    <Content Include="tpl\ui-project-Empty\src\assets\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\environments\environment.ts" />
+    <Content Include="tpl\ui-project-Empty\src\environments\environment.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\environments\environment.prod.ts" />
+    <Content Include="tpl\ui-project-Empty\src\environments\environment.prod.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\bootstrap.ts" />
+    <Content Include="tpl\ui-project-Empty\src\bootstrap.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\favicon.ico" />
+    <Content Include="tpl\ui-project-Empty\src\favicon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\index.html" />
+    <Content Include="tpl\ui-project-Empty\src\index.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\main.ts" />
+    <Content Include="tpl\ui-project-Empty\src\main.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\polyfills.ts" />
+    <Content Include="tpl\ui-project-Empty\src\polyfills.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\styles.scss" />
+    <Content Include="tpl\ui-project-Empty\src\styles.scss">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\src\test.ts" />
+    <Content Include="tpl\ui-project-Empty\src\test.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\.browserslistrc" />
+    <Content Include="tpl\ui-project-Empty\.browserslistrc">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\.editorconfig" />
+    <Content Include="tpl\ui-project-Empty\.editorconfig">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\angular.json" />
+    <Content Include="tpl\ui-project-Empty\angular.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\karma.conf.js" />
+    <Content Include="tpl\ui-project-Empty\karma.conf.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\package.json" />
+    <Content Include="tpl\ui-project-Empty\package.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\README.md" />
+    <Content Include="tpl\ui-project-Empty\README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\tsconfig.json" />
+    <Content Include="tpl\ui-project-Empty\tsconfig.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\tsconfig.app.json" />
+    <Content Include="tpl\ui-project-Empty\tsconfig.app.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\tsconfig.spec.json" />
+    <Content Include="tpl\ui-project-Empty\tsconfig.spec.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\ui-project-Empty\webpack.config.js" />
+    <Content Include="tpl\ui-project-Empty\webpack.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

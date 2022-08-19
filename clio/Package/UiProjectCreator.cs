@@ -15,7 +15,7 @@
 
 		#region Methods: Public
 
-		void Create(string projectName, string packageName, string vendorPrefix, 
+		void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
 			Func<string, bool> enableDownloadPackage);
 
 		#endregion
@@ -33,14 +33,14 @@
 
 		private const string packagesDirectoryName = "packages";
 		private const string projectsDirectoryName = "projects";
-		private const string angularFileName = "angular.json";
-		private const string packageFileName = "package.json";
-		private const string webpackConfigFileName = "webpack.config.js";
 
 		#endregion
 
 		#region Fields: Private
 
+		private static string[] _templateExtensions = new[] {
+			".json", ".js", ".ts", ".conf", ".config", ".scss", ".css"
+		};
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IWorkspace _workspace;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
@@ -49,7 +49,7 @@
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		private readonly IFileSystem _fileSystem; 
+		private readonly IFileSystem _fileSystem;
 
 		#endregion
 
@@ -95,32 +95,31 @@
 
 		#region Methods: Private
 
-		private void UpdateTemplateInfo(string projectPath, string fileName, string projectName, string packageName,
+		private void UpdateTemplateInfo(string projectPath, string projectName, string packageName,
 				string vendorPrefix) {
-			string filePath = Path.Combine(projectPath, fileName);
-			string tplContent = _fileSystem.ReadAllText(filePath);
-			tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix);
-			tplContent = tplContent.Replace("<%projectName%>", projectName);
-			tplContent = tplContent.Replace("<%distPath%>",
-				$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/","js/", projectName)}");
-			_fileSystem.WriteAllTextToFile(filePath, tplContent);
+			IEnumerable<string> filesPaths = _fileSystem
+				.GetFiles(projectPath, "*.*", SearchOption.AllDirectories)
+				.Where(f => _templateExtensions.Any(e => f.ToLower().EndsWith(e)));
+			foreach (string filePath in filesPaths) {
+				string tplContent = _fileSystem.ReadAllText(filePath);
+				tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix);
+				tplContent = tplContent.Replace("<%projectName%>", projectName);
+				tplContent = tplContent.Replace("<%distPath%>",
+					$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/","js/", projectName)}");
+				_fileSystem.WriteAllTextToFile(filePath, tplContent);
+			}
 		}
 
 		private void CreatePackage(string packageName) {
 			_packageCreator.Create(PackagesPath, packageName);
 		}
 
-		private void CreateProject(string projectName, string packageName, string vendorPrefix) {
+		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty) {
 			_fileSystem.CreateDirectoryIfNotExists(ProjectsPath);
 			var projectPath = Path.Combine(ProjectsPath, projectName);
-			_templateProvider.CopyTemplateFolder("ui-project", projectPath);
-			UpdateTemplateInfo(projectPath, angularFileName, projectName, packageName, vendorPrefix);
-			UpdateTemplateInfo(projectPath, packageFileName, projectName, packageName, vendorPrefix);
-			UpdateTemplateInfo(projectPath, webpackConfigFileName, projectName, packageName, vendorPrefix);
-			string filePath = Path.Combine(projectPath, "src", "app");
-			UpdateTemplateInfo(filePath, "app.module.ts", projectName, packageName, vendorPrefix);
-			filePath = Path.Combine(projectPath, "src", "app", "view-elements", "demo");
-			UpdateTemplateInfo(filePath, "demo.component.ts", projectName, packageName, vendorPrefix);
+			string templateFolderName = isEmpty ? "ui-project-Empty" : "ui-project";
+			_templateProvider.CopyTemplateFolder(templateFolderName, projectPath);
+			UpdateTemplateInfo(projectPath, projectName, packageName, vendorPrefix);
 		}
 
 		private void CheckCorrectProjectName(string projectName) {
@@ -146,7 +145,7 @@
 
 		#region Methods: Public
 
-		public void Create(string projectName, string packageName, string vendorPrefix,
+		public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
 				Func<string, bool> enableDownloadPackage) {
 			CheckCorrectProjectName(projectName);
 			var package = FindExistingPackage(packageName);
@@ -157,7 +156,7 @@
 			} else {
 				CreatePackage(packageName);
 			}
-			CreateProject(projectName, packageName, vendorPrefix);
+			CreateProject(projectName, packageName, vendorPrefix, isEmpty);
 		}
 
 		#endregion
