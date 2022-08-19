@@ -35,6 +35,7 @@ namespace Clio.Common
 		void DeleteDirectoryIfExists(string directoryPath);
 		bool ExistsDirectory(string directoryPath);
 		string GetCurrentDirectoryIfEmpty(string directoryPath);
+		bool IsEmptyDirectory();
 		string GetDestinationFileDirectory(string filePath, string destinationPath);
 		string[] GetDirectories(string directoryPath);
 		void OverwriteExistsDirectory(string directoryPath);

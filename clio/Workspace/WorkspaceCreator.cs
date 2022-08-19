@@ -74,6 +74,8 @@ namespace Clio.Workspace
 		private string RootPath => _workspacePathBuilder.RootPath;
 		private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
 
+		private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
+
 		#endregion
 
 		#region Methods: Private
@@ -106,11 +108,25 @@ namespace Clio.Workspace
 			_executablePermissionsActualizer.Actualize(_workspacePathBuilder.TasksFolderPath);
 		}
 
+		private void ValidateNotExistingWorkspace() {
+			if (IsWorkspace) {
+				throw new InvalidOperationException("This operation can not execute inside existing workspace!");
+			}
+		}
+
+		private void ValidateEmptyDirectory() {
+			if (!_fileSystem.IsEmptyDirectory()) {
+				throw new InvalidOperationException("This operation requires empty folder!");
+			}
+		}
+
 		#endregion
 
 		#region Methods: Public
 
 		public void Create(bool isAddingPackageNames = false) {
+			ValidateNotExistingWorkspace();
+			ValidateEmptyDirectory();
 			_templateProvider.CopyTemplateFolder("workspace", RootPath);
 			CreateWorkspaceSettingsFile(isAddingPackageNames);
 			if (_osPlatformChecker.IsWindowsEnvironment) {
