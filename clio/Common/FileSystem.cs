@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace Clio.Common
@@ -166,6 +167,9 @@ namespace Clio.Common
 				? Directory.GetCurrentDirectory()
 				: directoryPath;
 		}
+
+		public bool IsEmptyDirectory() =>
+			!Directory.GetFileSystemEntries(Directory.GetCurrentDirectory()).Any();
 
 		public string GetDestinationFileDirectory(string filePath, string destinationPath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
