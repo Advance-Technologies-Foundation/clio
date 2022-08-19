@@ -59,23 +59,44 @@ namespace Clio
 			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
 		}
 
-		private static IEnumerable<string> GetAllFiles(string tempPath, bool skipPdb) {
+		private static IEnumerable<string> GetAllFiles(string tempPath, bool skipPdb, string packagePath) {
 			var files = Directory
 				.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
 				.Where(name => !name.EndsWith(".pdb") || !skipPdb);
-			return ApplyClioIgnore(files);
+			return ApplyClioIgnore(files, packagePath);
 
 		}
 
-		private static IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files)
+		private static IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath)
 		{
-			//return if .clioignore is missing
-			if (!files.Any(f => f.EndsWith(".clioignore"))) return files;
+			var wsIgnoreFile = new DirectoryInfo(packagePath)?.Parent?.Parent?
+			.GetDirectories(".clio")?.FirstOrDefault().GetFiles(".clioignore")?.FirstOrDefault();
+			bool wsIgnoreFileMissing = (wsIgnoreFile == null || !wsIgnoreFile.Exists);
+			bool childIgnoreMissing = !files.Any(f => f.EndsWith(".clioignore"));
+
+			//return if .clioignore is missing in \.clio and any other package directory
+			if (wsIgnoreFileMissing && childIgnoreMissing) return files;
+			
+			
+			List<string> filteredFiles = new List<string>();
+
+			var ignore = new Ignore.Ignore();
+			ignore.OriginalRules.Clear();
+			
+			//Load content of clioIgnore from \.clio\.clioignore
+			ignore.Add(File.ReadAllLines(wsIgnoreFile.FullName));
+
+			foreach (var item in files)
+			{
+				Uri fUri = new Uri(item);
+				if (!ignore.IsIgnored(fUri.ToString()))
+				{
+					filteredFiles.Add(item);
+				}
+			}
+
 
 			var ignoreFiles = files.Where(f => f.EndsWith(".clioignore")).ToList();
-
-			List<string> filteredFiles = new List<string>();
-			var ignore = new Ignore.Ignore();
 			foreach (var ignoreFile in ignoreFiles)
 			{
 				FileInfo ignoreFi = new FileInfo(ignoreFile);
@@ -142,7 +163,7 @@ namespace Clio
 			_fileSystem.CheckOrDeleteExistsFile(packedPackagePath, overwrite);
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
 				_packageUtilities.CopyPackageElements(packagePath, tempPath, overwrite);
-				var files = GetAllFiles(tempPath, skipPdb);
+				var files = GetAllFiles(tempPath, skipPdb, packagePath);
 				_compressionUtilities.PackToGZip(files, tempPath, packedPackagePath);
 			}); 
 		}

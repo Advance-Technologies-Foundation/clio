@@ -2,8 +2,8 @@
   "profiles": {
     "clio": {
       "commandName": "Project",
-      "commandLineArgs": "createw",
-      "workingDirectory": "C:\\5"
+      "commandLineArgs": "pushw",
+      "workingDirectory": "C:\\workspaces\\zoom"
     }
   }
 }

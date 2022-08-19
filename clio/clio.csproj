@@ -73,7 +73,7 @@
     <Content Include="tpl\packages.config.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="tpl\package\.clioignore">
+    <Content Include="tpl\workspace\.clio\.clioignore">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\package\Files\PackageName.csproj">
@@ -361,5 +361,8 @@
     <Folder Include="tpl\package\Resources" />
     <Folder Include="tpl\package\Schemas" />
     <Folder Include="tpl\package\SqlScripts" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="tpl\workspace\.clio\.clioignore" />
   </ItemGroup>
 </Project>
