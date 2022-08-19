@@ -141,13 +141,6 @@ namespace Clio
 			File.Create(filePath).Dispose();
 			return this;
 		}
-		protected CreatioPackage CreateIgnoreFile()
-		{
-			GetTplPath(IgnoreFileTpl, out string fullPath);
-			File.Copy(fullPath, Path.Combine(FullPath,".clioignore"), true);
-			
-			return this;
-		}
 
 		protected CreatioPackage CreateAssemblyInfo() {
 			Directory.CreateDirectory(Path.Combine(FullPath, PropertiesDirName));
@@ -170,8 +163,7 @@ namespace Clio
 				.CreateSolution()
 				.CreatePackageConfig()
 				.CreateAssemblyInfo()
-				.CreateEmptyClass()
-				.CreateIgnoreFile();
+				.CreateEmptyClass();
 			return this;
 		}
 
