@@ -31,6 +31,12 @@
 			get; set;
 		}
 
+		[Option("empty", Required = false, Default = false,
+			HelpText = "Create empty package")]
+		public bool IsEmpty {
+			get; set;
+		}
+
 		#endregion
 
 	}
@@ -47,7 +53,6 @@
 
 		private readonly IUiProjectCreator _uiProjectCreator;
 
-
 		#endregion
 
 		#region Constructors: Public
@@ -55,12 +60,11 @@
 		public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator) {
 			uiProjectCreator.CheckArgumentNull(nameof(uiProjectCreator));
 			_uiProjectCreator= uiProjectCreator;
-			
 		}
 
 		#endregion
 
-		#region Methods: Public
+		#region Methods: Private
 
 		private static bool EnableDownloadPackage(string packageName) {
 			Console.WriteLine($"Do you wont download package [{packageName}] ? (y/n):");
@@ -78,7 +82,7 @@
 		public int Execute(CreateUiProjectOptions options) {
 			try {
 				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix,
-					EnableDownloadPackage);
+					options.IsEmpty, EnableDownloadPackage);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

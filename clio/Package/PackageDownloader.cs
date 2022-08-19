@@ -4,6 +4,7 @@ namespace Clio.Package
 	using System.Collections.Generic;
 	using System.IO;
 	using Clio.Common;
+	using Clio.WebApplication;
 
 	#region Class: PackageDownloader
 
@@ -23,6 +24,7 @@ namespace Clio.Package
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+		private readonly IApplicationPing _applicationPing;
 		private readonly IFileSystem _fileSystem;
 		private readonly ILogger _logger;
 		private string _reportPath;
@@ -31,15 +33,16 @@ namespace Clio.Package
 
 		#region Constructors: Public
 
-		public PackageDownloader(EnvironmentSettings environmentSettings, 
+		public PackageDownloader(EnvironmentSettings environmentSettings,
 				IApplicationClientFactory applicationClientFactory, IPackageArchiver packageArchiver,
 				IServiceUrlBuilder serviceUrlBuilder, IWorkingDirectoriesProvider workingDirectoriesProvider,
-				IFileSystem fileSystem, ILogger logger) {
+				IApplicationPing applicationPing, IFileSystem fileSystem, ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+			applicationPing.CheckArgumentNull(nameof(applicationPing));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			logger.CheckArgumentNull(nameof(logger));
 			_environmentSettings = environmentSettings;
@@ -47,6 +50,7 @@ namespace Clio.Package
 			_packageArchiver = packageArchiver;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_applicationPing = applicationPing;
 			_fileSystem = fileSystem;
 			_logger = logger;
 		}
@@ -90,7 +94,7 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public void DownloadZipPackages(IEnumerable<string> packagesNames, 
+		public void DownloadZipPackages(IEnumerable<string> packagesNames,
 				EnvironmentSettings environmentSettings = null, string destinationPath = null) {
 			environmentSettings ??= _environmentSettings;
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
@@ -99,14 +103,17 @@ namespace Clio.Package
 			}
 		}
 
-		public void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null, 
+		public void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null,
 				string destinationPath = null) {
 			DownloadZipPackages(new [] { packageName }, environmentSettings, destinationPath);
 		}
 
-		public void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null, 
+		public void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
 				string destinationPath = null) {
 			environmentSettings ??= _environmentSettings;
+			if (!_applicationPing.Ping(environmentSettings)) {
+				return;
+			}
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			_fileSystem.CheckOrOverwriteExistsDirectory(destinationPath, true);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
