@@ -37,7 +37,10 @@ namespace Clio.Project.NuGet
 		}
 		public Version FindSdkVersion(Version applicationVersion)
 		{
-			return _versions.FirstOrDefault(v => v == applicationVersion);
+			return _versions.FirstOrDefault(v => 
+				v.Major == applicationVersion.Major && 
+				v.Minor == applicationVersion.Minor && 
+				v.Build == applicationVersion.Build);
 		}
 	}
 

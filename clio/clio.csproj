@@ -23,6 +23,12 @@
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+		<!--
+            KK: Added NoDefaultExcludes flag to add .clioignore, 
+            https://docs.microsoft.com/en-us/nuget/reference/cli-reference/cli-ref-pack
+		<NoDefaultExcludes>true</NoDefaultExcludes>
+        -->
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -74,6 +80,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.clio\.clioignore">
+		<Pack>true</Pack>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\package\Files\PackageName.csproj">
