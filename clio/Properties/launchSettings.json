@@ -1,9 +1,0 @@
-{
-  "profiles": {
-    "clio": {
-      "commandName": "Project",
-      "commandLineArgs": "pushw",
-      "workingDirectory": "C:\\workspaces\\zoom"
-    }
-  }
-}
