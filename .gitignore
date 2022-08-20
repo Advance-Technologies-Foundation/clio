@@ -201,3 +201,5 @@ FakesAssemblies/
 
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
+
+clio/Properties/launchSettings.json
