@@ -70,7 +70,8 @@ namespace Clio
 		private static IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath)
 		{
 			var wsIgnoreFile = new DirectoryInfo(packagePath)?.Parent?.Parent?
-			.GetDirectories(".clio")?.FirstOrDefault().GetFiles(".clioignore")?.FirstOrDefault();
+			.GetDirectories(".clio")?.FirstOrDefault()?.GetFiles(".clioignore")?.FirstOrDefault();
+
 			bool wsIgnoreFileMissing = (wsIgnoreFile == null || !wsIgnoreFile.Exists);
 			bool childIgnoreMissing = !files.Any(f => f.EndsWith(".clioignore"));
 
