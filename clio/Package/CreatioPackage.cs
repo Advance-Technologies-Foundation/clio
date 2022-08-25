@@ -15,7 +15,7 @@ namespace Clio
 		public const string PackageConfigName = "packages.config";
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
-		public const string IgnoreFileName = ".clioignore";
+		public const string IgnoreFileName = "clioignore";
 
 
 		public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";

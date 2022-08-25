@@ -70,34 +70,24 @@ namespace Clio
 		private static IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath)
 		{
 			var wsIgnoreFile = new DirectoryInfo(packagePath)?.Parent?.Parent?
-			.GetDirectories(".clio")?.FirstOrDefault()?.GetFiles(".clioignore")?.FirstOrDefault();
+			.GetDirectories(".clio")?.FirstOrDefault()?.GetFiles(CreatioPackage.IgnoreFileName)?.FirstOrDefault();
 
 			bool wsIgnoreFileMissing = (wsIgnoreFile == null || !wsIgnoreFile.Exists);
-			bool childIgnoreMissing = !files.Any(f => f.EndsWith(".clioignore"));
-
-			//return if .clioignore is missing in \.clio and any other package directory
+			bool childIgnoreMissing = !files.Any(f => f.EndsWith(CreatioPackage.IgnoreFileName));
 			if (wsIgnoreFileMissing && childIgnoreMissing) return files;
-			
-			
 			List<string> filteredFiles = new List<string>();
-
 			var ignore = new Ignore.Ignore();
 			ignore.OriginalRules.Clear();
-			
-			//Load content of clioIgnore from \.clio\.clioignore
 			ignore.Add(File.ReadAllLines(wsIgnoreFile.FullName));
-
-			foreach (var item in files)
-			{
+			foreach (var item in files) {
 				Uri fUri = new Uri(item);
-				if (!ignore.IsIgnored(fUri.ToString()))
-				{
+				if (!ignore.IsIgnored(fUri.ToString())) {
 					filteredFiles.Add(item);
 				}
 			}
 
 
-			var ignoreFiles = files.Where(f => f.EndsWith(".clioignore")).ToList();
+			var ignoreFiles = files.Where(f => f.EndsWith(CreatioPackage.IgnoreFileName)).ToList();
 			foreach (var ignoreFile in ignoreFiles)
 			{
 				FileInfo ignoreFi = new FileInfo(ignoreFile);

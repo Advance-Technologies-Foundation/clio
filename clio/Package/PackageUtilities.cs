@@ -56,13 +56,6 @@ namespace Clio.Common
 			}
 			File.Copy(Path.Combine(sourcePath, "descriptor.json"), 
 				Path.Combine(destinationPath, "descriptor.json"));
-
-			if (new FileInfo(Path.Combine(sourcePath, ".clioignore")).Exists) 
-			{
-				File.Copy(Path.Combine(sourcePath, ".clioignore"), 
-					Path.Combine(destinationPath, ".clioignore"));
-			}
-
 		}
 
 		#endregion

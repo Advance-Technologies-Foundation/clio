@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>3.0.1.24</AssemblyVersion>
-	  <FileVersion>3.0.1.24</FileVersion>
-	  <Version>3.0.1.24</Version>
+	  <AssemblyVersion>3.0.1.26</AssemblyVersion>
+	  <FileVersion>3.0.1.26</FileVersion>
+	  <Version>3.0.1.26</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -23,12 +23,6 @@
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
-
-		<!--
-            KK: Added NoDefaultExcludes flag to add .clioignore, 
-            https://docs.microsoft.com/en-us/nuget/reference/cli-reference/cli-ref-pack
-		<NoDefaultExcludes>true</NoDefaultExcludes>
-        -->
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -44,7 +38,6 @@
 
   <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
-    <None Remove="tpl\package\.clioignore" />
     <None Remove="tpl\ui-project\.browserslistrc" />
     <None Remove="tpl\ui-project\.editorconfig" />
     <None Remove="tpl\ui-project\angular.json" />
@@ -79,7 +72,7 @@
     <Content Include="tpl\packages.config.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="tpl\workspace\.clio\.clioignore">
+    <Content Include="tpl\workspace\.clio\clioignore">
 		<Pack>true</Pack>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -458,6 +451,6 @@
     <Folder Include="tpl\package\SqlScripts" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="tpl\workspace\.clio\.clioignore" />
+    <None Include="tpl\workspace\.clio\clioignore" />
   </ItemGroup>
 </Project>
