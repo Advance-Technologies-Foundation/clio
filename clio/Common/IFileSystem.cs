@@ -17,8 +17,10 @@ namespace Clio.Common
 		bool DeleteFileIfExists(string filePath);
 		bool ExistsFile(string filePath);
 		string ExtractNameFromPath(string filePath);
-		string[] GetFiles(string filePath);
-		string[] GetFiles(string filePath, string searchPattern, SearchOption searchOption);
+		string GetFileNameWithoutExtension(FileInfo fileInfo); 
+		string[] GetFiles(string directoryPath);
+		string[] GetFiles(string directoryPath, string searchPattern, SearchOption searchOption);
+		FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption);
 		bool IsReadOnlyFile(string filePath);
 		void MoveFile(string oldFilePath, string newFilePath);
 		void ResetFileReadOnlyAttribute(string filePath);
@@ -30,6 +32,7 @@ namespace Clio.Common
 		void CopyDirectory(string source, string destination, bool overwrite);
 		DirectoryInfo CreateDirectory(string directoryPath);
 		void CreateDirectoryIfNotExists(string directoryPath);
+		void CreateOrClearDirectory(string directoryPath); 
 		void DeleteDirectory(string directoryPath);
 		void DeleteDirectory(string directoryPath, bool recursive);
 		void DeleteDirectoryIfExists(string directoryPath);

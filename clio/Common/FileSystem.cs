@@ -56,18 +56,29 @@ namespace Clio.Common
 		public string ExtractNameFromPath(string filePath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
 			var packageFileInfo = new FileInfo(filePath);
-			return packageFileInfo.Name
-				.Substring(0, packageFileInfo.Name.Length - packageFileInfo.Extension.Length);
+			return GetFileNameWithoutExtension(packageFileInfo);
 		}
 
-		public string[] GetFiles(string filePath) {
-			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-			return Directory.GetFiles(filePath);
+		public string GetFileNameWithoutExtension(FileInfo fileInfo) {
+			fileInfo.CheckArgumentNull(nameof(fileInfo));
+			return fileInfo.Name
+				.Substring(0, fileInfo.Name.Length - fileInfo.Extension.Length);
 		}
 
-		public string[] GetFiles(string filePath, string searchPattern, SearchOption searchOption) {
-			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-			return Directory.GetFiles(filePath, searchPattern, searchOption);
+		public string[] GetFiles(string directoryPath) {
+			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+			return Directory.GetFiles(directoryPath);
+		}
+
+		public string[] GetFiles(string directoryPath, string searchPattern, SearchOption searchOption) {
+			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+			return Directory.GetFiles(directoryPath, searchPattern, searchOption);
+		}
+
+		public FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption) {
+			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+			var directoryInfo = new DirectoryInfo(directoryPath);
+			return directoryInfo.GetFiles(searchPattern, searchOption);
 		}
 
 		public bool IsReadOnlyFile(string filePath) {
@@ -142,6 +153,14 @@ namespace Clio.Common
 				return;
 			}
 			Directory.CreateDirectory(directoryPath);
+		}
+
+		public void CreateOrClearDirectory(string directoryPath) {
+			if (Directory.Exists(directoryPath)) {
+				ClearDirectory(directoryPath);
+			} else {
+				Directory.CreateDirectory(directoryPath);
+			}
 		}
 
 		public void DeleteDirectory(string directoryPath) {

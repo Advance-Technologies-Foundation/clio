@@ -8,12 +8,6 @@
 	public interface IApplicationPing
 	{
 
-		#region Properties: Public
-
-		string PingUri { get; }
-
-		#endregion
-
 		#region Methods: Public
 
 		bool Ping();
@@ -47,9 +41,9 @@
 
 		#endregion
 
-		#region Properties: Public
+		#region Properties: Private
 
-		public string PingUri => _environmentSettings.IsNetCore
+		private string PingUri => _environmentSettings.IsNetCore
 			? _environmentSettings.Uri
 			: _serviceUrlBuilder.Build("ping");
 

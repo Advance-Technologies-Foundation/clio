@@ -72,6 +72,9 @@
     <Content Include="tpl\packages.config.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="tpl\workspace\.application\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="tpl\workspace\.clio\clioignore">
 		<Pack>true</Pack>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -304,6 +307,30 @@
     </Content>
     <None Remove="tpl\ui-project-Empty\webpack.config.js" />
     <Content Include="tpl\ui-project-Empty\webpack.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\open-solution-framework-sdk.cmd" />
+    <Content Include="tpl\workspace\tasks\open-solution-framework-sdk.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\open-solution-netcore-sdk.cmd" />
+    <Content Include="tpl\workspace\tasks\open-solution-netcore-sdk.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\run-all-platfrom-build-sdk.cmd" />
+    <Content Include="tpl\workspace\tasks\run-all-platfrom-build-sdk.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\build-netcore-sdk.sh" />
+    <Content Include="tpl\workspace\tasks\build-netcore-sdk.sh">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\build-netcore-sdk.cmd" />
+    <Content Include="tpl\workspace\tasks\build-netcore-sdk.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\build-framework-sdk.cmd" />
+    <Content Include="tpl\workspace\tasks\build-framework-sdk.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

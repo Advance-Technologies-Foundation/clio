@@ -20,11 +20,16 @@ namespace Clio.Workspace
 		string SolutionPath { get; }
 		string NugetFolderPath { get; }
 		string TasksFolderPath { get; }
+		string ApplicationFolderPath { get; }
+		string CoreBinFolderPath { get; } 
+		string LibFolderPath { get; }
+		string ConfigurationBinFolderPath { get; }
 
 		#endregion
 
 		#region Methods: Public
 
+		string BuildPackagePath(string packageName);
 		string BuildFrameworkCreatioSdkPath(Version nugetVersion);
 		string BuildCoreCreatioSdkPath(Version nugetVersion);
 		string BuildRelativePathRegardingPackageProjectPath(string destinationPath);
