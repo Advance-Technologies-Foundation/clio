@@ -53,6 +53,7 @@ namespace Clio
 			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
 			containerBuilder.RegisterType<DownloadConfigurationCommand>();
+			containerBuilder.RegisterType<UploadFileCommand>();
 			return containerBuilder.Build();
 		}
 	}
