@@ -78,7 +78,13 @@ namespace Clio.Common
 		public FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption) {
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
 			var directoryInfo = new DirectoryInfo(directoryPath);
-			return directoryInfo.GetFiles(searchPattern, searchOption);
+
+			//TODO: Discuss with P.Makarchuk
+			//directoryInfo.GetFiles causes System.IO.DirectoryNotFoundException when Schemas does not exist 
+			if (directoryInfo.Exists){
+				return directoryInfo.GetFiles(searchPattern, searchOption);	
+			}
+			return new FileInfo[0] ;
 		}
 
 		public bool IsReadOnlyFile(string filePath) {
