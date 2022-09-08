@@ -7,10 +7,10 @@
     using CommandLine;
 	using Newtonsoft.Json.Linq;
 
-	#region Class: UploadFileCommandOptions
+	#region Class: DeployCommandOptions
 
 	[Verb("alm-deploy", Aliases = new string[] { "deploy" }, HelpText = "Install package to selected environment")]
-	public class UploadFileCommandOptions : EnvironmentOptions
+	public class DeployCommandOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "File", Required = true, HelpText = "Package file path")]
 		public string FilePath { get; set; }
@@ -25,9 +25,9 @@
 
 	#endregion
 
-	#region Class: UploadLicenseCommand
+	#region Class: DeployCommand
 
-	public class UploadFileCommand : RemoteCommand<UploadFileCommandOptions>
+	public class DeployCommand : RemoteCommand<DeployCommandOptions>
 	{
 
 		#region Fields: Private
@@ -39,7 +39,7 @@
 
 		#region Constructors: Public
 
-		public UploadFileCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+		public DeployCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
 			: base(applicationClient, settings) {
 			settings.CheckArgumentNull(nameof(settings));
 			applicationClient.CheckArgumentNull(nameof(applicationClient));
@@ -51,7 +51,7 @@
 
 		#region Methods: Public
 
-		public override int Execute(UploadFileCommandOptions options) {
+		public override int Execute(DeployCommandOptions options) {
 			try {
 				Guid fileId;
 				do {
