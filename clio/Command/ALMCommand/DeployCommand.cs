@@ -7,10 +7,10 @@
     using CommandLine;
 	using Newtonsoft.Json.Linq;
 
-	#region Class: UploadFileCommandOptions
+	#region Class: DeployCommandOptions
 
 	[Verb("alm-deploy", Aliases = new string[] { "deploy" }, HelpText = "Install package to selected environment")]
-	public class UploadFileCommandOptions : EnvironmentOptions
+	public class DeployCommandOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "File", Required = true, HelpText = "Package file path")]
 		public string FilePath { get; set; }
@@ -25,9 +25,9 @@
 
 	#endregion
 
-	#region Class: UploadLicenseCommand
+	#region Class: DeployCommand
 
-	public class UploadFileCommand : RemoteCommand<UploadFileCommandOptions>
+	public class DeployCommand : RemoteCommand<DeployCommandOptions>
 	{
 
 		#region Fields: Private
@@ -39,7 +39,7 @@
 
 		#region Constructors: Public
 
-		public UploadFileCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+		public DeployCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
 			: base(applicationClient, settings) {
 			settings.CheckArgumentNull(nameof(settings));
 			applicationClient.CheckArgumentNull(nameof(applicationClient));
@@ -51,12 +51,10 @@
 
 		#region Methods: Public
 
-		public override int Execute(UploadFileCommandOptions options) {
+		public override int Execute(DeployCommandOptions options) {
 			try {
 				Guid fileId;
-				do {
-					fileId = Guid.NewGuid();
-				} while (Char.IsLetter(fileId.ToString().ElementAt(0)));
+				fileId = GetFileId();
 				string subEndpointPath;
 				if (options.NonUseSsp) {
 					subEndpointPath = "rest";
@@ -65,34 +63,47 @@
 				}
 				string uploadLicenseServiceUrl = $"/0/{subEndpointPath}/InstallPackageService/UploadFile";
 				string startOperationServiceUrl = $"/0/{subEndpointPath}/InstallPackageService/StartOperation";
-				FileInfo fi = new FileInfo(options.FilePath);
-				var uploadLicenseUrl = _environmentSettings.Uri + uploadLicenseServiceUrl
-					+ "?fileName=" + fi.Name + "&totalFileLength=" + fi.Length + "&fileId=" + fileId; 
-				string uploadResult = _applicationClient.UploadFile(uploadLicenseUrl, options.FilePath);
-				JObject json = JObject.Parse(uploadResult);
-				if (json["success"].ToString() == "True") {
+				if (UploadFile(uploadLicenseServiceUrl, options.FilePath, fileId)) {
 					Console.WriteLine($"File uploaded. FileId: {fileId}");
 					var startOperationUrl = _environmentSettings.Uri + startOperationServiceUrl;
-					string requestData = "{\"environmentName\": " + options.EnvironmentName
-						+ ", \"fileId\": " + fileId + "}";
-					string result = _applicationClient.ExecutePostRequest(startOperationUrl, requestData);
-					JObject startOperationResult = JObject.Parse(result);
-					if (startOperationResult["success"].ToString() == "True") {
-						var operationId = startOperationResult["operationId"].ToString();
-						Console.WriteLine($"OpeartionId: {operationId}");
+					string requestData = "{\"environmentName\": \"" + options.EnvironmentName
+						+ "\", \"fileId\": \"" + fileId + "\"}";
+					if (StartOperation(startOperationUrl, requestData)) {
 						Console.WriteLine("Done");
 						return 0;
 					}
 					Console.WriteLine($"Operation not started. FileId: {fileId}");
 					return 1;
-				} 
+				}
 				Console.WriteLine($"File not uploaded. FileId: {fileId}");
 				return 1;
-			}
-			catch (Exception e) {
+			} catch (Exception e) {
 				Console.WriteLine(e.Message);
 				return 1;
 			}
+		}
+
+		private bool UploadFile(string uploadLicenseUrl, string filePath, Guid fileId) {
+			FileInfo fi = new FileInfo(filePath);
+			var uploadLicenseEnpointUrl = _environmentSettings.Uri + uploadLicenseUrl
+					+ "?fileName=" + fi.Name + "&totalFileLength=" + fi.Length + "&fileId=" + fileId;
+			string uploadResult = _applicationClient.UploadFile(uploadLicenseEnpointUrl, filePath);
+			JObject json = JObject.Parse(uploadResult);
+			return json["success"].ToString() == "True";
+		}
+
+		private bool StartOperation(string startOperationUrl, string requestData) {
+			string result = _applicationClient.ExecutePostRequest(startOperationUrl, requestData);
+			JObject startOperationResult = JObject.Parse(result);
+			if (startOperationResult["success"].ToString() == "True") {
+				Console.WriteLine($"OpeartionId: {startOperationResult["operationId"]}");
+				return true;
+			}
+			return false;
+		}
+
+		private static Guid GetFileId() {
+			return Guid.NewGuid();
 		}
 
 		#endregion
