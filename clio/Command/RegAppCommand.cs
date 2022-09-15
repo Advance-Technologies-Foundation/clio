@@ -1,17 +1,15 @@
-﻿using System;
-using Clio.Common;
+﻿using Clio.Common;
 using Clio.UserEnvironment;
-using Clio.Utilities;
 using CommandLine;
+using System;
 
 namespace Clio.Command
 {
     [Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
     public class RegAppOptions : EnvironmentNameOptions
     {
-        [Option('a', "ActiveEnvironment", Required = false, HelpText = "Set a web application by default")]
+        [Option('a', "ActiveEnvironment", Required = false, HelpText = "Set as default web application")]
         public string ActiveEnvironment { get; set; }
-
     }
 
     public class RegAppCommand : Command<RegAppOptions>
@@ -60,7 +58,7 @@ namespace Clio.Command
                         }
                     }
                     _settingsRepository.ConfigureEnvironment(options.Name, environment);
-                    Console.WriteLine($"Envronment {options.Name} was configured...");
+                    Console.WriteLine($"Environment {options.Name} was configured...");
                     environment = _settingsRepository.GetEnvironment(options);
                     Console.WriteLine($"Try login to {environment.Uri} with {environment.Login} credentials ...");
                     var creatioClient = _applicationClientFactory.CreateClient(environment);
