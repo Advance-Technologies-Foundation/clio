@@ -3,6 +3,8 @@
 	using System;
 	using System.IO;
 	using System.Linq;
+	using System.Net;
+	using System.Text;
 	using Clio.Common;
     using CommandLine;
 	using Newtonsoft.Json.Linq;
@@ -87,7 +89,7 @@
 			FileInfo fi = new FileInfo(filePath);
 			var uploadLicenseEnpointUrl = _environmentSettings.Uri + uploadLicenseUrl
 					+ "?fileName=" + fi.Name + "&totalFileLength=" + fi.Length + "&fileId=" + fileId;
-			string uploadResult = _applicationClient.UploadFile(uploadLicenseEnpointUrl, filePath);
+			string uploadResult = _applicationClient.UploadAlmFile(uploadLicenseEnpointUrl, filePath);
 			JObject json = JObject.Parse(uploadResult);
 			return json["success"].ToString() == "True";
 		}
