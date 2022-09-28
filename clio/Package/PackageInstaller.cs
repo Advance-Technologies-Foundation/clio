@@ -21,6 +21,7 @@
 		private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
 		private const string InstallLogUrl = @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
+		private const string BackupUrl = @"/ServiceModel/PackageInstallerService.svc/CreateBackup";
 		private const string DefLogFileName = "cliolog.txt";
 
 		#endregion
@@ -100,6 +101,25 @@
 			applicationClient.UploadFile(GetCompleteUrl(UploadUrl), filePath);
 			_logger.WriteLine("Uploaded");
 			return packageName;
+		}
+
+		private bool CreateBackupPackage(string packageCode, string filePath,
+				EnvironmentSettings environmentSettings) {
+			try {
+				_logger.WriteLine("Backup process...");
+				FileInfo fileInfo = new FileInfo(filePath);
+				string zipPackageName = fileInfo.Name;
+				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+				applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl), "{\"Name\":\"" + packageCode +
+					"\",\"Code\":\"" + packageCode +
+					"\",\"ZipPackageName\":\"" + zipPackageName +
+					"\",\"LastUpdate\":0}")
+				;
+				_logger.WriteLine("Backup completed");
+				return true;
+			} catch {
+				return false;
+			}
 		}
 
 		private string GetInstallLog(EnvironmentSettings environmentSettings) {
@@ -183,6 +203,10 @@
 		private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
 				PackageInstallOptions packageInstallOptions) {
 			string packageName = UploadPackage(filePath, environmentSettings);
+			string packageCode = packageName.Split('.')[0];
+			if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
+				return (false, "Dont created backup.");
+			}
 			(bool success, string logText) = 
 				InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);
 			if (DeveloperModeEnabled(environmentSettings)) {
