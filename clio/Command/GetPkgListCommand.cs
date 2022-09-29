@@ -87,6 +87,26 @@ namespace Clio.Command
 				.OrderBy(p => p.Descriptor.Name);
 		}
 
+		private void PrintPackageList(PkgListOptions options, IEnumerable<PackageInfo> filteredPackages) {
+			if (options.Json.HasValue && options.Json.Value) {
+				Console.WriteLine(_jsonResponseFormater.Format(filteredPackages));
+			} else {
+				if (filteredPackages.Any()) {
+					PrintPackageList(filteredPackages);
+				}
+				Console.WriteLine();
+				Console.WriteLine($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
+			}
+		}
+
+		private void PrintError(PkgListOptions options, Exception e) {
+			if (options.Json.HasValue && options.Json.Value) {
+				Console.WriteLine(_jsonResponseFormater.Format(e));
+			} else {
+				Console.WriteLine(e);
+			}
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -95,19 +115,10 @@ namespace Clio.Command
 			try {
 				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
 				var filteredPackages = FilterPackages(packages, options.SearchPattern);
-				if (options.Json.HasValue && options.Json.Value) {
-					Console.WriteLine(_jsonResponseFormater.Format(filteredPackages));
-				} else {
-					if (filteredPackages.Any()) {
-						PrintPackageList(filteredPackages);
-					}
-					Console.WriteLine();
-					Console.WriteLine($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
-				}
-
+				PrintPackageList(options, filteredPackages);
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(_jsonResponseFormater.Format(e));
+				PrintError(options, e);
 				return 1;
 			}
 		}
