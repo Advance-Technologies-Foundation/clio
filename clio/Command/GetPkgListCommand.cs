@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
-using Newtonsoft.Json;
 
 namespace Clio.Command
 {
@@ -22,6 +20,10 @@ namespace Clio.Command
 		Default = null)]
 		public string SearchPattern { get; set; } = string.Empty;
 
+		[Option('j', "Json", Required = false, Default = false, HelpText = "Returns response in json format")]
+		public bool? Json { get; set; }
+
+
 		#endregion
 
 	}
@@ -32,21 +34,26 @@ namespace Clio.Command
 
 	public class GetPkgListCommand : Command<PkgListOptions>
 	{
+
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+		private readonly IJsonResponseFormater _jsonResponseFormater;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public GetPkgListCommand(EnvironmentSettings environmentSettings, 
-				IApplicationPackageListProvider applicationPackageListProvider) {
+				IApplicationPackageListProvider applicationPackageListProvider,
+				IJsonResponseFormater jsonResponseFormater) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
+			jsonResponseFormater.CheckArgumentNull(nameof(jsonResponseFormater));
 			_environmentSettings = environmentSettings;
 			_applicationPackageListProvider = applicationPackageListProvider;
+			_jsonResponseFormater= jsonResponseFormater;
 		}
 
 		#endregion
@@ -88,14 +95,19 @@ namespace Clio.Command
 			try {
 				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
 				var filteredPackages = FilterPackages(packages, options.SearchPattern);
-				if (filteredPackages.Any()) {
-					PrintPackageList(filteredPackages);
+				if (options.Json.HasValue && options.Json.Value) {
+					Console.WriteLine(_jsonResponseFormater.Format(filteredPackages));
+				} else {
+					if (filteredPackages.Any()) {
+						PrintPackageList(filteredPackages);
+					}
+					Console.WriteLine();
+					Console.WriteLine($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
 				}
-				Console.WriteLine();
-				Console.WriteLine($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
+
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				Console.WriteLine(_jsonResponseFormater.Format(e));
 				return 1;
 			}
 		}
