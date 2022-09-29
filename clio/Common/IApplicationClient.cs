@@ -12,6 +12,7 @@ namespace Clio.Common
 		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite);
 		void Login();
 		string UploadFile(string url, string filePath);
+		string UploadAlmFile(string url, string filePath);
 	}
 
 	public class CreatioClientAdapter : IApplicationClient
@@ -54,7 +55,11 @@ namespace Clio.Common
 			return _creatioClient.UploadFile(url, filePath);
 		}
 
-        internal T As<T>()
+		public string UploadAlmFile(string url, string filePath) {
+			return _creatioClient.UploadAlmFile(url, filePath);
+		}
+
+		internal T As<T>()
         {
             throw new NotImplementedException();
         }
