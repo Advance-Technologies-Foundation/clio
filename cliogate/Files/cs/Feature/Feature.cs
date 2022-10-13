@@ -2,6 +2,7 @@
 {
 	using System;
 	using System.Collections.Generic;
+	using System.Linq;
 	using ATF.Repository;
 	using ATF.Repository.Attributes;
 	using Terrasoft.Core;
@@ -129,13 +130,20 @@
 		/// </summary>
 		/// <param name="code">Feature code.</param>
 		/// <param name="state">New feature state.</param>
-		public void SetFeatureState(string code, int state) {
+		/// <param name="userId">User Id.</param>
+		public void SetFeatureState(string code, int state, Guid userId) {
 			Guid featureId = ExtractFeatureId(code);
 			if (featureId == Guid.Empty) {
 				CreateNewFeature(code, state);
 			} else {
 				var feature = Repository.GetItem<Feature>(featureId);
-				feature.UsersFeatureState.ForEach(item => item.FeatureState = state);
+				if (userId == Guid.Empty) {
+					feature.UsersFeatureState.ForEach(item => item.FeatureState = state);
+				} else if (feature.UsersFeatureState.Any(t => t.SysAdminUnitId == userId)) {
+					feature.UsersFeatureState.First(t => t.SysAdminUnitId == userId).FeatureState = state;
+				} else {
+					feature.UsersFeatureState.Add(CreateNewFeatureState(UserConnection.CurrentUser.Id, feature.Id, state));
+				}
 			}
 			Repository.Save();
 		}

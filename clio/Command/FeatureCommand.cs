@@ -14,6 +14,9 @@ namespace Clio.Command
 		[Value(1, MetaName = "State", Required = true, HelpText = "Feature state")]
 		public int State { get; set; }
 
+		[Value(2, MetaName = "onlyCurrentUser", Required = false, Default = false, HelpText = "Only current user")]
+		public bool OnlyCurrentUser { get; set; }
+
 	}
 
 	internal class FeatureCommand : RemoteCommand<FeatureOptions>
@@ -26,7 +29,7 @@ namespace Clio.Command
 		}
 
 		protected override string GetRequestData(FeatureOptions options) {
-			return "{" + $"\"code\":\"{options.Code}\",\"state\":\"{options.State}\"" + "}";
+			return "{" + $"\"code\":\"{options.Code}\",\"state\":\"{options.State}\",\"onlyCurrentUser\":{options.OnlyCurrentUser.ToString().ToLower()}" + "}";
 		}
 
 	}
