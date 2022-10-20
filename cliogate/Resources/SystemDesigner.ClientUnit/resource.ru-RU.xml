@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="ru-RU">
+	<Group Type="String">
+		<Items>
+			<Item Name="LocalizableStrings.RealogCaption.Value" Value="Telemetry log" />
+		</Items>
+	</Group>
+</Resources>
