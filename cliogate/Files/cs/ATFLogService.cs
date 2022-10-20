@@ -19,7 +19,7 @@ namespace Terrasoft.Configuration.Enrichment
 	/// </summary>
 	[ServiceContract]
 	[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]
-	public class LoggerConfigService : BaseService//, System.Web.SessionState.IReadOnlySessionState
+	public class ATFLogService : BaseService//, System.Web.SessionState.IReadOnlySessionState
 	{
 
 		private enum ResetReason
