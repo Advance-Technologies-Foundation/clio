@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>3.0.1.33</AssemblyVersion>
-	  <FileVersion>3.0.1.33</FileVersion>
-	  <Version>3.0.1.33</Version>
+	  <AssemblyVersion>3.0.1.34</AssemblyVersion>
+	  <FileVersion>3.0.1.34</FileVersion>
+	  <Version>3.0.1.34</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
