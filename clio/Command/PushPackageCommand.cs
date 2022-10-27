@@ -101,7 +101,7 @@
 			bool success = false;
 			try
 			{
-				if (options.MarketplaceIds.Any())
+				if (options.MarketplaceIds != null && options.MarketplaceIds.Any())
 				{
 					foreach (int MarketplaceId in options.MarketplaceIds)
 					{
