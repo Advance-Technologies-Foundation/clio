@@ -1,6 +1,8 @@
 ﻿namespace Clio.Command
 {
 	using System;
+	using System.Collections.Generic;
+	using System.Linq;
 	using System.Threading.Tasks;
 	using Clio.Common;
 	using Clio.Package;
@@ -41,7 +43,7 @@
 		public bool? IsForceUpdateAllColumns { get; set; }
 
 		[Option("id", Required = false, HelpText = "Marketplace application id")]
-		public int? MarketplaceId { get; set; }
+		public IEnumerable<int> MarketplaceIds { get; set; }
 
 		#endregion
 
@@ -99,16 +101,21 @@
 			bool success = false;
 			try
 			{
-				if (options.MarketplaceId is object && options.MarketplaceId is int value)
+				if (options.MarketplaceIds.Any())
 				{
-					string fullPath = string.Empty;
-					Task.Run(async () =>
+					foreach (int MarketplaceId in options.MarketplaceIds)
 					{
-						fullPath = await _marketplace.GetFileByIdAsync(value);
-					}).Wait();
-
-					success = _packageInstaller.Install(fullPath, _environmentSettings,
-						packageInstallOptions, options.ReportPath);
+						string fullPath = string.Empty;
+						Task.Run(async () =>
+						{
+							fullPath = await _marketplace.GetFileByIdAsync(MarketplaceId);
+						}).Wait();
+						
+						bool _loopSuccess = _packageInstaller.Install(fullPath, _environmentSettings,
+							packageInstallOptions, options.ReportPath);
+						Console.WriteLine(_loopSuccess ? $"Done installing app by id: {MarketplaceId}" : $"Error installing app by id: {MarketplaceId}");
+					}
+					success = true;
 				}
 				else
 				{
