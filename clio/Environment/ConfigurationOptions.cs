@@ -234,9 +234,9 @@ namespace Clio
 			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? _settings.DeveloperModeEnabled;
 			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
 			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
-			result.AuthAppUri = _settings.AuthAppUri;
-			result.ClientId = _settings.ClientId;
-			result.ClientSecret = _settings.ClientSecret;
+			result.ClientId = string.IsNullOrEmpty(options.ClientId) ? _settings.ClientId : options.ClientId;
+			result.ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? _settings.ClientSecret : options.ClientSecret;
+			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? _settings.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
 			if (_settings.Safe.HasValue && _settings.Safe.Value) {

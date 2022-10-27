@@ -207,7 +207,10 @@ namespace Clio
 				Uri = options.Uri,
 				Password = options.Password,
 				Maintainer = options.Maintainer,
-				IsNetCore = options.IsNetCore
+				IsNetCore = options.IsNetCore,
+				AuthAppUri = options.AuthAppUri,
+				ClientSecret = options.ClientSecret,
+				ClientId = options.ClientId
 			};
 		}
 

@@ -42,7 +42,10 @@ namespace Clio.Command
                         Maintainer = options.Maintainer,
                         Safe = options.SafeValue.HasValue ? options.SafeValue : false,
                         IsNetCore = options.IsNetCore ?? false,
-                        DeveloperModeEnabled = options.DeveloperModeEnabled
+                        DeveloperModeEnabled = options.DeveloperModeEnabled,
+                        ClientId = options.ClientId,
+                        ClientSecret = options.ClientSecret,
+                        AuthAppUri = options.AuthAppUri
                     };
                     if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment))
                     {
