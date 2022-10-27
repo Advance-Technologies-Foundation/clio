@@ -116,9 +116,9 @@ namespace Clio
 				Console.WriteLine("Start download packages ({0}).", packageName);
 				var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 				string requestData = "[" + packageNames + "]";
-				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData);
+				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
-			} catch (Exception) {
+			} catch (Exception e) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
 			}
 		}

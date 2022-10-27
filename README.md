@@ -221,10 +221,10 @@ for get installation log file specify report path parameter
 clio push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
-install from marketplace.creatio.com
+install one or more applications from marketplace.creatio.com
 
 ```
-clio push-pkg --id 22966
+clio push-pkg --id 22966 10096
 ```
 
 ## Pull package from remote application
