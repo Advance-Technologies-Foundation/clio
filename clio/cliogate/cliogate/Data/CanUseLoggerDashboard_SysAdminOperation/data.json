@@ -1,0 +1,21 @@
+﻿{
+  "PackageData": [
+    {
+      "Row": [
+        {
+          "SchemaColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+          "Value": "30996a73-2696-4b56-887d-2df82494295c"
+        },
+        {
+          "SchemaColumnUId": "2aec9cef-232e-413a-9a5a-9ddde2e8a2af",
+          "Value": "CanUseLoggerDashboard"
+        },
+        {
+          "SchemaColumnUId": "a2987d84-12ca-4f95-a27f-54d1cfc2517d",
+          "Value": "null",
+          "DisplayValue": ""
+        }
+      ]
+    }
+  ]
+}
