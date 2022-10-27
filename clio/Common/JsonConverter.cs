@@ -43,6 +43,8 @@
 			File.WriteAllText(jsonPath, JsonConvert.SerializeObject(value, Formatting.Indented));
 		}
 
+		public string SerializeObject<T>(T value) => JsonConvert.SerializeObject(value, Formatting.Indented);
+
 		#endregion
 
 	}

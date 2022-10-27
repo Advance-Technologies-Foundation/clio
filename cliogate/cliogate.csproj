@@ -40,10 +40,15 @@
     <Compile Remove="Schemas\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CreatioSDK" Version="7.17.4.2265" />
+    <PackageReference Include="CreatioSDK" Version="8.0.3.1759" />
     <PackageReference Include="ATF.Repository" Version="2.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="System.CodeDom" Version="4.7.0" />
+    <PackageReference Include="System.CodeDom" Version="5.0.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="NLogExt">
+      <HintPath>Files\Libs\NLogExt.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <Choose>
     <When Condition="'$(TargetFramework)'=='netstandard2.0'">
