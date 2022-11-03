@@ -54,6 +54,7 @@ namespace Clio
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
 			containerBuilder.RegisterType<DownloadConfigurationCommand>();
 			containerBuilder.RegisterType<DeployCommand>();
+			containerBuilder.RegisterType<GetVersionCommand>();
 			return containerBuilder.Build();
 		}
 	}
