@@ -22,5 +22,12 @@
 			get; set;
 		}
 
+		[Option('a', "Async", Required = false,
+			HelpText = "Async download file.", Default = false)]
+		public bool Async
+		{
+			get; set;
+		}
+
 	}
 }

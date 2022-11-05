@@ -46,6 +46,12 @@ namespace Clio
 
 		private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
+		private static string DeleteExistsPackagesZipUrl => AppUrl + @"/rest/PackagesGateway/DeleteExistsPackagesZip";
+
+		private static string ExistsPackageZipUrl => AppUrl + @"/rest/PackagesGateway/ExistsPackageZip";
+
+		private static string DownloadExistsPackageZipUrl => AppUrl + @"/rest/PackagesGateway/DownloadExistsPackageZip";
+
 		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
 
 
@@ -111,12 +117,28 @@ namespace Clio
 			return apiVersion;
 		}
 
-		private static void DownloadZipPackagesInternal(string packageName, string destinationPath) {
+		private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async) {
 			try {
 				Console.WriteLine("Start download packages ({0}).", packageName);
 				var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 				string requestData = "[" + packageNames + "]";
-				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
+				if (!_async) {
+					_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
+				} else {
+					_creatioClientInstance.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty, 10000);
+					new Thread(() => {
+						try {
+							_creatioClientInstance.DownloadFile(GetZipPackageUrl, Path.GetTempFileName(), requestData, 2000);
+						} catch { }
+					}).Start();
+					bool again = false;
+					do {
+						Thread.Sleep(2000);
+						again = !bool.Parse(_creatioClientInstance.ExecutePostRequest(ExistsPackageZipUrl, string.Empty, 10000));
+					} while (again);
+					_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
+				}
+
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
 			} catch (Exception e) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
@@ -155,7 +177,7 @@ namespace Clio
 					IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>();
 					workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 						string zipFilePath = Path.Combine(tempDirectory, $"{packageName}.zip");
-						DownloadZipPackagesInternal(packageName, zipFilePath);
+						DownloadZipPackagesInternal(packageName, zipFilePath, options.Async);
 						UnZipPackages(zipFilePath, destPath);
 					});
 				} else {
@@ -163,7 +185,7 @@ namespace Clio
 					if (Directory.Exists(destPath)) {
 						destPath = Path.Combine(destPath, $"{packageName}.zip");
 					}
-					DownloadZipPackagesInternal(packageName, destPath);
+					DownloadZipPackagesInternal(packageName, destPath, options.Async);
 				}
 				Console.WriteLine("Done");
 				return 0;
