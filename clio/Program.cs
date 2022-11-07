@@ -120,6 +120,7 @@ namespace Clio
 		private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async) {
 			try {
 				Console.WriteLine("Start download packages ({0}).", packageName);
+				int count = 0;
 				var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 				string requestData = "[" + packageNames + "]";
 				if (!_async) {
@@ -135,10 +136,12 @@ namespace Clio
 					do {
 						Thread.Sleep(2000);
 						again = !bool.Parse(_creatioClientInstance.ExecutePostRequest(ExistsPackageZipUrl, string.Empty, 10000));
+						if (++count > 600) {
+							throw new TimeoutException("Timeout exception");
+						}
 					} while (again);
 					_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
 				}
-
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
 			} catch (Exception e) {
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
