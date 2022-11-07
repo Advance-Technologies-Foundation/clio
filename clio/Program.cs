@@ -140,6 +140,7 @@ namespace Clio
 							throw new TimeoutException("Timeout exception");
 						}
 					} while (again);
+					Thread.Sleep(1000);
 					_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
 				}
 				Console.WriteLine("Download packages ({0}) completed.", packageName);
