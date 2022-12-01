@@ -1,0 +1,49 @@
+﻿{
+  "Descriptor": {
+    "UId": "bd5aed88-c413-498f-99d6-7421f6097a8d",
+    "Name": "SysAdminOperationGrantee_Telemetry",
+    "ModifiedOnUtc": "\/Date(1517486262000)\/",
+    "InstallType": 0,
+    "Schema": {
+      "UId": "3987bdc6-38bb-4b41-bcf7-90bb3995117a",
+      "Name": "SysAdminOperationGrantee"
+    },
+    "Columns": [
+      {
+        "ColumnUId": "423b165f-9759-437b-b532-95ef1b78063b",
+        "IsForceUpdate": false,
+        "IsKey": true,
+        "ColumnName": "SysAdminUnit",
+        "DataTypeValueUId": "b295071f-7ea9-4e62-8d1a-919bf3732ff2"
+      },
+      {
+        "ColumnUId": "e1f978af-3b07-4c9f-a422-c6170cd1b1a4",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "CanExecute",
+        "DataTypeValueUId": "90b65bf8-0ffc-4141-8779-2420877af907"
+      },
+      {
+        "ColumnUId": "9d032101-3db5-4bba-ab16-294104cd15ad",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "Position",
+        "DataTypeValueUId": "6b6b74e2-820d-490e-a017-2b73d4ccf2b0"
+      },
+      {
+        "ColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "Id",
+        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
+      },
+      {
+        "ColumnUId": "a64eb826-4dc1-45fb-a5ac-d768275eb719",
+        "IsForceUpdate": false,
+        "IsKey": true,
+        "ColumnName": "SysAdminOperation",
+        "DataTypeValueUId": "b295071f-7ea9-4e62-8d1a-919bf3732ff2"
+      }
+    ]
+  }
+}

@@ -43,6 +43,15 @@ namespace Clio
 		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
 		public string Safe { get; set; }
 
+		[Option("clientId", Required = false, HelpText = "OAuth client id")]
+		public string ClientId { get; set; }
+
+		[Option("clientSecret", Required = false, HelpText = "OAuth client secret")]
+		public string ClientSecret { get; set; }
+
+		[Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
+		public string AuthAppUri { get; set; }
+
 		public bool? SafeValue
 		{
 			get

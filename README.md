@@ -221,10 +221,10 @@ for get installation log file specify report path parameter
 clio push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
-install from marketplace.creatio.com
+install one or more applications from marketplace.creatio.com
 
 ```
-clio push-pkg --MrktId 22966
+clio push-pkg --id 22966 10096
 ```
 
 ## Pull package from remote application
@@ -687,7 +687,7 @@ add-item model --All "true" --Culture en-US -n "ATF.Repository.Models" -d C:\MyM
 
 OPTIONS
 |Short name|Long name|Description
-|:--:|:--|:--|:--
+|:--:|:--|:--|
 d|DestinationPath|Path to source directory
 n|Namespace|Name space for service classes and ATF models
 f|Fields|Required fields for ATF model class
