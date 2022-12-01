@@ -450,6 +450,29 @@ or non default application
 clio clear-redis-db <ENVIRONMENT_NAME>
 ```
 
+## Version
+
+Get versions of all known components
+```
+clio ver
+```
+
+Get current clio version
+```
+clio ver --clio
+```
+
+Get current cliogate version
+```
+clio ver --gate
+```
+
+Get dotnet runtime that executes clio
+```
+clio ver --runtime
+```
+
+
 # Environment settings
 
 Environment is the set of configuration options. It consist of name, Creatio application URL, login and password.
