@@ -65,7 +65,15 @@ namespace Clio.Common
 			zipStream.Read(bytes, 0, sizeof(int));
 			int fileContentLength = BitConverter.ToInt32(bytes, 0);
 			bytes = new byte[fileContentLength];
-			zipStream.Read(bytes, 0, bytes.Length);
+			var buffer = new byte[fileContentLength];
+			int totalRead = 0;
+			while (totalRead < buffer.Length) {
+				int bytesRead = zipStream.Read(buffer, totalRead, buffer.Length - totalRead);
+				if (bytesRead == 0) {
+					break;
+				}
+				totalRead += bytesRead;
+			}
 			string targetDirectoryPath = Path.GetDirectoryName(targetFilePath);
 			if (!Directory.Exists(targetDirectoryPath)) {
 				Directory.CreateDirectory(targetDirectoryPath);
