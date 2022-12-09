@@ -2,16 +2,16 @@
 
 	<PropertyGroup>
 	  <OutputType>Exe</OutputType>
-	  <TargetFramework>net6.0</TargetFramework>
+	  <TargetFramework>netcoreapp3.1</TargetFramework>
 	  <PackAsTool>true</PackAsTool>
 	  <PackageId>clio</PackageId>
 	  <Company>creatio</Company>
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>3.0.1.38</AssemblyVersion>
-	  <FileVersion>3.0.1.38</FileVersion>
-	  <Version>3.0.1.38</Version>
+	  <AssemblyVersion>3.0.1.39</AssemblyVersion>
+	  <FileVersion>3.0.1.39</FileVersion>
+	  <Version>3.0.1.39</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
