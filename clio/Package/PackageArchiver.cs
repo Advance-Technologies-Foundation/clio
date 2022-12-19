@@ -127,9 +127,57 @@ namespace Clio
 			}
 		}
 
+		private static string[] ExtractPackedPackages(string zipFilePath, string targetDirectoryPath) {
+			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath, true);
+			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath, "*.gz");
+			return packedPackagesPaths;
+		}
+
+		private void ExtractPackages(string zipFilePath, bool overwrite, bool deleteGzFiles,
+				bool unpackIsSameFolder, bool isShowDialogOverwrite, string destinationPath, Func<string> getDefaultDirectory) {
+			CheckUnZipPackagesArgument(zipFilePath);
+			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
+			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
+			string targetDirectoryPath = unpackIsSameFolder
+				? destinationPath
+				: getDefaultDirectory();
+			if (deleteGzFiles) {
+				_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
+					var packedPackagesPaths = ExtractPackedPackages(zipFilePath, tempPath);
+					Unpack(packedPackagesPaths, overwrite, isShowDialogOverwrite, targetDirectoryPath);
+				});
+			} else {
+				var packedPackagesPaths = ExtractPackedPackages(zipFilePath, targetDirectoryPath);
+				Unpack(packedPackagesPaths, overwrite, isShowDialogOverwrite, targetDirectoryPath);
+			}
+		}
+
+		private static bool ShowDialogOverwriteDestinationPackageDir(string destinationPackagePath) {
+			bool overwrite = true;
+			if (Directory.Exists(destinationPackagePath)) {
+				Console.Write($"Directory {destinationPackagePath} already exist. Do you want replace it (y/n)? ");
+				var key = Console.ReadKey();
+				Console.WriteLine();
+				overwrite = key.KeyChar == 'y';
+			} else {
+				Directory.CreateDirectory(destinationPackagePath);
+			}
+			return overwrite;
+		}
+
 		#endregion
 
 		#region Methods: Public
+
+		public bool IsZipArchive(string filePath) {
+			string fileExtension = _fileSystem.ExtractFileExtensionFromPath(filePath);
+			return string.Compare(fileExtension, $".{ZipExtension}", StringComparison.OrdinalIgnoreCase) == 0;
+		}
+
+		public bool IsGzArchive(string filePath) {
+			string fileExtension = _fileSystem.ExtractFileExtensionFromPath(filePath);
+			return string.Compare(fileExtension, $".{GzExtension}", StringComparison.OrdinalIgnoreCase) == 0;
+		}
 
 		public string GetPackedPackageFileName(string packageName) => $"{packageName}.{GzExtension}";
 		public string GetPackedGroupPackagesFileName(string groupPackagesName) => $"{groupPackagesName}.{ZipExtension}";
@@ -173,23 +221,31 @@ namespace Clio
 			});
 		}
 
-		public void Unpack(string packedPackagePath, bool overwrite, string destinationPath = null) {
+		public void Unpack(string packedPackagePath, bool overwrite, bool isShowDialogOverwrite = false, 
+				string destinationPath = null) {
 			CheckUnpackArgument(packedPackagePath);
 			CheckPackedPackageExistsAndNotEmpty(packedPackagePath);
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			string destinationPackageDirectory = 
 				_fileSystem.GetDestinationFileDirectory(packedPackagePath, destinationPath);
-			_fileSystem.CheckOrOverwriteExistsDirectory(destinationPackageDirectory, overwrite);
+			if (isShowDialogOverwrite) {
+				overwrite = ShowDialogOverwriteDestinationPackageDir(destinationPackageDirectory);
+			}
+			if (!overwrite) {
+				return;
+			}
+			_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPackageDirectory, overwrite);
 			_compressionUtilities.UnpackFromGZip(packedPackagePath, destinationPackageDirectory);
 		}
 
-		public void Unpack(IEnumerable<string> packedPackagesPaths, bool overwrite, string destinationPath = null) {
+		public void Unpack(IEnumerable<string> packedPackagesPaths, bool overwrite, bool isShowDialogOverwrite = false,
+				string destinationPath = null) {
 			packedPackagesPaths.CheckArgumentNull(nameof(packedPackagesPaths));
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			foreach (var packedPackagePath in packedPackagesPaths) {
-				string packageName = _fileSystem.ExtractNameFromPath(packedPackagePath);
+				string packageName = _fileSystem.ExtractFileNameFromPath(packedPackagePath);
 				_logger.WriteLine($"Start unzip package ({packageName}).");
-				Unpack(packedPackagePath, overwrite, destinationPath);
+				Unpack(packedPackagePath, overwrite, isShowDialogOverwrite, destinationPath);
 				_logger.WriteLine($"Unzip package ({packageName}) completed.");
 			}
 		}
@@ -201,38 +257,15 @@ namespace Clio
 		}
 
 		public void UnZipPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true, 
-				bool unpackIsSameFolder = false, string destinationPath = null) {
-			CheckUnZipPackagesArgument(zipFilePath);
-			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
-			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
-			string targetDirectoryPath = unpackIsSameFolder
-				? destinationPath
-				: _fileSystem.GetDestinationFileDirectory(zipFilePath, destinationPath);
-			if (overwrite) {
-				_fileSystem.OverwriteExistsDirectory(targetDirectoryPath);
-			}
-			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
-			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath);
-			 Unpack(packedPackagesPaths, true, targetDirectoryPath);
-			if (deleteGzFiles) {
-				DeletePackedPackages(packedPackagesPaths);
-			}
+				bool unpackIsSameFolder = false, bool isShowDialogOverwrite = false, string destinationPath = null) {
+			ExtractPackages(zipFilePath, overwrite, deleteGzFiles, unpackIsSameFolder, isShowDialogOverwrite,
+				destinationPath, () => _fileSystem.GetDestinationFileDirectory(zipFilePath, destinationPath));
 		}
 
 		public void ExtractPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true,
-				bool unpackIsSameFolder = false, string destinationPath = null) {
-			CheckUnZipPackagesArgument(zipFilePath);
-			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
-			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
-			string targetDirectoryPath = unpackIsSameFolder
-				? destinationPath
-				: Environment.CurrentDirectory;
-			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);
-			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath, "*.gz");
-			Unpack(packedPackagesPaths, true, targetDirectoryPath);
-			if (deleteGzFiles) {
-				DeletePackedPackages(packedPackagesPaths);
-			}
+				bool unpackIsSameFolder = false, bool isShowDialogOverwrite = false, string destinationPath = null) {
+			ExtractPackages(zipFilePath, overwrite, deleteGzFiles, unpackIsSameFolder, isShowDialogOverwrite,
+				destinationPath, () => Environment.CurrentDirectory);
 		}
 
 		public void UnZip(string zipFilePath, bool overwrite, string destinationPath = null) {

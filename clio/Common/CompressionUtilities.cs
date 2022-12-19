@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
+using System.IO.Compression; 
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -76,7 +76,15 @@ namespace Clio.Common
 			}
 			string targetDirectoryPath = Path.GetDirectoryName(targetFilePath);
 			if (!Directory.Exists(targetDirectoryPath)) {
-				Directory.CreateDirectory(targetDirectoryPath);
+				try {
+					Directory.CreateDirectory(targetDirectoryPath);
+				}
+				catch (Exception e)
+				{
+					Console.WriteLine(e);
+					throw;
+				}
+
 			}
 			using (var stream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None)) {
 				stream.Write(bytes, 0, fileContentLength);

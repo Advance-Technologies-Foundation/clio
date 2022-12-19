@@ -131,7 +131,7 @@ namespace Clio.Project.NuGet
 			CheckArguments(nugetPackageFullName, nugetSourceUrl);
 			RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
 				gzipPackedPackagesFiles => {
-					_packageArchiver.Unpack(gzipPackedPackagesFiles, overwrite, destinationNupkgDirectory);
+					_packageArchiver.Unpack(gzipPackedPackagesFiles, overwrite, false, destinationNupkgDirectory);
 				});
 		}
 

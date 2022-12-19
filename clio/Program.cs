@@ -162,7 +162,7 @@ namespace Clio
 
 		private static void UnZipPackages(string zipFilePath, string destinationPath) {
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-			packageArchiver.ExtractPackages(zipFilePath, true, true, true, destinationPath);
+			packageArchiver.ExtractPackages(zipFilePath, true, true, true, false, destinationPath);
 		}
 
 		private static void UnZip(string zipFilePath) {
@@ -298,9 +298,7 @@ namespace Clio
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
 					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
-					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
-						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
-						Resolve<IFileSystem>()),
+					(UnzipPkgOptions opts) => Resolve<ExtractPackageCommand>().Execute(opts),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
