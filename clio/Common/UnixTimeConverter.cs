@@ -16,8 +16,8 @@ namespace Clio.Common
 
 		#region Methods: Public
 
-		public static DateTime CovertFromUnixDateTime(long unixDateTime) {
-			return _epochUnixDateTime.AddMilliseconds(unixDateTime).ToLocalTime();
+		public static DateTime CovertFromUnixDateTimeToUtc(long unixDateTime) {
+			return _epochUnixDateTime.AddMilliseconds(unixDateTime);
 		}
 
 		public static long CovertToUnixDateTime(DateTime dateTime) {

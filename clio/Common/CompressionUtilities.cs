@@ -68,15 +68,7 @@ namespace Clio.Common
 			zipStream.Read(bytes, 0, bytes.Length);
 			string targetDirectoryPath = Path.GetDirectoryName(targetFilePath);
 			if (!Directory.Exists(targetDirectoryPath)) {
-				try {
-					Directory.CreateDirectory(targetDirectoryPath);
-				}
-				catch (Exception e)
-				{
-					Console.WriteLine(e);
-					throw;
-				}
-
+				Directory.CreateDirectory(targetDirectoryPath);
 			}
 			using (var stream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None)) {
 				stream.Write(bytes, 0, fileContentLength);

@@ -15,16 +15,16 @@ namespace Clio.Tests.Common
 
 		[Test, Category("Unit")]
 		public void CovertFromUnixDateTime_ReturnsDateTime() {
-			const long unixDateTime = 1556958281234;
-			DateTime expectedDateTime = new DateTime(2019, 5, 4, 11,24, 41, 234);
-			DateTime actualDateTime = UnixTimeConverter.CovertFromUnixDateTime(unixDateTime);
+			const long unixDateTime = 1557012281234;
+			DateTime expectedDateTime = new DateTime(2019, 5, 4, 23,24, 41, 234, DateTimeKind.Utc);
+			DateTime actualDateTime = UnixTimeConverter.CovertFromUnixDateTimeToUtc(unixDateTime);
 			actualDateTime.Should().Be(expectedDateTime);
 		}
 
 		[Test, Category("Unit")]
 		public void CovertToUnixDateTime_ReturnsUnixDateTime() {
-			const long expectedUnixDateTime = 1556958281234;
-			DateTime dateTime = new DateTime(2019, 5, 4, 11,24, 41, 234);
+			const long expectedUnixDateTime = 1557012281234;
+			DateTime dateTime = new DateTime(2019, 5, 4, 23,24, 41, 234, DateTimeKind.Utc);
 			long actualUnixDateTime = UnixTimeConverter.CovertToUnixDateTime(dateTime);
 			actualUnixDateTime.Should().Be(expectedUnixDateTime);
 		}
