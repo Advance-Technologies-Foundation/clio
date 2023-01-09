@@ -50,7 +50,7 @@ namespace Clio.Common
 		public void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite) {
 			sourcePath.CheckArgumentNullOrWhiteSpace(nameof(sourcePath));
 			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
-			_fileSystem.CheckOrOverwriteExistsDirectory(destinationPath, overwrite);
+			_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, overwrite);
 			foreach (string packageElementName in PackageElementNames) {
 				CopyPackageElement(sourcePath, destinationPath, packageElementName);
 			}

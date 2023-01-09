@@ -3,12 +3,9 @@ using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
-using Clio.Package;
-using Clio.Project.NuGet;
 using Clio.Querry;
-using Clio.Utilities;
-using Clio.Workspace;
 using System.Reflection;
+using Сlio.Command.PackageCommand;
 
 namespace Clio
 {
@@ -54,6 +51,8 @@ namespace Clio
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
 			containerBuilder.RegisterType<DownloadConfigurationCommand>();
 			containerBuilder.RegisterType<DeployCommand>();
+			containerBuilder.RegisterType<GetVersionCommand>();
+			containerBuilder.RegisterType<ExtractPackageCommand>();
 			return containerBuilder.Build();
 		}
 	}

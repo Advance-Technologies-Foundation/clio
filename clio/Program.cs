@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
 using Autofac;
 using Clio.Command;
 using Clio.Command.PackageCommand;
@@ -14,15 +9,18 @@ using Clio.Package;
 using Clio.Project;
 using Clio.Querry;
 using Clio.UserEnvironment;
-using Clio.Workspace;
 using CommandLine;
 using Creatio.Client;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using Сlio.Command.PackageCommand;
 
 namespace Clio
 {
-
 
 	class Program
 	{
@@ -164,7 +162,7 @@ namespace Clio
 
 		private static void UnZipPackages(string zipFilePath, string destinationPath) {
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-			packageArchiver.ExtractPackages(zipFilePath, true, true, true, destinationPath);
+			packageArchiver.ExtractPackages(zipFilePath, true, true, true, false, destinationPath);
 		}
 
 		private static void UnZip(string zipFilePath) {
@@ -274,7 +272,7 @@ namespace Clio
 					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
 					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions, 
 					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions, CreateUiProjectOptions,
-					DownloadConfigurationCommandOptions, DeployCommandOptions>(args)
+					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -300,9 +298,7 @@ namespace Clio
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
 					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
-					(UnzipPkgOptions opts) => ExtractPackageCommand.ExtractPackage(opts,
-						Resolve<IPackageArchiver>(),Resolve<IPackageUtilities>(),
-						Resolve<IFileSystem>()),
+					(UnzipPkgOptions opts) => Resolve<ExtractPackageCommand>().Execute(opts),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
@@ -332,6 +328,7 @@ namespace Clio
 					(CreateUiProjectOptions opts) => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
 					(DownloadConfigurationCommandOptions opts) => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),
 					(DeployCommandOptions opts) => Resolve<DeployCommand>(opts).Execute(opts),
+					(GetVersionOptions opts) => Resolve<GetVersionCommand>(opts).Execute(opts),
 					HandleParseError);
 		}
 

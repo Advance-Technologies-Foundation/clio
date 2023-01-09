@@ -53,10 +53,16 @@ namespace Clio.Common
 
 		public bool ExistsFile(string filePath) => File.Exists(filePath);
 
-		public string ExtractNameFromPath(string filePath) {
+		public string ExtractFileNameFromPath(string filePath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
 			var packageFileInfo = new FileInfo(filePath);
 			return GetFileNameWithoutExtension(packageFileInfo);
+		}
+
+		public string ExtractFileExtensionFromPath(string filePath) {
+			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
+			var fileInfo = new FileInfo(filePath);
+			return fileInfo.Extension;
 		}
 
 		public string GetFileNameWithoutExtension(FileInfo fileInfo) {
@@ -112,20 +118,22 @@ namespace Clio.Common
 			File.WriteAllText(filePath, contents);
 		}
 
-		public void CheckOrClearExistsDirectory(string directoryPath, bool overwrite) {
-			if (!Directory.Exists(directoryPath)) {
-				return;
-			}
-			if (overwrite) {
+		public void ClearOrCreateDirectory(string directoryPath) {
+			if (Directory.Exists(directoryPath)) {
 				ClearDirectory(directoryPath);
-			} else {
-				throw new Exception($"The directory {directoryPath} already exist");
 			}
+			Directory.CreateDirectory(directoryPath);
 		}
 
-		public void CheckOrOverwriteExistsDirectory(string directoryPath, bool overwrite) {
-			CheckOrClearExistsDirectory(directoryPath, overwrite);
-			Directory.CreateDirectory(directoryPath);
+		public void CreateOrOverwriteExistsDirectoryIfNeeded(string directoryPath, bool overwrite) {
+			if (!Directory.Exists(directoryPath)) {
+				Directory.CreateDirectory(directoryPath);
+				return;
+			}
+			if (!overwrite) {
+				return;
+			}
+			ClearDirectory(directoryPath);
 		}
 
 		public void ClearDirectory(string directoryPath) {
@@ -143,7 +151,7 @@ namespace Clio.Common
 		public void CopyDirectory(string source, string destination, bool overwrite) {
 			source.CheckArgumentNullOrWhiteSpace(nameof(source));
 			destination.CheckArgumentNullOrWhiteSpace(nameof(destination));
-			CheckOrOverwriteExistsDirectory(destination, overwrite);
+			CreateOrOverwriteExistsDirectoryIfNeeded(destination, overwrite);
 			foreach (string filePath in Directory.GetFiles(source)) {
 				File.Copy(filePath, Path.Combine(destination, Path.GetFileName(filePath)), true);
 			}
@@ -199,7 +207,7 @@ namespace Clio.Common
 		public string GetDestinationFileDirectory(string filePath, string destinationPath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
 			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
-			string fileName = ExtractNameFromPath(filePath);
+			string fileName = ExtractFileNameFromPath(filePath);
 			return Path.Combine(destinationPath, fileName);
 		}
 
