@@ -28,7 +28,22 @@ namespace Clio
 
 		public string ClientSecret { get; set; }
 
-		public string AuthAppUri { get; set; }
+		private string _authAppUri;
+		public string AuthAppUri {
+			get { 
+				return string.IsNullOrEmpty(_authAppUri) ?
+					Uri.ToLower().Replace(".creatio.com","-is.creatio.com") : _authAppUri;
+			}
+			set {
+				_authAppUri = value;
+			} 
+		}
+
+		public string SimpleloginUri {
+			get {
+				return Uri + "?simplelogin=true";
+			}
+		}
 
 		internal void Merge(EnvironmentSettings environment) {
 			if (!string.IsNullOrEmpty(environment.Login)) {
