@@ -32,7 +32,7 @@ namespace Clio
 		public string AuthAppUri {
 			get { 
 				return string.IsNullOrEmpty(_authAppUri) ?
-					Uri.ToLower().Replace(".creatio.com","-is.creatio.com") : _authAppUri;
+					Uri.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
 			}
 			set {
 				_authAppUri = value;
