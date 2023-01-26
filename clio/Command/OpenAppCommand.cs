@@ -21,7 +21,7 @@ namespace Clio.Command
 			try {
 				var settings = new SettingsRepository();
 				var env = settings.GetEnvironment(options);
-				WebBrowser.OpenUrl(env.Uri);
+				WebBrowser.OpenUrl(env.SimpleloginUri);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
