@@ -5,34 +5,35 @@ namespace Clio.Command
 	using System.Collections.Specialized;
 
 
-	#region Class: AddPackageOptions
+	#region Class: ExternalLinkOptions
 
 	[Verb("externalLink", Aliases = new string[] { "link" }, HelpText = "Handle external deep-links")]
 	public class ExternalLinkOptions : EnvironmentOptions
 	{
-
 		#region Properties: Public
-		[Option('c', "content", Required = false, HelpText = "content")]
+
+		// Default to make sure we dont throw prematurely
+		[Value(0, Default = "")]
 		public string Content
 		{
 			get; set;
 		}
 
-
 		#endregion
-
 	}
 
 	#endregion
 
-	#region Class: AddPackageCommand
+	#region Class: ExternalLinkCommand
 
 	public class ExternalLinkCommand : Command<ExternalLinkOptions>
 	{
 
 		#region Fields: Private
+
 		private readonly RegAppCommand _regCommand;
 		private Uri _clioUri;
+
 		#endregion
 
 		#region Constructors: Public
@@ -49,20 +50,15 @@ namespace Clio.Command
 		/// <summary>
 		/// to test execute in command line
 		/// clio-dev externalLink --content clio://?protocol=https:&host=129117-crm-bundle.creatio.com&name=vscode&clientId=83B03D807E3DEEAEF6A55D8CB587E191&clientSecret=C6EA75A49446A63F239BEB4C89892A610E638063AC298EEAF6786E309E06970C
+		/// Make sur  to call clio register before testing, see reg/clio_context_menu_win.reg Lines 20-24 (protocol registration)
 		/// </summary>
 		/// <param name="options"></param>
 		/// <returns></returns>
 		public override int Execute(ExternalLinkOptions options)
 		{
 
-			if (Uri.TryCreate(options.Content, UriKind.Absolute, out _clioUri))
-			{
-				if (_clioUri.Scheme != "clio")
-				{
-					Console.Error.WriteLine("ERROR - Not a clio URI");
-					return 0;
-				}
-			}
+			if (!IsLinkValid(options.Content))
+				return 0;
 
 			NameValueCollection clioParams = System.Web.HttpUtility.ParseQueryString(_clioUri.Query);
 
@@ -104,8 +100,33 @@ namespace Clio.Command
 			return 0;
 		}
 		#endregion
+
+		#region Methods: Private
+
+		/// <summary>
+		/// Check if Uri is valid
+		/// </summary>
+		/// <param name="content">URI to validate</param>
+		/// <returns>true when Uri parses correctly, otherwise false</returns>
+		private bool IsLinkValid(string content)
+		{
+			if (Uri.TryCreate(content, UriKind.Absolute, out _clioUri))
+			{
+				if (_clioUri.Scheme != "clio")
+				{
+					Console.Error.WriteLine("ERROR (UriScheme) - Not a clio URI");
+					return false;
+				}
+			}
+			else
+			{
+				Console.Error.WriteLine("ERROR (Uri) - Clio URI cannot be empty");
+				return false;
+			}
+			return true;
+		}
+		#endregion
 	}
 
 	#endregion
-
 }
