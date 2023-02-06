@@ -66,6 +66,7 @@ namespace Clio.Command
 
 			NameValueCollection clioParams = System.Web.HttpUtility.ParseQueryString(_clioUri.Query);
 
+#if DEBUG
 			Console.WriteLine("clio was called with:");
 			for (var i = 0; i < clioParams.Count; i++)
 			{
@@ -73,20 +74,21 @@ namespace Clio.Command
 				var value = clioParams.GetValues(i)?[0];
 				Console.WriteLine($"\t{key} - {value}");
 			}
+#endif
 
+			//TODO: change JS to merge protocol and host into one param
 			var baseUrl = $"{clioParams["protocol"]}//{clioParams["host"]}";
 
-			//Should pass OAuth20IdentityServerUrl SysSetting for completeness
+			//TODO: Pass OAuth20IdentityServerUrl SysSetting instead of guessing it
 			var authUrl = $"{clioParams["protocol"]}//{clioParams["host"].Replace(".creatio.com", "-is.creatio.com/connect/token")}";
 
-
-			var opt = new RegAppOptions
+			RegAppOptions opt = new RegAppOptions
 			{
-				IsNetCore = false,                                      //Should pass in deepLink as arg, in JS check if this.window.location.pathname starts with /0
+				IsNetCore = false,                                      //In OAuthClientAppPage check if this.window.location.pathname starts with /0
 				ClientId = clioParams["clientId"],
 				ClientSecret = clioParams["clientSecret"],
 				Uri = baseUrl,
-				Name = clioParams["name"],                          //Probably needs a unique name
+				Name = clioParams["name"],                          //Probably needs a unique name across all environments (may be combine baseUrl and name)
 				AuthAppUri = authUrl,
 				Login = string.Empty,
 				Password = string.Empty,
@@ -95,7 +97,10 @@ namespace Clio.Command
 
 			_regCommand.Execute(opt);
 
+#if DEBUG
 			Console.ReadLine();
+#endif
+
 			return 0;
 		}
 		#endregion
