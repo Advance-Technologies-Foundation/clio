@@ -48,9 +48,9 @@ namespace Clio.Command
 		#region Methods: Public
 
 		/// <summary>
-		/// to test execute in command line
-		/// clio-dev externalLink --content clio://?protocol=https:&host=129117-crm-bundle.creatio.com&name=vscode&clientId=83B03D807E3DEEAEF6A55D8CB587E191&clientSecret=C6EA75A49446A63F239BEB4C89892A610E638063AC298EEAF6786E309E06970C
-		/// Make sur  to call clio register before testing, see reg/clio_context_menu_win.reg Lines 20-24 (protocol registration)
+		/// Make sure to call clio register before testing, see reg/clio_context_menu_win.reg Lines 20-24 (protocol registration)
+		/// To test execute the following the command line:
+		/// clio-dev externalLink clio://?protocol=https:&host=129117-crm-bundle.creatio.com&name=vscode&clientId=83B03D807E3DEEAEF6A55D8CB587E191&clientSecret=C6EA75A49446A63F239BEB4C89892A610E638063AC298EEAF6786E309E06970C
 		/// </summary>
 		/// <param name="options"></param>
 		/// <returns></returns>
