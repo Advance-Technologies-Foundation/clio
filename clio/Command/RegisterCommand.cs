@@ -92,11 +92,8 @@ namespace Clio.Command
 		/// </remarks>
 		private async Task InstallVsCodeExtension()
 		{
-
-
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 			{
-
 				//Check if extension is installed
 				using (var process = Process.Start(new ProcessStartInfo
 				{
