@@ -1,8 +1,11 @@
 namespace Clio.Command
 {
+	using Clio.Requests;
 	using CommandLine;
+	using MediatR;
 	using System;
-	using System.Collections.Specialized;
+	using System.Linq;
+	using System.Threading.Tasks;
 
 
 	#region Class: ExternalLinkOptions
@@ -30,17 +33,14 @@ namespace Clio.Command
 	{
 
 		#region Fields: Private
-
-		private readonly RegAppCommand _regCommand;
-		private Uri _clioUri;
-
+		private readonly IMediator _mediator;
 		#endregion
 
 		#region Constructors: Public
 
-		public ExternalLinkCommand(RegAppCommand regCommand)
+		public ExternalLinkCommand(IMediator mediator)
 		{
-			_regCommand = regCommand;
+			_mediator = mediator;
 		}
 
 		#endregion
@@ -57,76 +57,39 @@ namespace Clio.Command
 		public override int Execute(ExternalLinkOptions options)
 		{
 
-			if (!IsLinkValid(options.Content))
-				return 0;
+			string commandName = new Uri(options.Content).Host;
 
-			NameValueCollection clioParams = System.Web.HttpUtility.ParseQueryString(_clioUri.Query);
-
-#if DEBUG
-			Console.WriteLine("clio was called with:");
-			for (var i = 0; i < clioParams.Count; i++)
+			if (string.IsNullOrEmpty(commandName))
 			{
-				var key = clioParams.Keys[i];
-				var value = clioParams.GetValues(i)?[0];
-				Console.WriteLine($"\t{key} - {value}");
+				Console.WriteLine(
+				"Action Name missing:"
+				+ Environment.NewLine +
+				"clio url has to follow the formar clio://actionName/?param1=val1&param2=val2");
 			}
-#endif
 
-			//TODO: change JS to merge protocol and host into one param
-			var baseUrl = $"{clioParams["protocol"]}//{clioParams["host"]}";
 
-			//TODO: Pass OAuth20IdentityServerUrl SysSetting instead of guessing it
-			var authUrl = $"{clioParams["protocol"]}//{clioParams["host"].Replace(".creatio.com", "-is.creatio.com/connect/token")}";
+			Type runtimeType = GetType().Assembly.GetTypes()
+				.Where(t => t.FullName.ToLower() == $"clio.requests.{commandName}")
+				.FirstOrDefault();
 
-			RegAppOptions opt = new RegAppOptions
+
+			if (runtimeType == null)
 			{
-				IsNetCore = false,                                      //In OAuthClientAppPage check if this.window.location.pathname starts with /0
-				ClientId = clioParams["clientId"],
-				ClientSecret = clioParams["clientSecret"],
-				Uri = baseUrl,
-				Name = clioParams["name"],                          //Probably needs a unique name across all environments (may be combine baseUrl and name)
-				AuthAppUri = authUrl,
-				Login = string.Empty,
-				Password = string.Empty,
-				Maintainer = "Customer"                                 //Should pass in deepLink as arg Maintainer (SysSetting.Maintainer)
-			};
+				Console.WriteLine($"Could not match {commandName} command with implemented type - Command {commandName} Not implemented.");
+				return 1;
+			}
 
-			_regCommand.Execute(opt);
 
-#if DEBUG
-			Console.ReadLine();
-#endif
+			IExtenalLink x = (IExtenalLink)Activator.CreateInstance(runtimeType, true);
+			x.Content = options.Content;
 
+			Task.Run(async () =>
+			{
+				var result = await _mediator.Send(x);
+			}).Wait();
 			return 0;
 		}
 		#endregion
-
-		#region Methods: Private
-
-		/// <summary>
-		/// Check if Uri is valid
-		/// </summary>
-		/// <param name="content">URI to validate</param>
-		/// <returns>true when Uri parses correctly, otherwise false</returns>
-		private bool IsLinkValid(string content)
-		{
-			if (Uri.TryCreate(content, UriKind.Absolute, out _clioUri))
-			{
-				if (_clioUri.Scheme != "clio")
-				{
-					Console.Error.WriteLine("ERROR (UriScheme) - Not a clio URI");
-					return false;
-				}
-			}
-			else
-			{
-				Console.Error.WriteLine("ERROR (Uri) - Clio URI cannot be empty");
-				return false;
-			}
-			return true;
-		}
-		#endregion
 	}
-
 	#endregion
 }

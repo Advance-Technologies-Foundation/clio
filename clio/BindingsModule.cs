@@ -4,6 +4,8 @@ using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
 using Clio.Querry;
+using MediatR.Extensions.Autofac.DependencyInjection;
+using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System.Reflection;
 using Сlio.Command.PackageCommand;
 
@@ -57,7 +59,14 @@ namespace Clio
 			containerBuilder.RegisterType<ExtractPackageCommand>();
 			containerBuilder.RegisterType<ExternalLinkCommand>();
 			containerBuilder.RegisterType<RegAppCommand>();
+			containerBuilder.RegisterType<RestartCommand>();
 
+
+			var configuration = MediatRConfigurationBuilder
+		   .Create(typeof(BindingsModule).Assembly)
+		   .WithAllOpenGenericHandlerTypesRegistered()
+		   .Build();
+			containerBuilder.RegisterMediatR(configuration);
 
 			return containerBuilder.Build();
 		}
