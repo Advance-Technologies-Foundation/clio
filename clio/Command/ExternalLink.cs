@@ -56,17 +56,10 @@ namespace Clio.Command
 		/// <returns></returns>
 		public override int Execute(ExternalLinkOptions options)
 		{
-
-			string commandName = new Uri(options.Content).Host;
-
-			if (string.IsNullOrEmpty(commandName))
+			if (!ValidateInput(options, out string commandName))
 			{
-				Console.WriteLine(
-				"Action Name missing:"
-				+ Environment.NewLine +
-				"clio url has to follow the formar clio://actionName/?param1=val1&param2=val2");
+				return 1;
 			}
-
 
 			Type runtimeType = GetType().Assembly.GetTypes()
 				.Where(t => t.FullName.ToLower() == $"clio.requests.{commandName}")
@@ -80,16 +73,47 @@ namespace Clio.Command
 			}
 
 
-			IExtenalLink x = (IExtenalLink)Activator.CreateInstance(runtimeType, true);
-			x.Content = options.Content;
+			IExtenalLink xRequest = (IExtenalLink)Activator.CreateInstance(runtimeType, true);
+			xRequest.Content = options.Content;
 
 			Task.Run(async () =>
 			{
-				var result = await _mediator.Send(x);
+				await _mediator.Send(xRequest);
 			}).Wait();
 			return 0;
 		}
 		#endregion
+
+
+		private bool ValidateInput(in ExternalLinkOptions options, out string commandName)
+		{
+
+			commandName = string.Empty;
+			if (string.IsNullOrEmpty(options.Content))
+			{
+				Console.WriteLine("Clio url cannot be emty");
+				return false;
+			}
+
+			if (!Uri.TryCreate(options.Content, UriKind.Absolute, out Uri _uri))
+			{
+				Console.WriteLine("Could not parse clio link");
+				return false;
+			}
+
+			commandName = _uri.Host;
+			if (string.IsNullOrEmpty(commandName))
+			{
+				Console.WriteLine(
+				"Action Name missing:"
+				+ Environment.NewLine +
+				"clio url has to follow the formar clio://actionName/?param1=val1&param2=val2");
+			}
+
+
+			return true;
+		}
+
 	}
 	#endregion
 }
