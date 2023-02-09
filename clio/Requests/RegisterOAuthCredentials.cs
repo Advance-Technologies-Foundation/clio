@@ -48,7 +48,7 @@ namespace Clio.Requests
 				ClientId = clioParams["clientId"],
 				ClientSecret = clioParams["clientSecret"],
 				Uri = baseUrl,
-				Name = clioParams["name"],                          //Probably needs a unique name across all environments (may be combine baseUrl and name)
+				Name = clioParams["name"].Replace(" ", "-"),                          //Probably needs a unique name across all environments (may be combine baseUrl and name)
 				AuthAppUri = authUrl,
 				Login = string.Empty,
 				Password = string.Empty,
