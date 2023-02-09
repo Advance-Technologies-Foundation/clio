@@ -43,9 +43,9 @@ namespace Clio.Command
 		public override int Execute(CreateWorkspaceCommandOptions options) {
 			try {
 				if (options.Environment == null) {
-					_workspace.Create();
+					_workspace.Create(options.Environment);
 				} else {
-					_workspace.Create(true);
+					_workspace.Create(options.Environment, true);
 					_workspace.Restore();
 				}
 				Console.WriteLine("Done");
