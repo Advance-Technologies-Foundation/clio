@@ -56,7 +56,6 @@ namespace Clio.Command
 			{
 				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 				{
-					Task.Run(async () => await InstallVsCodeExtension()).Wait();
 					string folder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 					string appDataClioFolderPath = Path.Combine(folder, "clio");
 					Directory.CreateDirectory(appDataClioFolderPath);
