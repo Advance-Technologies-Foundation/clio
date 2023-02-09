@@ -50,12 +50,10 @@ namespace Clio
 		}
 
 		private string _authAppUri;
-		public string AuthAppUri
-		{
-			get
-			{
+		public string AuthAppUri {
+			get {
 				return string.IsNullOrEmpty(_authAppUri) ?
-					Uri.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
+					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
 			}
 			set
 			{
