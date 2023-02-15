@@ -38,6 +38,7 @@
 
   <ItemGroup>
     <None Remove="tpl\packages.config.tpl" />
+    <None Remove="tpl\ui-project-Empty\webpack.prod.config.js" />
     <None Remove="tpl\ui-project\.browserslistrc" />
     <None Remove="tpl\ui-project\.editorconfig" />
     <None Remove="tpl\ui-project\angular.json" />
@@ -60,6 +61,7 @@
     <None Remove="tpl\ui-project\tsconfig.json" />
     <None Remove="tpl\ui-project\tsconfig.spec.json" />
     <None Remove="tpl\ui-project\webpack.config.js" />
+    <None Remove="tpl\ui-project\webpack.prod.config.js" />
     <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -70,6 +72,12 @@
 
   <ItemGroup>
     <Content Include="tpl\packages.config.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project-Empty\webpack.prod.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui-project\webpack.prod.config.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.application\placeholder.txt">
