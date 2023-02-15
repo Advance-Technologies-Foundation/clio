@@ -16,23 +16,23 @@ module.exports = {
   },
   optimization: {
     runtimeChunk: false
-  },
+  },   
   resolve: {
     alias: {
       ...sharedMappings.getAliases(),
-      lodash: 'lodash-es',
+        lodash: 'lodash-es',
     }
   },
   plugins: [
     new ModuleFederationPlugin({
-      name: "<%projectName%>",
-      filename: "remoteEntry.js",
-      exposes: {
-        './RemoteEntry': './/src/main.ts',
-      },
-      shared: share({
-        ...sharedMappings.getDescriptors()
-      })
+        name: "<%projectName%>",
+        filename: "remoteEntry.js",
+        exposes: {
+            './RemoteEntry': './/src/main.ts',
+        },
+        shared: share({
+          ...sharedMappings.getDescriptors()
+        })
     }),
     sharedMappings.getPlugin()
   ],
