@@ -50,18 +50,10 @@ namespace Clio
 		}
 
 		private string _authAppUri;
-		public string AuthAppUri {
-			get { 
-				return string.IsNullOrEmpty(_authAppUri) ?
-					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
-			}
-			set {
-				_authAppUri = value;
-			} 
-		}
-
-		public string SimpleloginUri {
-			get {
+		public string AuthAppUri
+		{
+			get
+			{
 				return string.IsNullOrEmpty(_authAppUri) ?
 					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
 			}
@@ -75,11 +67,12 @@ namespace Clio
 		{
 			get
 			{
-
-				return new Uri(new Uri(Uri), "0/Shell/?simplelogin=true").ToString();
-
-
-				//return Uri + "?simplelogin=true";
+				return string.IsNullOrEmpty(_authAppUri) ?
+					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
+			}
+			set
+			{
+				_authAppUri = value;
 			}
 		}
 
