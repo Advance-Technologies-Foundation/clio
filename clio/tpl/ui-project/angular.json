@@ -12,12 +12,12 @@
 			},
 			"root": "",
 			"sourceRoot": "src",
-			"prefix": "usr",
+			"prefix": "<%vendorPrefix%>",
 			"architect": {
 				"build": {
 					"builder": "ngx-build-plus:browser",
 					"options": {
-						"outputPath": "dist/<%projectName%>",
+						"outputPath": "<%distPath%>",
 						"index": "src/index.html",
 						"main": "src/main.ts",
 						"polyfills": [
