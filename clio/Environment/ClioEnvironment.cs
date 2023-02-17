@@ -57,12 +57,6 @@ namespace Clio.UserEnvironment
 			return result;
 		}
 
-		private static void Configure(EnvironmentOptions options) {
-			var settingsRepository = new SettingsRepository();
-			EnvironmentName = options.Environment;
-			Settings = settingsRepository.GetEnvironment(options);
-		}
-
 		public string GetRegisteredPath() {
 			var environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
 			string[] cliPath = (environmentPath?.Split(Path.PathSeparator));

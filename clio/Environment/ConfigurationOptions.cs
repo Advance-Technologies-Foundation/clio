@@ -65,10 +65,16 @@ namespace Clio
 
 		public string SimpleloginUri
 		{
-			get
-			{
-				return string.IsNullOrEmpty(_authAppUri) ?
-					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
+			get {
+				var cleanUri = Uri;
+				if (!string.IsNullOrEmpty(cleanUri)) {
+					var domain = ".creatio.com";
+					var index = cleanUri.IndexOf(domain);
+					if (index != -1) {
+						cleanUri = cleanUri.Substring(0, index + domain.Length);
+					}
+				}
+				return cleanUri + "/0/Shell/?simplelogin=true";
 			}
 			set
 			{

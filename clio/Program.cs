@@ -255,6 +255,13 @@ namespace Clio
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 		}
 
+		private static TCommand CreateRemoteCommandWithoutClient<TCommand>(EnvironmentOptions options,
+		params object[] additionalConstructorArgs) {
+			var settings = GetEnvironmentSettings(options);
+			var constructorArgs = new object[] { settings }.Concat(additionalConstructorArgs).ToArray();
+			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		}
+
 		//ToDo: move to factory
 		private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs)
 		{
@@ -350,7 +357,7 @@ namespace Clio
 					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
 					(UnzipPkgOptions opts) => Resolve<ExtractPackageCommand>().Execute(opts),
 					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
-					(OpenAppOptions opts) => CreateRemoteCommand<OpenAppCommand>(opts).Execute(opts),
+					(OpenAppOptions opts) => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),
 					(PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),

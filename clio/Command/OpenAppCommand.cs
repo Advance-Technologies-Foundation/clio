@@ -17,6 +17,9 @@ namespace Clio.Command
 			: base(applicationClient, environmentSettings) {
 		}
 
+		public OpenAppCommand(EnvironmentSettings environmentSettings): base(environmentSettings) {
+		}
+
 		public override int Execute(OpenAppOptions options) {
 			try {
 				var settings = new SettingsRepository();
