@@ -200,7 +200,7 @@ namespace Clio
 			}
 		}
 
-		private string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
+		public string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
 		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		public SettingsRepository()
