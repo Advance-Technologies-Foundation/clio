@@ -20,7 +20,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-          echo URL: "${{ secrets.SONAR_URL }}" token: "${{ secrets.SONAR_TOKEN }}";
           dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
           /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
           /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
@@ -32,11 +31,7 @@ jobs:
           SONAR_URL: ${{ secrets.SONAR_URL }}
         shell: powershell
         run: |
-          Get-Location;
-          echo URL: "${{ secrets.SONAR_URL }}" token: "${{ secrets.SONAR_TOKEN }}";
-          dotnet sonarscanner begin `
-            /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
-            /d:sonar.login="${{ secrets.SONAR_TOKEN }}" /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
+          dotnet-sonarscanner begin /k:clio /d:sonar.host.url=${{ secrets.SONAR_URL }} /d:sonar.login=${{ secrets.SONAR_TOKEN }} /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
+          dotnet-sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
           dotnet build-server shutdown;
-          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
