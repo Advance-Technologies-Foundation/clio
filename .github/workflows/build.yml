@@ -31,7 +31,9 @@ jobs:
           SONAR_URL: ${{ secrets.SONAR_URL }}
         shell: powershell
         run: |
-          dotnet-sonarscanner begin /k:clio /d:sonar.host.url=${{ secrets.SONAR_URL }} /d:sonar.login=${{ secrets.SONAR_TOKEN }} /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
+          dotnet-sonarscanner begin /k:clio /d:sonar.host.url=${{ secrets.SONAR_URL }} ``
+          /d:sonar.login=${{ secrets.SONAR_TOKEN }} `
+          /d:sonar.cs.opencover.reportsPaths=".\**\coverage.opencover.xml";
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
           dotnet-sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
           dotnet build-server shutdown;
