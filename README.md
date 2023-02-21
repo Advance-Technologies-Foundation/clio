@@ -1,3 +1,8 @@
+[![Quality Gate Status](https://sonarqube-rnd.creatio.com/api/project_badges/measure?project=clio&metric=alert_status)](https://sonarqube-rnd.creatio.com/dashboard?id=clio)
+[![Reliability Rating](https://sonarqube-rnd.creatio.com/api/project_badges/measure?project=clio&metric=reliability_rating)](https://sonarqube-rnd.creatio.com/dashboard?id=clio)
+[![Security Rating](https://sonarqube-rnd.creatio.com/api/project_badges/measure?project=clio&metric=security_rating)](https://sonarqube-rnd.creatio.com/dashboard?id=clio)
+[![Vulnerabilities](https://sonarqube-rnd.creatio.com/api/project_badges/measure?project=clio&metric=vulnerabilities)](https://sonarqube-rnd.creatio.com/dashboard?id=clio)
+
 # Introduction
 
 Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.

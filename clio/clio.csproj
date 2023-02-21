@@ -23,6 +23,7 @@
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
+	  <CodeAnalysisRuleSet>..\.sonarlint\cliocsharp.ruleset</CodeAnalysisRuleSet>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -71,6 +72,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
     <Content Include="tpl\packages.config.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

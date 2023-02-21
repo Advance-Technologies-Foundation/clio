@@ -22,6 +22,7 @@
   </PropertyGroup>
   <PropertyGroup Label="TemplateBuilder">
     <TemplateBuilderTargets Condition=" '$(TemplateBuilderTargets)'=='' ">$([System.IO.Path]::GetFullPath( $(MSBuildProjectDirectory)\..\packages\TemplateBuilder.1.1.6.1\tools\ligershark.templates.targets ))</TemplateBuilderTargets>
+    <CodeAnalysisRuleSet>..\.sonarlint\cliocsharp.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
@@ -38,6 +39,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Schemas\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CreatioSDK" Version="8.0.3.1759" />
