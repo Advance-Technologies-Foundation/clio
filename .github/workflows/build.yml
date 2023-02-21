@@ -19,7 +19,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-          dotnet test .\clio\clio.tests\clio.tests.csproj -nowarn:none `
+          dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
           /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
           /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
           dotnet build-server shutdown;
