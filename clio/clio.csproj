@@ -23,7 +23,7 @@
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
-	  <CodeAnalysisRuleSet>..\.sonarlint\cliocsharp.ruleset</CodeAnalysisRuleSet>
+	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
