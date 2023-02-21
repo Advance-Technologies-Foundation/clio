@@ -1,19 +1,19 @@
 ﻿namespace Clio
 {
+	using Clio.Common;
+	using Clio.Models;
+	using Newtonsoft.Json;
 	using System;
 	using System.IO;
 	using System.Net.Http;
 	using System.Threading.Tasks;
-	using Clio.Common;
-	using Clio.Models;
-	using Newtonsoft.Json;
 
 	public interface IMarketplace
 	{
 		Task<string> GetFileByIdAsync(int id);
 	}
 
-	public class Marketplace : IMarketplace
+	public class Marketplace : IMarketplace, IDisposable
 	{
 		const string _baseUri = "https://marketplace.creatio.com";
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -22,7 +22,7 @@
 
 		public Marketplace(IWorkingDirectoriesProvider workingDirectoriesProvider)
 		{
-			_httpClient = new HttpClient()
+			_httpClient = new HttpClient
 			{
 				BaseAddress = new Uri(_baseUri)
 			};
@@ -49,6 +49,17 @@
 			using var fs = new FileStream(fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
 			await fs.WriteAsync(bites);
 			return fullpath;
+		}
+
+		public void Dispose()
+		{
+			Dispose(true);
+			GC.SuppressFinalize(this);
+		}
+
+		protected virtual void Dispose(bool disposing)
+		{
+			_httpClient.Dispose();
 		}
 	}
 }
