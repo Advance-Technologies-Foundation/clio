@@ -64,7 +64,6 @@ namespace Clio.Common
 			var bytes = new byte[sizeof(int)];
 			zipStream.Read(bytes, 0, sizeof(int));
 			int fileContentLength = BitConverter.ToInt32(bytes, 0);
-			bytes = new byte[fileContentLength];
 			var buffer = new byte[fileContentLength];
 			int totalRead = 0;
 			while (totalRead < buffer.Length) {
@@ -87,7 +86,7 @@ namespace Clio.Common
 
 			}
 			using (var stream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None)) {
-				stream.Write(bytes, 0, fileContentLength);
+				stream.Write(buffer, 0, fileContentLength);
 			}
 		}
 
