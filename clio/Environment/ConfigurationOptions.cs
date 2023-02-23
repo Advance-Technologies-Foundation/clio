@@ -1,52 +1,111 @@
+using Clio.UserEnvironment;
+using Clio.Utilities;
+using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Clio.UserEnvironment;
-using Clio.Utilities;
-using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 
 namespace Clio
 {
 
 	public class EnvironmentSettings
 	{
-		public string Uri { get; set; }
+		public string Uri
+		{
+			get; set;
+		}
 
-		public string Login { get; set; }
+		public string Login
+		{
+			get; set;
+		}
 
-		public string Password { get; set; }
+		public string Password
+		{
+			get; set;
+		}
 
-		public string Maintainer { get; set; }
+		public string Maintainer
+		{
+			get; set;
+		}
 
-		public bool IsNetCore { get; set; }
+		public bool IsNetCore
+		{
+			get; set;
+		}
 
-		public string ClientId { get; set; }
+		public string ClientId
+		{
+			get; set;
+		}
 
-		public string ClientSecret { get; set; }
+		public string ClientSecret
+		{
+			get; set;
+		}
 
-		public string AuthAppUri { get; set; }
+		private string _authAppUri;
+		public string AuthAppUri
+		{
+			get
+			{
+				return string.IsNullOrEmpty(_authAppUri) ?
+					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
+			}
+			set
+			{
+				_authAppUri = value;
+			}
+		}
 
-		internal void Merge(EnvironmentSettings environment) {
-			if (!string.IsNullOrEmpty(environment.Login)) {
+		public string SimpleloginUri
+		{
+			get {
+				var cleanUri = Uri;
+				if (!string.IsNullOrEmpty(cleanUri)) {
+					var domain = ".creatio.com";
+					var index = cleanUri.IndexOf(domain);
+					if (index != -1) {
+						cleanUri = cleanUri.Substring(0, index + domain.Length);
+					}
+				}
+				return cleanUri + "/0/Shell/?simplelogin=true";
+			}
+			set
+			{
+				_authAppUri = value;
+			}
+		}
+
+		internal void Merge(EnvironmentSettings environment)
+		{
+			if (!string.IsNullOrEmpty(environment.Login))
+			{
 				Login = environment.Login;
 			}
-			if (!string.IsNullOrEmpty(environment.Uri)) {
+			if (!string.IsNullOrEmpty(environment.Uri))
+			{
 				Uri = environment.Uri;
 			}
-			if (!string.IsNullOrEmpty(environment.Password)) {
+			if (!string.IsNullOrEmpty(environment.Password))
+			{
 				Password = environment.Password;
 			}
-			if (!string.IsNullOrEmpty(environment.Maintainer)) {
+			if (!string.IsNullOrEmpty(environment.Maintainer))
+			{
 				Maintainer = environment.Maintainer;
 			}
-			if (environment.Safe.HasValue) {
+			if (environment.Safe.HasValue)
+			{
 				Safe = environment.Safe;
 			}
-			if (environment.DeveloperModeEnabled.HasValue) {
+			if (environment.DeveloperModeEnabled.HasValue)
+			{
 				DeveloperModeEnabled = environment.DeveloperModeEnabled;
 			}
 			IsNetCore = environment.IsNetCore;
@@ -55,40 +114,63 @@ namespace Clio
 			AuthAppUri = environment.AuthAppUri;
 		}
 
-		public bool? Safe { get; set; }
+		public bool? Safe
+		{
+			get; set;
+		}
 
-		
-		public bool? DeveloperModeEnabled { get; set; }
+
+		public bool? DeveloperModeEnabled
+		{
+			get; set;
+		}
 
 		[JsonIgnore]
-		public bool IsDevMode { get => DeveloperModeEnabled ?? false; }
+		public bool IsDevMode
+		{
+			get => DeveloperModeEnabled ?? false;
+		}
 
 	}
 
 	public class Settings
 	{
-		public Settings() {
+		public Settings()
+		{
 			Environments = new Dictionary<string, EnvironmentSettings>();
 		}
 
 		[JsonProperty("$schema")]
-		public string Schema  => "./schema.json";
+		public string Schema => "./schema.json";
 
-		public string ActiveEnvironmentKey { get; set; }
+		public string ActiveEnvironmentKey
+		{
+			get; set;
+		}
 
-		public EnvironmentSettings GetActiveEnviroment() {
+		public EnvironmentSettings GetActiveEnviroment()
+		{
 			if (String.IsNullOrEmpty(ActiveEnvironmentKey)
-				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
+				|| !Environments.ContainsKey(ActiveEnvironmentKey))
+			{
 				ActiveEnvironmentKey = Environments.First().Key;
 				return Environments.First().Value;
-			} else {
+			}
+			else
+			{
 				return Environments[ActiveEnvironmentKey];
 			}
 		}
 
-		public bool Autoupdate { get; set; }
+		public bool Autoupdate
+		{
+			get; set;
+		}
 
-		public Dictionary<string, EnvironmentSettings> Environments { get; set; }
+		public Dictionary<string, EnvironmentSettings> Environments
+		{
+			get; set;
+		}
 	}
 
 	public class SettingsRepository : ISettingsRepository
@@ -110,23 +192,27 @@ namespace Clio
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
-				if (userPath == null) {
+				if (userPath == null)
+				{
 					userPath = "";
 				}
 				return Path.Combine(userPath, companyName?.Company, product?.Product);
 			}
 		}
 
-		private string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
+		public string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
 		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
-		public SettingsRepository() {
+		public SettingsRepository()
+		{
 			InitializeSettingsFile();
 			InitSettings();
 		}
 
-		private void InitSettings() {
-			try {
+		private void InitSettings()
+		{
+			try
+			{
 				var builder = new ConfigurationBuilder()
 					.SetBasePath(Environment.CurrentDirectory)
 					.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
@@ -134,26 +220,33 @@ namespace Clio
 				IConfigurationRoot configuration = builder.Build();
 				_settings = new Settings();
 				configuration.Bind(_settings);
-			} catch (FormatException ex) {
+			}
+			catch (FormatException ex)
+			{
 				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
 				throw;
 			}
 		}
 
-		private void InitializeSettingsFile() {
-			if (File.Exists(AppSettingsFilePath)) {
+		private void InitializeSettingsFile()
+		{
+			if (File.Exists(AppSettingsFilePath))
+			{
 				return;
 			}
-			if (!Directory.Exists(AppSettingsFolderPath)) {
+			if (!Directory.Exists(AppSettingsFolderPath))
+			{
 				Directory.CreateDirectory(AppSettingsFolderPath);
 			}
 			InitDefaultSettings();
 			Save();
 		}
 
-		private void InitDefaultSettings() {
-			_settings = new Settings();	
-			_settings.Environments.Add("dev", new EnvironmentSettings() {
+		private void InitDefaultSettings()
+		{
+			_settings = new Settings();
+			_settings.Environments.Add("dev", new EnvironmentSettings()
+			{
 				Login = "Supervisor",
 				Password = "Supervisor",
 				Uri = "http://localhost"
@@ -166,16 +259,20 @@ namespace Clio
 		/// Creates json schema file.
 		/// This file is used by intelisence in vs code and other json editors.
 		/// </summary>
-		private void SaveSchema(){
+		private void SaveSchema()
+		{
 			var baseDir = AppDomain.CurrentDomain.BaseDirectory;
 			var tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
 			var tplContect = File.ReadAllText(tplPath);
 			File.WriteAllText(SchemaFilePath, tplContect);
 		}
 
-		private void Save() {
-			using (StreamWriter fileWriter = File.CreateText(AppSettingsFilePath)) {
-				JsonSerializer serializer = new JsonSerializer() {
+		private void Save()
+		{
+			using (StreamWriter fileWriter = File.CreateText(AppSettingsFilePath))
+			{
+				JsonSerializer serializer = new JsonSerializer()
+				{
 					Formatting = Formatting.Indented,
 					NullValueHandling = NullValueHandling.Ignore
 				};
@@ -184,48 +281,62 @@ namespace Clio
 				serializer.Serialize(fileWriter, _settings);
 			}
 
-			if(!File.Exists(SchemaFilePath)){
+			if (!File.Exists(SchemaFilePath))
+			{
 				SaveSchema();
 			}
 
 		}
 
-		public void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
-			JsonSerializer serializer = new JsonSerializer() {
+		public void ShowSettingsTo(TextWriter streamWriter, string environment = null)
+		{
+			JsonSerializer serializer = new JsonSerializer()
+			{
 				Formatting = Formatting.Indented,
 				NullValueHandling = NullValueHandling.Ignore
 			};
-			if (String.IsNullOrEmpty(environment)) {
+			if (String.IsNullOrEmpty(environment))
+			{
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				serializer.Serialize(streamWriter, _settings);
-			} else {
+			}
+			else
+			{
 				serializer.Serialize(streamWriter, _settings.Environments[environment]);
 			}
 		}
 
-		public EnvironmentSettings GetEnvironment(string name = null) {
-			if (string.IsNullOrWhiteSpace(name)) {
+		public EnvironmentSettings GetEnvironment(string name = null)
+		{
+			if (string.IsNullOrWhiteSpace(name))
+			{
 				var activeEnvironment = _settings.ActiveEnvironmentKey;
 				return _settings.Environments[activeEnvironment];
 			}
-			if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
+			if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment))
+			{
 				environment = new EnvironmentSettings();
 				_settings.Environments[name] = environment;
 			}
 			return environment;
 		}
 
-		private EnvironmentSettings FindEnvironment(string name = null) {
+		private EnvironmentSettings FindEnvironment(string name = null)
+		{
 			EnvironmentSettings environment;
-			try {
+			try
+			{
 				environment = GetEnvironment(name);
-			} catch {
+			}
+			catch
+			{
 				environment = new EnvironmentSettings();
 			}
 			return environment;
 		}
 
-		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
+		public EnvironmentSettings GetEnvironment(EnvironmentOptions options)
+		{
 			var result = new EnvironmentSettings();
 			var settingsRepository = new SettingsRepository();
 			var _settings = settingsRepository.FindEnvironment(options.Environment);
@@ -239,12 +350,14 @@ namespace Clio
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? _settings.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
-			if (_settings.Safe.HasValue && _settings.Safe.Value) {
+			if (_settings.Safe.HasValue && _settings.Safe.Value)
+			{
 				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 				Console.Write($"Do you want to continue? [Y/N]:");
 				var answer = Console.ReadKey();
 				Console.WriteLine();
-				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
+				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y')
+				{
 					Console.WriteLine("Operation was canceled by user");
 					System.Environment.Exit(1);
 				}
@@ -252,48 +365,62 @@ namespace Clio
 			return result;
 		}
 
-		public bool IsEnvironmentExists(string name) {
+		public bool IsEnvironmentExists(string name)
+		{
 			return _settings.Environments.ContainsKey(name);
 		}
 
-		public string FindEnvironmentNameByUri(string uri) {
+		public string FindEnvironmentNameByUri(string uri)
+		{
 			string safeUri = uri.TrimEnd('/');
 			return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
 		}
 
-		internal bool GetAutoupdate() {
+		internal bool GetAutoupdate()
+		{
 			return _settings.Autoupdate;
 		}
 
-		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
-			if (string.IsNullOrEmpty(name)) {
+		public void ConfigureEnvironment(string name, EnvironmentSettings environment)
+		{
+			if (string.IsNullOrEmpty(name))
+			{
 				_settings.GetActiveEnviroment().Merge(environment);
-			} else if (_settings.Environments.ContainsKey(name)) {
+			}
+			else if (_settings.Environments.ContainsKey(name))
+			{
 				_settings.Environments[name].Merge(environment);
-			} else {
+			}
+			else
+			{
 				_settings.Environments.Add(name, environment);
 			}
 			Save();
 		}
 
-		public void SetActiveEnvironment(string activeEnvironment) {
+		public void SetActiveEnvironment(string activeEnvironment)
+		{
 			_settings.ActiveEnvironmentKey = activeEnvironment;
 			Save();
 		}
 
-		public void RemoveEnvironment(string environment) {
-			if (_settings.Environments.ContainsKey(environment)) {
+		public void RemoveEnvironment(string environment)
+		{
+			if (_settings.Environments.ContainsKey(environment))
+			{
 				_settings.Environments.Remove(environment);
 				Save();
-			} else {
+			}
+			else
+			{
 				throw new KeyNotFoundException($"Application \"{environment}\" not found");
 			}
 		}
 
-        public void OpenSettingsFile()
-        {
+		public void OpenSettingsFile()
+		{
 			FileManager.OpenFile(AppSettingsFilePath);
 		}
-    }
+	}
 
 }

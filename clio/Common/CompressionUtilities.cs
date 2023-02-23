@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression; 
+using System.IO.Compression;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -43,31 +44,50 @@ namespace Clio.Common
 			zipStream.Write(bytes, 0, bytes.Length);
 		}
 
+		private static int SafeReadGZipStream(GZipStream stream, byte[] bytes) {
+			int totalRead = 0;
+			while (totalRead < bytes.Length) {
+				var charBytesRead = stream.Read(bytes, totalRead, bytes.Length - totalRead);
+				if (charBytesRead == 0) {
+					break;
+				}
+				totalRead += charBytesRead;
+			}
+			return totalRead;
+		}
+
 		private string ReadFileRelativePath(GZipStream zipStream) {
 			var bytes = new byte[sizeof(int)];
-			int readed = zipStream.Read(bytes, 0, sizeof(int));
-			if (readed < sizeof(int)) {
-				return null;
-			}
-			int fileNameLength = BitConverter.ToInt32(bytes, 0);
+			SafeReadGZipStream(zipStream, bytes);
+			int fileNameLength =  BitConverter.ToInt32(bytes, 0);
 			bytes = new byte[sizeof(char)];
-			var stringBuilder = new StringBuilder();
+			var sb = new StringBuilder();
 			for (int i = 0; i < fileNameLength; i++) {
-				zipStream.Read(bytes, 0, sizeof(char));
-				char c = BitConverter.ToChar(bytes, 0);
-				stringBuilder.Append(c);
+				SafeReadGZipStream(zipStream, bytes);
+				char character = BitConverter.ToChar(bytes, 0);
+				sb.Append(character);
 			}
-			return _fileSystem.NormalizeFilePathByPlatform(stringBuilder.ToString());
+			string filePath = sb.ToString();
+#if NETSTANDARD
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+				filePath = filePath.Replace("\\", "/");
+			}
+#endif
+			return filePath;
 		}
 
 		private static void ReadFileContent(string targetFilePath, GZipStream zipStream) {
 			var bytes = new byte[sizeof(int)];
-			zipStream.Read(bytes, 0, sizeof(int));
-			int fileContentLength = BitConverter.ToInt32(bytes, 0);
-			var buffer = new byte[fileContentLength];
 			int totalRead = 0;
-			while (totalRead < buffer.Length) {
-				int bytesRead = zipStream.Read(buffer, totalRead, buffer.Length - totalRead);
+			int bytesRead;
+			while ((bytesRead = zipStream.Read(bytes, totalRead, bytes.Length - totalRead)) > 0) {
+				totalRead += bytesRead;
+			}
+			int fileContentLength = BitConverter.ToInt32(bytes, 0);
+			bytes = new byte[fileContentLength];
+			totalRead = 0;
+			while (totalRead < bytes.Length) {
+				bytesRead = zipStream.Read(bytes, totalRead, bytes.Length - totalRead);
 				if (bytesRead == 0) {
 					break;
 				}
@@ -75,18 +95,10 @@ namespace Clio.Common
 			}
 			string targetDirectoryPath = Path.GetDirectoryName(targetFilePath);
 			if (!Directory.Exists(targetDirectoryPath)) {
-				try {
-					Directory.CreateDirectory(targetDirectoryPath);
-				}
-				catch (Exception e)
-				{
-					Console.WriteLine(e);
-					throw;
-				}
-
+				Directory.CreateDirectory(targetDirectoryPath);
 			}
 			using (var stream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None)) {
-				stream.Write(buffer, 0, fileContentLength);
+				stream.Write(bytes, 0, fileContentLength);
 			}
 		}
 

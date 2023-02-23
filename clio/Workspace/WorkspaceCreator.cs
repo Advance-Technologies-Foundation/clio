@@ -16,7 +16,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		void Create(bool isAddingPackageNames = false);
+		void Create(string environmentName, bool isAddingPackageNames = false);
 
 		#endregion
 
@@ -73,8 +73,9 @@ namespace Clio.Workspace
 
 		private string RootPath => _workspacePathBuilder.RootPath;
 		private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
-
+		private string WorkspaceEnvironmentSettingsPath => _workspacePathBuilder.WorkspaceEnvironmentSettingsPath;
 		private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
+		private bool ExistsWorkspaceSettingsFile => _fileSystem.ExistsFile(WorkspaceSettingsPath);
 
 		#endregion
 
@@ -90,9 +91,6 @@ namespace Clio.Workspace
 		}
 
 		private void CreateWorkspaceSettingsFile(bool isAddingPackageNames = false) {
-			if (_fileSystem.ExistsFile(WorkspaceSettingsPath)) {
-				return;
-			}
 			string[] packages = new string[] { };
 			if (isAddingPackageNames) {
 				IEnumerable<PackageInfo> packagesInfo =
@@ -120,15 +118,25 @@ namespace Clio.Workspace
 			}
 		}
 
+		private void CreateWorkspaceEnvironmentSettingsFile(string environmentName) {
+			var defaultWorkspaceSettings = new WorkspaceEnvironmentSettings {
+				Environment = environmentName ?? string.Empty
+			};
+			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceEnvironmentSettingsPath);
+		}
+
 		#endregion
 
 		#region Methods: Public
 
-		public void Create(bool isAddingPackageNames = false) {
+		public void Create(string environmentName, bool isAddingPackageNames = false) {
 			ValidateNotExistingWorkspace();
 			ValidateEmptyDirectory();
 			_templateProvider.CopyTemplateFolder("workspace", RootPath);
-			CreateWorkspaceSettingsFile(isAddingPackageNames);
+			if (!ExistsWorkspaceSettingsFile) {
+				CreateWorkspaceSettingsFile(isAddingPackageNames);
+				CreateWorkspaceEnvironmentSettingsFile(environmentName);
+			}
 			if (_osPlatformChecker.IsWindowsEnvironment) {
 				return;
 			}

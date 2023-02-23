@@ -79,8 +79,8 @@ namespace Clio.Workspace
 			ResetLazyWorkspaceSettings();
 		}
 
-		public void Create(bool isAddingPackageNames = false) {
-			_workspaceCreator.Create(isAddingPackageNames);
+		public void Create(string environmentName, bool isAddingPackageNames = false) {
+			_workspaceCreator.Create(environmentName, isAddingPackageNames);
 		}
 
 		public void Restore() {

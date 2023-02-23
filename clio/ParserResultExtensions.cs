@@ -1,6 +1,6 @@
-﻿using System;
+﻿using CommandLine;
+using System;
 using System.Collections.Generic;
-using CommandLine;
 
 namespace Clio
 {
@@ -14,7 +14,7 @@ namespace Clio
 
 		public static TResult MapResult<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18,
 				T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, T37, T38, T39,
-				T40, T41, T42, T43,T44, T45, T46, T47, T48, T49,T50,
+				T40, T41, T42, T43, T44, T45, T46, T47, T48, T49, T50, T51,
 				TResult>(
 			this ParserResult<object> result,
 			Func<T1, TResult> parsedFunc1,
@@ -67,74 +67,75 @@ namespace Clio
 			Func<T48, TResult> parsedFunc48,
 			Func<T49, TResult> parsedFunc49,
 			Func<T50, TResult> parsedFunc50,
+			Func<T51, TResult> parsedFunc51,
 			Func<IEnumerable<Error>, TResult> notParsedFunc)
 		{
 			if (!(result is Parsed<object> parsed))
-				return notParsedFunc(((NotParsed<object>) result).Errors);
+				return notParsedFunc(((NotParsed<object>)result).Errors);
 			if (parsed.Value is T1)
-				return parsedFunc1((T1) parsed.Value);
+				return parsedFunc1((T1)parsed.Value);
 			if (parsed.Value is T2)
-				return parsedFunc2((T2) parsed.Value);
+				return parsedFunc2((T2)parsed.Value);
 			if (parsed.Value is T3)
-				return parsedFunc3((T3) parsed.Value);
+				return parsedFunc3((T3)parsed.Value);
 			if (parsed.Value is T4)
-				return parsedFunc4((T4) parsed.Value);
+				return parsedFunc4((T4)parsed.Value);
 			if (parsed.Value is T5)
-				return parsedFunc5((T5) parsed.Value);
+				return parsedFunc5((T5)parsed.Value);
 			if (parsed.Value is T6)
-				return parsedFunc6((T6) parsed.Value);
+				return parsedFunc6((T6)parsed.Value);
 			if (parsed.Value is T7)
-				return parsedFunc7((T7) parsed.Value);
+				return parsedFunc7((T7)parsed.Value);
 			if (parsed.Value is T8)
-				return parsedFunc8((T8) parsed.Value);
+				return parsedFunc8((T8)parsed.Value);
 			if (parsed.Value is T9)
-				return parsedFunc9((T9) parsed.Value);
+				return parsedFunc9((T9)parsed.Value);
 			if (parsed.Value is T10)
-				return parsedFunc10((T10) parsed.Value);
+				return parsedFunc10((T10)parsed.Value);
 			if (parsed.Value is T11)
-				return parsedFunc11((T11) parsed.Value);
+				return parsedFunc11((T11)parsed.Value);
 			if (parsed.Value is T12)
-				return parsedFunc12((T12) parsed.Value);
+				return parsedFunc12((T12)parsed.Value);
 			if (parsed.Value is T13)
-				return parsedFunc13((T13) parsed.Value);
+				return parsedFunc13((T13)parsed.Value);
 			if (parsed.Value is T14)
-				return parsedFunc14((T14) parsed.Value);
+				return parsedFunc14((T14)parsed.Value);
 			if (parsed.Value is T15)
-				return parsedFunc15((T15) parsed.Value);
+				return parsedFunc15((T15)parsed.Value);
 			if (parsed.Value is T16)
-				return parsedFunc16((T16) parsed.Value);
+				return parsedFunc16((T16)parsed.Value);
 			if (parsed.Value is T17)
-				return parsedFunc17((T17) parsed.Value);
+				return parsedFunc17((T17)parsed.Value);
 			if (parsed.Value is T18)
-				return parsedFunc18((T18) parsed.Value);
+				return parsedFunc18((T18)parsed.Value);
 			if (parsed.Value is T19)
-				return parsedFunc19((T19) parsed.Value);
+				return parsedFunc19((T19)parsed.Value);
 			if (parsed.Value is T20)
-				return parsedFunc20((T20) parsed.Value);
+				return parsedFunc20((T20)parsed.Value);
 			if (parsed.Value is T21)
-				return parsedFunc21((T21) parsed.Value);
+				return parsedFunc21((T21)parsed.Value);
 			if (parsed.Value is T22)
-				return parsedFunc22((T22) parsed.Value);
+				return parsedFunc22((T22)parsed.Value);
 			if (parsed.Value is T23)
-				return parsedFunc23((T23) parsed.Value);
+				return parsedFunc23((T23)parsed.Value);
 			if (parsed.Value is T24)
-				return parsedFunc24((T24) parsed.Value);
+				return parsedFunc24((T24)parsed.Value);
 			if (parsed.Value is T25)
-				return parsedFunc25((T25) parsed.Value);
+				return parsedFunc25((T25)parsed.Value);
 			if (parsed.Value is T26)
-				return parsedFunc26((T26) parsed.Value);
+				return parsedFunc26((T26)parsed.Value);
 			if (parsed.Value is T27)
-				return parsedFunc27((T27) parsed.Value);
+				return parsedFunc27((T27)parsed.Value);
 			if (parsed.Value is T28)
-				return parsedFunc28((T28) parsed.Value);
+				return parsedFunc28((T28)parsed.Value);
 			if (parsed.Value is T29)
-				return parsedFunc29((T29) parsed.Value);
+				return parsedFunc29((T29)parsed.Value);
 			if (parsed.Value is T30)
-				return parsedFunc30((T30) parsed.Value);
+				return parsedFunc30((T30)parsed.Value);
 			if (parsed.Value is T31)
-				return parsedFunc31((T31) parsed.Value);
+				return parsedFunc31((T31)parsed.Value);
 			if (parsed.Value is T32)
-				return parsedFunc32((T32) parsed.Value);
+				return parsedFunc32((T32)parsed.Value);
 			if (parsed.Value is T33)
 				return parsedFunc33((T33)parsed.Value);
 			if (parsed.Value is T34)
@@ -171,6 +172,8 @@ namespace Clio
 				return parsedFunc49((T49)parsed.Value);
 			if (parsed.Value is T50)
 				return parsedFunc50((T50)parsed.Value);
+			if (parsed.Value is T51)
+				return parsedFunc51((T51)parsed.Value);
 			throw new InvalidOperationException();
 		}
 
