@@ -4,6 +4,9 @@ using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
 using Clio.Querry;
+using Clio.Requests;
+using Clio.Requests.Validators;
+using MediatR;
 using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System.Reflection;
@@ -67,6 +70,11 @@ namespace Clio
 		   .WithAllOpenGenericHandlerTypesRegistered()
 		   .Build();
 			containerBuilder.RegisterMediatR(configuration);
+
+
+			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
+			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
+
 
 			return containerBuilder.Build();
 		}
