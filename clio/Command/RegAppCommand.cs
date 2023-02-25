@@ -6,6 +6,7 @@ using FluentValidation;
 using System;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Clio.Command {
@@ -40,7 +41,7 @@ namespace Clio.Command {
 		public override int Execute(RegAppOptions options) {
 			try
 			{
-				if (options.FromIis)
+				if (options.FromIis && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 				{
 					//TODO: Autofac cannot resolve IISScannerHandler becacase IISScannerHandler needs RegAppCommand
 					IISScannerHandler iis = new IISScannerHandler(_settingsRepository, this);
