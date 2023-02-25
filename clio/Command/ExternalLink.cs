@@ -1,5 +1,4 @@
-namespace Clio.Command
-{
+namespace Clio.Command {
 	using Clio.Requests;
 	using CommandLine;
 	using FluentValidation;
@@ -17,14 +16,12 @@ namespace Clio.Command
 	#region Class: ExternalLinkOptions
 
 	[Verb("externalLink", Aliases = new[] { "link" }, HelpText = "Handle external deep-links")]
-	public class ExternalLinkOptions : EnvironmentOptions
-	{
+	public class ExternalLinkOptions : EnvironmentOptions {
 		#region Properties: Public
 
 		// Default to make sure we dont throw prematurely
 		[Value(0, Default = "")]
-		public string Content
-		{
+		public string Content {
 			get; set;
 		}
 
@@ -35,8 +32,7 @@ namespace Clio.Command
 
 	#region Class: ExternalLinkCommand
 
-	public class ExternalLinkCommand : Command<ExternalLinkOptions>
-	{
+	public class ExternalLinkCommand : Command<ExternalLinkOptions> {
 
 		#region Fields: Private
 		private readonly IMediator _mediator;
@@ -45,8 +41,7 @@ namespace Clio.Command
 
 		#region Constructors: Public
 
-		public ExternalLinkCommand(IMediator mediator, IValidator<ExternalLinkOptions> validator)
-		{
+		public ExternalLinkCommand(IMediator mediator, IValidator<ExternalLinkOptions> validator) {
 			_mediator = mediator;
 			_validator = validator;
 		}
@@ -65,8 +60,7 @@ namespace Clio.Command
 		/// <remarks>
 		/// See <see cref="Requests.Validators.ExternalLinkOptionsValidator"/> for validation details
 		/// </remarks>
-		public override int Execute(ExternalLinkOptions options)
-		{
+		public override int Execute(ExternalLinkOptions options) {
 			ValidationResult validationResult = _validator.Validate(options);
 			if (!validationResult.IsValid)
 			{
@@ -101,8 +95,7 @@ namespace Clio.Command
 		}
 		#endregion
 
-		private void PrintError(IEnumerable<ValidationFailure> errors)
-		{
+		private void PrintError(IEnumerable<ValidationFailure> errors) {
 			errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
 			.ToList().ForEach(e =>
 			{

@@ -1,14 +1,12 @@
 ﻿using FluentValidation;
 using System;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
-namespace Clio.Requests.Validators
-{
-	internal class ISSScannerValidator : AbstractValidator<IISScannerRequest>
-	{
-		public ISSScannerValidator()
-		{
+namespace Clio.Requests.Validators {
+	internal class ISSScannerValidator : AbstractValidator<IISScannerRequest> {
+		public ISSScannerValidator() {
 			RuleFor(r => r.Content).Cascade(CascadeMode.Stop).
 			Custom((value, context) =>
 			{
@@ -47,9 +45,9 @@ namespace Clio.Requests.Validators
 				Uri.TryCreate(value, UriKind.Absolute, out Uri uri);
 				NameValueCollection nvc = System.Web.HttpUtility.ParseQueryString(uri.Query);
 
-				string returnType = nvc["return"];
+				string returnType = nvc["return"].ToLower(CultureInfo.InvariantCulture);
 
-				string[] allowedValues = new[] { "count", "details" };
+				string[] allowedValues = new[] { "count", "details", "registerall" };
 				if (Array.IndexOf(allowedValues, returnType) < 0)
 				{
 					context.AddFailure(new FluentValidation.Results.ValidationFailure()

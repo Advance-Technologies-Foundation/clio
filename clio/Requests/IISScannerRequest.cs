@@ -1,4 +1,5 @@
-﻿using Clio.UserEnvironment;
+﻿using Clio.Command;
+using Clio.UserEnvironment;
 using MediatR;
 using System;
 using System.Collections.Generic;
@@ -10,12 +11,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
-namespace Clio.Requests
-{
-	public class IISScannerRequest : IExtenalLink
-	{
-		public string Content
-		{
+namespace Clio.Requests {
+	public class IISScannerRequest : IExtenalLink {
+		public string Content {
 			get; set;
 		}
 	}
@@ -29,170 +27,143 @@ namespace Clio.Requests
 	/// </remarks>
 	/// <example>
 	/// </example>
-	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>
-	{
+	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest> {
 		private readonly ISettingsRepository _settingsRepository;
+		private readonly RegAppCommand _regCommand;
 
-		public IISScannerHandler(ISettingsRepository settingsRepository)
-		{
+		public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand) {
 			_settingsRepository = settingsRepository;
+			_regCommand = regCommand;
 		}
 
-		public async Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken)
-		{
+		public Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken) {
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 
-			IList<UnregisteredSite> unregSites = await FindUnregisteredSites();
+			IEnumerable<UnregisteredSite> unregSites = _findUnregisteredCreatioSites(_settingsRepository);
 
 			var r = ClioParams?["return"];
 			if (r == "count")
 			{
-				Console.WriteLine(unregSites.Count);
+				Console.WriteLine(unregSites.Count());
 			}
 			if (r == "details")
 			{
 				var json = JsonSerializer.Serialize(unregSites);
 				Console.WriteLine(json);
 			}
-			return new Unit();
+			if (r == "registerAll")
+			{
+				unregSites.ToList().ForEach(site =>
+				{
+					_regCommand.Execute(new RegAppOptions
+					{
+						IsNetCore = site.siteType == SiteType.Core,
+						Uri = site.Uris.FirstOrDefault().ToString(),
+						Name = site.siteBinding.name,
+						Login = "Supervisor",
+						Password = "Supervisor",
+						Maintainer = "Customer",
+						TryLogIn = false
+					});
+				});
+			}
+			return Task.FromResult(new Unit());
 		}
 
 
-		/// <summary>
-		/// Look inside fileSystem to detect if IIS site is Creatio
-		/// </summary>
-		/// <param name="path">Path to IIS site</param>
-		/// <returns></returns>
-		private SiteType GetSiteType(string path)
-		{
-			//C:\inetpub\wwwroot\bundle806
-			var webapp = Path.Join(path, "Terrasoft.WebApp");
-			var configuration = Path.Join(path, "Terrasoft.Configuration");
+		private sealed record SiteBinding(string name, string state, string binding, string path) {
+		}
 
-			if (new DirectoryInfo(webapp).Exists)
-			{
-				return SiteType.NetFramework;
-			}
+		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) {
+		}
 
-			if (new DirectoryInfo(configuration).Exists)
-			{
-				return SiteType.Core;
-			}
-
-			return SiteType.NotCreatioSite;
+		private enum SiteType {
+			NetFramework,
+			Core,
+			NotCreatioSite
 		}
 
 		/// <summary>
-		/// Compares registed environments with IIS sites
+		/// Finds Creatio Sites in IIS that are not registered with clio
 		/// </summary>
-		/// <returns>IIS sites that are not registered as clio environment</returns>
-		private async Task<IList<UnregisteredSite>> FindUnregisteredSites()
+		private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> _findUnregisteredCreatioSites = (_settingsRepository) =>
 		{
-			var bindings = await GetBindings();
-			IList<UnregisteredSite> result = new List<UnregisteredSite>();
-			foreach (SiteBinding siteBinding in bindings)
+			return _getBindings().Where(site =>
 			{
-				IList<Uri> uris = ConvertBindingToUri(siteBinding.binding);
 				bool isRegisteredEnvironment = false;
-
-				foreach (Uri uri in uris)
+				_convertBindingToUri(site.binding).ForEach(uri =>
 				{
 					var key = _settingsRepository.FindEnvironmentNameByUri(uri.ToString());
-					if (!string.IsNullOrEmpty(key))
+					if (!string.IsNullOrEmpty(key) && !isRegisteredEnvironment)
 					{
 						isRegisteredEnvironment = true;
-						break;
 					}
-				}
-
-				SiteType siteType = GetSiteType(siteBinding.path);
-				if (!isRegisteredEnvironment && siteType != SiteType.NotCreatioSite)
-				{
-					result.Add(new UnregisteredSite(siteBinding, uris, siteType));
-				}
-			}
-			return result;
-		}
-
-		/// <summary>
-		/// Gets data from AppCmd.exe
-		/// </summary>
-		/// <returns>Parsed collection of SiteBinding</returns>
-		private async Task<IList<SiteBinding>> GetBindings()
-		{
-			string consoleOutput = await ExecuteAppCmdCommand("list sites /xml");
-			var xml = XElement.Parse(consoleOutput);
-			var sites = xml.Elements("SITE").ToList();
-
-			List<SiteBinding> sitesBindings = new List<SiteBinding>();
-			foreach (var site in sites)
+				});
+				return !isRegisteredEnvironment;
+			})
+			.Where(site => _detectSiteType(site.path) != SiteType.NotCreatioSite)
+			.Select(site =>
 			{
-				string name = site.Attribute("SITE.NAME")?.Value;
-				string state = site.Attribute("state")?.Value;
-				string binding = site.Attribute("bindings")?.Value;
-				string path = await ExecuteAppCmdCommand($"list VDIR {name}/ /text:physicalPath");
+				return new UnregisteredSite(
+					siteBinding: site,
+					Uris: _convertBindingToUri(site.binding),
+					siteType: _detectSiteType(site.path));
+			});
+		};
 
-				if (name is not null && state is not null && binding is not null && !string.IsNullOrWhiteSpace(path))
-				{
-					sitesBindings.Add(new SiteBinding(name, state, binding, path.Trim()));
-				}
-			}
-			return sitesBindings;
-		}
 
 		/// <summary>
 		/// Executes appcmd.exe with arguments and captures output
 		/// </summary>
-		/// <param name="args">commanda rguments</param>
-		/// <returns></returns>
-		/// <exception>
-		/// </exception>
-		/// <inheritdoc cref="Process.Start(ProcessStartInfo)" />
-		/// <remarks>
-		/// See <see href="https://learn.microsoft.com/en-us/iis/get-started/getting-started-with-iis/getting-started-with-appcmdexe">Getting Started with AppCmd.exe</see>
-		/// </remarks>
-		private Task<string> ExecuteAppCmdCommand(string args)
+		private static readonly Func<string, string> _appcmd = (args) =>
 		{
-			ProcessStartInfo psi = new()
+			const string dirPath = "C:\\Windows\\System32\\inetsrv\\";
+			const string exeName = "appcmd.exe";
+			return Process.Start(new ProcessStartInfo
 			{
 				RedirectStandardError = true,
 				RedirectStandardOutput = true,
 				UseShellExecute = false,
 				Arguments = args,
-				WorkingDirectory = "C:\\Windows\\System32\\inetsrv\\",
-				FileName = "C:\\Windows\\System32\\inetsrv\\appcmd.exe",
-				CreateNoWindow = false
-			};
-
-			Process process = Process.Start(psi);
-			process.WaitForExit();
-			return process.StandardOutput.ReadToEndAsync();
-		}
-
+				FileName = Path.Join(dirPath, exeName),
+			}).StandardOutput.ReadToEnd();
+		};
 
 		/// <summary>
-		/// Convert IIS binding format to list of Uri
+		/// Gets data from appcmd.exe
 		/// </summary>
-		/// <param name="binding">string to convert</param>
-		/// <returns>Parsed collection of Uri</returns>
-		private IList<Uri> ConvertBindingToUri(string binding)
+		private static readonly Func<IEnumerable<SiteBinding>> _getBindings = () =>
 		{
-			List<string> internalStrings = new();
+			return XElement.Parse(_appcmd("list sites /xml"))
+				.Elements("SITE")
+				.Select(site => _getSiteBindingFromXmlElement(site));
+		};
 
-			//"http/*:7080:localhost,http/*:7080:kkrylovn
+		/// <summary>
+		/// Splits IIS Binding into list
+		/// </summary>
+		private static readonly Func<string, List<string>> _splitBinding = (binding) =>
+		{
 			if (binding.Contains(','))
 			{
-				string[] items = binding.Split(',');
-				internalStrings.AddRange(items);
+				return binding.Split(',').ToList();
 			}
 			else
 			{
-				internalStrings.Add(binding);
-			}
+				return new List<string> { binding };
+			};
+		};
 
+		/// <summary>
+		/// Splits IIS Binding
+		/// </summary>
+		private static readonly Func<string, List<Uri>> _convertBindingToUri = (binding) =>
+		{
+			//List<string> internalStrings = new();
+			List<Uri> result = new();
 
-			IList<Uri> result = new List<Uri>();
-			foreach (string item in internalStrings)
+			//"http/*:7080:localhost,http/*:7080:kkrylovn
+			_splitBinding(binding).ForEach(item =>
 			{
 				//http/*:7080:localhost
 				//http/*:80:
@@ -207,24 +178,44 @@ namespace Clio.Requests
 				{
 					result.Add(value);
 				}
-			}
+			});
 			return result;
-		}
+		};
 
-		private sealed record SiteBinding(string name, string state, string binding, string path)
+		/// <summary>
+		/// Converts XElement to Sitebinding
+		/// </summary>
+		private static readonly Func<XElement, SiteBinding> _getSiteBindingFromXmlElement = (xmlElement) =>
 		{
-		}
+			return new SiteBinding(
+				name: xmlElement.Attribute("SITE.NAME")?.Value,
+				state: xmlElement.Attribute("state")?.Value,
+				binding: xmlElement.Attribute("bindings")?.Value,
+				path: _appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
+			);
+		};
 
-		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
-		{
-		}
 
-		private enum SiteType
+		/// <summary>
+		/// Detect Site Type
+		/// </summary>
+		private static Func<string, SiteType> _detectSiteType = (path) =>
 		{
-			NetFramework,
-			Core,
-			NotCreatioSite
-		}
+			var webapp = Path.Join(path, "Terrasoft.WebApp");
+			var configuration = Path.Join(path, "Terrasoft.Configuration");
+
+			if (new DirectoryInfo(webapp).Exists)
+			{
+				return SiteType.NetFramework;
+			}
+
+			if (new DirectoryInfo(configuration).Exists)
+			{
+				return SiteType.Core;
+			}
+
+			return SiteType.NotCreatioSite;
+		};
 
 	}
 }

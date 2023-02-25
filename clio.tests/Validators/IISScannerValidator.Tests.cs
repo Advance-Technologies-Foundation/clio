@@ -4,24 +4,20 @@ using FluentValidation;
 using NUnit.Framework;
 using System.Linq;
 
-namespace Clio.Tests.Validators
-{
-	public class IISScannerRequestValidatorTestCase
-	{
+namespace Clio.Tests.Validators {
+	public class IISScannerRequestValidatorTestCase {
 
 		private ISSScannerValidator _sut;
 
 		[SetUp]
-		public void Init()
-		{
+		public void Init() {
 			_sut = new ISSScannerValidator();
 		}
 
 		[Test, Category("Unit")]
 		[TestCase("clio://IISScannerRequest/?return=count")]
 		[TestCase("clio://IISScannerRequest/?return=details")]
-		public void ISSScannerValidator_ShouldValidate_As_Valid(string content)
-		{
+		public void ISSScannerValidator_ShouldValidate_As_Valid(string content) {
 			//Arange 
 			var request = new IISScannerRequest()
 			{
@@ -36,8 +32,7 @@ namespace Clio.Tests.Validators
 		[Test, Category("Unit")]
 		[TestCase("clio://IISScannerRequest/?a=b")]
 		[TestCase("clio://IISScannerRequest/?returnnn=a1")]
-		public void ISSScannerValidator_ShouldValidate_As_InValid_When_ReturnISMissing(string content)
-		{
+		public void ISSScannerValidator_ShouldValidate_As_InValid_When_ReturnIsMissing(string content) {
 			//Arange 
 			var request = new IISScannerRequest()
 			{
@@ -71,15 +66,14 @@ namespace Clio.Tests.Validators
 		[TestCase("clio://IISScannerRequest/?return=a19")]
 		[TestCase("clio://IISScannerRequest/?return=1")]
 		[TestCase("clio://IISScannerRequest/?return=g")]
-		public void ISSScannerValidator_ShouldValidate_As_InValid_WhenReturnParam_Is_Incorrect(string content)
-		{
+		public void ISSScannerValidator_ShouldValidate_As_InValid_WhenReturnParam_Is_Incorrect(string content) {
 			//Arange 
 			var request = new IISScannerRequest()
 			{
 				Content = content,
 			};
 
-			string[] allowedValues = new[] { "count", "details" };
+			string[] allowedValues = new[] { "count", "details", "registerall" };
 			var expected = new
 			{
 				ErrorCode = "ARG002",
