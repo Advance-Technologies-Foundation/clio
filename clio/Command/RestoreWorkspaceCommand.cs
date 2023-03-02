@@ -7,7 +7,7 @@ namespace Clio.Command
 
 	#region Class: RestoreWorkspaceOptions
 
-	[Verb("restore-workspace", Aliases = new string[] { "restorew" }, HelpText = "Restore clio workspace")]
+	[Verb("restore-workspace", Aliases = new string[] { "restorew", "pullw", "pull-workspace" }, HelpText = "Restore clio workspace")]
 	public class RestoreWorkspaceOptions : EnvironmentOptions
 	{
 	}

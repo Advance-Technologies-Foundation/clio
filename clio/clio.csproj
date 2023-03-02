@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>6.0.1.5</AssemblyVersion>
-	  <FileVersion>6.0.1.5</FileVersion>
-	  <Version>6.0.1.5</Version>
+	  <AssemblyVersion>6.0.1.6</AssemblyVersion>
+	  <FileVersion>6.0.1.6</FileVersion>
+	  <Version>6.0.1.6</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -38,6 +38,8 @@
 
 
   <ItemGroup>
+    <None Remove="reg\clio_context_menu_win.reg" />
+    <None Remove="reg\unreg_clio_context_menu_win.reg" />
     <None Remove="tpl\packages.config.tpl" />
     <None Remove="tpl\ui-project-Empty\webpack.prod.config.js" />
     <None Remove="tpl\ui-project\.browserslistrc" />
@@ -73,6 +75,12 @@
 
   <ItemGroup>
     <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
+    <Content Include="reg\clio_context_menu_win.reg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="reg\unreg_clio_context_menu_win.reg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="tpl\packages.config.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -431,9 +439,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="img\creatio_favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="reg\clio_context_menu_win.reg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="tpl\entity-listener-template.tpl">
