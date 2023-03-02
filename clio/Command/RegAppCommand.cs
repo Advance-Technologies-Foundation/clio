@@ -9,36 +9,41 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Clio.Command {
+namespace Clio.Command
+{
 	[Verb("reg-web-app", Aliases = new string[] { "reg", "cfg" }, HelpText = "Configure a web application settings")]
-	public class RegAppOptions : EnvironmentNameOptions {
+	public class RegAppOptions : EnvironmentNameOptions
+	{
 		[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set as default web application")]
 		public string ActiveEnvironment {
 			get; set;
 		}
 
-		[Option("all-from-IIS", Required = true, HelpText = "Register all Creatios from IIS")]
+		[Option("add-from-iis", Required = false, HelpText = "Register all Creatios from IIS")]
 		public bool FromIis {
 			get; set;
 		}
 
 
-		[Option("WithLogin", Required = false, HelpText = "Try login after registration")]
-		public bool TryLogIn {
+		[Option("checkLogin", Required = false, HelpText = "Try login after registration")]
+		public bool CheckLogin {
 			get; set;
 		}
 	}
 
-	public class RegAppCommand : Command<RegAppOptions> {
+	public class RegAppCommand : Command<RegAppOptions>
+	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly IApplicationClientFactory _applicationClientFactory;
 
-		public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory) {
+		public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory)
+		{
 			_settingsRepository = settingsRepository;
 			_applicationClientFactory = applicationClientFactory;
 		}
 
-		public override int Execute(RegAppOptions options) {
+		public override int Execute(RegAppOptions options)
+		{
 			try
 			{
 				if (options.FromIis && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -85,13 +90,13 @@ namespace Clio.Command {
 					_settingsRepository.ConfigureEnvironment(options.Name, environment);
 					Console.WriteLine($"Environment {options.Name} was configured...");
 					environment = _settingsRepository.GetEnvironment(options);
-					Console.WriteLine($"Try login to {environment.Uri} with {environment.Login} credentials ...");
 
-					if (options.TryLogIn)
+					if (options.CheckLogin)
 					{
+						Console.WriteLine($"Try login to {environment.Uri} with {environment.Login ?? environment.ClientId} credentials ...");
 						var creatioClient = _applicationClientFactory.CreateClient(environment);
 						creatioClient.Login();
-						Console.WriteLine($"Login successfull");
+						Console.WriteLine($"Login successful");
 					}
 					return 0;
 				}

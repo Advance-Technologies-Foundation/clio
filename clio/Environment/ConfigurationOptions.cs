@@ -14,70 +14,66 @@ namespace Clio
 
 	public class EnvironmentSettings
 	{
-		public string Uri
-		{
+		public string Uri {
 			get; set;
 		}
 
-		public string Login
-		{
+		public string Login {
 			get; set;
 		}
 
-		public string Password
-		{
+		public string Password {
 			get; set;
 		}
 
-		public string Maintainer
-		{
+		public string Maintainer {
 			get; set;
 		}
 
-		public bool IsNetCore
-		{
+		public bool IsNetCore {
 			get; set;
 		}
 
-		public string ClientId
-		{
+		public string ClientId {
 			get; set;
 		}
 
-		public string ClientSecret
-		{
+		public string ClientSecret {
 			get; set;
 		}
 
 		private string _authAppUri;
-		public string AuthAppUri
-		{
-			get
-			{
-				return string.IsNullOrEmpty(_authAppUri) ?
-					Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token") : _authAppUri;
+		public string AuthAppUri {
+			get {
+				if (string.IsNullOrEmpty(_authAppUri))
+				{
+					if (Uri?.ToLower().Contains(".creatio.com") ?? false)
+					{
+						return Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token");
+					}
+				}
+				return _authAppUri;
 			}
-			set
-			{
+			set {
 				_authAppUri = value;
 			}
 		}
 
-		public string SimpleloginUri
-		{
+		public string SimpleloginUri {
 			get {
 				var cleanUri = Uri;
-				if (!string.IsNullOrEmpty(cleanUri)) {
+				if (!string.IsNullOrEmpty(cleanUri))
+				{
 					var domain = ".creatio.com";
 					var index = cleanUri.IndexOf(domain);
-					if (index != -1) {
+					if (index != -1)
+					{
 						cleanUri = cleanUri.Substring(0, index + domain.Length);
 					}
 				}
 				return cleanUri + "/0/Shell/?simplelogin=true";
 			}
-			set
-			{
+			set {
 				_authAppUri = value;
 			}
 		}
@@ -114,20 +110,17 @@ namespace Clio
 			AuthAppUri = environment.AuthAppUri;
 		}
 
-		public bool? Safe
-		{
+		public bool? Safe {
 			get; set;
 		}
 
 
-		public bool? DeveloperModeEnabled
-		{
+		public bool? DeveloperModeEnabled {
 			get; set;
 		}
 
 		[JsonIgnore]
-		public bool IsDevMode
-		{
+		public bool IsDevMode {
 			get => DeveloperModeEnabled ?? false;
 		}
 
@@ -143,8 +136,7 @@ namespace Clio
 		[JsonProperty("$schema")]
 		public string Schema => "./schema.json";
 
-		public string ActiveEnvironmentKey
-		{
+		public string ActiveEnvironmentKey {
 			get; set;
 		}
 
@@ -162,13 +154,11 @@ namespace Clio
 			}
 		}
 
-		public bool Autoupdate
-		{
+		public bool Autoupdate {
 			get; set;
 		}
 
-		public Dictionary<string, EnvironmentSettings> Environments
-		{
+		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
 	}
@@ -180,10 +170,8 @@ namespace Clio
 
 		private Settings _settings;
 
-		private string AppSettingsFolderPath
-		{
-			get
-			{
+		private string AppSettingsFolderPath {
+			get {
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
 						"LOCALAPPDATA" : "HOME");

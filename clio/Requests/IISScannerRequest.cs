@@ -11,8 +11,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
-namespace Clio.Requests {
-	public class IISScannerRequest : IExtenalLink {
+namespace Clio.Requests
+{
+	public class IISScannerRequest : IExtenalLink
+	{
 		public string Content {
 			get; set;
 		}
@@ -27,16 +29,19 @@ namespace Clio.Requests {
 	/// </remarks>
 	/// <example>
 	/// </example>
-	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest> {
+	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>
+	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly RegAppCommand _regCommand;
 
-		public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand) {
+		public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand)
+		{
 			_settingsRepository = settingsRepository;
 			_regCommand = regCommand;
 		}
 
-		public Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken) {
+		public Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken)
+		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 
 			IEnumerable<UnregisteredSite> unregSites = _findUnregisteredCreatioSites(_settingsRepository);
@@ -63,7 +68,7 @@ namespace Clio.Requests {
 						Login = "Supervisor",
 						Password = "Supervisor",
 						Maintainer = "Customer",
-						TryLogIn = false
+						CheckLogin = false
 					});
 				});
 			}
@@ -71,13 +76,16 @@ namespace Clio.Requests {
 		}
 
 
-		private sealed record SiteBinding(string name, string state, string binding, string path) {
+		private sealed record SiteBinding(string name, string state, string binding, string path)
+		{
 		}
 
-		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) {
+		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
+		{
 		}
 
-		private enum SiteType {
+		private enum SiteType
+		{
 			NetFramework,
 			Core,
 			NotCreatioSite
