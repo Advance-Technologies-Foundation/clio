@@ -8,8 +8,7 @@ namespace Clio.Requests
 {
 	public class GetAppSettingsFilePath : IExtenalLink
 	{
-		public string Content
-		{
+		public string Content {
 			get; set;
 		}
 	}
@@ -30,7 +29,7 @@ namespace Clio.Requests
 			_settingsRepository = settingsRepository;
 		}
 
-		public Task<Unit> Handle(GetAppSettingsFilePath request, CancellationToken cancellationToken)
+		public Task Handle(GetAppSettingsFilePath request, CancellationToken cancellationToken)
 		{
 			Console.WriteLine(_settingsRepository.AppSettingsFilePath);
 			return Unit.Task;

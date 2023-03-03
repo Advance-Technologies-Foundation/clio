@@ -12,9 +12,12 @@ using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System.Reflection;
 using Сlio.Command.PackageCommand;
 
-namespace Clio {
-	public class BindingsModule {
-		public IContainer Register(EnvironmentSettings settings = null) {
+namespace Clio
+{
+	public class BindingsModule
+	{
+		public IContainer Register(EnvironmentSettings settings = null)
+		{
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
@@ -58,8 +61,6 @@ namespace Clio {
 			containerBuilder.RegisterType<GetVersionCommand>();
 			containerBuilder.RegisterType<ExtractPackageCommand>();
 			containerBuilder.RegisterType<ExternalLinkCommand>();
-			containerBuilder.RegisterType<ExternalLinkCommand>();
-
 
 			var configuration = MediatRConfigurationBuilder
 		   .Create(typeof(BindingsModule).Assembly)

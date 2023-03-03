@@ -8,8 +8,7 @@ namespace Clio.Requests
 {
 	public class Restart : IExtenalLink
 	{
-		public string Content
-		{
+		public string Content {
 			get; set;
 		}
 	}
@@ -30,7 +29,7 @@ namespace Clio.Requests
 			_restartCommand = restartCommand;
 		}
 
-		public Task<Unit> Handle(Restart request, CancellationToken cancellationToken)
+		public Task Handle(Restart request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 			RestartOptions opt = new()

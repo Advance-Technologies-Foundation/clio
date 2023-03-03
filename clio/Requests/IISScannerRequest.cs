@@ -45,7 +45,7 @@ namespace Clio.Requests
 			_regCommand = regCommand;
 		}
 
-		public async Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken)
+		public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 
@@ -55,8 +55,8 @@ namespace Clio.Requests
 			if (r == "remote")
 			{
 				const string userName = @"TSCRM\k.krylov";          //userName that has access to the remote host
-				const string password = "************";             //password
-				const string computername = "ts1-mrkt-web01";       //remote host with IIS that we're going to get sites from
+				const string password = "$Zarelon36!";             //password
+				const string computername = "localhost";       //remote host with IIS that we're going to get sites from
 
 				int i = 1;
 				(await _test((userName, password, computername))).ToList().ForEach(async site =>
@@ -92,7 +92,6 @@ namespace Clio.Requests
 					});
 				});
 			}
-			return new Unit();
 		}
 
 		/// <summary>
@@ -146,7 +145,8 @@ namespace Clio.Requests
 		private static Func<(string userName, string password, string computerName), Task<Dictionary<string, Uri>>>
 		_test = async (args) =>
 		{
-			var securestring = new SecureString();
+			using var securestring = new SecureString();
+
 			foreach (char c in args.password)
 			{
 				securestring.AppendChar(c);
@@ -163,34 +163,27 @@ namespace Clio.Requests
 			runspace.OpenAsync();
 
 			List<PSObject> tempList = new();
-			string script = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebApplication | ConvertTo-Json}}";
-			using (var ps1 = PowerShell.Create())
-			{
-				ps1?.AddScript(script);
-				var result1 = await ps1.InvokeAsync().ConfigureAwait(false);
-				tempList.AddRange(result1);
-			}
 
-			var distinctListOfWebApps = JsonSerializer.Deserialize<List<WebAppDto>>(tempList.FirstOrDefault().ToString())
+			string get_webapp = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebApplication | ConvertTo-Json}}";
+			using var ps = PowerShell.Create();
+
+			tempList.AddRange(await ps.AddScript(get_webapp).InvokeAsync());
+
+			var distinctListOfWebApps =
+			JsonSerializer.Deserialize<IEnumerable<WebAppDto>>(tempList.FirstOrDefault().ToString())
 			.Where(a => a.PhysicalPath.EndsWith("Terrasoft.WebApp") && a.path.EndsWith("/0"))
 			.Select(i => (
 				siteName: Regex.Match(i.ItemXPath, "(@name=')(.*?)(' and @id='\\d?')")?.Groups[2].Value?.Trim(),
 				sitePath: i.path.Replace("/0", "")
-			))
-			.ToList();
+			));
 
 
 			tempList.Clear();
-			string getSite = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebSite | ConvertTo-Json}}";
-			using (var ps2 = PowerShell.Create())
-			{
-				ps2?.AddScript(getSite);
-				var result2 = await ps2.InvokeAsync().ConfigureAwait(false);
-				tempList.AddRange(result2);
-			}
-			runspace.CloseAsync();
-			runspace.Dispose();
 
+			string get_website = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebSite | ConvertTo-Json}}";
+			tempList.AddRange(await ps.AddScript(get_website).InvokeAsync());
+
+			runspace.CloseAsync();
 
 			Dictionary<string, List<Uri>> remoteSites = new();
 			JsonSerializer.Deserialize<List<WebSiteDto>>(tempList.FirstOrDefault().ToString())
@@ -202,16 +195,28 @@ namespace Clio.Requests
 			});
 
 			Dictionary<string, Uri> result = new();
-			distinctListOfWebApps.ForEach(i =>
+			distinctListOfWebApps.ToList().ForEach(i =>
 			{
-				var uri = remoteSites[i.siteName].Where(u => u.Host != "localhost").FirstOrDefault();
-				var newUri = new Uri(uri, i.sitePath);
-				result.Add($"{i.siteName}:{i.sitePath}", newUri);
+				var uri = (args.computerName == "localhost") ? remoteSites[i.siteName].FirstOrDefault() :
+				remoteSites[i.siteName].FirstOrDefault(u => u.Host != "localhost");
 
+				if (Uri.TryCreate(uri, i.sitePath, out Uri filalUri))
+				{
+					result.Add($"{i.siteName}:{i.sitePath}", filalUri);
+				}
 			});
-
 			return result;
 		};
+
+		private static void Runspace_StateChanged(object sender, RunspaceStateEventArgs e)
+		{
+			Console.WriteLine(e.RunspaceStateInfo);
+		}
+
+		private static void Runspace_AvailabilityChanged(object sender, RunspaceAvailabilityEventArgs e)
+		{
+			Console.WriteLine(e.RunspaceAvailability);
+		}
 
 		/// <summary>
 		/// Gets data from appcmd.exe

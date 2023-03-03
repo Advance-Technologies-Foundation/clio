@@ -8,8 +8,7 @@ namespace Clio.Requests
 {
 	public class RegisterOAuthCredentials : IExtenalLink
 	{
-		public string Content
-		{
+		public string Content {
 			get; set;
 		}
 	}
@@ -26,7 +25,7 @@ namespace Clio.Requests
 			_regCommand = regCommand;
 		}
 
-		public Task<Unit> Handle(RegisterOAuthCredentials request, CancellationToken cancellationToken)
+		public Task Handle(RegisterOAuthCredentials request, CancellationToken cancellationToken)
 		{
 
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);

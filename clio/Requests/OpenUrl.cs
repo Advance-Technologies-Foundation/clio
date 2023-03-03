@@ -8,8 +8,7 @@ namespace Clio.Requests
 {
 	public class OpenUrl : IExtenalLink
 	{
-		public string Content
-		{
+		public string Content {
 			get; set;
 		}
 	}
@@ -23,7 +22,7 @@ namespace Clio.Requests
 	/// </remarks>
 	internal class OpenUrlHandler : BaseExternalLinkHandler, IRequestHandler<OpenUrl>
 	{
-		public Task<Unit> Handle(OpenUrl request, CancellationToken cancellationToken)
+		public Task Handle(OpenUrl request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 			string requestedLink = ClioParams["url"];
