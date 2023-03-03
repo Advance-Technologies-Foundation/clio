@@ -158,8 +158,11 @@ namespace Clio.Requests
 		};
 
 
-
-		private static Func<(string userName, string password, string computerName), Task<Dictionary<string, Uri>>> _test = async (args) =>
+		/// <summary>
+		/// Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
+		/// </summary>
+		private static Func<(string userName, string password, string computerName), Task<Dictionary<string, Uri>>>
+		_test = async (args) =>
 		{
 			var securestring = new SecureString();
 			foreach (char c in args.password)
@@ -178,7 +181,7 @@ namespace Clio.Requests
 			runspace.OpenAsync();
 
 			List<PSObject> tempList = new();
-			string script = $"Invoke-Command -ComputerName ts1-mrkt-web01 -ScriptBlock {{Import-Module WebAdministration; Get-WebApplication | ConvertTo-Json}}";
+			string script = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebApplication | ConvertTo-Json}}";
 			using (var ps1 = PowerShell.Create())
 			{
 				ps1?.AddScript(script);
@@ -196,7 +199,7 @@ namespace Clio.Requests
 
 
 			tempList.Clear();
-			string getSite = $"Invoke-Command -ComputerName ts1-mrkt-web01 -ScriptBlock {{Import-Module WebAdministration; Get-WebSite | ConvertTo-Json}}";
+			string getSite = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebSite | ConvertTo-Json}}";
 			using (var ps2 = PowerShell.Create())
 			{
 				ps2?.AddScript(getSite);
@@ -210,14 +213,11 @@ namespace Clio.Requests
 			Dictionary<string, List<Uri>> remoteSites = new();
 			JsonSerializer.Deserialize<List<WebSiteDto>>(tempList.FirstOrDefault().ToString())
 			.Where(dto => distinctListOfWebApps.Select(s => s.siteName).Contains(dto.name))
-			.ToList()
-			.ForEach(i =>
+			.ToList().ForEach(i =>
 			{
 				string newString = i.bindings.Collection.Replace(" *", "/*").Replace(" ", ",");
 				remoteSites.Add(i.name, _convertBindingToUri(newString));
 			});
-
-
 
 			Dictionary<string, Uri> result = new();
 			distinctListOfWebApps.ForEach(i =>
