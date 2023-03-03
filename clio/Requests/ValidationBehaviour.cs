@@ -11,7 +11,7 @@ namespace Clio.Requests
 	{
 		private readonly IValidator<TRequest> _validator;
 
-		public ValidationBehaviour(IValidator<TRequest> validator)
+		public ValidationBehaviour(IValidator<TRequest> validator = null)
 		{
 			_validator = validator;
 		}
@@ -19,9 +19,9 @@ namespace Clio.Requests
 
 		public Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
 		{
-			ValidationResult validationResult = _validator.Validate(request);
+			ValidationResult validationResult = _validator?.Validate(request);
 
-			if (!validationResult.IsValid)
+			if (validationResult is object && !validationResult.IsValid)
 			{
 				throw new ValidationException(validationResult.Errors);
 			}

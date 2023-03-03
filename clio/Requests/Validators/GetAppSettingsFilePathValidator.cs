@@ -1,8 +1,6 @@
-﻿using FluentValidation;
-
-namespace Clio.Requests.Validators
+﻿namespace Clio.Requests.Validators
 {
-	internal class GetAppSettingsFilePathValidator : AbstractValidator<GetAppSettingsFilePath>
-	{
-	}
+	//internal class GetAppSettingsFilePathValidator : AbstractValidator<GetAppSettingsFilePath>
+	//{
+	//}
 }
