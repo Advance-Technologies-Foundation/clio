@@ -1,12 +1,17 @@
 ﻿using Clio.Command;
 using Clio.UserEnvironment;
 using MediatR;
+using Microsoft.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management.Automation;
+using System.Management.Automation.Runspaces;
+using System.Security;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -40,13 +45,28 @@ namespace Clio.Requests
 			_regCommand = regCommand;
 		}
 
-		public Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken)
+		public async Task<Unit> Handle(IISScannerRequest request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 
 			IEnumerable<UnregisteredSite> unregSites = _findUnregisteredCreatioSites(_settingsRepository);
 
 			var r = ClioParams?["return"];
+			if (r == "remote")
+			{
+				const string userName = @"TSCRM\k.krylov";          //userName that has access to the remote host
+				const string password = "************";             //password
+				const string computername = "ts1-mrkt-web01";       //remote host with IIS that we're going to get sites from
+
+				int i = 1;
+				(await _test((userName, password, computername))).ToList().ForEach(async site =>
+				{
+					await Console.Out.WriteLineAsync($"({i++}) {site.Key} - {site.Value}");
+				});
+
+				//Here I would call regApp command but instead I will write total
+				await Console.Out.WriteLineAsync($"**** TOTAL: {i - 1} new sites ****");
+			}
 			if (r == "count")
 			{
 				Console.WriteLine(unregSites.Count());
@@ -72,7 +92,7 @@ namespace Clio.Requests
 					});
 				});
 			}
-			return Task.FromResult(new Unit());
+			return new Unit();
 		}
 
 
@@ -137,6 +157,82 @@ namespace Clio.Requests
 			}).StandardOutput.ReadToEnd();
 		};
 
+
+
+		private static Func<(string userName, string password, string computerName), Task<Dictionary<string, Uri>>> _test = async (args) =>
+		{
+			var securestring = new SecureString();
+			foreach (char c in args.password)
+			{
+				securestring.AppendChar(c);
+			}
+
+			PSCredential creds = new(args.userName, securestring);
+			WSManConnectionInfo connectionInfo = new()
+			{
+				Credential = creds,
+				ComputerName = args.computerName
+			};
+
+			Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
+			runspace.OpenAsync();
+
+			List<PSObject> tempList = new();
+			string script = $"Invoke-Command -ComputerName ts1-mrkt-web01 -ScriptBlock {{Import-Module WebAdministration; Get-WebApplication | ConvertTo-Json}}";
+			using (var ps1 = PowerShell.Create())
+			{
+				ps1?.AddScript(script);
+				var result1 = await ps1.InvokeAsync().ConfigureAwait(false);
+				tempList.AddRange(result1);
+			}
+
+			var distinctListOfWebApps = JsonSerializer.Deserialize<List<WebAppDto>>(tempList.FirstOrDefault().ToString())
+			.Where(a => a.PhysicalPath.EndsWith("Terrasoft.WebApp") && a.path.EndsWith("/0"))
+			.Select(i => (
+				siteName: Regex.Match(i.ItemXPath, "(@name=')(.*?)(' and @id='\\d?')")?.Groups[2].Value?.Trim(),
+				sitePath: i.path.Replace("/0", "")
+			))
+			.ToList();
+
+
+			tempList.Clear();
+			string getSite = $"Invoke-Command -ComputerName ts1-mrkt-web01 -ScriptBlock {{Import-Module WebAdministration; Get-WebSite | ConvertTo-Json}}";
+			using (var ps2 = PowerShell.Create())
+			{
+				ps2?.AddScript(getSite);
+				var result2 = await ps2.InvokeAsync().ConfigureAwait(false);
+				tempList.AddRange(result2);
+			}
+			runspace.CloseAsync();
+			runspace.Dispose();
+
+
+			Dictionary<string, List<Uri>> remoteSites = new();
+			JsonSerializer.Deserialize<List<WebSiteDto>>(tempList.FirstOrDefault().ToString())
+			.Where(dto => distinctListOfWebApps.Select(s => s.siteName).Contains(dto.name))
+			.ToList()
+			.ForEach(i =>
+			{
+				string newString = i.bindings.Collection.Replace(" *", "/*").Replace(" ", ",");
+				remoteSites.Add(i.name, _convertBindingToUri(newString));
+			});
+
+
+
+			Dictionary<string, Uri> result = new();
+			distinctListOfWebApps.ForEach(i =>
+			{
+				var uri = remoteSites[i.siteName].Where(u => u.Host != "localhost").FirstOrDefault();
+				var newUri = new Uri(uri, i.sitePath);
+				result.Add($"{i.siteName}:{i.sitePath}", newUri);
+
+			});
+
+			return result;
+		};
+
+
+
 		/// <summary>
 		/// Gets data from appcmd.exe
 		/// </summary>
@@ -146,6 +242,7 @@ namespace Clio.Requests
 				.Elements("SITE")
 				.Select(site => _getSiteBindingFromXmlElement(site));
 		};
+
 
 		/// <summary>
 		/// Splits IIS Binding into list
@@ -176,15 +273,18 @@ namespace Clio.Requests
 				//http/*:7080:localhost
 				//http/*:80:
 				var items = item.Split(':');
-				string hostName = (string.IsNullOrEmpty(items[2])) ? "localhost" : items[2];
-				string port = items[1];
-				string other = items[0];
-				string protocol = other.Replace("/*", "");
-				string url = $"{protocol}://{hostName}:{port}";
-
-				if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
+				if (items.Length >= 3)
 				{
-					result.Add(value);
+					string hostName = (string.IsNullOrEmpty(items[2])) ? "localhost" : items[2];
+					string port = items[1];
+					string other = items[0];
+					string protocol = other.Replace("/*", "");
+					string url = $"{protocol}://{hostName}:{port}";
+
+					if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
+					{
+						result.Add(value);
+					}
 				}
 			});
 			return result;
@@ -226,4 +326,11 @@ namespace Clio.Requests
 		};
 
 	}
+
+
+	public record WebAppDto(string ElementTagName, string path, string enabledProtocols, string PhysicalPath, string ItemXPath);
+
+	public record WebSiteDto(string name, int id, Bindings bindings);
+
+	public record Bindings(string Collection);
 }
