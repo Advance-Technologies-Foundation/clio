@@ -95,22 +95,6 @@ namespace Clio.Requests
 			return new Unit();
 		}
 
-
-		private sealed record SiteBinding(string name, string state, string binding, string path)
-		{
-		}
-
-		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
-		{
-		}
-
-		private enum SiteType
-		{
-			NetFramework,
-			Core,
-			NotCreatioSite
-		}
-
 		/// <summary>
 		/// Finds Creatio Sites in IIS that are not registered with clio
 		/// </summary>
@@ -139,7 +123,6 @@ namespace Clio.Requests
 			});
 		};
 
-
 		/// <summary>
 		/// Executes appcmd.exe with arguments and captures output
 		/// </summary>
@@ -156,7 +139,6 @@ namespace Clio.Requests
 				FileName = Path.Join(dirPath, exeName),
 			}).StandardOutput.ReadToEnd();
 		};
-
 
 		/// <summary>
 		/// Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
@@ -231,8 +213,6 @@ namespace Clio.Requests
 			return result;
 		};
 
-
-
 		/// <summary>
 		/// Gets data from appcmd.exe
 		/// </summary>
@@ -242,7 +222,6 @@ namespace Clio.Requests
 				.Elements("SITE")
 				.Select(site => _getSiteBindingFromXmlElement(site));
 		};
-
 
 		/// <summary>
 		/// Splits IIS Binding into list
@@ -303,7 +282,6 @@ namespace Clio.Requests
 			);
 		};
 
-
 		/// <summary>
 		/// Detect Site Type
 		/// </summary>
@@ -325,12 +303,25 @@ namespace Clio.Requests
 			return SiteType.NotCreatioSite;
 		};
 
+		private sealed record SiteBinding(string name, string state, string binding, string path)
+		{
+		}
+
+		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
+		{
+		}
+
+		private enum SiteType
+		{
+			NetFramework,
+			Core,
+			NotCreatioSite
+		}
+
+		private sealed record WebAppDto(string ElementTagName, string path, string enabledProtocols, string PhysicalPath, string ItemXPath);
+
+		private sealed record WebSiteDto(string name, int id, Bindings bindings);
+
+		private sealed record Bindings(string Collection);
 	}
-
-
-	public record WebAppDto(string ElementTagName, string path, string enabledProtocols, string PhysicalPath, string ItemXPath);
-
-	public record WebSiteDto(string name, int id, Bindings bindings);
-
-	public record Bindings(string Collection);
 }
