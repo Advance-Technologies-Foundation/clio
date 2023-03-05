@@ -53,7 +53,7 @@ namespace Clio.Command
 			{
 				if (options.FromIis)
 				{
-					_powerShellFactory.Initialize(string.Empty, string.Empty, options.Host);
+					_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
 					var sites = IISScannerHandler.getSites(_powerShellFactory);
 
 					sites.ToList().ForEach(site =>
