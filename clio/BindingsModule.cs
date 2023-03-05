@@ -6,6 +6,7 @@ using Clio.Common;
 using Clio.Querry;
 using Clio.Requests;
 using Clio.Requests.Validators;
+using Clio.Utilities;
 using MediatR;
 using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
@@ -61,21 +62,18 @@ namespace Clio
 			containerBuilder.RegisterType<GetVersionCommand>();
 			containerBuilder.RegisterType<ExtractPackageCommand>();
 			containerBuilder.RegisterType<ExternalLinkCommand>();
-
-			var configuration = MediatRConfigurationBuilder
-		   .Create(typeof(BindingsModule).Assembly)
-		   .WithAllOpenGenericHandlerTypesRegistered()
-		   .Build();
-			containerBuilder.RegisterMediatR(configuration);
-
-
-			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
-			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
-
-
+			containerBuilder.RegisterType<PowerShellFactory>();
 			containerBuilder.RegisterType<RegAppCommand>();
 			containerBuilder.RegisterType<RestartCommand>();
 
+			var configuration = MediatRConfigurationBuilder
+				.Create(typeof(BindingsModule).Assembly)
+				.WithAllOpenGenericHandlerTypesRegistered()
+				.Build();
+			containerBuilder.RegisterMediatR(configuration);
+
+			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
+			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 
 			return containerBuilder.Build();
 		}

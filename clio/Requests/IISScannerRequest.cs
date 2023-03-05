@@ -1,15 +1,16 @@
 ﻿using Clio.Command;
 using Clio.UserEnvironment;
+using Clio.Utilities;
 using MediatR;
 using Microsoft.CodeAnalysis;
+using OneOf;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
-using System.Management.Automation.Runspaces;
-using System.Security;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -38,34 +39,41 @@ namespace Clio.Requests
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly RegAppCommand _regCommand;
+		private readonly PowerShellFactory _powerShellFactory;
 
-		public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand)
+
+		public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand, PowerShellFactory powerShellFactory)
 		{
 			_settingsRepository = settingsRepository;
 			_regCommand = regCommand;
+			_powerShellFactory = powerShellFactory;
 		}
 
 		public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
-
 			IEnumerable<UnregisteredSite> unregSites = _findUnregisteredCreatioSites(_settingsRepository);
 
 			var r = ClioParams?["return"];
 			if (r == "remote")
 			{
-				const string userName = @"TSCRM\k.krylov";          //userName that has access to the remote host
-				const string password = "$Zarelon36!";             //password
-				const string computername = "localhost";       //remote host with IIS that we're going to get sites from
+				//clio://IISScannerRequest/?returnremote&host=localhost;
+				string computername = ClioParams?["host"];
+
+				//clio externalLink clio://IISScannerRequest/?return=remote&host=localhost&username=1234&password=5678;
+				string userName = ClioParams?["username"];
+				string password = ClioParams?["password"];
+				_powerShellFactory.Initialize(userName, password, computername);
 
 				int i = 1;
-				(await _test((userName, password, computername))).ToList().ForEach(async site =>
+
+				getSites(_powerShellFactory)?.ToList().ForEach(async site =>
 				{
-					await Console.Out.WriteLineAsync($"({i++}) {site.Key} - {site.Value}");
+					Console.WriteLine($"({i++}) {site.Key} - {site.Value}");
 				});
 
 				//Here I would call regApp command but instead I will write total
-				await Console.Out.WriteLineAsync($"**** TOTAL: {i - 1} new sites ****");
+				Console.WriteLine($"**** TOTAL: {i - 1} new sites ****");
 			}
 			if (r == "count")
 			{
@@ -142,81 +150,44 @@ namespace Clio.Requests
 		/// <summary>
 		/// Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
 		/// </summary>
-		private static Func<(string userName, string password, string computerName), Task<Dictionary<string, Uri>>>
-		_test = async (args) =>
+
+		public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> getSites = (psf) =>
 		{
-			using var securestring = new SecureString();
-
-			foreach (char c in args.password)
-			{
-				securestring.AppendChar(c);
-			}
-
-			PSCredential creds = new(args.userName, securestring);
-			WSManConnectionInfo connectionInfo = new()
-			{
-				Credential = creds,
-				ComputerName = args.computerName
-			};
-
-			Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
-			runspace.OpenAsync();
-
-			List<PSObject> tempList = new();
-
-			string get_webapp = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebApplication | ConvertTo-Json}}";
-			using var ps = PowerShell.Create();
-
-			tempList.AddRange(await ps.AddScript(get_webapp).InvokeAsync());
-
-			var distinctListOfWebApps =
-			JsonSerializer.Deserialize<IEnumerable<WebAppDto>>(tempList.FirstOrDefault().ToString())
-			.Where(a => a.PhysicalPath.EndsWith("Terrasoft.WebApp") && a.path.EndsWith("/0"))
-			.Select(i => (
-				siteName: Regex.Match(i.ItemXPath, "(@name=')(.*?)(' and @id='\\d?')")?.Groups[2].Value?.Trim(),
-				sitePath: i.path.Replace("/0", "")
-			));
-
-
-			tempList.Clear();
-
-			string get_website = $"Invoke-Command -ComputerName {args.computerName} -ScriptBlock {{Import-Module WebAdministration; Get-WebSite | ConvertTo-Json}}";
-			tempList.AddRange(await ps.AddScript(get_website).InvokeAsync());
-
-			runspace.CloseAsync();
-
-			Dictionary<string, List<Uri>> remoteSites = new();
-			JsonSerializer.Deserialize<List<WebSiteDto>>(tempList.FirstOrDefault().ToString())
-			.Where(dto => distinctListOfWebApps.Select(s => s.siteName).Contains(dto.name))
-			.ToList().ForEach(i =>
-			{
-				string newString = i.bindings.Collection.Replace(" *", "/*").Replace(" ", ",");
-				remoteSites.Add(i.name, _convertBindingToUri(newString));
-			});
-
 			Dictionary<string, Uri> result = new();
-			distinctListOfWebApps.ToList().ForEach(i =>
-			{
-				var uri = (args.computerName == "localhost") ? remoteSites[i.siteName].FirstOrDefault() :
-				remoteSites[i.siteName].FirstOrDefault(u => u.Host != "localhost");
 
-				if (Uri.TryCreate(uri, i.sitePath, out Uri filalUri))
+			var sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
+			var webApps = psf.GetInstance().AddCommand("Get-WebApplication").Invoke<WebApp>();
+
+			webApps.Where(webApp => webApp.Path.EndsWith("/0"))
+			.ToList()
+			.ForEach(webApp =>
+			{
+
+				var rootSite = sites.Where(site =>
+					site.Name == webApp.SiteName && site.Id == webApp.SiteId)
+				.Select(site => (site.Name, site.Uris)).FirstOrDefault();
+
+				string newPath = webApp.Path.Substring(0, webApp.Path.Length - 2);
+				var rootUri = (psf.ComputerName == "localhost") ? rootSite.Uris.FirstOrDefault() : rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
+				if (Uri.TryCreate(rootUri, newPath, out Uri value))
 				{
-					result.Add($"{i.siteName}:{i.sitePath}", filalUri);
+					result.Add(rootSite.Name + newPath, value);
 				}
 			});
 			return result;
 		};
 
-		private static void Runspace_StateChanged(object sender, RunspaceStateEventArgs e)
-		{
-			Console.WriteLine(e.RunspaceStateInfo);
-		}
 
-		private static void Runspace_AvailabilityChanged(object sender, RunspaceAvailabilityEventArgs e)
+
+		private static Func<OneOf<Collection<PSObject>, Exception>, Collection<PSObject>> getValue = (oneOf) =>
 		{
-			Console.WriteLine(e.RunspaceAvailability);
-		}
+			if (oneOf.Value is Exception ex)
+			{
+				Console.Write(ex.Message);
+				return default;
+			}
+			return (oneOf.Value as Collection<PSObject>);
+		};
 
 		/// <summary>
 		/// Gets data from appcmd.exe
@@ -328,5 +299,132 @@ namespace Clio.Requests
 		private sealed record WebSiteDto(string name, int id, Bindings bindings);
 
 		private sealed record Bindings(string Collection);
+
+	}
+
+	public record Site
+	{
+		/// <summary>
+		/// IIS Site name
+		/// </summary>
+		public string Name { get; private set; }
+
+
+		/// <summary>
+		/// IIS physical path
+		/// </summary>
+		public string PhysicalPath { get; private set; }
+
+		/// <summary>
+		/// IIS Site Id
+		/// </summary>
+		public long Id { get; private set; }
+
+		/// <summary>
+		/// IIS EnabledProtocols
+		/// </summary>
+		public string EnabledProtocols { get; set; }
+
+		public string Binding { get; private set; }
+
+		public List<Uri> Uris => _convertBindingToUri(Binding);
+
+		public static implicit operator Site(PSObject obj) => _asSite(obj);
+
+
+		/// <summary>
+		/// Converts PSObject to Site
+		/// </summary>
+		private static Func<PSObject, Site> _asSite = (psObject) =>
+		{
+			return new Site()
+			{
+				Name = psObject.Properties["Name"].Value as string,
+				PhysicalPath = psObject.Properties["PhysicalPath"].ToString(),
+				Id = (long)psObject.Properties["Id"].Value,
+				EnabledProtocols = psObject.Properties["EnabledProtocols"].ToString(),
+				Binding = (psObject.Properties["bindings"].Value as PSObject).
+						Properties.FirstOrDefault(p => p.Name == "Collection")?.Value.ToString()
+			};
+		};
+
+		/// <summary>
+		/// Splits IIS Binding
+		/// </summary>
+		private static readonly Func<string, List<Uri>> _convertBindingToUri = (binding) =>
+		{
+
+			binding = binding.Replace(" *", "/*").Replace(" ", ",");
+
+			//List<string> internalStrings = new();
+			List<Uri> result = new();
+
+			//"http/*:7080:localhost,http/*:7080:kkrylovn
+			_splitBinding(binding).ForEach(item =>
+			{
+				//http/*:7080:localhost
+				//http/*:80:
+				var items = item.Split(':');
+				if (items.Length >= 3)
+				{
+					string hostName = (string.IsNullOrEmpty(items[2])) ? "localhost" : items[2];
+					string port = items[1];
+					string other = items[0];
+					string protocol = other.Replace("/*", "");
+					string url = $"{protocol}://{hostName}:{port}";
+
+					if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
+					{
+						result.Add(value);
+					}
+				}
+			});
+			return result;
+		};
+		/// <summary>
+		/// Splits IIS Binding into list
+		/// </summary>
+		private static readonly Func<string, List<string>> _splitBinding = (binding) =>
+		{
+			if (binding.Contains(','))
+			{
+				return binding.Split(',').ToList();
+			}
+			else
+			{
+				return new List<string> { binding };
+			};
+		};
+	}
+
+	public record WebApp
+	{
+
+		private const string _regex = "(@name=')(.*?)'\\sand\\s@id='(\\d)'";
+		public string ElementTagName { get; private set; }
+		public string Path { get; private set; }
+		public string EnabledProtocols { get; private set; }
+		public string PhysicalPath { get; private set; }
+		public string ItemXPath { get; private set; }
+		public string SiteName { get; private set; }
+		public long SiteId { get; private set; }
+
+		public static implicit operator WebApp(PSObject obj) => _asWebApp(obj);
+		private static Func<PSObject, WebApp> _asWebApp = (psObject) =>
+		{
+			var itemXPath = psObject.Properties["ItemXPath"]?.Value as string ?? string.Empty;
+			var groups = Regex.Match(itemXPath, _regex).Groups;
+
+			return new WebApp()
+			{
+				ElementTagName = psObject.Properties["ElementTagName"]?.Value as string ?? string.Empty,
+				Path = psObject.Properties["Path"]?.Value as string ?? string.Empty,
+				EnabledProtocols = psObject.Properties["EnabledProtocols"]?.Value as string ?? string.Empty,
+				PhysicalPath = psObject.Properties["PhysicalPath"]?.Value as string ?? string.Empty,
+				ItemXPath = itemXPath,
+				SiteName = groups[2].Value.Trim(),
+				SiteId = long.TryParse(groups[3].Value?.Trim(), out long v) ? v : -1
+			};
+		};
 	}
 }

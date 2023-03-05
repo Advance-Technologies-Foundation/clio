@@ -372,7 +372,9 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="7.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="7.0.0" />
     <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.2.10" />
+    <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+    <PackageReference Include="OneOf" Version="3.0.223" />
     <PackageReference Include="System.Json" Version="4.7.1" />
 	<PackageReference Include="Ignore" Version="0.1.46" />
   </ItemGroup>

@@ -15,7 +15,7 @@ namespace Clio.Tests.Command
 		{
 			var clientFactory = Substitute.For<IApplicationClientFactory>();
 			var settingsRepository = Substitute.For<ISettingsRepository>();
-			var command = new RegAppCommand(settingsRepository, clientFactory);
+			var command = new RegAppCommand(settingsRepository, clientFactory, null);
 			var name = "Test";
 			var login = "TestLogin";
 			var password = "TestPassword";
@@ -48,7 +48,7 @@ namespace Clio.Tests.Command
 				Name = name
 			};
 			var clientFactory = Substitute.For<IApplicationClientFactory>();
-			var command = new RegAppCommand(settingsRepository, clientFactory);
+			var command = new RegAppCommand(settingsRepository, clientFactory, null);
 			command.Execute(options);
 			settingsRepository.Received(1).SetActiveEnvironment(name);
 		}
@@ -64,7 +64,7 @@ namespace Clio.Tests.Command
 				ActiveEnvironment = name
 			};
 			var clientFactory = Substitute.For<IApplicationClientFactory>();
-			var command = new RegAppCommand(settingsRepository, clientFactory);
+			var command = new RegAppCommand(settingsRepository, clientFactory, null);
 			command.Execute(options);
 			settingsRepository.Received(0).SetActiveEnvironment(name);
 		}

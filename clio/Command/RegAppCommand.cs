@@ -1,13 +1,13 @@
 ﻿using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
+using Clio.Utilities;
 using CommandLine;
 using FluentValidation;
+using Microsoft.CodeAnalysis;
 using System;
 using System.Globalization;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace Clio.Command
 {
@@ -24,9 +24,12 @@ namespace Clio.Command
 			get; set;
 		}
 
-
 		[Option("checkLogin", Required = false, HelpText = "Try login after registration")]
 		public bool CheckLogin {
+			get; set;
+		}
+		[Option("host", Required = false, HelpText = "Computer name where IIS is hosted")]
+		public string Host {
 			get; set;
 		}
 	}
@@ -35,22 +38,38 @@ namespace Clio.Command
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly IApplicationClientFactory _applicationClientFactory;
+		private readonly IPowerShellFactory _powerShellFactory;
 
-		public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory)
+		public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory, IPowerShellFactory powerShellFactory)
 		{
 			_settingsRepository = settingsRepository;
 			_applicationClientFactory = applicationClientFactory;
+			_powerShellFactory = powerShellFactory;
 		}
 
 		public override int Execute(RegAppOptions options)
 		{
 			try
 			{
-				if (options.FromIis && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				if (options.FromIis)
 				{
-					//TODO: Autofac cannot resolve IISScannerHandler becacase IISScannerHandler needs RegAppCommand
-					IISScannerHandler iis = new IISScannerHandler(_settingsRepository, this);
-					iis.Handle(new IISScannerRequest { Content = "clio://IISScannerRequest/?return=registerAll" }, CancellationToken.None);
+					_powerShellFactory.Initialize(string.Empty, string.Empty, options.Host);
+					var sites = IISScannerHandler.getSites(_powerShellFactory);
+
+					sites.ToList().ForEach(site =>
+					{
+						_settingsRepository.ConfigureEnvironment(site.Key, new EnvironmentSettings()
+						{
+							Login = "Supervisor",
+							Password = "Sipervisor",
+							Uri = site.Value.ToString(),
+							Maintainer = "Customer",
+							Safe = false,
+							IsNetCore = false,
+							DeveloperModeEnabled = true,
+						});
+						Console.WriteLine($"Environment {site.Key} was added from {options.Host ?? "localhost"}");
+					});
 					return 0;
 				}
 

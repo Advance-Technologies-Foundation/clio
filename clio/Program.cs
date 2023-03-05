@@ -9,6 +9,7 @@ using Clio.Package;
 using Clio.Project;
 using Clio.Querry;
 using Clio.UserEnvironment;
+using Clio.Utilities;
 using CommandLine;
 using Creatio.Client;
 using Newtonsoft.Json;
@@ -30,10 +31,8 @@ namespace Clio
 		private static string ClientId => CreatioEnvironment.Settings.ClientId;
 		private static string ClientSecret => CreatioEnvironment.Settings.ClientSecret;
 		private static string AuthAppUrl => CreatioEnvironment.Settings.AuthAppUri;
-		private static string AppUrl
-		{
-			get
-			{
+		private static string AppUrl {
+			get {
 				if (CreatioEnvironment.IsNetCore)
 				{
 					return Url;
@@ -58,10 +57,8 @@ namespace Clio
 
 		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
 
-		private static CreatioClient _creatioClientInstance
-		{
-			get
-			{
+		private static CreatioClient _creatioClientInstance {
+			get {
 				if (string.IsNullOrEmpty(ClientId))
 				{
 					return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
@@ -256,7 +253,8 @@ namespace Clio
 		}
 
 		private static TCommand CreateRemoteCommandWithoutClient<TCommand>(EnvironmentOptions options,
-		params object[] additionalConstructorArgs) {
+		params object[] additionalConstructorArgs)
+		{
 			var settings = GetEnvironmentSettings(options);
 			var constructorArgs = new object[] { settings }.Concat(additionalConstructorArgs).ToArray();
 			return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
@@ -335,7 +333,7 @@ namespace Clio
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
 					(RegAppOptions opts) => CreateCommand<RegAppCommand>(
-						new SettingsRepository(), new ApplicationClientFactory()).Execute(opts),
+						new SettingsRepository(), new ApplicationClientFactory(), new PowerShellFactory()).Execute(opts),
 					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					(GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
