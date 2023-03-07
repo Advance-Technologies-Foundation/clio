@@ -61,7 +61,7 @@ namespace Clio.Command
 						_settingsRepository.ConfigureEnvironment(site.Key, new EnvironmentSettings()
 						{
 							Login = "Supervisor",
-							Password = "Sipervisor",
+							Password = "Supervisor",
 							Uri = site.Value.ToString(),
 							Maintainer = "Customer",
 							Safe = false,
