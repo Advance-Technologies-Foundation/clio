@@ -28,6 +28,7 @@ namespace Clio.Command
 		public bool CheckLogin {
 			get; set;
 		}
+
 		[Option("host", Required = false, HelpText = "Computer name where IIS is hosted")]
 		public string Host {
 			get; set;

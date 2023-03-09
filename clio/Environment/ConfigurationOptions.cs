@@ -407,6 +407,11 @@ namespace Clio
 		{
 			FileManager.OpenFile(AppSettingsFilePath);
 		}
+
+		void ISettingsRepository.RemoveAllEnvironment() {
+			_settings.Environments.Clear();
+			Save();
+		}
 	}
 
 }
