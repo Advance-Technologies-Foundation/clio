@@ -73,9 +73,7 @@ namespace Clio
 				}
 				return cleanUri + "/0/Shell/?simplelogin=true";
 			}
-			set {
-				_authAppUri = value;
-			}
+
 		}
 
 		internal void Merge(EnvironmentSettings environment)
