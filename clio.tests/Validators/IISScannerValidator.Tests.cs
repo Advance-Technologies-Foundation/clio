@@ -73,7 +73,7 @@ namespace Clio.Tests.Validators {
 				Content = content,
 			};
 
-			string[] allowedValues = new[] { "count", "details", "registerall" };
+			string[] allowedValues = new[] { "count", "details", "registerall", "remote" };
 			var expected = new
 			{
 				ErrorCode = "ARG002",
