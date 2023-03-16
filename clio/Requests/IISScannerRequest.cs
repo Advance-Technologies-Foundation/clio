@@ -158,12 +158,11 @@ namespace Clio.Requests
 			var sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
 			var webApps = psf.GetInstance().AddCommand("Get-WebApplication").Invoke<WebApp>();
 
-			webApps.Where(webApp => webApp.Path.EndsWith("/0") && webApp.PhysicalPath.EndsWith("Terrasoft.WebApp"))
+			webApps.Where(webApp => webApp.Path.EndsWith("/0"))
 			.ToList()
 			.ForEach(webApp =>
 			{
 
-				Console.WriteLine(webApp.SiteName);
 				var rootSite = sites.Where(site =>
 					site.Name == webApp.SiteName && site.Id == webApp.SiteId)
 				.Select(site => (site.Name, site.Uris)).FirstOrDefault();
@@ -344,7 +343,7 @@ namespace Clio.Requests
 				PhysicalPath = psObject.Properties["PhysicalPath"].ToString(),
 				Id = (long)psObject.Properties["Id"].Value,
 				EnabledProtocols = psObject.Properties["EnabledProtocols"].ToString(),
-				Binding = (psObject.Properties["Bindings"].Value as PSObject).
+				Binding = (psObject.Properties["bindings"].Value as PSObject).
 						Properties.FirstOrDefault(p => p.Name == "Collection")?.Value.ToString()
 			};
 		};
@@ -401,7 +400,7 @@ namespace Clio.Requests
 	public record WebApp
 	{
 
-		private const string _regex = "(@name=')(.*?)'\\sand\\s@id='(\\d*?)'";
+		private const string _regex = "(@name=')(.*?)'\\sand\\s@id='(\\d)'";
 		public string ElementTagName { get; private set; }
 		public string Path { get; private set; }
 		public string EnabledProtocols { get; private set; }
