@@ -15,7 +15,7 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		void SaveWorkspaceSettings();
-		void Create(bool isAddedPackageNames = false);
+		void Create(string environmentName, bool isAddedPackageNames = false);
 		void Restore();
 		void Install(string creatioPackagesZipName = null);
 		void AddPackageIfNeeded(string packageName);

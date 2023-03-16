@@ -2,6 +2,8 @@
 
 Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
 
+Please give **[clio-explorer](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer)**, a Visual Studio code extension for **clio** a try! This extension provides user interface over clio commands.
+
 # Installation and features
 
 You can download release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/clio/releases). Unpack the archive with clio.

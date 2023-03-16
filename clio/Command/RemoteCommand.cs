@@ -24,6 +24,10 @@ namespace Clio.Command
 			EnvironmentSettings = environmentSettings;
 		}
 
+		protected RemoteCommand(EnvironmentSettings environmentSettings) {
+			EnvironmentSettings = environmentSettings;
+		}
+
 		protected int Login() {
 			try {
 				Console.WriteLine($"Try login to {EnvironmentSettings.Uri} with {EnvironmentSettings.Login} credentials...");

@@ -126,7 +126,7 @@ namespace Clio.Package
 				foreach (string packageName in packagesNames) {
 					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory);
 					string packageZipPath = GetPackageZipPath(packageName, tempDirectory);
-					_packageArchiver.UnZipPackages(packageZipPath, false, true, true, 
+					_packageArchiver.UnZipPackages(packageZipPath, true, true, true, 
 						false, destinationPath);
 				}
 			});

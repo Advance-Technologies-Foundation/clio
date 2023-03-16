@@ -4,6 +4,12 @@ using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
 using Clio.Querry;
+using Clio.Requests;
+using Clio.Requests.Validators;
+using Clio.Utilities;
+using MediatR;
+using MediatR.Extensions.Autofac.DependencyInjection;
+using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System.Reflection;
 using Сlio.Command.PackageCommand;
 
@@ -11,12 +17,14 @@ namespace Clio
 {
 	public class BindingsModule
 	{
-		public IContainer Register(EnvironmentSettings settings = null) {
+		public IContainer Register(EnvironmentSettings settings = null)
+		{
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
 				.AsImplementedInterfaces();
-			if (settings != null) {
+			if (settings != null)
+			{
 				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
@@ -53,6 +61,20 @@ namespace Clio
 			containerBuilder.RegisterType<DeployCommand>();
 			containerBuilder.RegisterType<GetVersionCommand>();
 			containerBuilder.RegisterType<ExtractPackageCommand>();
+			containerBuilder.RegisterType<ExternalLinkCommand>();
+			containerBuilder.RegisterType<PowerShellFactory>();
+			containerBuilder.RegisterType<RegAppCommand>();
+			containerBuilder.RegisterType<RestartCommand>();
+
+			var configuration = MediatRConfigurationBuilder
+				.Create(typeof(BindingsModule).Assembly)
+				.WithAllOpenGenericHandlerTypesRegistered()
+				.Build();
+			containerBuilder.RegisterMediatR(configuration);
+
+			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
+			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
+
 			return containerBuilder.Build();
 		}
 	}

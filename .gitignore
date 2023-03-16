@@ -182,7 +182,8 @@ ClientBin/
 node_modules/
 bower_components/
 orleans.codegen.cs
-
+.sonarqube
+.sonarlint
 
 # Backup & report files from converting an old project file
 # to a newer Visual Studio version. Backup files are not needed,

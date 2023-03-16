@@ -1,7 +1,7 @@
-﻿using System;
-using System.IO;
-using FluentAssertions;
+﻿using FluentAssertions;
 using NUnit.Framework;
+using System;
+using System.IO;
 using static Clio.Tests.AssertionExtensions;
 using File = System.IO.File;
 
@@ -22,35 +22,43 @@ namespace Clio.Tests
 		private class CreatioPkgMock : CreatioPackage
 		{
 
-			public CreatioPkgMock(bool setDirectory = true) : base(CreatioPkgTests.PackageName, CreatioPkgTests.Maintainer) {
+			public CreatioPkgMock(bool setDirectory = true) : base(CreatioPkgTests.PackageName, CreatioPkgTests.Maintainer)
+			{
 				ProjectId = Guid.Parse(PackageUId);
 				CreatedOn = TestCreatedOn;
-				if (setDirectory) {
+				if (setDirectory)
+				{
 					FullPath = Path.Combine(Environment.CurrentDirectory, ResultDir);
 				}
 			}
 
-			public void CreateDescriptor() {
+			public void CreateDescriptor()
+			{
 				CreatePkgDescriptor();
 			}
 
-			public void CreateProjFile() {
+			public void CreateProjFile()
+			{
 				CreateProj();
 			}
 
-			public void CreateNugetPackageConfig() {
+			public void CreateNugetPackageConfig()
+			{
 				CreatePackageConfig();
 			}
 
-			public void CreateAssemblyProps() {
+			public void CreateAssemblyProps()
+			{
 				CreateAssemblyInfo();
 			}
 
 		}
 
 		[OneTimeSetUp]
-		public void SetupOneTime() {
-			if (!System.IO.Directory.Exists(ResultDir)) {
+		public void SetupOneTime()
+		{
+			if (!System.IO.Directory.Exists(ResultDir))
+			{
 				System.IO.Directory.CreateDirectory(ResultDir);
 			}
 		}
@@ -63,7 +71,8 @@ namespace Clio.Tests
 			TestName = "Check Correct PackageConfig")]
 		[TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, CreatioPackage.AssemblyInfoName,
 			"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo file")]
-		public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName) {
+		public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName)
+		{
 			var pkg = new CreatioPkgMock();
 			pkg.GetType().GetMethod(methodName).Invoke(pkg, null);
 			var resultPath = Path.Combine(pkg.FullPath, resultFileName);
@@ -73,7 +82,8 @@ namespace Clio.Tests
 		}
 
 		[Test, Category("Integration")]
-		public void CreatioPkg_Create_CheckPackageStructure() {
+		public void CreatioPkg_Create_CheckPackageStructure()
+		{
 			var oldEnvironment = Environment.CurrentDirectory;
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
 			var pkg = CreatioPackage.CreatePackage(PackageName, Maintainer);
@@ -100,11 +110,12 @@ namespace Clio.Tests
 		}
 
 		[Test, Category("Integration")]
-		public void CreatioPkg_Create_CheckCorrectTplFilePathGettingFromPath() {
+		public void CreatioPkg_Create_CheckCorrectTplFilePathGettingFromPath()
+		{
 			var oldCD = Environment.CurrentDirectory;
 			var oldPath = Environment.GetEnvironmentVariable("PATH");
 			Environment.CurrentDirectory = Path.Combine(Environment.CurrentDirectory, ResultDir);
-			Environment.SetEnvironmentVariable("PATH", oldCD + ";C:\\Program Files");
+			Environment.SetEnvironmentVariable("PATH", oldCD + ";C:\\Program Files\\dotnet");
 			var pkg = CreatioPackage.CreatePackage(PackageName, Maintainer);
 			pkg.Create();
 			Environment.CurrentDirectory = oldCD;
@@ -117,8 +128,10 @@ namespace Clio.Tests
 
 
 		[OneTimeTearDown]
-		public void TeardownOneTime() {
-			if (System.IO.Directory.Exists(ResultDir)) {
+		public void TeardownOneTime()
+		{
+			if (System.IO.Directory.Exists(ResultDir))
+			{
 				System.IO.Directory.Delete(ResultDir, true);
 			}
 		}

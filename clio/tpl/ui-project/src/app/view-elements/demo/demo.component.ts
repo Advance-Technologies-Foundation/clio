@@ -1,4 +1,4 @@
-import { Component } from "@angular/core";
+import {Component, Input} from "@angular/core";
 import {
   CrtInterfaceDesignerItem,
   CrtViewElement,
@@ -23,4 +23,7 @@ export class DemoComponent {
   public showAlert() {
     alert("Congrats, welcome to Freedom!");
   }
+
+  @Input()
+  public loading = false;
 }

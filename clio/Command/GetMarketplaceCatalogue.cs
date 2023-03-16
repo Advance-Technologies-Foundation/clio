@@ -13,10 +13,13 @@ namespace Clio.Command
 	public class GetMarketplaceCatalogOptions : EnvironmentOptions
 	{
 		[Option('n', "Name", Required = false, HelpText = "Application or package name")]
-		public string Name { get; set; }
+		public string Name
+		{
+			get; set;
+		}
 	}
 
-	public class GetMarketplacecatalogCommand : Command<GetMarketplaceCatalogOptions>
+	public class GetMarketplacecatalogCommand : Command<GetMarketplaceCatalogOptions>, IDisposable
 	{
 		private readonly HttpClient _httpClient;
 		const string _baseUri = "https://marketplace.creatio.com";
@@ -41,10 +44,10 @@ namespace Clio.Command
 			IList<string[]> table = new List<string[]>();
 			table.Add(CreateRow("Marketplace Id", "Application title"));
 			table.Add(CreateEmptyRow());
-			
+
 			foreach (var app in _apps
 				.Where(a => a.Attributes.Title.ToLower()?
-				.Contains(options.Name?.ToLower()?? "") ?? false)
+				.Contains(options.Name?.ToLower() ?? "") ?? false)
 				.OrderBy(appp => appp.Attributes.Title))
 			{
 				table.Add(CreateRow(app.Attributes.ContentId.ToString(), app.Attributes.Title));
@@ -90,68 +93,123 @@ namespace Clio.Command
 			_apps = apps;
 		}
 
+		public void Dispose()
+		{
+			Dispose(true);
+			GC.SuppressFinalize(this);
+		}
+
+		protected virtual void Dispose(bool disposing)
+		{
+			_httpClient.Dispose();
+		}
 	}
 
 	public class Dto
 	{
 		[JsonPropertyName("links")]
-		public object Links { get; set; }
+		public object Links
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("jsonapi")]
-		public object JsonApi { get; set; }
+		public object JsonApi
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("data")]
-		public IList<Application> Applications { get; set; }
+		public IList<Application> Applications
+		{
+			get; set;
+		}
 	}
 
 	public class Application
 	{
 		[JsonPropertyName("type")]
-		public string Type { get; set; }
+		public string Type
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("id")]
-		public Guid Id { get; set; }
+		public Guid Id
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("links")]
-		public Links Links { get; set; }
+		public Links Links
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("attributes")]
-		public Attributes Attributes { get; set; }
+		public Attributes Attributes
+		{
+			get; set;
+		}
 
 	}
 
 	public class Attributes
 	{
 		[JsonPropertyName("title")]
-		public string Title { get; set; }
+		public string Title
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("created")]
-		public DateTime Created { get; set; }
+		public DateTime Created
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("changed")]
-		public DateTime Changed { get; set; }
+		public DateTime Changed
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("moderation_state")]
-		public string Status { get; set; }
+		public string Status
+		{
+			get; set;
+		}
 
 		[JsonPropertyName("field_app_name")]
-		public string Name { get; set; }
+		public string Name
+		{
+			get; set;
+		}
 
 
 		[JsonPropertyName("drupal_internal__nid")]
-		public int ContentId { get; set; }
+		public int ContentId
+		{
+			get; set;
+		}
 
 	}
 
 	public class Links
 	{
 		[JsonPropertyName("self")]
-		public Self Self { get; set; }
+		public Self Self
+		{
+			get; set;
+		}
 	}
 
 	public class Self
 	{
 		[JsonPropertyName("href")]
-		public Uri Href { get; set; }
+		public Uri Href
+		{
+			get; set;
+		}
 	}
 }

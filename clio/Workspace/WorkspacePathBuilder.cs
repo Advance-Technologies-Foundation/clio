@@ -15,6 +15,7 @@ namespace Clio.Workspace
 		private const string ProjectsFolderName = "projects";
 		private const string ClioDirectoryName = ".clio";
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
+		private const string WorkspaceEnvironmentSettingsJson = "workspaceEnvironmentSettings.json";
 		private const string SolutionName = "CreatioPackages.sln";
 		private const string NugetFolderName = ".nuget";
 		private const string SolutionFolderName = ".solution";
@@ -68,6 +69,8 @@ namespace Clio.Workspace
 		public string ClioDirectoryPath => Path.Combine(RootPath, ClioDirectoryName);
 
 		public string WorkspaceSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceSettingsJson);
+		public string WorkspaceEnvironmentSettingsPath =>
+			Path.Combine(ClioDirectoryPath, WorkspaceEnvironmentSettingsJson);
 
 		public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
 		public string ProjectsFolderPath => Path.Combine(RootPath, ProjectsFolderName);

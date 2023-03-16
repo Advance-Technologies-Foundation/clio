@@ -17,11 +17,14 @@ namespace Clio.Command
 			: base(applicationClient, environmentSettings) {
 		}
 
+		public OpenAppCommand(EnvironmentSettings environmentSettings): base(environmentSettings) {
+		}
+
 		public override int Execute(OpenAppOptions options) {
 			try {
 				var settings = new SettingsRepository();
 				var env = settings.GetEnvironment(options);
-				WebBrowser.OpenUrl(env.Uri);
+				WebBrowser.OpenUrl(env.SimpleloginUri);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e);
