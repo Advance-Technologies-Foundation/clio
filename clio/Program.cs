@@ -385,7 +385,27 @@ namespace Clio
 					(DeployCommandOptions opts) => Resolve<DeployCommand>(opts).Execute(opts),
 					(GetVersionOptions opts) => Resolve<GetVersionCommand>(opts).Execute(opts),
 					(ExternalLinkOptions opts) => Resolve<ExternalLinkCommand>(opts).Execute(opts),
-					errs => 1);
+					HandleParseError);
+		}
+
+		private static int HandleParseError(IEnumerable<Error> errs) {
+			var exitCode = 1;
+
+			var notRealErrors = new List<ErrorType>()
+			{
+				ErrorType.VersionRequestedError,
+				ErrorType.HelpRequestedError,
+				ErrorType.HelpVerbRequestedError,
+			};
+
+			var isNotRealError = errs.Select(err => err.Tag)
+				.Intersect(notRealErrors)
+				.Any();
+
+			if (isNotRealError)
+				exitCode = 0;
+
+			return exitCode;
 		}
 
 		private static int SetDeveloperMode(DeveloperModeOptions opts)
