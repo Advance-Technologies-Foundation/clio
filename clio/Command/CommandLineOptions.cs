@@ -38,6 +38,9 @@ namespace Clio
 				}
 				return null;
 			}
+			set {
+				DevMode = value.ToString();
+			}
 		}
 
 		[Option('s', "Safe", Required = false, HelpText = "Safe action in this environment")]
@@ -69,6 +72,9 @@ namespace Clio
 				return null;
 			}
 		}
+
+		[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
+		public bool RestartEnvironment { get; set; }
 
 	}
 

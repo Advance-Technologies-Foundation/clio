@@ -347,8 +347,8 @@ namespace Clio
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
-					(InstallGateOptions opts) => Resolve<PushPackageCommand>(CreatePushPkgOptions(opts))
-						.Execute(CreatePushPkgOptions(opts)),
+					(InstallGateOptions opts) => Resolve<PushPackageCommand>(CreateClioGatePkgOptions(opts))
+						.Execute(CreateClioGatePkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
 					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
@@ -386,6 +386,13 @@ namespace Clio
 					(GetVersionOptions opts) => Resolve<GetVersionCommand>(opts).Execute(opts),
 					(ExternalLinkOptions opts) => Resolve<ExternalLinkCommand>(opts).Execute(opts),
 					HandleParseError);
+		}
+
+		private static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts) {
+			var pushPackageOptions = CreatePushPkgOptions(opts);
+			pushPackageOptions.DeveloperModeEnabled = false;
+			pushPackageOptions.RestartEnvironment = true;
+			return pushPackageOptions;
 		}
 
 		private static int HandleParseError(IEnumerable<Error> errs) {

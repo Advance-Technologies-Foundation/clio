@@ -15,6 +15,7 @@ namespace Clio.Package
 		public bool SkipValidateActions { get; set; } = false;
 		public bool ExecuteValidateActions { get; set; } = false;
 		public bool IsForceUpdateAllColumns { get; set; } = false;
+		public bool RestartEnvironment { get; set; } = false;
 
 		#endregion
 

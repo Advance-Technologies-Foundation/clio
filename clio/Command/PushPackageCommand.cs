@@ -77,15 +77,15 @@
 		#region Methods: Private
 		private PackageInstallOptions ExtractPackageInstallOptions(PushPkgOptions options)
 		{
-			var packageInstallOptions = new PackageInstallOptions
-			{
+			var packageInstallOptions = new PackageInstallOptions {
 				InstallSqlScript = options.InstallSqlScript ?? true,
 				InstallPackageData = options.InstallPackageData ?? true,
 				ContinueIfError = options.ContinueIfError ?? true,
 				SkipConstraints = options.SkipConstraints ?? false,
 				SkipValidateActions = options.SkipValidateActions ?? false,
 				ExecuteValidateActions = options.ExecuteValidateActions ?? false,
-				IsForceUpdateAllColumns = options.IsForceUpdateAllColumns ?? false
+				IsForceUpdateAllColumns = options.IsForceUpdateAllColumns ?? false,
+				RestartEnvironment = options.RestartEnvironment
 			};
 			return packageInstallOptions == _packageInstallOptionsDefault
 				? null
