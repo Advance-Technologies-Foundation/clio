@@ -80,7 +80,7 @@ namespace Clio.Workspace
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_osPlatformChecker = osPlatformChecker;
-			_applicationClientLazy = new Lazy<IApplicationClient>(CreateApplicationClient);
+			_applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
 			_resetSchemaChangeStateServiceUrl = serviceUrlBuilder.Build(ResetSchemaChangeStateServicePath);
 
 		}
@@ -95,11 +95,8 @@ namespace Clio.Workspace
 
 		#region Methods: Private
 
-		private IApplicationClient CreateApplicationClient() {
-			IApplicationClient applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
-			applicationClient.Login();
-			return applicationClient;
-		}
+		private IApplicationClient CreateClient() =>
+			_applicationClientFactory.CreateClient(_environmentSettings);
 
 		private void ResetSchemaChangeStateServiceUrl(string packageName) =>
 			ApplicationClient.ExecutePostRequest(_resetSchemaChangeStateServiceUrl,
