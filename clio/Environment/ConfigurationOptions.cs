@@ -71,9 +71,9 @@ namespace Clio
 						cleanUri = cleanUri.Substring(0, index + domain.Length);
 					}
 				}
-				return cleanUri + "/0/Shell/?simplelogin=true";
+				var simpleLoginUriText = cleanUri.TrimEnd('/') + (IsNetCore ? "/Shell/?simplelogin=true" : "/0/Shell/?simplelogin=true");
+				return simpleLoginUriText;
 			}
-
 		}
 
 		internal void Merge(EnvironmentSettings environment)

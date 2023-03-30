@@ -52,6 +52,11 @@ namespace Clio
 		[Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
 		public string AuthAppUri { get; set; }
 
+
+		[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
+		public bool IsSilent { get; set; }
+
+
 		public bool? SafeValue {
 			get {
 				if (!string.IsNullOrEmpty(Safe))
