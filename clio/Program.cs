@@ -347,7 +347,7 @@ namespace Clio
 					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
 					(PullPkgOptions opts) => DownloadZipPackages(opts),
 					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
-					(InstallGateOptions opts) => Resolve<PushPackageCommand>(CreateClioGatePkgOptions(opts))
+					(InstallGateOptions opts) => Resolve<InstallGatePkgCommand>(CreateClioGatePkgOptions(opts))
 						.Execute(CreateClioGatePkgOptions(opts)),
 					(ItemOptions opts) => AddItem(opts),
 					(DeveloperModeOptions opts) => SetDeveloperMode(opts),

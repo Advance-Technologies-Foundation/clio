@@ -15,7 +15,6 @@ namespace Clio.Package
 		public bool SkipValidateActions { get; set; } = false;
 		public bool ExecuteValidateActions { get; set; } = false;
 		public bool IsForceUpdateAllColumns { get; set; } = false;
-		public bool RestartEnvironment { get; set; } = false;
 
 		#endregion
 
@@ -45,8 +44,7 @@ namespace Clio.Package
 			        ContinueIfError == obj.ContinueIfError &&
 			        SkipConstraints == obj.SkipConstraints &&
 			        SkipValidateActions == obj.SkipValidateActions &&
-			        ExecuteValidateActions == obj.ExecuteValidateActions &&
-			        IsForceUpdateAllColumns == obj.IsForceUpdateAllColumns);
+			        ExecuteValidateActions == obj.ExecuteValidateActions);
 		}
 
 		public static bool operator ==(PackageInstallOptions v1, PackageInstallOptions v2) =>

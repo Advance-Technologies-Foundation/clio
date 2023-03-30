@@ -212,7 +212,7 @@
 			if (DeveloperModeEnabled(environmentSettings)) {
 				UnlockMaintainerPackageInternal(environmentSettings);
 			}
-			if (DeveloperModeEnabled(environmentSettings) || packageInstallOptions.RestartEnvironment) {
+			if (DeveloperModeEnabled(environmentSettings)) {
 				_application.Restart();
 			}
 			return (success, logText);
