@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
-using CommandLine;
+﻿using CommandLine;
 using CommandLine.Text;
+using System.Collections.Generic;
 
 namespace Clio
 {
@@ -27,20 +27,23 @@ namespace Clio
 		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
 		public string DevMode { get; set; }
 
-		public bool? DeveloperModeEnabled
-		{
-			get
-			{
-				if (!string.IsNullOrEmpty(DevMode)) {
-					if (bool.TryParse(DevMode, out bool result)) {
+		public bool? DeveloperModeEnabled {
+			get {
+				if (!string.IsNullOrEmpty(DevMode))
+				{
+					if (bool.TryParse(DevMode, out bool result))
+					{
 						return result;
 					}
 				}
 				return null;
 			}
+			set {
+				DevMode = value.ToString();
+			}
 		}
 
-		[Option('s', "Safe", Required = false, HelpText = "Safe action in this enviroment")]
+		[Option('s', "Safe", Required = false, HelpText = "Safe action in this environment")]
 		public string Safe { get; set; }
 
 		[Option("clientId", Required = false, HelpText = "OAuth client id")]
@@ -52,12 +55,17 @@ namespace Clio
 		[Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
 		public string AuthAppUri { get; set; }
 
-		public bool? SafeValue
-		{
-			get
-			{
-				if (!string.IsNullOrEmpty(Safe)) {
-					if (bool.TryParse(Safe, out bool result)) {
+
+		[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
+		public bool IsSilent { get; set; }
+
+
+		public bool? SafeValue {
+			get {
+				if (!string.IsNullOrEmpty(Safe))
+				{
+					if (bool.TryParse(Safe, out bool result))
+					{
 						return result;
 					}
 				}
@@ -65,9 +73,12 @@ namespace Clio
 			}
 		}
 
+		[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
+		public bool RestartEnvironment { get; set; }
+
 	}
 
-	public class EnvironmentNameOptions: EnvironmentOptions
+	public class EnvironmentNameOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
 		public string Name { get => Environment; set { Environment = value; } }
@@ -127,9 +138,9 @@ namespace Clio
 
 		[Option('a', "All", Required = false, HelpText = "Create all models", Default = true)]
 		public bool CreateAll { get; set; }
-		
+
 		[Option('x', "Culture", Required = false, HelpText = "Description custure", Default = "en-US")]
-		public string Culture{ get; set; }
+		public string Culture { get; set; }
 	}
 
 	[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" }, HelpText = "Activate developer mode for selected environment")]

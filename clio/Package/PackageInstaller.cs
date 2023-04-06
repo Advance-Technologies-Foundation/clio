@@ -211,6 +211,8 @@
 				InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);
 			if (DeveloperModeEnabled(environmentSettings)) {
 				UnlockMaintainerPackageInternal(environmentSettings);
+			}
+			if (DeveloperModeEnabled(environmentSettings)) {
 				_application.Restart();
 			}
 			return (success, logText);

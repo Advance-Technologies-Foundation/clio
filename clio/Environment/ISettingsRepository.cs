@@ -20,5 +20,6 @@ namespace Clio.UserEnvironment
 		void RemoveEnvironment(string name);
 		void ShowSettingsTo(TextWriter textWriter, string name);
 		void OpenSettingsFile();
+		void RemoveAllEnvironment();
 	}
 }

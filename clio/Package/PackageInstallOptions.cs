@@ -44,8 +44,7 @@ namespace Clio.Package
 			        ContinueIfError == obj.ContinueIfError &&
 			        SkipConstraints == obj.SkipConstraints &&
 			        SkipValidateActions == obj.SkipValidateActions &&
-			        ExecuteValidateActions == obj.ExecuteValidateActions &&
-			        IsForceUpdateAllColumns == obj.IsForceUpdateAllColumns);
+			        ExecuteValidateActions == obj.ExecuteValidateActions);
 		}
 
 		public static bool operator ==(PackageInstallOptions v1, PackageInstallOptions v2) =>

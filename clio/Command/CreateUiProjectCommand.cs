@@ -7,7 +7,7 @@
 
 	#region Class: CreateUiProjectOptions
 
-	[Verb("new-ui-project", Aliases = new string[] { "create-ui-project", "new-ui", "createup", "uiproject", "ui"},
+	[Verb("new-ui-project", Aliases = new string[] { "create-ui-project", "new-ui", "createup", "uiproject", "ui" },
 		HelpText = "Add new UI project")]
 	public class CreateUiProjectOptions : EnvironmentOptions
 	{
@@ -20,7 +20,7 @@
 		}
 
 		[Option('v', "vendor-prefix", Required = true,
-			HelpText ="Vendor prefix")]
+			HelpText = "Vendor prefix")]
 		public string VendorPrefix {
 			get; set;
 		}
@@ -36,6 +36,7 @@
 		public bool IsEmpty {
 			get; set;
 		}
+
 
 		#endregion
 
@@ -57,19 +58,22 @@
 
 		#region Constructors: Public
 
-		public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator) {
+		public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator)
+		{
 			uiProjectCreator.CheckArgumentNull(nameof(uiProjectCreator));
-			_uiProjectCreator= uiProjectCreator;
+			_uiProjectCreator = uiProjectCreator;
 		}
 
 		#endregion
 
 		#region Methods: Private
 
-		private static bool EnableDownloadPackage(string packageName) {
+		private static bool EnableDownloadPackage(string packageName)
+		{
 			Console.WriteLine($"Do you wont download package [{packageName}] ? (y/n):");
 			string result;
-			do {
+			do
+			{
 				result = Console.ReadLine().Trim().ToLower();
 			} while (result != "y" && result != "n");
 			return result == "y";
@@ -79,13 +83,19 @@
 
 		#region Methods: Public
 
-		public int Execute(CreateUiProjectOptions options) {
-			try {
+		public int Execute(CreateUiProjectOptions options)
+		{
+			try
+			{
+
 				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix,
-					options.IsEmpty, EnableDownloadPackage);
+					options.IsEmpty, (options.IsSilent ? (a) => { return false; }
+				: EnableDownloadPackage));
 				Console.WriteLine("Done");
 				return 0;
-			} catch (Exception e) {
+			}
+			catch (Exception e)
+			{
 				Console.WriteLine(e.Message);
 				return 1;
 			}

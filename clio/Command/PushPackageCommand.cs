@@ -6,6 +6,7 @@
 	using System.Threading.Tasks;
 	using Clio.Common;
 	using Clio.Package;
+	using Clio.WebApplication;
 	using CommandLine;
 
 	#region Class: PushPkgOptions
@@ -77,8 +78,7 @@
 		#region Methods: Private
 		private PackageInstallOptions ExtractPackageInstallOptions(PushPkgOptions options)
 		{
-			var packageInstallOptions = new PackageInstallOptions
-			{
+			var packageInstallOptions = new PackageInstallOptions {
 				InstallSqlScript = options.InstallSqlScript ?? true,
 				InstallPackageData = options.InstallPackageData ?? true,
 				ContinueIfError = options.ContinueIfError ?? true,
@@ -131,6 +131,38 @@
 				return 1;
 			}
 		}
+		#endregion
+	}
+
+	#endregion
+
+	#region Class: InstallGatePkgCommand
+
+	public class InstallGatePkgCommand : PushPackageCommand
+	{
+		private IApplication _application;
+		private ILogger _logger;
+
+		#region Constructors: Public
+		public InstallGatePkgCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
+			IMarketplace marketplace, IApplication applicatom, ILogger logger)
+			: base(environmentSettings, packageInstaller, marketplace) {
+			_application = applicatom;
+			_logger = logger;
+		}
+		
+		#endregion
+
+		#region Methods: Public
+
+		public override int Execute(PushPkgOptions options) {
+			int result = base.Execute(options);
+			if (result == 0) {
+				_application.Restart();
+			}
+			return result;
+		}
+
 		#endregion
 	}
 
