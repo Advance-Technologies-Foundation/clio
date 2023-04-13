@@ -76,7 +76,7 @@ namespace Clio.Command
 
 				if (options.Name.ToLower(CultureInfo.InvariantCulture) == "open")
 				{
-					_settingsRepository.OpenSettingsFile();
+					_settingsRepository.OpenFile();
 					return 0;
 				}
 				else
@@ -137,4 +137,26 @@ namespace Clio.Command
 			}
 		}
 	}
+
+
+	[Verb("open-settings", Aliases = new string[] { "conf", "configuration", "settings", "os" }, HelpText = "Open configuration file")]
+	public class OpenCfgOptions {
+		
+	}
+
+	public class OpenCfgCommand : Command<OpenCfgOptions>
+	{
+		public OpenCfgCommand() { }
+
+		public override int Execute(OpenCfgOptions options) {
+			try {
+				SettingsRepository.OpenSettingsFile();
+				return 0;
+			} catch (Exception e) {
+				Console.WriteLine($"{e.Message}");
+				return 1;
+			}
+		}
+	}
+
 }

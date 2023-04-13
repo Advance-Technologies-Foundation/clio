@@ -301,13 +301,20 @@ namespace Clio
 		}
 
 
+		private static void TryCheckForUpdate() {
+			try {
+				var autoupdate = new SettingsRepository().GetAutoupdate();
+				if (autoupdate) {
+					new Thread(UpdateCliCommand.CheckUpdate).Start();
+				}
+			} catch(Exception ex) { 
+			
+			}
+		}
+
 		private static int Main(string[] args)
 		{
-			var autoupdate = new SettingsRepository().GetAutoupdate();
-			if (autoupdate)
-			{
-				new Thread(UpdateCliCommand.CheckUpdate).Start();
-			}
+			TryCheckForUpdate();
 			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
@@ -327,7 +334,8 @@ namespace Clio
 					LoadPackagesToFileSystemOptions, UploadLicensesOptions, LoadPackagesToDbOptions, HealthCheckOptions,
 					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions,
 					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions, CreateUiProjectOptions,
-					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions>(args)
+					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,OpenCfgOptions
+					>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -385,6 +393,7 @@ namespace Clio
 					(DeployCommandOptions opts) => Resolve<DeployCommand>(opts).Execute(opts),
 					(GetVersionOptions opts) => Resolve<GetVersionCommand>(opts).Execute(opts),
 					(ExternalLinkOptions opts) => Resolve<ExternalLinkCommand>(opts).Execute(opts),
+					(OpenCfgOptions opts) => Resolve<OpenCfgCommand>().Execute(opts),
 					HandleParseError);
 		}
 
