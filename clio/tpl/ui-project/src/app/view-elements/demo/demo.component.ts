@@ -23,7 +23,4 @@ export class DemoComponent {
   public showAlert() {
     alert("Congrats, welcome to Freedom!");
   }
-
-  @Input()
-  public loading = false;
 }
