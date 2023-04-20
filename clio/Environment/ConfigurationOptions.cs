@@ -166,9 +166,9 @@ namespace Clio
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
 
-		private Settings _settings;
+		private Settings _settings = new Settings();
 
-		private string AppSettingsFolderPath {
+		private static string AppSettingsFolderPath {
 			get {
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
@@ -186,7 +186,8 @@ namespace Clio
 			}
 		}
 
-		public string AppSettingsFilePath => Path.Combine(AppSettingsFolderPath, FileName);
+		private static string AppSettingsFile => Path.Combine(AppSettingsFolderPath, FileName);
+		public string AppSettingsFilePath => AppSettingsFile;
 		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		public SettingsRepository()
@@ -199,13 +200,18 @@ namespace Clio
 		{
 			try
 			{
-				var builder = new ConfigurationBuilder()
-					.SetBasePath(Environment.CurrentDirectory)
-					.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
-					.AddEnvironmentVariables();
-				IConfigurationRoot configuration = builder.Build();
-				_settings = new Settings();
-				configuration.Bind(_settings);
+				var filePath = Path.Combine(Environment.CurrentDirectory, AppSettingsFilePath);
+				if (File.Exists(filePath)) {
+					var fileContent = File.ReadAllText(filePath);
+					if (!String.IsNullOrWhiteSpace(fileContent)) {
+						var builder = new ConfigurationBuilder()
+							.SetBasePath(Environment.CurrentDirectory)
+							.AddJsonFile(AppSettingsFilePath, optional: false, reloadOnChange: true)
+							.AddEnvironmentVariables();
+						IConfigurationRoot configuration = builder.Build();
+						configuration.Bind(_settings);
+					}
+				}
 			}
 			catch (FormatException ex)
 			{
@@ -403,9 +409,13 @@ namespace Clio
 			}
 		}
 
-		public void OpenSettingsFile()
+		public static void OpenSettingsFile()
 		{
-			FileManager.OpenFile(AppSettingsFilePath);
+			FileManager.OpenFile(AppSettingsFile);
+		}
+
+		public void OpenFile() {
+			OpenSettingsFile();
 		}
 
 		void ISettingsRepository.RemoveAllEnvironment() {

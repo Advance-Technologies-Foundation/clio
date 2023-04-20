@@ -19,7 +19,7 @@ namespace Clio.UserEnvironment
 		void ConfigureEnvironment(string name, EnvironmentSettings environment);
 		void RemoveEnvironment(string name);
 		void ShowSettingsTo(TextWriter textWriter, string name);
-		void OpenSettingsFile();
+		void OpenFile();
 		void RemoveAllEnvironment();
 	}
 }

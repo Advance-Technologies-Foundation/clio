@@ -30,6 +30,7 @@ namespace Clio
 				containerBuilder.RegisterInstance(settings);
 			}
 			containerBuilder.RegisterType<PushPackageCommand>();
+			containerBuilder.RegisterType<OpenCfgCommand>();
 			containerBuilder.RegisterType<InstallGatePkgCommand>();
 			containerBuilder.RegisterType<PingAppCommand>();
 			containerBuilder.RegisterType<SqlScriptCommand>();
