@@ -57,6 +57,7 @@ docker run -it --rm clio reg-web-app -help
   - [Upload Licenses](#upload-licenses)
   - [Restart application](#restart-application)
   - [Clear redis database](#clear-redis-database)
+  - [Compile configuration](#compile-configuration)
 - [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
@@ -450,6 +451,24 @@ or non default application
 
 ```
 clio clear-redis-db <ENVIRONMENT_NAME>
+```
+
+## Compile configuration
+
+For compile configuration
+
+```
+clio compile-configuration
+
+//or
+
+clio compile-configuration <ENVIRONMENT_NAME>
+```
+
+for compile all
+
+```
+clio compile-configuration --all
 ```
 
 ## Version
