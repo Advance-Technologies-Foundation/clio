@@ -1,4 +1,4 @@
-import {Component, Input} from "@angular/core";
+import {Component, Input, ViewEncapsulation} from "@angular/core";
 import {
   CrtInterfaceDesignerItem,
   CrtViewElement,
@@ -18,6 +18,7 @@ import {
 @Component({
   selector: "<%vendorPrefix%>-demo",
   template: `<button (click)="showAlert()">Click me!</button>`,
+  encapsulation: ViewEncapsulation.ShadowDom
 })
 export class DemoComponent {
   public showAlert() {
