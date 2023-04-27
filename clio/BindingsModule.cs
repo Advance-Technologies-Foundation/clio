@@ -59,6 +59,7 @@ namespace Clio
 			containerBuilder.RegisterType<Marketplace>();
 			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
+			containerBuilder.RegisterType<CreateUiProjectOptionsValidator>();
 			containerBuilder.RegisterType<DownloadConfigurationCommand>();
 			containerBuilder.RegisterType<DeployCommand>();
 			containerBuilder.RegisterType<GetVersionCommand>();

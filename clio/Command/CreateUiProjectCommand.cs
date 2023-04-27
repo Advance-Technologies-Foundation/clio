@@ -3,7 +3,9 @@
 	using Clio.Common;
 	using Clio.Package;
 	using CommandLine;
+	using FluentValidation;
 	using System;
+	using System.ComponentModel.DataAnnotations;
 
 	#region Class: CreateUiProjectOptions
 
@@ -44,6 +46,20 @@
 
 	#endregion
 
+	#region Class: CreateUiProjectOptionsValidator
+
+	public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProjectOptions>
+	{
+		public CreateUiProjectOptionsValidator() {
+			RuleFor(x => x.ProjectName).NotEmpty().WithMessage("Project name is required.");
+			RuleFor(x => x.VendorPrefix).Matches("^[a-z]{1,50}$")
+				.WithMessage("'{PropertyName}' must be between 1 and 50 characters long and contain only lowercase letters and digits. You entered: '{PropertyValue}'."
+				+ Environment.NewLine + "See more: https://academy.creatio.com/docs/developer/front_end_development_freedom_ui/remote_module/implement_a_remote_module/overview");
+			RuleFor(x => x.PackageName).NotEmpty().WithMessage("Package name is required.");
+		}
+	}
+
+	#endregion
 
 	#region Class: CreateUiProjectCommand
 
@@ -53,15 +69,18 @@
 		#region Fields: Private
 
 		private readonly IUiProjectCreator _uiProjectCreator;
+		private readonly IValidator<CreateUiProjectOptions> _optionsValidator;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator)
+		public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator, IValidator<CreateUiProjectOptions> optionsValidator)
 		{
 			uiProjectCreator.CheckArgumentNull(nameof(uiProjectCreator));
+			optionsValidator.CheckArgumentNull(nameof(optionsValidator));
 			_uiProjectCreator = uiProjectCreator;
+			_optionsValidator = optionsValidator;
 		}
 
 		#endregion
@@ -87,7 +106,13 @@
 		{
 			try
 			{
-
+				var result = _optionsValidator.Validate(options);
+				if (!result.IsValid) {
+					foreach (var error in result.Errors) {
+						Console.WriteLine(error.ErrorMessage);
+					}
+					return 1;
+				}
 				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix,
 					options.IsEmpty, (options.IsSilent ? (a) => { return false; }
 				: EnableDownloadPackage));
