@@ -362,12 +362,12 @@
     <PackageReference Include="Autofac" Version="6.5.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.4.2" />
-    <PackageReference Include="creatio.client" Version="1.0.12" />
-    <PackageReference Include="FluentValidation" Version="11.5.1" />
+    <PackageReference Include="creatio.client" Version="1.0.13" />
+    <PackageReference Include="FluentValidation" Version="11.5.2" />
     <PackageReference Include="MediatR" Version="12.0.1" />
     <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="7.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="7.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="7.0.4" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="7.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="7.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="7.0.0" />
