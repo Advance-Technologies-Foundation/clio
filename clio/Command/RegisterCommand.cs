@@ -1,4 +1,5 @@
-﻿using Clio.UserEnvironment;
+﻿using Clio.Common;
+using Clio.UserEnvironment;
 using CommandLine;
 using System;
 using System.Diagnostics;
@@ -52,10 +53,12 @@ namespace Clio.Command
 
 		public override int Execute(RegisterOptions options)
 		{
-			try
-			{
-				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				{
+			try {
+				if (OperationSystem.Current.IsWindows) {
+					if (!OperationSystem.Current.HasAdminRights()) {
+						Console.WriteLine("Clio register command need admin rights.");
+						return 1;
+					}
 					string folder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 					string appDataClioFolderPath = Path.Combine(folder, "clio");
 					Directory.CreateDirectory(appDataClioFolderPath);
@@ -70,10 +73,11 @@ namespace Clio.Command
 					}
 					string reg_file_name = Path.Combine(environment.GetAssemblyFolderPath(), "reg", "clio_context_menu_win.reg");
 					Process.Start(new ProcessStartInfo("cmd", $"/c reg import  {reg_file_name}") { CreateNoWindow = true });
-					Console.WriteLine("Clio context menu successfully registered");
+					Console.WriteLine("Clio context menu successfully registered.");
 					return 0;
 				}
-				return 0;
+				Console.WriteLine("Clio register command is only supported on: 'windows'.");
+				return 1;
 			}
 			catch (Exception e)
 			{
