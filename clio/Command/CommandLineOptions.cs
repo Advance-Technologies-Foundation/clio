@@ -76,6 +76,22 @@ namespace Clio
 		[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
 		public bool RestartEnvironment { get; set; }
 
+		public static bool IsNullOrEmpty(EnvironmentOptions options) {
+			if (options == null) {
+				return true;
+			}
+			if (string.IsNullOrEmpty(options.Uri) &&
+					string.IsNullOrEmpty(options.Login) &&
+					string.IsNullOrEmpty(options.Password) &&
+					string.IsNullOrEmpty(options.ClientId) &&
+					string.IsNullOrEmpty(options.ClientSecret) &&
+					string.IsNullOrEmpty(options.AuthAppUri) &&
+					string.IsNullOrEmpty(options.Maintainer)) {
+				return true;
+			}
+			return false;
+		}
+
 	}
 
 	public class EnvironmentNameOptions : EnvironmentOptions

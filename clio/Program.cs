@@ -312,8 +312,16 @@ namespace Clio
 			}
 		}
 
-		private static int Main(string[] args)
-		{
+		private static int Main(string[] args) {
+			try {
+				return ExecuteCommands(args);
+			} catch (Exception e) {
+				Console.WriteLine(e.Message);
+				return 1;
+			}
+		}
+
+		private static int ExecuteCommands(string[] args) {
 			TryCheckForUpdate();
 			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";

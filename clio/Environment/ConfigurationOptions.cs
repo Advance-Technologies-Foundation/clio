@@ -272,7 +272,7 @@ namespace Clio
 			try {
 				environment = GetEnvironment(name);
 			} catch {
-				environment = new EnvironmentSettings();
+				return null;
 			}
 			return environment;
 		}
@@ -281,6 +281,14 @@ namespace Clio
 			var result = new EnvironmentSettings();
 			var settingsRepository = new SettingsRepository();
 			var _settings = settingsRepository.FindEnvironment(options.Environment);
+			if (_settings == null) {
+				var environmentName = string.IsNullOrEmpty(options.Environment) ? settingsRepository.GetDefaultEnvironmentName() : options.Environment;
+				if (EnvironmentOptions.IsNullOrEmpty(options)) {
+					throw new Exception($"Environment with key '{environmentName}' not found. Check youre config file or command arguments.");
+				} else {
+					_settings = new EnvironmentSettings();
+				}
+			}
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? _settings.IsNetCore;
 			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? _settings.DeveloperModeEnabled;
@@ -302,6 +310,10 @@ namespace Clio
 				}
 			}
 			return result;
+		}
+
+		private string GetDefaultEnvironmentName() {
+			return _settings.ActiveEnvironmentKey;
 		}
 
 		public bool IsEnvironmentExists(string name) {
