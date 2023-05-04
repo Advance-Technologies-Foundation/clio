@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>6.0.1.20</AssemblyVersion>
-	  <FileVersion>6.0.1.20</FileVersion>
-	  <Version>6.0.1.20</Version>
+	  <AssemblyVersion>6.0.1.21</AssemblyVersion>
+	  <FileVersion>6.0.1.21</FileVersion>
+	  <Version>6.0.1.21</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -70,6 +70,7 @@
     <None Remove="tpl\ui-project\tsconfig.spec.json" />
     <None Remove="tpl\ui-project\webpack.config.js" />
     <None Remove="tpl\ui-project\webpack.prod.config.js" />
+    <None Remove="tpl\workspace\builds\placeholder.txt" />
     <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -190,6 +191,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.vscode\keybinding.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\builds\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\build-framework.cmd">
