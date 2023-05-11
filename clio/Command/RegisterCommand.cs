@@ -71,7 +71,10 @@ namespace Clio.Command
 						var destImgFilePath = Path.Combine(appDataClioFolderPath, imgFile.Name);
 						imgFile.CopyTo(destImgFilePath, true);
 					}
+					string unreg_file_name = Path.Combine(environment.GetAssemblyFolderPath(), "reg", "unreg_clio_context_menu_win.reg");
 					string reg_file_name = Path.Combine(environment.GetAssemblyFolderPath(), "reg", "clio_context_menu_win.reg");
+					var unregProcess = Process.Start(new ProcessStartInfo("cmd", $"/c reg import  {unreg_file_name}") { CreateNoWindow = true });
+					unregProcess.WaitForExit();
 					Process.Start(new ProcessStartInfo("cmd", $"/c reg import  {reg_file_name}") { CreateNoWindow = true });
 					Console.WriteLine("Clio context menu successfully registered.");
 					return 0;
