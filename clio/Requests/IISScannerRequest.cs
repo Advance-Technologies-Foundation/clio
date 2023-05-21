@@ -131,6 +131,22 @@ namespace Clio.Requests
 		};
 
 		/// <summary>
+		/// Finds Creatio Sites in IIS that are not registered with clio
+		/// </summary>
+		internal static readonly Func<IEnumerable<UnregisteredSite>> _findAllCreatioSites = () =>
+		{
+			return _getBindings()
+			.Where(site => _detectSiteType(site.path) != SiteType.NotCreatioSite)
+			.Select(site =>
+			{
+				return new UnregisteredSite(
+					siteBinding: site,
+					Uris: _convertBindingToUri(site.binding),
+					siteType: _detectSiteType(site.path));
+			});
+		};
+
+		/// <summary>
 		/// Executes appcmd.exe with arguments and captures output
 		/// </summary>
 		private static readonly Func<string, string> _appcmd = (args) =>
@@ -280,15 +296,15 @@ namespace Clio.Requests
 			return SiteType.NotCreatioSite;
 		};
 
-		private sealed record SiteBinding(string name, string state, string binding, string path)
+		internal sealed record SiteBinding(string name, string state, string binding, string path)
 		{
 		}
 
-		private sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
+		internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
 		{
 		}
 
-		private enum SiteType
+		internal enum SiteType
 		{
 			NetFramework,
 			Core,

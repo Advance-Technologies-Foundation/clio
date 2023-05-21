@@ -255,6 +255,8 @@
             <Private>false</Private>
         </Reference>
     </ItemGroup>
+	<ItemGroup Label="Package References">
+	</ItemGroup>
     <Target Name="Paths" BeforeTargets="BeforeCompile">
         <Message Importance="High" Text="*********** Project [$(MSBuildProjectFile)] TargetFramework [$(TargetFramework)] CoreTargetFramework [$(CoreTargetFramework)]" />
         <!--
