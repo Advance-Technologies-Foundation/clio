@@ -4,6 +4,9 @@ using System.IO;
 using Clio.Common;
 using CommandLine;
 using ConsoleTables;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using Newtonsoft.Json;
 
 namespace Clio.Command.SqlScriptCommand
@@ -23,6 +26,12 @@ namespace Clio.Command.SqlScriptCommand
 
 		[Option('d', "DestinationPath", Required = false, HelpText = "Path to results file.", Default = null)]
 		public string DestPath { get; set; }
+
+		[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
+		public bool IsSilent
+		{
+			get; set;
+		}
 	}
 
 	public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
@@ -35,20 +44,32 @@ namespace Clio.Command.SqlScriptCommand
 			_sqlScriptExecutor = sqlScriptExecutor;
 		}
 
-		private static string GetSqlScriptResult(string result, string viewType) {
-			viewType = viewType.ToLower();
-			if (viewType == "table") {
-				if (result == "[]") {
-					return string.Empty;
-				}
-				if (int.TryParse(result, out var count)) {
-					return $"({count} rows affected)";
-				}
-				var dataTable = JsonConvert.DeserializeObject<DataTable>(result);
-				var table = CreateConsoleTable(dataTable);
-				return table.ToString();
+		private static string GetSqlScriptResult(string serverResponse, string viewType, string filePath) {
+			if (serverResponse == "[]") {
+				return string.Empty;
 			}
-			return result;
+			if (int.TryParse(serverResponse, out var count)) {
+				return $"({count} rows affected)";
+			}
+			viewType = viewType.ToLower();
+			var dataTable = JsonConvert.DeserializeObject<DataTable>(serverResponse);
+			var table = CreateConsoleTable(dataTable);
+			string formatResult = table.ToString();
+			if (viewType == "table") {
+				if (filePath != null) {
+					File.WriteAllText(filePath, formatResult);
+				}
+			} else if (viewType.ToLower() == "csv") {
+				SaveDataTableToCsv(dataTable, filePath);
+			} else if (viewType.ToLower() == "xlsx") {
+				SaveDataTableToXlsx(dataTable, filePath);
+			} else {
+				if (filePath != null) {
+					File.WriteAllText(filePath, serverResponse);
+				}
+				formatResult = serverResponse;
+			}
+			return formatResult;
 		}
 
 		private static ConsoleTable CreateConsoleTable(DataTable dataTable) {
@@ -60,6 +81,64 @@ namespace Clio.Command.SqlScriptCommand
 				table.AddRow(dataTable.Rows[i].ItemArray);
 			}
 			return table;
+		}
+
+		static void SaveDataTableToCsv(DataTable dataTable, string filePath, string delimiter = ";") {
+			using (StreamWriter sw = new StreamWriter(filePath)) {
+				for (int i = 0; i < dataTable.Columns.Count; i++) {
+					sw.Write(dataTable.Columns[i]);
+					if (i < dataTable.Columns.Count - 1) {
+						sw.Write(delimiter);
+					}
+				}
+				sw.WriteLine();
+				foreach (DataRow row in dataTable.Rows) {
+					for (int i = 0; i < dataTable.Columns.Count; i++) {
+						sw.Write(row[i]);
+						if (i < dataTable.Columns.Count - 1) {
+							sw.Write(delimiter);
+						}
+					}
+					sw.WriteLine();
+				}
+			}
+		}
+
+		static void SaveDataTableToXlsx(DataTable dataTable, string filePath) {
+			using (SpreadsheetDocument spreadsheetDocument = SpreadsheetDocument.Create(filePath,
+					SpreadsheetDocumentType.Workbook)) {
+				WorkbookPart workbookPart = spreadsheetDocument.AddWorkbookPart();
+				workbookPart.Workbook = new Workbook();
+				WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
+				worksheetPart.Worksheet = new Worksheet(new SheetData());
+				Sheets sheets = spreadsheetDocument.WorkbookPart.Workbook.AppendChild(new Sheets());
+				string sheetName = "Sheet1";
+				uint sheetId = 1;
+				Sheet sheet = new Sheet() { Id = spreadsheetDocument.WorkbookPart.GetIdOfPart(worksheetPart),
+					SheetId = sheetId, Name = sheetName };
+				sheets.Append(sheet);
+				SheetData sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
+				Row headerRow = new Row();
+				foreach (DataColumn column in dataTable.Columns) {
+					Cell cell = new Cell();
+					cell.DataType = CellValues.String;
+					cell.CellValue = new CellValue(column.ColumnName);
+					headerRow.AppendChild(cell);
+				}
+				sheetData.AppendChild(headerRow);
+				foreach (DataRow row in dataTable.Rows) {
+					Row dataRow = new Row();
+					foreach (var item in row.ItemArray) {
+						Cell cell = new Cell();
+						cell.DataType = CellValues.String;
+						cell.CellValue = new CellValue(item.ToString());
+						dataRow.AppendChild(cell);
+					}
+					sheetData.AppendChild(dataRow);
+				}
+				workbookPart.Workbook.Save();
+				spreadsheetDocument.Close();
+			}
 		}
 
 		public override int Execute(ExecuteSqlScriptOptions opts) {
@@ -77,12 +156,10 @@ namespace Clio.Command.SqlScriptCommand
 					var sc = Console.ReadLine();
 					result = _sqlScriptExecutor.Execute(sc, ApplicationClient, EnvironmentSettings);
 				}
-				result = GetSqlScriptResult(result, opts.ViewType);
+				result = GetSqlScriptResult(result, opts.ViewType, opts.DestPath);
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
-
-				Console.WriteLine(result);
-				if (opts.DestPath != null) {
-					File.WriteAllText(opts.DestPath, result);
+				if (!opts.IsSilent) {
+					Console.WriteLine(result);
 				}
 				Console.WriteLine("Done");
 			} catch (Exception e) {

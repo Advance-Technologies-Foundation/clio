@@ -9,9 +9,9 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>6.0.1.23</AssemblyVersion>
-	  <FileVersion>6.0.1.23</FileVersion>
-	  <Version>6.0.1.23</Version>
+	  <AssemblyVersion>6.0.1.24</AssemblyVersion>
+	  <FileVersion>6.0.1.24</FileVersion>
+	  <Version>6.0.1.24</Version>
 	  <Description>CLI interface for Creatio</Description>
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
@@ -367,6 +367,7 @@
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.4.2" />
     <PackageReference Include="creatio.client" Version="1.0.14" />
+    <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="FluentValidation" Version="11.5.2" />
     <PackageReference Include="MediatR" Version="12.0.1" />
     <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="10.0.0" />
