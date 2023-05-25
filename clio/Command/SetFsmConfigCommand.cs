@@ -109,46 +109,31 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
 	#region Methods: Public
 	public override int Execute(SetFsmConfigOptions options) {
-
 		ValidationResult validationResult = _validator.Validate(options);
 		if (validationResult.Errors.Any()) {
 			PrintErrors(validationResult.Errors);
 			return 1;
 		}
-		
 		string webConfigPath = string.IsNullOrWhiteSpace(options.PhysicalPath) ? 
 			Path.Join(GetWebConfigPathFromEnvName(options.Environment), WebConfingFileName) //Searches IIS registered sites
 			: Path.Join(options.PhysicalPath, WebConfingFileName);
-
 		if (File.Exists(webConfigPath)) {
 			ModifyWebConfigFile(webConfigPath, options.IsFsm.ToLower() == "on"); //Happy path
-
-			Console.WriteLine();
-			if(string.IsNullOrWhiteSpace(options.Environment)) {
-				Console.WriteLine("To download content to file system execute 'clio 2fs -e <envName>' command");
-			}else {
-				Console.WriteLine($"To download content to file system execute 'clio 2fs -e {options.Environment}' command");
-			}
 			return 0;
 		}
-		
 		Console.WriteLine($"Config does not exist in {webConfigPath}");
 		return 1;
 	}
 
 	private string GetWebConfigPathFromEnvName(string envName) {
-
 		EnvironmentSettings env = _settingsRepository.GetEnvironment(envName);
 		if(string.IsNullOrWhiteSpace(env.Uri)) {
 			throw new Exception($"Could not find path to environment: '{envName}'");
 		}
-		
 		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler._findAllCreatioSites();
-
 		foreach (IISScannerHandler.UnregisteredSite site in sites) {
 			foreach (Uri unregisteredSiteUri in site.Uris) {
 				if(unregisteredSiteUri.ToString() == new Uri(env.Uri).ToString()) {
-					//Found
 					return site.siteBinding.path;
 				}
 			}
@@ -157,7 +142,6 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	}
 
 	private int ModifyWebConfigFile(string webConfigPath, bool isFsm) {
-		
 		string webConfigContent = File.ReadAllText(webConfigPath);
 		XmlDocument doc = new ();
 		doc.LoadXml(webConfigContent);
@@ -165,21 +149,15 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 		XmlNode fileDesignModeNode = root
 			.SelectSingleNode("descendant::terrasoft")
 			.SelectSingleNode("descendant::fileDesignMode");
-		
 		string fileDesignModeNodeOldValue = fileDesignModeNode.Attributes["enabled"].Value;
 		string fileDesignModeNodeNewValue = isFsm.ToString().ToLower();
-		
 		fileDesignModeNode.Attributes["enabled"].Value = fileDesignModeNodeNewValue;
 		_changedValuesTable.Add(new [] {"fileDesignMode",fileDesignModeNodeOldValue,fileDesignModeNodeNewValue});
-		
 		XmlNodeList cNodes = root.SelectSingleNode("descendant::appSettings").ChildNodes;
-			
 		foreach (XmlNode cNode in cNodes) {
 			if(cNode.Attributes is not null && cNode.Attributes["key"].Value == "UseStaticFileContent") {
-				
 				string useStaticFileContentOldValue = cNode.Attributes["value"].Value;
 				string useStaticFileContentNewValue = (!isFsm).ToString().ToLower();
-				
 				cNode.Attributes["value"].Value  = useStaticFileContentNewValue;
 				_changedValuesTable.Add(new [] {"UseStaticFileContent",useStaticFileContentOldValue,useStaticFileContentNewValue});
 			}
