@@ -17,7 +17,7 @@ namespace Clio.Command
 
 	#region Class: LoadPackagesToFileSystemCommand
 	
-	public class LoadPackagesToFileSystemCommand : Command<LoadPackagesToFileSystemOptions>
+	public class LoadPackagesToFileSystemCommand : Command<EnvironmentOptions>
 	{
 		
 		#region Fields: Private
@@ -37,7 +37,7 @@ namespace Clio.Command
 
 		#region Methods: Public
 
-		public override int Execute(LoadPackagesToFileSystemOptions options) {
+		public override int Execute(EnvironmentOptions options) {
 			try {
 				_fileDesignModePackages.LoadPackagesToFileSystem();
 				Console.WriteLine();

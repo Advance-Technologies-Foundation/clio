@@ -14,16 +14,16 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Xml;
 
-public class ToggleFsmOptionsValidator : AbstractValidator<ToggleFsmOptions>
+public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOptions>
 {
 
 	#region Constructors: Public
 
-	public ToggleFsmOptionsValidator() {
-		RuleFor(o => o.Name == o.LoaderPath).Cascade(CascadeMode.Stop)
+	public SetFsmConfigOptionsValidator() {
+		RuleFor(o => o.Name == o.PhysicalPath).Cascade(CascadeMode.Stop)
 			.Custom((value, context) =>
 			{
-				if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && string.IsNullOrWhiteSpace(context.InstanceToValidate.LoaderPath))
+				if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && string.IsNullOrWhiteSpace(context.InstanceToValidate.PhysicalPath))
 				{
 					context.AddFailure(new ValidationFailure
 					{
@@ -35,7 +35,7 @@ public class ToggleFsmOptionsValidator : AbstractValidator<ToggleFsmOptions>
 				}
 			})
 			.Custom((value, context) => {
-				bool isLoaderPathEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.LoaderPath);
+				bool isLoaderPathEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.PhysicalPath);
 				bool isEnvEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.Environment);
 
 				if (isEnvEmpty && isLoaderPathEmpty) {
@@ -53,29 +53,29 @@ public class ToggleFsmOptionsValidator : AbstractValidator<ToggleFsmOptions>
 
 }
 
-[Verb("fsm", Aliases = new[] {"fsm"}, HelpText = "Toggle file system mode")]
-public class ToggleFsmOptions : EnvironmentNameOptions
+[Verb("set-fsm-config", Aliases = new[] {"switch-fsm", "tfsm"}, HelpText = "Toggle file system mode properties in config file")]
+public class SetFsmConfigOptions : EnvironmentNameOptions
 {
 
 	#region Properties: Public
 
-	[Option("loaderPath", Required = false, HelpText = "Path to applications")]
-	public string LoaderPath { get; set; }
+	[Option("physicalPath", Required = false, HelpText = "Path to applications")]
+	public string PhysicalPath { get; set; }
 
-	[Option("set", Required = false, HelpText = "Path to applications", Default = true)]
-	public bool IsFsm { get; set; }
+	[Value(0, Required = true, HelpText = "on or off", Default = "on")]
+	public string IsFsm { get; set; }
 
 
 	#endregion
 
 }
 
-internal class ToggleFsmCommand : Command<ToggleFsmOptions>
+public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 {
 
 	#region Fields: Private
 
-	private readonly IValidator<ToggleFsmOptions> _validator;
+	private readonly IValidator<SetFsmConfigOptions> _validator;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IList<string[]> _changedValuesTable;
 	private const string WebConfingFileName = "Web.config";
@@ -84,7 +84,7 @@ internal class ToggleFsmCommand : Command<ToggleFsmOptions>
 
 	#region Constructors: Public
 
-	public ToggleFsmCommand(IValidator<ToggleFsmOptions> validator, ISettingsRepository settingsRepository) {
+	public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository) {
 		_validator = validator;
 		_settingsRepository = settingsRepository;
 		_changedValuesTable = new List<string[]> {
@@ -108,7 +108,7 @@ internal class ToggleFsmCommand : Command<ToggleFsmOptions>
 	#endregion
 
 	#region Methods: Public
-	public override int Execute(ToggleFsmOptions options) {
+	public override int Execute(SetFsmConfigOptions options) {
 
 		ValidationResult validationResult = _validator.Validate(options);
 		if (validationResult.Errors.Any()) {
@@ -116,12 +116,12 @@ internal class ToggleFsmCommand : Command<ToggleFsmOptions>
 			return 1;
 		}
 		
-		string webConfigPath = string.IsNullOrWhiteSpace(options.LoaderPath) ? 
+		string webConfigPath = string.IsNullOrWhiteSpace(options.PhysicalPath) ? 
 			Path.Join(GetWebConfigPathFromEnvName(options.Environment), WebConfingFileName) //Searches IIS registered sites
-			: Path.Join(options.LoaderPath, WebConfingFileName);
+			: Path.Join(options.PhysicalPath, WebConfingFileName);
 
 		if (File.Exists(webConfigPath)) {
-			ModifyWebConfigFile(webConfigPath, options.IsFsm); //Happy path
+			ModifyWebConfigFile(webConfigPath, options.IsFsm.ToLower() == "on"); //Happy path
 
 			Console.WriteLine();
 			if(string.IsNullOrWhiteSpace(options.Environment)) {
@@ -132,7 +132,7 @@ internal class ToggleFsmCommand : Command<ToggleFsmOptions>
 			return 0;
 		}
 		
-		Console.WriteLine("Web.config does not exist");
+		Console.WriteLine($"Config does not exist in {webConfigPath}");
 		return 1;
 	}
 
@@ -145,11 +145,11 @@ internal class ToggleFsmCommand : Command<ToggleFsmOptions>
 		
 		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler._findAllCreatioSites();
 
-		foreach (IISScannerHandler.UnregisteredSite unregisteredSite in sites) {
-			foreach (Uri unregisteredSiteUri in unregisteredSite.Uris) {
+		foreach (IISScannerHandler.UnregisteredSite site in sites) {
+			foreach (Uri unregisteredSiteUri in site.Uris) {
 				if(unregisteredSiteUri.ToString() == new Uri(env.Uri).ToString()) {
 					//Found
-					return unregisteredSite.siteBinding.path;
+					return site.siteBinding.path;
 				}
 			}
 		}

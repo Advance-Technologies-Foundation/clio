@@ -68,7 +68,8 @@ namespace Clio
 			containerBuilder.RegisterType<PowerShellFactory>();
 			containerBuilder.RegisterType<RegAppCommand>();
 			containerBuilder.RegisterType<RestartCommand>();
-			containerBuilder.RegisterType<ToggleFsmCommand>();
+			containerBuilder.RegisterType<SetFsmConfigCommand>();
+			containerBuilder.RegisterType<TurnFsmCommand>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
@@ -78,7 +79,7 @@ namespace Clio
 
 			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
 			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
-			containerBuilder.RegisterType<ToggleFsmOptionsValidator>();
+			containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
 
 			return containerBuilder.Build();
 		}

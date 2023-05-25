@@ -17,7 +17,7 @@ namespace Clio.Command
 
 	#region Class: LoadPackagesToDbCommand
 	
-	public class LoadPackagesToDbCommand : Command<LoadPackagesToDbOptions>
+	public class LoadPackagesToDbCommand : Command<EnvironmentOptions>
 	{
 
 		#region Fields: Private
@@ -37,7 +37,7 @@ namespace Clio.Command
 
 		#region Methods: Public
 
-		public override int Execute(LoadPackagesToDbOptions options) {
+		public override int Execute(EnvironmentOptions options) {
 			try {
 				_fileDesignModePackages.LoadPackagesToDb();
 				Console.WriteLine();
