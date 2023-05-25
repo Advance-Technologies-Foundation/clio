@@ -53,7 +53,7 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
 
 }
 
-[Verb("set-fsm-config", Aliases = new[] {"switch-fsm", "tfsm"}, HelpText = "Toggle file system mode properties in config file")]
+[Verb("set-fsm-config", Aliases = new[] {"fsmc", "sfsmc"}, HelpText = "Set file system mode properties in config file")]
 public class SetFsmConfigOptions : EnvironmentNameOptions
 {
 
