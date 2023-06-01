@@ -344,7 +344,7 @@ namespace Clio
 					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions, CreateUiProjectOptions,
 					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,
 					OpenCfgOptions, CompileConfigurationOptions, MkLinkOptions, TurnFsmCommandOptions, SetFsmConfigOptions, ScenarioRunnerOptions
-                    >(args)
+                    , CompressAppOptions >(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -408,6 +408,7 @@ namespace Clio
 					(TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
 					(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
 					(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
+					(CompressAppOptions opts) => Resolve<CompressAppCommand>(opts).Execute(opts),
 					HandleParseError);
 		}
 
@@ -555,4 +556,5 @@ namespace Clio
 			return PackageConverter.Convert(opts);
 		}
 	}
+
 }

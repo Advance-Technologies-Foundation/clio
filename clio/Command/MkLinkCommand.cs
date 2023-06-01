@@ -74,17 +74,8 @@ namespace Clio.Command
 					Console.WriteLine($"Package '{environmentPackageName}' found in repository.");
 					environmentPackageFolder.Delete(true);
 					string repositoryPackageFolderPath = repositoryPackageFolder.FullName;
-					string repositoryPackageFolderBranchesPath = Path.Combine(repositoryPackageFolderPath, "branches");
-					if (Directory.Exists(repositoryPackageFolderBranchesPath)) {
-						DirectoryInfo[] directories = new DirectoryInfo(repositoryPackageFolderBranchesPath).GetDirectories();
-						if (directories.Count() == 1) {
-							CreateLink(environmentPackageFolder.FullName, directories[0].FullName);
-						} else {
-							throw new NotSupportedException($"Command link not supported structure for package '{environmentPackageName}" +
-								$"'. Expected structure contains one package version in folder '{repositoryPackageFolderBranchesPath}'.");
-						}
-					}
-					CreateLink(environmentPackageFolder.FullName, repositoryPackageFolderPath);
+					string packageContentFolderPath = PackageUtilities.GetPackageContentFolderPath(repositoryPackageFolderPath);
+					CreateLink(packageContentFolderPath, repositoryPackageFolderPath);
 				} else {
 					Console.WriteLine($"Package '{environmentPackageName}' not found in repository.");
 				}

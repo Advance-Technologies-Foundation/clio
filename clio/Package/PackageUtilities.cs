@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Clio.Common
 {
@@ -56,6 +58,20 @@ namespace Clio.Common
 			}
 			File.Copy(Path.Combine(sourcePath, "descriptor.json"), 
 				Path.Combine(destinationPath, "descriptor.json"));
+		}
+
+		public static string GetPackageContentFolderPath(string repositoryPackageFolderPath) {
+			string repositoryPackageFolderBranchesPath = Path.Combine(repositoryPackageFolderPath, "branches");
+			if (Directory.Exists(repositoryPackageFolderBranchesPath)) {
+				DirectoryInfo[] directories = new DirectoryInfo(repositoryPackageFolderBranchesPath).GetDirectories();
+				if (directories.Count() == 1) {
+					return directories[0].FullName;
+				} else {
+					throw new NotSupportedException($"Unsupported package folder structure." +
+						$"Expected structure contains one package version in folder '{repositoryPackageFolderBranchesPath}'.");
+				}
+			}
+			return repositoryPackageFolderPath;
 		}
 
 		#endregion
