@@ -74,6 +74,14 @@ namespace Clio.Common
 			return repositoryPackageFolderPath;
 		}
 
+		public static string GetPackageContentFolderPath(string repositoryFolderPath, string packageName) {
+			string fullPackagePath = Path.Combine(repositoryFolderPath, packageName);
+			return GetPackageContentFolderPath(fullPackagePath);
+		}
+
+		public static string BuildPackageDescriptorPath(string packagePath) =>
+			Path.Combine(packagePath, CreatioPackage.DescriptorName);
+
 		#endregion
 
 	}

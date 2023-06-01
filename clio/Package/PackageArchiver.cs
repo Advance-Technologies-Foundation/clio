@@ -197,7 +197,7 @@ namespace Clio
 				SearchOption.AllDirectories);
 		}
 
-		public void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite) {
+		public void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite = true) {
 			CheckPackArgument(packagePath, packedPackagePath);
 			_fileSystem.CheckOrDeleteExistsFile(packedPackagePath, overwrite);
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
@@ -208,7 +208,7 @@ namespace Clio
 		}
 
 		public void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb, 
-				bool overwrite) {
+				bool overwrite = true) {
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
 				sourcePath ??= Environment.CurrentDirectory;
 				foreach (var name in names)

@@ -11,8 +11,8 @@ namespace Clio
 		string GetPackedGroupPackagesFileName(string groupPackagesName);
 		void CheckPackedPackageExistsAndNotEmpty(string packedPackagePath);
 		IEnumerable<string> FindGzipPackedPackagesFiles(string searchDirectory);
-		void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite);
-		void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb, bool overwrite);
+		void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite = true);
+		void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb, bool overwrite = true);
 		void Unpack(string packedPackagePath, bool overwrite, bool isShowDialogOverwrite = false,
 			string destinationPath = null);
 		void Unpack(IEnumerable<string> packedPackagesPaths, bool overwrite, bool isShowDialogOverwrite = false,

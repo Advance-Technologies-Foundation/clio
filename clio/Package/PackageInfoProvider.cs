@@ -34,7 +34,7 @@ namespace Clio
 
 		public PackageInfo GetPackageInfo(string packagePath) {
 			packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
-			string packageDescriptorPath = Path.Combine(packagePath, CreatioPackage.DescriptorName);
+			string packageDescriptorPath = PackageUtilities.BuildPackageDescriptorPath(packagePath);
 			if (!File.Exists(packageDescriptorPath)) {
 				throw new Exception($"Package descriptor not found by path: '{packageDescriptorPath}'"); 
 			}

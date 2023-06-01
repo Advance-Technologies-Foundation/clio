@@ -300,7 +300,6 @@ namespace Clio
 			return container.Resolve<T>();
 		}
 
-
 		private static void TryCheckForUpdate() {
 			try {
 				var autoupdate = new SettingsRepository().GetAutoupdate();
@@ -343,8 +342,8 @@ namespace Clio
 					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions,
 					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions, CreateUiProjectOptions,
 					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,
-					OpenCfgOptions, CompileConfigurationOptions, MkLinkOptions, TurnFsmCommandOptions, SetFsmConfigOptions, ScenarioRunnerOptions
-                    , CompressAppOptions >(args)
+					OpenCfgOptions, CompileConfigurationOptions, MkLinkOptions, TurnFsmCommandOptions, SetFsmConfigOptions,
+					ScenarioRunnerOptions, CompressAppOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -408,7 +407,7 @@ namespace Clio
 					(TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
 					(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
 					(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
-					(CompressAppOptions opts) => Resolve<CompressAppCommand>(opts).Execute(opts),
+					(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
 					HandleParseError);
 		}
 
