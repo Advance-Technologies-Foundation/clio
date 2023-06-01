@@ -343,8 +343,8 @@ namespace Clio
 					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions,
 					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions, CreateUiProjectOptions,
 					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,
-					OpenCfgOptions, CompileConfigurationOptions, MkLinkOptions, TurnFsmCommandOptions, SetFsmConfigOptions
-					>(args)
+					OpenCfgOptions, CompileConfigurationOptions, MkLinkOptions, TurnFsmCommandOptions, SetFsmConfigOptions, ScenarioRunnerOptions
+                    >(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -407,6 +407,7 @@ namespace Clio
 					(MkLinkOptions opts) => CreateCommand<MkLinkCommand>().Execute(opts),
 					(TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
 					(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
+					(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
 					HandleParseError);
 		}
 

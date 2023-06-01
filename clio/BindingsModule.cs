@@ -11,7 +11,10 @@ using MediatR;
 using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System.Reflection;
+using YamlDotNet.Serialization.NamingConventions;
+using YamlDotNet.Serialization;
 using Сlio.Command.PackageCommand;
+using Clio.Common.ScenarioHandlers;
 
 namespace Clio
 {
@@ -29,7 +32,13 @@ namespace Clio
 				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
 			}
-			containerBuilder.RegisterType<PushPackageCommand>();
+
+            var deserializer = new DeserializerBuilder()
+				.WithNamingConvention(UnderscoredNamingConvention.Instance)
+				.Build();
+			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
+
+            containerBuilder.RegisterType<PushPackageCommand>();
 			containerBuilder.RegisterType<OpenCfgCommand>();
 			containerBuilder.RegisterType<InstallGatePkgCommand>();
 			containerBuilder.RegisterType<PingAppCommand>();
@@ -70,6 +79,7 @@ namespace Clio
 			containerBuilder.RegisterType<RestartCommand>();
 			containerBuilder.RegisterType<SetFsmConfigCommand>();
 			containerBuilder.RegisterType<TurnFsmCommand>();
+			containerBuilder.RegisterType<ScenarioRunnerCommand>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
@@ -80,6 +90,7 @@ namespace Clio
 			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
 			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 			containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
+			containerBuilder.RegisterType<UnzipRequestValidator>();
 
 			return containerBuilder.Build();
 		}

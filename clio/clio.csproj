@@ -382,6 +382,7 @@
     <PackageReference Include="OneOf" Version="3.0.223" />
     <PackageReference Include="System.Json" Version="4.7.1" />
 	<PackageReference Include="Ignore" Version="0.1.46" />
+	<PackageReference Include="YamlDotNet" Version="13.1.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
