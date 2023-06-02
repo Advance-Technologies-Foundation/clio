@@ -320,7 +320,79 @@ namespace Clio
 			}
 		}
 
-		private static int ExecuteCommands(string[] args) {
+		//TODO: this is a temporary solution, need to refactor
+		public static readonly Func<object, int> MyMap = (instance) => {
+            return instance switch {
+                (ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
+                (RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
+                (ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
+                (RegAppOptions opts) => CreateCommand<RegAppCommand>(
+                    new SettingsRepository(), new ApplicationClientFactory(), new PowerShellFactory()).Execute(opts),
+                (AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
+                (UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
+                (GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
+                (PushPkgOptions opts) => Resolve<PushPackageCommand>(opts).Execute(opts),
+                (DeletePkgOptions opts) => Resolve<DeletePackageCommand>(opts).Execute(opts),
+                (ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
+                (NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
+                    new CreatioPkgProjectCreator())).Execute(opts),
+                (ConvertOptions opts) => ConvertPackage(opts),
+                (RegisterOptions opts) => CreateCommand<RegisterCommand>().Execute(opts),
+                (UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
+                (PullPkgOptions opts) => DownloadZipPackages(opts),
+                (ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
+                (InstallGateOptions opts) => Resolve<InstallGatePkgCommand>(CreateClioGatePkgOptions(opts))
+                    .Execute(CreateClioGatePkgOptions(opts)),
+                (ItemOptions opts) => AddItem(opts),
+                (DeveloperModeOptions opts) => SetDeveloperMode(opts),
+                (SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
+                (FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
+                (UnzipPkgOptions opts) => Resolve<ExtractPackageCommand>().Execute(opts),
+                (PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+                (OpenAppOptions opts) => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),
+                (PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
+                (CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
+                (PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
+                (PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
+                (RestoreNugetPkgOptions opts) => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
+                (InstallNugetPkgOptions opts) => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
+                (SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
+                (GetPackageVersionOptions opts) => Resolve<GetPackageVersionCommand>().Execute(opts),
+                (CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
+                (RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
+                (CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
+                (PushWorkspaceCommandOptions opts) => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
+                //(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
+                (LoadPackagesToFileSystemOptions opts) => Resolve<LoadPackagesToFileSystemCommand>(opts)
+                    .Execute(opts),
+                (LoadPackagesToDbOptions opts) => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
+                (UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+                (HealthCheckOptions opts) => Resolve<HealthCheckCommand>(opts).Execute(opts),
+                (AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
+                (UnlockPackageOptions opts) => Resolve<UnlockPackageCommand>(opts).Execute(opts),
+                (LockPackageOptions opts) => Resolve<LockPackageCommand>(opts).Execute(opts),
+                (DataServiceQuerryOptions opts) => Resolve<DataServiceQuerry>(opts).Execute(opts),
+                (RestoreFromPackageBackupOptions opts) => Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
+                (GetMarketplaceCatalogOptions opts) => Resolve<GetMarketplacecatalogCommand>(opts).Execute(opts),
+                (CreateUiProjectOptions opts) => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
+                (DownloadConfigurationCommandOptions opts) => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),
+                (DeployCommandOptions opts) => Resolve<DeployCommand>(opts).Execute(opts),
+                (GetVersionOptions opts) => Resolve<GetVersionCommand>(opts).Execute(opts),
+                (ExternalLinkOptions opts) => Resolve<ExternalLinkCommand>(opts).Execute(opts),
+                (OpenCfgOptions opts) => Resolve<OpenCfgCommand>().Execute(opts),
+                (CompileConfigurationOptions opts) => CreateRemoteCommand<CompileConfigurationCommand>(opts).Execute(opts),
+                (MkLinkOptions opts) => CreateCommand<MkLinkCommand>().Execute(opts),
+                (TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
+                (SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
+                (ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
+                (CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
+                _ => 1,
+            };
+
+        };
+
+
+		internal static int ExecuteCommands(string[] args) {
 			TryCheckForUpdate();
 			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";

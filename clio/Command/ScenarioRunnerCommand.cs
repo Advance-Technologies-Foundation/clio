@@ -1,15 +1,17 @@
 ﻿using Autofac;
+using Clio.Common;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using CommandLine;
-using DocumentFormat.OpenXml.Spreadsheet;
 using MediatR;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using YamlDotNet.Serialization;
 
@@ -33,7 +35,7 @@ namespace Clio.Command {
             _settingsRepository = settingsRepository;
             _deserializer = deserializer;
             _mediator = mediator;
-            _container = new MyBindingModule().Register();
+            _container = new PrivateBindingModule().Register();
         }
 
 
@@ -43,7 +45,7 @@ namespace Clio.Command {
                 Console.WriteLine("Scenario not found");
                 return 1;
             }
-
+            return ParseYaml(scenarioFileName);
             var yaml = ReadYaml(scenarioFileName);
             
             int counter = 0;
@@ -95,6 +97,152 @@ namespace Clio.Command {
             return false;
         }
 
+
+        private int ParseYaml(string scenarioFileName) {
+
+            var text = File.OpenText(scenarioFileName);
+            var yaml = _deserializer.Deserialize<Scenario2>(text);
+
+            yaml.Steps.ForEach(step => {
+                var commandOption = MatchStepToCommandOption(step);
+                Program.MyMap(commandOption);
+            });
+           return 0;
+        }
+
+        private object MatchStepToCommandOption(Step2 step) {
+
+            var type = FindType(step.Action);
+            var instance = InitInstance(type, step);
+
+            if (step.Options is not null) {
+                instance = InitOptions(instance, step);
+                instance = InitValues(instance, step);
+            }
+            //var args = CreateArgsFromInstace(instance);
+
+            return instance;
+        }
+
+        private static Type FindType(string action) {
+            var allTypes = Assembly.GetExecutingAssembly().GetTypes();
+            foreach (var type in allTypes) {
+                var attributes = type.GetCustomAttributes<VerbAttribute>();
+                if (attributes.Any()) {
+                    foreach (var attribute in attributes) {
+                        if (attribute is VerbAttribute attr) {
+                            var isAlias = (attr.Aliases is object) ? attr.Aliases.Contains(action) : false;
+                            var isName = attr.Name == action;
+                            if (isAlias || isName) {
+                                return type;
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static object InitInstance(Type type, Step2 step) {
+            var instance = Activator.CreateInstance(type);
+            
+            if (instance is null) {
+                return null;
+            }
+            return instance;
+        }
+        private static object InitOptions(object instance, Step2 step) {
+            var type = instance.GetType();
+            var props = type.GetProperties();
+            foreach (var prop in props) {
+                var attributes = prop.GetCustomAttributes<OptionAttribute>();
+                if (attributes.Any()) {
+                    foreach (var attribute in attributes) {
+                        if (attribute is OptionAttribute attr) {
+                            var isLongName = step.Options.ContainsKey(attr.LongName);
+                            var isShortName = step.Options.ContainsKey(attr.ShortName);
+                            if (isLongName || isShortName) {
+
+                                var value = isShortName ? step.Options[attr.ShortName] : step.Options[attr.LongName];
+                                var pValue = Convert.ChangeType(value, prop.PropertyType);
+                                instance.GetType().GetProperty(prop.Name).SetValue(instance, pValue);
+                            }
+                        }
+                    }
+                }
+            }
+            return instance;
+        }
+        private static object InitValues(object instance, Step2 step) {
+            var type = instance.GetType();
+            var props = type.GetProperties();
+            foreach (var prop in props) {
+                var attributes = prop.GetCustomAttributes<ValueAttribute>();
+                if (attributes.Any()) {
+                    foreach (var attribute in attributes) {
+                        if (attribute is ValueAttribute attr) {
+                            if (step.Options.ContainsKey(attr.MetaName)) {
+                                var value = step.Options[attr.MetaName];
+                                var pValue = Convert.ChangeType(value, prop.PropertyType);
+                                instance.GetType().GetProperty(prop.Name).SetValue(instance, pValue);
+                            }
+                        }
+                    }
+                }
+            }
+            return instance;
+        }
+
+        /// <summary>
+        /// Creates arguments from instace.
+        /// </summary>
+        /// <param name="instance">The instance.</param>
+        /// <returns></returns>
+        private static string[] CreateArgsFromInstace(object instance) {
+
+            var properties = instance.GetType().GetProperties();
+            var verbAttribute = instance.GetType().GetCustomAttribute<VerbAttribute>();
+            var valueDictionary = new Dictionary<int, string>();
+            var optionDictionary = new Dictionary<string, string>();
+            foreach(var property in properties) {
+
+                var propertyValue = property.GetValue(instance);
+                if(propertyValue is not null) {
+                    var valueAttirbute = property.GetCustomAttribute<ValueAttribute>();
+                    if(valueAttirbute is not null) {
+                        valueDictionary.Add(valueAttirbute.Index, propertyValue.ToString());
+                    }
+                    var optionAttirbute = property.GetCustomAttribute<OptionAttribute>();
+                    if (optionAttirbute is not null) {
+
+                        if(!string.IsNullOrWhiteSpace(optionAttirbute.ShortName)) {
+                            var value = $"{optionAttirbute.ShortName} {propertyValue}"; //-
+                            optionDictionary.Add(optionAttirbute.ShortName, value);
+                        }
+                        else {
+                            var value = $"{optionAttirbute.LongName} {propertyValue}"; //--
+                            optionDictionary.Add(optionAttirbute.LongName, value);
+                        }                        
+                    }
+                }
+            }
+
+            var orderedvalueDictionary = valueDictionary.OrderBy(x => x.Key);
+            StringBuilder sb = new StringBuilder();
+            List<string> args = new List<string>();
+            args.Add(verbAttribute.Name);
+
+            foreach (var kvp in orderedvalueDictionary) {
+                args.Add(kvp.Value);
+            }
+
+            foreach(var kvp in optionDictionary) {
+                args.Add(kvp.Value);
+            }
+
+            
+            return args.ToArray();
+        }
         private Queue<Step> ReadYaml(string scenarioFileName) {
             var queue = new Queue<Step>();
             var text = File.OpenText(scenarioFileName);
@@ -104,6 +252,18 @@ namespace Clio.Command {
                 queue.Enqueue(step);
             });
             return queue;
+        }
+
+        private sealed class PrivateBindingModule {
+            public IContainer Register() {
+                var containerBuilder = new ContainerBuilder();
+                containerBuilder.RegisterType<UnzipRequest>();
+                containerBuilder.RegisterType<TestRequest>();
+                containerBuilder.RegisterType<CreateIISSiteRequest>();
+                containerBuilder.RegisterType<ConfigureConnectionStringRequest>();
+                containerBuilder.RegisterType<RestoreBdRequest>();
+                return containerBuilder.Build();
+            }
         }
     }
 
@@ -154,16 +314,23 @@ namespace Clio.Command {
         }
     }
 
-    public class MyBindingModule {
-        public IContainer Register() {
-            var containerBuilder = new ContainerBuilder();
-            containerBuilder.RegisterType<UnzipRequest>();
-            containerBuilder.RegisterType<TestRequest>();
-            containerBuilder.RegisterType<CreateIISSiteRequest>();
-            containerBuilder.RegisterType<ConfigureConnectionStringRequest>();
-            containerBuilder.RegisterType<RestoreBdRequest>();
-            return containerBuilder.Build();
-        }
-    }
 
+    public class Scenario2 {
+        [YamlMember(Alias = "settings")]
+        public Dictionary<string, string> CommonSettings { get; set; }
+
+        [YamlMember(Alias = "steps")]
+        public List<Step2> Steps { get; set; }
+
+    }
+    public class Step2 {
+        [YamlMember(Alias = "action")]
+        public string Action { get; set; }
+
+        [YamlMember(Alias = "description")]
+        public string Description { get; set; }
+
+        [YamlMember(Alias = "options")]
+        public Dictionary<object, object> Options { get; set; }
+    }
 }
