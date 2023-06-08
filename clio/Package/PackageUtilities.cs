@@ -52,11 +52,12 @@ namespace Clio.Common
 		public void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite) {
 			sourcePath.CheckArgumentNullOrWhiteSpace(nameof(sourcePath));
 			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
+			string packageContentPath = GetPackageContentFolderPath(sourcePath);
 			_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, overwrite);
 			foreach (string packageElementName in PackageElementNames) {
-				CopyPackageElement(sourcePath, destinationPath, packageElementName);
+				CopyPackageElement(packageContentPath, destinationPath, packageElementName);
 			}
-			File.Copy(Path.Combine(sourcePath, "descriptor.json"), 
+			File.Copy(Path.Combine(packageContentPath, "descriptor.json"), 
 				Path.Combine(destinationPath, "descriptor.json"));
 		}
 

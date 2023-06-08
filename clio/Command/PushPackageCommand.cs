@@ -11,7 +11,7 @@
 
 	#region Class: PushPkgOptions
 
-	[Verb("push-pkg", Aliases = new string[] { "install" }, HelpText = "Install package on a web application")]
+	[Verb("push-pkg", Aliases = new string[] { "install", "push" }, HelpText = "Install package on a web application")]
 	public class PushPkgOptions : EnvironmentOptions
 	{
 		#region Properties: Public
