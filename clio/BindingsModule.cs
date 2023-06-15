@@ -39,6 +39,7 @@ namespace Clio
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 
             containerBuilder.RegisterType<PushPackageCommand>();
+            containerBuilder.RegisterType<InstallApplicationCommand>();
 			containerBuilder.RegisterType<OpenCfgCommand>();
 			containerBuilder.RegisterType<InstallGatePkgCommand>();
 			containerBuilder.RegisterType<PingAppCommand>();

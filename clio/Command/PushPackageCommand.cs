@@ -12,15 +12,9 @@
 	#region Class: PushPkgOptions
 
 	[Verb("push-pkg", Aliases = new string[] { "install", "push" }, HelpText = "Install package on a web application")]
-	public class PushPkgOptions : EnvironmentOptions
+	public class PushPkgOptions : InstallOptions
 	{
 		#region Properties: Public
-
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
-		public string Name { get; set; }
-
-		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
-		public string ReportPath { get; set; }
 
 		[Option("InstallSqlScript", Required = false, HelpText = "Install sql script")]
 		public bool? InstallSqlScript { get; set; }
