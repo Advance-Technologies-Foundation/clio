@@ -58,7 +58,13 @@ namespace Clio.Command
 			}
 			var environmentPackageFolders = ReadCreatioPackages(environmentPackagePath).ToList();
 			var repositoryPackageFolders = ReadCreatioWorkspacePakages(repositoryPath);
-			var missingPackages = packageNames.Where(s => !repositoryPackageFolders.Any(t => s == t.Name));
+			var repoistoryPackageNames = repositoryPackageFolders.Select(s => s.Name);
+			var missingPackages = new List<string>();
+			foreach (string packageName in packageNames) {
+				if (!repoistoryPackageNames.Contains(packageName)) {
+					missingPackages.Add(packageName);
+				}
+			}
 			if (missingPackages.Any()) {
 				throw new Exception($"Packages {string.Join(", ", missingPackages)} not found in repository: {repositoryPath}.");
 			}
