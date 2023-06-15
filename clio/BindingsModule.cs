@@ -15,6 +15,7 @@ using YamlDotNet.Serialization.NamingConventions;
 using YamlDotNet.Serialization;
 using Сlio.Command.PackageCommand;
 using Clio.Common.ScenarioHandlers;
+using Clio.YAML;
 
 namespace Clio
 {
@@ -81,6 +82,7 @@ namespace Clio
 			containerBuilder.RegisterType<TurnFsmCommand>();
 			containerBuilder.RegisterType<ScenarioRunnerCommand>();
 			containerBuilder.RegisterType<CompressAppCommand>();
+			containerBuilder.RegisterType<ScenarioParser>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)

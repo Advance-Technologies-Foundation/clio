@@ -7,10 +7,12 @@ namespace Clio.Utilities
     {
 		public static void OpenFile(string filePath)
 		{
+			// clio cfg open
 			if (OSPlatformChecker.GetIsWindowsEnvironment())
 			{
 				Console.WriteLine($"Open {filePath}...");
-				Process.Start(new ProcessStartInfo("cmd", $"/c start {filePath}") { CreateNoWindow = true });
+				Process.Start(filePath);
+				//Process.Start(new ProcessStartInfo("cmd", $"/c start {filePath}") { CreateNoWindow = true });
 			}
 			else
 			{

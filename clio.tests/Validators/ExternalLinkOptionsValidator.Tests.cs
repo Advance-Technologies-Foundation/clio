@@ -38,19 +38,16 @@ namespace Clio.Tests.Validators
 		[TestCase("random_string")]
 		[TestCase("more random text")]
 		[TestCase("clio://IISScannerRequest /?return=count")]
-		[TestCase("clio://IISScannerRequest /?return=count")]
 		[TestCase("clio:// IISScannerRequest/?return=count")]
 		[TestCase("clio:// IISScannerRequest /?return=count")]
 		[TestCase("clio://  /?return=count")]
-		public void ExternalLinlValidator_ShouldValidate_As_InValid_NotAUri(string content)
+		public void ExternalLinkOptionsValidator_ShouldValidate_As_InValid_NotAUri(string content)
 		{
 			//Arange 
 			var request = new ExternalLinkOptions()
 			{
 				Content = content,
 			};
-
-
 			var expected = new
 			{
 				ErrorCode = "10",
@@ -60,7 +57,6 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
 			Assert.Multiple(() =>
 			{
 				Assert.IsFalse(validationResults.IsValid);
@@ -70,7 +66,6 @@ namespace Clio.Tests.Validators
 				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
 				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
 			});
-
 		}
 
 
@@ -99,7 +94,6 @@ namespace Clio.Tests.Validators
 		[Test, Category("Unit")]
 		[TestCase("c://IISScannerRequest/?return=count")]
 		[TestCase("cl://IISScannerRequest/?return=count")]
-		[TestCase("cli://IISScannerRequest/?return=count")]
 		[TestCase("cli://IISScannerRequest/?return=count")]
 		[TestCase("cli://")]
 		public void ExternalLinlValidator_ShouldValidate_As_InValid_WhenDoesNotStartWithClio(string content)

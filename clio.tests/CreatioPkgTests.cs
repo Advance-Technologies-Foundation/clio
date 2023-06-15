@@ -60,6 +60,7 @@ namespace Clio.Tests
 			if (!System.IO.Directory.Exists(ResultDir))
 			{
 				System.IO.Directory.CreateDirectory(ResultDir);
+				var a  ="";
 			}
 		}
 
