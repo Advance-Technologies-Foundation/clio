@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -13,6 +14,14 @@ namespace Clio.Common
 	{
 
 		#region Methods: Public
+
+		public static void CreateLink(string link, string target) {
+			Process mklinkProcess = Process.Start(
+				new ProcessStartInfo("cmd", $"/c mklink /D \"{link}\" \"{target}\"") {
+					CreateNoWindow = true
+				});
+			mklinkProcess.WaitForExit();
+		}
 
 		public void CheckOrDeleteExistsFile(string filePath, bool delete) {
 			if (!File.Exists(filePath)) {

@@ -342,8 +342,8 @@ namespace Clio
 					AddPackageOptions, UnlockPackageOptions, LockPackageOptions, DataServiceQuerryOptions,
 					RestoreFromPackageBackupOptions, GetMarketplaceCatalogOptions, CreateUiProjectOptions,
 					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,
-					OpenCfgOptions, CompileConfigurationOptions, MkLinkOptions, TurnFsmCommandOptions, SetFsmConfigOptions,
-					ScenarioRunnerOptions, CompressAppOptions, InstallApplicationOptions>(args)
+					OpenCfgOptions, CompileConfigurationOptions, Link2RepoOptions, Link4RepoOptions, TurnFsmCommandOptions,
+					SetFsmConfigOptions, ScenarioRunnerOptions, CompressAppOptions, InstallApplicationOptions>(args)
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -404,7 +404,8 @@ namespace Clio
 					(ExternalLinkOptions opts) => Resolve<ExternalLinkCommand>(opts).Execute(opts),
 					(OpenCfgOptions opts) => Resolve<OpenCfgCommand>().Execute(opts),
 					(CompileConfigurationOptions opts) => CreateRemoteCommand<CompileConfigurationCommand>(opts).Execute(opts),
-					(MkLinkOptions opts) => CreateCommand<MkLinkCommand>().Execute(opts),
+					(Link2RepoOptions opts) => CreateCommand<Link2RepoCommand>().Execute(opts),
+					(Link4RepoOptions opts) => CreateCommand<Link4RepoCommand>().Execute(opts),
 					(TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
 					(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
 					(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
@@ -555,6 +556,7 @@ namespace Clio
 		{
 			return PackageConverter.Convert(opts);
 		}
+
 	}
 
 }
