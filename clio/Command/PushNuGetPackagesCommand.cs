@@ -1,15 +1,12 @@
 using Clio.Common;
 using CommandLine;
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
 using Clio.Project.NuGet;
 
 namespace Clio.Command
 {
-	[Verb("push-nuget-pkg", Aliases = new string[] { "push" }, HelpText = "Push package on NuGet server")]
+	[Verb("push-nuget-pkg", Aliases = new string[] { "push-n", "push-nuget" }, 
+		HelpText = "Push package on NuGet server")]
 	public class PushNuGetPkgsOptions : EnvironmentOptions
 	{
 
