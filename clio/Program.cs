@@ -23,8 +23,7 @@ using Сlio.Command.PackageCommand;
 namespace Clio
 {
 
-	class Program
-	{
+	class Program {
 		private static string UserName => CreatioEnvironment.Settings.Login;
 		private static string UserPassword => CreatioEnvironment.Settings.Password;
 		private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
@@ -53,7 +52,6 @@ namespace Clio
 		private static string DownloadExistsPackageZipUrl => AppUrl + @"/rest/PackagesGateway/DownloadExistsPackageZip";
 
 		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
-
 
 		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
 
@@ -87,14 +85,11 @@ namespace Clio
 			Console.WriteLine(text);
 			Console.ForegroundColor = currentColor;
 		}
-
-
 		public static void SetupAppConnection(EnvironmentOptions options)
 		{
 			Configure(options);
 			CheckApiVersion();
 		}
-
 
 		public static void CheckApiVersion()
 		{
@@ -113,7 +108,6 @@ namespace Clio
 				 $"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
 			}
 		}
-
 
 		private static Version GetAppApiVersion()
 		{
@@ -172,7 +166,6 @@ namespace Clio
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
 			}
 		}
-
 
 		private static string CorrectJson(string body)
 		{
@@ -321,7 +314,7 @@ namespace Clio
 		}
 
 		//TODO: this is a temporary solution, need to refactor
-		public static readonly Func<object, int> MyMap = (instance) => {
+		public static Func<object, int> MyMap = (instance) => {
             return instance switch {
                 (ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
                 (RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -388,10 +381,13 @@ namespace Clio
                 (CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
                 _ => 1,
             };
+		};
 
-        };
-
-
+		//TODO: There must be a better way to test it
+		public static Func<object, object> MyMapForTests = (instance)=> {
+			return instance;
+		};
+		
 		internal static int ExecuteCommands(string[] args) {
 			TryCheckForUpdate();
 			var creatioEnv = new CreatioEnvironment();
@@ -627,5 +623,4 @@ namespace Clio
 			return PackageConverter.Convert(opts);
 		}
 	}
-
 }

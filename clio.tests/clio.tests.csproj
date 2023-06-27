@@ -19,6 +19,9 @@
     <None Include="samplefiles\Proj.csproj">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="YAML\Yaml-Samples\steps_incorrect_action.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
