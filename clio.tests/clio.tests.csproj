@@ -94,27 +94,6 @@
     <None Update="CoreSrcReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\3SegmentsWithValuesFile.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\3Segments.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\secrets.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\EmptyFile.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\1Segment.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\2Segments.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\config.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Update="YAML\Yaml-Samples\steps.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
