@@ -314,7 +314,7 @@ namespace Clio
 		}
 
 		//TODO: this is a temporary solution, need to refactor
-		public static Func<object, int> MyMap = (instance) => {
+		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
             return instance switch {
                 (ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -409,6 +409,7 @@ namespace Clio
 					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,
 					OpenCfgOptions, CompileConfigurationOptions, Link2RepoOptions, Link4RepoOptions, TurnFsmCommandOptions,
 					SetFsmConfigOptions, ScenarioRunnerOptions, CompressAppOptions, InstallApplicationOptions>(args)
+				
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -476,6 +477,8 @@ namespace Clio
 					(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
 					(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
 					HandleParseError);
+			
+			
 		}
 
 		private static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts) {

@@ -10,6 +10,8 @@
 	using FluentAssertions;
 	using NUnit.Framework;
 	using OneOf;
+	using OneOf.Types;
+	using YamlDotNet.Serialization;
 
 	[TestFixture]
 	[Category("YAML")]
@@ -18,6 +20,7 @@
 
 		private readonly Step _sut;
 		private readonly RestartOptions _marker = new RestartOptions();
+		private readonly IDeserializer _deserializer = new DeserializerBuilder().Build();
 		public StepTests()
 		{
 			_sut = new Step
@@ -34,13 +37,12 @@
 		[TestCase("restart-web-app")]
 		public void FindTest_ShouldFindTypeByNameOrAlias(string searchName)
 		{
-			
 			// Arrange
 			Type[] allTypes = _marker.GetType().Assembly.GetTypes();
 			
 			// Act
-			OneOf<Type, NotType> result = Step.FindOptionTypeByName(allTypes, searchName);
-			if (result.Value is NotType type) {
+			OneOf<Type, None> result = Step.FindOptionTypeByName(allTypes, searchName);
+			if (result.Value is None type) {
 				throw new NullReferenceException("Not a type");
 			}
 			object instance = Activator.CreateInstance(result.Value as Type);
@@ -54,13 +56,20 @@
 		public void ActivateOptions_ShouldReturn_Object 
 			(IReadOnlyDictionary<object, object> optionValues, object expected) {
 			
+			//Arrange
+			const string sampleFile = @"YAML/Yaml-Samples/steps.yaml";
+			Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
+			IReadOnlyDictionary<string, object> secrets = Scenario.ParseSecrets(scenario.Sections);
+			IReadOnlyDictionary<string, object> config = Scenario.ParseSettings(scenario.Sections);
+			
 			// Act
-			OneOf<Type, NotType> input = expected.GetType();
-			OneOf<NotOption, object> result = Step.ActivateOptions(input, optionValues);
-
+			OneOf<Type, None> input = expected.GetType();
+			OneOf<None, object> result = Step.ActivateOptions(input, optionValues,config, secrets);
+			
+			
 			// Asert
 			result.Should().NotBeNull();
-			result.Value.Should().NotBeOfType<NotOption>();
+			result.Value.Should().NotBeOfType<None>();
 			result.Value.GetType().Should().Be(expected.GetType());
 			
 			
@@ -146,30 +155,54 @@
 			Type[] allTypes = _marker.GetType().Assembly.GetTypes();
 			
 			// Act
-			OneOf<Type, NotType> result = Step.FindOptionTypeByName(allTypes, searchName);
+			OneOf<Type, None> result = Step.FindOptionTypeByName(allTypes, searchName);
 
 			//Assert
-			result.Value.Should().BeOfType<NotType>();
+			result.Value.Should().BeOfType<None>();
 		}
 		
 		
-		
-		
-		[Test()]
-		public void ActivateOptions_ShouldReturn_NotObject_When_Receiving_NotType() {
+		[Test]
+		public void ActivateOptions_ShouldReturn_NotObject_When_Receiving_None() {
 			
 			//Arrange
 			var options = new Dictionary<object, object>() {
 				{"Name","TestEnvironment"},
 			};
+			const string sampleFile = @"YAML/Yaml-Samples/steps.yaml";
+			Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
+			IReadOnlyDictionary<string, object> secrets = Scenario.ParseSecrets(scenario.Sections);
+			IReadOnlyDictionary<string, object> config = Scenario.ParseSettings(scenario.Sections);
 			
 			// Act
-			OneOf<Type, NotType> input = new NotType();
-			OneOf<NotOption, object> result = Step.ActivateOptions(input, options);
+			OneOf<Type, None> input = new None();
+			OneOf<None, object> result = Step.ActivateOptions(input, options, config, secrets);
 
 			// Asert
 			result.Should().NotBeNull();
-			result.Value.Should().BeOfType<NotOption>();
+			result.Value.Should().BeOfType<None>();
+			
+		}
+		
+		
+		[Test]
+		public void ActivateOptions_ShouldReturn_ActiveatedCommand_When_CommandUsesMacros() {
+			
+			//Arrange
+			const string sampleFile = @"YAML/Yaml-Samples/steps_with_macro.yaml";
+			Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
+			IReadOnlyDictionary<string, object> secrets = Scenario.ParseSecrets(scenario.Sections);
+			IReadOnlyDictionary<string, object> settings = Scenario.ParseSettings(scenario.Sections);
+			
+			Dictionary<object, object> options = new () {
+				{"Environment","{{settings.Environment.name}}"},
+			};
+			
+			// Act
+			OneOf<None, object> result = Step.ActivateOptions(typeof(RestartOptions), options, settings, secrets);
+			
+			// Asert
+			result.Value.Should().BeOfType<RestartOptions>();
 			
 		}
 	}

@@ -1,0 +1,28 @@
+secrets:
+  values: 'YAML/Yaml-Samples/other_secrets.yaml'
+  mssql_password: msPassword
+  pgsql_password: pgPassword
+
+settings:
+  Environment:
+    name: digitalads
+    publisher: Terrasoft
+
+steps:
+- action: restart
+  description: restart application
+  options:
+    Environment: "{{settings.Environment.name}}"
+
+- action: flushdb
+  description: flush redis database
+  options:
+    Environment: "{{settings.Environment.name}}"
+
+- action: syssetting
+  description: Set Maintainer SysSetting
+  options:
+    Environment: "{{settings.Environment.name}}"
+    Code: Publisher
+    Value: "{{settings.Environment.publisher}}"
+    Type: Text

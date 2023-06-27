@@ -1,0 +1,30 @@
+secrets:
+  values: 'C:\otherfile.yaml'
+  mssql_password: msPassword
+  pgsql_password: pgPassword
+
+config:
+
+steps:
+- action: restart
+  description: restart application
+  options:
+    Environment: digitalads
+
+- action: flushdb
+  description: flush Redis database
+  options:
+    Environment: digitalads
+
+- action: ver
+  description: get runtime version
+  options:
+    all: true
+
+- action: download
+  description: download package from Creatio
+  options:
+    Name: CrtDigitalAdsApp
+    Environment: digitalads
+    DestinationPath: D:\CrtDigitalAdsApp
+    UnZip: true
