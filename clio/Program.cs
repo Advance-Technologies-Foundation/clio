@@ -23,8 +23,7 @@ using Сlio.Command.PackageCommand;
 namespace Clio
 {
 
-	class Program
-	{
+	class Program {
 		private static string UserName => CreatioEnvironment.Settings.Login;
 		private static string UserPassword => CreatioEnvironment.Settings.Password;
 		private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
@@ -53,7 +52,6 @@ namespace Clio
 		private static string DownloadExistsPackageZipUrl => AppUrl + @"/rest/PackagesGateway/DownloadExistsPackageZip";
 
 		private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
-
 
 		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
 
@@ -87,14 +85,11 @@ namespace Clio
 			Console.WriteLine(text);
 			Console.ForegroundColor = currentColor;
 		}
-
-
 		public static void SetupAppConnection(EnvironmentOptions options)
 		{
 			Configure(options);
 			CheckApiVersion();
 		}
-
 
 		public static void CheckApiVersion()
 		{
@@ -113,7 +108,6 @@ namespace Clio
 				 $"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
 			}
 		}
-
 
 		private static Version GetAppApiVersion()
 		{
@@ -172,7 +166,6 @@ namespace Clio
 				Console.WriteLine("Download packages ({0}) not completed.", packageName);
 			}
 		}
-
 
 		private static string CorrectJson(string body)
 		{
@@ -320,6 +313,78 @@ namespace Clio
 			}
 		}
 
+		//TODO: this is a temporary solution, need to refactor
+		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
+            return instance switch {
+                (ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
+					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
+					(ClearRedisOptions opts) => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
+					(RegAppOptions opts) => CreateCommand<RegAppCommand>(
+						new SettingsRepository(), new ApplicationClientFactory(), new PowerShellFactory()).Execute(opts),
+					(AppListOptions opts) => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
+					(UnregAppOptions opts) => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
+					(GeneratePkgZipOptions opts) => Resolve<CompressPackageCommand>().Execute(opts),
+					(PushPkgOptions opts) => Resolve<PushPackageCommand>(opts).Execute(opts),
+					(InstallApplicationOptions opts) => Resolve<InstallApplicationCommand>(opts).Execute(opts),
+					(DeletePkgOptions opts) => Resolve<DeletePackageCommand>(opts).Execute(opts),
+					(ReferenceOptions opts) => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
+					(NewPkgOptions opts) => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
+						new CreatioPkgProjectCreator())).Execute(opts),
+					(ConvertOptions opts) => ConvertPackage(opts),
+					(RegisterOptions opts) => CreateCommand<RegisterCommand>().Execute(opts),
+					(UnregisterOptions opts) => CreateCommand<UnregisterCommand>().Execute(opts),
+					(PullPkgOptions opts) => DownloadZipPackages(opts),
+					(ExecuteSqlScriptOptions opts) => Resolve<SqlScriptCommand>(opts).Execute(opts),
+					(InstallGateOptions opts) => Resolve<InstallGatePkgCommand>(CreateClioGatePkgOptions(opts))
+						.Execute(CreateClioGatePkgOptions(opts)),
+					(ItemOptions opts) => AddItem(opts),
+					(DeveloperModeOptions opts) => SetDeveloperMode(opts),
+					(SysSettingsOptions opts) => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
+					(FeatureOptions opts) => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
+					(UnzipPkgOptions opts) => Resolve<ExtractPackageCommand>().Execute(opts),
+					(PingAppOptions opts) => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+					(OpenAppOptions opts) => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),
+					(PkgListOptions opts) => Resolve<GetPkgListCommand>(opts).Execute(opts),
+					(CompileOptions opts) => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
+					(PushNuGetPkgsOptions opts) => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
+					(PackNuGetPkgOptions opts) => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
+					(RestoreNugetPkgOptions opts) => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
+					(InstallNugetPkgOptions opts) => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
+					(SetPackageVersionOptions opts) => Resolve<SetPackageVersionCommand>().Execute(opts),
+					(GetPackageVersionOptions opts) => Resolve<GetPackageVersionCommand>().Execute(opts),
+					(CheckNugetUpdateOptions opts) => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
+					(RestoreWorkspaceOptions opts) => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
+					(CreateWorkspaceCommandOptions opts) => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
+					(PushWorkspaceCommandOptions opts) => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
+					//(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
+					(LoadPackagesToFileSystemOptions opts) => Resolve<LoadPackagesToFileSystemCommand>(opts)
+						.Execute(opts),
+					(LoadPackagesToDbOptions opts) => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
+					(UploadLicensesOptions opts) => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+					(HealthCheckOptions opts) => Resolve<HealthCheckCommand>(opts).Execute(opts),
+					(AddPackageOptions opts) => Resolve<AddPackageCommand>(opts).Execute(opts),
+					(UnlockPackageOptions opts) => Resolve<UnlockPackageCommand>(opts).Execute(opts),
+					(LockPackageOptions opts) => Resolve<LockPackageCommand>(opts).Execute(opts),
+					(DataServiceQuerryOptions opts) => Resolve<DataServiceQuerry>(opts).Execute(opts),
+					(RestoreFromPackageBackupOptions opts) => Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
+					(GetMarketplaceCatalogOptions opts) => Resolve<GetMarketplacecatalogCommand>(opts).Execute(opts),
+					(CreateUiProjectOptions opts) => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
+					(DownloadConfigurationCommandOptions opts) => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),
+					(DeployCommandOptions opts) => Resolve<DeployCommand>(opts).Execute(opts),
+					(GetVersionOptions opts) => Resolve<GetVersionCommand>(opts).Execute(opts),
+					(ExternalLinkOptions opts) => Resolve<ExternalLinkCommand>(opts).Execute(opts),
+					(OpenCfgOptions opts) => Resolve<OpenCfgCommand>().Execute(opts),
+					(CompileConfigurationOptions opts) => CreateRemoteCommand<CompileConfigurationCommand>(opts).Execute(opts),
+					(Link2RepoOptions opts) => CreateCommand<Link2RepoCommand>().Execute(opts),
+					(Link4RepoOptions opts) => CreateCommand<Link4RepoCommand>().Execute(opts),
+					(TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
+					(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
+					(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
+                _ => 1,
+            };
+		};
+
+		
 		private static int ExecuteCommands(string[] args) {
 			TryCheckForUpdate();
 			var creatioEnv = new CreatioEnvironment();
@@ -344,6 +409,7 @@ namespace Clio
 					DownloadConfigurationCommandOptions, DeployCommandOptions, GetVersionOptions, ExternalLinkOptions,
 					OpenCfgOptions, CompileConfigurationOptions, Link2RepoOptions, Link4RepoOptions, TurnFsmCommandOptions,
 					SetFsmConfigOptions, ScenarioRunnerOptions, CompressAppOptions, InstallApplicationOptions>(args)
+				
 				.MapResult(
 					(ExecuteAssemblyOptions opts) => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					(RestartOptions opts) => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
@@ -411,6 +477,8 @@ namespace Clio
 					(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
 					(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
 					HandleParseError);
+			
+			
 		}
 
 		private static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts) {
@@ -558,5 +626,4 @@ namespace Clio
 		}
 
 	}
-
 }
