@@ -3,6 +3,8 @@ steps:
     description: restart application
     options:
       Environment: digitalads
+      p: Supervisor
+      l: Supervisor
 
   - action: flushdb
     description: flush Redis database

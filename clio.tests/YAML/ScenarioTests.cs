@@ -3,160 +3,74 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.YAML;
 using FluentAssertions;
 using NUnit.Framework;
-using OneOf.Types;
 using YamlDotNet.Serialization;
 
-[TestFixture, Author("Kirill Krylov")]
+[TestFixture(Author = "Kirill Krylov")]
 [Category("YAML")]
 public class ScenarioTests
 {
-	private readonly IDeserializer _deserializer;
-	private readonly Type[] _allAvailableTypes;
+
+	#region Fields: Private
+
+	private readonly Scenario _sut;
+
+	#endregion
+
+	#region Constructors: Public
+
 	public ScenarioTests() {
-		_deserializer = new DeserializerBuilder().Build();
-		
-		Program marker = new Program();
-		_allAvailableTypes = marker.GetType().Assembly.GetTypes();
+		IDeserializer deserializer = new DeserializerBuilder().Build();
+		_sut = new Scenario(deserializer);
 	}
-	
-	[Test]
-	public void CreateScenarioFromFile_Returns_SectionsAndSteps_When_FileExists() {
-		//Arrange
-		const string sampleFile = @"YAML/Yaml-Samples/steps.yaml";
 
-		// Act
-		Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
-		IReadOnlyList<Step> steps = Scenario.ParseSteps(scenario.Sections);
-		
-		// Assert
-		scenario.Sections.Should().HaveCount(1);
-		steps.Should().HaveCount(4);
-	}
-	
-	[Test]
-	public void CreateScenarioFromFile_Returns_InitializedSteps_When_FileExists() {
-		//Arrange
-		const string sampleFile = @"YAML/Yaml-Samples/steps.yaml";
+	#endregion
 
-		// Act
-		Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
-		IReadOnlyList<Step> steps = Scenario.ParseSteps(scenario.Sections);
-		IReadOnlyDictionary<string, object> secrets = Scenario.ParseSecrets(scenario.Sections);
-		IReadOnlyDictionary<string, object> config = Scenario.ParseSettings(scenario.Sections);
-		
-		// Assert
-		steps.ToList().ForEach(step=> {
-			var stepType = Step.FindOptionTypeByName(_allAvailableTypes, step.Action);
-			var activeOption = Step.ActivateOptions(stepType.Value as Type, step.Options, config, secrets);
-			
-			object _ = step.Action switch {
-				"restart" => activeOption.Value.Should().BeOfType<RestartOptions>(),
-				"flushdb" => activeOption.Value.Should().BeOfType<ClearRedisOptions>(),
-				"ver" => activeOption.Value.Should().BeOfType<GetVersionOptions>(),
-				"download" => activeOption.Value.Should().BeOfType<PullPkgOptions>(),
-				_ => throw new ArgumentOutOfRangeException(nameof(step.Action), step.Action, "Unknown action")
-			};
-		});
-	}
-	
-	[Test]
-	public void CreateScenarioFromFile_Returns_InitializedSteps_When_ActionIsIncorrect() {
-		//Arrange
-		const string sampleFile = @"YAML/Yaml-Samples/steps_incorrect_action.yaml";
+	#region Methods: Public
 
-		// Act
-		Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
-		IReadOnlyList<Step> steps = Scenario.ParseSteps(scenario.Sections);
-		IReadOnlyDictionary<string, object> secrets = Scenario.ParseSecrets(scenario.Sections);
-		IReadOnlyDictionary<string, object> config = Scenario.ParseSettings(scenario.Sections);
-		//Assert
-		scenario.Sections.Should().HaveCount(1);
-		steps.Should().HaveCount(4);
-		
-		steps.ToList().ForEach(step=> {
-			var stepType = Step.FindOptionTypeByName(_allAvailableTypes, step.Action);
-			var activeOption = Step.ActivateOptions(stepType, step.Options,config, secrets);
-			
-			object _ = step.Action switch {
-				"aaa" => activeOption.Value.Should().BeOfType<None>(),
-				"flushdb" => activeOption.Value.Should().BeOfType<ClearRedisOptions>(),
-				"ver" => activeOption.Value.Should().BeOfType<GetVersionOptions>(),
-				"download" => activeOption.Value.Should().BeOfType<PullPkgOptions>(),
-				_ => throw new ArgumentOutOfRangeException(nameof(step.Action), step.Action, "Unknown action")
-			};
-		});
-	}
-	
-	
-	[Test]
-	public void CreateScenarioFromFile_Returns_ThreeSections() {
-		//Arrange
-		const string sampleFile = @"YAML/Yaml-Samples/3sections.yaml";
+	[TestCase("YAML/Script/three_sections_with_step_vlaues.yaml")]
+	[TestCase("YAML/Script/three_sections.yaml")]
+	[TestCase("YAML/Script/steps_only_with_values.yaml")]
+	[TestCase("YAML/Script/additional_steps_sections.yaml")]
+	[TestCase("YAML/Script/three_sections_settings_macro.yaml")]
+	public void GetSteps_Returns_ActivatedSteps_When_FileContainsSteps(string fileName) {
+		//Arrange 
+		Type[] types = _sut.GetType().Assembly.GetTypes();
 
-		// Act
-		Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
-		IReadOnlyList<Step> steps = Scenario.ParseSteps(scenario.Sections);
-		
-		// Assert
-		scenario.Sections.Should().HaveCount(3);
-		scenario.Sections.ContainsKey("steps").Should().BeTrue();
-		scenario.Sections.ContainsKey("secrets").Should().BeTrue();
-		scenario.Sections.ContainsKey("config").Should().BeTrue();
-	}
-	
-	[Test]
-	public void CreateScenarioFromFile_Returns_Secrets_When_FileContainsSecrets() {
-		//Arrange
-		const string sampleFile = @"YAML/Yaml-Samples/secrets.yaml";
-
-		// Act
-		Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
-		var secrets = Scenario.ParseSecrets(scenario.Sections);
-		
-		// Assert
-		scenario.Sections.Should().HaveCount(1);
-		scenario.Sections.ContainsKey("secrets").Should().BeTrue();
-	}
-	
-	[Test]
-	public void ConvertDictionary_Returns_Converted() {
-		
-		//Arrange
-		var input = new Dictionary<object, object>() {
-			{"key1","obj1"},
-			{"key2","obj2"},
-		};
-		
 		//Act
-		var result = Scenario.ConvertDictionary(input);
-		
-		//Assert
-		result.Should().HaveCount(2);
-		result["key1"].Should().Be("obj1");
-		result["key1"].Should().BeOfType<string>();
-		
-		result["key2"].Should().Be("obj2");
-		result["key2"].Should().BeOfType<string>();
-	}
-	
-	
-	[Test]
-	public void Steps_WithRefToOtherFile() {
-		//Arrange
-		const string sampleFile = @"YAML/Yaml-Samples/steps_with_values.yaml";
+		IEnumerable<object> steps = _sut.InitScript(fileName).GetSteps(types);
 
-		// Act
-		Scenario scenario = (Scenario.CreateScenarioFromFile(sampleFile, _deserializer)).Value as Scenario;
-		var steps = Scenario.ParseSteps(scenario.Sections);
-		
-		// Assert
+		//Assert
+		List<object> listOfSteps = steps.ToList();
 		steps.Should().HaveCount(4);
-		
+
+		listOfSteps[0].Should().BeOfType<RestartOptions>();
+		RestartOptions restartOption = listOfSteps[0] as RestartOptions;
+		restartOption.Environment.Should().Be("digitalads");
+		restartOption.Login.Should().Be("Supervisor");
+		restartOption.Password.Should().Be("Supervisor");
+
+		listOfSteps[1].Should().BeOfType<ClearRedisOptions>();
+		ClearRedisOptions clearRedisOption = listOfSteps[1] as ClearRedisOptions;
+		clearRedisOption.Environment.Should().Be("digitalads");
+
+		listOfSteps[2].Should().BeOfType<GetVersionOptions>();
+		GetVersionOptions verOptions = listOfSteps[2] as GetVersionOptions;
+		verOptions.All.Should().BeTrue();
+
+		listOfSteps[3].Should().BeOfType<PullPkgOptions>();
+		PullPkgOptions pullPkgOptions = listOfSteps[3] as PullPkgOptions;
+		pullPkgOptions.Environment.Should().Be("digitalads");
+		pullPkgOptions.Name.Should().Be("CrtDigitalAdsApp");
+		pullPkgOptions.DestPath.Should().Be("D:\\CrtDigitalAdsApp");
+		pullPkgOptions.Unzip.Should().BeTrue();
 	}
 	
+	#endregion
+
 }

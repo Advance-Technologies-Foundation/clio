@@ -83,7 +83,7 @@ namespace Clio
 			containerBuilder.RegisterType<TurnFsmCommand>();
 			containerBuilder.RegisterType<ScenarioRunnerCommand>();
 			containerBuilder.RegisterType<CompressAppCommand>();
-			containerBuilder.RegisterType<ScenarioParser>();
+			containerBuilder.RegisterType<Scenario>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)

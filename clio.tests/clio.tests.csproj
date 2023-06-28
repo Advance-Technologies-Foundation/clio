@@ -19,31 +19,28 @@
     <None Include="samplefiles\Proj.csproj">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\steps_incorrect_action.yaml">
+    <None Update="YAML\Script\three_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\3sections.yaml">
+    <None Update="YAML\Script\additional_secrets_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\secrets.yaml">
+    <None Update="YAML\Script\additional_settings_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\steps_with_macro.yaml">
+    <None Update="YAML\Script\three_sections_with_step_vlaues.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\mutiple_steps_with_macro.yaml">
+    <None Update="YAML\Script\additional_steps_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\emptyFile.yaml">
+    <None Update="YAML\Script\steps_only_with_values.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\steps_with_values.yaml">
+    <None Update="YAML\Script\three_sections_settings_macro.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="YAML\Yaml-Samples\other_steps.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\other_secrets.yaml">
+    <None Update="YAML\Script\emptyFile.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -116,9 +113,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="CoreSrcReferenceHint.xml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Yaml-Samples\steps.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

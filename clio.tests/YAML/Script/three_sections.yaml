@@ -1,15 +1,20 @@
 secrets:
-  values: 'C:\otherfile.yaml'
+  values: 'YAML/Script/additional_secrets_sections.yaml'
   mssql_password: msPassword
   pgsql_password: pgPassword
 
-config:
-
+settings:
+  values: 'YAML/Script/additional_settings_sections.yaml'
+  setting_one: setting_one_value
+  setting_two: setting_two_value
+  
 steps:
 - action: restart
   description: restart application
   options:
     Environment: digitalads
+    p: Supervisor
+    l: Supervisor
 
 - action: flushdb
   description: flush Redis database
@@ -22,6 +27,15 @@ steps:
     all: true
 
 - action: download
+  description: download package from Creatio
+  options:
+    Name: CrtDigitalAdsApp
+    Environment: digitalads
+    DestinationPath: D:\CrtDigitalAdsApp
+    UnZip: true
+      
+
+- action: wrongAction
   description: download package from Creatio
   options:
     Name: CrtDigitalAdsApp
