@@ -43,28 +43,28 @@ public class ScenarioTests
 		Type[] types = _sut.GetType().Assembly.GetTypes();
 
 		//Act
-		IEnumerable<object> steps = _sut.InitScript(fileName).GetSteps(types);
+		IEnumerable<Tuple<object, string>> steps = _sut.InitScript(fileName).GetSteps(types);
 
 		//Assert
-		List<object> listOfSteps = steps.ToList();
 		steps.Should().HaveCount(4);
+		List<Tuple<object, string>> listOfSteps = steps.ToList();
 
-		listOfSteps[0].Should().BeOfType<RestartOptions>();
-		RestartOptions restartOption = listOfSteps[0] as RestartOptions;
+		listOfSteps[0].Item1.Should().BeOfType<RestartOptions>();
+		RestartOptions restartOption = listOfSteps[0].Item1 as RestartOptions;
 		restartOption.Environment.Should().Be("digitalads");
 		restartOption.Login.Should().Be("Supervisor");
 		restartOption.Password.Should().Be("Supervisor");
 
-		listOfSteps[1].Should().BeOfType<ClearRedisOptions>();
-		ClearRedisOptions clearRedisOption = listOfSteps[1] as ClearRedisOptions;
+		listOfSteps[1].Item1.Should().BeOfType<ClearRedisOptions>();
+		ClearRedisOptions clearRedisOption = listOfSteps[1].Item1 as ClearRedisOptions;
 		clearRedisOption.Environment.Should().Be("digitalads");
 
-		listOfSteps[2].Should().BeOfType<GetVersionOptions>();
-		GetVersionOptions verOptions = listOfSteps[2] as GetVersionOptions;
+		listOfSteps[2].Item1.Should().BeOfType<GetVersionOptions>();
+		GetVersionOptions verOptions = listOfSteps[2].Item1 as GetVersionOptions;
 		verOptions.All.Should().BeTrue();
 
-		listOfSteps[3].Should().BeOfType<PullPkgOptions>();
-		PullPkgOptions pullPkgOptions = listOfSteps[3] as PullPkgOptions;
+		listOfSteps[3].Item1.Should().BeOfType<PullPkgOptions>();
+		PullPkgOptions pullPkgOptions = listOfSteps[3].Item1 as PullPkgOptions;
 		pullPkgOptions.Environment.Should().Be("digitalads");
 		pullPkgOptions.Name.Should().Be("CrtDigitalAdsApp");
 		pullPkgOptions.DestPath.Should().Be("D:\\CrtDigitalAdsApp");

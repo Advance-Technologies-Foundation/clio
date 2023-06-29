@@ -41,14 +41,15 @@ internal class StepTests
 		secretsLookupMock.Invoke(Arg.Any<string>()).Returns(string.Empty);
 
 		//Act
-		OneOf<None, object> commandOption = step.Activate(types, settingsLookupMock, secretsLookupMock);
+		Tuple<OneOf<None, object>, string> commandOption = step.Activate(types, settingsLookupMock, secretsLookupMock);
 
 		//Assert
 		settingsLookupMock.DidNotReceive().Invoke(Arg.Any<string>());
 		secretsLookupMock.DidNotReceive().Invoke(Arg.Any<string>());
-		commandOption.Value.Should().BeOfType<RestartOptions>();
-		RestartOptions restartOption = commandOption.Value as RestartOptions;
+		commandOption.Item1.Value.Should().BeOfType<RestartOptions>();
+		RestartOptions restartOption = commandOption.Item1.Value as RestartOptions;
 		restartOption.Environment.Should().Be(expectedEnvName);
+		commandOption.Item2.Should().Be("restart application");
 	}
 
 	[Test]
@@ -70,13 +71,13 @@ internal class StepTests
 		secretsLookupMock.Invoke(Arg.Any<string>()).Returns(string.Empty);
 
 		//Act
-		OneOf<None, object> commandOption = step.Activate(types, settingsLookupMock, secretsLookupMock);
+		Tuple<OneOf<None, object>, string> commandOption = step.Activate(types, settingsLookupMock, secretsLookupMock);
 
 		//Assert
 		settingsLookupMock.Received(1).Invoke(Arg.Any<string>());
 		secretsLookupMock.DidNotReceive().Invoke(Arg.Any<string>());
-		commandOption.Value.Should().BeOfType<RestartOptions>();
-		RestartOptions restartOption = commandOption.Value as RestartOptions;
+		commandOption.Item1.Value.Should().BeOfType<RestartOptions>();
+		RestartOptions restartOption = commandOption.Item1.Value as RestartOptions;
 		restartOption.Environment.Should().Be("{{settings.Environmentttttttttt}}");
 	}
 
@@ -99,13 +100,13 @@ internal class StepTests
 		secretsLookupMock.Invoke(Arg.Any<string>()).Returns(string.Empty);
 
 		//Act
-		OneOf<None, object> commandOption = step.Activate(types, settingsLookupMock, secretsLookupMock);
+		Tuple<OneOf<None, object>, string> commandOption = step.Activate(types, settingsLookupMock, secretsLookupMock);
 
 		//Assert
 		settingsLookupMock.DidNotReceive().Invoke(Arg.Any<string>());
 		secretsLookupMock.DidNotReceive().Invoke(Arg.Any<string>());
-		commandOption.Value.Should().BeOfType<RestartOptions>();
-		RestartOptions restartOption = commandOption.Value as RestartOptions;
+		commandOption.Item1.Value.Should().BeOfType<RestartOptions>();
+		RestartOptions restartOption = commandOption.Item1.Value as RestartOptions;
 		restartOption.Environment.Should().Be("{{settings:Environmentttttttttt}}");
 	}
 

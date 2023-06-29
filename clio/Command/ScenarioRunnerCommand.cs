@@ -31,7 +31,7 @@
 				.GetSteps( GetType().Assembly.GetTypes())
 				.ToList().ForEach(step=> {
 					Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Starting step: {step.Item2}");
-					result += Program.ExecuteCommandWithOption(((OneOf<None, object>)step.Item1).Value);
+					result += Program.ExecuteCommandWithOption(step.Item1);
 					Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Finished step: {step.Item2}");
 					Console.WriteLine();
 				});

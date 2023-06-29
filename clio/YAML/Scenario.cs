@@ -194,9 +194,8 @@ public class Scenario : IScenario, IExecutableScenario
 	public IEnumerable<Tuple<object, string>> GetSteps(Type[] types) {
 		return Steps
 			.Select(step => step.Activate(types, _settingLookup, _secretsLookup))
-			.Where(activeStep => activeStep.Value is not None)
-			.Select(activeStep => new Tuple<object, string>(
-				(activeStep.Value as Tuple<object,string>).Item1, (activeStep.Value as Tuple<object,string>).Item2));
+			.Where(activeStep => activeStep.Item1.Value is not None)
+			.Select(activeStep => new Tuple<object, string>(activeStep.Item1.Value, activeStep.Item2));
 	}
 
 	/// <summary>
