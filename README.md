@@ -6,109 +6,6 @@ Please give **[clio-explorer](https://marketplace.visualstudio.com/items?itemNam
 
 # Installation and features
 
-You can download release binaries from [latest release](https://github.com/Advance-Technologies-Foundation/clio/releases). Unpack the archive with clio.
-
-## Run with docker
-
-### Build
-
-```
-docker build -f ./install/Dockerfile -t clio .
-```
-
-### Run
-
-```
-docker run -it --rm clio help
-docker run -it --rm clio reg-web-app -help
-```
-
-# Content table
-
-- [Introduction](#introduction)
-- [Installation and features](#installation-and-features)
-  - [Run with docker](#run-with-docker)
-    - [Build](#build)
-    - [Run](#run)
-- [Content table](#content-table)
-- [Arguments](#arguments)
-- [Register and unregister](#register-and-unregister)
-  - [Windows](#windows)
-  - [Context menu](#context-menu)
-  - [MacOS](#macos)
-  - [Help and examples](#help-and-examples)
-- [Packages](#packages)
-  - [Creating new package](#creating-new-package)
-  - [Installing package](#installing-package)
-  - [Pull package from remote application](#pull-package-from-remote-application)
-  - [Delete package](#delete-package)
-  - [Compress package](#compress-package)
-  - [Extract package](#extract-package)
-  - [Restore configuration](#restore-configuration)
-  - [Get package list](#get-package-list)
-  - [Set package version](#set-package-version)
-- [NuGet Packages](#nuget-packages)
-  - [Pack NuGet package](#pack-nuget-package)
-  - [Push NuGet package](#push-nuget-package)
-  - [Restore NuGet package](#restore-nuget-package)
-  - [Install NuGet package](#install-nuget-package)
-  - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
-- [Application](#application)
-  - [Upload Licenses](#upload-licenses)
-  - [Restart application](#restart-application)
-  - [Clear redis database](#clear-redis-database)
-  - [Compile configuration](#compile-configuration)
-- [Environment settings](#environment-settings)
-  - [Create/Update an environment](#createupdate-an-environment)
-  - [Delete the existing environment](#delete-the-existing-environment)
-  - [Check environment](#check-environment)
-  - [View application options](#view-application-options)
-  - [Open application](#open-application)
-  - [Ping application](#ping-application)
-  - [Healthcheck](#healthcheck)
-- [Development](#development)
-  - [Workspaces](#workspaces)
-  - [Convert package](#convert-package)
-  - [Execute assembly](#execute-assembly)
-  - [References](#references)
-  - [Execute custom SQL script](#execute-custom-sql-script)
-  - [Execute dataservice request](#dataservice)
-  - [Help and examples](#help-and-examples)
-  - [Add item](#add-item)
-- [Packages](#packages)
-  - [Creating new package](#creating-new-package)
-  - [Installing package](#installing-package)
-  - [Pull package from remote application](#pull-package-from-remote-application)
-  - [Delete package](#delete-package)
-  - [Compress package](#compress-package)
-  - [Extract package](#extract-package)
-  - [Restore configuration](#restore-configuration)
-  - [Get package list](#get-package-list)
-  - [Set package version](#set-package-version)
-  - [Get Marketplace catalog](#marketplace-catalog)
-- [NuGet Packages](#nuget-packages)
-  - [Pack NuGet package](#pack-nuget-package)
-  - [Push NuGet package](#push-nuget-package)
-  - [Restore NuGet package](#restore-nuget-package)
-  - [Install NuGet package](#install-nuget-package)
-  - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
-- [Environment settings](#environment-settings)
-  - [Create/Update an environment](#createupdate-an-environment)
-  - [Delete the existing environment](#delete-the-existing-environment)
-  - [Check environment](#check-environment)
-  - [View application options](#view-application-options)
-  - [Open application](#open-application)
-  - [Ping application](#ping-application)
-- [Using for CI/CD systems](#using-for-cicd-systems)
-
-# Arguments
-
-- `<PACKAGE_NAME>` - package name
-- `<ENVIRONMENT_NAME>` - environment name
-- `<COMMAND_NAME>` - clio command name
-
-# Register and unregister
-
 ## Windows
 
 To register clio as the global tool, run the command:
@@ -180,6 +77,105 @@ For display command help use:
 ```
 clio <COMMAND_NAME> --help
 ```
+
+## Run with docker
+
+### Build
+
+```
+docker build -f ./install/Dockerfile -t clio .
+```
+
+### Run
+
+```
+docker run -it --rm clio help
+docker run -it --rm clio reg-web-app -help
+```
+
+# Content table
+
+- [Introduction](#introduction)
+- [Installation and features](#installation-and-features)
+  - [Windows](#windows)
+  - [Context menu](#context-menu)
+  - [MacOS](#macos)
+  - [Help and examples](#help-and-examples)
+  - [Run with docker](#run-with-docker)
+    - [Build](#build)
+    - [Run](#run)
+- [Content table](#content-table)
+- [Arguments](#arguments)
+- [Packages](#packages)
+  - [Creating new package](#creating-new-package)
+  - [Installing package](#installing-package)
+  - [Pull package from remote application](#pull-package-from-remote-application)
+  - [Delete package](#delete-package)
+  - [Compress package](#compress-package)
+  - [Extract package](#extract-package)
+  - [Restore configuration](#restore-configuration)
+  - [Get package list](#get-package-list)
+  - [Set package version](#set-package-version)
+- [NuGet Packages](#nuget-packages)
+  - [Pack NuGet package](#pack-nuget-package)
+  - [Push NuGet package](#push-nuget-package)
+  - [Restore NuGet package](#restore-nuget-package)
+  - [Install NuGet package](#install-nuget-package)
+  - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
+- [Application](#application)
+  - [Upload Licenses](#upload-licenses)
+  - [Restart application](#restart-application)
+  - [Clear redis database](#clear-redis-database)
+  - [Compile configuration](#compile-configuration)
+- [Environment settings](#environment-settings)
+  - [Create/Update an environment](#createupdate-an-environment)
+  - [Delete the existing environment](#delete-the-existing-environment)
+  - [Check environment](#check-environment)
+  - [View application options](#view-application-options)
+  - [Open application](#open-application)
+  - [Ping application](#ping-application)
+  - [Healthcheck](#healthcheck)
+- [Development](#development)
+  - [Workspaces](#workspaces)
+  - [Convert package](#convert-package)
+  - [Execute assembly](#execute-assembly)
+  - [References](#references)
+  - [Execute custom SQL script](#execute-custom-sql-script)
+  - [Execute dataservice request](#dataservice)
+  - [Help and examples](#help-and-examples)
+  - [Add item](#add-item)
+- [Packages](#packages)
+  - [Creating new package](#creating-new-package)
+  - [Installing package](#installing-package)
+  - [Pull package from remote application](#pull-package-from-remote-application)
+  - [Delete package](#delete-package)
+  - [Compress package](#compress-package)
+  - [Extract package](#extract-package)
+  - [Restore configuration](#restore-configuration)
+  - [Get package list](#get-package-list)
+  - [Set package version](#set-package-version)
+  - [Get Marketplace catalog](#marketplace-catalog)
+- [NuGet Packages](#nuget-packages)
+  - [Pack NuGet package](#pack-nuget-package)
+  - [Push NuGet package](#push-nuget-package)
+  - [Restore NuGet package](#restore-nuget-package)
+  - [Install NuGet package](#install-nuget-package)
+  - [Check packages updates in NuGet](#check-packages-updates-in-nuget)
+- [Environment settings](#environment-settings)
+  - [Create/Update an environment](#createupdate-an-environment)
+  - [Delete the existing environment](#delete-the-existing-environment)
+  - [Check environment](#check-environment)
+  - [View application options](#view-application-options)
+  - [Open application](#open-application)
+  - [Ping application](#ping-application)
+- [Using for CI/CD systems](#using-for-cicd-systems)
+
+# Arguments
+
+- `<PACKAGE_NAME>` - package name
+- `<ENVIRONMENT_NAME>` - environment name
+- `<COMMAND_NAME>` - clio command name
+
 
 # Packages
 
