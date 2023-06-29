@@ -44,3 +44,12 @@ steps:
     Environment: "{{settings.Environment}}"
     DestinationPath: "{{settings.download.DestinationPath}}"
     UnZip: "{{settings.download.UnZip}}"
+
+
+- action: aaaaaa
+  description: download package from Creatio
+  options:
+    Name: "{{settings.download.Name}}"
+    Environment: "{{settings.Environment}}"
+    DestinationPath: "{{settings.download.DestinationPath}}"
+    UnZip: "{{settings.download.UnZip}}"

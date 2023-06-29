@@ -24,14 +24,18 @@
 			_scenario = scenario;
 		}
 		public override int Execute(ScenarioRunnerOptions options) {
-			
 			int result = 0;
+			Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Scenario started");
 			_scenario
 				.InitScript(options.FileName)
 				.GetSteps( GetType().Assembly.GetTypes())
 				.ToList().ForEach(step=> {
-					result += Program.ExecuteCommandWithOption(step);
-			});
+					Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Starting step: {step.Item2}");
+					result += Program.ExecuteCommandWithOption(((OneOf<None, object>)step.Item1).Value);
+					Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Finished step: {step.Item2}");
+					Console.WriteLine();
+				});
+			Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Scenario finished");
 			return result >=1 ? 1: 0;
 		}
 	}

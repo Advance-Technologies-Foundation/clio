@@ -22,7 +22,7 @@ namespace Clio.Tests.Command
 			var uri = "http://testuri.org";
 			var options = new RegAppOptions
 			{
-				Name = name,
+				EnvironmentName = name,
 				Login = login,
 				Password = password,
 				Uri = uri,
@@ -45,7 +45,7 @@ namespace Clio.Tests.Command
 			var options = new RegAppOptions
 			{
 				ActiveEnvironment = name,
-				Name = name
+				EnvironmentName = name
 			};
 			var clientFactory = Substitute.For<IApplicationClientFactory>();
 			var command = new RegAppCommand(settingsRepository, clientFactory, null);

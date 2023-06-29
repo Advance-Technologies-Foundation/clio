@@ -20,7 +20,7 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
 	#region Constructors: Public
 
 	public SetFsmConfigOptionsValidator() {
-		RuleFor(o => o.Name == o.PhysicalPath).Cascade(CascadeMode.Stop)
+		RuleFor(o => o.EnvironmentName == o.PhysicalPath).Cascade(CascadeMode.Stop)
 			.Custom((value, context) =>
 			{
 				if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && string.IsNullOrWhiteSpace(context.InstanceToValidate.PhysicalPath))

@@ -96,8 +96,8 @@ namespace Clio
 
 	public class EnvironmentNameOptions : EnvironmentOptions
 	{
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]
-		public string Name { get => Environment; set { Environment = value; } }
+		[Value(0, MetaName = "EnvironmentName", Required = false, HelpText = "Application name")]
+		public string EnvironmentName { get => Environment; set { Environment = value; } }
 	}
 
 

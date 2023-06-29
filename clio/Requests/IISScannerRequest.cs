@@ -92,7 +92,7 @@ namespace Clio.Requests
 					{
 						IsNetCore = site.siteType == SiteType.Core,
 						Uri = site.Uris.FirstOrDefault().ToString(),
-						Name = site.siteBinding.name,
+						EnvironmentName = site.siteBinding.name,
 						Login = "Supervisor",
 						Password = "Supervisor",
 						Maintainer = "Customer",

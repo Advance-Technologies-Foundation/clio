@@ -28,9 +28,11 @@ public interface IExecutableScenario
 
 	#region Methods: Public
 
-	IEnumerable<object> GetSteps(Type[] types);
+	IEnumerable<Tuple<object,string>> GetSteps(Type[] types);
 
 	#endregion
+	
+	internal List<Step> Steps { get; set; }
 
 }
 
@@ -165,7 +167,7 @@ public class Scenario : IScenario, IExecutableScenario
 
 	private IReadOnlyDictionary<string, object> Settings { get; set; }
 
-	private List<Step> Steps { get; set; }
+	public List<Step> Steps { get; set; }
 
 	#endregion
 
@@ -189,11 +191,12 @@ public class Scenario : IScenario, IExecutableScenario
 
 	#region Methods: Public
 
-	public IEnumerable<object> GetSteps(Type[] types) {
+	public IEnumerable<Tuple<object, string>> GetSteps(Type[] types) {
 		return Steps
 			.Select(step => step.Activate(types, _settingLookup, _secretsLookup))
 			.Where(activeStep => activeStep.Value is not None)
-			.Select(activeStep => activeStep.Value);
+			.Select(activeStep => new Tuple<object, string>(
+				(activeStep.Value as Tuple<object,string>).Item1, (activeStep.Value as Tuple<object,string>).Item2));
 	}
 
 	/// <summary>

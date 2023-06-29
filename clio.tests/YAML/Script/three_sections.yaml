@@ -8,6 +8,7 @@ settings:
   setting_one: setting_one_value
   setting_two: setting_two_value
   
+  
 steps:
 - action: restart
   description: restart application

@@ -147,10 +147,12 @@ public class Step
 	/// <param name="settingsLookup">Settings lookup function</param>
 	/// <param name="secretsLookup">Secrets lookup function</param>
 	/// <returns>Executable CommandOption</returns>
-	public OneOf<None, object> Activate(Type[] allTypes, Func<string, OneOf<object, None>> settingsLookup,
-		Func<string, OneOf<object, None>> secretsLookup) {
+	public OneOf<None, Tuple<object, string>> Activate(
+		Type[] allTypes, Func<string, OneOf<object, None>> settingsLookup,
+		Func<string, OneOf<object, None>> secretsLookup) 
+	{
 		OneOf<Type, None> maybeType = FindOptionTypeByName(allTypes, Action);
-		return ActivateOptions(maybeType, Options, settingsLookup, secretsLookup);
+		return new Tuple<object, string>(ActivateOptions(maybeType, Options, settingsLookup, secretsLookup),Description??Action);
 	}
 
 	#endregion
