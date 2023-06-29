@@ -746,5 +746,31 @@ In CI/CD systems, you can specify configuration options when calling commands:
 clio restart -u http://mysite.creatio.com -l administrator -p password
 ```
 
+## Automation scenarios
+You can combine multiple commands into one scenario and execute it with 
+```
+clio run-scenario --file-name scenario.yaml
+```
+Scenario consists of and steps and optional settings and/or secrets.
+```yaml
+secrets:
+  Login: real-login
+  Password: real-password
+
+settings:
+  uri: http://localhost:80
+  
+steps:
+  - action: restart
+    description: restart application
+    options:
+      uri: {{settings.uri}}
+      Login: {{secrets.Login}}
+      Password: {{secrets.Password}}
+```
+
+See more examples in [samples](https://github.com/Advance-Technologies-Foundation/clio-docs/tree/main/clio/Samples/Scenarios)
+
+
 
 
