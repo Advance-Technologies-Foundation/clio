@@ -473,7 +473,8 @@ namespace Clio
 		{
 			return PackageConverter.Convert(opts);
 		}
-
+		
+		
 		private static Type[] CommandOption = new []{
 			typeof(ExecuteAssemblyOptions),
 			typeof(RestartOptions),
@@ -602,6 +603,7 @@ namespace Clio
 				(TurnFsmCommandOptions opts) => Resolve<TurnFsmCommand>(opts).Execute(opts),
 				(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
 				(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
+				(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
                 _ => 1,
             };
 		};

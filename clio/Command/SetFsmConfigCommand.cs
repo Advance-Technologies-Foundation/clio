@@ -62,7 +62,7 @@ public class SetFsmConfigOptions : EnvironmentNameOptions
 	[Option("physicalPath", Required = false, HelpText = "Path to applications")]
 	public string PhysicalPath { get; set; }
 
-	[Value(0, Required = true, HelpText = "on or off", Default = "on")]
+	[Value(0, MetaName="IsFsm", Required = true, HelpText = "on or off", Default = "on")]
 	public string IsFsm { get; set; }
 
 
