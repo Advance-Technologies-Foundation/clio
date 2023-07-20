@@ -61,8 +61,7 @@ namespace Clio.Package
 
 		private bool IsFileDesignModeUrl {
 			get {
-				string responseFormServer = _applicationClient
-					.ExecutePostRequest(_getIsFileDesignModeUrl, null);
+				string responseFormServer = _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty);
 				var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
 				if (response.Success) {
 					return response.Value;
@@ -89,8 +88,7 @@ namespace Clio.Package
 				return;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
-			string responseFormServer = _applicationClient
-				.ExecutePostRequest(endpoint, null);
+			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty);
 			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
 			if (response.Success) {
 				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
