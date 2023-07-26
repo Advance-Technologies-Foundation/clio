@@ -27,7 +27,7 @@
 
 	#region Class: InstallApplicationOptions
 
-	[Verb("intstall-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
+	[Verb("install-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
 	public class InstallApplicationOptions : InstallOptions
 	{
 
