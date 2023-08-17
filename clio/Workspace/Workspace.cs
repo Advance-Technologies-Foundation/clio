@@ -4,6 +4,8 @@ namespace Clio.Workspace
 {
 	using System;
     using Clio.Common;
+	using Clio.UserEnvironment;
+
 
 	#region Class: Workspace
 
@@ -51,6 +53,8 @@ namespace Clio.Workspace
 
 		private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
 
+		private string WorkspaceEnvironmentSettingsPath => _workspacePathBuilder.WorkspaceEnvironmentSettingsPath;
+
 		#endregion
 
 		#region Properties: Public
@@ -70,9 +74,16 @@ namespace Clio.Workspace
 		private WorkspaceSettings ReadWorkspaceSettings() =>
 			_jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
 
+		private WorkspaceEnvironmentSettings ReadWorkspaceEnvironmentSettings() =>
+			_jsonConverter.DeserializeObjectFromFile<WorkspaceEnvironmentSettings>(WorkspaceEnvironmentSettingsPath);
+
 		#endregion
 
 		#region Methods: Public
+
+		public void SaveWorkspaceEnvironment(string environmentName) {
+			_workspaceCreator.SaveWorkspaceEnvironmentSettings(environmentName);
+		}
 
 		public void SaveWorkspaceSettings() {
 			_jsonConverter.SerializeObjectToFile(WorkspaceSettings, WorkspaceSettingsPath);

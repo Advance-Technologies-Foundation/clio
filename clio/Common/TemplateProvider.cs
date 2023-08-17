@@ -54,7 +54,6 @@ namespace Clio.Common
 			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
 			string templatePath = _workingDirectoriesProvider.GetTemplateFolderPath(templateFolderName);
 			_fileSystem.CopyDirectory(templatePath, destinationPath, true);
-			DeletePlaceholder(destinationPath);
 		}
 
 		#endregion

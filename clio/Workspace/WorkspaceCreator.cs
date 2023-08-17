@@ -18,6 +18,8 @@ namespace Clio.Workspace
 
 		void Create(string environmentName, bool isAddingPackageNames = false);
 
+		void SaveWorkspaceEnvironmentSettings(string environmentName);
+
 		#endregion
 
 	}
@@ -118,16 +120,16 @@ namespace Clio.Workspace
 			}
 		}
 
-		private void CreateWorkspaceEnvironmentSettingsFile(string environmentName) {
+		#endregion
+
+		#region Methods: Public
+
+		public void SaveWorkspaceEnvironmentSettings(string environmentName) {
 			var defaultWorkspaceSettings = new WorkspaceEnvironmentSettings {
 				Environment = environmentName ?? string.Empty
 			};
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceEnvironmentSettingsPath);
 		}
-
-		#endregion
-
-		#region Methods: Public
 
 		public void Create(string environmentName, bool isAddingPackageNames = false) {
 			ValidateNotExistingWorkspace();
@@ -135,7 +137,7 @@ namespace Clio.Workspace
 			_templateProvider.CopyTemplateFolder("workspace", RootPath);
 			if (!ExistsWorkspaceSettingsFile) {
 				CreateWorkspaceSettingsFile(isAddingPackageNames);
-				CreateWorkspaceEnvironmentSettingsFile(environmentName);
+				SaveWorkspaceEnvironmentSettings(environmentName);
 			}
 			if (_osPlatformChecker.IsWindowsEnvironment) {
 				return;

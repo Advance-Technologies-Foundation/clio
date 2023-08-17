@@ -84,6 +84,7 @@ namespace Clio
 			containerBuilder.RegisterType<ScenarioRunnerCommand>();
 			containerBuilder.RegisterType<CompressAppCommand>();
 			containerBuilder.RegisterType<Scenario>();
+			containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)

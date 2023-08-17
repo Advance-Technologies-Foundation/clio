@@ -19,7 +19,7 @@ namespace Clio.Workspace
 		void Restore();
 		void Install(string creatioPackagesZipName = null);
 		void AddPackageIfNeeded(string packageName);
-
+		void SaveWorkspaceEnvironment(string environmentName);
 		#endregion
 
 	}

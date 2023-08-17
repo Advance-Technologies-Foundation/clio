@@ -535,7 +535,8 @@ namespace Clio
 			typeof(SetFsmConfigOptions),
 			typeof(ScenarioRunnerOptions),
 			typeof(CompressAppOptions),
-			typeof(InstallApplicationOptions)
+			typeof(InstallApplicationOptions),
+			typeof(ConfigureWorkspaceOptions),
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -604,7 +605,8 @@ namespace Clio
 				(SetFsmConfigOptions opts) => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
 				(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
 				(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
-                _ => 1,
+				(ConfigureWorkspaceOptions opts) => Resolve<ConfigureWorkspaceCommand>(opts).Execute(opts),
+				_ => 1,
             };
 		};
 	}

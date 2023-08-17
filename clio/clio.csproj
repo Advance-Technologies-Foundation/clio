@@ -70,6 +70,7 @@
     <None Remove="tpl\ui-project\tsconfig.spec.json" />
     <None Remove="tpl\ui-project\webpack.config.js" />
     <None Remove="tpl\ui-project\webpack.prod.config.js" />
+    <None Remove="tpl\workspace\.gitignore" />
     <None Remove="tpl\workspace\builds\placeholder.txt" />
     <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -176,6 +177,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.clio\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\.gitignore">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.nuget\placeholder.txt">
