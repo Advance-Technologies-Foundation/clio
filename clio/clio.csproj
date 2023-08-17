@@ -9,7 +9,7 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>6.0.1.37</AssemblyVersion>
+	  <AssemblyVersion>6.0.1.38</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
@@ -72,6 +72,9 @@
     <None Remove="tpl\ui-project\webpack.prod.config.js" />
     <None Remove="tpl\workspace\.gitignore" />
     <None Remove="tpl\workspace\builds\placeholder.txt" />
+    <None Remove="tpl\workspace\tasks\git-init-dev-branch.cmd" />
+    <None Remove="tpl\workspace\tasks\git-init-workspace.cmd" />
+    <None Remove="tpl\workspace\tasks\git-push.cmd" />
     <None Update="cliogate\cliogate.gz">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -207,6 +210,15 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\build-netcore.sh">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\tasks\git-init-dev-branch.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\tasks\git-init-workspace.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\tasks\git-push.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\open-solution-framework.cmd">
