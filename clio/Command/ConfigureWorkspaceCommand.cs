@@ -27,6 +27,9 @@ namespace Clio.Command
 		public IEnumerable<string> PackageNames
 		{
 			get {
+				if (string.IsNullOrEmpty(Packages)) {
+					return Enumerable.Empty<string>();
+				}
 				return StringParser.ParseArray(Packages);
 			}
 		}
