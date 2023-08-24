@@ -314,6 +314,7 @@ namespace Clio
 					System.Environment.Exit(1);
 				}
 			}
+			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? _settings.WorkspacePathes : options.WorkspacePathes;
 			return result;
 		}
 

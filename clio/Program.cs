@@ -537,6 +537,7 @@ namespace Clio
 			typeof(CompressAppOptions),
 			typeof(InstallApplicationOptions),
 			typeof(ConfigureWorkspaceOptions),
+			typeof(GitSyncOptions),
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -606,8 +607,9 @@ namespace Clio
 				(CompressAppOptions opts) => Resolve<CompressAppCommand>().Execute(opts),
 				(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
 				(ConfigureWorkspaceOptions opts) => Resolve<ConfigureWorkspaceCommand>(opts).Execute(opts),
+				(GitSyncOptions opts) => Resolve<GitSyncCommand>(opts).Execute(opts),
 				_ => 1,
-            };
+			};
 		};
 	}
 }

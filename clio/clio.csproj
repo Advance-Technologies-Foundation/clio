@@ -212,13 +212,16 @@
     <Content Include="tpl\workspace\tasks\build-netcore.sh">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="tpl\workspace\tasks\git-to-env.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\workspace\tasks\env-to-git.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="tpl\workspace\tasks\git-init-dev-branch.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\git-init-workspace.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\git-push.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\tasks\open-solution-framework.cmd">

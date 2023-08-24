@@ -96,6 +96,7 @@ namespace Clio
 			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 			containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
 			containerBuilder.RegisterType<UnzipRequestValidator>();
+			containerBuilder.RegisterType<GitSyncCommand>();
 
 			return containerBuilder.Build();
 		}
