@@ -41,6 +41,10 @@ namespace Clio
 			get; set;
 		}
 
+		public string WorkspacePathes {
+			get; set;
+		}
+
 		private string _authAppUri;
 		public string AuthAppUri {
 			get {
@@ -94,6 +98,7 @@ namespace Clio
 			ClientId = environment.ClientId;
 			ClientSecret = environment.ClientSecret;
 			AuthAppUri = environment.AuthAppUri;
+			WorkspacePathes = environment.WorkspacePathes;
 		}
 
 		public bool? Safe {

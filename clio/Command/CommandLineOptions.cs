@@ -27,6 +27,11 @@ namespace Clio
 		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
 		public string DevMode { get; set; }
 
+		[Option("WorkspacePathes", Required = false, HelpText = "Workspace path")]
+		public string WorkspacePathes {
+			get; set;
+		}
+
 		public bool? DeveloperModeEnabled {
 			get {
 				if (!string.IsNullOrEmpty(DevMode))

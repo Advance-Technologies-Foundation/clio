@@ -92,7 +92,8 @@ namespace Clio.Command
 						DeveloperModeEnabled = options.DeveloperModeEnabled,
 						ClientId = options.ClientId,
 						ClientSecret = options.ClientSecret,
-						AuthAppUri = options.AuthAppUri
+						AuthAppUri = options.AuthAppUri,
+						WorkspacePathes = options.WorkspacePathes
 					};
 					if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment))
 					{
