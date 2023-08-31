@@ -726,6 +726,15 @@ Generate ATF models for `All` entities, with comments pulled from description in
 add-item model --All "true" --Culture en-US -n "ATF.Repository.Models" -d C:\MyModels
 ```
 
+OPTIONS
+|Short name|Long name|Description
+|:--:|:--|:--|
+d|DestinationPath|Path to source directory
+n|Namespace|Name space for service classes and ATF models
+f|Fields|Required fields for ATF model class
+a|All|Create ATF models for all Entities
+x|Culture|Description culture
+
 ## Link Workspace to File Design Mode
 
 To connect your package from workspace to local system in file design mode use command
@@ -737,15 +746,6 @@ To connect your local system in file design mode use command to workspace
 ```
 clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
-
-OPTIONS
-|Short name|Long name|Description
-|:--:|:--|:--|
-d|DestinationPath|Path to source directory
-n|Namespace|Name space for service classes and ATF models
-f|Fields|Required fields for ATF model class
-a|All|Create ATF models for all Entities
-x|Culture|Description culture
 
 # Using for CI/CD systems
 
