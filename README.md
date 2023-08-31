@@ -51,7 +51,7 @@ clio unregister
 2. Download and extract clio [release](https://github.com/Advance-Technologies-Foundation/clio/releases/latest)
 3. [Register](https://www.architectryan.com/2012/10/02/add-to-the-path-on-mac-os-x-mountain-lion/) clio folder in PATH system variables if you want to use clio alias
 
-Execute these command in terminal
+Execute these commands in terminal
 
 ```
 cd ~/clio folder/
@@ -182,13 +182,13 @@ docker run -it --rm clio reg-web-app -help
 
 ## Creating new package
 
-To create new package project, use the next command:
+To create a new package project, use the next command:
 
 ```
  clio new-pkg <PACKAGE_NAME>
 ```
 
-you can set reference on local core assembly with using Creatio file design mode with command in Pkg directory
+you can set reference on local core assembly by using Creatio file design mode with command in Pkg directory
 
 ```
  clio new-pkg <PACKAGE_NAME> -r bin
@@ -196,8 +196,8 @@ you can set reference on local core assembly with using Creatio file design mode
 
 ## Installing package
 
-To install package from directory you can use the next command:
-for non compressed package in current folder
+To install package from directory, you can use the next command:
+for non-compressed package in current folder
 
 ```
 clio push-pkg <PACKAGE_NAME>
@@ -229,7 +229,7 @@ clio push-pkg --id 22966 10096
 
 ## Pull package from remote application
 
-For download package to local file system from application use command:
+To download package to a local file system from application, use command:
 
 ```
 clio pull-pkg <PACKAGE_NAME>
@@ -245,7 +245,7 @@ Applies to Creatio 7.14.0 and up
 
 ## Delete package
 
-To delete package, use the next command:
+To delete a package, use the next command:
 
 ```
 clio delete-pkg-remote <PACKAGE_NAME>
@@ -259,7 +259,7 @@ clio delete-pkg-remote <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 
 ## Compress package
 
-For compress package into *.gz archive for directory which contain package folder
+To compress package into *.gz archive for directory which contains package folder
 
 ```
 clio generate-pkg-zip <PACKAGE_NAME>
@@ -500,7 +500,7 @@ Environment is the set of configuration options. It consist of name, Creatio app
 Register new application settings
 
 ```
-clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
+clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password
 ```
 
 or update existing settings
@@ -575,7 +575,7 @@ clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 
 ## Workspaces
 
-For connect proffesional developer tools and Creatio no-code designers, you can organanize development flow in you local file system in **workspace.**
+For connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.**
 
 https://user-images.githubusercontent.com/26967647/166842902-566af234-f9ad-48fb-82c1-0a0302bc5b3c.mp4
 
@@ -593,7 +593,7 @@ Create workspace in local directory with all editable packages from environment,
 C:\Demo> clio create-workspace -e demo
 ```
 
-Restore packages in you file system via command from selected environmet
+Restore packages in you file system via command from selected environment
 
 ```
 C:\Demo> clio restore-workspace -e demo
@@ -611,7 +611,7 @@ Push you modified code to the you environment via command and work with it from 
 C:\Demo> clio push-workspace -e demo
 ```
 
-**IMPORTANT**: Workspaces available from clio 3.0.1.2 and above and for full support developer flow you must install additional system package **cliogate** to you invironment.
+**IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install additional system package **cliogate** to you environment.
 
 ```
 C:\Demo> clio install-gate -e demo
@@ -663,15 +663,12 @@ execute-sql-script -f c:\Path to file\file.sql
 
 Execute dataservice requests on a web application.
 
-|Key |Value           |Description|
-|:--:|:---------------|:----------------------------------------|
-| -t | Operation Type | One of [select, insert, update, delete]
-| -f | Input filename | File in json format that contacins request payload
-| -d | Output filename| File where result of the operation will be saved
-| -v | Variables to substitute| List of key-value pairs to substitute in an input file
-
-
-
+| Key | Value                   | Description                                            |
+|:---:|:------------------------|:-------------------------------------------------------|
+| -t  | Operation Type          | One of [select, insert, update, delete]                |
+| -f  | Input filename          | File in json format that contains request payload      |
+| -d  | Output filename         | File where result of the operation will be saved       |
+| -v  | Variables to substitute | List of key-value pairs to substitute in an input file |
 
 Execute dataservice request with variable substitution.
 ```json
@@ -752,7 +749,7 @@ clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgP
 In CI/CD systems, you can specify configuration options when calling commands:
 
 ```
-clio restart -u http://mysite.creatio.com -l administrator -p password
+clio restart -u https://mysite.creatio.com -l administrator -p password
 ```
 
 ## Automation scenarios
@@ -779,7 +776,3 @@ steps:
 ```
 
 See more examples in [samples](https://github.com/Advance-Technologies-Foundation/clio-docs/tree/main/clio/Samples/Scenarios)
-
-
-
-
