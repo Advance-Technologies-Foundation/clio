@@ -144,6 +144,7 @@ docker run -it --rm clio reg-web-app -help
   - [Execute dataservice request](#dataservice)
   - [Help and examples](#help-and-examples)
   - [Add item](#add-item)
+  - [Link Workspace to File Design Mode](#link-workspace-to-file-design-mode)
 - [Packages](#packages)
   - [Creating new package](#creating-new-package)
   - [Installing package](#installing-package)
@@ -723,6 +724,18 @@ clio add-item model Contact -f Name,Email -n MyNameSpace -d .
 Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set `ATF.Repository.Models` namespace and save them to `C:\MyModels`
 ```
 add-item model --All "true" --Culture en-US -n "ATF.Repository.Models" -d C:\MyModels
+```
+
+## Link Workspace to File Design Mode
+
+To connect your package from workspace to local system in file design mode use command
+```
+clio link-from-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
+```
+
+To connect your local system in file design mode use command to workspace
+```
+clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
 
 OPTIONS
