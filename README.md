@@ -127,6 +127,7 @@ docker run -it --rm clio reg-web-app -help
   - [Restart application](#restart-application)
   - [Clear redis database](#clear-redis-database)
   - [Compile configuration](#compile-configuration)
+  - [System settings](#system-settings) 
 - [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
@@ -466,6 +467,14 @@ for compile all
 
 ```
 clio compile-configuration --all
+```
+## System settings
+
+For set system settings value
+
+```
+clio set-syssetting <CODE> <VALUE>
+
 ```
 
 ## Version
