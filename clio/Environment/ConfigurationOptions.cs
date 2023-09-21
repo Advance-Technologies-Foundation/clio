@@ -287,9 +287,8 @@ namespace Clio
 			var settingsRepository = new SettingsRepository();
 			var _settings = settingsRepository.FindEnvironment(options.Environment);
 			if (_settings == null) {
-				var environmentName = string.IsNullOrEmpty(options.Environment) ? settingsRepository.GetDefaultEnvironmentName() : options.Environment;
-				if (EnvironmentOptions.IsNullOrEmpty(options)) {
-					throw new Exception($"Environment with key '{environmentName}' not found. Check youre config file or command arguments.");
+				if (!string.IsNullOrEmpty(options.Environment)) {
+					throw new Exception($"Environment with key '{options.Environment}' not found. Check youre config file or command arguments.");
 				} else {
 					_settings = new EnvironmentSettings();
 				}
