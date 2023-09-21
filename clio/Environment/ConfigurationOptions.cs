@@ -285,11 +285,14 @@ namespace Clio
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
 			var result = new EnvironmentSettings();
 			var settingsRepository = new SettingsRepository();
-			EnvironmentSettings _settings;
-			if (!string.IsNullOrEmpty(options.Environment)) {
-				_settings = settingsRepository.GetEnvironment(options.Environment);
-			} else {
-				_settings = settingsRepository.GetDefaultEnvironment();
+			var _settings = settingsRepository.FindEnvironment(options.Environment);
+			if (_settings == null) {
+				var environmentName = string.IsNullOrEmpty(options.Environment) ? settingsRepository.GetDefaultEnvironmentName() : options.Environment;
+				if (EnvironmentOptions.IsNullOrEmpty(options)) {
+					throw new Exception($"Environment with key '{environmentName}' not found. Check youre config file or command arguments.");
+				} else {
+					_settings = new EnvironmentSettings();
+				}
 			}
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? _settings.IsNetCore;
@@ -313,10 +316,6 @@ namespace Clio
 			}
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? _settings.WorkspacePathes : options.WorkspacePathes;
 			return result;
-		}
-
-		private EnvironmentSettings GetDefaultEnvironment() {
-			return FindEnvironment(_settings.ActiveEnvironmentKey) ?? new EnvironmentSettings();
 		}
 
 		private string GetDefaultEnvironmentName() {
