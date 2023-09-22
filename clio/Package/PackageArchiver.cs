@@ -268,14 +268,13 @@ namespace Clio
 				destinationPath, () => Environment.CurrentDirectory);
 		}
 
+		/// <inheritdoc cref="System.IO.Compression.ZipFile.ExtractToDirectory(string, string)"/>
 		public void UnZip(string zipFilePath, bool overwrite, string destinationPath = null) {
 			CheckUnZipPackagesArgument(zipFilePath);
 			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
-			ZipFile.ExtractToDirectory(zipFilePath, Environment.CurrentDirectory);
+			ZipFile.ExtractToDirectory(zipFilePath, destinationPath ?? Environment.CurrentDirectory);
 		}
-
-
-
+		
 		#endregion
 
 	}

@@ -189,7 +189,7 @@ namespace Clio
 		private static void UnZip(string zipFilePath)
 		{
 			IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-			packageArchiver.UnZip(zipFilePath, true, "");
+			packageArchiver.UnZip(zipFilePath, true, null);
 		}
 
 		private static int DownloadZipPackages(PullPkgOptions options)
@@ -538,6 +538,7 @@ namespace Clio
 			typeof(InstallApplicationOptions),
 			typeof(ConfigureWorkspaceOptions),
 			typeof(GitSyncOptions),
+			typeof(PfInstallerOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -608,6 +609,7 @@ namespace Clio
 				(ScenarioRunnerOptions opts) => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
 				(ConfigureWorkspaceOptions opts) => Resolve<ConfigureWorkspaceCommand>(opts).Execute(opts),
 				(GitSyncOptions opts) => Resolve<GitSyncCommand>(opts).Execute(opts),
+				(PfInstallerOptions opts) => Resolve<InstallerCommand>(opts).Execute(opts),
 				_ => 1,
 			};
 		};

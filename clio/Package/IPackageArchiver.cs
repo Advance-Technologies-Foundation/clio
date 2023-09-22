@@ -20,6 +20,8 @@ namespace Clio
 		void ZipPackages(string sourceGzipFilesFolderPaths, string destinationArchiveFileName, bool overwrite);
 		void UnZipPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true, 
 			bool unpackIsSameFolder = false, bool isShowDialogOverwrite = false, string destinationPath = null);
+		
+		/// <inheritdoc cref="System.IO.Compression.ZipFile.ExtractToDirectory(string, string)"/>
 		void UnZip(string zipFilePath, bool overwrite, string destinationPath = null);
 		void ExtractPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true,
 			bool unpackIsSameFolder = false, bool isShowDialogOverwrite = false, string destinationPath = null);
