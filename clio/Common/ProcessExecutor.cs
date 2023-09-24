@@ -23,9 +23,9 @@ namespace Clio.Common
 				UseShellExecute = false,
 				WorkingDirectory = workingDirectory,
 				RedirectStandardOutput = true,
-				RedirectStandardError = true
+				RedirectStandardError = true,
 			};
-			var sb = new StringBuilder();		
+			var sb = new StringBuilder();
 			process.EnableRaisingEvents = waitForExit;
 				
 			if(showOutput) {
