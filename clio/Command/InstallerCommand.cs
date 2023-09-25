@@ -155,39 +155,46 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		return 0;
 	}
 
-	private int ExitWithErrorMessage(string message) {
+	private static int ExitWithErrorMessage(string message) {
 		Console.WriteLine(message);
 		return 1;
 	}
-
-	private int ExitWithOkMessage(string message) {
+	private static int ExitWithOkMessage(string message) {
 		Console.WriteLine(message);
 		return 0;
 	}
 
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options) {
 		Console.WriteLine("[Update connection string] - Started");
-		ConfigureConnectionStringRequest request = new() {
-			Arguments = new Dictionary<string, string> {
-				{"folderPath", Path.Join(IISRootFolder, options.SiteName)}, {
-					"dbString",
-					$"Server={Dns.GetHostName()};Port=5432;Database={options.SiteName};User ID=postgres;password=root;Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
-				},
-				{"redis", $"host={Dns.GetHostName()};db=11;port=6379"}, {
-					"isNetFramework",
-					(InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework)
-					.ToString()
+		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		k8Commands.ConnectionStringParams csParam = dbType switch {
+			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
+			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
+		};
+		
+		ConfigureConnectionStringRequest request = dbType switch {
+			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest() {
+				Arguments = new Dictionary<string, string> {
+					{"folderPath", Path.Join(IISRootFolder, options.SiteName)},
+					{"dbString", $"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"},
+					{"redis", $"host={Dns.GetHostName()};db=11;port={csParam.RedisPort}"}, 
+					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
+				}
+			},
+			InstallerHelper.DatabaseType.MsSql =>  new ConfigureConnectionStringRequest() {
+				Arguments = new Dictionary<string, string> {
+					{"folderPath", Path.Join(IISRootFolder, options.SiteName)},
+					{"dbString", $"Data Source={Dns.GetHostName()},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"},
+					{"redis", $"host={Dns.GetHostName()};db=11;port={csParam.RedisPort}"}, 
+					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
 				}
 			}
 		};
+		
 		return (await _mediator.Send(request)).Value switch {
 			(HandlerError error) => ExitWithErrorMessage(error.ErrorDescription),
-			(ConfigureConnectionStringResponse {
-				Status: BaseHandlerResponse.CompletionStatus.Success
-			} result) => ExitWithOkMessage(result.Description),
-			(ConfigureConnectionStringResponse {
-				Status: BaseHandlerResponse.CompletionStatus.Failure
-			} result) => ExitWithErrorMessage(result.Description),
+			(ConfigureConnectionStringResponse {Status: BaseHandlerResponse.CompletionStatus.Success} result) => ExitWithOkMessage(result.Description),
+			(ConfigureConnectionStringResponse {Status: BaseHandlerResponse.CompletionStatus.Failure} result) => ExitWithErrorMessage(result.Description),
 			_ => ExitWithErrorMessage("Unknown error occured")
 		};
 	}
@@ -197,6 +204,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Methods: Public
 
 	public override int Execute(PfInstallerOptions options) {
+
 		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
 		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
