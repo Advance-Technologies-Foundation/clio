@@ -155,8 +155,7 @@ namespace Clio
 		private const string SchemaFileName = "schema.json";
 
 		private Settings _settings = new Settings();
-
-		private static string AppSettingsFolderPath {
+		public static string AppSettingsFolderPath {
 			get {
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?

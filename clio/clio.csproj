@@ -379,6 +379,78 @@
     <Content Include="tpl\workspace\tasks\build-framework-sdk.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="tpl\k8\infrastructure\email-listener\email-listener-services.yaml" />
+    <Content Include="tpl\k8\infrastructure\email-listener\email-listener-services.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\email-listener\email-listener-workload.yaml" />
+    <Content Include="tpl\k8\infrastructure\email-listener\email-listener-workload.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\mssql\mssq-secrets.yaml" />
+    <Content Include="tpl\k8\infrastructure\mssql\mssq-secrets.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\mssql\mssql-services.yaml" />
+    <Content Include="tpl\k8\infrastructure\mssql\mssql-services.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\mssql\mssql-stateful-set.yaml" />
+    <Content Include="tpl\k8\infrastructure\mssql\mssql-stateful-set.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\mssql\mssql-volumes.yaml" />
+    <Content Include="tpl\k8\infrastructure\mssql\mssql-volumes.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\redis\redis-services.yaml" />
+    <Content Include="tpl\k8\infrastructure\redis\redis-services.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\redis\redis-workload.yaml" />
+    <Content Include="tpl\k8\infrastructure\redis\redis-workload.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\clio-namespace.yaml" />
+    <Content Include="tpl\k8\infrastructure\clio-namespace.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\clio-storage-class.yaml" />
+    <Content Include="tpl\k8\infrastructure\clio-storage-class.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\postgres\postgres-volumes.yaml" />
+    <Content Include="tpl\k8\infrastructure\postgres\postgres-volumes.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\postgres\postgres-stateful-set.yaml" />
+    <Content Include="tpl\k8\infrastructure\postgres\postgres-stateful-set.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\postgres\postgres-services.yaml" />
+    <Content Include="tpl\k8\infrastructure\postgres\postgres-services.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\postgres\postgres-secrets.yaml" />
+    <Content Include="tpl\k8\infrastructure\postgres\postgres-secrets.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-workload.yaml" />
+    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-workload.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-volumes.yaml" />
+    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-volumes.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-services.yaml" />
+    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-services.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-secrets.yaml" />
+    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-secrets.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
