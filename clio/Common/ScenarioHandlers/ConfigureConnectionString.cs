@@ -20,28 +20,61 @@ namespace Clio.Common.ScenarioHandlers {
         
         public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request, CancellationToken cancellationToken) {
 
-            string cnPath = @"C:\inetpub\wwwroot\demosite\ConnectionStrings.config";
-            var dbString = BuildConnectionStringFromTemplate(request, "dbCnTemplate");
-            var redisString = BuildConnectionStringFromTemplate(request, "redisCnTemplate");
+            string folder = request.Arguments["folderPath"];
+            string dbString = request.Arguments["dbString"]; 
+            string redisString = request.Arguments["redis"];
             
+            string cnPath = Path.Join(folder, "ConnectionStrings.config");
             string result = ConfigureConnectionStrings(cnPath, dbString, redisString);
-            return new ConfigureConnectionStringResponse() {
+            
+            bool isNetFrameWork = bool.Parse(request.Arguments["isNetFramework"]);
+            if(!isNetFrameWork) {
+                string webConfigPath = Path.Join(folder, "Terrasoft.WebHost.dll.config");
+                result = result+"\n"+UpdateWebConfig(webConfigPath);
+            }
+            
+            return new ConfigureConnectionStringResponse {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
                 Description = result
             };
         }
 
+        
+        private static string UpdateWebConfig(string webConfigPath) {
+            string configContent = File.ReadAllText(webConfigPath);
+            XmlDocument doc = new();
+            doc.LoadXml(configContent);
+            XmlNode root = doc.DocumentElement;
+            
+            XmlNode cookiesSameSiteModeNode = root?.SelectSingleNode("descendant::add[@key='CookiesSameSiteMode']");
+            if(cookiesSameSiteModeNode != null) {
+                cookiesSameSiteModeNode.Attributes["value"].Value = "Lax";
+            }
+            doc.Save(webConfigPath);
+            return "Set CookiesSameSiteMode to Lax";
+        }
+        
         private static string ConfigureConnectionStrings(string cnFilePath, string db, string redis) {
             string cnFileContent = File.ReadAllText(cnFilePath);
             XmlDocument doc = new();
             doc.LoadXml(cnFileContent);
             XmlNode root = doc.DocumentElement;
 
-            XmlNode dbNode = root.SelectSingleNode("descendant::add[@name='db']");
-            dbNode.Attributes["connectionString"].Value = db;
+            XmlNode dbPostgreSqlNode = root?.SelectSingleNode("descendant::add[@name='dbPostgreSql']");
+            if(dbPostgreSqlNode != null) {
+                dbPostgreSqlNode.Attributes["connectionString"].Value = db;
+            }
 
-            XmlNode redisNode = root.SelectSingleNode("descendant::add[@name='redis']");
-            redisNode.Attributes["connectionString"].Value = redis;
+            XmlNode dbNode = root?.SelectSingleNode("descendant::add[@name='db']");
+            if(dbNode != null ) {
+                dbNode.Attributes["connectionString"].Value = db;
+            }
+            
+            
+            XmlNode redisNode = root?.SelectSingleNode("descendant::add[@name='redis']");
+            if(redisNode != null) {
+                redisNode.Attributes["connectionString"].Value = redis;
+            }
 
             doc.Save(cnFilePath);
 
@@ -54,19 +87,5 @@ namespace Clio.Common.ScenarioHandlers {
 
             return sb.ToString();
         }
-
-        private static string BuildConnectionStringFromTemplate(ConfigureConnectionStringRequest request, string templateName) {
-
-            string template = request.Arguments[templateName];
-            string pattern = @"\{\{.*?\}\}";
-            return Regex.Replace(template, pattern, (Match m) => {
-                string key = m.Value.Trim('{', '}');
-                if (request.Arguments.ContainsKey(key)) {
-                    return request.Arguments[key];
-                }
-                return m.Value;
-            });
-        }
-
     }
 }

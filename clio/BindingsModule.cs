@@ -11,11 +11,13 @@ using MediatR;
 using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System.Reflection;
+using Clio.Common.K8;
 using YamlDotNet.Serialization.NamingConventions;
 using YamlDotNet.Serialization;
 using Сlio.Command.PackageCommand;
 using Clio.Common.ScenarioHandlers;
 using Clio.YAML;
+using k8s;
 
 namespace Clio
 {
@@ -34,6 +36,12 @@ namespace Clio
 				containerBuilder.RegisterInstance(settings);
 			}
 
+			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+			IKubernetes k8Client = new Kubernetes(config);
+			containerBuilder.RegisterInstance(k8Client).As<IKubernetes>();
+			containerBuilder.RegisterType<k8Commands>();
+			
+			
             var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
 				.Build();

@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarqube
+  namespace: creatio
+spec:
+  selector:
+    matchLabels:
+      app: sonarqube
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: sonarqube
+    spec:
+      initContainers:
+        - name: volume-permissions
+          image: busybox
+          command: ["sh", "-c", "/bin/chmod 777 /opt/sonarqube/logs && /bin/chmod 777 /opt/sonarqube/data && /bin/chmod 777 /opt/sonarqube/extensions"]
+          volumeMounts:
+            - mountPath: "/opt/sonarqube/logs"
+              name: sonar-logs
+            - mountPath: "/opt/sonarqube/data"
+              name: sonar-data
+            - mountPath: "/opt/sonarqube/extensions"
+              name: sonar-extensions
+      containers:
+        - name: sonarqube
+          image: sonarqube:lts-community
+          imagePullPolicy: "IfNotPresent"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1024Mi
+            limits:
+              cpu: 2000m
+              memory: 2048Mi
+          volumeMounts:
+          - mountPath: "/opt/sonarqube/data"
+            name: sonar-data
+          - mountPath: "/opt/sonarqube/extensions"
+            name: sonar-extensions
+          - mountPath: "/opt/sonarqube/logs"
+            name: sonar-logs
+          ports:
+            - containerPort: 9000
+              protocol: TCP
+          env:
+          - name: "SONARQUBE_JDBC_USERNAME"
+            value: "postgres"
+          - name: "SONARQUBE_JDBC_URL"
+            value: "jdbc:postgresql://postgres"
+          - name: "SONARQUBE_JDBC_PASSWORD"
+            value: "root"
+      volumes:
+        - name: sonar-data
+          persistentVolumeClaim:
+            claimName: sonar-data-pvc
+        - name: sonar-extensions
+          persistentVolumeClaim:
+            claimName: sonar-extensions-pvc
+        - name: sonar-logs
+          persistentVolumeClaim:
+            claimName: sonar-logs-pvc
+
+
+---
+    kind: PersistentVolume
+    apiVersion: v1
+    metadata:
+      name: sonar-data-pv
+      labels:
+        type: local
+        app: sonarqube
+    spec:
+      capacity:
+        storage: 50Gi
+      accessModes:
+        - ReadWriteOnce
+      hostPath:
+        path: "/mnt/sonarqube/data"
+
+---
+    kind: PersistentVolume
+    apiVersion: v1
+    metadata:
+      name: sonar-extensions-pv
+      labels:
+        type: local
+        app: sonarqube
+    spec:
+      capacity:
+        storage: 5Gi
+      accessModes:
+        - ReadWriteOnce
+      hostPath:
+        path: "/mnt/sonarqube/extensions"
+
+---
+    kind: PersistentVolume
+    apiVersion: v1
+    metadata:
+      name: sonar-logs-pv
+      labels:
+        type: local
+        app: sonarqube
+    spec:
+      capacity:
+        storage: 10Gi
+      accessModes:
+        - ReadWriteOnce
+      hostPath:
+        path: "/mnt/sonarqube/logs"
+
+---
+    kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: sonar-data-pvc
+      namespace: creatio
+      labels:
+        app: sonarqube
+    spec:
+      storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      volumeName: sonar-data-pv
+      resources:
+        requests:
+          storage: 50Gi
+    
+---
+    kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: sonar-extensions-pvc
+      namespace: creatio
+      labels:
+        app: sonarqube
+    spec:
+      storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      volumeName: sonar-extensions-pv
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+    kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: sonar-logs-pvc
+      namespace: creatio
+      labels:
+        app: sonarqube
+    spec:
+      storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      volumeName: sonar-logs-pv
+      resources:
+        requests:
+          storage: 10Gi
+
+
+---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: sonarqube-service
+      namespace: creatio
+      labels:
+        app: sonarqube
+    spec:
+       ports:
+        - name: sonarqube
+          port: 9000
+          nodePort: 30900
+       type: NodePort
+       selector:
+        app: sonarqube

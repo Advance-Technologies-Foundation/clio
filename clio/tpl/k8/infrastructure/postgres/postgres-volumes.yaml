@@ -1,0 +1,33 @@
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: postgres-data-pv
+  labels:
+    type: local
+    app: clio-postgres
+spec:
+  storageClassName: clio-storage
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/clio-infrastructure/postgres/data"
+
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: postgres-backup-images-pv
+  labels:
+    type: local
+    app: clio-postgres
+spec:
+  storageClassName: clio-storage
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/clio-infrastructure/postgres/backup-images"

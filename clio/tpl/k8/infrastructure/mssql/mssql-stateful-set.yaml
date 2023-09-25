@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clio-mssql
+  namespace: clio-infrastructure
+spec:
+  selector:
+    matchLabels:
+      app: clio-mssql
+  replicas: 1
+  serviceName: mssql-service-lb
+  template:
+    metadata:
+      labels:
+        app: clio-mssql
+    spec:
+      hostname: clio-mssql
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+        - name: volume-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 10001:0 /var/opt/mssql"]
+          volumeMounts:
+          - mountPath: "/var/opt/mssql"
+            name: mssql-data
+      containers:
+        - name: clio-mssql
+          image: mcr.microsoft.com/mssql/server:2022-latest
+          imagePullPolicy: "Always"
+          resources:
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+            requests:
+              memory: "512Mi"
+              cpu: "0.25"
+          env:
+            - name: MSSQL_PID
+              value: "Developer"
+            - name: ACCEPT_EULA
+              value: "Y"
+            - name: MSSQL_SA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clio-mssql-secret
+                  key: MSSQL_SA_PASSWORD
+          ports:
+            - containerPort: 1433
+              name: primary-port
+          volumeMounts:
+            - mountPath: /var/opt/mssql
+              name: mssql-data 
+  volumeClaimTemplates:
+  - metadata:
+      name: mssql-data
+      namespace: clio-infrastructure
+    spec:
+      storageClassName: clio-storage
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 100Gi

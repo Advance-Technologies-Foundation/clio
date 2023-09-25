@@ -388,6 +388,7 @@
     <PackageReference Include="creatio.client" Version="1.0.18" />
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="FluentValidation" Version="11.5.2" />
+    <PackageReference Include="KubernetesClient" Version="12.0.16" />
     <PackageReference Include="MediatR" Version="12.0.1" />
     <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="10.0.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.1" />
@@ -403,7 +404,8 @@
     <PackageReference Include="OneOf" Version="3.0.223" />
     <PackageReference Include="System.Json" Version="4.7.1" />
 	<PackageReference Include="Ignore" Version="0.1.46" />
-	<PackageReference Include="YamlDotNet" Version="13.1.0" />
+	<PackageReference Include="YamlDotNet" Version="13.4.0" />
+    <PackageReference Include="SharpZipLib" Version="1.4.2" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">

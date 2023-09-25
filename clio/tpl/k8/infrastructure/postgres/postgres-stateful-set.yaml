@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clio-postgres
+  namespace: clio-infrastructure
+spec:
+  selector:
+    matchLabels:
+      app: clio-postgres
+  replicas: 1
+  serviceName: postgres-service-lb
+  template:
+    metadata:
+      labels:
+        app: clio-postgres
+    spec:
+      containers:
+        - name: clio-postgres
+          image: postgres:latest
+          imagePullPolicy: "IfNotPresent"
+          resources:
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+            requests:
+              memory: "512Mi"
+              cpu: "0.25"
+          env:
+            - name : POSTGRES_DB
+              value : postgres
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clio-postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clio-postgres-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-data
+            - mountPath: /usr/local/backup-images
+              name: postgres-backup-images
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+      namespace: clio-infrastructure
+    spec:
+      storageClassName: clio-storage
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 100Gi
+  - metadata:
+      name: postgres-backup-images
+      namespace: clio-infrastructure
+    spec:
+      storageClassName: clio-storage
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi

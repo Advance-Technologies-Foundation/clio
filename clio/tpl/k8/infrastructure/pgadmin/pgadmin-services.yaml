@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgadmin-service
+  namespace: clio-infrastructure
+  labels:
+    app: clio-pgadmin
+spec:
+  selector:
+   app: clio-pgadmin
+  type: LoadBalancer
+  ports:
+   - port: 1080
+     targetPort: 80

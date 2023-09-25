@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clio-email-listener
+  namespace: clio-infrastructure
+  labels:
+    app: clio-email-listener
+spec:
+    selector:
+      app: clio-email-listener
+    type: LoadBalancer
+    ports:
+    - port: 1090
+      targetPort: 8080

@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clio-redis
+  namespace: clio-infrastructure
+spec:
+  selector:
+    matchLabels:
+      app: clio-redis
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: clio-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:latest
+          command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+          env:
+            - name: ALLOW_EMPTY_PASSWORD
+              value: "yes"
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: "0.25"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: redis-config
+              mountPath: /usr/local/etc/redis/redis.conf
+              subPath: redis.conf
+              readOnly: true
+      volumes:
+        - name: redis-config
+          configMap:
+            name: redis-config
+
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: redis-config
+ namespace: clio-infrastructure
+data:
+ redis.conf: |-
+   databases 100
+

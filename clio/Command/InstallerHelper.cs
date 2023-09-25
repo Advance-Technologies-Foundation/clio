@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using Clio.Common;
 using Microsoft.Data.SqlClient;
@@ -77,7 +78,20 @@ public static class InstallerHelper
 		};
 	};
 	
-	
+	public static string FetFQDN() {
+		string FQDN = "localhost";
+		try
+		{
+			FQDN =  Dns.GetHostName();
+			FQDN = Dns.GetHostEntry(Dns.GetHostName()).HostName;
+			return FQDN;
+		}
+		catch (Exception e)
+		{
+			Console.WriteLine("Defaulting to localhost");
+			return FQDN;
+		}
+	}
 	
 	public static readonly Func<string, bool> CheckPgTemplateExists = (templateName)=> {
 		try {

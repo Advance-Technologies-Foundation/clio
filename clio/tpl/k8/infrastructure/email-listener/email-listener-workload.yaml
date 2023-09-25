@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clio-email-listener
+  namespace: clio-infrastructure
+spec:
+  selector:
+    matchLabels:
+      app: clio-email-listener
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: clio-email-listener
+    spec:
+      containers:
+        - name: email-listener
+          image: bpmonline/emaillistener:1.0.10
+          imagePullPolicy: "IfNotPresent"
+          resources:
+            requests:
+              cpu: "0.25"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          env:
+          - name: ExchangeListenerRedisHost
+            value: "redis-service-internal:6379"
+          - name: ExchangeListenerRedisDatabase
+            value: "0"
+          ports:
+          - containerPort: 8080

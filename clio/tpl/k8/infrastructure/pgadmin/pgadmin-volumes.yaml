@@ -1,0 +1,55 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: pgadmin-pv
+  labels:
+    type: local
+    app: clio-pgadmin
+spec:
+  storageClassName: clio-storage
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/clio-infrastructure/pgadmin"
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pgadmin-pvc
+  namespace: clio-infrastructure
+  labels:
+    app: clio-pgadmin
+spec:
+  storageClassName: clio-storage
+  volumeName: pgadmin-pv
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgadmin-config
+  namespace: clio-infrastructure
+data:
+  servers.json: |
+   {
+       "Servers": {
+         "1": {
+           "Name": "PostgreSQL",
+           "Group": "Servers",
+           "Port": 5432,
+           "Username": "postgres",
+           "Password": "root",
+           "Host": "postgres-service-internal",
+           "SSLMode": "prefer",
+           "MaintenanceDB": "postgres"
+         }
+       }
+   }

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mssql-service-lb
+  namespace: clio-infrastructure
+  labels:
+    app: clio-mssql
+spec: 
+  selector:
+    app: clio-mssql
+  type: LoadBalancer
+  ports:
+  - port: 1434
+    targetPort: 1433
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mssql-service-internal
+  namespace: clio-infrastructure
+  labels:
+    app: clio-mssql
+spec:
+  selector:
+    app: clio-mssql
+  type: ClusterIP
+  ports:
+    - port: 1433
+      targetPort: 1433
+ 

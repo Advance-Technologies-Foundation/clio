@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clio-pgadmin
+  namespace: clio-infrastructure
+spec:
+  selector:
+    matchLabels:
+      app: clio-pgadmin
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: clio-pgadmin
+    spec:
+      initContainers:
+        - name: hack
+          image: busybox
+          command: ["sh", "-c", "chown -R 5050:5050 /var/lib/pgadmin;", "sh", "-c", "chown -R 5050:5050 /pgadmin4/servers.json"]
+          volumeMounts:
+            - name: pgadmin-data
+              mountPath: /var/lib/pgadmin
+            - name: pgadmin-config
+              mountPath: /pgadmin4/servers.json
+              subPath: servers.json
+      containers:
+        - name: pgadmin4
+          image: dpage/pgadmin4:latest
+          imagePullPolicy: "Always"
+          resources:
+            requests:
+              cpu: "0.25"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+          env:
+            - name: PGADMIN_DEFAULT_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: clio-pgadmin-secret
+                  key: PGADMIN_DEFAULT_EMAIL
+            - name: PGADMIN_DEFAULT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clio-pgadmin-secret
+                  key: PGADMIN_DEFAULT_PASSWORD
+          volumeMounts:
+            - mountPath: /var/lib/pgadmin
+              name: pgadmin-data
+            - mountPath: /pgadmin4/servers.json
+              name: pgadmin-config
+              subPath: servers.json
+              readOnly: true
+          ports:
+            - containerPort: 80
+              name: clio-pgadmin
+      volumes:
+      - name: pgadmin-data
+        persistentVolumeClaim:
+          claimName: pgadmin-pvc
+      - name: pgadmin-config
+        configMap:
+          name: pgadmin-config
