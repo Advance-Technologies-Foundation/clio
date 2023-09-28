@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace Clio.Command
 {
 	[Verb("register", HelpText = "Register clio commands in context menu ")]
-	internal class RegisterOptions
+	public class RegisterOptions
 	{
 		[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
 			" machine location. Use 'u' for set user location and 'm' to set machine location.")]
@@ -45,11 +45,9 @@ namespace Clio.Command
 
 	}
 
-	class RegisterCommand : Command<RegisterOptions>
+	public class RegisterCommand : Command<RegisterOptions>
 	{
-		public RegisterCommand()
-		{
-		}
+	
 
 		public override int Execute(RegisterOptions options)
 		{

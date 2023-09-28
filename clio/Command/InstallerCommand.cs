@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management.Automation.Runspaces;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -11,19 +12,20 @@ using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using CommandLine;
 using MediatR;
+using StackExchange.Redis;
 
 namespace Clio.Command;
 
-[Verb("pg-install", HelpText = "pg-install")]
+[Verb("deploy-creatio", HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
 
 	#region Properties: Public
 
-	[Option("SiteName", Required = true, HelpText = "SiteName")]
+	[Option("SiteName", Required = false, HelpText = "SiteName")]
 	public string SiteName { get; set; }
 
-	[Option("SitePort", Required = true, HelpText = "Site port")]
+	[Option("SitePort", Required = false, HelpText = "Site port")]
 	public int SitePort { get; set; }
 
 	[Option("ZipFile", Required = true, HelpText = "Sets Zip File path")]
@@ -48,17 +50,19 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	private readonly IProcessExecutor _processExecutor;
 	private readonly k8Commands _k8;
 	private readonly IMediator _mediator;
+	private readonly RegAppCommand _registerCommand;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public InstallerCommand(IPackageArchiver packageArchiver, IProcessExecutor processExecutor, k8Commands k8,
-		IMediator mediator) {
+		IMediator mediator, RegAppCommand registerCommand) {
 		_packageArchiver = packageArchiver;
 		_processExecutor = processExecutor;
 		_k8 = k8;
 		_mediator = mediator;
+		_registerCommand = registerCommand;
 	}
 
 	#endregion
@@ -66,7 +70,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Methods: Private
 
 	private static int StartWebBrowser(PfInstallerOptions options) {
-		string url = $"http://{InstallerHelper.FetFQDN}:{options.SitePort}";
+		string url = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}";
 		try {
 			Process.Start(url);
 			return 0;
@@ -164,6 +168,19 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		return 0;
 	}
 
+	private static int FindEmptyRedisDb(int port) {
+		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
+		IServer server = redis.GetServer("localhost", port);
+		int count = server.DatabaseCount;
+		for(int i = 1; i<count; i++) {
+			long records = server.DatabaseSize(i);
+			if(records == 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
+	
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options) {
 		Console.WriteLine("[Update connection string] - Started");
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
@@ -172,20 +189,22 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
 		};
 		
+		int redisDb = FindEmptyRedisDb(csParam.RedisPort);
+		
 		ConfigureConnectionStringRequest request = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest() {
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(IISRootFolder, options.SiteName)},
 					{"dbString", $"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"},
-					{"redis", $"host={Dns.GetHostName()};db=11;port={csParam.RedisPort}"}, 
+					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, 
 					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
 				}
 			},
-			InstallerHelper.DatabaseType.MsSql =>  new ConfigureConnectionStringRequest() {
+			InstallerHelper.DatabaseType.MsSql =>  new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(IISRootFolder, options.SiteName)},
 					{"dbString", $"Data Source={Dns.GetHostName()},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"},
-					{"redis", $"host={Dns.GetHostName()};db=11;port={csParam.RedisPort}"}, 
+					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, 
 					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
 				}
 			}
@@ -204,14 +223,37 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Methods: Public
 
 	public override int Execute(PfInstallerOptions options) {
-
+		
+		if(!File.Exists(options.ZipFile)) {
+			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
+			return 1;
+		}
+	
+		while(string.IsNullOrEmpty(options.SiteName)) {
+			Console.WriteLine("Please enter site name:");
+			options.SiteName = Console.ReadLine();
+			
+			if(Directory.Exists(Path.Join(IISRootFolder, options.SiteName))) {
+				Console.WriteLine($"Site with name {options.SiteName} already exists in {Path.Join(IISRootFolder, options.SiteName)}");
+				options.SiteName = string.Empty;
+			}
+		}
+		
+		while(options.SitePort<=0) {
+			Console.WriteLine("Please enter site port, recommended range between (400000 and 40100):");
+			if (int.TryParse(Console.ReadLine(), out int value)) {
+				options.SitePort = value;
+			}else {
+				Console.WriteLine("Site port must be an in value");
+			}
+		}
+		
+		
 		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
 		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
-
-		CreateIISSite(unzippedDirectory, options).GetAwaiter().GetResult();
-
+		
 		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {
 			InstallerHelper.DatabaseType.Postgres => DoPgWork(unzippedDirectory,
 				options.SiteName), //Need to check if db already exists
@@ -228,10 +270,22 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			_ => ExitWithErrorMessage("Failed to update ConnectionString.config file")
 		};
 
-		return updateConnectionStringResult switch {
+		_registerCommand.Execute(new RegAppOptions {
+			EnvironmentName = options.SiteName,
+			Login = "Supervisor",
+			Password = "Supervisor",
+			Uri = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}",
+			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore
+		});
+		
+		_ =updateConnectionStringResult switch {
 			0 => StartWebBrowser(options),
-			_ => ExitWithErrorMessage($"Could not open: http://{InstallerHelper.FetFQDN}:{options.SitePort}")
+			_ => ExitWithErrorMessage($"Could not open: http://{InstallerHelper.FetFQDN()}:{options.SitePort}")
 		};
+
+		Console.WriteLine("Press any key to exit...");
+		Console.ReadKey();
+		return 0;
 	}
 
 	#endregion

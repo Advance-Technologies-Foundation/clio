@@ -473,6 +473,7 @@
     <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
     <PackageReference Include="Npgsql" Version="7.0.6" />
+    <PackageReference Include="NRedisStack" Version="0.9.0" />
     <PackageReference Include="OneOf" Version="3.0.223" />
     <PackageReference Include="System.Json" Version="4.7.1" />
 	<PackageReference Include="Ignore" Version="0.1.46" />

@@ -7,7 +7,7 @@
 
 	#region Class: DownloadLibsCommandOptions
 
-	[Verb("download-configuration", Aliases = new string[] { "dconf" },
+	[Verb("download-configuration", Aliases = new [] { "dconf" },
 		HelpText = "Download libraries from web-application")]
 	public class DownloadConfigurationCommandOptions : EnvironmentOptions
 	{
@@ -38,10 +38,7 @@
 
 		#endregion
 
-		#region Methods: Private
-
-		#endregion
-
+		
 		#region Methods: Public
 
 		public override int Execute(DownloadConfigurationCommandOptions options) {
