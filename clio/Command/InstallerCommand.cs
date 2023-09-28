@@ -231,8 +231,10 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
 			return 1;
 		}
-	
-		while(string.IsNullOrEmpty(options.SiteName)) {
+		if (!Directory.Exists(_iisRootFolder)) {
+			Directory.CreateDirectory(_iisRootFolder);
+		}
+		while (string.IsNullOrEmpty(options.SiteName)) {
 			Console.WriteLine("Please enter site name:");
 			options.SiteName = Console.ReadLine();
 			
