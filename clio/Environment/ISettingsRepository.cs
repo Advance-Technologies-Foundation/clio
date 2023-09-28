@@ -21,5 +21,7 @@ namespace Clio.UserEnvironment
 		void ShowSettingsTo(TextWriter textWriter, string name);
 		void OpenFile();
 		void RemoveAllEnvironment();
+		
+		string GetIISClioRootPath();
 	}
 }

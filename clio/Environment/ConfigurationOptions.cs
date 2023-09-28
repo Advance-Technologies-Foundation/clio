@@ -123,6 +123,15 @@ namespace Clio
 			Environments = new Dictionary<string, EnvironmentSettings>();
 		}
 
+		string defaultIisRootPath = @"C:\inetpub\wwwroot\clio";
+		private string _iISClioRootPath;
+		
+		[JsonProperty("iis-clio-root-path")]
+		public string IISClioRootPath {
+			get => string.IsNullOrWhiteSpace(_iISClioRootPath)? defaultIisRootPath : _iISClioRootPath;
+			set => _iISClioRootPath = value;
+		}
+
 		[JsonProperty("$schema")]
 		public string Schema => "./schema.json";
 
@@ -370,6 +379,11 @@ namespace Clio
 			_settings.Environments.Clear();
 			Save();
 		}
+
+		public string GetIISClioRootPath() {
+			return _settings.IISClioRootPath;
+		}
+
 	}
 
 }

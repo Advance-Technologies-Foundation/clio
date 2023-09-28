@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Management.Automation.Runspaces;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
+using Clio.UserEnvironment;
 using CommandLine;
 using MediatR;
 using StackExchange.Redis;
@@ -40,7 +40,8 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
 	#region Constants: Private
 
-	private const string IISRootFolder = @"D:\Projects\inetpub\wwwroot";
+	//private const string IISRootFolder = @"D:\Projects\inetpub\wwwroot";
+	private readonly string _iisRootFolder;
 
 	#endregion
 
@@ -51,18 +52,20 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	private readonly k8Commands _k8;
 	private readonly IMediator _mediator;
 	private readonly RegAppCommand _registerCommand;
+	
 
 	#endregion
 
 	#region Constructors: Public
 
 	public InstallerCommand(IPackageArchiver packageArchiver, IProcessExecutor processExecutor, k8Commands k8,
-		IMediator mediator, RegAppCommand registerCommand) {
+		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository) {
 		_packageArchiver = packageArchiver;
 		_processExecutor = processExecutor;
 		_k8 = k8;
 		_mediator = mediator;
 		_registerCommand = registerCommand;
+		_iisRootFolder = settingsRepository.GetIISClioRootPath();
 	}
 
 	#endregion
@@ -98,7 +101,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 				{"siteName", options.SiteName},
 				{"port", options.SitePort.ToString()},
 				{"sourceDirectory", unzippedDirectory.FullName},
-				{"destinationDirectory", IISRootFolder}, {
+				{"destinationDirectory", _iisRootFolder}, {
 					"isNetFramework",
 					(InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework)
 					.ToString()
@@ -194,7 +197,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		ConfigureConnectionStringRequest request = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest() {
 				Arguments = new Dictionary<string, string> {
-					{"folderPath", Path.Join(IISRootFolder, options.SiteName)},
+					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)},
 					{"dbString", $"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"},
 					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, 
 					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
@@ -202,7 +205,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			},
 			InstallerHelper.DatabaseType.MsSql =>  new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
-					{"folderPath", Path.Join(IISRootFolder, options.SiteName)},
+					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)},
 					{"dbString", $"Data Source={Dns.GetHostName()},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"},
 					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, 
 					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
@@ -233,22 +236,20 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			Console.WriteLine("Please enter site name:");
 			options.SiteName = Console.ReadLine();
 			
-			if(Directory.Exists(Path.Join(IISRootFolder, options.SiteName))) {
-				Console.WriteLine($"Site with name {options.SiteName} already exists in {Path.Join(IISRootFolder, options.SiteName)}");
+			if(Directory.Exists(Path.Join(_iisRootFolder, options.SiteName))) {
+				Console.WriteLine($"Site with name {options.SiteName} already exists in {Path.Join(_iisRootFolder, options.SiteName)}");
 				options.SiteName = string.Empty;
 			}
 		}
 		
-		while(options.SitePort<=0) {
-			Console.WriteLine("Please enter site port, recommended range between (400000 and 40100):");
+		while(options.SitePort is <= 0 or > 65536){
+			Console.WriteLine($"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
 			if (int.TryParse(Console.ReadLine(), out int value)) {
 				options.SitePort = value;
 			}else {
 				Console.WriteLine("Site port must be an in value");
 			}
 		}
-		
-		
 		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
 		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
