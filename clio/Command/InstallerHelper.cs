@@ -46,7 +46,6 @@ public static class InstallerHelper
 	private const string MsSqlBackupExtension = ".bak";
 	private const string PgBackupExtension = ".backup";
 	private const string PostgresAppName = "clio-postgres";
-	private const string RootDestinationDirectory = @"D:\Projects\CreatioProductBuild";
 	private const string PgConnectionString = "Host=localhost;Port=5432;Username=postgres;Password=root;Database=postgres";
 	
 	#endregion
@@ -194,7 +193,7 @@ public static class InstallerHelper
 	[NotNull]
 	public static readonly Func<string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExisting =
 		(zipFile, packageArchiver) => {
-			string destinationPath = Path.Join(RootDestinationDirectory,
+			string destinationPath = Path.Join(new FileInfo(zipFile).Directory.FullName,
 				Path.GetFileNameWithoutExtension(new FileInfo(zipFile).FullName));
 			return Directory.Exists(destinationPath) switch {
 				true => new DirectoryInfo(destinationPath),
