@@ -36,11 +36,14 @@ namespace Clio
 				containerBuilder.RegisterInstance(settings);
 			}
 
-			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
-			IKubernetes k8Client = new Kubernetes(config);
-			containerBuilder.RegisterInstance(k8Client).As<IKubernetes>();
-			containerBuilder.RegisterType<k8Commands>();
+			try {
+				KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+				IKubernetes k8Client = new Kubernetes(config);
+				containerBuilder.RegisterInstance(k8Client).As<IKubernetes>();
+				containerBuilder.RegisterType<k8Commands>();
+			} catch {
 			
+			}
 			
             var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
