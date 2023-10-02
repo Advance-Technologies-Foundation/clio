@@ -785,3 +785,60 @@ steps:
 ```
 
 See more examples in [samples](https://github.com/Advance-Technologies-Foundation/clio-docs/tree/main/clio/Samples/Scenarios)
+
+
+# Installer
+
+Clio comes with many tricks up its sleeve, one of of such tricks is the option to install Creatio on the host its running on.
+In order for Clio to install Creatio few things need to happen:
+- Clio needs to have access to database server (Mssql or Postgres and Redis)
+- Clio needs to have access to Creatio installation files
+- Enable required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
+- Enable required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
+
+## Infrastructure
+To simply installation of dependencies we opted to deploy MsSQL, Postgres and Redis in your local Kubernetes cluster. To create an empty cluster we recommend using [Rancher Desktop](https://rancherdesktop.io), however there are others.
+
+- Install [Rancher Desktop](https://rancherdesktop.io) and configure resources
+    - On windows use [.wlsconfig](https://learn.microsoft.com/en-us/windows/wsl/wsl-config) file.
+      Sample config:
+      ```
+      [wsl2]
+      memory=16GB # Limits VM memory in WSL 2 to 4 GB
+      processors=8 # Makes the WSL 4 VM use 8 virtual processors
+      ```
+- To generate generate deployment scrips execute the following in command line
+  
+  ```ps
+  create-k8-files
+  ```
+  This will generate necessary files in `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure` folder
+  - Review generated files and make sure that they are correct. Things to review:
+    - `mssql-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
+    - `mssql-stateful-set.yaml` - make sure you agree with terms and conditions of Microsoft SQL Server Developer Edition.
+    - `mssql-stateful-set.yaml` - will try to allocate 20Gb of disk space for database files. Make sure you have enough space on your disk.
+    - `postgres-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
+    - `postgres-stateful-set.yaml` - will try to allocate 40Gb of disk space for database files and 5Gb for backup files. Make sure you have enough space on your disk.
+
+- Deploy necessary components by executing series of commands
+  ```ps
+  kubectl apply -f infrastructure
+  kubectl apply -f infrastructure\mssql
+  kubectl apply -f infrastructure\postgres
+  kubectl apply -f infrastructure\pgadmin
+  kubectl apply -f infrastructure\redis
+  ```
+  
+
+## Creatio Installation
+  To get Windows (only) context menu for `.zip` file execute
+    ```ps
+      clio register
+    ```
+You may need to close all Explorer windows and open them again. Find Creatio installation `zip` file and right click on it. You should see `clio: deploy Creatio` menu item. 
+  Click on the menu item and follow the prompts. 
+  You may need _**Administrator**_ privileges
+> Other OS use command to install Creatio
+```bash
+ clio deploy-creatio --ZipFile <Path_To_ZipFile>
+```
