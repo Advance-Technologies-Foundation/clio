@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-service-lb
+  annotations:
+    a8r.io/description: "This service exposes Postgres outside cluster, use port in ConnectionStrings.config"
   namespace: clio-infrastructure
   labels:
     app: clio-postgres
@@ -19,6 +21,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-service-internal
+  annotations:
+    a8r.io/description: "This is cluster internal service, primarily used by email-listener, pdAdmin and IdentityService if installed"
   namespace: clio-infrastructure
   labels:
     app: clio-postgres

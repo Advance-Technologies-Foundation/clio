@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: clio-email-listener
   namespace: clio-infrastructure
+  annotations:
+    a8r.io/description: "This service exposes email-listener outside the cluster, used by creatio running outside the cluster"
   labels:
     app: clio-email-listener
 spec:

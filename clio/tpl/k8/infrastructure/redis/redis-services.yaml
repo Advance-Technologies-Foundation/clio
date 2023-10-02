@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis-service-lb
+  annotations:
+    a8r.io/description: "This service exposes redis outside cluster, use port in ConnectionStrings.config"
   namespace: clio-infrastructure
   labels:
     app: clio-redis
@@ -19,6 +21,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis-service-internal
+  annotations:
+    a8r.io/description: "This is cluster internal service, primarily used by email listener"
   namespace: clio-infrastructure
   labels:
     app: clio-redis

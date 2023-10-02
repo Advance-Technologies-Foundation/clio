@@ -1,6 +1,10 @@
 ﻿{
 	"$schema": "http://json-schema.org/schema",
 	"properties": {
+		"iis-clio-root-path":{
+			"type":"string",
+			"description": "Default IIS folder where Creatio instances will run from"
+		},
 		"ActiveEnvironmentKey":{
 			"type":"string",
 			"description": "Default environment key"
