@@ -74,10 +74,11 @@ public class k8Commands
 		#region Constructors: Public
 
 		public ActivePod(PodType podType) {
-			(ContainerName, PodLabel, VolumeMountName, FolderInVolumeMountName, AppName,UsernameKey, PasswordKey, SecretName, InternalServiceName) = podType switch {
-				PodType.Postgres => (PostgresContainerName, PostgresPodLabel, PostgresVolumeMountName, PostgresVolumeMountName, 
+			(ContainerName, PodLabel, VolumeMountName, FolderInVolumeMountName, AppName, UsernameKey, PasswordKey, SecretName, InternalServiceName) = podType switch {
+				PodType.Postgres => (PostgresContainerName, PostgresPodLabel, PostgresVolumeMountName, string.Empty, 
 					PostgresAppName, PostgresUserNameKey, PostgresPasswordKey, PostgresSecretName, PostgresInternalServiceName),
-				PodType.Mssql => (MssqlContainerName, MssqlPodLabel, MssqlVolumeMountName, MssqlFolderInVolumeMountName, MssqlAppName, "",MssqlPasswordKey, MssqlSecretName, MssqlInternalServiceName),
+				PodType.Mssql => (MssqlContainerName, MssqlPodLabel, MssqlVolumeMountName, MssqlFolderInVolumeMountName,
+					MssqlAppName, "",MssqlPasswordKey, MssqlSecretName, MssqlInternalServiceName),
 				_ => throw new InvalidOperationException($"Unsupported PodType: {podType}")
 			};
 		}
@@ -101,12 +102,10 @@ public class k8Commands
 			string mountpath = pod.Spec.Containers
 				.FirstOrDefault(c => c.Name == currentPodType.ContainerName)?
 				.VolumeMounts.FirstOrDefault(vm => vm.Name == currentPodType.VolumeMountName)?.MountPath;
-
-			return $"{mountpath}/{destFileName}";
-			// return string.IsNullOrWhiteSpace(currentPodType.FolderInVolumeMountName) switch {
-			// 	true => $"{mountpath}/{destFileName}",
-			// 	_ => $"{mountpath}/{currentPodType.FolderInVolumeMountName}/{destFileName}"
-			// };
+			return string.IsNullOrWhiteSpace(currentPodType.FolderInVolumeMountName) switch {
+				true => $"{mountpath}/{destFileName}",
+				_ => $"{mountpath}/{currentPodType.FolderInVolumeMountName}/{destFileName}"
+			};
 		};
 
 	
