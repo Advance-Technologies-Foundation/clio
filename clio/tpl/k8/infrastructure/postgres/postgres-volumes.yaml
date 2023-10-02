@@ -9,7 +9,7 @@ metadata:
 spec:
   storageClassName: clio-storage
   capacity:
-    storage: 100Gi
+    storage: 40Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
@@ -26,7 +26,7 @@ metadata:
 spec:
   storageClassName: clio-storage
   capacity:
-    storage: 10Gi
+    storage: 5Gi
   accessModes:
     - ReadWriteOnce
   hostPath:

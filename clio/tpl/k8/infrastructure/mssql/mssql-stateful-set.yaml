@@ -31,8 +31,8 @@ spec:
           imagePullPolicy: "Always"
           resources:
             limits:
-              memory: "4Gi"
-              cpu: "2"
+              memory: "2Gi"
+              cpu: "1"
             requests:
               memory: "512Mi"
               cpu: "0.25"
@@ -61,4 +61,4 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 100Gi
+          storage: 20Gi

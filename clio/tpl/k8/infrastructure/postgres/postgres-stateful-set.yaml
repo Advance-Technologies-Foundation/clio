@@ -20,8 +20,8 @@ spec:
           imagePullPolicy: "IfNotPresent"
           resources:
             limits:
-              memory: "4Gi"
-              cpu: "2"
+              memory: "2Gi"
+              cpu: "1"
             requests:
               memory: "512Mi"
               cpu: "0.25"
@@ -52,7 +52,7 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 100Gi
+          storage: 40Gi
   - metadata:
       name: postgres-backup-images
       namespace: clio-infrastructure
@@ -61,4 +61,4 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 10Gi
+          storage: 5Gi

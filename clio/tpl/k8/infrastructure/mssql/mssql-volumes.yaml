@@ -8,7 +8,7 @@ metadata:
 spec:
   storageClassName: clio-storage
   capacity:
-    storage: 100Gi
+    storage: 20Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
