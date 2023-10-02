@@ -7,11 +7,13 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using CommandLine;
 using MediatR;
+using OneOf.Types;
 using StackExchange.Redis;
 
 namespace Clio.Command;
@@ -39,8 +41,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 {
 
 	#region Constants: Private
-
-	//private const string IISRootFolder = @"D:\Projects\inetpub\wwwroot";
+	
 	private readonly string _iisRootFolder;
 
 	#endregion
@@ -119,45 +120,55 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	}
 
 	private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName) {
-		bool exists = InstallerHelper.CheckPgTemplateExists(tmpDbName);
+
+		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+		Postgres postgres = new Postgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		
+		bool exists = postgres.CheckTemplateExists(tmpDbName);
 		if (exists) {
 			return;
 		}
-
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
 		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
+		
+		postgres.CreateDb(tmpDbName);
 		string restoreResult = _k8.RestorePgDatabase(src.Name, tmpDbName);
+		
 		string reportFilename = $@"C:\restore_{tmpDbName}_Result.txt";
 		File.WriteAllText(reportFilename, restoreResult);
 		Console.WriteLine($"[Report Generated in] - {reportFilename}");
 
-		InstallerHelper.SetPgDatabaseAsTemplate(tmpDbName);
+		postgres.SetDatabaseAsTemplate(tmpDbName);
 		string deleteResult = _k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
 		Console.WriteLine($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
 	}
-
-	private int DoMsWork(DirectoryInfo unzippedDirectory, string zipFile) {
-		// (bool isSuccess, string fileName) k8result = InstallerHelper.CopyBackupFile(unzippedDirectory, false, _processExecutor, null, InstallerHelper.DatabaseType.MsSql);
-		// Console.WriteLine($"[Copying backup file completed] - {k8result.fileName}");
-		// Console.WriteLine();
-
-		string newDbName = Path.GetFileNameWithoutExtension(new FileInfo(zipFile).Name);
-		//var createTemplateresult = InstallerHelper.CreateMsSqlDb(newDbName, _processExecutor);
-
-		//InstallerHelper.DeleteFileK8(k8result.fileName, _processExecutor, InstallerHelper.DatabaseType.Postgres);
-		InstallerHelper.DeleteFileK8("8.1.1.1164_Studio_Softkey_MSSQL_ENU.bak", _processExecutor,
-			InstallerHelper.DatabaseType.MsSql);
-		//Console.WriteLine($"[Deleted backup file] {k8result.fileName}");
-
+	
+	private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName) {
+		
+		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
+		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+		_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
+		
+		k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
+		Mssql mssql = new Mssql(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		
+		bool exists = mssql.CheckDbExists(siteName);
+		if(!exists) {
+			mssql.CreateDb(siteName, $"{siteName}.bak");
+		}
+		_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
 		return 0;
 	}
 
 	private int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName) {
 		string tmpDbName = "template_" + unzippedDirectory.Name;
+		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+		Postgres postgres = new Postgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		
 		CreatePgTemplate(unzippedDirectory, tmpDbName);
-		InstallerHelper.CreateDbFromTemplate(tmpDbName, destDbName);
+		postgres.CreateDbFromTemplate(tmpDbName, destDbName);
 		Console.WriteLine($"[Database created] - {destDbName}");
 		return 0;
 	}
@@ -170,7 +181,6 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		Console.WriteLine(message);
 		return 0;
 	}
-
 	private static int FindEmptyRedisDb(int port) {
 		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
 		IServer server = redis.GetServer("localhost", port);
@@ -183,7 +193,6 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		}
 		return -1;
 	}
-	
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options) {
 		Console.WriteLine("[Update connection string] - Started");
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
@@ -195,7 +204,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		int redisDb = FindEmptyRedisDb(csParam.RedisPort);
 		
 		ConfigureConnectionStringRequest request = dbType switch {
-			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest() {
+			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)},
 					{"dbString", $"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"},
@@ -220,7 +229,60 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			_ => ExitWithErrorMessage("Unknown error occured")
 		};
 	}
+	private static readonly Action<string, string, IProgress<double>> CopyFileWithProgress = (sourcePath, destinationPath, progress)=>{
+		const int bufferSize = 1024 * 1024; // 1MB
+		byte[] buffer = new byte[bufferSize];
+		int bytesRead;
 
+		using FileStream sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read);
+		long totalBytes = sourceStream.Length;
+
+		using FileStream destinationStream = new FileStream(destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
+		while((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
+		{
+			destinationStream.Write(buffer, 0, bytesRead);
+			// Report progress
+			double percentage = 100d * (double)sourceStream.Position / totalBytes;
+			progress.Report(percentage);
+		}
+	};
+	private static readonly Func<string, string> CopyZipLocal = (src)=> {
+	
+		//TODO: this needs to go to AppSettings
+		const string localFolder = @"D:\Projects\CreatioProductBuild";
+		if (!Directory.Exists(localFolder)) {
+			Directory.CreateDirectory(localFolder);
+		}
+		
+		FileInfo srcInfo  = new (src);
+		string dest = Path.Join(localFolder, srcInfo.Name);
+		
+		if (File.Exists(dest)) {
+			return dest;
+		}
+		
+		Console.WriteLine($"Detected network drive as source, copying to local folder {localFolder}");
+		Console.Write("Copy Progress:    ");
+		Progress<double> progressReporter = new Progress<double>(progress => {
+			
+			string result = progress switch {
+				< 10 => progress.ToString("0").PadLeft(2)+" %",
+				< 100 => progress.ToString("0").PadLeft(1)+" %",
+				100 => "100 %",
+				_ => ""
+			};
+			Console.CursorLeft = 15;
+			Console.Write(result);
+		});
+		CopyFileWithProgress(src, dest, progressReporter);
+		return dest;
+	};
+	private static readonly Func<string, string> CopyLocalWhenNetworkDrive = (path) => 
+		new DriveInfo(Path.GetPathRoot(path)) switch {
+			{DriveType: DriveType.Network} => CopyZipLocal(path),
+			_ => path
+	};
+	
 	#endregion
 
 	#region Methods: Public
@@ -252,15 +314,16 @@ public class InstallerCommand : Command<PfInstallerOptions>
 				Console.WriteLine("Site port must be an in value");
 			}
 		}
+		
+		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
 		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
 		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
 		
 		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {
-			InstallerHelper.DatabaseType.Postgres => DoPgWork(unzippedDirectory,
-				options.SiteName), //Need to check if db already exists
-			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.ZipFile)
+			InstallerHelper.DatabaseType.Postgres => DoPgWork(unzippedDirectory, options.SiteName), //Need to check if db already exists
+			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName)
 		};
 
 		int createSiteResult = dbRestoreResult switch {

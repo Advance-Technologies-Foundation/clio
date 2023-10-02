@@ -38,12 +38,20 @@ public class k8Commands
 		private const string MssqlPodLabel = "clio-mssql";
 		private const string MssqlVolumeMountName = "mssql-data";
 		private const string MssqlAppName = "clio-mssql";
+		private const string MssqlUserNameKey = "";
+		private const string MssqlPasswordKey = "MSSQL_SA_PASSWORD";
+		private const string MssqlSecretName = "clio-mssql-secret";
+		private const string MssqlInternalServiceName = "mssql-service-internal";
 		
 		private const string PostgresContainerName = "clio-postgres";
 		private const string PostgresPodLabel = "clio-postgres";
 		private const string PostgresVolumeMountName = "postgres-backup-images";
 		private const string PostgresAppName = "clio-postgres";
-
+		private const string PostgresUserNameKey = "POSTGRES_USER";
+		private const string PostgresPasswordKey = "POSTGRES_PASSWORD";
+		private const string PostgresSecretName = "clio-postgres-secret";
+		private const string PostgresInternalServiceName = "postgres-service-internal";
+		
 		#endregion
 
 		#region Fields: Internal
@@ -53,16 +61,23 @@ public class k8Commands
 		internal readonly string VolumeMountName;
 		internal readonly string FolderInVolumeMountName;
 		internal readonly string AppName;
-
+		internal readonly string UsernameKey;
+		internal readonly string PasswordKey;
+		internal const string RedisAppName = "clio-redis";
+		internal const string RedisLoadBalancerServiceName = "redis-service-lb";
+		internal const string RedisInternalServiceName = "redis-service-internal";
+		internal readonly string SecretName;
+		internal readonly string InternalServiceName;
+		
 		#endregion
 
 		#region Constructors: Public
 
 		public ActivePod(PodType podType) {
-			(ContainerName, PodLabel, VolumeMountName, FolderInVolumeMountName, AppName) = podType switch {
-				PodType.Postgres => (PostgresContainerName, PostgresPodLabel, PostgresVolumeMountName, string.Empty, PostgresAppName),
-				PodType.Mssql => (MssqlContainerName, MssqlPodLabel, MssqlVolumeMountName,
-					MssqlFolderInVolumeMountName, MssqlAppName),
+			(ContainerName, PodLabel, VolumeMountName, FolderInVolumeMountName, AppName,UsernameKey, PasswordKey, SecretName, InternalServiceName) = podType switch {
+				PodType.Postgres => (PostgresContainerName, PostgresPodLabel, PostgresVolumeMountName, PostgresVolumeMountName, 
+					PostgresAppName, PostgresUserNameKey, PostgresPasswordKey, PostgresSecretName, PostgresInternalServiceName),
+				PodType.Mssql => (MssqlContainerName, MssqlPodLabel, MssqlVolumeMountName, MssqlFolderInVolumeMountName, MssqlAppName, "",MssqlPasswordKey, MssqlSecretName, MssqlInternalServiceName),
 				_ => throw new InvalidOperationException($"Unsupported PodType: {podType}")
 			};
 		}
@@ -87,45 +102,14 @@ public class k8Commands
 				.FirstOrDefault(c => c.Name == currentPodType.ContainerName)?
 				.VolumeMounts.FirstOrDefault(vm => vm.Name == currentPodType.VolumeMountName)?.MountPath;
 
-			return string.IsNullOrWhiteSpace(currentPodType.FolderInVolumeMountName) switch {
-				true => $"{mountpath}/{destFileName}",
-				_ => $"{mountpath}/{currentPodType.FolderInVolumeMountName}/{destFileName}"
-			};
+			return $"{mountpath}/{destFileName}";
+			// return string.IsNullOrWhiteSpace(currentPodType.FolderInVolumeMountName) switch {
+			// 	true => $"{mountpath}/{destFileName}",
+			// 	_ => $"{mountpath}/{currentPodType.FolderInVolumeMountName}/{destFileName}"
+			// };
 		};
 
 	
-	private static readonly Func<string, bool> CreatePostgresDbWithClient = (dbName)=> {
-		
-		try {
-			// also valid
-			NpgsqlConnectionStringBuilder csb = new () {
-				Host = "localhost",
-				Port = 5432,
-				Username = "postgres",
-				Password = "root",
-				Database = "postgres"
-			};
-			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(csb);
-			
-			//using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(PgConnectionString);
-			using NpgsqlConnection cnn = dataSource.OpenConnection();
-			using NpgsqlCommand cmd = dataSource.CreateCommand($"CREATE DATABASE \"{dbName}\" ENCODING UTF8 CONNECTION LIMIT -1");
-			cmd.ExecuteNonQuery();
-			cnn.Close();
-			return true;
-		} catch (Exception e)  when (e is PostgresException pe){
-			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
-			return false;
-		}
-		catch(Exception e) when (e is NpgsqlException ne) {
-			Console.WriteLine(ne.Message);
-			return false;
-		}
-		catch(Exception e) {
-			Console.WriteLine(e.Message);
-			return false;
-		}
-	};
 	
 	private readonly IKubernetes _client;
 
@@ -147,7 +131,6 @@ public class k8Commands
 	#region Methods: Private
 
 	private async Task<string> ExecInPod(ActivePod currentPod, V1Pod pod, IEnumerable<string> commandToExecute) {
-		
 		try {
 			WebSocket webSocket =
 				await _client.WebSocketNamespacedPodExecAsync(pod.Metadata.Name, K8NNameSpace, commandToExecute,
@@ -166,7 +149,6 @@ public class k8Commands
 		catch (Exception e){
 			Console.WriteLine(e);
 		}
-		
 		return "";
 	}
 
@@ -213,80 +195,57 @@ public class k8Commands
 			"--jobs=4", 
 			"--username=postgres"
 		};
-		
-		var r = CreatePostgresDbWithClient(dbName);
-		var result =  ExecInPod(currentPod, pod, command).GetAwaiter().GetResult();
+		string result =  ExecInPod(currentPod, pod, command).GetAwaiter().GetResult();
 		return result;
 	}
 	
 	public ConnectionStringParams GetPostgresConnectionString() {
-		
 		ActivePod currentPod = new ActivePod(PodType.Postgres);
-		V1Pod pod = GetPodByLabel(currentPod.PodLabel);
-		
-		V1StatefulSet ss = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
+		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
 			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
-		string serviceName = ss.Spec.ServiceName;
+		string serviceName = statefulSet.Spec.ServiceName;
 		
+		V1ServicePort pgPort = GetServicePort(currentPod.AppName, serviceName);
+		V1ServicePort dbPortInternal = GetServicePort(currentPod.AppName, currentPod.InternalServiceName);
+		V1ServicePort redisPort = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisLoadBalancerServiceName);
+		V1ServicePort redisPortInternal = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisInternalServiceName);
 		
-		var pgPort = GetLoadBalancePort(currentPod.AppName, serviceName);
-		var redisPort = GetLoadBalancePort("clio-redis", "redis-service-lb");
-		
-		
-		string secretName = pod.Spec.Containers.FirstOrDefault(c=> c.Name == currentPod.ContainerName)
-			?.Env.
-			FirstOrDefault(e=> e.Name == "POSTGRES_USER")
-			?.ValueFrom.SecretKeyRef.Name;
 		
 		V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
-			.Items.FirstOrDefault(s=>s.Metadata.Name ==secretName);
+			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
 		
-		byte[] password = secrets?.Data["POSTGRES_PASSWORD"];
-		byte[] username = secrets?.Data["POSTGRES_USER"];
+		byte[] password = secrets?.Data[currentPod.PasswordKey];
+		byte[] username = secrets?.Data[currentPod.UsernameKey];
 		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
 		string usernameStr = Encoding.UTF8.GetString(username ?? Array.Empty<byte>());
-		
-		
-		return new ConnectionStringParams(pgPort.Port, redisPort.Port, usernameStr, passwordStr);
-		
+		return new ConnectionStringParams(pgPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port, usernameStr, passwordStr);
 	}
 	
 	public ConnectionStringParams GetMssqlConnectionString() {
-		
 		ActivePod currentPod = new ActivePod(PodType.Mssql);
-		V1Pod pod = GetPodByLabel(currentPod.PodLabel);
-		
-		V1StatefulSet ss = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
+		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
 			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
-		string serviceName = ss.Spec.ServiceName;
+		string serviceName = statefulSet.Spec.ServiceName;
 		
-		var dbPort = GetLoadBalancePort(currentPod.AppName, serviceName);
-		var redisPort = GetLoadBalancePort("clio-redis", "redis-service-lb");
-		
-		string secretName = pod.Spec.Containers.FirstOrDefault(c=> c.Name == currentPod.ContainerName)
-			?.Env.
-			FirstOrDefault(e=> e.Name == "MSSQL_SA_PASSWORD")
-			?.ValueFrom.SecretKeyRef.Name;
+		V1ServicePort dbPort = GetServicePort(currentPod.AppName, serviceName);
+		V1ServicePort dbPortInternal = GetServicePort(currentPod.AppName, currentPod.InternalServiceName);
+		V1ServicePort redisPort = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisLoadBalancerServiceName);
+		V1ServicePort redisPortInternal = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisInternalServiceName);
 		
 		V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
-			.Items.FirstOrDefault(s=>s.Metadata.Name ==secretName);
-		
-		byte[] password = secrets?.Data["MSSQL_SA_PASSWORD"];
+			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
+		byte[] password = secrets?.Data[currentPod.PasswordKey];
 		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
 		
-		return new ConnectionStringParams(dbPort.Port, redisPort.Port, "sa", passwordStr);
-		
+		return new ConnectionStringParams(dbPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port,"sa", passwordStr);
 	}
-	private V1ServicePort GetLoadBalancePort(string appName, string serviceName ) {
+	private V1ServicePort GetServicePort(string appName, string serviceName ) {
 		V1Service service = _client.CoreV1.ListNamespacedService(K8NNameSpace, labelSelector:$"app={appName}")
 			.Items.FirstOrDefault(s=> s.Metadata.Name == serviceName);
-		V1ServicePort port = service.Spec.Ports.FirstOrDefault();
-		return port;
+		return service?.Spec.Ports.FirstOrDefault();
 	}
-	
-	
 	#endregion
-	public record ConnectionStringParams(int DbPort, int RedisPort, string DbUsername, string DbPassword);
+	public record ConnectionStringParams(int DbPort, int DbInternalPort,int RedisPort, int RedisInternalPort,string DbUsername, string DbPassword);
 	
 }
 
