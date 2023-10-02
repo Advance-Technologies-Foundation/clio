@@ -13,7 +13,6 @@ using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using CommandLine;
 using MediatR;
-using OneOf.Types;
 using StackExchange.Redis;
 
 namespace Clio.Command;
@@ -40,38 +39,107 @@ public class PfInstallerOptions : EnvironmentNameOptions
 public class InstallerCommand : Command<PfInstallerOptions>
 {
 
-	#region Constants: Private
-	
-	private readonly string _iisRootFolder;
-
-	#endregion
-
 	#region Fields: Private
 
+	private static readonly Action<string, string, IProgress<double>> CopyFileWithProgress =
+		(sourcePath, destinationPath, progress) => {
+			const int bufferSize = 1024 * 1024; // 1MB
+			byte[] buffer = new byte[bufferSize];
+			int bytesRead;
+
+			using FileStream sourceStream = new(sourcePath, FileMode.Open, FileAccess.Read);
+			long totalBytes = sourceStream.Length;
+
+			using FileStream destinationStream = new(destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
+			while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0) {
+				destinationStream.Write(buffer, 0, bytesRead);
+				// Report progress
+				double percentage = 100d * sourceStream.Position / totalBytes;
+				progress.Report(percentage);
+			}
+		};
+
+	private string CopyZipLocal(string src)  {
+		if (!Directory.Exists(_productFolder)) {
+			Directory.CreateDirectory(_productFolder);
+		}
+
+		FileInfo srcInfo = new(src);
+		string dest = Path.Join(_productFolder, srcInfo.Name);
+
+		if (File.Exists(dest)) {
+			return dest;
+		}
+
+		Console.WriteLine($"Detected network drive as source, copying to local folder {_productFolder}");
+		Console.Write("Copy Progress:    ");
+		Progress<double> progressReporter = new(progress => {
+			string result = progress switch {
+				< 10 => progress.ToString("0").PadLeft(2) + " %",
+				< 100 => progress.ToString("0").PadLeft(1) + " %",
+				100 => "100 %",
+				_ => ""
+			};
+			Console.CursorLeft = 15;
+			Console.Write(result);
+		});
+		CopyFileWithProgress(src, dest, progressReporter);
+		return dest;
+	}
+
+	private string CopyLocalWhenNetworkDrive (string path) =>
+		new DriveInfo(Path.GetPathRoot(path)) switch {
+			{DriveType: DriveType.Network} => CopyZipLocal(path),
+			_ => path
+		};
+
+	private readonly string _iisRootFolder;
+	private readonly string _productFolder;
 	private readonly IPackageArchiver _packageArchiver;
-	private readonly IProcessExecutor _processExecutor;
 	private readonly k8Commands _k8;
 	private readonly IMediator _mediator;
 	private readonly RegAppCommand _registerCommand;
-	
 
 	#endregion
 
 	#region Constructors: Public
 
-	public InstallerCommand(IPackageArchiver packageArchiver, IProcessExecutor processExecutor, k8Commands k8,
+	public InstallerCommand(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository) {
 		_packageArchiver = packageArchiver;
-		_processExecutor = processExecutor;
 		_k8 = k8;
 		_mediator = mediator;
 		_registerCommand = registerCommand;
 		_iisRootFolder = settingsRepository.GetIISClioRootPath();
+		_productFolder = settingsRepository.GetCreatioProductsFolder();
 	}
 
 	#endregion
 
 	#region Methods: Private
+
+	private static int ExitWithErrorMessage(string message) {
+		Console.WriteLine(message);
+		return 1;
+	}
+
+	private static int ExitWithOkMessage(string message) {
+		Console.WriteLine(message);
+		return 0;
+	}
+
+	private static int FindEmptyRedisDb(int port) {
+		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
+		IServer server = redis.GetServer("localhost", port);
+		int count = server.DatabaseCount;
+		for (int i = 1; i < count; i++) {
+			long records = server.DatabaseSize(i);
+			if (records == 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
 
 	private static int StartWebBrowser(PfInstallerOptions options) {
 		string url = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}";
@@ -102,8 +170,8 @@ public class InstallerCommand : Command<PfInstallerOptions>
 				{"siteName", options.SiteName},
 				{"port", options.SitePort.ToString()},
 				{"sourceDirectory", unzippedDirectory.FullName},
-				{"destinationDirectory", _iisRootFolder}, {
-					"isNetFramework",
+				{"destinationDirectory", _iisRootFolder}, 
+				{"isNetFramework",
 					(InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework)
 					.ToString()
 				}
@@ -120,10 +188,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	}
 
 	private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName) {
-
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-		Postgres postgres = new Postgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
-		
+		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
 		bool exists = postgres.CheckTemplateExists(tmpDbName);
 		if (exists) {
 			return;
@@ -132,10 +199,10 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
-		
+
 		postgres.CreateDb(tmpDbName);
 		string restoreResult = _k8.RestorePgDatabase(src.Name, tmpDbName);
-		
+
 		string reportFilename = $@"C:\restore_{tmpDbName}_Result.txt";
 		File.WriteAllText(reportFilename, restoreResult);
 		Console.WriteLine($"[Report Generated in] - {reportFilename}");
@@ -144,18 +211,17 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		string deleteResult = _k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
 		Console.WriteLine($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
 	}
-	
+
 	private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName) {
-		
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
 		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
-		
+
 		k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
-		Mssql mssql = new Mssql(csp.DbPort, csp.DbUsername, csp.DbPassword);
-		
+		Mssql mssql = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
 		bool exists = mssql.CheckDbExists(siteName);
-		if(!exists) {
+		if (!exists) {
 			mssql.CreateDb(siteName, $"{siteName}.bak");
 		}
 		_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
@@ -165,131 +231,71 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	private int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName) {
 		string tmpDbName = "template_" + unzippedDirectory.Name;
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-		Postgres postgres = new Postgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
-		
+		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
 		CreatePgTemplate(unzippedDirectory, tmpDbName);
 		postgres.CreateDbFromTemplate(tmpDbName, destDbName);
 		Console.WriteLine($"[Database created] - {destDbName}");
 		return 0;
 	}
 
-	private static int ExitWithErrorMessage(string message) {
-		Console.WriteLine(message);
-		return 1;
-	}
-	private static int ExitWithOkMessage(string message) {
-		Console.WriteLine(message);
-		return 0;
-	}
-	private static int FindEmptyRedisDb(int port) {
-		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
-		IServer server = redis.GetServer("localhost", port);
-		int count = server.DatabaseCount;
-		for(int i = 1; i<count; i++) {
-			long records = server.DatabaseSize(i);
-			if(records == 0) {
-				return i;
-			}
-		}
-		return -1;
-	}
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options) {
 		Console.WriteLine("[Update connection string] - Started");
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
-			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
+			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
 		};
-		
+
 		int redisDb = FindEmptyRedisDb(csParam.RedisPort);
-		
+
 		ConfigureConnectionStringRequest request = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
-					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)},
-					{"dbString", $"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"},
-					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, 
-					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
+					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
+						"dbString",
+						$"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
+					},
+					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, {
+						"isNetFramework",
+						(InstallerHelper.DetectFramework(unzippedDirectory) ==
+							InstallerHelper.FrameworkType.NetFramework).ToString()
+					}
 				}
 			},
-			InstallerHelper.DatabaseType.MsSql =>  new ConfigureConnectionStringRequest {
+			InstallerHelper.DatabaseType.MsSql => new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
-					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)},
-					{"dbString", $"Data Source={Dns.GetHostName()},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"},
-					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, 
-					{"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()}
+					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
+						"dbString",
+						$"Data Source={Dns.GetHostName()},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+					},
+					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, {
+						"isNetFramework",
+						(InstallerHelper.DetectFramework(unzippedDirectory) ==
+							InstallerHelper.FrameworkType.NetFramework).ToString()
+					}
 				}
 			}
 		};
-		
+
 		return (await _mediator.Send(request)).Value switch {
 			(HandlerError error) => ExitWithErrorMessage(error.ErrorDescription),
-			(ConfigureConnectionStringResponse {Status: BaseHandlerResponse.CompletionStatus.Success} result) => ExitWithOkMessage(result.Description),
-			(ConfigureConnectionStringResponse {Status: BaseHandlerResponse.CompletionStatus.Failure} result) => ExitWithErrorMessage(result.Description),
+			(ConfigureConnectionStringResponse {
+				Status: BaseHandlerResponse.CompletionStatus.Success
+			} result) => ExitWithOkMessage(result.Description),
+			(ConfigureConnectionStringResponse {
+				Status: BaseHandlerResponse.CompletionStatus.Failure
+			} result) => ExitWithErrorMessage(result.Description),
 			_ => ExitWithErrorMessage("Unknown error occured")
 		};
 	}
-	private static readonly Action<string, string, IProgress<double>> CopyFileWithProgress = (sourcePath, destinationPath, progress)=>{
-		const int bufferSize = 1024 * 1024; // 1MB
-		byte[] buffer = new byte[bufferSize];
-		int bytesRead;
 
-		using FileStream sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read);
-		long totalBytes = sourceStream.Length;
-
-		using FileStream destinationStream = new FileStream(destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
-		while((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
-		{
-			destinationStream.Write(buffer, 0, bytesRead);
-			// Report progress
-			double percentage = 100d * (double)sourceStream.Position / totalBytes;
-			progress.Report(percentage);
-		}
-	};
-	private static readonly Func<string, string> CopyZipLocal = (src)=> {
-	
-		//TODO: this needs to go to AppSettings
-		const string localFolder = @"D:\Projects\CreatioProductBuild";
-		if (!Directory.Exists(localFolder)) {
-			Directory.CreateDirectory(localFolder);
-		}
-		
-		FileInfo srcInfo  = new (src);
-		string dest = Path.Join(localFolder, srcInfo.Name);
-		
-		if (File.Exists(dest)) {
-			return dest;
-		}
-		
-		Console.WriteLine($"Detected network drive as source, copying to local folder {localFolder}");
-		Console.Write("Copy Progress:    ");
-		Progress<double> progressReporter = new Progress<double>(progress => {
-			
-			string result = progress switch {
-				< 10 => progress.ToString("0").PadLeft(2)+" %",
-				< 100 => progress.ToString("0").PadLeft(1)+" %",
-				100 => "100 %",
-				_ => ""
-			};
-			Console.CursorLeft = 15;
-			Console.Write(result);
-		});
-		CopyFileWithProgress(src, dest, progressReporter);
-		return dest;
-	};
-	private static readonly Func<string, string> CopyLocalWhenNetworkDrive = (path) => 
-		new DriveInfo(Path.GetPathRoot(path)) switch {
-			{DriveType: DriveType.Network} => CopyZipLocal(path),
-			_ => path
-	};
-	
 	#endregion
 
 	#region Methods: Public
 
 	public override int Execute(PfInstallerOptions options) {
-		
-		if(!File.Exists(options.ZipFile)) {
+		if (!File.Exists(options.ZipFile)) {
 			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
 			return 1;
 		}
@@ -299,31 +305,33 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		while (string.IsNullOrEmpty(options.SiteName)) {
 			Console.WriteLine("Please enter site name:");
 			options.SiteName = Console.ReadLine();
-			
-			if(Directory.Exists(Path.Join(_iisRootFolder, options.SiteName))) {
-				Console.WriteLine($"Site with name {options.SiteName} already exists in {Path.Join(_iisRootFolder, options.SiteName)}");
+
+			if (Directory.Exists(Path.Join(_iisRootFolder, options.SiteName))) {
+				Console.WriteLine(
+					$"Site with name {options.SiteName} already exists in {Path.Join(_iisRootFolder, options.SiteName)}");
 				options.SiteName = string.Empty;
 			}
 		}
-		
-		while(options.SitePort is <= 0 or > 65536){
-			Console.WriteLine($"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
+
+		while (options.SitePort is <= 0 or > 65536) {
+			Console.WriteLine(
+				$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
 			if (int.TryParse(Console.ReadLine(), out int value)) {
 				options.SitePort = value;
-			}else {
+			} else {
 				Console.WriteLine("Site port must be an in value");
 			}
 		}
-		
+
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
 		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
 		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
-		
+
 		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {
-			InstallerHelper.DatabaseType.Postgres => DoPgWork(unzippedDirectory, options.SiteName), //Need to check if db already exists
-			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName)
+			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
+			_ => DoPgWork(unzippedDirectory, options.SiteName)
 		};
 
 		int createSiteResult = dbRestoreResult switch {
@@ -343,8 +351,8 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			Uri = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}",
 			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore
 		});
-		
-		_ =updateConnectionStringResult switch {
+
+		_ = updateConnectionStringResult switch {
 			0 => StartWebBrowser(options),
 			_ => ExitWithErrorMessage($"Could not open: http://{InstallerHelper.FetFQDN()}:{options.SitePort}")
 		};

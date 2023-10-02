@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.Json.Serialization;
 
 namespace Clio
 {
@@ -110,7 +111,7 @@ namespace Clio
 			get; set;
 		}
 
-		[JsonIgnore]
+		[Newtonsoft.Json.JsonIgnore]
 		public bool IsDevMode {
 			get => DeveloperModeEnabled ?? false;
 		}
@@ -123,12 +124,23 @@ namespace Clio
 			Environments = new Dictionary<string, EnvironmentSettings>();
 		}
 
-		string defaultIisRootPath = @"C:\inetpub\wwwroot\clio";
+		//TODO: This wont work for Mac and Linux
+		private const string DefaultCreatioProductFolder = @"C:\CreatioProductBuild";
+		private string _creatioProductFolder;
+
+		[JsonProperty("creatio-products")]
+		public string CreatioProductFolder {
+			get => string.IsNullOrWhiteSpace(_creatioProductFolder)? DefaultCreatioProductFolder : _creatioProductFolder;
+			set => _creatioProductFolder = value;
+		}
+		
+		//TODO: This wont work for Mac and Linux
+		private const string DefaultIisRootPath = @"C:\inetpub\wwwroot\clio";
 		private string _iISClioRootPath;
 		
 		[JsonProperty("iis-clio-root-path")]
 		public string IISClioRootPath {
-			get => string.IsNullOrWhiteSpace(_iISClioRootPath)? defaultIisRootPath : _iISClioRootPath;
+			get => string.IsNullOrWhiteSpace(_iISClioRootPath)? DefaultIisRootPath : _iISClioRootPath;
 			set => _iISClioRootPath = value;
 		}
 
@@ -383,7 +395,9 @@ namespace Clio
 		public string GetIISClioRootPath() {
 			return _settings.IISClioRootPath;
 		}
-
+		public string GetCreatioProductsFolder() {
+			return _settings.CreatioProductFolder;
+		}
 	}
 
 }

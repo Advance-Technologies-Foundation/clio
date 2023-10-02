@@ -23,5 +23,6 @@ namespace Clio.UserEnvironment
 		void RemoveAllEnvironment();
 		
 		string GetIISClioRootPath();
+		string GetCreatioProductsFolder();
 	}
 }
