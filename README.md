@@ -859,7 +859,7 @@ You may need _**Administrator**_ privileges.
 
 Clio will automatically determine if the zip file is stored remotely.
 If the file isn't on your local machine, Clio will copy it to a predefined local working folder location,
-You can change the default location in `appsetting.json` `"creatio-products` property.
+You can change the default location in `appsetting.json` file `creatio-products` property.
 To see your `appsetting.json` file execute 
 ```bash
 clio cfg open
