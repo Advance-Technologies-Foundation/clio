@@ -11,7 +11,7 @@ public class Mssql
 
 	public Mssql(int port, string username, string password) {
 		_builder = new SqlConnectionStringBuilder {
-			DataSource = $"localhost,{port}",
+			DataSource = $"127.0.0.1,{port}",
 			UserID = username,
 			Password = password,
 			InitialCatalog = "master",

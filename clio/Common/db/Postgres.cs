@@ -9,7 +9,7 @@ public class Postgres
 	private readonly string _connectionString;
 
 	public Postgres(int port, string username, string password) {
-		_connectionString = $"Host=localhost;Port={port};Username={username};Password={password};Database=postgres";
+		_connectionString = $"Host=127.0.0.1;Port={port};Username={username};Password={password};Database=postgres";
 	}
 	
 	public bool CreateDbFromTemplate (string templateName, string dbName) {
