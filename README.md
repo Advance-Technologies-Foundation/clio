@@ -789,55 +789,14 @@ See more examples in [samples](https://github.com/Advance-Technologies-Foundatio
 
 # Installation of Creatio using Clio
 
-Clio now provides the functionality to install Creatio on a local machine using a zip file or an already unzipped folder. Here's how you can do it:
+Clio provides functionality to install Creatio on a local machine using a zip file or an unzipped folder. Here's how you can do it:
 
-
-## Step 1: Acquiring the Zip File
-Input the zip file into Clio with the help right-click or execute
-```bash
-clio deploy-creatio --ZipFile <PATH_TO.ZIP>
-```
-Clio will automatically determine if the zip file is stored remotely.
-If the file isn't on your local machine, Clio will copy it to a predefined local working folder location,
-You can change the default location in `appsetting.json` `"creatio-products` property.
-To see your `appsetting.json` file execute 
-```bash
-clio apps
-```
-If the zip file already exists in your working directory, Clio will skip this step.
-
-
-## Step 2: Extracting the Zip File
-Clio will extract the zip file to the same directory where the original zip file is located. 
-If the folder already exists, Clio will skip this step.
-
-
-## Step 3: Database Restoration
-Initially, the backup file will be copied to a folder that is accessible by the database server.
-Scripts suitable for both Microsoft SQL and Postgres deployment within a Kubernetes cluster are provided.
-Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and 
-copy files as needed.
-Once files are copied, Clio will proceed to restore the database.
-> Postgres - clio will create a template database, and then a real database from the template. If Database or template already exists, Clio will skip this step.
-
-
-## Step 4: Constructing the Connection String
-The connection string will be generated based on your existing cluster configuration.
-
-
-## Step 5: IIS Configuration and Launch
-Clio will set up an IIS site, configure the relevant app pool,
-and then launch Creatio in your default browser. 
-You can override default location in of an IIS folder in `appsetting.json` `iis-clio-root-path` property. 
-
-
-- Enable required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
-- Enable required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
-
-# Infrastructure
+# Prepare Infrastructure
 To simply installation of dependencies, clio provides deployment files for 
 Microsoft SQL, Postgres, and Redis server in your local Kubernetes cluster. 
 To create an empty cluster, we recommend using [Rancher Desktop](https://rancherdesktop.io), however there are other alternatives.
+
+> If you already have running MSSQL/PostgresSQL/Redis servers on you local machine you have to configure kubernetes services ports to avoid collisions. Reffer to services.yaml in related directories
 
 
 ## Install [Rancher Desktop](https://rancherdesktop.io) and configure resources
@@ -845,13 +804,13 @@ On Windows configure resources with [.wlsconfig](https://learn.microsoft.com/en-
 Sample config:
 ```
 [wsl2]
-memory=16GB # Limits VM memory in WSL 2 to 16 GB
-processors=8 # Makes the WSL  VM use 8 virtual processors
+memory=8GB # Limits VM memory in WSL 2 to 16 GB
+processors=4 # Makes the WSL  VM use 8 virtual processors
 ```
 
 ##  Generate deployment scrips
 ```bash
-create-k8-files
+clio create-k8-files
 ```
 Review files in `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure` folder.
 Things to review:
@@ -870,12 +829,24 @@ kubectl apply -f infrastructure\pgadmin
 kubectl apply -f infrastructure\redis
 ```
 
-## Creatio Installation
+
+## Prepare IIS Configuration and Launch
+Clio will set up an IIS site, configure the relevant app pool,
+and then launch Creatio in your default browser. 
+You can override default location in of an IIS folder in `appsetting.json` `iis-clio-root-path` property. 
+
+
+- Enable required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
+- Enable required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
+
+
+## Run Creatio Installation
 
 To get a Windows (only) context menu for `.zip` file execute
 ```ps
   clio register
 ```
+
 You may need to close all Explorer windows and open them again. Find Creatio installation `zip` file and right-click on it. 
 You should see `clio: deploy Creatio` menu item. Click on the menu item and follow the prompts. 
 You may need _**Administrator**_ privileges.
@@ -883,3 +854,40 @@ You may need _**Administrator**_ privileges.
 ```bash
  clio deploy-creatio --ZipFile <Path_To_ZipFile>
 ```
+
+## Technical details
+
+Clio will automatically determine if the zip file is stored remotely.
+If the file isn't on your local machine, Clio will copy it to a predefined local working folder location,
+You can change the default location in `appsetting.json` `"creatio-products` property.
+To see your `appsetting.json` file execute 
+```bash
+clio cfg open
+```
+If the zip file already exists in your working directory, Clio will skip this step.
+
+
+### Extracting the Zip File
+Clio will extract the zip file to the same directory where the original zip file is located. 
+If the folder already exists, Clio will skip this step.
+
+
+### Constructing the Connection String
+The connection string will be generated based on your existing cluster configuration.
+
+
+### Database Restoration
+Initially, the backup file will be copied to a folder that is accessible by the database server.
+Scripts suitable for both Microsoft SQL and Postgres deployment within a Kubernetes cluster are provided.
+Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and 
+copy files as needed.
+Once files are copied, Clio will proceed to restore the database.
+By default, database will be available on default port
+
+- Postgres: localhost:5432 (root/root)
+- PG Admin: localhost:1080 (root@creatio.com/root)
+- MSSQL: localhost:5432 (sa/$Zarelon01$Zarelon01)
+
+> Postgres - clio will create a template database, and then a real database from the template. If Database or template already exists, Clio will skip this step.
+
+> You can change port and secrets in configuration files `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure`
