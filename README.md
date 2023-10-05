@@ -171,6 +171,7 @@ docker run -it --rm clio reg-web-app -help
   - [Open application](#open-application)
   - [Ping application](#ping-application)
 - [Using for CI/CD systems](#using-for-cicd-systems)
+- [Installation of Creatio](#installation-of-creatio-using-clio)
 
 # Arguments
 
