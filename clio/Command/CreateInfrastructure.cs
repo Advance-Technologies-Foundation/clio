@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Policy;
 using Clio.Common;
 using CommandLine;
 using DocumentFormat.OpenXml.Drawing;
@@ -15,6 +17,26 @@ namespace Clio.Command
 	public class CreateInfrastructureOptions
 	{
 		
+	}
+
+	[Verb("open-k8-files", Aliases = new string[] { "cfg-k8f", "cfg-k8s" }, HelpText = "Open folder K8 files for deployment")]
+	public class OpenInfrastructureOptions
+	{
+
+	}
+
+	public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>
+	{
+		public override int Execute(OpenInfrastructureOptions options) {
+			string infrsatructureCfgFilesFolder = Path.Join(SettingsRepository.AppSettingsFolderPath, "infrastructure");
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+				Process.Start("explorer.exe", infrsatructureCfgFilesFolder);
+				return 0;
+			} else {
+				Console.WriteLine("Clio open-k8-files command is only supported on: 'windows'.");
+				return 1;
+			}
+		}
 	}
 
 	public class CreateInfrastructureCommand : Command<CreateInfrastructureOptions>

@@ -539,7 +539,8 @@ namespace Clio
 			typeof(ConfigureWorkspaceOptions),
 			typeof(GitSyncOptions),
 			typeof(PfInstallerOptions),
-			typeof(CreateInfrastructureOptions)
+			typeof(CreateInfrastructureOptions),
+			typeof(OpenInfrastructureOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -612,6 +613,7 @@ namespace Clio
 				(GitSyncOptions opts) => Resolve<GitSyncCommand>(opts).Execute(opts),
 				(PfInstallerOptions opts) => Resolve<InstallerCommand>(opts).Execute(opts),
 				(CreateInfrastructureOptions opts) => Resolve<CreateInfrastructureCommand>().Execute(opts),
+				(OpenInfrastructureOptions opts) => Resolve<OpenInfrastructureCommand>().Execute(opts),
 				_ => 1,
 			};
 		};
