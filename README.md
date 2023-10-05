@@ -820,7 +820,7 @@ Things to review:
 - `postgres-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
 - `postgres-stateful-set.yaml` - will try to allocate 40Gb of disk space for database files and 5Gb for backup files. Make sure you have enough space on your disk.
 
-Deploy necessary components by executing a series of commands
+Deploy necessary components by executing a series of commands from `C:\Users\YOUR_USER\AppData\Local\creatio\clio\`
 ```ps
 kubectl apply -f infrastructure
 kubectl apply -f infrastructure\mssql
@@ -839,6 +839,10 @@ You can override default location in of an IIS folder in `appsetting.json` `iis-
 - Enable required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
 - Enable required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
 
+For automated check you can execute command 
+```bash
+clio check-windows-features
+```
 
 ## Run Creatio Installation
 
@@ -866,6 +870,10 @@ clio cfg open
 ```
 If the zip file already exists in your working directory, Clio will skip this step.
 
+### For IIS deployment
+Make sure that iis working directory defined in `appsettings.json` file `iis-clio-root-path` has allow `Full Control` for IIS_IUSRS
+
+![](https://academy.creatio.com/sites/en/files/documentation/sdk/en/BPMonlineWebSDK/Screenshots/WorkingWithIDE/permissions.png)
 
 ### Extracting the Zip File
 Clio will extract the zip file to the same directory where the original zip file is located. 

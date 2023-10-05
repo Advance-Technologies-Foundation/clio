@@ -87,11 +87,14 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		return dest;
 	}
 
-	private string CopyLocalWhenNetworkDrive (string path) =>
-		new DriveInfo(Path.GetPathRoot(path)) switch {
-			{DriveType: DriveType.Network} => CopyZipLocal(path),
+	private string CopyLocalWhenNetworkDrive(string path) {
+		if (path.StartsWith(@"\\")) {
+			return CopyZipLocal(path);
+		}
+		return new DriveInfo(Path.GetPathRoot(path)) switch { { DriveType: DriveType.Network } => CopyZipLocal(path),
 			_ => path
-		};
+			};
+		}
 
 	private readonly string _iisRootFolder;
 	private readonly string _productFolder;
