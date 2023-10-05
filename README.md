@@ -799,7 +799,11 @@ See more examples in [samples](https://github.com/Advance-Technologies-Foundatio
 
 # Installation of Creatio using Clio
 
-Clio provides functionality to install Creatio on a local machine using a zip file or an unzipped folder. Here's how you can do it:
+Clio provides functionality to install Creatio on a local machine using a zip file or an unzipped folder.
+
+> Supported Net6 and NetFramework platforms with MsSql or PostgreSQL databases
+
+Here's how you can do it:
 
 # Prepare Infrastructure
 To simply installation of dependencies, clio provides deployment files for 
