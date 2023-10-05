@@ -137,6 +137,7 @@ docker run -it --rm clio reg-web-app -help
   - [Ping application](#ping-application)
   - [Healthcheck](#healthcheck)
 - [Development](#development)
+  - [Check requirment windows features](#check-requirment-windows-features)
   - [Workspaces](#workspaces)
   - [Convert package](#convert-package)
   - [Execute assembly](#execute-assembly)
