@@ -254,12 +254,10 @@ public class InstallerCommand : Command<PfInstallerOptions>
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
 						"dbString",
-						$"Server={Dns.GetHostName()};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
+						$"Server=localhost;Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
 					},
-					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, {
-						"isNetFramework",
-						(InstallerHelper.DetectFramework(unzippedDirectory) ==
-							InstallerHelper.FrameworkType.NetFramework).ToString()
+					{"redis", $"host=localhost;db={redisDb};port={csParam.RedisPort}"}, {
+						"isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework).ToString()
 					}
 				}
 			},
@@ -267,9 +265,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
 						"dbString",
-						$"Data Source={Dns.GetHostName()},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+						$"Data Source=localhost,{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
 					},
-					{"redis", $"host={Dns.GetHostName()};db={redisDb};port={csParam.RedisPort}"}, {
+					{"redis", $"host=localhost;db={redisDb};port={csParam.RedisPort}"}, {
 						"isNetFramework",
 						(InstallerHelper.DetectFramework(unzippedDirectory) ==
 							InstallerHelper.FrameworkType.NetFramework).ToString()
