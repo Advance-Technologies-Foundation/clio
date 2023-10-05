@@ -821,12 +821,26 @@ Things to review:
 - `postgres-stateful-set.yaml` - will try to allocate 40Gb of disk space for database files and 5Gb for backup files. Make sure you have enough space on your disk.
 
 Deploy necessary components by executing a series of commands from `C:\Users\YOUR_USER\AppData\Local\creatio\clio\`
+or execute command to open directory
+```
+clio open-k8-files
+```
 ```ps
-kubectl apply -f infrastructure
+# common
+kubectl apply -f clio-namespace.yaml
+kubectl apply -f clio-storage-class.yaml
+
+# redis
+kubectl apply -f infrastructure\redis
+
+# mssql
+kubectl apply -f infrastructure\mssql\mssql-volumes.yaml
 kubectl apply -f infrastructure\mssql
+
+# postgresql
+kubectl apply -f infrastructure\postgres\postgres-volumes.yaml
 kubectl apply -f infrastructure\postgres
 kubectl apply -f infrastructure\pgadmin
-kubectl apply -f infrastructure\redis
 ```
 
 

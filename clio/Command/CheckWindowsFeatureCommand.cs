@@ -29,8 +29,8 @@ namespace Clio.Command
 
 		public override int Execute(CheckWindowsFeaturesOptions options) {
 			var missedComponents = new List<string>();
-			Console.WriteLine("For detailed information go to: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
-			Console.WriteLine("Check started:");
+			Console.WriteLine("For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
+			Console.WriteLine($"{Environment.NewLine}Check started:");
 			foreach (var item in RequirmentNETFrameworkFeatures) {
 				if (!windowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower())) { 
 					missedComponents.Add(item);
@@ -39,6 +39,7 @@ namespace Clio.Command
 					Console.WriteLine($"OK: {item}");
 				}
 			}
+			Console.WriteLine();
 			if (missedComponents.Count > 0) {
 				Console.WriteLine("Windows has missed components:");
 				foreach (var item in missedComponents) {
