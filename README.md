@@ -582,6 +582,16 @@ clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 
 # Development
 
+## Check requirment Windows features
+
+To check required windows features execute command
+
+```bash
+
+clio check-windows-features
+
+```
+
 ## Workspaces
 
 For connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.**
@@ -831,16 +841,16 @@ kubectl apply -f clio-namespace.yaml
 kubectl apply -f clio-storage-class.yaml
 
 # redis
-kubectl apply -f infrastructure\redis
+kubectl apply -f redis
 
 # mssql
-kubectl apply -f infrastructure\mssql\mssql-volumes.yaml
-kubectl apply -f infrastructure\mssql
+kubectl apply -f mssql\mssql-volumes.yaml
+kubectl apply -f mssql
 
 # postgresql
-kubectl apply -f infrastructure\postgres\postgres-volumes.yaml
-kubectl apply -f infrastructure\postgres
-kubectl apply -f infrastructure\pgadmin
+kubectl apply -f postgres\postgres-volumes.yaml
+kubectl apply -f postgres
+kubectl apply -f pgadmin
 ```
 
 
