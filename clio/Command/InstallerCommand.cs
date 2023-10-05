@@ -204,14 +204,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
 
 		postgres.CreateDb(tmpDbName);
-		string restoreResult = _k8.RestorePgDatabase(src.Name, tmpDbName);
-
-		string reportFilename = $@"C:\restore_{tmpDbName}_Result.txt";
-		File.WriteAllText(reportFilename, restoreResult);
-		Console.WriteLine($"[Report Generated in] - {reportFilename}");
-
+		_k8.RestorePgDatabase(src.Name, tmpDbName);
 		postgres.SetDatabaseAsTemplate(tmpDbName);
-		string deleteResult = _k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
+		_k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
 		Console.WriteLine($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
 	}
 
