@@ -23,14 +23,12 @@ namespace Clio
 {
 	public class BindingsModule
 	{
-		public IContainer Register(EnvironmentSettings settings = null)
-		{
+		public IContainer Register(EnvironmentSettings settings = null) {
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
 				.AsImplementedInterfaces();
-			if (settings != null)
-			{
+			if (settings != null) {
 				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
@@ -41,17 +39,18 @@ namespace Clio
 				IKubernetes k8Client = new Kubernetes(config);
 				containerBuilder.RegisterInstance(k8Client).As<IKubernetes>();
 				containerBuilder.RegisterType<k8Commands>();
+				containerBuilder.RegisterType<InstallerCommand>();
 			} catch {
-			
+
 			}
-			
-            var deserializer = new DeserializerBuilder()
+
+			var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
 				.Build();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 
-            containerBuilder.RegisterType<PushPackageCommand>();
-            containerBuilder.RegisterType<InstallApplicationCommand>();
+			containerBuilder.RegisterType<PushPackageCommand>();
+			containerBuilder.RegisterType<InstallApplicationCommand>();
 			containerBuilder.RegisterType<OpenCfgCommand>();
 			containerBuilder.RegisterType<InstallGatePkgCommand>();
 			containerBuilder.RegisterType<PingAppCommand>();
@@ -96,10 +95,9 @@ namespace Clio
 			containerBuilder.RegisterType<CompressAppCommand>();
 			containerBuilder.RegisterType<Scenario>();
 			containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
-			containerBuilder.RegisterType<Clio.Command.InstallerCommand>();
 			containerBuilder.RegisterType<CreateInfrastructureCommand>();
 			containerBuilder.RegisterType<OpenInfrastructureCommand>();
-
+			containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)

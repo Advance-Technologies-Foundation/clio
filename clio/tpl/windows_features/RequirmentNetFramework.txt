@@ -1,0 +1,24 @@
+﻿Static Content
+Default Document
+HTTP Errors
+HTTP Redirection
+ASP
+ISAPI extensions
+ISAPI Filters
+WebSocket Protocol
+Windows Communication Foundation HTTP Activation
+Windows Communication Foundation Non-HTTP Activation
+ASP.NET 4.8
+WCF services
+HTTP Activation
+Message Queuing (MSMQ) Activation
+Named Pipe Activation
+TCP Activation
+TCP Port Sharing
+HTTP Logging
+Logging Tools
+Request Monitor
+Custom Logging
+Basic Authentication
+Request Filtering
+IP Security
