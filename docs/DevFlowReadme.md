@@ -1,9 +1,12 @@
 # Organize common development flow for No-Code and Professional developers
 
 
-## Initialize environments
+## Initialize environment
 
-> SAMPLE IMAGE HERE
+<div style="text-align:center; width:50%">
+   <img src="img/clio_explorer_new_environment.png" alt="Initialize new environment">
+</div>
+
 
 ## Professional developers
 
@@ -11,31 +14,32 @@
     ```bash
     dotnet tool install clio -g
     ```
-    > Recommended plugin [clio explore](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer) for [VS Code](https://code.visualstudio.com/download)
+    > Recommended plugin [clio explorer](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer) for [VS Code](https://code.visualstudio.com/download)
 
 2. Deploy Creatio instance locally. [Creatio Academy](https://academy.creatio.com/docs/7-18/user/on_site_deployment/general_deployment_procedure/general_creatio_deployment_procedure) or using [clio automation](https://github.com/Advance-Technologies-Foundation/clio#installation-of-creatio-using-clio)
 
 3. [Register environment in clio](https://github.com/Advance-Technologies-Foundation/clio#environment-settings) or via clio explorer. 
 If you deployed Creatio locally, with clio, you can skip this step
-<IMAGE FROM CLIO ADD ENV IN CLIO EXPLORER>
+
+   <img src="img/clio_explorer_new_environment.png" width="50%" alt="register new environment">
 
 4. Turn on [FSM mode](https://academy.creatio.com/docs/developer/development_tools/external_ides/overview#title-2098-3) r via clio explorer
-<IMAGE FROM CLIO ADD ENV IN CLIO EXPLORER>
+   
+   <img src="img/clio_explorer_turn_fsm_mode.png" width="50%" alt="turn file system on">
 
 5. Create a [workspace](https://github.com/Advance-Technologies-Foundation/clio#workspaces) for the project
-    ```bash
+   ```bash
     clio create-workspace
     ```
 
 6. Create application in Creatio and link packages to workspace
-    ```bash
+   ```bash
     clio l2r -r "<PATH_TO_WORKSPACE_FOLDER>" \
     -e "<LOCAL_CREATIO_PATH>\Terrasoft.WebApp\Terrasoft.Configuration\Pkg" \
     -p "<AppPackage1>,<AppPackage2>,<...>"
     ``` 
 
-7. Link workspace with environment
-Add settings in file `<workspace_path>/.clio/workspaceEnvironmentSettings.json` your environment
+7. Link workspace with environment, add settings in file `<workspace_path>/.clio/workspaceEnvironmentSettings.json` your environment
     ```json
     {
       "Environment": "<env_name>"
