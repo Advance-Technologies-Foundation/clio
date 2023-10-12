@@ -3,9 +3,7 @@
 
 ## Initialize environment
 
-<div style="text-align:center; width:50%">
-   <img src="img/clio_explorer_new_environment.png" alt="Initialize new environment">
-</div>
+<img src="img/clio_explorer_new_environment.png" width="50%" alt="Initialize new environment">
 
 
 ## Professional developers
@@ -63,10 +61,23 @@ If you deployed Creatio locally, with clio, you can skip this step
 
 ## No-Code developer
 
-Получает удаленную среду разработки и регистрирует его в clio explorer
-Устанавливает в систему clio api через clio explorer
-Выкачивает локально воркспейс из git
-Ставит приложение через clio explorer на среду разработки
+1. Gets access to Creatio instance and register it with clio explorer
+
+   IMAGE_HERE
+
+2. Install `clio api` on the Creatio instance
+
+   IMAGE_HERE
+
+3. Download previously initialized workspace from git repository
+   
+   ```bash
+   git clone <git_repo_url>
+   ```
+
+4. Install application on creatio instance with clio explorer
+
+    IMAGE_HERE
 
 
 ## Professional developers flow
