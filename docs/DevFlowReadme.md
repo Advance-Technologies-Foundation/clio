@@ -14,10 +14,11 @@
     ```
     > Recommended plugin [clio explorer](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer) for [VS Code](https://code.visualstudio.com/download)
 2. Deploy Creatio instance locally. [Creatio Academy](https://academy.creatio.com/docs/7-18/user/on_site_deployment/general_deployment_procedure/general_creatio_deployment_procedure) or using [clio automation](https://github.com/Advance-Technologies-Foundation/clio#installation-of-creatio-using-clio)
-3. [Register environment in clio](https://github.com/Advance-Technologies-Foundation/clio#environment-settings) or via clio explorer. 
-If you deployed Creatio locally, with clio, you can skip this step
+3. [Register environment in clio](https://github.com/Advance-Technologies-Foundation/clio#environment-settings) or via clio explorer. If you deployed Creatio locally, with clio, you can skip this step
+   
    <img src="img/clio_explorer_new_environment.png" width="50%" alt="register new environment">
-4. Turn on [FSM mode](https://academy.creatio.com/docs/developer/development_tools/external_ides/overview#title-2098-3) r via clio explorer
+4. Turn on [FSM mode](https://academy.creatio.com/docs/developer/development_tools/external_ides/overview#title-2098-3) via clio explorer
+   
    <img src="img/clio_explorer_turn_fsm_mode.png" width="50%" alt="turn file system on">
 5. Create a [workspace](https://github.com/Advance-Technologies-Foundation/clio#workspaces) for the project
    ```bash
