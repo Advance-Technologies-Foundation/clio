@@ -16,6 +16,15 @@ public class Postgres
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
+			
+			string killSqlConnections = @$"
+			SELECT pg_terminate_backend(pg_stat_activity.pid)
+			FROM pg_stat_activity
+			WHERE pg_stat_activity.datname = '{templateName}'
+			";
+			using NpgsqlCommand killConnectionCmd = dataSource.CreateCommand(killSqlConnections);
+			killConnectionCmd.ExecuteNonQuery();
+			
 			using NpgsqlCommand cmd = dataSource.CreateCommand($"CREATE DATABASE \"{dbName}\" TEMPLATE=\"{templateName}\" ENCODING UTF8 CONNECTION LIMIT -1");
 			cmd.ExecuteNonQuery();
 			cnn.Close();
