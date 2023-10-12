@@ -60,7 +60,7 @@
    ```bash
    clio install-gate -e <env_nname>
    ```
-   IMAGE_HERE
+   <img src="img/clio_explorer_install_clio_api.png" alt="General environment">
 
 3. Download previously initialized workspace from git repository
    
@@ -70,7 +70,7 @@
 
 4. Install application on creatio instance with clio explorer
 
-    IMAGE_HERE
+    <img src="img/clio-pushw-explorer.png" alt="General environment">
 
 
 ## Professional developers flow
