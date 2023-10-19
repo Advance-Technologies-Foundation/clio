@@ -12,6 +12,3 @@ Execute command
 
 ## How to develop and consume remote module
 You can find different examples by following https://academy.creatio.com link.
-
-
-default empty

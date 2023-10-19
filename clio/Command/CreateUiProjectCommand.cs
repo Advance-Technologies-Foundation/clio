@@ -38,6 +38,12 @@
 		public bool IsEmpty {
 			get; set;
 		}
+		
+		[Option("version", Required = false, Default = "",
+			HelpText = "Creatio version")]
+		public string CreatioVersion {
+			get; set;
+		}
 
 
 		#endregion
@@ -51,6 +57,7 @@
 	public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProjectOptions>
 	{
 		public CreateUiProjectOptionsValidator() {
+			
 			RuleFor(x => x.ProjectName).NotEmpty().WithMessage("Project name is required.");
 			RuleFor(x => x.VendorPrefix).Matches("^[a-z]{1,50}$")
 				.WithMessage("'{PropertyName}' must be between 1 and 50 characters long and contain only lowercase letters and digits. You entered: '{PropertyValue}'."
@@ -114,7 +121,7 @@
 					return 1;
 				}
 				_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix,
-					options.IsEmpty, (options.IsSilent ? (a) => { return false; }
+					options.IsEmpty, options.CreatioVersion, (options.IsSilent ? (a) => { return false; }
 				: EnableDownloadPackage));
 				Console.WriteLine("Done");
 				return 0;

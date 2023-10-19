@@ -15,7 +15,7 @@
 
 		#region Methods: Public
 
-		void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
+		void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty, string creatioVersion,
 			Func<string, bool> enableDownloadPackage);
 
 		#endregion
@@ -29,6 +29,8 @@
 	public class UiProjectCreator : IUiProjectCreator
 	{
 
+		// папа
+
 		#region Constants: Private
 
 		private const string packagesDirectoryName = "packages";
@@ -41,6 +43,7 @@
 		private static string[] _templateExtensions = new[] {
 			".json", ".js", ".ts", ".conf", ".config", ".scss", ".css"
 		};
+
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IWorkspace _workspace;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
@@ -56,10 +59,10 @@
 		#region Constructors: Public
 
 		public UiProjectCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
-				IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
-				IPackageDownloader packageDownloader, IWorkspacePathBuilder workspacePathBuilder,
-				ITemplateProvider templateProvider, IWorkingDirectoriesProvider workingDirectoriesProvider,
-				IFileSystem fileSystem) {
+			IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
+			IPackageDownloader packageDownloader, IWorkspacePathBuilder workspacePathBuilder,
+			ITemplateProvider templateProvider, IWorkingDirectoriesProvider workingDirectoriesProvider,
+			IFileSystem fileSystem) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspace.CheckArgumentNull(nameof(workspace));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
@@ -84,10 +87,14 @@
 		#region Properties: Private
 
 		private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
-		private string PackagesPath => IsWorkspace
+
+		private string PackagesPath =>
+			IsWorkspace
 				? _workspacePathBuilder.PackagesFolderPath
 				: Path.Combine(_workingDirectoriesProvider.CurrentDirectory, packagesDirectoryName);
-		private string ProjectsPath => IsWorkspace
+
+		private string ProjectsPath =>
+			IsWorkspace
 				? _workspacePathBuilder.ProjectsFolderPath
 				: Path.Combine(_workingDirectoriesProvider.CurrentDirectory, projectsDirectoryName);
 
@@ -96,7 +103,7 @@
 		#region Methods: Private
 
 		private void UpdateTemplateInfo(string projectPath, string projectName, string packageName,
-				string vendorPrefix) {
+			string vendorPrefix) {
 			IEnumerable<string> filesPaths = _fileSystem
 				.GetFiles(projectPath, "*.*", SearchOption.AllDirectories)
 				.Where(f => _templateExtensions.Any(e => f.ToLower().EndsWith(e)));
@@ -105,7 +112,7 @@
 				tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix);
 				tplContent = tplContent.Replace("<%projectName%>", projectName);
 				tplContent = tplContent.Replace("<%distPath%>",
-					$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/","js/", projectName)}");
+					$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/", "js/", projectName)}");
 				_fileSystem.WriteAllTextToFile(filePath, tplContent);
 			}
 		}
@@ -114,11 +121,16 @@
 			_packageCreator.Create(PackagesPath, packageName);
 		}
 
-		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty) {
+		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
+			string creatioVersion) {
 			_fileSystem.CreateDirectoryIfNotExists(ProjectsPath);
 			var projectPath = Path.Combine(ProjectsPath, projectName);
 			string templateFolderName = isEmpty ? "ui-project-Empty" : "ui-project";
-			_templateProvider.CopyTemplateFolder(templateFolderName, projectPath);
+			if(string.IsNullOrWhiteSpace(creatioVersion)) {
+				_templateProvider.CopyTemplateFolder(templateFolderName, projectPath);
+			}else {
+				_templateProvider.CopyTemplateFolder(templateFolderName, projectPath, creatioVersion, "ui");
+			}
 			UpdateTemplateInfo(projectPath, projectName, packageName, vendorPrefix);
 		}
 
@@ -146,7 +158,7 @@
 		#region Methods: Public
 
 		public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
-				Func<string, bool> enableDownloadPackage) {
+			string creatioVersion, Func<string, bool> enableDownloadPackage) {
 			CheckCorrectProjectName(projectName);
 			var package = FindExistingPackage(packageName);
 			if (package != null && enableDownloadPackage(packageName)) {
@@ -156,7 +168,7 @@
 			} else {
 				CreatePackage(packageName);
 			}
-			CreateProject(projectName, packageName, vendorPrefix, isEmpty);
+			CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
 		}
 
 		#endregion
@@ -164,5 +176,4 @@
 	}
 
 	#endregion
-
 }

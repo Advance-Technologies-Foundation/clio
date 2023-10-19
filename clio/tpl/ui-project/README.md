@@ -11,4 +11,7 @@ Execute command
 `npm run test`
 
 ## How to develop and consume remote module
-You can find different examples by following https://academy.creatio.com link. 
+You can find different examples by following https://academy.creatio.com link.
+
+
+default

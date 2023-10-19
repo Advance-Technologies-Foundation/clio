@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace Clio.Common
 {
 	using System;
@@ -49,11 +52,37 @@ namespace Clio.Common
 			return File.ReadAllText(templatePath);
 		}
 
-		public void CopyTemplateFolder(string templateFolderName, string destinationPath) {
+		public void CopyTemplateFolder(string templateFolderName, string destinationPath, string creatioVersion = "",
+			string group = "") {
 			templateFolderName.CheckArgumentNullOrWhiteSpace(nameof(templateFolderName));
 			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
-			string templatePath = _workingDirectoriesProvider.GetTemplateFolderPath(templateFolderName);
+			string templatePath = GetCompatibleVersionTemplatePath(templateFolderName, creatioVersion, group);
 			_fileSystem.CopyDirectory(templatePath, destinationPath, true);
+		}
+
+		private string GetCompatibleVersionTemplatePath(string templateName, string creatioVersion = "",
+			string group = "") {
+			bool groupExists = !string.IsNullOrWhiteSpace(group);
+			if (!groupExists && string.IsNullOrWhiteSpace(creatioVersion)) {
+				return _workingDirectoriesProvider.GetTemplateFolderPath(templateName);
+			}
+			string root = groupExists ? group : templateName;
+			string rootPath = _workingDirectoriesProvider.GetTemplateFolderPath(root);
+			DirectoryInfo[] versions = new DirectoryInfo(rootPath).GetDirectories();
+
+			List<Version> availableVersions = new List<Version>();
+			foreach (var item in versions) {
+				if (Version.TryParse(item.Name, out Version version)) {
+					availableVersions.Add(version);
+				}
+			}
+			availableVersions.Sort();
+			Version compatibleVersion = availableVersions.FindLast(v => v <= new Version(creatioVersion));
+			if (compatibleVersion is null) {
+				throw new ArgumentException($"Minimum compatible version is {availableVersions.First().ToString()}",
+					"version");
+			}
+			return Path.Combine(rootPath, compatibleVersion.ToString(), groupExists ? templateName : string.Empty);
 		}
 
 		#endregion
@@ -61,5 +90,4 @@ namespace Clio.Common
 	}
 
 	#endregion
-
 }

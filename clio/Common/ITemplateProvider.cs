@@ -1,6 +1,5 @@
 namespace Clio.Common
 {
-
 	#region Interface: ITemplateProvider
 
 	public interface ITemplateProvider
@@ -9,12 +8,13 @@ namespace Clio.Common
 		#region Methods: Public
 
 		string GetTemplate(string templateName);
-		void CopyTemplateFolder(string templateFolderName, string destinationPath);
+
+		void CopyTemplateFolder(string templateFolderName, string destinationPath, string creatioVersion = "",
+			string group = "");
 
 		#endregion
 
 	}
 
 	#endregion
-
 }
