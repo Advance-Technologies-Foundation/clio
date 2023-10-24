@@ -5,6 +5,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -31,11 +32,11 @@ namespace Clio
 		{
 			GetEntitySchemasAsync();
 
-			Parallel.ForEach(_schemas, new ParallelOptions(){ MaxDegreeOfParallelism = 16}, 
+			Parallel.ForEach(_schemas, new ParallelOptions(){ MaxDegreeOfParallelism = 4}, 
 			a=>{
 				GetRuntimeEntitySchema(a);
 			});
-
+			int i = 0;
 			foreach (var schema in _schemas)
 			{
 				var di = new DirectoryInfo(_opts.DestinationPath);
@@ -46,6 +47,8 @@ namespace Clio
 
 				var filePath = Path.Combine(_opts.DestinationPath, schema.Key + ".cs");
 				File.WriteAllText(filePath, CreateClassFileText(schema));
+				i++;
+				Console.Write($"Generated: {i} models from {_schemas.Count}\r");
 			}
 		}
 
@@ -93,29 +96,30 @@ namespace Clio
 
 		private string CreateClassFileText(KeyValuePair<string, Schema> schema)
 		{
-			StringBuilder sb = new StringBuilder();
-
-			sb.AppendLine("using ATF.Repository;")
+			StringBuilder sb = new ();
+			sb.AppendLine(@"#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
+				.AppendLine()
+				.AppendLine("using ATF.Repository;")
 				.AppendLine("using ATF.Repository.Attributes;")
-				.AppendLine("using System;")
 				.AppendLine("using System.Diagnostics.CodeAnalysis;")
 				.AppendLine()
 				.Append("namespace ").AppendLine(_opts.Namespace)
 				.AppendLine("{")
 				.AppendLine();
 
-
 			if (!string.IsNullOrEmpty(schema.Value.Description))
 			{
-				sb
-				.Append("\t").AppendLine("/// <summary>")
-				.Append("\t").Append("/// ").AppendLine(schema.Value.Description)
-				.Append("\t").AppendLine("/// </summary>");
+				
+				var commentLines = schema.Value.Description.Split("\n").ToList();
+				
+				sb.Append("\t").AppendLine("/// <summary>");
+				commentLines.ForEach(l=> sb.Append("\t").Append("/// ").AppendLine(l));
+				sb.Append("\t").AppendLine("/// </summary>");
 			}
-			sb.Append("\t").AppendLine("[ExcludeFromCodeCoverage]");
-			sb.Append("\t").Append("[Schema(\"").Append(schema.Value.Name).AppendLine("\")]")
-				.Append("\t").Append("public class ").Append(schema.Value.Name).AppendLine(": BaseModel")
-				.Append("\t").AppendLine("{")
+			sb.Append('\t').AppendLine("[ExcludeFromCodeCoverage]");
+			sb.Append('\t').Append("[Schema(\"").Append(schema.Value.Name).AppendLine("\")]")
+				.Append('\t').Append("public class ").Append(schema.Value.Name).AppendLine(": BaseModel")
+				.Append('\t').AppendLine("{")
 				.AppendLine();
 			foreach (var column in schema.Value.Columns)
 			{
@@ -151,26 +155,25 @@ namespace Clio
 			}
 			sb.AppendLine("\t}");
 			sb.AppendLine("}");
+			sb.AppendLine(@"#pragma warning restore CS8618 // Non-nullable field is uninitialized.");
 			var x = sb.ToString();
 			return sb.ToString();
 		}
 
-		private string GetTypeFromDataValueType(int dataValueType)
-		{
-			switch (dataValueType)
-			{
-				case 0: return nameof(Guid);
-				case 1: return nameof(String);
-				case 4: return nameof(Int32);
-				case 5: return nameof(Single);
-				case 6: return nameof(Decimal);
-				case 7: return nameof(DateTime);
-				case 8: return nameof(DateTime);
-				case 9: return nameof(DateTime);
-				case 10: return nameof(Guid);
-				case 11: return nameof(Guid);
-				case 12: return nameof(Boolean);
-				case 13: return "Byte[]";
+		private string GetTypeFromDataValueType(int dataValueType) {
+			return dataValueType switch {
+				0 => nameof(Guid),
+				1 => "string",
+				4 => "int",
+				5 => nameof(Single),
+				6 => "decimal",
+				7 => nameof(DateTime),
+				8 => nameof(DateTime),
+				9 => nameof(DateTime),
+				10 => nameof(Guid),
+				11 => nameof(Guid),
+				12 => "bool",
+				13 => "byte[]",
 				//case 14: return nameof(byte[]); what is IMAGE
 				//CUSTOM_OBJECT	15
 				//IMAGELOOKUP	16
@@ -180,29 +183,28 @@ namespace Clio
 				//ENTITY	20
 				//ENTITY_COLLECTION	21
 				//ENTITY_COLUMN_MAPPING_COLLECTION	22
-
-				case 23: return nameof(String);
-				case 24: return nameof(String);
+				23 => nameof(String),
+				24 => nameof(String),
 				//case 25: return nameof(String); FILE	25
 				//MAPPING	26
-				case 27: return nameof(String);
-				case 28: return nameof(String);
-				case 29: return nameof(String);
-				case 30: return nameof(String);
-				case 31: return nameof(Decimal);
-				case 32: return nameof(Decimal);
-				case 33: return nameof(Decimal);
-				case 34: return nameof(Decimal);
+				27 => "string",
+				28 => "string",
+				29 => "string",
+				30 => "string",
+				31 => "decimal",
+				32 => "decimal",
+				33 => "decimal",
+				34 => "decimal",
 				//LOCALIZABLE_PARAMETER_VALUES_LIST	35
 				//METADATA_TEXT	36
 				//STAGE_INDICATOR	37
 				//OBJECT_LIST	38
 				//COMPOSITE_OBJECT_LIST	39
-				case 40: return nameof(Decimal);
+				40 => "decimal",
 				//FILE_LOCATOR	41
-				case 42: return nameof(String);
-				default: return nameof(String);
-			}
+				42 => "string",
+				_ => "string"
+			};
 		}
 	}
 
