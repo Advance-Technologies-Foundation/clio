@@ -730,18 +730,23 @@ clio add-item service test
 ``` 
 
 Add entity-listener template to project
-```
+```bash
 clio add-item entity-listener test
 ``` 
 
 Generate AFT model for `Contact` entity with `Name` and `Email` fields, set namespace to `MyNameSpace` and save to `current directory`
-```
+```bash
 clio add-item model Contact -f Name,Email -n MyNameSpace -d .
 ```
 
 Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set `ATF.Repository.Models` namespace and save them to `C:\MyModels`
+```bash
+add-item model -n "<YOUR_NAMESPACE>" -d <TARGET_PATH>
 ```
-add-item model --All "true" --Culture en-US -n "ATF.Repository.Models" -d C:\MyModels
+
+To generate all models in current directory
+```bash
+add-item model -n "<YOUR_NAMESPACE>" 
 ```
 
 OPTIONS
@@ -752,6 +757,7 @@ n|Namespace|Name space for service classes and ATF models
 f|Fields|Required fields for ATF model class
 a|All|Create ATF models for all Entities
 x|Culture|Description culture
+
 
 ## Link Workspace to File Design Mode
 

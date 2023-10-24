@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Clio.Common;
 
 namespace Clio
 {
@@ -16,16 +17,18 @@ namespace Clio
 		private readonly CreatioClient _creatioClient;
 		private readonly string _appUrl;
 		private readonly ItemOptions _opts;
+		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
 		private string EntitySchemaManagerRequestUrl => _appUrl + @"/DataService/json/SyncReply/EntitySchemaManagerRequest";
 		private string RuntimeEntitySchemaRequestUrl => _appUrl + @"/DataService/json/SyncReply/RuntimeEntitySchemaRequest";
 		private readonly Dictionary<string, Schema> _schemas = new Dictionary<string, Schema>();
 
-		public ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts)
+		public ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts, IWorkingDirectoriesProvider workingDirectoriesProvider)
 		{
 			_creatioClient = creatioClient;
 			_appUrl = appUrl;
 			_opts = opts;
+			_workingDirectoriesProvider = workingDirectoriesProvider;
 		}
 
 		public void GetModels()
@@ -36,20 +39,24 @@ namespace Clio
 			a=>{
 				GetRuntimeEntitySchema(a);
 			});
+			if(string.IsNullOrWhiteSpace(_opts.DestinationPath)) {
+				_opts.DestinationPath = _workingDirectoriesProvider.CurrentDirectory;
+			}
+			Console.WriteLine($"Models will be generated in directory: {_opts.DestinationPath}");
+			var di = new DirectoryInfo(_opts.DestinationPath);
+			if(!di.Exists)
+			{
+				di.Create();
+			}
+			
 			int i = 0;
 			foreach (var schema in _schemas)
 			{
-				var di = new DirectoryInfo(_opts.DestinationPath);
-				if(!di.Exists)
-				{
-					di.Create();
-				}
-
 				var filePath = Path.Combine(_opts.DestinationPath, schema.Key + ".cs");
 				File.WriteAllText(filePath, CreateClassFileText(schema));
-				i++;
-				Console.Write($"Generated: {i} models from {_schemas.Count}\r");
+				Console.Write($"Generated: {++i} models from {_schemas.Count}\r");
 			}
+			Console.WriteLine();
 		}
 
 		private void GetEntitySchemasAsync()
@@ -208,6 +215,7 @@ namespace Clio
 		}
 	}
 
+	
 	public class Column
 	{
 		public string Name { get; set; }

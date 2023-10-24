@@ -144,7 +144,7 @@ namespace Clio
 		[Value(0, MetaName = "Item type", Required = true, HelpText = "Item type")]
 		public string ItemType { get; set; }
 
-		[Value(1, MetaName = "Item name", Required = true, HelpText = "Item name")]
+		[Value(1, MetaName = "Item name", Required = false, HelpText = "Item name")]
 		public string ItemName { get; set; }
 
 
@@ -160,7 +160,7 @@ namespace Clio
 		[Option('a', "All", Required = false, HelpText = "Create all models", Default = true)]
 		public bool CreateAll { get; set; }
 
-		[Option('x', "Culture", Required = false, HelpText = "Description custure", Default = "en-US")]
+		[Option('x', "Culture", Required = false, HelpText = "Description culture", Default = "en-US")]
 		public string Culture { get; set; }
 	}
 

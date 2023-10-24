@@ -397,7 +397,9 @@ namespace Clio
 			{
 				Console.WriteLine("Generating models...");
 				SetupAppConnection(opts);
-				ModelBuilder mb = new ModelBuilder(_creatioClientInstance, AppUrl, opts);
+				
+				var workingDirectoryProvider = Resolve<IWorkingDirectoriesProvider>();
+				ModelBuilder mb = new ModelBuilder(_creatioClientInstance, AppUrl, opts, workingDirectoryProvider);
 				mb.GetModels();
 				return 0;
 			}
