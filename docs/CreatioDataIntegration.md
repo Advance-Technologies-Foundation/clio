@@ -6,19 +6,19 @@ To simply integration between Creatio and third party C# applications you can us
 
 1. Create new C# project or use existing one
 
-```ps
+```powershell
 dotnet new console -n CreatioDataIntegration
 cd CreatioDataIntegration
 ```
 
 2. Add NuGet package to use [ATF Repository][Atf Repository Nuget]
 
-```ps
+```powershell
 dotnet add package ATF.Repository
 ```
 
 3. Generate models for named environment, omit -e key for default environment
-```ps
+```powershell
 clio add-item model -n "CreatioDataIntegration.Models" -d .\Models -e <ENVIRONMENT_NAME>
 ```
 
@@ -53,7 +53,7 @@ public static class Program
 ``````
 
 Run project
-```ps
+```powershell
 dotnet run --project CreatioDataIntegration.csproj
 ```
 
