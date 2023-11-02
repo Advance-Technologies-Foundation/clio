@@ -5,15 +5,14 @@ using System.Security;
 
 namespace Clio.Utilities
 {
-	public interface IPowerShellFactory
+	public interface IPowerShellFactory : IDisposable
 	{
 		string ComputerName { get; }
-		void Dispose();
 		PowerShell GetInstance();
 		void Initialize(string userName, string password, string computerName);
 	}
 
-	public class PowerShellFactory : IDisposable, IPowerShellFactory
+	public class PowerShellFactory : IPowerShellFactory
 	{
 
 		private bool _disposed = false;
@@ -28,10 +27,7 @@ namespace Clio.Utilities
 		private SecureString SecureString { get; set; }
 
 		private WSManConnectionInfo ConnectionInfo { get; set; }
-
-		public PowerShellFactory()
-		{
-		}
+		
 
 		public void Initialize(string userName, string password, string computerName)
 		{
