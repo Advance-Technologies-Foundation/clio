@@ -10,5 +10,6 @@ deploy:
     - master
   cache:
   script:
-    - clio pushw -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
-    - clio restart -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
+    - dotnet tool install clio --tool-path ./clio-tool
+    - ./clio-tool/clio.exe pushw -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
+    - ./clio-tool/clio.exe restart -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
