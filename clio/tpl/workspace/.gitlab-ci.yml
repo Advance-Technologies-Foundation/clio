@@ -3,8 +3,9 @@
     
 deploy:
   stage: deploy
+  dependencies: []
   tags:
-    - windows
+    - clio
   only:
     - master
   cache:
