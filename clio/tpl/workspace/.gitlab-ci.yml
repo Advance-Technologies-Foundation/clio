@@ -1,0 +1,13 @@
+﻿stages:
+  - deploy
+    
+deploy:
+  stage: deploy
+  tags:
+    - windows
+  only:
+    - master
+  cache:
+  script:
+    - clio pushw -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
+    - clio restart -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
