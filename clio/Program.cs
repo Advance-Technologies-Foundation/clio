@@ -304,6 +304,7 @@ namespace Clio
 			}
 		}
 
+		
 		private static int Main(string[] args) {
 			try {
 				return ExecuteCommands(args);
@@ -314,7 +315,7 @@ namespace Clio
 		}
 		
 		private static int ExecuteCommands(string[] args) {
-			TryCheckForUpdate();
+			TryCheckUpdate(args);
 			var creatioEnv = new CreatioEnvironment();
 			string helpFolderName = $"help";
 			string helpDirectoryPath = helpFolderName;
@@ -328,6 +329,19 @@ namespace Clio
 				return ExecuteCommandWithOption(parsed.Value);
 			}
 			return HandleParseError(((NotParsed<object>)parserResult).Errors);
+		}
+		
+		public static bool EnableUpdate = false;
+		private static void TryCheckUpdate(string[] args){
+			EnableUpdate = args.Length switch
+			{
+				2 when args[0] == "cfg" && args[1] == "open" => true,
+				_ => EnableUpdate
+			};
+
+			if(!EnableUpdate) {
+				TryCheckForUpdate();
+			}
 		}
 
 		private static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts) {

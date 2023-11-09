@@ -25,6 +25,7 @@
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
+	  <LangVersion>11</LangVersion>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -744,7 +745,7 @@
     <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-secrets.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-	<None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

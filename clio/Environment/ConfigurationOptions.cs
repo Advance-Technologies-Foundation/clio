@@ -211,9 +211,14 @@ namespace Clio
 						_settings = JsonConvert.DeserializeObject<Settings>(fileContent);
 					}
 				}
-			} catch(FormatException ex) {
+			} catch(Exception ex) {
 				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
-				throw;
+				if(Program.EnableUpdate) {
+					_settings = default;
+				}
+				else {
+					throw;
+				}
 			}
 		}
 
