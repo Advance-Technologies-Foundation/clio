@@ -17,6 +17,7 @@ using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.Core.Packages;
 using Terrasoft.Web.Common;
+using global::Common.Logging;
 #if NETSTANDARD2_0
 using System.Globalization;
 using Terrasoft.Web.Http.Abstractions;
@@ -98,6 +99,9 @@ namespace cliogate.Files.cs
 		}
 
 		#endregion
+
+		private ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
+		private string splitName = "#OriginalMaintainer:";
 
 		#region Methods: Public
 
@@ -198,19 +202,44 @@ namespace cliogate.Files.cs
 			ResponseFormat = WebMessageFormat.Json)]
 		public bool UnlockPackages(string[] unlockPackages = null) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				_log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages));
 				var maintainerCode = SysSettings.GetValue<string>(UserConnection, "Maintainer", "NonImplemented");
-				Query query = new Update(UserConnection, "SysPackage")
-					.Set("InstallType", Column.Parameter(0, "Integer"))
-					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode)) as Update;
 				if (unlockPackages != null && unlockPackages.Any()) {
-					query = query.And("Name").In(Column.Parameters((IEnumerable<string>)unlockPackages));
+					foreach (var unlockPackage in unlockPackages) {
+						var originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
+						var originalDescription = GetPackageAttributeValue<string>("Description", unlockPackage);
+						var description = originalDescription.Contains(splitName) ? originalDescription 
+							: originalDescription + splitName + originalMaintainer;
+						Query query = new Update(UserConnection, "SysPackage")
+							.Set("InstallType", Column.Parameter(0))
+							.Set("Maintainer", Column.Parameter(maintainerCode))
+							.Set("Description", Column.Parameter(description))
+							.Where("Name").IsEqual(Column.Parameter(unlockPackage));
+						Update update = query as Update;
+						update.BuildParametersAsValue = true;
+						update.Execute();
+					}
+				} else {
+					Query query = new Update(UserConnection, "SysPackage")
+						.Set("InstallType", Column.Parameter(0, "Integer"))
+						.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode));
+					Update update = query as Update;
+					update.Execute();
 				}
-				Update update = query as Update;
-				update.Execute();
 				return true;
 			} else {
 				throw new Exception("You don'nt have permission for operation CanManageSolution");
 			}
+		}
+
+		private T GetPackageAttributeValue<T>(string key, string packageName) {
+			Select query = new Select(UserConnection)
+					.From("SysPackage")
+					.Column(key)
+					.Where("Name")
+					.IsEqual(Column.Parameter(packageName)) as Select;
+			var result = query.ExecuteScalar<T>();
+			return result;
 		}
 
 		[OperationContract]
@@ -219,16 +248,31 @@ namespace cliogate.Files.cs
 			ResponseFormat = WebMessageFormat.Json)]
 		public bool LockPackages(string[] lockPackages = null) {
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				_log.WarnFormat("Start LockPackages, packages: {0}", string.Join(", ", lockPackages));
 				var maintainerCode = SysSettings.GetValue<string>(UserConnection, "Maintainer", "NonImplemented");
-				Query query = new Update(UserConnection, "SysPackage")
+				if (lockPackages != null && lockPackages.Any()) {
+					foreach (var lockPackage in lockPackages) {
+						var originalMaintainer = GetPackageAttributeValue<string>("Maintainer", lockPackage);
+						var description = GetPackageAttributeValue<string>("Description", lockPackage)
+							.Split(new[] { splitName }, StringSplitOptions.None);
+						var maintainer = description.Length > 1 ? description.Last() : originalMaintainer;
+						Query query = new Update(UserConnection, "SysPackage")
+							.Set("InstallType", Column.Parameter(1))
+							.Set("Maintainer", Column.Parameter(maintainer))
+							.Set("Description", Column.Parameter(description[0]))
+							.Where("Name").IsEqual(Column.Parameter(lockPackage));
+						Update update = query as Update;
+						update.BuildParametersAsValue = true;
+						update.Execute();
+					}
+				} else {
+					Query query = new Update(UserConnection, "SysPackage")
 					.Set("InstallType", Column.Parameter(1, "Integer"))
 					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode))
 					.And("Name").IsNotEqual(Column.Parameter("Custom")) as Update;
-				if (lockPackages != null && lockPackages.Any()) {
-					query = query.And("Name").In(Column.Parameters((IEnumerable<string>)lockPackages));
+					Update update = query as Update;
+					update.Execute();
 				}
-				Update update = query as Update;
-				update.Execute();
 				return true;
 			} else {
 				throw new Exception("You don'nt have permission for operation CanManageSolution");
