@@ -200,10 +200,13 @@ namespace cliogate.Files.cs
 			if (UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				var maintainerCode = SysSettings.GetValue<string>(UserConnection, "Maintainer", "NonImplemented");
 				Query query = new Update(UserConnection, "SysPackage")
-					.Set("InstallType", Column.Parameter(0, "Integer"))
-					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode)) as Update;
+					.Set("InstallType", Column.Parameter(0, "Integer"));
 				if (unlockPackages != null && unlockPackages.Any()) {
-					query = query.And("Name").In(Column.Parameters((IEnumerable<string>)unlockPackages));
+					query = (query as Update).Set("Maintainer", Column.Parameter(0, "Integer"));
+					query = (query as Update).Set("Description", Column.SourceColumn("Maintainer"));
+					query = query.Where("Name").In(Column.Parameters((IEnumerable<string>)unlockPackages));
+				} else {
+					query = query.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode));
 				}
 				Update update = query as Update;
 				update.Execute();
@@ -211,6 +214,15 @@ namespace cliogate.Files.cs
 			} else {
 				throw new Exception("You don'nt have permission for operation CanManageSolution");
 			}
+		}
+
+		private T GetPackageAttributeValue<T>(string key, string packageName) {
+			Select query = new Select(UserConnection)
+					.From("SysPackage")
+					.Column(key)
+					.Where("Name")
+					.IsEqual(Column.Parameter(packageName)) as Select;
+			return query.ExecuteScalar<T>();
 		}
 
 		[OperationContract]
