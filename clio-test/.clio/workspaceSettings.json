@@ -1,0 +1,4 @@
+{
+  "Packages": ["Pkg1","Pkg2"],
+  "ApplicationVersion": "8.1.0"
+}

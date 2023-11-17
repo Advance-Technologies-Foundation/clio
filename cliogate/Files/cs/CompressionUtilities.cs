@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 
 namespace cliogate.Files.cs
 {
@@ -35,8 +37,12 @@ namespace cliogate.Files.cs
 
 		#region Methods: Public
 
-		public static MemoryStream GetCompressedFolder(string rootDirectoryPath) {
-			string[] files = Directory.GetFiles(rootDirectoryPath, "*.*", SearchOption.AllDirectories);
+		public static MemoryStream GetCompressedFolder(string rootDirectoryPath, IEnumerable<string> ignoreDirectoriesName = null) {
+			var files = Directory.GetFiles(rootDirectoryPath, "*.*", SearchOption.AllDirectories);
+			if(ignoreDirectoriesName != null) {
+				IEnumerable<string> startNameIgnore = ignoreDirectoriesName.Select(d => Path.Combine(rootDirectoryPath, d)); 
+				files = files.Where(f=> !startNameIgnore.Any(f.StartsWith)).ToArray();
+			}
 			byte[] compressed;
 			using (var outStream = new MemoryStream()) {
 				using (var zipStream = new GZipStream(outStream, CompressionMode.Compress)) {

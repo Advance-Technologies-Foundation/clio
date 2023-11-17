@@ -13,6 +13,7 @@ namespace Clio.Workspace
 
 		private const string PackagesFolderName = "packages";
 		private const string ProjectsFolderName = "projects";
+		private const string TestProjectsFolderName ="tests";
 		private const string ClioDirectoryName = ".clio";
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 		private const string WorkspaceEnvironmentSettingsJson = "workspaceEnvironmentSettings.json";
@@ -75,6 +76,8 @@ namespace Clio.Workspace
 		public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
 		public string ProjectsFolderPath => Path.Combine(RootPath, ProjectsFolderName);
 
+		public string ProjectsTestsFolderPath => Path.Combine(RootPath, TestProjectsFolderName);
+
 		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);
 		public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
 
@@ -113,7 +116,7 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		public string BuildPackagePath(string packageName) => Path.Combine(PackagesFolderPath, packageName);
-
+		public string BuildPackageProjectPath(string packageName) => Path.Combine(PackagesFolderPath, packageName, "Files", packageName+".csproj");
 		public string BuildFrameworkCreatioSdkPath(Version nugetVersion) =>
 			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
 				"net40");

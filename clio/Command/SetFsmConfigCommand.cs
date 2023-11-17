@@ -1,6 +1,7 @@
 ﻿using CommandLine;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace Clio.Command;
@@ -78,8 +79,9 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	private readonly IValidator<SetFsmConfigOptions> _validator;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IList<string[]> _changedValuesTable;
-	private const string WebConfingFileName = "Web.config";
+	private string WebConfigFileName = "Web.config";
 
+	private bool _isNetCore;
 	#endregion
 
 	#region Constructors: Public
@@ -101,7 +103,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
 			.ToList().ForEach(e =>
 			{
-				Console.WriteLine($"{e.Severity.ToString().ToUpper()} ({e.ErrorCode}) - {e.ErrorMessage}");
+				Console.WriteLine($"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}");
 			});
 	}
 
@@ -114,11 +116,18 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 			PrintErrors(validationResult.Errors);
 			return 1;
 		}
+		
+		_ = _settingsRepository.GetEnvironment(options).IsNetCore switch {
+			true => WebConfigFileName = "Terrasoft.WebHost.dll.config",
+			var _ => WebConfigFileName = "Web.config"
+ 		};
+		
+		
 		string webConfigPath = string.IsNullOrWhiteSpace(options.PhysicalPath) ? 
-			Path.Join(GetWebConfigPathFromEnvName(options.Environment), WebConfingFileName) //Searches IIS registered sites
-			: Path.Join(options.PhysicalPath, WebConfingFileName);
+			Path.Join(GetWebConfigPathFromEnvName(options.Environment), WebConfigFileName) //Searches IIS registered sites
+			: Path.Join(options.PhysicalPath, WebConfigFileName);
 		if (File.Exists(webConfigPath)) {
-			ModifyWebConfigFile(webConfigPath, options.IsFsm.ToLower() == "on"); //Happy path
+			ModifyWebConfigFile(webConfigPath, options.IsFsm.ToLower(CultureInfo.InvariantCulture) == "on"); //Happy path
 			return 0;
 		}
 		Console.WriteLine($"Config does not exist in {webConfigPath}");

@@ -765,6 +765,16 @@ To connect your package from workspace to local system in file design mode use c
 ```
 clio link-from-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
+<details>
+<summary>Link all packages from repository</summary>
+
+```ps
+clio l4r -e ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg) -p * -r .\
+```
+
+</details>
+
+
 
 To connect your local system in file design mode use command to workspace
 ```

@@ -83,7 +83,7 @@ namespace Clio.Command
 				};
 
 				HttpResponseMessage response = await _httpClient.SendAsync(message).ConfigureAwait(false);
-				var strContent = await response.Content.ReadAsStringAsync();
+				string strContent = await response.Content.ReadAsStringAsync();
 				dto = System.Text.Json.JsonSerializer.Deserialize<Dto>(strContent);
 				offset += 50;
 				apps.AddRange(dto.Applications.Where(a => a.Attributes.Status == "published"));

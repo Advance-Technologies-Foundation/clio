@@ -1,34 +1,30 @@
 ﻿using System;
 
-namespace Clio.Common
+namespace Clio.Common;
+
+#region Class: UnixTimeConverter
+
+public static class UnixTimeConverter
 {
 
-	#region Class: UnixTimeConverter
+	#region Fields: Private
 
-	public static class UnixTimeConverter
-	{
-		#region Fields: Private
+	private static readonly DateTime EpochUnixDateTime = new(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
 
-		private static readonly DateTime _epochUnixDateTime = 
-			new DateTime(1970,1,1,0,0,0,0,System.DateTimeKind.Utc);
+	#endregion
 
-		#endregion
+	#region Methods: Public
 
-		#region Methods: Public
+	public static DateTime CovertFromUnixDateTimeToUtc(long unixDateTime){
+		return EpochUnixDateTime.AddMilliseconds(unixDateTime);
+	}
 
-		public static DateTime CovertFromUnixDateTimeToUtc(long unixDateTime) {
-			return _epochUnixDateTime.AddMilliseconds(unixDateTime);
-		}
-
-		public static long CovertToUnixDateTime(DateTime dateTime) {
-			return (long)(dateTime.ToUniversalTime().Subtract(_epochUnixDateTime)).TotalMilliseconds;
-			//return _epochUnixDateTime.AddMilliseconds(unixDateTime).ToLocalTime();
-		}
-
-		#endregion
-
+	public static long CovertToUnixDateTime(DateTime dateTime){
+		return (long)dateTime.ToUniversalTime().Subtract(EpochUnixDateTime).TotalMilliseconds;
 	}
 
 	#endregion
 
 }
+
+#endregion

@@ -372,6 +372,9 @@
     <None Update="tpl\ui\8.0.8\ui-project\src\app\view-elements\demo\demo-icon.svg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="tpl\UnitTest.csproj.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -746,6 +749,22 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Remove="tpl\UnitTestLibs\Terrasoft.TestFramework.dll" />
+    <Content Include="tpl\UnitTestLibs\Terrasoft.TestFramework.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\UnitTestLibs\UnitTest.dll" />
+    <Content Include="tpl\UnitTestLibs\UnitTest.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\open-test-solution-framework.cmd" />
+    <Content Include="tpl\workspace\tasks\open-test-solution-framework.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\open-test-solution-netcore.cmd" />
+    <Content Include="tpl\workspace\tasks\open-test-solution-netcore.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -910,6 +929,7 @@
     <Folder Include="tpl\package\SqlScripts" />
     <Folder Include="tpl\ui\8.0.3\" />
     <Folder Include="tpl\ui\8.0.8\" />
+    <Folder Include="tpl\workspace\tests\" />
   </ItemGroup>
   <ItemGroup>
     <None Include="tpl\workspace\.clio\clioignore" />

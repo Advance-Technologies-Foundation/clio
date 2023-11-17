@@ -15,13 +15,9 @@ public class ArtifactFilter
 		_baseDirectory = baseDirectory;
 	}
 	
-	internal static readonly Func<string, IEnumerable<string>> GetDirectories = (baseDirectory) => {
-		
-		var mylist = Directory.GetDirectories(baseDirectory)
-			.Select(item=> (new Uri(item, UriKind.Absolute)).Segments.Last())
-			.Where(item=> item==baseDirectory);
-		
-		return mylist;
-	};
+	internal static readonly Func<string, IEnumerable<string>> GetDirectories = baseDirectory =>
+		Directory.GetDirectories(baseDirectory)
+		.Select(item=> new Uri(item, UriKind.Absolute).Segments.Last())
+		.Where(item=> item==baseDirectory);
 
 }

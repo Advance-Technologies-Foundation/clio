@@ -35,6 +35,8 @@ namespace Clio.Command
 		}
 	}
 
+	
+	
 	public class ConfigureWorkspaceCommand : Command<ConfigureWorkspaceOptions>
 	{
 

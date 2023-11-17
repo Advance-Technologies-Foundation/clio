@@ -17,6 +17,8 @@ namespace Clio.Workspace
 		string WorkspaceEnvironmentSettingsPath { get; }
 		string PackagesFolderPath { get; }
 		string ProjectsFolderPath { get; }
+		string ProjectsTestsFolderPath { get; }
+		
 		string SolutionFolderPath { get; }
 		string SolutionPath { get; }
 		string NugetFolderPath { get; }
@@ -31,6 +33,7 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		string BuildPackagePath(string packageName);
+		string BuildPackageProjectPath(string packageName);
 		string BuildFrameworkCreatioSdkPath(Version nugetVersion);
 		string BuildCoreCreatioSdkPath(Version nugetVersion);
 		string BuildRelativePathRegardingPackageProjectPath(string destinationPath);

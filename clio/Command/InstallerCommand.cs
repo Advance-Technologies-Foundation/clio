@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -12,6 +13,7 @@ using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using CommandLine;
+using DocumentFormat.OpenXml.Presentation;
 using MediatR;
 using StackExchange.Redis;
 
@@ -291,6 +293,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Methods: Public
 
 	public override int Execute(PfInstallerOptions options) {
+	
 		if (!File.Exists(options.ZipFile)) {
 			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
 			return 1;

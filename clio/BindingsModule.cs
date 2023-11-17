@@ -98,6 +98,7 @@ namespace Clio
 			containerBuilder.RegisterType<CreateInfrastructureCommand>();
 			containerBuilder.RegisterType<OpenInfrastructureCommand>();
 			containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
+			containerBuilder.RegisterType<CreateTestProjectCommand>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
