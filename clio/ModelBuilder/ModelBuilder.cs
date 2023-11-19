@@ -62,15 +62,17 @@ namespace Clio
 		private void GetEntitySchemasAsync()
 		{
 			var responseJson = _creatioClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
-			var col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson);
-			foreach (var item in col.Collection)
-			{
-				if(!_schemas.ContainsKey(item.Name)){
-					_schemas.Add(item.Name,new Schema
-					{
-						Name = item.Name,
-					});
-				}
+			
+			JsonSerializerSettings settings = new () {
+				NullValueHandling = NullValueHandling.Ignore
+			};
+			
+			EntitySchemaResponse col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson, settings);
+			foreach (EntitySchema item in col.Collection.Where(item => !_schemas.ContainsKey(item.Name))) {
+				_schemas.Add(item.Name,new Schema
+				{
+					Name = item.Name,
+				});
 			}
 		}
 

@@ -473,9 +473,6 @@
     <Content Include="tpl\ui-project\webpack.config.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="tpl\workspace\.clio\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
     <Content Include="tpl\workspace\.gitignore">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -765,6 +762,9 @@
     <Content Include="tpl\workspace\tasks\open-test-solution-netcore.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Update="tpl\workspace\tests\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -929,7 +929,6 @@
     <Folder Include="tpl\package\SqlScripts" />
     <Folder Include="tpl\ui\8.0.3\" />
     <Folder Include="tpl\ui\8.0.8\" />
-    <Folder Include="tpl\workspace\tests\" />
   </ItemGroup>
   <ItemGroup>
     <None Include="tpl\workspace\.clio\clioignore" />
