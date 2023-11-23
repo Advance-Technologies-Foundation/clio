@@ -1,6 +1,7 @@
 ﻿using Creatio.Client;
 using System;
 using System.Threading;
+using Clio.Common.Responses;
 
 namespace Clio.Common
 {
@@ -51,6 +52,8 @@ namespace Clio.Common
 		void Login();
 		string UploadFile(string url, string filePath);
 		string UploadAlmFile(string url, string filePath);
+
+		T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite) where T: BaseResponse, new();
 	}
 
 	public class CreatioClientAdapter : IApplicationClient
@@ -109,5 +112,22 @@ namespace Clio.Common
         {
             throw new NotImplementedException();
         }
-    }
+
+		/// <summary>
+		/// Performs post request and returns deserialized response.
+		/// </summary>
+		/// <param name="url">Request url.</param>
+		/// <param name="requestData">Request data.</param>
+		/// <param name="requestTimeout">Request timeout. Default: infinity period.</param>
+		/// <typeparam name="T">Return value type.</typeparam>
+		/// <returns>Response.<see cref="T"/></returns>
+		public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
+			where T: BaseResponse, new() {
+			var converter = new JsonConverter();
+			string response = _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
+			return converter.DeserializeObject<T>(response);
+		}
+
+
+	}
 }
