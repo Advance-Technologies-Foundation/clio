@@ -53,7 +53,7 @@ internal class CreateTestProjectCommand
 
 	#region Constants: Private
 
-	private const string testsDirectoryName = "tests";
+	private const string TestsDirectoryName = "tests";
 
 	#endregion
 
@@ -62,7 +62,6 @@ internal class CreateTestProjectCommand
 	private readonly IValidator<CreateTestProjectOptions> _optionsValidator;
 	private readonly IWorkspace _workspace;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
-	private readonly IWorkspaceCreator _workspaceCreator;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly ITemplateProvider _templateProvider;
 	private readonly IFileSystem _fileSystem;
@@ -71,17 +70,13 @@ internal class CreateTestProjectCommand
 
 	#region Constructors: Public
 
-	public CreateTestProjectCommand(IValidator<CreateTestProjectOptions> optionsValidator,
-		 IWorkspace workspace, 
-			IWorkspacePathBuilder workspacePathBuilder, IWorkspaceCreator workspaceCreator,
-		 IWorkingDirectoriesProvider workingDirectoriesProvider,
+	public CreateTestProjectCommand(IValidator<CreateTestProjectOptions> optionsValidator, IWorkspace workspace, 
+			IWorkspacePathBuilder workspacePathBuilder,IWorkingDirectoriesProvider workingDirectoriesProvider,
 		 ITemplateProvider templateProvider, IFileSystem fileSystem
-	)
-	{
+	){
 		_optionsValidator = optionsValidator;
 		_workspace = workspace;
 		_workspacePathBuilder = workspacePathBuilder;
-		_workspaceCreator = workspaceCreator;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_templateProvider = templateProvider;
 		_fileSystem = fileSystem;
@@ -96,7 +91,7 @@ internal class CreateTestProjectCommand
 	private string TestsPath =>
 		IsWorkspace
 			? _workspacePathBuilder.ProjectsTestsFolderPath
-			: Path.Combine(_workingDirectoriesProvider.CurrentDirectory, testsDirectoryName);
+			: Path.Combine(_workingDirectoriesProvider.CurrentDirectory, TestsDirectoryName);
 
 	#endregion
 
@@ -108,6 +103,8 @@ internal class CreateTestProjectCommand
 				?  _workspace.WorkspaceSettings.Packages
 				: options.PackageName.Split(",", StringSplitOptions.RemoveEmptyEntries);
 			const string solutionName = "UnitTests";
+			
+			_fileSystem.CreateDirectoryIfNotExists(TestsPath);
 			ExecuteDotnetCommand($"new sln -n {solutionName}", TestsPath);
 			
 			string tplContent = _templateProvider.GetTemplate("UnitTest.csproj");
@@ -125,8 +122,8 @@ internal class CreateTestProjectCommand
 				string relativeTestProjectPath = Path.Combine(packageName, unitTestProjFileName);
 				ExecuteDotnetCommand($"sln {solutionName}.sln add {relativeTestProjectPath}", TestsPath);
 
-                string underTestProjectPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
-                ExecuteDotnetCommand($"sln {solutionName}.sln add {underTestProjectPath}", TestsPath);
+				string underTestProjectPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
+				ExecuteDotnetCommand($"sln {solutionName}.sln add {underTestProjectPath}", TestsPath);
 			}
 			Console.WriteLine("Done");
 			return 0;
@@ -136,20 +133,19 @@ internal class CreateTestProjectCommand
 		}
 	}
 	
-	
 	private void ExecuteDotnetCommand(string command, string workingDirectoryPath) {
 		IProcessExecutor processExecutor = new ProcessExecutor();
 		IDotnetExecutor dotnetExecutor = new DotnetExecutor(processExecutor);
 		dotnetExecutor.Execute(command, true, workingDirectoryPath);
 	}
 	
-	
 	private void UpdateCsProj(string csprojPath, string packageName) {
 		string csprojContent = _fileSystem.ReadAllText(csprojPath);
-		const string packageNameTemplate = @"{{packageUnderTest}}";
+		const string packageNameTemplate = "{{packageUnderTest}}";
 		string newContent = csprojContent.Replace(packageNameTemplate, packageName);
 		_fileSystem.WriteAllTextToFile(csprojPath, newContent);
 	}
+	
 	#endregion
 
 }

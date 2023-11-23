@@ -765,13 +765,20 @@
     <Content Update="tpl\workspace\tests\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="tpl\workspace\tests\placeholder.txt" />
+    <Content Include="tpl\workspace\tests\placeholder.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Autofac" Version="6.5.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.4.2" />
-    <PackageReference Include="creatio.client" Version="1.0.18" />
+
+    <!--    <PackageReference Include="creatio.client" Version="1.0.18" />-->
+    <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
+    
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="FluentValidation" Version="11.5.2" />
     <PackageReference Include="KubernetesClient" Version="12.0.16" />
