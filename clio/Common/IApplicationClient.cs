@@ -1,11 +1,18 @@
 ﻿using Creatio.Client;
 using System;
+using System.Net.WebSockets;
 using System.Threading;
+using Creatio.Client.Dto;
 
 namespace Clio.Common
 {
 	public interface IApplicationClient
 	{
+		
+		public event EventHandler<WsMessage> MessageReceived;
+
+		public event EventHandler<WebSocketState> ConnectionStateChanged;
+		
 		string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = 10000);
 		void DownloadFile(string url, string filePath, string requestData);
 		string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite);
@@ -13,6 +20,9 @@ namespace Clio.Common
 		void Login();
 		string UploadFile(string url, string filePath);
 		string UploadAlmFile(string url, string filePath);
+		
+		void Listen(CancellationToken cancellationToken);
+		
 	}
 
 	public class CreatioClientAdapter : IApplicationClient
@@ -31,6 +41,7 @@ namespace Clio.Common
 			_creatioClient = creatioClient;
 		}
 
+		
 		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
 		}
@@ -63,5 +74,22 @@ namespace Clio.Common
         {
             throw new NotImplementedException();
         }
+		
+		public void Listen(CancellationToken cancellationToken) {
+			_creatioClient.ConnectionStateChanged += (sender, state) => {
+				ConnectionStateChanged?.Invoke(sender, state);
+			};
+			
+			_creatioClient.MessageReceived += (sender, message) => {
+				MessageReceived?.Invoke(sender, message);
+			};
+			
+			_creatioClient.StartListening(cancellationToken);
+		} 
+		
+		public event EventHandler<WsMessage> MessageReceived;
+
+		public event EventHandler<WebSocketState> ConnectionStateChanged;
+
     }
 }
