@@ -1,3 +1,5 @@
+using System.Threading;
+
 namespace Clio.Package
 {
 	using Clio.Common;
@@ -11,6 +13,7 @@ namespace Clio.Package
 		#region Methods: Public
 
 		void LoadPackagesToFileSystem();
+
 		void LoadPackagesToDb();
 
 		#endregion
@@ -23,7 +26,14 @@ namespace Clio.Package
 
 	public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
 	{
-		
+		#region Consts: Private
+
+		private const int retryRequestCount = 3;
+
+		private const int delayBetweenRetryAttemptsSec = 1;
+
+		#endregion
+
 		#region Fields: Private
 
 		private readonly IApplicationClient _applicationClient;
@@ -37,8 +47,8 @@ namespace Clio.Package
 
 		#region Constructors: Public
 
-		public FileDesignModeFileDesignModePackages(IApplicationClient applicationClient, IJsonConverter jsonConverter, 
-				ILogger logger, IServiceUrlBuilder serviceUrlBuilder) {
+		public FileDesignModeFileDesignModePackages(IApplicationClient applicationClient, IJsonConverter jsonConverter,
+			ILogger logger, IServiceUrlBuilder serviceUrlBuilder){
 			applicationClient.CheckArgumentNull(nameof(applicationClient));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			logger.CheckArgumentNull(nameof(logger));
@@ -52,7 +62,6 @@ namespace Clio.Package
 				.Build("/ServiceModel/AppInstallerService.svc/LoadPackagesToDB");
 			_getIsFileDesignModeUrl = serviceUrlBuilder
 				.Build("/ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode");
-
 		}
 
 		#endregion
@@ -61,7 +70,8 @@ namespace Clio.Package
 
 		private bool IsFileDesignModeUrl {
 			get {
-				string responseFormServer = _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty);
+				string responseFormServer
+					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, retryRequestCount, delayBetweenRetryAttemptsSec);
 				var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
 				if (response.Success) {
 					return response.Value;
@@ -79,16 +89,16 @@ namespace Clio.Package
 		private static string GetErrorDetails(ErrorInfo errorInfo) =>
 			$"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
 
-		private void PrintErrorOperationMessage( string storageName, string errorMessage) =>
+		private void PrintErrorOperationMessage(string storageName, string errorMessage) =>
 			_logger.WriteLine($"Load packages to {storageName} on a web application ended with error: {errorMessage}");
 
-		private void LoadPackagesToStorage(string endpoint, string storageName) {
+		private void LoadPackagesToStorage(string endpoint, string storageName){
 			if (!IsFileDesignModeUrl) {
-				PrintErrorOperationMessage( storageName, "disabled file design mode");
+				PrintErrorOperationMessage(storageName, "disabled file design mode");
 				return;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
-			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty);
+			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, retryRequestCount, delayBetweenRetryAttemptsSec);
 			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
 			if (response.Success) {
 				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
@@ -102,16 +112,13 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public void LoadPackagesToFileSystem() =>
-			LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
+		public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
 
-		public void LoadPackagesToDb() =>
-			LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
+		public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
 
 		#endregion
 
 	}
 
 	#endregion
-
 }

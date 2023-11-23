@@ -559,6 +559,7 @@ namespace Clio
 			typeof(OpenInfrastructureOptions),
 			typeof(CheckWindowsFeaturesOptions),
 			typeof(CreateTestProjectOptions),
+			typeof(DeactivatePkgOptions),
 			typeof(ListenOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -635,6 +636,7 @@ namespace Clio
 				(OpenInfrastructureOptions opts) => Resolve<OpenInfrastructureCommand>().Execute(opts),
 				(CheckWindowsFeaturesOptions opts) => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
 				(CreateTestProjectOptions opts) => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
+				(DeactivatePkgOptions opts) => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 				(ListenOptions opts) => Resolve<ListenCommand>(opts).Execute(opts),
 				_ => 1,
 			};

@@ -1,32 +1,32 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
-    <PackAsTool>true</PackAsTool>
-    <PackageId>clio</PackageId>
-    <Company>creatio</Company>
-    <Authors>creatio rnd team</Authors>
-    <PackageTags>cli ATF clio creatio</PackageTags>
-    <NeutralLanguage>en</NeutralLanguage>
-    <AssemblyVersion>6.0.2.10</AssemblyVersion>
-    <FileVersion>$(AssemblyVersion)</FileVersion>
-    <Version>$(AssemblyVersion)</Version>
-    <Description>CLI interface for Creatio</Description>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <PackageLicenseUrl></PackageLicenseUrl>
-    <PackageLicense>MIT</PackageLicense>
-    <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>https://github.com/Advance-Technologies-Foundation/clio</PackageProjectUrl>
-    <Copyright>ATF ©2023</Copyright>
-    <RootNamespace>Clio</RootNamespace>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <LangVersion>11</LangVersion>
-  </PropertyGroup>
+	<PropertyGroup>
+	  <OutputType>Exe</OutputType>
+	  <TargetFramework>net6.0</TargetFramework>
+	  <PackAsTool>true</PackAsTool>
+	  <PackageId>clio</PackageId>
+	  <Company>creatio</Company>
+	  <Authors>creatio rnd team</Authors>
+	  <PackageTags>cli ATF clio creatio</PackageTags>
+	  <NeutralLanguage>en</NeutralLanguage>
+	  <AssemblyVersion>6.0.2.10</AssemblyVersion>
+	  <FileVersion>$(AssemblyVersion)</FileVersion>
+	  <Version>$(AssemblyVersion)</Version>
+	  <Description>CLI interface for Creatio</Description>
+	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	  <PackageLicenseUrl></PackageLicenseUrl>
+	  <PackageLicense>MIT</PackageLicense>
+	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
+	  <RepositoryType>git</RepositoryType>
+	  <PackageProjectUrl>https://github.com/Advance-Technologies-Foundation/clio</PackageProjectUrl>
+	  <Copyright>ATF ©2023</Copyright>
+	  <RootNamespace>Clio</RootNamespace>
+	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
+	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
+	  <LangVersion>11</LangVersion>
+	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <ErrorReport>prompt</ErrorReport>
@@ -37,12 +37,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
-
-  <ItemGroup>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-      <_Parameter1>clio.tests</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
+	
+    <ItemGroup>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+			<_Parameter1>clio.tests</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
 
   <ItemGroup>
     <None Remove="reg\clio_context_menu_win.reg" />
@@ -398,7 +398,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.clio\clioignore">
-      <Pack>true</Pack>
+		<Pack>true</Pack>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\package\Files\PackageName.csproj">
@@ -765,20 +765,13 @@
     <Content Update="tpl\workspace\tests\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <None Remove="tpl\workspace\tests\placeholder.txt" />
-    <Content Include="tpl\workspace\tests\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Autofac" Version="6.5.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.4.2" />
-
-    <!--    <PackageReference Include="creatio.client" Version="1.0.18" />-->
-    <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
-
+    <PackageReference Include="creatio.client" Version="1.0.20" />
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="FluentValidation" Version="11.5.2" />
     <PackageReference Include="KubernetesClient" Version="12.0.16" />
@@ -797,8 +790,8 @@
     <PackageReference Include="NRedisStack" Version="0.9.0" />
     <PackageReference Include="OneOf" Version="3.0.223" />
     <PackageReference Include="System.Json" Version="4.7.1" />
-    <PackageReference Include="Ignore" Version="0.1.46" />
-    <PackageReference Include="YamlDotNet" Version="13.4.0" />
+	<PackageReference Include="Ignore" Version="0.1.46" />
+	<PackageReference Include="YamlDotNet" Version="13.4.0" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
   </ItemGroup>
   <ItemGroup>

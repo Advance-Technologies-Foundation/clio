@@ -80,8 +80,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IList<string[]> _changedValuesTable;
 	private string WebConfigFileName = "Web.config";
-
-	private bool _isNetCore;
+	
 	#endregion
 
 	#region Constructors: Public

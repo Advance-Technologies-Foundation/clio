@@ -27,9 +27,9 @@
 
     <ItemGroup>
         <Reference Include="System.Web"/>
-        <!-- <Reference Include="Terrasoft.Configuration">
+        <Reference Include="Terrasoft.Configuration">
             <HintPath>$(TestCoreLibPath)\..\bin\Terrasoft.Configuration.dll</HintPath>
-        </Reference> -->
+        </Reference>
     </ItemGroup>
 
     <ItemGroup Label="Nuget packages">
@@ -55,6 +55,8 @@
             <HintPath>.\Libs\UnitTest.dll</HintPath>
         </Reference>
     </ItemGroup>
+    
+    <!-- 
     <ItemGroup Label="Core References">
         <Reference Include="Terrasoft.Common">
             <HintPath>$(TestCoreLibPath)/Terrasoft.Common.dll</HintPath>
@@ -195,6 +197,7 @@
             <Private>True</Private>
         </Reference>
     </ItemGroup>
+     -->
     <ItemGroup>
         <ProjectReference Include="..\..\packages\{{packageUnderTest}}\Files\{{packageUnderTest}}.csproj"/>
     </ItemGroup>
