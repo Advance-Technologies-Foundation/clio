@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Net;
 using System.Net.WebSockets;
 using System.Threading;
@@ -6,7 +7,7 @@ using Clio.Common;
 using CommandLine;
 using Creatio.Client.Dto;
 using System.Text.Json;
-
+using Microsoft.IdentityModel.Tokens;
 
 namespace Clio.Command;
 
@@ -14,13 +15,27 @@ namespace Clio.Command;
 
 [Verb("listen", HelpText = "Subscribe to a websocket")]
 public class ListenOptions : EnvironmentOptions
-{ }
+{
+
+	[Option("loglevel", Required = false, HelpText = "Log level (ALL, Debug, Error, Fatal, Info, Trace, Warn)", Default = "All")]
+	public string LogLevel { get; set; }
+
+	[Option("logPattern", Required = false, HelpText = "Log pattern (i.e. ExceptNoisyLoggers)", Default = "")]
+	public string LogPattern { get; set; }
+	
+	[Option("FileName", Required = false, HelpText = "File path to save logs into")]
+	public string FileName { get; set; }
+
+	[Option("Silent", Required = false, HelpText = "Disable messages in console", Default = false)]
+	public bool Silent { get; set; }
+
+}
 
 #endregion
 
 #region Class: ListenCommand
 
-public class ListenCommand : Command<EnvironmentOptions>
+public class ListenCommand : Command<ListenOptions>
 {
 	
 	private readonly IApplicationClient _applicationClient;
@@ -29,8 +44,10 @@ public class ListenCommand : Command<EnvironmentOptions>
 	private readonly IFileSystem _fileSystem;
 	private const string StartLogBroadcast = "/rest/ATFLogService/StartLogBroadcast";
 	private const string StopLogBroadcast = "/rest/ATFLogService/ResetConfiguration";
+	private string LogFilePath = string.Empty;
+	private bool Silent;
 	#region Constructors: Public
-
+	
 	public ListenCommand(IApplicationClient applicationClient,ILogger logger,EnvironmentSettings environmentSettings, IFileSystem fileSystem){
 		_applicationClient = applicationClient;
 		_logger = logger;
@@ -43,23 +60,26 @@ public class ListenCommand : Command<EnvironmentOptions>
 
 	#region Methods: Public
 
-	public override int Execute(EnvironmentOptions options){
+	public override int Execute(ListenOptions options){
+		LogFilePath = options.FileName;
+		Silent = options.Silent;
 		_applicationClient.Listen(CancellationToken.None);
-		StartLogger();
+		StartLogger(options);
 		Console.ReadKey();
 		StopLogger();
 		return 0;
 	}
 	
-	private void StartLogger(){
+	private void StartLogger(ListenOptions options){
 		string rootPath = _environmentSettings.IsNetCore ? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
 		string requestUrl = rootPath+StartLogBroadcast;
 		var payload = new {
-			logLevelStr = "All",
+			logLevelStr = options.LogLevel,
 			bufferSize = 1,
+			loggerPattern= options.LogPattern
 		};
-		JsonSerializerOptions options = new (){PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
-		string payloadString = JsonSerializer.Serialize(payload,options);
+		JsonSerializerOptions serializerOptions = new (){PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
+		string payloadString = JsonSerializer.Serialize(payload,serializerOptions);
 		_applicationClient.ExecutePostRequest(requestUrl,payloadString);
 		
 	}
@@ -71,7 +91,6 @@ public class ListenCommand : Command<EnvironmentOptions>
 	}
 
 	private void OnMessageReceived(object sender, WsMessage message){
-		
 		switch (message.Header.Sender)
 		{
 			case "TelemetryService":
@@ -84,10 +103,12 @@ public class ListenCommand : Command<EnvironmentOptions>
 	}
 	
 	private void HandleTelemetryServiceMessages(WsMessage message){
-
-		//JsonSerializer.Deserialize<TelemetryMessage>(message.Body);
-		System.IO.File.AppendAllText("C:\\ws-clio.json", Environment.NewLine+message.Body);
-		//_fileSystem.WriteAllTextToFile("C:\\ws-clio.txt", message.Body);
+		if(!Silent) {
+			_logger.WriteLine(message.Body);
+		}
+		if(!LogFilePath.IsNullOrEmpty()) {
+			System.IO.File.AppendAllText(LogFilePath, Environment.NewLine+message.Body);
+		}
 	}
 	
 	private void OnConnectionStateChanged(object sender, WebSocketState state){

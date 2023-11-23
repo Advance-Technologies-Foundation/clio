@@ -18,14 +18,6 @@ namespace Clio.Common
 		void DownloadFile(string url, string filePath, string requestData);
 		
 		/// <summary>
-		/// Executes GET Request without retry
-		/// </summary>
-		/// <param name="url">Request URL</param>
-		/// <param name="requestTimeout">Request Timeout</param>
-		/// <returns>Response</returns>
-		string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite);
-
-		/// <summary>
 		/// Executes GET Request with retry
 		/// </summary>
 		/// <param name="url">Request URL</param>
@@ -34,17 +26,8 @@ namespace Clio.Common
 		/// <param name="delaySec">delay between retries in seconds</param>
 		/// <returns>Response</returns>
 		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
-		string ExecuteGetRequest(string url, int requestTimeout, int retryCount = 1, int delaySec = 1);
+		string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 		
-		/// <summary>
-		/// Executes POST Request without retry
-		/// </summary>
-		/// <param name="url">Request URL</param>
-		/// <param name="requestData">Request Data</param>
-		/// <param name="requestTimeout">Request Timeout</param>
-		/// <returns>Response</returns>
-		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite);
-
 		/// <summary>
 		/// Executes POST Request with retry
 		/// </summary>
@@ -55,7 +38,7 @@ namespace Clio.Common
 		/// <param name="delaySec">delay between retries in seconds</param>
 		/// <returns>Response</returns>
 		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
-		string ExecutePostRequest(string url, string requestData, int requestTimeout , int retryCount = 1, int delaySec = 1);
+		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 		void Login();
 		string UploadFile(string url, string filePath);
 		string UploadAlmFile(string url, string filePath);
@@ -89,17 +72,13 @@ namespace Clio.Common
 		public void DownloadFile(string url, string filePath, string requestData) {
 			_creatioClient.DownloadFile(url, filePath, requestData);
 		}
-
-		public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite) {
-			return _creatioClient.ExecuteGetRequest(url, requestTimeout);
-		}
 		
-		public string ExecuteGetRequest(string url, int requestTimeout, int retryCount = 1, int delaySec = 1 ) {
+		public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1 ) {
 			return _creatioClient.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec);
 		}
 
-		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite) {
-			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
+		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1){
+			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
 		}
 
 		public void Login() {
@@ -135,8 +114,6 @@ namespace Clio.Common
 
 		public event EventHandler<WebSocketState> ConnectionStateChanged;
 
-    }
-
 		/// <summary>
 		/// Performs post request and returns deserialized response.
 		/// </summary>
@@ -151,7 +128,5 @@ namespace Clio.Common
 			string response = _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
 			return converter.DeserializeObject<T>(response);
 		}
-
-
 	}
 }
