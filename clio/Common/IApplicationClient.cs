@@ -16,16 +16,17 @@ namespace Clio.Common
 		/// <param name="requestTimeout">Request Timeout</param>
 		/// <returns>Response</returns>
 		string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite);
-		
+
 		/// <summary>
 		/// Executes GET Request with retry
 		/// </summary>
 		/// <param name="url">Request URL</param>
 		/// <param name="requestTimeout">Request Timeout</param>
-		/// <param name="retry">retry count</param>
+		/// <param name="retryCount">retry count</param>
+		/// <param name="delaySec">delay between retries in seconds</param>
 		/// <returns>Response</returns>
-		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retry"/> count</exception>
-		string ExecuteGetRequest(string url, int requestTimeout, uint retry );
+		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
+		string ExecuteGetRequest(string url, int requestTimeout, int retryCount = 1, int delaySec = 1);
 		
 		/// <summary>
 		/// Executes POST Request without retry
@@ -35,17 +36,18 @@ namespace Clio.Common
 		/// <param name="requestTimeout">Request Timeout</param>
 		/// <returns>Response</returns>
 		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite);
-		
+
 		/// <summary>
 		/// Executes POST Request with retry
 		/// </summary>
 		/// <param name="url">Request URL</param>
 		/// <param name="requestData">Request Data</param>
 		/// <param name="requestTimeout">Request Timeout</param>
-		/// <param name="retry">retry count</param>
+		/// <param name="retryCount">retry count</param>
+		/// <param name="delaySec">delay between retries in seconds</param>
 		/// <returns>Response</returns>
-		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retry"/> count</exception>
-		string ExecutePostRequest(string url, string requestData, int requestTimeout , uint retry);
+		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
+		string ExecutePostRequest(string url, string requestData, int requestTimeout , int retryCount = 1, int delaySec = 1);
 		void Login();
 		string UploadFile(string url, string filePath);
 		string UploadAlmFile(string url, string filePath);
@@ -79,47 +81,16 @@ namespace Clio.Common
 			return _creatioClient.ExecuteGetRequest(url, requestTimeout);
 		}
 		
-		public string ExecuteGetRequest(string url, int requestTimeout, uint retry) {
-			int attempts = 0;
-			Exception clientException = null;
-			while(attempts < retry) {
-				try {
-					return _creatioClient.ExecuteGetRequest(url, requestTimeout);
-				} catch (Exception e) {
-					attempts++;
-					clientException = e;
-					Thread.Sleep(1000);
-				}
-			}
-			throw new Exception($"Could not execute GET request, attempted {attempts} times", clientException);
+		public string ExecuteGetRequest(string url, int requestTimeout, int retryCount = 1, int delaySec = 1 ) {
+			return _creatioClient.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec);
 		}
 
 		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite) {
 			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
 		}
 		
-		/// <summary>
-		/// Executes POST Request with retry
-		/// </summary>
-		/// <param name="url">Request URL</param>
-		/// <param name="requestData">Request Data</param>
-		/// <param name="requestTimeout">Request Timeout</param>
-		/// <param name="retry">retry count</param>
-		/// <returns>Response</returns>
-		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retry"/> count</exception>
-		public string ExecutePostRequest(string url, string requestData, int requestTimeout, uint retry) {
-			int attempts = 0;
-			Exception clientException = null;
-			while(attempts < retry) {
-				try {
-					return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
-				} catch (Exception e) {
-					attempts++;
-					clientException = e;
-					Thread.Sleep(1000);
-				}
-			}
-			throw new Exception($"Could not execute POST request, attempted {attempts} times", clientException);
+		public string ExecutePostRequest(string url, string requestData, int requestTimeout, int retryCount, int delaySec = 1) {
+			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
 		}
 		
 		public void Login() {

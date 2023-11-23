@@ -775,10 +775,7 @@
     <PackageReference Include="Autofac" Version="6.5.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.4.2" />
-
-    <!--    <PackageReference Include="creatio.client" Version="1.0.18" />-->
-    <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
-    
+    <PackageReference Include="creatio.client" Version="1.0.20" />
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="FluentValidation" Version="11.5.2" />
     <PackageReference Include="KubernetesClient" Version="12.0.16" />

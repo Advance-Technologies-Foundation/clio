@@ -26,6 +26,13 @@ namespace Clio.Package
 
 	public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
 	{
+		#region Consts: Private
+
+		private const int retryRequestCount = 3;
+
+		private const int delayBetweenRetryAttemptsSec = 1;
+
+		#endregion
 
 		#region Fields: Private
 
@@ -64,7 +71,7 @@ namespace Clio.Package
 		private bool IsFileDesignModeUrl {
 			get {
 				string responseFormServer
-					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, 3);
+					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, retryRequestCount, delayBetweenRetryAttemptsSec);
 				var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
 				if (response.Success) {
 					return response.Value;
@@ -91,7 +98,7 @@ namespace Clio.Package
 				return;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
-			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, 3);
+			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, retryRequestCount, delayBetweenRetryAttemptsSec);
 			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
 			if (response.Success) {
 				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
