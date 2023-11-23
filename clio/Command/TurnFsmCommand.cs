@@ -1,4 +1,6 @@
-﻿using CommandLine;
+﻿using System;
+using System.Threading;
+using CommandLine;
 
 namespace Clio.Command;
 
@@ -34,6 +36,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	public override int Execute(TurnFsmCommandOptions options){
 		if (options.IsFsm == "on") {
 			if (_setFsmConfigCommand.Execute(options) == 0) {
+				Thread.Sleep(TimeSpan.FromSeconds(3));
 				return _loadPackagesToFileSystemCommand.Execute(options);
 			}
 		} else {
