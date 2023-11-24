@@ -46,6 +46,8 @@ public class ListenCommand : Command<ListenOptions>
 	private const string StopLogBroadcast = "/rest/ATFLogService/ResetConfiguration";
 	private string LogFilePath = string.Empty;
 	private bool Silent;
+	private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+	
 	#region Constructors: Public
 	
 	public ListenCommand(IApplicationClient applicationClient,ILogger logger,EnvironmentSettings environmentSettings, IFileSystem fileSystem){
@@ -61,11 +63,13 @@ public class ListenCommand : Command<ListenOptions>
 	#region Methods: Public
 
 	public override int Execute(ListenOptions options){
+		CancellationToken token = _cancellationTokenSource.Token;
 		LogFilePath = options.FileName;
 		Silent = options.Silent;
-		_applicationClient.Listen(CancellationToken.None);
+		_applicationClient.Listen(token);
 		StartLogger(options);
 		Console.ReadKey();
+		_cancellationTokenSource.Cancel();
 		StopLogger();
 		return 0;
 	}
@@ -81,13 +85,13 @@ public class ListenCommand : Command<ListenOptions>
 		JsonSerializerOptions serializerOptions = new (){PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
 		string payloadString = JsonSerializer.Serialize(payload,serializerOptions);
 		_applicationClient.ExecutePostRequest(requestUrl,payloadString);
-		
 	}
 	
 	private void StopLogger(){
 		string rootPath = _environmentSettings.IsNetCore ? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
 		string requestUrl = rootPath+StopLogBroadcast;
 		_applicationClient.ExecutePostRequest(requestUrl,string.Empty);
+		
 	}
 
 	private void OnMessageReceived(object sender, WsMessage message){
