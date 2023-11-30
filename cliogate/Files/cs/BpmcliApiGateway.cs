@@ -1,6 +1,7 @@
 ﻿using System;
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -11,13 +12,16 @@ using ClioGate.Functions.SQL;
 using Common.Logging;
 using Newtonsoft.Json;
 using Terrasoft.Common;
+using Terrasoft.Core;
 using Terrasoft.Core.Configuration;
 using Terrasoft.Core.ConfigurationBuild;
 using Terrasoft.Core.DB;
 using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.Core.Packages;
+using Terrasoft.Core.ServiceModelContract;
 using Terrasoft.Web.Common;
+using Terrasoft.Web.Http.Abstractions;
 #if NETSTANDARD2_0
 using System.Globalization;
 using Terrasoft.Web.Http.Abstractions;
@@ -331,6 +335,23 @@ namespace cliogate.Files.cs
 			return true;
 		}
 
+		// http://kkrylovn.tscrm.com:40050/rest/CreatioApiGateway/SavePackageFileContent?packageName=CrtBase&filePath=descriptor12345.json&fileContent=123
+		[OperationContract]
+		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public BaseResponse SavePackageFileContent(string packageName, string filePath, string fileContent){
+			CheckCanManageSolution();
+
+			PackageExplorer packageExplorer = new PackageExplorer(packageName);
+			var result = packageExplorer.SaveFileContent(filePath, fileContent);
+			return new BaseResponse {
+				Success = result.isSuccess,
+				ErrorInfo = new ErrorInfo() {
+					Message = result.ex?.Message,
+					StackTrace = result.ex?.StackTrace
+				}
+			};
+		}
+
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "UnlockPackages",
 			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
@@ -373,10 +394,69 @@ namespace cliogate.Files.cs
 			return CreateInstallUtilities().SaveSchemaDBStructure(invalidSchemas, true);
 		}
 
+		[OperationContract]
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public BaseResponse UploadFile(Stream stream){
+			CheckCanManageSolution();
+			HttpContext contextAccessor = HttpContextAccessor.GetInstance();
+			HeaderCollection headers = contextAccessor.Request.Headers;
+			const string fileNameHeader = "X-File-Name";
+			const string packageNameHeader = "X-Package-Name";
+			if(!headers.AllKeys.Contains(fileNameHeader)) {
+				return new BaseResponse {
+					Success = false,
+					ErrorInfo = new ErrorInfo() {
+						Message = $"Error: {fileNameHeader} header missing",
+					}
+				};
+			}
+			if(!headers.AllKeys.Contains(packageNameHeader)) {
+				return new BaseResponse {
+					Success = false,
+					ErrorInfo = new ErrorInfo() {
+						Message = $"Error: {packageNameHeader} header missing",
+					}
+				};
+			}
+			string filename = headers[fileNameHeader];
+			string packageName = headers[packageNameHeader];
+			
+			PackageExplorer packageExplorer = new PackageExplorer(packageName);
+			packageExplorer.SaveFileContent(filename, stream);
+			
+			return new BaseResponse {
+				Success = true
+			};
+			
+		}
+		[OperationContract]
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public BaseResponse DeleteFile(string packageName, string filePath){
+			CheckCanManageSolution();
+			PackageExplorer packageExplorer = new PackageExplorer(packageName);
+			(bool isSuccess, Exception ex) = packageExplorer.DeleteFile(filePath);
+			
+			if(!isSuccess) {
+				return new BaseResponse {
+					Success = isSuccess,
+					ErrorInfo = {
+						Message = ex.Message,
+						StackTrace = ex.StackTrace
+					}
+				};
+			}
+			return new BaseResponse {
+				Success = true
+			};
+			
+		}
 		#endregion
 
 	}
 
+	
 	public class PackageExplorer
 	{
 
@@ -414,6 +494,19 @@ namespace cliogate.Files.cs
 			return Path.Combine(_baseDir, "Terrasoft.Configuration", "Pkg", _packageName, "Files");
 		}
 
+		private bool IsPackageUnlocked(string packageName){
+			var userConnection = ClassFactory.Get<UserConnection>();
+			string maintainerCode = SysSettings.GetValue(userConnection, "Maintainer", "NonImplemented");
+			Select select = new Select(userConnection)
+				.From("SysPackage").WithHints(new NoLockHint())
+				.Column(Func.Count("Id")).As("Count")
+				.Where("Name").IsEqual(Column.Parameter(packageName)) 
+				.And("InstallType").IsEqual(Column.Parameter(0))
+				.And("Maintainer").IsEqual(Column.Parameter(maintainerCode))
+				as Select;
+			return select.ExecuteScalar<int>() == 1;
+		}
+		
 		#endregion
 
 		#region Methods: Public
@@ -428,7 +521,52 @@ namespace cliogate.Files.cs
 				.GetFiles(PackageDirectoryPath(), "*.*", SearchOption.AllDirectories)
 				.Select(f => f.Replace(PackageDirectoryPath(), string.Empty));
 
+		public (bool isSuccess, Exception ex) SaveFileContent(string filePath, string fileContent){
+			CheckNameForDeniedSymbols(filePath);
+			if(!IsPackageUnlocked(_packageName)) {
+				return (false, new Exception("Cannot save file in a locked package"));
+			}
+			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+			string directoryPath = Path.GetDirectoryName(fullPath);
+			if (!Directory.Exists(directoryPath)) {
+				Directory.CreateDirectory(directoryPath);
+			}
+			File.WriteAllText(fullPath, fileContent);
+			return (true, null);
+		}
+		public (bool isSuccess, Exception ex) SaveFileContent(string filePath, Stream fileContent){
+			CheckNameForDeniedSymbols(filePath);
+			if(!IsPackageUnlocked(_packageName)) {
+				return (false, new Exception("Cannot save file in a locked package"));
+			}
+			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+			string directoryPath = Path.GetDirectoryName(fullPath);
+			if (!Directory.Exists(directoryPath)) {
+				Directory.CreateDirectory(directoryPath);
+			}
+			File.WriteAllBytes(fullPath, fileContent.GetAllBytes());
+			return (true, null);
+		}
+
 		#endregion
+
+		public (bool isSuccess, Exception ex) DeleteFile(string filePath){
+			CheckNameForDeniedSymbols(filePath);
+			if(!IsPackageUnlocked(_packageName)) {
+				return (false, new Exception("Cannot save file in a locked package"));
+			}
+			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+			string directoryPath = Path.GetDirectoryName(fullPath);
+			if (!Directory.Exists(directoryPath)) {
+				return (false, new DirectoryNotFoundException(directoryPath));
+			}
+			try {
+				File.Delete(fullPath);
+				return (true, null);
+			} catch (Exception ex) {
+				return (false, ex);
+			}
+		}
 
 	}
 
