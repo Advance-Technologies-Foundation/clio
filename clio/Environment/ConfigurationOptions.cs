@@ -288,6 +288,7 @@ namespace Clio
 		public EnvironmentSettings GetEnvironment(string name = null) {
 			if(string.IsNullOrWhiteSpace(name)) {
 				var activeEnvironment = _settings.ActiveEnvironmentKey;
+				Console.WriteLine($"{activeEnvironment}: {_settings.Environments[activeEnvironment].Uri}");
 				return _settings.Environments[activeEnvironment];
 			}
 			if(!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
