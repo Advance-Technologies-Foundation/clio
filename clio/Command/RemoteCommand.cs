@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net;
+using System.Net.Http;
 using System.Threading;
 using Clio.Common;
 
@@ -27,6 +28,8 @@ namespace Clio.Command
 		protected RemoteCommand(EnvironmentSettings environmentSettings) {
 			EnvironmentSettings = environmentSettings;
 		}
+
+		public virtual HttpMethod HttpMethod => HttpMethod.Post;
 
 		protected int Login() {
 			try {
@@ -56,7 +59,16 @@ namespace Clio.Command
 		}
 
 		private void ExecuteRemoteCommand(TEnvironmentOptions options) {
-			ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options));
+			string response;
+			if (HttpMethod == HttpMethod.Post) {
+				response = ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options));
+			} else {
+				response = ApplicationClient.ExecuteGetRequest(ServiceUri);
+			}
+			ProceedResponse(response);
+		}
+
+		protected virtual void ProceedResponse(string response) {
 		}
 
 		protected virtual string GetRequestData(TEnvironmentOptions options) {

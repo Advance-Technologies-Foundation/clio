@@ -23,7 +23,7 @@ using Сlio.Command.PackageCommand;
 namespace Clio
 {
 
-	class Program {
+    class Program {
 		private static string UserName => CreatioEnvironment.Settings.Login;
 		private static string UserPassword => CreatioEnvironment.Settings.Password;
 		private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
@@ -560,7 +560,8 @@ namespace Clio
 			typeof(CheckWindowsFeaturesOptions),
 			typeof(CreateTestProjectOptions),
 			typeof(DeactivatePkgOptions),
-			typeof(ListenOptions)
+			typeof(ListenOptions),
+			typeof(ShowPackageFileContentOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -638,8 +639,11 @@ namespace Clio
 				(CreateTestProjectOptions opts) => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
 				(DeactivatePkgOptions opts) => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 				(ListenOptions opts) => Resolve<ListenCommand>(opts).Execute(opts),
+				(ShowPackageFileContentOptions opts) => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
 				_ => 1,
 			};
 		};
+
+
 	}
 }
