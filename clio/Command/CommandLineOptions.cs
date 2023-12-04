@@ -97,6 +97,10 @@ namespace Clio
 			return false;
 		}
 
+		public virtual bool ShowDefaultEnvironment() {
+			return true;
+		}
+
 	}
 
 	public class EnvironmentNameOptions : EnvironmentOptions

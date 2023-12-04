@@ -288,7 +288,6 @@ namespace Clio
 		public EnvironmentSettings GetEnvironment(string name = null) {
 			if(string.IsNullOrWhiteSpace(name)) {
 				var activeEnvironment = _settings.ActiveEnvironmentKey;
-				Console.WriteLine($"{activeEnvironment}: {_settings.Environments[activeEnvironment].Uri}");
 				return _settings.Environments[activeEnvironment];
 			}
 			if(!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
@@ -318,6 +317,9 @@ namespace Clio
 				} else {
 					_settings = new EnvironmentSettings();
 				}
+			}
+			if (options.Environment == null && options.ShowDefaultEnvironment() && options.Uri == null) {
+				Console.WriteLine($"{this._settings.ActiveEnvironmentKey}: {_settings.Uri}");
 			}
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? _settings.IsNetCore;
