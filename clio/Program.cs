@@ -55,6 +55,10 @@ namespace Clio
 
 		private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
 
+		public static bool IsEnvironmentReported {
+			get; set;
+		}
+
 		private static CreatioClient _creatioClientInstance {
 			get {
 				if (string.IsNullOrEmpty(ClientId))

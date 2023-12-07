@@ -318,7 +318,9 @@ namespace Clio
 					_settings = new EnvironmentSettings();
 				}
 			}
-			if (options.Environment == null && options.ShowDefaultEnvironment() && options.Uri == null) {
+			if (options.Environment == null && options.ShowDefaultEnvironment() && options.Uri == null
+					&& !Program.IsEnvironmentReported) {
+				Program.IsEnvironmentReported = true;
 				Console.WriteLine($"{this._settings.ActiveEnvironmentKey}: {_settings.Uri}");
 			}
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
