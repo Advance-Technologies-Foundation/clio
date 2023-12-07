@@ -20,6 +20,7 @@
 		#region Properties: Protected
 
 		protected override string InstallUrl => @"/ServiceModel/AppInstallerService.svc/InstallAppFromFile";
+		protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreatePackageBackup";
 
 		#endregion
 

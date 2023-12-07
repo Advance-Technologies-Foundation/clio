@@ -24,6 +24,8 @@
 
 		protected override string InstallUrl => @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
 
+		protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreateBackup";
+
 		#endregion
 
 		#region Methods: Protected
