@@ -765,6 +765,25 @@ f|Fields|Required fields for ATF model class
 a|All|Create ATF models for all Entities
 x|Culture|Description culture
 
+## Materialize Nuget
+
+The `materialize-nuget` command is a vital tool for managing NuGet package references, 
+especially in scenarios where internet access is limited or unavailable. 
+This command is specifically designed to convert NuGet package references into direct dll 
+(Dynamic Link Library) references.
+
+### Use Case
+This feature is particularly useful when you need to install a package on Creatio instance
+that may not have internet connectivity. By converting the package references into dlls, 
+materialize-nuget ensures that all necessary dependencies are locally available, 
+thus facilitating smooth package installation and functionality in offline environments.
+
+### How to Use
+```bash
+clio materialize-nuget <PACKAGE_NAME>
+```
+
+
 
 ## Link Workspace to File Design Mode
 
