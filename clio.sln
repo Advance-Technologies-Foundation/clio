@@ -12,6 +12,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{3189A0BE-B1FB-43D6-B60B-4D65C80179C7}"
 	ProjectSection(SolutionItems) = preProject
 		README.md = README.md
+		.gitignore = .gitignore
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "creatioclient", "..\creatioclient\creatioclient\creatioclient.csproj", "{904C58B1-74E7-40B6-8AB8-07CFED1A0FB9}"

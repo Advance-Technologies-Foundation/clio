@@ -1,4 +1,5 @@
 ﻿using System;
+using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace Clio.Common
 {
@@ -17,6 +18,22 @@ namespace Clio.Common
 			Console.WriteLine(value);
 		}
 
+		public void WriteError(string value){
+			ConsoleColor color = Console.ForegroundColor;
+			Console.ForegroundColor = ConsoleColor.Red;
+			Console.Write("[ERROR] - ");
+			Console.ForegroundColor = color;
+			Console.WriteLine(value);
+		}
+		
+		public void WriteWarning(string value){
+			ConsoleColor color = Console.ForegroundColor;
+			Console.ForegroundColor = ConsoleColor.DarkYellow;
+			Console.Write("[WARNING] - ");
+			Console.ForegroundColor = color;
+			Console.WriteLine(value);
+		}
+		
 		#endregion
 
 	}

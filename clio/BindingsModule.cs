@@ -18,6 +18,7 @@ using Сlio.Command.PackageCommand;
 using Clio.Common.ScenarioHandlers;
 using Clio.YAML;
 using k8s;
+using FileSystem = System.IO.Abstractions.FileSystem;
 
 namespace Clio
 {
@@ -43,7 +44,10 @@ namespace Clio
 			} catch {
 
 			}
-
+			
+			containerBuilder.RegisterType<FileSystem>().As<System.IO.Abstractions.IFileSystem>();
+			
+			
 			var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
 				.Build();
@@ -103,6 +107,7 @@ namespace Clio
 			containerBuilder.RegisterType<ShowPackageFileContentCommand>();
 			containerBuilder.RegisterType<MaterializeNugetCommand>();
 			containerBuilder.RegisterType<NugetMaterializer>();
+			containerBuilder.RegisterType<PropsBuilder>();
 			
 
 			var configuration = MediatRConfigurationBuilder

@@ -35,12 +35,14 @@ public class MaterializeNugetCommand : Command<MaterializeNugetOptions>
 	#region Constructors: Public
 
 	public MaterializeNugetCommand(IWorkspace workspace, IWorkspacePathBuilder workspacePathBuilder, 
-		ILogger logger, IFileSystem fileSystem, INugetMaterializer nugetMaterializer){
+		ILogger logger, IFileSystem fileSystem, INugetMaterializer nugetMaterializer
+		){
 		_workspace = workspace;
 		_workspacePathBuilder = workspacePathBuilder;
 		_logger = logger;
 		_fileSystem = fileSystem;
 		_nugetMaterializer = nugetMaterializer;
+		
 	}
 
 	#endregion

@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
-
+using Ms = System.IO.Abstractions;
 namespace Clio.Common
 {
 
@@ -12,6 +13,11 @@ namespace Clio.Common
 
 	public class FileSystem : IFileSystem
 	{
+
+		private readonly Ms.IFileSystem _msFileSystem;
+		public FileSystem(Ms.IFileSystem msFileSystem){
+			_msFileSystem = msFileSystem;
+		}
 
 		#region Methods: Public
 
@@ -22,9 +28,25 @@ namespace Clio.Common
 				});
 			mklinkProcess.WaitForExit();
 		}
+		
+		public Ms.IFileSystemInfo CreateSymLink(string path, string pathToTarget){
+			path.CheckArgumentNullOrWhiteSpace(nameof(path));
+			pathToTarget.CheckArgumentNullOrWhiteSpace(nameof(pathToTarget));
+			if(_msFileSystem.File.Exists(path)) {
+				return CreateFileSymLink(path, pathToTarget);
+			}
+			if(_msFileSystem.Directory.Exists(path)) {
+				return CreateDirectorySymLink(path, pathToTarget);
+			}
+			throw new ArgumentOutOfRangeException(nameof(path), $"Path {path} does not exist");
+		}
+		public Ms.IFileSystemInfo CreateFileSymLink(string path, string pathToTarget) => 
+			_msFileSystem.File.CreateSymbolicLink(path, pathToTarget);
+		public Ms.IFileSystemInfo CreateDirectorySymLink(string path, string pathToTarget) => 
+			_msFileSystem.Directory.CreateSymbolicLink(path, pathToTarget);
 
 		public void CheckOrDeleteExistsFile(string filePath, bool delete) {
-			if (!File.Exists(filePath)) {
+			if (!_msFileSystem.File.Exists(filePath)) {
 				return;
 			}
 			if (delete) {
@@ -38,9 +60,10 @@ namespace Clio.Common
 			filesPaths.CheckArgumentNull(nameof(filesPaths));
 			destinationDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationDirectory));
 			foreach (string sourceFilePath in filesPaths) {
-				var sourceFileInfo = new FileInfo(sourceFilePath);
+				Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+				Ms.IFileInfo sourceFileInfo = fileInfoFactory.New(sourceFilePath);
 				string destinationFilePath = Path.Combine(destinationDirectory, sourceFileInfo.Name);
-				File.Copy(sourceFilePath, destinationFilePath, overwrite);
+				_msFileSystem.File.Copy(sourceFilePath, destinationFilePath, overwrite);
 			}
 		}
 
@@ -49,18 +72,17 @@ namespace Clio.Common
 			if (IsReadOnlyFile(filePath)) {
 				ResetFileReadOnlyAttribute(filePath);
 			}
-			File.Delete(filePath);
+			_msFileSystem.File.Delete(filePath);
+			//TODO: Discuss with P.Makarchuk
+			//why return type is bool when always true
 			return true;
 		}
+		
+		
+		public bool DeleteFileIfExists(string filePath) => 
+			_msFileSystem.File.Exists(filePath) && DeleteFile(filePath);
 
-		public bool DeleteFileIfExists(string filePath) {
-			if (!File.Exists(filePath)) {
-				return false;
-			}
-			return DeleteFile(filePath);
-		}
-
-		public bool ExistsFile(string filePath) => File.Exists(filePath);
+		public bool ExistsFile(string filePath) => _msFileSystem.File.Exists(filePath);
 
 		public string ExtractFileNameFromPath(string filePath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
@@ -70,7 +92,9 @@ namespace Clio.Common
 
 		public string ExtractFileExtensionFromPath(string filePath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-			var fileInfo = new FileInfo(filePath);
+			//var fileInfo = new FileInfo(filePath);
+			Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+			Ms.IFileInfo fileInfo = fileInfoFactory.New(filePath);
 			return fileInfo.Extension;
 		}
 
@@ -81,13 +105,14 @@ namespace Clio.Common
 		}
 
 		public string[] GetFiles(string directoryPath) {
+			//TODO: Should probably be IEnumerable<string> instead of string[]
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-			return Directory.GetFiles(directoryPath);
+			return _msFileSystem.Directory.GetFiles(directoryPath);
 		}
 
 		public string[] GetFiles(string directoryPath, string searchPattern, SearchOption searchOption) {
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-			return Directory.GetFiles(directoryPath, searchPattern, searchOption);
+			return _msFileSystem.Directory.GetFiles(directoryPath, searchPattern, searchOption);
 		}
 
 		public FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption) {
@@ -103,40 +128,40 @@ namespace Clio.Common
 		}
 
 		public bool IsReadOnlyFile(string filePath) {
-			if (!File.Exists(filePath)) {
+			if (!_msFileSystem.File.Exists(filePath)) {
 				return false;
 			}
-			return (File.GetAttributes(filePath) & FileAttributes.ReadOnly) == FileAttributes.ReadOnly;
+			return (_msFileSystem.File.GetAttributes(filePath) & FileAttributes.ReadOnly) != 0;
 		}
 
 		public void MoveFile(string oldFilePath, string newFilePath) =>
-			File.Move(oldFilePath, newFilePath);
+			_msFileSystem.File.Move(oldFilePath, newFilePath);
 
 		public void ResetFileReadOnlyAttribute(string filePath) {
-			if (!File.Exists(filePath)) {
+			if (!_msFileSystem.File.Exists(filePath)) {
 				return;
 			}
 			if (IsReadOnlyFile(filePath)) {
-				File.SetAttributes(filePath, File.GetAttributes(filePath) & ~FileAttributes.ReadOnly);
+				_msFileSystem.File.SetAttributes(filePath, _msFileSystem.File.GetAttributes(filePath) & ~FileAttributes.ReadOnly);
 			}
 		}
 
-		public string ReadAllText(string filePath) => File.ReadAllText(filePath);
+		public string ReadAllText(string filePath) => 
+			_msFileSystem.File.ReadAllText(filePath);
 
-		public void WriteAllTextToFile(string filePath, string contents) {
-			File.WriteAllText(filePath, contents);
-		}
+		public void WriteAllTextToFile(string filePath, string contents) => 
+			_msFileSystem.File.WriteAllText(filePath, contents);
 
 		public void ClearOrCreateDirectory(string directoryPath) {
-			if (Directory.Exists(directoryPath)) {
+			if (_msFileSystem.Directory.Exists(directoryPath)) {
 				ClearDirectory(directoryPath);
 			}
-			Directory.CreateDirectory(directoryPath);
+			_msFileSystem.Directory.CreateDirectory(directoryPath);
 		}
 
 		public void CreateOrOverwriteExistsDirectoryIfNeeded(string directoryPath, bool overwrite) {
-			if (!Directory.Exists(directoryPath)) {
-				Directory.CreateDirectory(directoryPath);
+			if (!_msFileSystem.Directory.Exists(directoryPath)) {
+				_msFileSystem.Directory.CreateDirectory(directoryPath);
 				return;
 			}
 			if (!overwrite) {
@@ -161,28 +186,29 @@ namespace Clio.Common
 			source.CheckArgumentNullOrWhiteSpace(nameof(source));
 			destination.CheckArgumentNullOrWhiteSpace(nameof(destination));
 			CreateOrOverwriteExistsDirectoryIfNeeded(destination, overwrite);
-			foreach (string filePath in Directory.GetFiles(source)) {
-				File.Copy(filePath, Path.Combine(destination, Path.GetFileName(filePath)), true);
+			foreach (string filePath in _msFileSystem.Directory.GetFiles(source)) {
+				_msFileSystem.File.Copy(filePath, Path.Combine(destination, Path.GetFileName(filePath)), true);
 			}
-			foreach (string directoryPath in Directory.GetDirectories(source)) {
+			foreach (string directoryPath in _msFileSystem.Directory.GetDirectories(source)) {
 				CopyDirectory(directoryPath, Path.Combine(destination, Path.GetFileName(directoryPath)), overwrite);
 			}
 		}
 
-		public DirectoryInfo CreateDirectory(string directoryPath) => Directory.CreateDirectory(directoryPath);
+		public Ms.IDirectoryInfo CreateDirectory(string directoryPath) => 
+			_msFileSystem.Directory.CreateDirectory(directoryPath);
 
 		public void CreateDirectoryIfNotExists(string directoryPath) {
-			if (Directory.Exists(directoryPath)) {
+			if (_msFileSystem.Directory.Exists(directoryPath)) {
 				return;
 			}
-			Directory.CreateDirectory(directoryPath);
+			_msFileSystem.Directory.CreateDirectory(directoryPath);
 		}
 
 		public void CreateOrClearDirectory(string directoryPath) {
-			if (Directory.Exists(directoryPath)) {
+			if (_msFileSystem.Directory.Exists(directoryPath)) {
 				ClearDirectory(directoryPath);
 			} else {
-				Directory.CreateDirectory(directoryPath);
+				_msFileSystem.Directory.CreateDirectory(directoryPath);
 			}
 		}
 
@@ -192,26 +218,26 @@ namespace Clio.Common
 
 		public void DeleteDirectory(string directoryPath, bool recursive) {
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-			Directory.Delete(directoryPath, recursive);
+			_msFileSystem.Directory.Delete(directoryPath, recursive);
 		}
 
 		public void DeleteDirectoryIfExists(string directoryPath) {
 			directoryPath.CheckArgumentNull(nameof(directoryPath));
-			if (Directory.Exists(directoryPath)) {
-				Directory.Delete(directoryPath, true);
+			if (_msFileSystem.Directory.Exists(directoryPath)) {
+				_msFileSystem.Directory.Delete(directoryPath, true);
 			}
 		}
 
-		public bool ExistsDirectory(string directoryPath) => Directory.Exists(directoryPath);
+		public bool ExistsDirectory(string directoryPath) => _msFileSystem.Directory.Exists(directoryPath);
 
 		public string GetCurrentDirectoryIfEmpty(string directoryPath) {
 			return string.IsNullOrWhiteSpace(directoryPath)
-				? Directory.GetCurrentDirectory()
+				? _msFileSystem.Directory.GetCurrentDirectory()
 				: directoryPath;
 		}
 
 		public bool IsEmptyDirectory() =>
-			!Directory.GetFileSystemEntries(Directory.GetCurrentDirectory()).Any();
+			!_msFileSystem.Directory.GetFileSystemEntries(_msFileSystem.Directory.GetCurrentDirectory()).Any();
 
 		public string GetDestinationFileDirectory(string filePath, string destinationPath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
@@ -222,16 +248,16 @@ namespace Clio.Common
 
 		public string[] GetDirectories(string directoryPath) {
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-			return Directory.GetDirectories(directoryPath);
+			return _msFileSystem.Directory.GetDirectories(directoryPath);
 		}
 
 		public void OverwriteExistsDirectory(string directoryPath) {
 			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-			if (!Directory.Exists(directoryPath)) {
+			if (!_msFileSystem.Directory.Exists(directoryPath)) {
 				return;
 			}
-			Directory.Delete(directoryPath, true);
-			Directory.CreateDirectory(directoryPath);
+			_msFileSystem.Directory.Delete(directoryPath, true);
+			_msFileSystem.Directory.CreateDirectory(directoryPath);
 		}
 
 		public void SafeDeleteDirectory(string directoryPath) {
@@ -258,7 +284,39 @@ namespace Clio.Common
 			return Path.Combine(filePathItem);
 		}
 
+		public enum Algorithm
+		{
+			SHA1,
+			SHA256,
+			SHA384,
+			SHA512,
+			MD5
+		}
+		
+		public string GetFileHash(Algorithm algorithm, string fileName){
+			HashAlgorithm hashAlgorithm = algorithm switch {
+				Algorithm.SHA1 => SHA1.Create(),
+				Algorithm.SHA256 => SHA256.Create(),
+				Algorithm.SHA384 => SHA384.Create(),
+				Algorithm.SHA512 => SHA512.Create(),
+				Algorithm.MD5 => MD5.Create(),
+				var _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, null)
+			};
+			
+			using Ms.FileSystemStream  stream = _msFileSystem.File.OpenRead(fileName);
+			byte[] hash = hashAlgorithm.ComputeHash(stream);
+			return BitConverter.ToString(hash).Replace("-", string.Empty);
+		}
+		
+		public bool CompareFiles(string first, string second) => CompareFiles(Algorithm.MD5, first, second);
 
+		public bool CompareFiles(Algorithm algorithm, string first, string second){
+			if (!_msFileSystem.File.Exists(first) || !_msFileSystem.File.Exists(second)){
+				return false;
+			}
+			return GetFileHash(algorithm, first) == GetFileHash(algorithm, second);
+		}
+		
 		#endregion
 
 	}
