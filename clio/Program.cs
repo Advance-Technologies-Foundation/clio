@@ -565,7 +565,8 @@ namespace Clio
 			typeof(CreateTestProjectOptions),
 			typeof(DeactivatePkgOptions),
 			typeof(ListenOptions),
-			typeof(ShowPackageFileContentOptions)
+			typeof(ShowPackageFileContentOptions),
+			typeof(CompilePackageOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -644,6 +645,7 @@ namespace Clio
 				(DeactivatePkgOptions opts) => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 				(ListenOptions opts) => Resolve<ListenCommand>(opts).Execute(opts),
 				(ShowPackageFileContentOptions opts) => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
+				(CompilePackageOptions opts) => Resolve<CompilePackageCommand>(opts).Execute(opts),
 				_ => 1,
 			};
 		};

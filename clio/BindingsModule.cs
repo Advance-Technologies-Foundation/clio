@@ -101,6 +101,7 @@ namespace Clio
 			containerBuilder.RegisterType<CreateTestProjectCommand>();
 			containerBuilder.RegisterType<ListenCommand>();
 			containerBuilder.RegisterType<ShowPackageFileContentCommand>();
+			containerBuilder.RegisterType<CompilePackageCommand>();
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
