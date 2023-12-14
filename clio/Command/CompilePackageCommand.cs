@@ -48,7 +48,6 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 
 	public override int Execute(CompilePackageOptions options) {
 		try {
-			Console.WriteLine($"Start compilation {options.PackageName} package(s).");
 			_packageBuilder.Rebuild(options.PackageNames);
 			Console.WriteLine("Done");
 			return 0;
