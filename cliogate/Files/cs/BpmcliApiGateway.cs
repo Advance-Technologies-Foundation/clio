@@ -335,9 +335,10 @@ namespace cliogate.Files.cs
 			return true;
 		}
 
-		// http://kkrylovn.tscrm.com:40050/rest/CreatioApiGateway/SavePackageFileContent?packageName=CrtBase&filePath=descriptor12345.json&fileContent=123
+		// /rest/CreatioApiGateway/SavePackageFileContent?packageName=CrtBase&filePath=descriptor12345.json&fileContent=123
 		[OperationContract]
-		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+			ResponseFormat = WebMessageFormat.Json)]
 		public BaseResponse SavePackageFileContent(string packageName, string filePath, string fileContent){
 			CheckCanManageSolution();
 
