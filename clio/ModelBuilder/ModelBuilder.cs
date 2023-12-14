@@ -108,6 +108,7 @@ namespace Clio
 			StringBuilder sb = new ();
 			sb.AppendLine(@"#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
 				.AppendLine()
+				.AppendLine("using System;")
 				.AppendLine("using ATF.Repository;")
 				.AppendLine("using ATF.Repository.Attributes;")
 				.AppendLine("using System.Diagnostics.CodeAnalysis;")

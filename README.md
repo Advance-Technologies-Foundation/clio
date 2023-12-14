@@ -230,6 +230,13 @@ install one or more applications from marketplace.creatio.com
 clio push-pkg --id 22966 10096
 ```
 
+> [!IMPORTANT]
+> When you work with packages from Application Hub, you need use command push-app with same parameters like push-pkg. For example
+
+```
+clio push-app C:\Packages\package.gz
+```
+
 ## Pull package from remote application
 
 To download package to a local file system from application, use command:

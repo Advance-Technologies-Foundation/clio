@@ -26,6 +26,15 @@ namespace Clio.Command {
 		}
 
 		#endregion
+
+		#region
+
+		public override bool ShowDefaultEnvironment() {
+			return false;
+		}
+
+		#endregion
+
 	}
 
 	#endregion

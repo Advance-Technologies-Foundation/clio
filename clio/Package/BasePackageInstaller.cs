@@ -19,7 +19,6 @@
 		private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
 		private const string InstallLogUrl = @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
-		private const string BackupUrl = @"/ServiceModel/PackageInstallerService.svc/CreateBackup";
 		private const string DefLogFileName = "cliolog.txt";
 
 		#endregion
@@ -73,6 +72,8 @@
 		#region Properties: Protected
 
 		protected abstract string InstallUrl { get; }
+
+		protected abstract string BackupUrl { get; }
 
 		#endregion
 

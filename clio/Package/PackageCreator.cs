@@ -113,7 +113,22 @@ namespace Clio.Package
 			}
 			_templateProvider.CopyTemplateFolder("package", packagePath);
 			CreatePackageDescriptorToFileSystem(packagePath, packageName);
+			CreatePackageProj(packagesPath, packageName);
+			
+		}
+
+		private void CreatePackageProj(string packagesPath, string packageName){
+			ApplyMacrosToProjectFiles(packagesPath, packageName);
 			RenameTemplatePackageNameCsproj(packagesPath, packageName);
+		}
+
+		private void ApplyMacrosToProjectFiles(string packagesPath, string packageName){
+			string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
+			string packageNameTargetPropsPath = Path.Combine(packageFilesPath, "Directory.Build.targets");
+			string packageNameTargetPropsContent = _fileSystem.ReadAllText(packageNameTargetPropsPath);
+			string newPackageNameCsprojContent = packageNameTargetPropsContent
+				.Replace("#PackageName#", packageName);
+			_fileSystem.WriteAllTextToFile(packageNameTargetPropsPath, newPackageNameCsprojContent);
 		}
 
 		private string GetPackagesPath() =>
