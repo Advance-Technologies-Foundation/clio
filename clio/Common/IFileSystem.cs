@@ -46,6 +46,7 @@ namespace Clio.Common
 		void SafeDeleteDirectory(string directoryPath);
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
 		string NormalizeFilePathByPlatform(string filePath);
+		string[] GetDirectories();
 
 		#endregion
 

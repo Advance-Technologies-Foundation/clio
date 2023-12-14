@@ -258,6 +258,10 @@ namespace Clio.Common
 			return Path.Combine(filePathItem);
 		}
 
+		public string[] GetDirectories() {
+			return GetDirectories(Directory.GetCurrentDirectory());
+		}
+
 
 		#endregion
 

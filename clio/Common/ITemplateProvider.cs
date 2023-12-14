@@ -9,8 +9,9 @@ namespace Clio.Common
 
 		string GetTemplate(string templateName);
 
-		void CopyTemplateFolder(string templateFolderName, string destinationPath, string creatioVersion = "",
-			string group = "");
+		void CopyTemplateFolder(string templateCode, string destinationPath, string creatioVersion = "",
+			string group = "", bool overrideFolder = true);
+		string[] GetTemplateDirectories(string templateCode);
 
 		#endregion
 

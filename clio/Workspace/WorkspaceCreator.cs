@@ -114,8 +114,11 @@ namespace Clio.Workspace
 			}
 		}
 
-		private void ValidateEmptyDirectory() {
-			if (!_fileSystem.IsEmptyDirectory()) {
+		private void ValidateDirectory() {
+			var existingDirectories = _fileSystem.GetDirectories();
+			string[] templateDirectories = _templateProvider.GetTemplateDirectories("workspace");
+			var commonDirectories = existingDirectories.Intersect(templateDirectories);
+			if (commonDirectories.Any()) {
 				throw new InvalidOperationException("This operation requires empty folder!");
 			}
 		}
@@ -133,8 +136,8 @@ namespace Clio.Workspace
 
 		public void Create(string environmentName, bool isAddingPackageNames = false) {
 			ValidateNotExistingWorkspace();
-			ValidateEmptyDirectory();
-			_templateProvider.CopyTemplateFolder("workspace", RootPath);
+			ValidateDirectory();
+			_templateProvider.CopyTemplateFolder("workspace", RootPath, "", "", false);
 			if (!ExistsWorkspaceSettingsFile) {
 				CreateWorkspaceSettingsFile(isAddingPackageNames);
 				SaveWorkspaceEnvironmentSettings(environmentName);
