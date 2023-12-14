@@ -34,7 +34,7 @@ namespace Clio.Command
 
 	public class GetVersionCommand : Command<GetVersionOptions>
 	{
-		private const string _gateVersion = "6.0.2.21";
+		private const string _gateVersion = "2.0.0.25";
 		public override int Execute(GetVersionOptions options)
 		{
 			if (options is object && options.Clio)
