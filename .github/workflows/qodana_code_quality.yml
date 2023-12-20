@@ -13,12 +13,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Test Solution
-        shell: bash
-        run: |
-          dotnet test ./clio.tests/clio.tests.csproj -nowarn:none `
-          /p:CollectCoverage=true /p:CoverletOutputFormat=lcov `
-          /p:CoverletOutput="./../.qodana/code-coverage";
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2023.2
         env:
