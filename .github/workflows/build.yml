@@ -37,9 +37,3 @@ jobs:
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
           dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
           dotnet build-server shutdown;
-      - name: 'Qodana Scan'
-        uses: JetBrains/qodana-action@v2023.2
-        env:
-          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
-        with:
-         args: --property, qodana.net.solution=clio.sln
