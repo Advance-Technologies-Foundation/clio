@@ -161,6 +161,7 @@ namespace Clio.Common
 		string ConvertToRelativePath(string path, string rootDirectoryPath);
 
 		string NormalizeFilePathByPlatform(string filePath);
+		string[] GetDirectories();
 
 		/// <summary>
 		/// Computes hash string of a files

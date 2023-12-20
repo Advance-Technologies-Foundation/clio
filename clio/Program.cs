@@ -567,6 +567,8 @@ namespace Clio
 			typeof(ListenOptions),
 			typeof(ShowPackageFileContentOptions),
 			typeof(MaterializeNugetOptions),
+			typeof(ShowPackageFileContentOptions),
+			typeof(CompilePackageOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -646,6 +648,7 @@ namespace Clio
 				(ListenOptions opts) => Resolve<ListenCommand>(opts).Execute(opts),
 				(ShowPackageFileContentOptions opts) => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
 				(MaterializeNugetOptions opts) => Resolve<MaterializeNugetCommand>(opts).Execute(opts),
+				(CompilePackageOptions opts) => Resolve<CompilePackageCommand>(opts).Execute(opts),
 				_ => 1,
 			};
 		};

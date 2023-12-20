@@ -115,7 +115,7 @@ internal class CreateTestProjectCommand
 				_fileSystem.CreateDirectoryIfNotExists(unitTestDirectoryName);
 				_fileSystem.WriteAllTextToFile(csprojFilePath, tplContent);
 				_templateProvider.CopyTemplateFolder(
-					templateFolderName: "UnitTestLibs",
+					templateCode: "UnitTestLibs",
 					destinationPath: Path.Combine(unitTestDirectoryName,"Libs"));
 				UpdateCsProj(csprojFilePath, packageName);
 				

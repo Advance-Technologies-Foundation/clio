@@ -309,6 +309,10 @@ namespace Clio.Common
 		}
 		
 		public bool CompareFiles(string first, string second) => CompareFiles(Algorithm.MD5, first, second);
+		public string[] GetDirectories() {
+			return GetDirectories(Directory.GetCurrentDirectory());
+		}
+
 
 		public bool CompareFiles(Algorithm algorithm, string first, string second){
 			if (!_msFileSystem.File.Exists(first) || !_msFileSystem.File.Exists(second)){

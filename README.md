@@ -109,6 +109,7 @@ docker run -it --rm clio reg-web-app -help
 - [Packages](#packages)
   - [Creating new package](#creating-new-package)
   - [Installing package](#installing-package)
+  - [Compile package](#compile-package)
   - [Pull package from remote application](#pull-package-from-remote-application)
   - [Delete package](#delete-package)
   - [Compress package](#compress-package)
@@ -235,6 +236,18 @@ clio push-pkg --id 22966 10096
 
 ```
 clio push-app C:\Packages\package.gz
+```
+
+## Compile package
+
+For compile package
+
+```
+clio compile-package <PACKAGE NAME>
+
+//or
+
+clio compile-package <PACKAGE NAME> -e <ENVIRONMENT_NAME>
 ```
 
 ## Pull package from remote application

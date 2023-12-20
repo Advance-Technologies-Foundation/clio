@@ -1,19 +1,19 @@
 <Project>
     <ItemGroup Condition="'$(PkgPath)' != ''">
-        <Compile Remove="$(PkgPath)/CSP/Assemblies/**" />
-        <Compile Remove="$(PkgPath)/CSP/Data/**" />
-        <Compile Remove="$(PkgPath)/CSP/SqlScripts/**" />
-        <Compile Remove="$(PkgPath)/CSP/Schemas\**" />
-        <Compile Remove="$(PkgPath)/CSP/Resources/**" />
-        <EmbeddedResource Remove="$(PkgPath)/CSP/Assemblies/**" />
-        <EmbeddedResource Remove="$(PkgPath)/CSP/Data/**" />
-        <EmbeddedResource Remove="$(PkgPath)/CSP/SqlScripts/**" />
-        <EmbeddedResource Remove="$(PkgPath)/CSP/Schemas/**" />
-        <EmbeddedResource Remove="$(PkgPath)/CSP/Resources/**" />
-        <None Remove="$(PkgPath)/CSP/Assemblies/**" />
-        <None Remove="$(PkgPath)/CSP/Data/**" />
-        <None Remove="$(PkgPath)/CSP/SqlScripts/**" />
-        <None Remove="$(PkgPath)/CSP/Schemas/**" />
-        <None Remove="$(PkgPath)/CSP/Resources/**" />
+        <Compile Remove="$(PkgPath)/#PackageName#/Assemblies/**" />
+        <Compile Remove="$(PkgPath)/#PackageName#/Data/**" />
+        <Compile Remove="$(PkgPath)/#PackageName#/SqlScripts/**" />
+        <Compile Remove="$(PkgPath)/#PackageName#/Schemas\**" />
+        <Compile Remove="$(PkgPath)/#PackageName#/Resources/**" />
+        <EmbeddedResource Remove="$(PkgPath)/#PackageName#/Assemblies/**" />
+        <EmbeddedResource Remove="$(PkgPath)/#PackageName#/Data/**" />
+        <EmbeddedResource Remove="$(PkgPath)/#PackageName#/SqlScripts/**" />
+        <EmbeddedResource Remove="$(PkgPath)/#PackageName#/Schemas/**" />
+        <EmbeddedResource Remove="$(PkgPath)/#PackageName#/Resources/**" />
+        <None Remove="$(PkgPath)/#PackageName#/Assemblies/**" />
+        <None Remove="$(PkgPath)/#PackageName#/Data/**" />
+        <None Remove="$(PkgPath)/#PackageName#/SqlScripts/**" />
+        <None Remove="$(PkgPath)/#PackageName#/Schemas/**" />
+        <None Remove="$(PkgPath)/#PackageName#/Resources/**" />
     </ItemGroup>
 </Project>
