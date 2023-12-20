@@ -30,7 +30,6 @@ exclude:
   - name: SuggestVarOrType_Elsewhere
   - name: SuggestVarOrType_BuiltInTypes
   - name: SuggestVarOrType_DeconstructionDeclarations
-dotnet:
-  project: clio/clio.csproj
-dot-net: 
-  solution: clio.sln
+dot-net:
+  solution: clio.sln 
+  
