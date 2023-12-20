@@ -122,7 +122,7 @@ public class NugetMaterializer : INugetMaterializer
 		}
 	}
 
-	private IEnumerable<NugetPackage> GetNugetReferences(IEnumerable<XElement> elements){
+	private static IEnumerable<NugetPackage> GetNugetReferences(IEnumerable<XElement> elements){
 		IList<NugetPackage> list = new List<NugetPackage>();
 		foreach (XElement element in elements) {
 			string name = element.Attribute("Include")?.Value;
