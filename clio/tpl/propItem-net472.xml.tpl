@@ -16,19 +16,6 @@
 			<ItemGroup>
 				<Reference Include="#dll-name-here#">
 					<HintPath>Libs/net472/#dll-name-here#.dll</HintPath>
-					<SpecificVersion>False</SpecificVersion>
-					<Private>False</Private>
-				</Reference>
-			</ItemGroup>
-		</When>
-		
-		<!-- Used when building for netstandrad 2.0-->
-		<When Condition="Exists('Libs/netstandard/#dll-name-here#.dll') and '$(TargetFramework)' == 'netstandard2.0'">
-			<ItemGroup>
-				<Reference Include="#dll-name-here#">
-					<HintPath>Libs/netstandard/#dll-name-here#.dll</HintPath>
-					<SpecificVersion>False</SpecificVersion>
-					<Private>False</Private>
 				</Reference>
 			</ItemGroup>
 		</When>

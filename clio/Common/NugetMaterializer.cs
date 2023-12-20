@@ -37,6 +37,7 @@ public class NugetMaterializer : INugetMaterializer
 	private readonly IProcessExecutor _processExecutor;
 	private readonly IPropsBuilder _propsBuilder;
 	private string _csprojPath;
+	private XDocument _csproj;
 
 	#endregion
 
@@ -112,8 +113,8 @@ public class NugetMaterializer : INugetMaterializer
 	[Pure]
 	private IEnumerable<XElement> FindNugetReferences(string xmlContent){
 		try {
-			XDocument csproj = XDocument.Parse(xmlContent);
-			IEnumerable<XElement> elements = csproj.Descendants(Tag);
+			_csproj = XDocument.Parse(xmlContent);
+			IEnumerable<XElement> elements = _csproj.Descendants(Tag);
 			return elements;
 		} catch {
 			_logger.WriteError($"Could not parse {_csprojPath} file");
@@ -144,6 +145,63 @@ public class NugetMaterializer : INugetMaterializer
 		return csProjContent;
 	}
 
+	private void UpdateCsProjFile(string packageName, IEnumerable<XElement> xElements){
+		bool needsBackUp = false;
+		
+		//comment out PackageReference from the main csproj file
+		foreach (XElement element in xElements) {
+			needsBackUp = true;
+			XComment comment = new(element.ToString());
+			element.ReplaceWith(comment);
+		}
+		
+		//Look in csproj for the following line
+		//<Import Condition="'$(TargetFramework)' == 'net472'" Project="MrktApolloApp-net472.nuget.props" />
+		IEnumerable<XElement> importElementsNet472 = _csproj.Descendants("Import")
+			.Where(e=> 
+				e.Attribute("Project")?.Value == $"{packageName}-net472.nuget.props"
+				&& e.Attribute("Condition")?.Value == "'$(TargetFramework)' == 'net472'");
+		
+		if(!importElementsNet472.Any()){
+			XElement importElementNet472 = new("Import");
+			importElementNet472.SetAttributeValue("Condition", "'$(TargetFramework)' == 'net472'");
+			importElementNet472.SetAttributeValue("Project", $"{packageName}-net472.nuget.props");
+			
+			//This will not be null, since csproj MUST have Project element
+			_csproj.Element("Project")!.Add(importElementNet472); 
+			needsBackUp = true;
+		}else {
+			_logger.WriteWarning($"Could not add {packageName}-net472.nuget.props import to the {_csprojPath} file. Import already exists");
+		}
+		
+		//Look in csproj for the following line
+		//<Import Condition="'$(TargetFramework)' == 'netstandard2.0'" Project="MrktApolloApp-netstandard.nuget.props" />
+		IEnumerable<XElement> importElementsNetStandard = _csproj.Descendants("Import")
+			.Where(e=> 
+				e.Attribute("Project")?.Value == $"{packageName}-netstandard.nuget.props"
+				&& e.Attribute("Condition")?.Value == "'$(TargetFramework)' == 'netstandard2.0'");
+
+		if(!importElementsNetStandard.Any()) {
+			XElement importElementNetStandard = new("Import");
+			importElementNetStandard.SetAttributeValue("Condition", "'$(TargetFramework)' == 'netstandard2.0'");
+			importElementNetStandard.SetAttributeValue("Project", $"{packageName}-netstandard.nuget.props");
+			
+			//This will not be null, since csproj MUST have Project element
+			_csproj.Element("Project")!.Add(importElementNetStandard);
+			needsBackUp = true;
+		}else {
+			_logger.WriteWarning($"Could not add {packageName}-netstandard.nuget.props import to the {_csprojPath} file. Import already exists");
+		}
+
+		if (!needsBackUp) {
+			return;
+		}
+		
+		_logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
+		_fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
+		_csproj.Save(_csprojPath);
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -162,8 +220,7 @@ public class NugetMaterializer : INugetMaterializer
 		AddNugetReferences(packageName, xElements);
 		BuildNugetProject(packageName);
 		_propsBuilder.Build(packageName);
-		//Create Props file
-		//remove or comment out PackageReference from the main csproj file
+		UpdateCsProjFile(packageName, xElements);
 		return 0;
 	}
 

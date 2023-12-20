@@ -94,8 +94,6 @@ public class PropsBuilder_Tests
 			Arg.Is(SearchOption.TopDirectoryOnly)
 			);
 		
-		
-		
 		return;
 
 		

@@ -66,6 +66,10 @@ namespace Clio.Common
 				_msFileSystem.File.Copy(sourceFilePath, destinationFilePath, overwrite);
 			}
 		}
+		
+		public void CopyFile(string from, string to, bool overwrite){
+			_msFileSystem.File.Copy(from, to, overwrite);
+		}
 
 		public bool DeleteFile(string filePath) {
 			filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));

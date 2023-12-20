@@ -378,7 +378,10 @@
     <None Update="tpl\NugetProject.csproj.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="tpl\propItem.xml.tpl">
+    <None Update="tpl\propItem-net472.xml.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="tpl\propItem-netstandard.xml.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

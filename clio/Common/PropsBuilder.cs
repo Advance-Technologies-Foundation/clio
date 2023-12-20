@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Xml.Linq;
 using Clio.Workspace;
+using Npgsql.Internal.TypeHandlers.NumericHandlers;
 
 namespace Clio.Common;
 
@@ -155,7 +156,9 @@ public class PropsBuilder : IPropsBuilder
 		string csprojPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 		string xmlContent = _fileSystem.ReadAllText(csprojPath);
 		XDocument csproj = XDocument.Parse(xmlContent);
-		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "propItem.xml.tpl");
+		
+		string tplFileName = moniker == Moniker.net472 ? "propItem-net472.xml.tpl" : "propItem-netstandard.xml.tpl";
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", tplFileName);
 		string templateContent = _fileSystem.ReadAllText(templatePath);
 
 		StringBuilder sb = new StringBuilder()

@@ -41,6 +41,9 @@ namespace Clio.Common
 		void CheckOrDeleteExistsFile(string filePath, bool delete);
 
 		void CopyFiles(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
+		
+		/// <inheritdoc cref="System.IO.Abstractions.IFile.Copy(string,string,bool)"/>
+		void CopyFile(string from, string to, bool overwrite);
 
 		/// <summary>
 		/// Deletes the file at the specified path.

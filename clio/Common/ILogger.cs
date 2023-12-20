@@ -7,6 +7,7 @@
 		
 		void WriteWarning(string value);
 		void WriteError(string value);
+		void WriteInfo(string value);
 
 	}
 

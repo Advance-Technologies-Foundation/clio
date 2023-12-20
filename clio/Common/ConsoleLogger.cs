@@ -34,6 +34,14 @@ namespace Clio.Common
 			Console.WriteLine(value);
 		}
 		
+		
+		public void WriteInfo(string value){
+			ConsoleColor color = Console.ForegroundColor;
+			Console.ForegroundColor = ConsoleColor.Green;
+			Console.Write("[INFO] - ");
+			Console.ForegroundColor = color;
+			Console.WriteLine(value);
+		}
 		#endregion
 
 	}
