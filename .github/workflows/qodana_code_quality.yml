@@ -16,9 +16,9 @@ jobs:
       - name: Test Solution
         shell: bash
         run: |
-          dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+          dotnet test ./clio.tests/clio.tests.csproj -nowarn:none `
           /p:CollectCoverage=true /p:CoverletOutputFormat=lcov `
-          /p:CoverletOutput=".\..\.qodana\code-coverage";
+          /p:CoverletOutput="./../.qodana/code-coverage";
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2023.2
         env:
