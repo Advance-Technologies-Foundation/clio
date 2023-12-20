@@ -32,4 +32,5 @@ exclude:
   - name: SuggestVarOrType_DeconstructionDeclarations
 dot-net:
   solution: clio.sln 
-  
+dotnet: 
+  project: ./clio/clio.csproj
