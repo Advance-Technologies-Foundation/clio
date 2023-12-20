@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Xml.Linq;
 using Clio.Workspace;
-using Npgsql.Internal.TypeHandlers.NumericHandlers;
 
 namespace Clio.Common;
 
