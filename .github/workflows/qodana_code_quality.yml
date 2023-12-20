@@ -19,7 +19,6 @@ jobs:
           dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
           /p:CollectCoverage=true /p:CoverletOutputFormat=lcov `
           /p:CoverletOutput=".\..\.qodana\code-coverage";
-          dotnet build-server shutdown;
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2023.2
         env:
