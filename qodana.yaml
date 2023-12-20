@@ -31,6 +31,25 @@ exclude:
   - name: SuggestVarOrType_BuiltInTypes
   - name: SuggestVarOrType_DeconstructionDeclarations
 dot-net:
-  solution: clio.sln 
-dotnet: 
+  solution: clio.sln
+dotnet:
   project: ./clio/clio.csproj
+include:
+  - name: UseArrayEmptyMethod
+  - name: RedundantPatternParentheses
+  - name: ArrangeNamespaceBody
+  - name: UseVerbatimString
+  - name: CA1822
+  - name: ConvertIfStatementToReturnStatement
+  - name: RedundantIfElseBlock
+  - name: SuggestBaseTypeForParameter
+  - name: ArrangeTrailingCommaInMultilineLists
+  - name: MemberCanBeMadeStatic.Local
+  - name: RedundantEmptyObjectCreationArgumentList
+  - name: ReplaceSubstringWithRangeIndexer
+  - name: ArrangeTypeModifiers
+  - name: BuiltInTypeReferenceStyle
+  - name: CA1825
+  - name: ConvertToConstant.Local
+  - name: RedundantArrayCreationExpression
+  - name: RedundantLambdaSignatureParentheses
