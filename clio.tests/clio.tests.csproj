@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    
+    <LangVersion>Latest</LangVersion>
     <IsPackable>false</IsPackable>
 
     <RootNamespace>Clio.Tests</RootNamespace>
@@ -43,6 +43,9 @@
     <None Update="YAML\Script\emptyFile.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="samplefiles\sample.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -52,6 +55,7 @@
     <PackageReference Include="NSubstitute" Version="5.0.0" />
     <PackageReference Include="nunit" Version="3.13.3" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.3.1" />
+    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="20.0.4" />
     <!--<PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.2" />-->
   </ItemGroup>
 	<PropertyGroup>
@@ -117,6 +121,10 @@
     <None Update="CoreSrcReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="TestResults\" />
   </ItemGroup>
 
 </Project>

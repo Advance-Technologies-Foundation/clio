@@ -1,0 +1,8 @@
+﻿<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="View Test Results" type="PowerShellRunType" factoryName="PowerShell" scriptUrl="D:\Projects\clio-proj\clio\clio.tests\view-test-results.ps1" workingDirectory="D:\Projects\clio-proj\clio\clio.tests" executablePath="C:\Program Files\PowerShell\7\pwsh.exe">
+    <envs />
+    <method v="2">
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="Run tests with report" run_configuration_type="PowerShellRunType" />
+    </method>
+  </configuration>
+</component>

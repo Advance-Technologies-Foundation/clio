@@ -75,7 +75,7 @@ namespace Clio.Workspace
 
 		public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
 		public string ProjectsFolderPath => Path.Combine(RootPath, ProjectsFolderName);
-
+		
 		public string ProjectsTestsFolderPath => Path.Combine(RootPath, TestProjectsFolderName);
 
 		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);

@@ -9,7 +9,7 @@ namespace Clio.Workspace
 	{
 
 		#region Properties: Public
-
+		
 		string RootPath { get; }
 		bool IsWorkspace { get; }
 		string ClioDirectoryPath { get; }
@@ -33,6 +33,12 @@ namespace Clio.Workspace
 		#region Methods: Public
 
 		string BuildPackagePath(string packageName);
+		
+		/// <summary>
+		/// Path to csproj file of package
+		/// </summary>
+		/// <param name="packageName"></param>
+		/// <returns></returns>
 		string BuildPackageProjectPath(string packageName);
 		string BuildFrameworkCreatioSdkPath(Version nugetVersion);
 		string BuildCoreCreatioSdkPath(Version nugetVersion);

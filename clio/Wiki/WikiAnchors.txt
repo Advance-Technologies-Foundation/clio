@@ -8,3 +8,5 @@ extract-package:extract-pkg-zip
 compress-package:generate-pkg-zip
 installing-package:push-pkg
 pull-package-from-remote-application:pull-pkg
+switch-nuget-to-dll-reference:nuget2dll
+

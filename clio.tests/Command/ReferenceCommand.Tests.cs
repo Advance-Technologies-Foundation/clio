@@ -15,10 +15,8 @@ namespace Clio.Tests.Command
 			ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
 			ReferenceOptions options = new ReferenceOptions();
 			ReferenceCommand command = new ReferenceCommand(creator);
-			Action testAction = () => {
-				command.Execute(options);
-			};
-			testAction.Should().Throw<Exception>();
+			var actual = command.Execute(options);
+			actual.Should().Be(1);
 		}
 
 		[Test, Category("Unit")]

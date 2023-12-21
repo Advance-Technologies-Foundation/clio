@@ -566,6 +566,8 @@ namespace Clio
 			typeof(DeactivatePkgOptions),
 			typeof(ListenOptions),
 			typeof(ShowPackageFileContentOptions),
+			typeof(SwitchNugetToDllOptions),
+			typeof(ShowPackageFileContentOptions),
 			typeof(CompilePackageOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -645,6 +647,7 @@ namespace Clio
 				(DeactivatePkgOptions opts) => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 				(ListenOptions opts) => Resolve<ListenCommand>(opts).Execute(opts),
 				(ShowPackageFileContentOptions opts) => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
+				(SwitchNugetToDllOptions opts) => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
 				(CompilePackageOptions opts) => Resolve<CompilePackageCommand>(opts).Execute(opts),
 				_ => 1,
 			};
