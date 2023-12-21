@@ -10,7 +10,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Category("Unit")]
-public class MaterializeNugetTests
+public class SwitchNugetToDllTests
 {
 
 	#region Fields: Private
@@ -19,7 +19,7 @@ public class MaterializeNugetTests
 		(value, ws) => ws.IsWorkspace.Returns(value);
 
 	private static readonly ReadmeChecker ReadmeChecker = ClioTestsSetup.GetService<ReadmeChecker>();
-	private MaterializeNugetCommand _command;
+	private SwitchNugetToDllCommand _toDllCommand;
 	private readonly IWorkspace _workspace = Substitute.For<IWorkspace>();
 	private readonly IWorkspacePathBuilder _workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 	private readonly IFileSystem _fileSystem = Substitute.For<IFileSystem>();
@@ -37,9 +37,9 @@ public class MaterializeNugetTests
 		const string packageName = "test-package";
 		const string csProjFilePath = packageName + ".csproj";
 
-		_command = new MaterializeNugetCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
+		_toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
 			_nugetMaterializer);
-		MaterializeNugetOptions options = new() {
+		SwitchNugetToDllOptions toDllOptions = new() {
 			PackageName = packageName
 		};
 		SetWorkspace(true, _workspace);
@@ -55,7 +55,7 @@ public class MaterializeNugetTests
 		_nugetMaterializer.Materialize(Arg.Is(packageName)).Returns(expectedResult);
 
 		//Act
-		int actual = _command.Execute(options);
+		int actual = _toDllCommand.Execute(toDllOptions);
 
 		//Assert
 		actual.Should().Be(expectedResult);
@@ -69,9 +69,9 @@ public class MaterializeNugetTests
 		const string packageName = "test-package";
 		const string csProjFilePath = packageName + ".csproj";
 
-		_command = new MaterializeNugetCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
+		_toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
 			_nugetMaterializer);
-		MaterializeNugetOptions options = new() {
+		SwitchNugetToDllOptions toDllOptions = new() {
 			PackageName = packageName
 		};
 		SetWorkspace(true, _workspace);
@@ -86,32 +86,32 @@ public class MaterializeNugetTests
 		});
 
 		//Act
-		int actual = _command.Execute(options);
+		int actual = _toDllCommand.Execute(toDllOptions);
 
 		//Assert
 		actual.Should().Be(1);
-		_logger.Received(1).WriteLine($"{options.PackageName} does not contain C# projects... exiting");
+		_logger.Received(1).WriteLine($"{toDllOptions.PackageName} does not contain C# projects... exiting");
 	}
 
 	[Test]
 	public void Command_ShouldHave_DescriptionBlock_InReadmeFile() =>
 		ReadmeChecker
-			.IsInReadme(typeof(MaterializeNugetOptions))
+			.IsInReadme(typeof(SwitchNugetToDllOptions))
 			.Should()
 			.BeTrue("{0} is a command and needs a be described in README.md", this);
 
 	[Test]
 	public void Command_ShouldNotExecute_OutsideWorkspace(){
 		//Arrange
-		_command = new MaterializeNugetCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
+		_toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
 			_nugetMaterializer);
-		MaterializeNugetOptions options = new() {
+		SwitchNugetToDllOptions toDllOptions = new() {
 			PackageName = "test-package"
 		};
 		SetWorkspace(false, _workspace);
 
 		//Act
-		int actual = _command.Execute(options);
+		int actual = _toDllCommand.Execute(toDllOptions);
 
 		//Assert
 		_logger.Received(1).WriteLine("This command cannot be run outside of a workspace");

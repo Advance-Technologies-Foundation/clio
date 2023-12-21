@@ -566,7 +566,7 @@ namespace Clio
 			typeof(DeactivatePkgOptions),
 			typeof(ListenOptions),
 			typeof(ShowPackageFileContentOptions),
-			typeof(MaterializeNugetOptions),
+			typeof(SwitchNugetToDllOptions),
 			typeof(ShowPackageFileContentOptions),
 			typeof(CompilePackageOptions)
 		};
@@ -647,7 +647,7 @@ namespace Clio
 				(DeactivatePkgOptions opts) => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 				(ListenOptions opts) => Resolve<ListenCommand>(opts).Execute(opts),
 				(ShowPackageFileContentOptions opts) => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
-				(MaterializeNugetOptions opts) => Resolve<MaterializeNugetCommand>(opts).Execute(opts),
+				(SwitchNugetToDllOptions opts) => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
 				(CompilePackageOptions opts) => Resolve<CompilePackageCommand>(opts).Execute(opts),
 				_ => 1,
 			};

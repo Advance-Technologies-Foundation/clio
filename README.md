@@ -779,16 +779,16 @@ OPTIONS
 | a            | All             | Create ATF models for all Entities             |
 | x            | Culture         | Description culture                            |
 
-## Materialize Nuget
+## Switch Nuget To Dll Reference
 
-The `materialize-nuget` command is a vital tool for managing NuGet package references, 
+The `switch-nuget-to-dll-reference` command is a vital tool for managing NuGet package references, 
 especially in scenarios where internet access is limited or unavailable. 
 This command is specifically designed to convert NuGet package references into direct dll 
 (Dynamic Link Library) references.
 
 ### Use Case
 
-`materialize-nuget` command, is beneficial when developing a package on for installation on Creatio 
+`switch-nuget-to-dll-reference` command, is beneficial when developing a package on for installation on Creatio 
 instance that lacks internet connectivity. Command converts `[PackageReference]` into local DLLs, 
 This facilitates seamless package installation and operation in offline environments.
 
@@ -799,7 +799,11 @@ Lear more about [PackageReference] and [Reference] in Microsoft documentation.
 
 ### How to Use
 ```bash
-clio materialize-nuget <PACKAGE_NAME>
+clio switch-nuget-to-dll-reference <PACKAGE_NAME>
+
+#or
+
+clio nuget2dll <PACKAGE_NAME>
 ```
 
 ## Link Workspace to File Design Mode

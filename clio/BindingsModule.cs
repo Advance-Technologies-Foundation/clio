@@ -106,7 +106,7 @@ namespace Clio
 			containerBuilder.RegisterType<ListenCommand>();
 			containerBuilder.RegisterType<ShowPackageFileContentCommand>();
 			containerBuilder.RegisterType<CompilePackageCommand>();
-			containerBuilder.RegisterType<MaterializeNugetCommand>();
+			containerBuilder.RegisterType<SwitchNugetToDllCommand>();
 			containerBuilder.RegisterType<NugetMaterializer>();
 			containerBuilder.RegisterType<PropsBuilder>();
 			

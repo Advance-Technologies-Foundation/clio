@@ -5,9 +5,9 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("materialize-nuget", Aliases = new[] {"ml"},
-	HelpText = "Converts nuget references to dll references in csproj files")]
-public class MaterializeNugetOptions : EnvironmentOptions
+[Verb("switch-nuget-to-dll-reference", Aliases = new[] {"nuget2dll"},
+	HelpText = "Switches nuget references to dll references in csproj files")]
+public class SwitchNugetToDllOptions : EnvironmentOptions
 {
 
 	#region Properties: Public
@@ -19,7 +19,7 @@ public class MaterializeNugetOptions : EnvironmentOptions
 
 }
 
-public class MaterializeNugetCommand : Command<MaterializeNugetOptions>
+public class SwitchNugetToDllCommand : Command<SwitchNugetToDllOptions>
 {
 
 	#region Fields: Private
@@ -34,7 +34,7 @@ public class MaterializeNugetCommand : Command<MaterializeNugetOptions>
 
 	#region Constructors: Public
 
-	public MaterializeNugetCommand(IWorkspace workspace, IWorkspacePathBuilder workspacePathBuilder, 
+	public SwitchNugetToDllCommand(IWorkspace workspace, IWorkspacePathBuilder workspacePathBuilder, 
 		ILogger logger, IFileSystem fileSystem, INugetMaterializer nugetMaterializer
 		){
 		_workspace = workspace;
@@ -49,18 +49,18 @@ public class MaterializeNugetCommand : Command<MaterializeNugetOptions>
 
 	#region Methods: Public
 
-	public override int Execute(MaterializeNugetOptions options){
+	public override int Execute(SwitchNugetToDllOptions toDllOptions){
 		bool isWorkspace = _workspace.IsWorkspace;
 		if (!isWorkspace) {
 			_logger.WriteLine("This command cannot be run outside of a workspace");
 			return 1;
 		}
 		WorkspaceSettings settings = _workspace.WorkspaceSettings;
-		string csprojFilePath = _workspacePathBuilder.BuildPackageProjectPath(options.PackageName);
+		string csprojFilePath = _workspacePathBuilder.BuildPackageProjectPath(toDllOptions.PackageName);
 		if (settings.Packages.Any() && _fileSystem.ExistsFile(csprojFilePath)) {
-			return _nugetMaterializer.Materialize(options.PackageName);
+			return _nugetMaterializer.Materialize(toDllOptions.PackageName);
 		}
-		_logger.WriteLine($"{options.PackageName} does not contain C# projects... exiting");
+		_logger.WriteLine($"{toDllOptions.PackageName} does not contain C# projects... exiting");
 		return 1;
 
 	}
