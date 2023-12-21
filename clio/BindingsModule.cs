@@ -19,6 +19,7 @@ using Clio.Common.ScenarioHandlers;
 using Clio.YAML;
 using k8s;
 using FileSystem = System.IO.Abstractions.FileSystem;
+using ATF.Repository.Providers;
 
 namespace Clio
 {
@@ -33,6 +34,9 @@ namespace Clio
 				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
+
+				IDataProvider dataProvider = new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
+				containerBuilder.RegisterInstance(dataProvider).As<IDataProvider>();
 			}
 
 			try {
@@ -46,8 +50,7 @@ namespace Clio
 			}
 			
 			containerBuilder.RegisterType<FileSystem>().As<System.IO.Abstractions.IFileSystem>();
-			
-			
+
 			var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
 				.Build();
@@ -109,7 +112,8 @@ namespace Clio
 			containerBuilder.RegisterType<SwitchNugetToDllCommand>();
 			containerBuilder.RegisterType<NugetMaterializer>();
 			containerBuilder.RegisterType<PropsBuilder>();
-			
+			containerBuilder.RegisterType<UninstallAppCommand>();
+
 
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)

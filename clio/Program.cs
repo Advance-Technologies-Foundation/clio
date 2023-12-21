@@ -568,7 +568,8 @@ namespace Clio
 			typeof(ShowPackageFileContentOptions),
 			typeof(SwitchNugetToDllOptions),
 			typeof(ShowPackageFileContentOptions),
-			typeof(CompilePackageOptions)
+			typeof(CompilePackageOptions),
+			typeof(UninstallAppOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -649,6 +650,7 @@ namespace Clio
 				(ShowPackageFileContentOptions opts) => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
 				(SwitchNugetToDllOptions opts) => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
 				(CompilePackageOptions opts) => Resolve<CompilePackageCommand>(opts).Execute(opts),
+				(UninstallAppOptions opts) => Resolve<UninstallAppCommand>(opts).Execute(opts),
 				_ => 1,
 			};
 		};

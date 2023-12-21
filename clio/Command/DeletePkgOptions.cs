@@ -8,4 +8,5 @@ namespace Clio.Command
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 	}
+
 }
