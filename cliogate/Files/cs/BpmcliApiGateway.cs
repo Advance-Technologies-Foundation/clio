@@ -8,6 +8,7 @@ using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
+using ATF.Repository;
 using ClioGate.Functions.SQL;
 using Common.Logging;
 using Newtonsoft.Json;
@@ -232,7 +233,7 @@ namespace cliogate.Files.cs
 			return JsonConvert.SerializeObject(models, Formatting.Indented);
 		}
 
-		// http://kkrylovn.tscrm.com:40050/rest/CreatioApiGateway/GetPackageFileContent?packageName=CrtBase&filePath=descriptor.json
+		// /rest/CreatioApiGateway/GetPackageFileContent?packageName=CrtBase&filePath=descriptor.json
 		[OperationContract]
 		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
 		public string GetPackageFileContent(string packageName, string filePath){
@@ -242,7 +243,7 @@ namespace cliogate.Files.cs
 			return packageExplorer.GetPackageFileContent(filePath);
 		}
 
-		// http://kkrylovn.tscrm.com:40050/rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName=CrtBase
+		// /rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName=CrtBase
 		[OperationContract]
 		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
 		public IEnumerable<string> GetPackageFilesDirectoryContent(string packageName){
@@ -452,6 +453,29 @@ namespace cliogate.Files.cs
 				Success = true
 			};
 			
+		}
+
+		// /rest/CreatioApiGateway/GetApplicationIdByName?appName=ttt1
+		[OperationContract]
+		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public string GetApplicationIdByName(string appName) {
+			CheckCanManageSolution();
+			EntitySchemaQuery esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysInstalledApp");
+			var columndId = esq.AddColumn("Id");
+			
+			esq.Filters.Add(
+				esq.CreateFilterWithParameters(FilterComparisonType.Equal,"Name", appName));
+			esq.Filters.Add(
+				esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Code", appName));
+			esq.Filters.LogicalOperation = LogicalOperationStrict.Or;
+			EntityCollection entities = esq.GetEntityCollection(UserConnection);
+			if (entities.Count == 0) {
+				return $"Application {appName} not found.";
+			}
+			if (entities.Count > 1) {
+				return $"More then one application found.";
+			}
+			return entities[0].GetTypedColumnValue<string>(columndId.Name);
 		}
 
 		#endregion

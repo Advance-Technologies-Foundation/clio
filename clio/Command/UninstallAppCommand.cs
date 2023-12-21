@@ -23,14 +23,18 @@
 
 	public class UninstallAppCommand : RemoteCommand<UninstallAppOptions>
 	{
-		private readonly IDataProvider dataProvider;
 
-		public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings, IDataProvider dataProvider)
+		public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings, ILogger logger)
 			: base(applicationClient, settings) {
-			this.dataProvider = dataProvider;
+			Logger = logger;
+		}
+
+		public ILogger Logger {
+			get;
 		}
 
 		protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/UninstallApp";
+		protected string GetApplicationIdByNameUrl => RootPath + @"/rest/CreatioApiGateway/GetApplicationIdByName?appName=";
 
 		protected override string GetRequestData(UninstallAppOptions options) {
 			if (Guid.TryParse(options.Name, out Guid appid)) {
@@ -40,22 +44,20 @@
 			}
 		}
 
+		protected override void ExecuteRemoteCommand(UninstallAppOptions options) {
+			Logger.WriteInfo("Uninstalling application");
+			base.ExecuteRemoteCommand(options);
+		}
+
 		private Guid GetAppIdFromAppName(string name) {
-			var context = AppDataContextFactory.GetAppDataContext(dataProvider);
-			var apps = context.Models<SysInstalledApp>().Where(x => x.Name == name).ToList();
-			if (apps.Count() == 0) {
-				throw new ItemNotFoundException($"Application \"{name}\" not found.");
+			string response = ApplicationClient.ExecuteGetRequest(GetApplicationIdByNameUrl + name).Trim('\"');
+			if (Guid.TryParse(response, out Guid appId)) {
+				Logger.WriteInfo($"Found Application Id by {name}: {appId}");
+				return appId;
+			} else {
+				Logger.WriteError(response);
+				throw new SilentException(response);
 			}
-			if (apps.Count() > 1) {
-				throw new ArgumentOutOfRangeException($"Found more the one application: {PrintArrayInOneLine(apps)}");
-			}
-			return apps[0].Id;
 		}
-
-		private string PrintArrayInOneLine(IEnumerable<object> array) {
-			string result = string.Join(", ", array.Select(x => x.ToString()));
-			return result;
-		}
-
 	}
 }

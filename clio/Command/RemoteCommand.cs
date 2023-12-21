@@ -52,13 +52,17 @@ namespace Clio.Command
 				ExecuteRemoteCommand(options);
 				Console.WriteLine("Done");
 				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e);
+			} 
+			catch (SilentException ex) {
+				return 1;
+			}
+			catch (Exception e) {
+				Console.WriteLine(e.Message);
 				return 1;
 			}
 		}
 
-		private void ExecuteRemoteCommand(TEnvironmentOptions options) {
+		protected virtual void ExecuteRemoteCommand(TEnvironmentOptions options) {
 			string response;
 			if (HttpMethod == HttpMethod.Post) {
 				response = ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options));

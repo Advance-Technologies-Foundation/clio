@@ -21,7 +21,7 @@ namespace Clio.Common
 		public void WriteError(string value){
 			ConsoleColor color = Console.ForegroundColor;
 			Console.ForegroundColor = ConsoleColor.Red;
-			Console.Write("[ERROR] - ");
+			Console.Write("[ERR] - ");
 			Console.ForegroundColor = color;
 			Console.WriteLine(value);
 		}
@@ -29,7 +29,7 @@ namespace Clio.Common
 		public void WriteWarning(string value){
 			ConsoleColor color = Console.ForegroundColor;
 			Console.ForegroundColor = ConsoleColor.DarkYellow;
-			Console.Write("[WARNING] - ");
+			Console.Write("[WAR] - ");
 			Console.ForegroundColor = color;
 			Console.WriteLine(value);
 		}
@@ -38,7 +38,7 @@ namespace Clio.Common
 		public void WriteInfo(string value){
 			ConsoleColor color = Console.ForegroundColor;
 			Console.ForegroundColor = ConsoleColor.Green;
-			Console.Write("[INFO] - ");
+			Console.Write("[INF] - ");
 			Console.ForegroundColor = color;
 			Console.WriteLine(value);
 		}

@@ -34,9 +34,6 @@ namespace Clio
 				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
-
-				IDataProvider dataProvider = new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
-				containerBuilder.RegisterInstance(dataProvider).As<IDataProvider>();
 			}
 
 			try {
