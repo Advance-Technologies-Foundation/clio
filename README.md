@@ -112,6 +112,7 @@ docker run -it --rm clio reg-web-app -help
   - [Compile package](#compile-package)
   - [Pull package from remote application](#pull-package-from-remote-application)
   - [Delete package](#delete-package)
+  - [Uninstall application](#uninstall-application)
   - [Compress package](#compress-package)
   - [Extract package](#extract-package)
   - [Restore configuration](#restore-configuration)
@@ -278,6 +279,14 @@ for delete for non default application
 
 ```
 clio delete-pkg-remote <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+## Uninstall application
+
+To uninstall application, use the next command:
+
+```
+clio uninstall-app-remote <APP_NAME|APP_CODE>
 ```
 
 ## Compress package
