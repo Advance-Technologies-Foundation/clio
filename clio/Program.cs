@@ -18,6 +18,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using ATF.Repository;
+using ATF.Repository.Providers;
+using CreatioModel;
 using Сlio.Command.PackageCommand;
 
 namespace Clio
@@ -569,7 +572,8 @@ namespace Clio
 			typeof(SwitchNugetToDllOptions),
 			typeof(ShowPackageFileContentOptions),
 			typeof(CompilePackageOptions),
-			typeof(UninstallAppOptions)
+			typeof(UninstallAppOptions),
+			typeof(ListInstalledAppsOptions)
 		};
 		public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 			return instance switch {
@@ -651,6 +655,7 @@ namespace Clio
 				(SwitchNugetToDllOptions opts) => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
 				(CompilePackageOptions opts) => Resolve<CompilePackageCommand>(opts).Execute(opts),
 				(UninstallAppOptions opts) => Resolve<UninstallAppCommand>(opts).Execute(opts),
+				ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
 				_ => 1,
 			};
 		};

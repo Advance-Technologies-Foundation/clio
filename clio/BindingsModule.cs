@@ -34,6 +34,14 @@ namespace Clio
 				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
 				containerBuilder.RegisterInstance(settings);
+				
+				
+				IDataProvider provider = string.IsNullOrEmpty(settings.Login) switch {
+					true=> new RemoteDataProvider(settings.Uri,settings.AuthAppUri,settings.ClientId,settings.ClientSecret, settings.IsNetCore),
+					false=>new RemoteDataProvider(settings.Uri,settings.Login,settings.Password, settings.IsNetCore)
+				};
+				containerBuilder.RegisterInstance(provider).As<IDataProvider>();
+				
 			}
 
 			try {
@@ -110,6 +118,7 @@ namespace Clio
 			containerBuilder.RegisterType<NugetMaterializer>();
 			containerBuilder.RegisterType<PropsBuilder>();
 			containerBuilder.RegisterType<UninstallAppCommand>();
+			containerBuilder.RegisterType<ListInstalledAppsCommand>();
 
 
 			var configuration = MediatRConfigurationBuilder

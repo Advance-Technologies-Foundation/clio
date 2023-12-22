@@ -1,5 +1,5 @@
 ﻿using System;
-
+using ConsoleTables;
 
 namespace Clio.Common
 {
@@ -42,6 +42,12 @@ namespace Clio.Common
 			Console.ForegroundColor = color;
 			Console.WriteLine(value);
 		}
+		
+		
+		public void PrintTable(ConsoleTable table){
+			this.WriteLine(table.ToString());
+		}
+		
 		#endregion
 
 	}

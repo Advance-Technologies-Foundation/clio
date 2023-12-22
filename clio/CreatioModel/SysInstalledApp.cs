@@ -19,6 +19,10 @@ namespace CreatioModel
 		[SchemaProperty("Code")]
 		public string Code { get; set; }
 
+		
+		[SchemaProperty("Description")]
+		public string Description { get; set; }
+
 		public override string ToString() {
 			return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
 		}
