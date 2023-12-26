@@ -303,6 +303,22 @@ or you can specify full path for package and .gz file
 clio generate-pkg-zip  C:\Packages\package -d C:\Store\package.gz
 ```
 
+## List Installed Applications
+
+The `get-app-list` command, also short alias as `apps`, 
+is used to list all the installed applications in the selected environment. 
+This command is useful when you want to check which applications are currently 
+installed in your Creatio environment.
+
+```bash
+clio get-app-list
+
+#or 
+
+clio apps
+```
+
+
 ## Extract package
 
 For package from  *.gz archive

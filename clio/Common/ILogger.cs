@@ -1,4 +1,6 @@
-﻿namespace Clio.Common
+﻿using ConsoleTables;
+
+namespace Clio.Common
 {
 	public interface ILogger
 	{
@@ -8,6 +10,8 @@
 		void WriteWarning(string value);
 		void WriteError(string value);
 		void WriteInfo(string value);
+		
+		void PrintTable(ConsoleTable table);
 
 	}
 
