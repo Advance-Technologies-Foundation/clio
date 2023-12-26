@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -5,10 +6,9 @@ using Clio.Common;
 using CommandLine;
 using ConsoleTables;
 using CreatioModel;
-
 namespace Clio.Command;
 
-[Verb("list-installed-applications", Aliases = new[] {"lia", "list-apps"},
+[Verb("get-app-list", Aliases = new[] {"lia", "list-apps", "apps", "app-list", "apps-list", "list - installed - applications" },
 	HelpText = "List installed apps")]
 public class ListInstalledAppsOptions : EnvironmentOptions
 { }

@@ -305,17 +305,17 @@ clio generate-pkg-zip  C:\Packages\package -d C:\Store\package.gz
 
 ## List Installed Applications
 
-The `list-installed-applications` command, also abbreviated as `lia`, 
+The `get-app-list` command, also short alias as `apps`, 
 is used to list all the installed applications in the selected environment. 
 This command is useful when you want to check which applications are currently 
 installed in your Creatio environment.
 
 ```bash
-clio list-installed-applications
+clio get-app-list
 
 #or 
 
-clio lia
+clio apps
 ```
 
 

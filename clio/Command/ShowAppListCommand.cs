@@ -4,7 +4,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("show-web-app-list", Aliases = new string[] { "apps", "show-web-app", "app" }, HelpText = "Show the list of web applications and their settings")]
+	[Verb("show-web-app-list", Aliases = new string[] { "show-web-app", "envs"}, HelpText = "Show the list of web applications and their settings")]
 	public class AppListOptions
 	{
 		[Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
