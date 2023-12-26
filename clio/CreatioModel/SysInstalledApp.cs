@@ -10,7 +10,7 @@ namespace CreatioModel
 
 	[ExcludeFromCodeCoverage]
 	[Schema("SysInstalledApp")]
-	public class SysInstalledApp: BaseModel
+	public class SysInstalledApp : BaseModel
 	{
 
 		[SchemaProperty("Name")]
@@ -19,9 +19,20 @@ namespace CreatioModel
 		[SchemaProperty("Code")]
 		public string Code { get; set; }
 
-		
+
 		[SchemaProperty("Description")]
 		public string Description { get; set; }
+
+		private string _version;
+		[SchemaProperty("Version")]
+		public string Version {
+			get { 
+				return string.IsNullOrEmpty(_version) ? "none" : _version;
+			}
+			set { 
+				_version = value;
+			}
+		}
 
 		public override string ToString() {
 			return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
@@ -37,8 +48,7 @@ namespace CreatioModel
 	{
 
 		[SchemaProperty("Name")]
-		public string Name
-		{
+		public string Name {
 			get; set;
 		}
 

@@ -36,15 +36,14 @@ public class ListInstalledAppsCommand : Command<ListInstalledAppsOptions>
 
 	public override int Execute(ListInstalledAppsOptions options){
 		ConsoleTable table = new();
-		table.Columns.Add(nameof(SysInstalledApp.Id));
 		table.Columns.Add(nameof(SysInstalledApp.Name));
 		table.Columns.Add(nameof(SysInstalledApp.Code));
-		table.Columns.Add(nameof(SysInstalledApp.Description));
+		table.Columns.Add(nameof(SysInstalledApp.Version));
 
 		AppDataContextFactory.GetAppDataContext(_provider)
 			.Models<SysInstalledApp>()
 			.ToList()
-			.ForEach(m => { table.AddRow(m.Id, m.Name, m.Code, m.Description?.Trim()); });
+			.ForEach(m => { table.AddRow(m.Name, m.Code, m.Version); });
 		_logger.PrintTable(table);
 		return 0;
 	}
