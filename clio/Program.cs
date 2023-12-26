@@ -285,12 +285,14 @@ class Program {
 		};
 	}
 
-	private static T Resolve<T>(EnvironmentOptions options = null)
+	private static T Resolve<T>(object options = null)
 	{
 		EnvironmentSettings settings = null;
-		if (options != null)
-		{
-			settings = GetEnvironmentSettings(options);
+		if (options is EnvironmentOptions) {
+			var environmentOptions = options as EnvironmentOptions;
+			if (environmentOptions != null) {
+				settings = GetEnvironmentSettings(environmentOptions as EnvironmentOptions);
+			}
 		}
 		var container = new BindingsModule().Register(settings);
 		return container.Resolve<T>();

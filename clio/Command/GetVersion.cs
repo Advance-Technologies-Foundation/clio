@@ -5,7 +5,7 @@ using System.Reflection;
 namespace Clio.Command
 {
 	[Verb("ver", Aliases = new string[] { "get-version" }, HelpText = "Check for Creatio packages updates in NuGet")]
-	public class GetVersionOptions : EnvironmentOptions
+	public class GetVersionOptions
 	{
 		[Option("all", Required = false, HelpText = "Get versions for all known components")]
 		public bool All
