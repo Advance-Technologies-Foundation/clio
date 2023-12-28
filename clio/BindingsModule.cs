@@ -119,7 +119,10 @@ namespace Clio
 			containerBuilder.RegisterType<PropsBuilder>();
 			containerBuilder.RegisterType<UninstallAppCommand>();
 			containerBuilder.RegisterType<DownloadAppCommand>();
-			
+			containerBuilder.RegisterType<DeployAppCommand>();
+			containerBuilder.RegisterType<ApplicationManager>();
+
+
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
 
 

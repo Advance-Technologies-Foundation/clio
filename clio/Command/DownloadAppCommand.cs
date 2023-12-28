@@ -22,22 +22,13 @@ public class DownloadAppCommand : BaseAppCommand<DownloadAppOptions>
 {
 	protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/ExportApp";
 	
-	public DownloadAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, ILogger logger, IDataProvider dataProvider) 
-		: base(applicationClient, environmentSettings, logger, dataProvider){ }
+	public DownloadAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, ILogger logger, IDataProvider dataProvider,
+			ApplicationManager applicationManager) 
+		: base(applicationClient, environmentSettings, logger, dataProvider, applicationManager) { }
 	
 	protected override void ExecuteRemoteCommand(DownloadAppOptions options) {
 		_logger.WriteInfo("Downloading application");
-		
-		var appInfo = GetAppFromAppName(options.Name);
-		var data = new {
-			appId =  appInfo.Id
-		};
-		var dataStr = JsonSerializer.Serialize(data);
-		string zipFilePath = string.IsNullOrWhiteSpace(options.FilePath) 
-			? Path.Combine(Environment.CurrentDirectory, $"{appInfo.Code}_{appInfo.Version}_{DateTime.UtcNow:dd-MMM-yyy_HH-mm}.zip") 
-			: options.FilePath;
-		
-		ApplicationClient.DownloadFile(ServiceUri, zipFilePath, dataStr);
+		_applicationManager.Download(options.Name, options.Environment, options.FilePath);
 	}
 
 }

@@ -11,8 +11,8 @@ public class UninstallAppOptions : BaseAppCommandOptions{}
 
 public class UninstallAppCommand : BaseAppCommand<UninstallAppOptions>
 {
-	public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings, ILogger logger, IDataProvider dataProvider)
-		: base(applicationClient, settings, logger, dataProvider){}
+	public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings, ILogger logger, IDataProvider dataProvider, ApplicationManager applicationManager)
+		: base(applicationClient, settings, logger, dataProvider, applicationManager) {}
 		
 
 	protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/UninstallApp";

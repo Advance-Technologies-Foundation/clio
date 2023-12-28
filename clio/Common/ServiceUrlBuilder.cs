@@ -47,9 +47,9 @@
 
 		#region Methods: Public
 
-		public string Build(string serviceEndpoint) => $"{RootPath}{Normalize(serviceEndpoint)}";
+		public string Build(string serviceEndpoint) => $"{RootPath}{Normalize(serviceEndpoint.Replace(RootPath, string.Empty))}";
 		public string Build(string serviceEndpoint, EnvironmentSettings environmentSettings) =>
-			$"{GetRootPath(environmentSettings)}{Normalize(serviceEndpoint)}";
+			$"{GetRootPath(environmentSettings)}{serviceEndpoint.Replace(GetRootPath(environmentSettings), string.Empty)}";
 
 		#endregion
 

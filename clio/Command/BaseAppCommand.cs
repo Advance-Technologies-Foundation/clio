@@ -22,14 +22,16 @@ public class BaseAppCommandOptions : EnvironmentOptions
 public class BaseAppCommand<T>: RemoteCommand<T> where T : BaseAppCommandOptions 
 {
 
-	protected readonly ILogger _logger;
 	private readonly IDataProvider _dataProvider;
+	protected readonly ILogger _logger;
+	protected readonly ApplicationManager _applicationManager;
 
 	public BaseAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, 
-		ILogger logger, IDataProvider dataProvider) 
+		ILogger logger, IDataProvider dataProvider, ApplicationManager applicationManager) 
 		: base(applicationClient, environmentSettings){
 		_logger = logger;
 		_dataProvider = dataProvider;
+		_applicationManager = applicationManager;
 	}
 
 	protected List<SysInstalledApp> GetApplicationList() =>

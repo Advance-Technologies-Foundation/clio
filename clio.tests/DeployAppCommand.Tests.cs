@@ -5,11 +5,12 @@ using NUnit.Framework;
 namespace Clio.Tests
 {
 	[TestFixture]
-	internal class DownloadAppCommandTests : BaseCommandTests<DownloadAppOptions>
+	internal class DeployAppCommandTests : BaseCommandTests<DeployAppOptions>
 	{
 
-		
+
+
 
 	}
-	
+
 }
