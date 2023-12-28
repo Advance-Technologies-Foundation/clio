@@ -281,6 +281,17 @@ for delete for non default application
 clio delete-pkg-remote <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 ```
 
+## Download application
+
+```bash
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> 
+#or
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> --FilePath <FILE_PATH.ZIP>
+```
+
+
+
+
 ## Uninstall application
 
 To uninstall application, use the next command:
@@ -288,6 +299,9 @@ To uninstall application, use the next command:
 ```
 clio uninstall-app-remote <APP_NAME|APP_CODE>
 ```
+
+x
+
 
 ## Compress package
 

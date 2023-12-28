@@ -21,9 +21,7 @@ public class ReadmeChecker
 			.Split(' ')
 			.ToList();
 
-		for (int i = 0; i < commandWords.Count; i++) {
-			commandWords[i] = char.ToUpper(commandWords[i][0]) + commandWords[i][1..];
-		}
+		
 		string expectedSectionName = "## " + string.Join(' ', commandWords);
 		return expectedSectionName;
 	};
@@ -33,7 +31,8 @@ public class ReadmeChecker
 		
 		PopulateListToCheck(T);
 		return _namesToCheck
-			.Select(name => _readmeContent.Contains(name))
+			.Select(name => _readmeContent.ToUpper()
+				.Contains(name.ToUpper()))
 			.Any(isInReadme => isInReadme);
 	}
 

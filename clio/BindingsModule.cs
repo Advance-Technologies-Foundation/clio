@@ -118,6 +118,8 @@ namespace Clio
 			containerBuilder.RegisterType<NugetMaterializer>();
 			containerBuilder.RegisterType<PropsBuilder>();
 			containerBuilder.RegisterType<UninstallAppCommand>();
+			containerBuilder.RegisterType<DownloadAppCommand>();
+			
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
 
 

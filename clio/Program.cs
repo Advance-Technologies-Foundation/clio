@@ -571,6 +571,7 @@ class Program {
 		typeof(ShowPackageFileContentOptions),
 		typeof(CompilePackageOptions),
 		typeof(UninstallAppOptions),
+		typeof(DownloadAppOptions),
 		typeof(ListInstalledAppsOptions)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -653,6 +654,7 @@ class Program {
 			SwitchNugetToDllOptions opts => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
 			CompilePackageOptions opts => Resolve<CompilePackageCommand>(opts).Execute(opts),
 			UninstallAppOptions opts => Resolve<UninstallAppCommand>(opts).Execute(opts),
+			DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
 			_ => 1,
 		};
