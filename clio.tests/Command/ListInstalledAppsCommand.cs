@@ -14,15 +14,8 @@ namespace Clio.Tests.Command;
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 [Category("UnitTests")]
 [TestFixture]
-public class ListInstalledAppsCommandTests
+public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsOptions>
 {
-	private static readonly ReadmeChecker ReadmeChecker = ClioTestsSetup.GetService<ReadmeChecker>();
-	[Test]
-	public void Command_ShouldHave_DescriptionBlock_InReadmeFile() =>
-		ReadmeChecker
-			.IsInReadme(typeof(ListInstalledAppsOptions))
-			.Should()
-			.BeTrue("{0} is a command and needs a be described in README.md", this);
 
 	[Test]
 	public void Repository_ShouldBeCalled()
@@ -62,4 +55,17 @@ public class ListInstalledAppsCommandTests
 		);
 		callCount.Should().Be(1);
 	}
+}
+
+public class BaseCommandTests<T>
+{
+
+	protected static readonly ReadmeChecker ReadmeChecker = ClioTestsSetup.GetService<ReadmeChecker>();
+	[Test]
+	public void Command_ShouldHave_DescriptionBlock_InReadmeFile() =>
+		ReadmeChecker
+			.IsInReadme(typeof(T))
+			.Should()
+			.BeTrue("{0} is a command and needs a be described in README.md", this);
+
 }
