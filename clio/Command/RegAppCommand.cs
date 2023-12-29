@@ -64,7 +64,7 @@ namespace Clio.Command
 					return 0;
 				}
 
-				if (options.EnvironmentName.ToLower(CultureInfo.InvariantCulture) == "open") {
+				if (options.EnvironmentName?.ToLower(CultureInfo.InvariantCulture) == "open") {
 					_settingsRepository.OpenFile();
 					return 0;
 				} else {
