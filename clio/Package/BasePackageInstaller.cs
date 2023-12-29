@@ -10,7 +10,6 @@
 	using System.Threading;
 	using System;
 
-
 	public abstract class BasePackageInstaller
 	{
 
@@ -31,7 +30,6 @@
 		private readonly ISqlScriptExecutor _scriptExecutor;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
-
 		private readonly IApplication _application;
 		private string _reportPath;
 
@@ -46,9 +44,9 @@
 		#region Constructors: Public
 
 		public BasePackageInstaller(EnvironmentSettings environmentSettings,
-				IApplicationClientFactory applicationClientFactory, IApplication application,
-				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger) {
+			IApplicationClientFactory applicationClientFactory, IApplication application,
+			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
+			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger){
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			application.CheckArgumentNull(nameof(application));
@@ -79,7 +77,8 @@
 
 		#region Methods: Private
 
-		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url);
+		private string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
+			_serviceUrlBuilder.Build(url, environmentSettings);
 
 		private bool DeveloperModeEnabled(EnvironmentSettings environmentSettings) =>
 			environmentSettings.DeveloperModeEnabled.HasValue && environmentSettings.DeveloperModeEnabled.Value;
@@ -87,12 +86,12 @@
 		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
 			_applicationClientFactory.CreateClient(environmentSettings);
 
-		private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings) {
+		private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings){
 			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
 			applicationClient.CallConfigurationService("CreatioApiGateway", "UnlockPackages", "{}");
 		}
 
-		private void SaveLogFile(string logText, string reportPath) {
+		private void SaveLogFile(string logText, string reportPath){
 			if (reportPath != null && !string.IsNullOrWhiteSpace(logText)) {
 				if (File.Exists(reportPath)) {
 					File.Delete(reportPath);
@@ -103,28 +102,28 @@
 			}
 		}
 
-		private string UploadPackage(string filePath, EnvironmentSettings environmentSettings) {
+		private string UploadPackage(string filePath, EnvironmentSettings environmentSettings){
 			_logger.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string packageName = fileInfo.Name;
 			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			applicationClient.UploadFile(GetCompleteUrl(UploadUrl), filePath);
+			applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
 			_logger.WriteLine("Uploaded");
 			return packageName;
 		}
 
 		private bool CreateBackupPackage(string packageCode, string filePath,
-				EnvironmentSettings environmentSettings) {
+			EnvironmentSettings environmentSettings){
 			try {
 				_logger.WriteLine("Backup process...");
 				FileInfo fileInfo = new FileInfo(filePath);
 				string zipPackageName = fileInfo.Name;
 				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-				applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl), "{\"Name\":\"" + packageCode +
-					"\",\"Code\":\"" + packageCode +
-					"\",\"ZipPackageName\":\"" + zipPackageName +
-					"\",\"LastUpdate\":0}")
-				;
+				applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" + packageCode +
+						"\",\"Code\":\"" + packageCode +
+						"\",\"ZipPackageName\":\"" + zipPackageName +
+						"\",\"LastUpdate\":0}")
+					;
 				_logger.WriteLine("Backup completed");
 				return true;
 			} catch {
@@ -132,22 +131,21 @@
 			}
 		}
 
-		private string GetInstallLog(EnvironmentSettings environmentSettings) {
+		private string GetInstallLog(EnvironmentSettings environmentSettings){
 			try {
 				IApplicationClient applicationClientForLog = CreateApplicationClient(environmentSettings);
-				return applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl));
-			} catch (Exception ex) {
-			}
+				return applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSettings));
+			} catch (Exception ex) { }
 			return String.Empty;
 		}
 
-		private string GetLogDiff(string currentLog, string completeLog) {
+		private string GetLogDiff(string currentLog, string completeLog){
 			return string.IsNullOrWhiteSpace(completeLog)
 				? string.Empty
 				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
 		}
 
-		private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings) {
+		private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings){
 			var cancellationToken = (CancellationToken)cancellationTokenObject;
 			var currentLogContent = string.Empty;
 			while (!cancellationToken.IsCancellationRequested) {
@@ -171,17 +169,17 @@
 		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
 		private string InstallPackageOnServer(string fileName, EnvironmentSettings environmentSettings,
-				PackageInstallOptions packageInstallOptions) {
+			PackageInstallOptions packageInstallOptions){
 			string installUrl = packageInstallOptions == null
 				? InstallUrl
 				: InstallWithOptionsUrl;
 			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl),
+			return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}
 
 		private (bool, string) InstallPackageOnServerWithLogListener(string fileName,
-				EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions){
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
 			var cancellationTokenSource = new CancellationTokenSource();
@@ -199,7 +197,7 @@
 		}
 
 		private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
-				PackageInstallOptions packageInstallOptions) {
+			PackageInstallOptions packageInstallOptions){
 			string packageName = UploadPackage(filePath, environmentSettings);
 			string packageCode = packageName.Split('.')[0];
 			if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
@@ -217,7 +215,7 @@
 		}
 
 		private (bool, string) InstallPackageFromFolder(string packageFolderPath,
-				EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions){
 			var packedFilePath = $"{packageFolderPath}.gz";
 			_packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
 			bool success = false;
@@ -230,9 +228,8 @@
 			return (success, logText);
 		}
 
-
 		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath,
-				EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions){
 			bool success = false;
 			string logText = null;
 			if (File.Exists(packagePackedFileOrFolderPath)) {
@@ -252,7 +249,7 @@
 		#region Methods: Protected
 
 		protected bool InternalInstall(string packagePath, EnvironmentSettings environmentSettings = null,
-				PackageInstallOptions packageInstallOptions = null, string reportPath = null) {
+			PackageInstallOptions packageInstallOptions = null, string reportPath = null){
 			environmentSettings ??= _environmentSettings;
 			packagePath = _fileSystem.GetCurrentDirectoryIfEmpty(packagePath);
 			_reportPath = reportPath;

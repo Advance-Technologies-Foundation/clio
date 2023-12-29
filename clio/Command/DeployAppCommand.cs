@@ -9,7 +9,7 @@ using CommandLine;
 namespace Clio.Command
 {
 
-	[Verb("deploy-application", Aliases = new[] { "deploy" }, HelpText = "Deploy app from current environment to destination deploy")]
+	[Verb("deploy-application", Aliases = new[] { "deploy-app" }, HelpText = "Deploy app from current environment to destination environment")]
 	internal class DeployAppOptions : BaseAppCommandOptions
 	{
 

@@ -289,6 +289,15 @@ clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME>
 clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> --FilePath <FILE_PATH.ZIP>
 ```
 
+## Deploy application
+
+```bash
+clio deploy-application <APP_NAME|APP_CODE> -e <SOURCE_ENVIRONMENT_NAME> -d <DESTINATION_ENVIRONMENT_NAME>
+
+#or omit -e argument to take application from default environment
+
+clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
+````
 
 
 
