@@ -44,7 +44,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommandOptions options = new() {
 			Uri = $"mssql://{username}:{password}@{host}:{port}",
 			BackUpFilePath = @"D:\Projects\CreatioProductBuild\8.1.2.2482_Studio_Softkey_MSSQL_ENU\db\BPMonline812Studio.bak",
-			FolderVisibleToServer = @"\\wsl.localhost\rancher-desktop\mnt\clio-infrastructure\mssql\data",
+			DbWorknigFolder = @"\\wsl.localhost\rancher-desktop\mnt\clio-infrastructure\mssql\data",
 			DbName = existingDbName
 		};
 		

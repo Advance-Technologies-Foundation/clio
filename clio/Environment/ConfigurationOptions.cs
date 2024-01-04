@@ -21,11 +21,11 @@ namespace Clio
 		public string DbName {
 			get; set;
 		}
-		
+
 		public string BackupFilePath {
 			get; set;
 		}
-		
+
 
 		public string Login {
 			get; set;
@@ -46,11 +46,11 @@ namespace Clio
 		public string ClientId {
 			get; set;
 		}
-		
+
 		public string DbServerKey {
 			get; set;
 		}
-		
+
 		[Newtonsoft.Json.JsonIgnore]
 		public DbServer DbServer {
 			get; set;
@@ -67,8 +67,8 @@ namespace Clio
 		private string _authAppUri;
 		public string AuthAppUri {
 			get {
-				if(string.IsNullOrEmpty(_authAppUri)) {
-					if(Uri?.ToLower().Contains(".creatio.com") ?? false) {
+				if (string.IsNullOrEmpty(_authAppUri)) {
+					if (Uri?.ToLower().Contains(".creatio.com") ?? false) {
 						return Uri?.ToLower().Replace(".creatio.com", "-is.creatio.com/connect/token");
 					}
 				}
@@ -82,10 +82,10 @@ namespace Clio
 		public string SimpleloginUri {
 			get {
 				var cleanUri = Uri;
-				if(!string.IsNullOrEmpty(cleanUri)) {
+				if (!string.IsNullOrEmpty(cleanUri)) {
 					var domain = ".creatio.com";
 					var index = cleanUri.IndexOf(domain);
-					if(index != -1) {
+					if (index != -1) {
 						cleanUri = cleanUri.Substring(0, index + domain.Length);
 					}
 				}
@@ -95,22 +95,22 @@ namespace Clio
 		}
 
 		internal void Merge(EnvironmentSettings environment) {
-			if(!string.IsNullOrEmpty(environment.Login)) {
+			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
 			}
-			if(!string.IsNullOrEmpty(environment.Uri)) {
+			if (!string.IsNullOrEmpty(environment.Uri)) {
 				Uri = environment.Uri;
 			}
-			if(!string.IsNullOrEmpty(environment.Password)) {
+			if (!string.IsNullOrEmpty(environment.Password)) {
 				Password = environment.Password;
 			}
-			if(!string.IsNullOrEmpty(environment.Maintainer)) {
+			if (!string.IsNullOrEmpty(environment.Maintainer)) {
 				Maintainer = environment.Maintainer;
 			}
-			if(environment.Safe.HasValue) {
+			if (environment.Safe.HasValue) {
 				Safe = environment.Safe;
 			}
-			if(environment.DeveloperModeEnabled.HasValue) {
+			if (environment.DeveloperModeEnabled.HasValue) {
 				DeveloperModeEnabled = environment.DeveloperModeEnabled;
 			}
 			IsNetCore = environment.IsNetCore;
@@ -118,20 +118,20 @@ namespace Clio
 			ClientSecret = environment.ClientSecret;
 			AuthAppUri = environment.AuthAppUri;
 			WorkspacePathes = environment.WorkspacePathes;
-			
-			if(!string.IsNullOrEmpty(environment.DbName)) {
+
+			if (!string.IsNullOrEmpty(environment.DbName)) {
 				DbName = environment.DbName;
 			}
-			if(!string.IsNullOrEmpty(environment.DbServerKey)) {
+			if (!string.IsNullOrEmpty(environment.DbServerKey)) {
 				DbServerKey = environment.DbServerKey;
 			}
-			if(environment.DbServer?.Uri != null) {
-				if(DbServer == null) {
+			if (environment.DbServer?.Uri != null) {
+				if (DbServer == null) {
 					DbServer = new DbServer();
 				}
 				DbServer.Uri = environment.DbServer.Uri;
 			}
-			if(!string.IsNullOrEmpty(environment.BackupFilePath)) {
+			if (!string.IsNullOrEmpty(environment.BackupFilePath)) {
 				BackupFilePath = environment.BackupFilePath;
 			}
 		}
@@ -164,17 +164,17 @@ namespace Clio
 
 		[JsonProperty("creatio-products")]
 		public string CreatioProductFolder {
-			get => string.IsNullOrWhiteSpace(_creatioProductFolder)? DefaultCreatioProductFolder : _creatioProductFolder;
+			get => string.IsNullOrWhiteSpace(_creatioProductFolder) ? DefaultCreatioProductFolder : _creatioProductFolder;
 			set => _creatioProductFolder = value;
 		}
-		
+
 		//TODO: This wont work for Mac and Linux
 		private const string DefaultIisRootPath = @"C:\inetpub\wwwroot\clio";
 		private string _iISClioRootPath;
-		
+
 		[JsonProperty("iis-clio-root-path")]
 		public string IISClioRootPath {
-			get => string.IsNullOrWhiteSpace(_iISClioRootPath)? DefaultIisRootPath : _iISClioRootPath;
+			get => string.IsNullOrWhiteSpace(_iISClioRootPath) ? DefaultIisRootPath : _iISClioRootPath;
 			set => _iISClioRootPath = value;
 		}
 
@@ -184,14 +184,14 @@ namespace Clio
 		public string ActiveEnvironmentKey {
 			get; set;
 		}
-		
-		
+
+
 		[JsonProperty("dbConnectionStringKeys")]
-		public Dictionary<string, DbServer> DbServers{get;set;}
-		
-		
+		public Dictionary<string, DbServer> DbServers { get; set; }
+
+
 		public EnvironmentSettings GetActiveEnviroment() {
-			if(String.IsNullOrEmpty(ActiveEnvironmentKey)
+			if (String.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
 				ActiveEnvironmentKey = Environments.First().Key;
 				return Environments.First().Value;
@@ -225,7 +225,7 @@ namespace Clio
 					.FirstOrDefault();
 				var product = assy.GetCustomAttributes<AssemblyProductAttribute>()
 					.FirstOrDefault();
-				if(userPath == null) {
+				if (userPath == null) {
 					userPath = "";
 				}
 				return Path.Combine(userPath, companyName?.Company, product?.Product);
@@ -244,34 +244,33 @@ namespace Clio
 		private void InitSettings() {
 			try {
 				var filePath = Path.Combine(Environment.CurrentDirectory, AppSettingsFilePath);
-				if(File.Exists(filePath)) {
+				if (File.Exists(filePath)) {
 					var fileContent = File.ReadAllText(filePath);
-					if(!String.IsNullOrWhiteSpace(fileContent)) {
+					if (!String.IsNullOrWhiteSpace(fileContent)) {
 						_settings = JsonConvert.DeserializeObject<Settings>(fileContent);
 						foreach (var environment in _settings.Environments) {
-							if(environment.Value.DbServerKey != null && _settings.DbServers != null && _settings.DbServers.ContainsKey(environment.Value.DbServerKey)){
+							if (environment.Value.DbServerKey != null && _settings.DbServers != null && _settings.DbServers.ContainsKey(environment.Value.DbServerKey)) {
 								environment.Value.DbServer = _settings.DbServers[environment.Value.DbServerKey];
 							}
 						}
-						
+
 					}
 				}
-			} catch(Exception ex) {
+			} catch (Exception ex) {
 				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
-				if(Program.EnableUpdate) {
+				if (Program.EnableUpdate) {
 					_settings = default;
-				}
-				else {
+				} else {
 					throw;
 				}
 			}
 		}
 
 		private void InitializeSettingsFile() {
-			if(File.Exists(AppSettingsFilePath)) {
+			if (File.Exists(AppSettingsFilePath)) {
 				return;
 			}
-			if(!Directory.Exists(AppSettingsFolderPath)) {
+			if (!Directory.Exists(AppSettingsFolderPath)) {
 				Directory.CreateDirectory(AppSettingsFolderPath);
 			}
 			InitDefaultSettings();
@@ -301,7 +300,7 @@ namespace Clio
 		}
 
 		private void Save() {
-			using(StreamWriter fileWriter = File.CreateText(AppSettingsFilePath)) {
+			using (StreamWriter fileWriter = File.CreateText(AppSettingsFilePath)) {
 				JsonSerializer serializer = new JsonSerializer() {
 					Formatting = Formatting.Indented,
 					NullValueHandling = NullValueHandling.Ignore
@@ -311,7 +310,7 @@ namespace Clio
 				serializer.Serialize(fileWriter, _settings);
 			}
 
-			if(!File.Exists(SchemaFilePath)) {
+			if (!File.Exists(SchemaFilePath)) {
 				SaveSchema();
 			}
 
@@ -322,7 +321,7 @@ namespace Clio
 				Formatting = Formatting.Indented,
 				NullValueHandling = NullValueHandling.Ignore
 			};
-			if(String.IsNullOrEmpty(environment)) {
+			if (String.IsNullOrEmpty(environment)) {
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				serializer.Serialize(streamWriter, _settings);
 			} else {
@@ -331,11 +330,11 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(string name = null) {
-			if(string.IsNullOrWhiteSpace(name)) {
+			if (string.IsNullOrWhiteSpace(name)) {
 				var activeEnvironment = _settings.ActiveEnvironmentKey;
 				return _settings.Environments[activeEnvironment];
 			}
-			if(!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
+			if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
 				environment = new EnvironmentSettings();
 				_settings.Environments[name] = environment;
 			}
@@ -378,38 +377,53 @@ namespace Clio
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? _settings.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
-			if(_settings.Safe.HasValue && _settings.Safe.Value) {
+			if (_settings.Safe.HasValue && _settings.Safe.Value) {
 				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
 				Console.Write($"Do you want to continue? [Y/N]:");
 				var answer = Console.ReadKey();
 				Console.WriteLine();
-				if(answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
+				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
 					Console.WriteLine("Operation was canceled by user");
 					System.Environment.Exit(1);
 				}
 			}
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? _settings.WorkspacePathes : options.WorkspacePathes;
-			
+
 			bool isUri = Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
-			if(isUri) {
-				result.DbServer ??= new DbServer {
-					Uri = uri
-				};
+			if (isUri) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.Uri = uri;
 			}
-			
-			if(!string.IsNullOrWhiteSpace(options.WorkingFolder)) {
+
+			if (!string.IsNullOrWhiteSpace(options.WorkingFolder)) {
 				result.DbServer ??= new DbServer {
 					WorkingFolder = options.WorkingFolder
 				};
 			}
-			
-			if(!string.IsNullOrEmpty(options.BackUpFilePath)) {
+
+			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.Login = options.DbUser;
+			}
+
+			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.Password = options.DbPassword;
+			}
+
+			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
 				result.BackupFilePath = options.BackUpFilePath;
 			}
-			if(!string.IsNullOrEmpty(options.DbName)) {
+			if (!string.IsNullOrEmpty(options.DbName)) {
 				result.DbName = options.DbName;
 			}
-			
+
 			return result;
 		}
 
@@ -431,9 +445,9 @@ namespace Clio
 		}
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
-			if(string.IsNullOrEmpty(name)) {
+			if (string.IsNullOrEmpty(name)) {
 				_settings.GetActiveEnviroment().Merge(environment);
-			} else if(_settings.Environments.ContainsKey(name)) {
+			} else if (_settings.Environments.ContainsKey(name)) {
 				_settings.Environments[name].Merge(environment);
 			} else {
 				_settings.Environments.Add(name, environment);
@@ -447,7 +461,7 @@ namespace Clio
 		}
 
 		public void RemoveEnvironment(string environment) {
-			if(_settings.Environments.ContainsKey(environment)) {
+			if (_settings.Environments.ContainsKey(environment)) {
 				_settings.Environments.Remove(environment);
 				Save();
 			} else {
@@ -476,15 +490,25 @@ namespace Clio
 		}
 	}
 
-	
+
 	public class DbServer
 	{
 		[JsonPropertyName("uri")]
-		public Uri Uri {get;set;}
+		public Uri Uri { get; set; }
 
 		[JsonPropertyName("workingFolder")]
-		public string WorkingFolder {get;set;}
+		public string WorkingFolder { get; set; }
+		public string Password { get; internal set; }
+		public string Login { get; internal set; }
 
+		public Credentials GetCredentials() =>
+			Uri.UserInfo.Split(':') switch {
+				var credentials when credentials.Length == 2 => new Credentials(credentials[0], credentials[1]),
+				var _ => new Credentials(Login, Password)
+			};
 	}
-	
+
+	public record Credentials(string Username, string Password);
+
+
 }
