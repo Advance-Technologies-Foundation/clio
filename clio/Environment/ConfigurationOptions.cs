@@ -18,6 +18,15 @@ namespace Clio
 			get; set;
 		}
 
+		public string DbName {
+			get; set;
+		}
+		
+		public string BackupFilePath {
+			get; set;
+		}
+		
+
 		public string Login {
 			get; set;
 		}
@@ -35,6 +44,15 @@ namespace Clio
 		}
 
 		public string ClientId {
+			get; set;
+		}
+		
+		public string DbServerKey {
+			get; set;
+		}
+		
+		[Newtonsoft.Json.JsonIgnore]
+		public DbServer DbServer {
 			get; set;
 		}
 
@@ -100,6 +118,22 @@ namespace Clio
 			ClientSecret = environment.ClientSecret;
 			AuthAppUri = environment.AuthAppUri;
 			WorkspacePathes = environment.WorkspacePathes;
+			
+			if(!string.IsNullOrEmpty(environment.DbName)) {
+				DbName = environment.DbName;
+			}
+			if(!string.IsNullOrEmpty(environment.DbServerKey)) {
+				DbServerKey = environment.DbServerKey;
+			}
+			if(environment.DbServer?.Uri != null) {
+				if(DbServer == null) {
+					DbServer = new DbServer();
+				}
+				DbServer.Uri = environment.DbServer.Uri;
+			}
+			if(!string.IsNullOrEmpty(environment.BackupFilePath)) {
+				BackupFilePath = environment.BackupFilePath;
+			}
 		}
 
 		public bool? Safe {
@@ -150,7 +184,12 @@ namespace Clio
 		public string ActiveEnvironmentKey {
 			get; set;
 		}
-
+		
+		
+		[JsonProperty("dbConnectionStringKeys")]
+		public Dictionary<string, DbServer> DbServers{get;set;}
+		
+		
 		public EnvironmentSettings GetActiveEnviroment() {
 			if(String.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
@@ -209,6 +248,12 @@ namespace Clio
 					var fileContent = File.ReadAllText(filePath);
 					if(!String.IsNullOrWhiteSpace(fileContent)) {
 						_settings = JsonConvert.DeserializeObject<Settings>(fileContent);
+						foreach (var environment in _settings.Environments) {
+							if(environment.Value.DbServerKey != null && _settings.DbServers != null && _settings.DbServers.ContainsKey(environment.Value.DbServerKey)){
+								environment.Value.DbServer = _settings.DbServers[environment.Value.DbServerKey];
+							}
+						}
+						
 					}
 				}
 			} catch(Exception ex) {
@@ -344,6 +389,27 @@ namespace Clio
 				}
 			}
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? _settings.WorkspacePathes : options.WorkspacePathes;
+			
+			bool isUri = Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
+			if(isUri) {
+				result.DbServer ??= new DbServer {
+					Uri = uri
+				};
+			}
+			
+			if(!string.IsNullOrWhiteSpace(options.WorkingFolder)) {
+				result.DbServer ??= new DbServer {
+					WorkingFolder = options.WorkingFolder
+				};
+			}
+			
+			if(!string.IsNullOrEmpty(options.BackUpFilePath)) {
+				result.BackupFilePath = options.BackUpFilePath;
+			}
+			if(!string.IsNullOrEmpty(options.DbName)) {
+				result.DbName = options.DbName;
+			}
+			
 			return result;
 		}
 
@@ -410,4 +476,15 @@ namespace Clio
 		}
 	}
 
+	
+	public class DbServer
+	{
+		[JsonPropertyName("uri")]
+		public Uri Uri {get;set;}
+
+		[JsonPropertyName("workingFolder")]
+		public string WorkingFolder {get;set;}
+
+	}
+	
 }

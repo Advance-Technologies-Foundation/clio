@@ -100,7 +100,22 @@ namespace Clio
 		public virtual bool ShowDefaultEnvironment() {
 			return true;
 		}
-
+		
+		[Option("db-server-uri", Required = false, HelpText = "Db server uri")]
+		public string DbServerUri { get; set; }
+		
+		[Option("workingFolder", Required = false, HelpText = "Db working folder")]
+		public string WorkingFolder { get; set; }
+		
+		[Option('f',"from-file", Required = false, HelpText = "Full path to backup file")]
+		public string BackUpFilePath { get; set; }
+	
+		[Option('d',"visible-folder", Required = false, HelpText = "Folder visible to db server")]
+		public string FolderVisibleToServer { get; set; }
+	
+		[Option('n', "dbName", Required = false, HelpText = "Desired database name")]
+		public string DbName { get; set; }
+		
 	}
 
 	public class EnvironmentNameOptions : EnvironmentOptions

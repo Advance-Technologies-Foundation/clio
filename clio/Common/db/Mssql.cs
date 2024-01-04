@@ -1,14 +1,38 @@
 ﻿using System;
 using System.IO;
 using Microsoft.Data.SqlClient;
+using NRedisStack;
 
 namespace Clio.Common.db;
 
-public class Mssql
+public interface IMssql
+{
+
+	bool CreateDb (string dbName, string backupFileName);
+
+	bool CheckDbExists(string dbName);
+
+	void RenameDb(string optionsDbName, string s);
+
+	void DropDb(string optionsDbName);
+
+}
+
+public class Mssql : IMssql
 {
 	
 	private readonly SqlConnectionStringBuilder _builder;
 
+	public Mssql(string host, int port, string username, string password) {
+		_builder = new SqlConnectionStringBuilder {
+			DataSource = $"{host},{port}",
+			UserID = username,
+			Password = password,
+			InitialCatalog = "master",
+			Encrypt = false
+		};
+	}
+	
 	public Mssql(int port, string username, string password) {
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = $"127.0.0.1,{port}",
@@ -25,19 +49,20 @@ public class Mssql
 		{
 			using SqlConnection connection = new SqlConnection(_builder.ConnectionString);
 			connection.Open();
+			string ldf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HH:mm}.ldf";
+			string mdf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HH:mm}.mdf";
 			
-			string ldf = Path.GetFileNameWithoutExtension(backupFileName) + ".ldf";
-			string mdf = Path.GetFileNameWithoutExtension(backupFileName) + ".mdf";
+			DefaultPaths defaultPaths = GetInstanceDefaultPaths(connection, false);
 			
 			string sqlText = $@"
 
 			USE [master]
 			RESTORE DATABASE [{dbName}] 
-			FROM  DISK = N'/var/opt/mssql/data/{backupFileName}' 
+			FROM  DISK = N'{defaultPaths.dataPath}{backupFileName}' 
 			WITH  FILE = 1,  
 			MOVE N'TSOnline_Data' 
-			TO N'/var/opt/mssql/data/{mdf}',  
-			MOVE N'TSOnline_Log' TO N'/var/opt/mssql/data/{ldf}',  
+			TO N'{defaultPaths.dataPath}{mdf}',  
+			MOVE N'TSOnline_Log' TO N'{defaultPaths.logPath}{ldf}',  
 			NOUNLOAD,  STATS = 5
 			";
 			
@@ -77,6 +102,66 @@ public class Mssql
 			return false;
 		}
 	}
+
+	public void RenameDb(string from, string to){
+		
+		using SqlConnection connection = new SqlConnection(_builder.ConnectionString);
+		connection.Open();
+		var sqlText = $"""
+									USE master;
+									ALTER DATABASE [{from}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+									ALTER DATABASE [{from}] MODIFY NAME = [{to}];
+									ALTER DATABASE [{to}] SET MULTI_USER;
+								
+						""";
+		var cmd = new SqlCommand(sqlText, connection);
+		cmd.ExecuteNonQuery();
+		connection.Close();
+	}
+
+	public void DropDb(string optionsDbName){
+		using SqlConnection connection = new SqlConnection(_builder.ConnectionString);
+		connection.Open();
+		var sqlText = $"""
+						
+									USE [master]
+									ALTER DATABASE [{optionsDbName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+									DROP DATABASE [{optionsDbName}];
+								
+						""";
+		var cmd = new SqlCommand(sqlText, connection);
+		cmd.ExecuteNonQuery();
+		connection.Close();
+	}
+
+	private DefaultPaths GetInstanceDefaultPaths(bool closeConnection){
+		using SqlConnection connection = new (_builder.ConnectionString);
+		connection.Open();
+		return GetInstanceDefaultPaths(connection, closeConnection);
+	}
+	private DefaultPaths GetInstanceDefaultPaths(SqlConnection connection, bool closeConnection){
+		string sqlText = $"""
+						
+								USE [master]
+								SELECT
+									SERVERPROPERTY('InstanceDefaultDataPath') AS DefaultDataPath,
+									SERVERPROPERTY('InstanceDefaultLogPath') AS DefaultLogPath;
+								
+						""";
+		var cmd = new SqlCommand(sqlText, connection);
+		using SqlDataReader reader = cmd.ExecuteReader();
+		
+		string dataPath = string.Empty; 
+		string logPath = string.Empty;
+		while(reader.Read()) {
+			dataPath = reader[0].ToString();
+			logPath = reader[1].ToString();
+		}
+		if(closeConnection) {
+			connection.Close();
+		}
+		return new DefaultPaths(dataPath, logPath);
+	}
 	
-	
+	record DefaultPaths(string dataPath, string logPath);
 }

@@ -573,7 +573,8 @@ class Program {
 		typeof(UninstallAppOptions),
 		typeof(DownloadAppOptions),
 		typeof(DeployAppOptions),
-		typeof(ListInstalledAppsOptions)
+		typeof(ListInstalledAppsOptions),
+		typeof(RestoreDbCommandOptions)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -658,6 +659,7 @@ class Program {
 			DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
+			RestoreDbCommandOptions opts =>Resolve<RestoreDbCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

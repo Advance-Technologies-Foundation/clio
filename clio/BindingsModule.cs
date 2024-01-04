@@ -20,6 +20,7 @@ using Clio.YAML;
 using k8s;
 using FileSystem = System.IO.Abstractions.FileSystem;
 using ATF.Repository.Providers;
+using Clio.Common.db;
 
 namespace Clio
 {
@@ -121,9 +122,11 @@ namespace Clio
 			containerBuilder.RegisterType<DownloadAppCommand>();
 			containerBuilder.RegisterType<DeployAppCommand>();
 			containerBuilder.RegisterType<ApplicationManager>();
-
+			containerBuilder.RegisterType<RestoreDbCommand>();
+			containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
 
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
+			
 
 
 			var configuration = MediatRConfigurationBuilder
