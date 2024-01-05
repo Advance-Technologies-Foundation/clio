@@ -105,14 +105,11 @@ namespace Clio
 		[Option("db-server-uri", Required = false, HelpText = "Db server uri")]
 		public string DbServerUri { get; set; }
 
-		[Option("dbuser", Required = false, HelpText = "Database user")]
+		[Option("db-user", Required = false, HelpText = "Database user")]
 		public string DbUser { get; set; }
 
-		[Option("dbPassword", Required = false, HelpText = "Database password")]
+		[Option("db-password", Required = false, HelpText = "Database password")]
 		public string DbPassword { get; set; }
-
-		[Option("workingFolder", Required = false, HelpText = "Db working folder")]
-		public string WorkingFolder { get; set; }
 		
 		[Option('f', "backup-file", Required = false, HelpText = "Full path to backup file")]
 		public string BackUpFilePath { get; set; }
@@ -120,8 +117,11 @@ namespace Clio
 		[Option('d',"db-working-folder", Required = false, HelpText = "Folder visible to db server")]
 		public string DbWorknigFolder { get; set; }
 	
-		[Option('n', "dbName", Required = false, HelpText = "Desired database name")]
+		[Option('n', "db-name", Required = false, HelpText = "Desired database name")]
 		public string DbName { get; set; }
+		
+		[Option("force", Required = false, HelpText = "Force restore")]
+		public bool Force { get; set; }
 		
 	}
 

@@ -49,8 +49,8 @@ public class Mssql : IMssql
 		{
 			using SqlConnection connection = new SqlConnection(_builder.ConnectionString);
 			connection.Open();
-			string ldf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HH:mm}.ldf";
-			string mdf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HH:mm}.mdf";
+			string ldf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HHmmss}.ldf";
+			string mdf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HHmmss}.mdf";
 			
 			DefaultPaths defaultPaths = GetInstanceDefaultPaths(connection, false);
 			

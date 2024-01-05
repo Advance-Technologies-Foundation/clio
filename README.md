@@ -1039,3 +1039,46 @@ By default, database will be available on default port
 > Postgres - clio will create a template database, and then a real database from the template. If Database or template already exists, Clio will skip this step.
 
 > You can change port and secrets in configuration files `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure`
+
+
+## Restore database for Creatio environments
+
+To restore database for Creatio environments, you can use the next command:
+
+```bash
+clio RestoreDb --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> -f <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
+#use --force to overwrite existing database without prompt
+```
+
+You can register db-servers in clio config file (`appsetting.json`) see example below
+
+```json
+  "dbConnectionStringKeys" : {
+    "k8-mssql": {
+        "uri": "mssql://username:password@127.0.0.1:1433",
+        "workingFolder" : "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
+      }
+  }
+```
+To link environment with a db server use `DbServerKey` property in environment settings. 
+You can also specify `DbName` and `BackupFilePath` properties to simplify command.
+```json
+  "Environments": {
+    "apollo-bundle-framework": {
+      ... OTHER PROPERTIES ...
+	  "DbServerKey": "k8-mssql",
+	  "DbName": "mydb10",
+	  "BackupFilePath": "D:\\Projects\\CreatioProductBuild\\8.1.2.2482_Studio_Softkey_MSSQL_ENU\\db\\BPMonline812Studio.bak"
+    }
+  },
+  "dbConnectionStringKeys" : {
+    "k8-mssql": {
+		"uri": "mssql://username:password@127.0.0.1:1433",
+		"workingFolder" : "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
+	  }
+  }
+```
+
+```bash
+clio resrore-db -e <ENVIRONMENT_NAME>
+```

@@ -391,16 +391,19 @@ namespace Clio
 
 			bool isUri = Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
 			if (isUri) {
+				
 				if (result.DbServer == null) {
 					result.DbServer = new DbServer();
 				}
 				result.DbServer.Uri = uri;
 			}
 
-			if (!string.IsNullOrWhiteSpace(options.WorkingFolder)) {
-				result.DbServer ??= new DbServer {
-					WorkingFolder = options.WorkingFolder
-				};
+			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.WorkingFolder = options.DbWorknigFolder;
+				
 			}
 
 			if (!string.IsNullOrWhiteSpace(options.DbUser)) {

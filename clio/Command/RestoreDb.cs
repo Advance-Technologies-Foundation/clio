@@ -10,20 +10,8 @@ namespace Clio.Command;
 
 #region Class: RestoreDbCommandOptions
 
-[Verb("RestoreDb", Aliases = new string[] { }, HelpText = "Restores database from backup file")]
-public class RestoreDbCommandOptions : EnvironmentOptions
-{
-
-	// clio-dev RestoreDb -n mydb10 -f "D:\Projects\CreatioProductBuild\8.1.2.2482_Studio_Softkey_MSSQL_ENU\db\BPMonline812Studio.bak" -d "\\wsl.localhost\rancher-desktop\mnt\clio-infrastructure\mssql\data" -u "mssql://sa:$Zarelon01$Zarelon01@localhost:1433" --force  
-	#region Properties: Public
-	
-	[Option("force", Required = false, HelpText = "Force restore")]
-	public bool Force { get; set; }
-	
-	
-	#endregion
-
-}
+[Verb("restore-db", Aliases = new string[] {"rdb"}, HelpText = "Restores database from backup file")]
+public class RestoreDbCommandOptions : EnvironmentOptions { }
 
 #endregion
 
@@ -55,12 +43,14 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	#region Methods: Public
 
 	public override int Execute(RestoreDbCommandOptions options) {
-		EnvironmentSettings env = _settingsRepository.GetEnvironment(options.Environment);
+		EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
 		
-		return env.DbServer.Uri.Scheme switch {
+		var result =  env.DbServer.Uri.Scheme switch {
 			 "mssql" => RestoreMs(env.DbServer, env.DbName, options.Force, env.BackupFilePath),
 			  var _ => HandleIncorrectUri(options.Uri)
 		};
+		_logger.WriteLine("Done");
+		return result;
 	}
 
 	private int HandleIncorrectUri(string uri){
@@ -87,8 +77,11 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 			}
 		}
 		_fileSystem.CopyFiles(new[]{backUpFilePath}, dbServer.WorkingFolder, true);
+		_logger.WriteInfo($"Copied backup file to server \r\n\tfrom: {backUpFilePath} \r\n\tto  : {dbServer.WorkingFolder}");
+		
+		_logger.WriteInfo("Started db restore...");
 		var result =  mssql.CreateDb(dbName, Path.GetFileName(backUpFilePath)) ? 0 : 1;
-		_logger.WriteInfo($"Created database {dbName}");
+		_logger.WriteInfo($"Created database {dbName} from file {backUpFilePath}");
 		return result;
 	}
 
