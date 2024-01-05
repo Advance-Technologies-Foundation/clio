@@ -19,7 +19,7 @@
 	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
 	  <RepositoryType>git</RepositoryType>
 	  <PackageProjectUrl>https://github.com/Advance-Technologies-Foundation/clio</PackageProjectUrl>
-	  <Copyright>ATF ©2023</Copyright>
+	  <Copyright>ATF ©2024</Copyright>
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
