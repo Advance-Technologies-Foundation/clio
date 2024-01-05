@@ -1046,7 +1046,7 @@ By default, database will be available on default port
 To restore database for Creatio environments, you can use the next command:
 
 ```bash
-clio RestoreDb --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> -f <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
+clio restore-db --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> -f <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
 #use --force to overwrite existing database without prompt
 ```
 
