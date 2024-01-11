@@ -58,6 +58,7 @@ namespace Clio.Command
 		}
 
 
+
 		private List<string> windowsActiveFeatures {
 			get {
 				var features = new List<string>();
@@ -65,7 +66,7 @@ namespace Clio.Command
 					ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
 					ManagementObjectCollection featureCollection = searcher.Get();
 					foreach (ManagementObject featureObject in featureCollection) {
-						string featureName = featureObject["Name"].ToString();
+					string featureName = featureObject["Name"].ToString();
 						features.Add(featureName);
 						string featureCaption = featureObject["Caption"].ToString();
 						features.Add(featureCaption);
