@@ -661,6 +661,16 @@ clio check-windows-features
 
 ```
 
+## Install requirment Windows features
+
+To install required windows features execute command
+
+```bash
+
+clio install-windows-features
+
+```
+
 ## Workspaces
 
 For connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.**
