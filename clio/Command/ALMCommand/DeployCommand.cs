@@ -89,7 +89,9 @@
 			FileInfo fi = new FileInfo(filePath);
 			var uploadLicenseEnpointUrl = _environmentSettings.Uri + uploadLicenseUrl
 					+ "?fileName=" + fi.Name + "&totalFileLength=" + fi.Length + "&fileId=" + fileId;
-			string uploadResult = _applicationClient.UploadAlmFile(uploadLicenseEnpointUrl, filePath);
+			Console.WriteLine($"Start uploading file {fi.Name}");
+			string uploadResult = _applicationClient.UploadAlmFileByChunk(uploadLicenseEnpointUrl, filePath);
+			Console.WriteLine($"End of uploading");
 			JObject json = JObject.Parse(uploadResult);
 			return json["success"].ToString() == "True";
 		}
@@ -98,7 +100,7 @@
 			string result = _applicationClient.ExecutePostRequest(startOperationUrl, requestData);
 			JObject startOperationResult = JObject.Parse(result);
 			if (startOperationResult["success"].ToString() == "True") {
-				Console.WriteLine($"OpeartionId: {startOperationResult["operationId"]}");
+				Console.WriteLine($"Command to deploy packages to environmnet succesfully startetd OpeartionId: {startOperationResult["operationId"]}");
 				return true;
 			}
 			return false;

@@ -42,7 +42,9 @@ namespace Clio.Common
 		void Login();
 		string UploadFile(string url, string filePath);
 		string UploadAlmFile(string url, string filePath);
-		
+
+		string UploadAlmFileByChunk(string url, string filePath);
+
 		void Listen(CancellationToken cancellationToken);
 		
 
@@ -135,6 +137,10 @@ namespace Clio.Common
 			var converter = new JsonConverter();
 			string response = _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
 			return converter.DeserializeObject<T>(response);
+		}
+
+		public string UploadAlmFileByChunk(string url, string filePath) {
+			return _creatioClient.UploadAlmFileByChunk(url, filePath);
 		}
 	}
 }
