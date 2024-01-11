@@ -14,13 +14,22 @@
 			"description": "Auto update clio",
 			"default": false
 		},
+		"dbConnectionStringKeys":{
+			"type":"object",
+			"patternProperties": {
+				".*" : {"$ref": "#/definitions/dbconnectionstring"}
+			},
+			"description": "List of configured environments that clio can interact with"
+		},
 		"Environments":{
 			"type":"object",
 			"patternProperties": {
-				"" : {"$ref": "#/definitions/environment"}
+				".*" : {"$ref": "#/definitions/environment"}
 			},
 			"description": "List of configured environments that clio can interact with"
 		}
+		
+
 	},
 	"description": "Clio environment description file",
 	"required": ["ActiveEnvironmentKey", "Autoupdate", "Environments"],
@@ -87,6 +96,27 @@
 				"IsNetCore": false,
 				"Safe": false,
 				"DeveloperModeEnabled": true
+			}
+		},
+		"dbconnectionstring":{
+			"type":"object",
+			"properties": {
+				"uri":{
+					"type": "string",
+					"default": "",
+					"description": "connection string mssql://login:password@hostname:port"
+				},
+				"workingFolder":{
+					"type": "string",
+					"default": "C:\\",
+					"description": "Folder path visible to host"
+				}
+			},
+			"description": "Db server properties",
+			"required": ["uri", "workingFolder"],
+			"default":{
+				"uri": "mssql://SA:SAPA55word@localhost:1433",
+				"workingFolder": "C:\\"
 			}
 		}
 	}
