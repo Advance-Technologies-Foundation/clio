@@ -10,3 +10,4 @@ installing-package:push-pkg
 pull-package-from-remote-application:pull-pkg
 switch-nuget-to-dll-reference:nuget2dll
 get-app-list:list-installed-applications
+manage-windows-features:manage-requirment-windows-features
