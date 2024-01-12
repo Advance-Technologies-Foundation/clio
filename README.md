@@ -139,7 +139,6 @@ docker run -it --rm clio reg-web-app -help
   - [Ping application](#ping-application)
   - [Healthcheck](#healthcheck)
 - [Development](#development)
-  - [Check requirment windows features](#check-requirment-windows-features)
   - [Workspaces](#workspaces)
   - [Convert package](#convert-package)
   - [Execute assembly](#execute-assembly)
@@ -175,6 +174,7 @@ docker run -it --rm clio reg-web-app -help
   - [Ping application](#ping-application)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
+  --[Manage requirment Windows features](#manage-requirment-windows-features)
 
 # Arguments
 
@@ -651,16 +651,6 @@ clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 
 # Development
 
-## Check requirment Windows features
-
-To check required windows features execute command
-
-```bash
-
-clio check-windows-features
-
-```
-
 ## Workspaces
 
 For connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.**
@@ -924,6 +914,22 @@ To create an empty cluster, we recommend using [Rancher Desktop](https://rancher
 
 > If you already have running MSSQL/PostgresSQL/Redis servers on you local machine you have to configure kubernetes services ports to avoid collisions. Reffer to services.yaml in related directories
 
+## Manage requirment Windows features
+
+To manage required windows features execute command
+
+```bash
+
+# check
+clio manage-windows-features -c
+
+# install
+clio manage-windows-features -i
+
+# uninstall
+clio manage-windows-features -u
+
+```
 
 ## Install [Rancher Desktop](https://rancherdesktop.io) and configure resources
 On Windows configure resources with [.wlsconfig](https://learn.microsoft.com/en-us/windows/wsl/wsl-config) file.

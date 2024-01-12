@@ -16,34 +16,25 @@ namespace Clio.Command
 
 	public class CheckWindowsFeaturesCommand : Command<CheckWindowsFeaturesOptions>
 	{
+		private IWindowsFeatureManager _windowsFeatureManager;
 
-		public CheckWindowsFeaturesCommand(IWorkingDirectoriesProvider workingDirectoriesProvider) {
-			WorkingDirectoriesProvider = workingDirectoriesProvider;
-		}
-
-		private string RequirmentNETFrameworkFeaturesFilePaths {
-			get {
-				return Path.Join(WorkingDirectoriesProvider.TemplateDirectory, "windows_features", "RequirmentNetFramework.txt");
-			}
+		public CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager) {
+			_windowsFeatureManager = windowsFeatureManager;
 		}
 
 		public override int Execute(CheckWindowsFeaturesOptions options) {
-			var missedComponents = new List<string>();
+			var missedComponents = _windowsFeatureManager.GetMissedComponents();
+			var requirmentComponentStates = _windowsFeatureManager.GerRequiredComponent();
 			Console.WriteLine("For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
 			Console.WriteLine($"{Environment.NewLine}Check started:");
-			foreach (var item in RequirmentNETFrameworkFeatures) {
-				if (!windowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower())) { 
-					missedComponents.Add(item);
-					Console.WriteLine($"NOT INSTALLED: {item}");
-				} else {
-					Console.WriteLine($"OK: {item}");
-				}
+			foreach (var item in requirmentComponentStates) {
+				Console.WriteLine($"{item}");
 			}
 			Console.WriteLine();
 			if (missedComponents.Count > 0) {
 				Console.WriteLine("Windows has missed components:");
 				foreach (var item in missedComponents) {
-					Console.WriteLine($"NOT INSTALLED: {item}");
+					Console.WriteLine($"{item}");
 				}
 				return 1;
 			} else {
@@ -53,29 +44,6 @@ namespace Clio.Command
 		}
 
 
-		private List<string> RequirmentNETFrameworkFeatures {
-			get { return File.ReadAllLines(RequirmentNETFrameworkFeaturesFilePaths).ToList(); }
-		}
 
-
-		private List<string> windowsActiveFeatures {
-			get {
-				var features = new List<string>();
-				try {
-					ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
-					ManagementObjectCollection featureCollection = searcher.Get();
-					foreach (ManagementObject featureObject in featureCollection) {
-						string featureName = featureObject["Name"].ToString();
-						features.Add(featureName);
-						string featureCaption = featureObject["Caption"].ToString();
-						features.Add(featureCaption);
-					}
-				} catch (Exception e) {
-				}
-				return features;
-			}
-		}
-
-		public IWorkingDirectoriesProvider WorkingDirectoriesProvider { get; }
 	}
 }

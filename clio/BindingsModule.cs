@@ -111,6 +111,7 @@ namespace Clio
 			containerBuilder.RegisterType<CreateInfrastructureCommand>();
 			containerBuilder.RegisterType<OpenInfrastructureCommand>();
 			containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
+			containerBuilder.RegisterType<ManageWindowsFeaturesCommand>();
 			containerBuilder.RegisterType<CreateTestProjectCommand>();
 			containerBuilder.RegisterType<ListenCommand>();
 			containerBuilder.RegisterType<ShowPackageFileContentCommand>();
