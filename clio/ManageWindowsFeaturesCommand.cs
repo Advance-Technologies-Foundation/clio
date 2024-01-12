@@ -7,7 +7,7 @@ namespace Clio
 {
 	[Verb("manage-windows-features", Aliases = new string[] { "mwf", "mng-win-features" }, HelpText = "Install windows features required for Creatio")]
 
-	internal class InstallWindowsFeaturesOptions
+	internal class ManageWindowsFeaturesOptions
 	{
 		[Option('c', "Check", Required = false, HelpText = "Check required feature states")]
 		public bool CheckMode {
@@ -26,7 +26,7 @@ namespace Clio
 
 	}
 
-	internal class ManageWindowsFeaturesCommand : Command<InstallWindowsFeaturesOptions> {
+	internal class ManageWindowsFeaturesCommand : Command<ManageWindowsFeaturesOptions> {
 
 		private IWindowsFeatureManager _windowsFeatureManager;
 
@@ -34,7 +34,7 @@ namespace Clio
 			_windowsFeatureManager = windowsFeatureManager;
 		}
 
-		public override int Execute(InstallWindowsFeaturesOptions options) {
+		public override int Execute(ManageWindowsFeaturesOptions options) {
 			if (options.CheckMode) {
 				CheckRequirmentFeatureOptions();
 			} else if (options.InstallMode) {

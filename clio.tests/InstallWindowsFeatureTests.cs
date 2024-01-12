@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Clio.Tests
 {
 	[TestFixture]
-	internal class InstallWindowsFeatureTests: BaseCommandTests<InstallWindowsFeaturesOptions>
+	internal class InstallWindowsFeatureTests: BaseCommandTests<ManageWindowsFeaturesOptions>
 	{
 	}
 
