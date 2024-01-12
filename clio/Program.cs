@@ -650,7 +650,7 @@ class Program {
 			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
 			OpenInfrastructureOptions opts => Resolve<OpenInfrastructureCommand>().Execute(opts),
 			CheckWindowsFeaturesOptions opts => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
-			InstallWindowsFeaturesOptions opts => Resolve<InstallWindowsFeaturesCommand>().Execute(opts),
+			InstallWindowsFeaturesOptions opts => Resolve<ManageWindowsFeaturesCommand>().Execute(opts),
 			CreateTestProjectOptions opts => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
 			DeactivatePkgOptions opts => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 			ListenOptions opts => Resolve<ListenCommand>(opts).Execute(opts),

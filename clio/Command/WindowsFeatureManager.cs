@@ -27,21 +27,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		}
 	}
 
-	public void InstallFeature(string featureName) {
-		DismApi.Initialize(DismLogLevel.LogErrorsWarningsInfo);
-		try {
-			var featureCode = GetInactiveFeaturesCode(featureName);
-			using var session = DismApi.OpenOnlineSession();
-			var (left, top) = Console.GetCursorPosition();
-			DismApi.EnableFeature(session, featureCode, false, true, null, progress => {
-				Console.SetCursorPosition(left, top);
-				Console.Write($"{progress.Total} / {progress.Current}");
-			});
-			Console.WriteLine();
-		} finally {
-			DismApi.Shutdown();
-		}
-	}
+	
 
 	private string GetInactiveFeaturesCode(string featureName) {
 		var windowsFeatures = GetWindowsFeatures();
@@ -78,27 +64,36 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		return requirmentFeatures;
 	}
 
+	public void InstallFeature(string featureName) {
+		SetFeatureState(featureName, true);
+	}
+
 	public void UninstallFeature(string featureName) {
+		SetFeatureState(featureName, false);
+	}
 
+	private void SetFeatureState(string featureName, bool state) {
+		DismApi.Initialize(DismLogLevel.LogErrorsWarningsInfo);
 		try {
-			ManagementScope scope = new ManagementScope("\\\\.\\ROOT\\CIMV2");
-			scope.Connect();
-
-			ObjectGetOptions options = new ObjectGetOptions();
-			ManagementPath path = new ManagementPath("Win32_OptionalFeature");
-
-			using (ManagementClass featureClass = new ManagementClass(scope, path, options)) {
-				ManagementBaseObject inParams = featureClass.GetMethodParameters("Uninstall");
-				inParams["Name"] = featureName;
-
-				ManagementBaseObject outParams = featureClass.InvokeMethod("Uninstall", inParams, null);
-
-				if (outParams != null && outParams["ReturnValue"] != null) {
-					Console.WriteLine($"Feature removal result: {outParams["ReturnValue"]}");
-				}
+			var featureCode = GetInactiveFeaturesCode(featureName);
+			using var session = DismApi.OpenOnlineSession();
+			var (left, top) = Console.GetCursorPosition();
+			if (state) {
+				DismApi.EnableFeature(session, featureCode, false, true, null, progress => {
+					Console.SetCursorPosition(left, top);
+					Console.Write($"{progress.Total} / {progress.Current} ");
+				});
+			} else {
+				DismApi.DisableFeature(session, featureCode, null, true, progress => {
+					Console.SetCursorPosition(left, top);
+					Console.Write($"{progress.Total} / {progress.Current} ");
+				});
 			}
-		} catch (ManagementException e) {
-			Console.WriteLine("An error occurred: " + e.Message);
+			Console.WriteLine();
+		} catch (Exception e) {
+			Console.WriteLine(e.Message);
+		} finally {
+			DismApi.Shutdown();
 		}
 	}
 
