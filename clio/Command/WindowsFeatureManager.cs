@@ -1,4 +1,6 @@
-﻿using Clio.Common;
+﻿using Castle.Components.DictionaryAdapter;
+using Clio.Common;
+using Microsoft.Dism;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,7 +18,7 @@ public interface IWindowsFeatureManager
 
 }
 
-	public class WindowsFeatureManager : IWindowsFeatureManager
+public class WindowsFeatureManager : IWindowsFeatureManager
 {
 
 	private string RequirmentNETFrameworkFeaturesFilePaths {
@@ -26,26 +28,26 @@ public interface IWindowsFeatureManager
 	}
 
 	public void InstallFeature(string featureName) {
+		DismApi.Initialize(DismLogLevel.LogErrorsWarningsInfo);
 		try {
-			ManagementScope scope = new ManagementScope("\\\\.\\ROOT\\CIMV2");
-			scope.Connect();
-
-			ObjectGetOptions options = new ObjectGetOptions();
-			ManagementPath path = new ManagementPath("Win32_OptionalFeature");
-
-			using (ManagementClass featureClass = new ManagementClass(scope, path, options)) {
-				ManagementBaseObject inParams = featureClass.GetMethodParameters("Install");
-				inParams["Name"] = featureName;
-
-				ManagementBaseObject outParams = featureClass.InvokeMethod("Install", inParams, null);
-
-				if (outParams != null && outParams["ReturnValue"] != null) {
-					Console.WriteLine($"Feature installation result: {outParams["ReturnValue"]}");
-				}
-			}
-		} catch (ManagementException e) {
-			Console.WriteLine("An error occurred: " + e.Message);
+			var featureCode = GetInactiveFeaturesCode(featureName);
+			using var session = DismApi.OpenOnlineSession();
+			var (left, top) = Console.GetCursorPosition();
+			DismApi.EnableFeature(session, featureCode, false, true, null, progress => {
+				Console.SetCursorPosition(left, top);
+				Console.Write($"{progress.Total} / {progress.Current}");
+			});
+			Console.WriteLine();
+		} finally {
+			DismApi.Shutdown();
 		}
+	}
+
+	private string GetInactiveFeaturesCode(string featureName) {
+		var windowsFeatures = GetWindowsFeatures();
+		var feature = windowsFeatures.FirstOrDefault(i => i.Name.ToLower() == featureName.ToLower() ||
+				i.Caption.ToLower() == featureName.ToLower());
+		return feature.Name;
 	}
 
 	private List<string> RequirmentNETFrameworkFeatures {
@@ -120,6 +122,19 @@ public interface IWindowsFeatureManager
 			}
 			return _windowsActiveFeatures;
 		}
+	}
+
+	private List<WindowsFeature> GetWindowsFeatures() {
+		var features = new List<WindowsFeature>();
+		ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OptionalFeature");
+		ManagementObjectCollection featureCollection = searcher.Get();
+		foreach (ManagementObject featureObject in featureCollection) {
+			features.Add(new WindowsFeature() {
+				Name = featureObject["Name"].ToString(),
+				Caption = featureObject["Caption"].ToString()
+			});
+		}
+		return features;
 	}
 
 	IWorkingDirectoriesProvider _workingDirectoriesProvider;

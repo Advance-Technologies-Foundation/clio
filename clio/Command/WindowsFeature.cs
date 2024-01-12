@@ -2,6 +2,8 @@
 {
 	public string Name { get; set; }
 
+	public string Caption { get; set; }
+
 	public string State { get {
 			return Installed ? "OK" : "Not installed";
 		}
