@@ -130,6 +130,7 @@ docker run -it --rm clio reg-web-app -help
   - [Clear redis database](#clear-redis-database)
   - [Compile configuration](#compile-configuration)
   - [System settings](#system-settings) 
+  - [Set Base WebService Url](#set-base-webservice-url)
 - [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
@@ -545,6 +546,18 @@ For set system settings value
 ```bash
 clio set-syssetting <CODE> <VALUE>
 ```
+
+## Set Base WebService Url
+
+To configure a base url of a web service, in an environment use the following command. 
+It may be useful when you need to change the base url of a web service in a development or 
+testing environment.
+
+```bash
+clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
+
+```
+
 
 ## Version
 

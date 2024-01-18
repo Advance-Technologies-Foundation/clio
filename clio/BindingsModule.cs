@@ -125,11 +125,8 @@ namespace Clio
 			containerBuilder.RegisterType<ApplicationManager>();
 			containerBuilder.RegisterType<RestoreDbCommand>();
 			containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
-
+			containerBuilder.RegisterType<SetWebServiceUrlCommand>();
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
-			
-
-
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()
