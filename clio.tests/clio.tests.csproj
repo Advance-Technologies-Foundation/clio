@@ -51,7 +51,7 @@
   <ItemGroup>
     <PackageReference Include="ATF.Repository.Mock" Version="2.0.1.5" />
     <PackageReference Include="FluentAssertions" Version="6.10.0" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.3" />
     <PackageReference Include="Npgsql" Version="7.0.6" />
     <PackageReference Include="NSubstitute" Version="5.0.0" />
     <PackageReference Include="nunit" Version="3.13.3" />
