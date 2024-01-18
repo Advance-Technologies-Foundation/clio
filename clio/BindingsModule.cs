@@ -96,7 +96,7 @@ namespace Clio
 			containerBuilder.RegisterType<CreateUiProjectOptionsValidator>();
 			containerBuilder.RegisterType<DownloadConfigurationCommand>();
 			containerBuilder.RegisterType<DeployCommand>();
-			containerBuilder.RegisterType<GetVersionCommand>();
+			containerBuilder.RegisterType<InfoCommand>();
 			containerBuilder.RegisterType<ExtractPackageCommand>();
 			containerBuilder.RegisterType<ExternalLinkCommand>();
 			containerBuilder.RegisterType<PowerShellFactory>();

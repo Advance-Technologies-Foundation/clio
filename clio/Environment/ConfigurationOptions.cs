@@ -232,7 +232,7 @@ namespace Clio
 			}
 		}
 
-		private static string AppSettingsFile => Path.Combine(AppSettingsFolderPath, FileName);
+		public static string AppSettingsFile => Path.Combine(AppSettingsFolderPath, FileName);
 		public string AppSettingsFilePath => AppSettingsFile;
 		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
