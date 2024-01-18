@@ -58,16 +58,17 @@ namespace Clio.Command
 				Console.WriteLine("gate:   {0}", _gateVersion);
 				return 0;
 			}
-			else if (options is object && options.All || (!options.Runtime && !options.Gate && !options.Clio))
+			else if(options.ShowSettingsFilePath) {
+				Console.WriteLine(SettingsRepository.AppSettingsFile);
+				return 0;
+			}
+			else if (options is object && options.All || (!options.Runtime && !options.Gate && !options.Clio && !options.ShowSettingsFilePath))
 			{
 				Console.WriteLine("clio:               {0}", Assembly.GetEntryAssembly().GetName().Version);
 				Console.WriteLine("gate:               {0}", _gateVersion);
 				Console.WriteLine("dotnet:             {0}", Environment.Version.ToString());
 				Console.WriteLine("settings file path: {0}", SettingsRepository.AppSettingsFile);
 				return 0;
-			}
-			else if(options.ShowSettingsFilePath) {
-				Console.WriteLine(SettingsRepository.AppSettingsFile);
 			}
 			return 1;
 		}
