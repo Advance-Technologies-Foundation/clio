@@ -57,8 +57,8 @@ public class ScenarioRunnerCommandTests
 		ClearRedisOptions clearRedisOption = _receivedOptions[1] as ClearRedisOptions;
 		clearRedisOption.Environment.Should().Be("digitalads");
 
-		_receivedOptions[2].Should().BeOfType<GetVersionOptions>();
-		GetVersionOptions verOptions = _receivedOptions[2] as GetVersionOptions;
+		_receivedOptions[2].Should().BeOfType<InfoCommandOptions>();
+		InfoCommandOptions verOptions = _receivedOptions[2] as InfoCommandOptions;
 		verOptions.All.Should().BeTrue();
 
 		_receivedOptions[3].Should().BeOfType<PullPkgOptions>();
