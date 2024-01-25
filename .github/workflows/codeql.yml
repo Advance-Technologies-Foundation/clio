@@ -68,7 +68,7 @@ jobs:
     - name: Autobuild
      # uses: github/codeql-action/autobuild@v3
       run: |
-        dotnet build ./clio/clio.csproj -c Release --no-incremental -f net6.0
+        dotnet build ./clio/clio.csproj -f net6.0
       
 
     # ℹ️ Command-line programs to run using the OS shell.
