@@ -9,7 +9,7 @@ using CommandLine;
 namespace Clio.Command;
 
 
-[Verb("download-application", Aliases = new[] { "dapp" }, HelpText = "Downloads app from environment")]
+[Verb("download-application", Aliases = new[] { "dapp", "download-app" }, HelpText = "Downloads app from environment")]
 public class DownloadAppOptions: BaseAppCommandOptions
 {
 
