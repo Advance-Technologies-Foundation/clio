@@ -684,6 +684,13 @@ Create workspace in local directory with all editable packages from environment,
 C:\Demo> clio create-workspace -e demo
 ```
 
+Create workspace in local directory with packages in app, execute create-workspace command
+To get list of app codes execute `clio lia -e <ENVIRONMENT>`
+
+```bash
+C:\Demo> clio create-workspace --AppCode <APP_CODE>
+```
+
 Restore packages in you file system via command from selected environment
 
 ```powershell

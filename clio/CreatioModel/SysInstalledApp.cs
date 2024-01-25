@@ -40,8 +40,6 @@ namespace CreatioModel
 
 	}
 
-
-
 	[ExcludeFromCodeCoverage]
 	[Schema("Contact")]
 	public class Contact : BaseModel
@@ -55,4 +53,5 @@ namespace CreatioModel
 	}
 
 }
+
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.
