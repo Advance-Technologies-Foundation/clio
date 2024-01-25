@@ -111,13 +111,13 @@ namespace Clio
 		[Option("db-password", Required = false, HelpText = "Database password")]
 		public string DbPassword { get; set; }
 		
-		[Option('f', "backup-file", Required = false, HelpText = "Full path to backup file")]
+		[Option("backup-file", Required = false, HelpText = "Full path to backup file")]
 		public string BackUpFilePath { get; set; }
 	
-		[Option('d',"db-working-folder", Required = false, HelpText = "Folder visible to db server")]
+		[Option("db-working-folder", Required = false, HelpText = "Folder visible to db server")]
 		public string DbWorknigFolder { get; set; }
 	
-		[Option('n', "db-name", Required = false, HelpText = "Desired database name")]
+		[Option("db-name", Required = false, HelpText = "Desired database name")]
 		public string DbName { get; set; }
 		
 		[Option("force", Required = false, HelpText = "Force restore")]
