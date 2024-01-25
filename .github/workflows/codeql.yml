@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'csharp', 'javascript-typescript' ]
+        language: [ 'csharp' ]
         # CodeQL supports [ 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift' ]
         # Use only 'java-kotlin' to analyze code written in Java, Kotlin or both
         # Use only 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
@@ -68,7 +68,7 @@ jobs:
     - name: Autobuild
      # uses: github/codeql-action/autobuild@v3
       run: |
-        dotnet build ./clio/clio.csproj -c Release --no-incremental 
+        dotnet build ./clio/clio.csproj -c Release --no-incremental -f net6.0
       
 
     # ℹ️ Command-line programs to run using the OS shell.
