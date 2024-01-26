@@ -17,7 +17,7 @@ namespace Clio.Command
 		[Option('t', "ExecutorType", Required = true, HelpText = "Assembly type name for proceed")]
 		public string ExecutorType { get; set; }
 
-		[Option('w', "WriteResponse", Required = false, HelpText = "")]
+		[Option("WriteResponse", Required = false, HelpText = "")]
 		public bool WriteResponse { get; set; }
 	}
 
