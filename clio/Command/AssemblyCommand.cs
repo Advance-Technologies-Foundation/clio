@@ -16,10 +16,14 @@ namespace Clio.Command
 
 		[Option('t', "ExecutorType", Required = true, HelpText = "Assembly type name for proceed")]
 		public string ExecutorType { get; set; }
+
+		[Option('w', "WriteResponse", Required = false, HelpText = "")]
+		public bool WriteResponse { get; set; }
 	}
 
 	class AssemblyCommand : RemoteCommand<ExecuteAssemblyOptions>
 	{
+		private ExecuteAssemblyOptions _options;
 		protected override string ServicePath => @"/IDE/ExecuteScript";
 
 
@@ -28,11 +32,19 @@ namespace Clio.Command
 		}
 
 		protected override string GetRequestData(ExecuteAssemblyOptions options) {
+			_options = options;
 			string filePath = options.Name;
 			string executorType = options.ExecutorType;
 			var fileContent = File.ReadAllBytes(filePath);
 			string body = Convert.ToBase64String(fileContent);
 			return @"{""Body"":""" + body + @""",""LibraryType"":""" + executorType + @"""}";
+		}
+
+		protected override void ProceedResponse(string response, ExecuteAssemblyOptions options) {
+			base.ProceedResponse(response, options);
+			if (options.WriteResponse) {
+				Console.WriteLine(response);
+			}
 		}
 	}
 }

@@ -48,8 +48,8 @@ namespace Clio.Command
 			return base.Execute(options);
 		}
 
-		protected override void ProceedResponse(string response) {
-			base.ProceedResponse(response);
+		protected override void ProceedResponse(string response, ShowPackageFileContentOptions options) {
+			base.ProceedResponse(response, options);
 			if (IsReadFile) {
 				PrintFileContent(response);
 			} else {

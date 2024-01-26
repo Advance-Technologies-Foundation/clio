@@ -69,10 +69,10 @@ namespace Clio.Command
 			} else {
 				response = ApplicationClient.ExecuteGetRequest(ServiceUri);
 			}
-			ProceedResponse(response);
+			ProceedResponse(response, options);
 		}
 
-		protected virtual void ProceedResponse(string response) {
+		protected virtual void ProceedResponse(string response, TEnvironmentOptions options) {
 		}
 
 		protected virtual string GetRequestData(TEnvironmentOptions options) {
