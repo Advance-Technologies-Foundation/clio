@@ -9,7 +9,7 @@ using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
-public class AssemblyCommandTestCase
+public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 {
 
 	private TextWriter _defaultConsoleWriter;

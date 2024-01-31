@@ -11,7 +11,7 @@ namespace Clio.Command
 		Aliases = new[] { "exec" },
 		HelpText = "Execute an assembly code which implements the IExecutor interface",
 		Hidden = true)]
-	internal class ExecuteAssemblyOptions : EnvironmentOptions
+	public class ExecuteAssemblyOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
 		public string Name { get; set; }
