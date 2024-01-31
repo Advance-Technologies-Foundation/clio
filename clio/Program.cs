@@ -569,7 +569,6 @@ class Program {
 		typeof(ListenOptions),
 		typeof(ShowPackageFileContentOptions),
 		typeof(SwitchNugetToDllOptions),
-		typeof(ShowPackageFileContentOptions),
 		typeof(CompilePackageOptions),
 		typeof(UninstallAppOptions),
 		typeof(DownloadAppOptions),
