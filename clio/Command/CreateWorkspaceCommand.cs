@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace Clio.Command
 {
 	using System;
@@ -63,7 +65,7 @@ namespace Clio.Command
 						if (app != null) {
 							IEnumerable<string> packages = app.GetPackages();
 							foreach (string package in packages) {
-								_workspace.AddPackageIfNeeded(options.AppCode);
+								_workspace.AddPackageIfNeeded(package);
 							}
 						}
 					}
