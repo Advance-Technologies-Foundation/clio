@@ -15,6 +15,7 @@ using Clio.UserEnvironment;
 using CommandLine;
 using DocumentFormat.OpenXml.Presentation;
 using MediatR;
+using Microsoft.Identity.Client;
 using StackExchange.Redis;
 
 namespace Clio.Command;
@@ -33,6 +34,9 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
 	[Option("ZipFile", Required = true, HelpText = "Sets Zip File path")]
 	public string ZipFile { get; set; }
+	public string Product { get; internal set; }
+	internal CreatioDBType DBType { get; set; }
+	internal CreatioRuntimePlatform RuntimePlatform { get; set; }
 
 	#endregion
 
@@ -117,6 +121,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		_registerCommand = registerCommand;
 		_iisRootFolder = settingsRepository.GetIISClioRootPath();
 		_productFolder = settingsRepository.GetCreatioProductsFolder();
+	}
+
+	public InstallerCommand() {
 	}
 
 	#endregion
@@ -293,7 +300,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Methods: Public
 
 	public override int Execute(PfInstallerOptions options) {
-	
+		if (string.IsNullOrEmpty(options.ZipFile) && !String.IsNullOrEmpty(options.Product)) {
+			options.ZipFile = GetBuildDilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
+		}
 		if (!File.Exists(options.ZipFile)) {
 			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
 			return 1;
@@ -359,6 +368,40 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		Console.WriteLine("Press any key to exit...");
 		Console.ReadKey();
 		return 0;
+	}
+
+	public string GetBuildDilePathFromOptions(string product, CreatioDBType dBType, CreatioRuntimePlatform runtimePlatform) {
+		throw new NotImplementedException();
+	}
+
+	internal object GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
+		string latestBranch = GetLatestVersion(remoteArtifactServerPath);
+		var latestBranchPath = Path.Combine(remoteArtifactServerPath, latestBranch);
+		string latestBuild = GetLatestVersion(latestBranchPath);
+		string productDirectoryName = GetProductDirectoryName(product);
+		string productZipFileName = GetProductFileName(latestBuild, product, creatioDBType, creatioRuntimePlatform);
+		return Path.Combine(remoteArtifactServerPath,latestBranch,latestBuild,productDirectoryName, productZipFileName);
+	}
+
+	private string GetProductFileName(string latestBuild, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
+		return $"{latestBuild}_{product}_Softkey_{creatioDBType}_ENU.zip";
+	}
+
+	private string GetProductDirectoryName(string product) {
+		return $"{product}_Softkey_ENU";
+	}
+
+	private string GetLatestVersion(string remoteArtifactServerPath) {
+		var branches = Directory.GetDirectories(remoteArtifactServerPath);
+		List<Version> version = new List<Version>();
+		foreach(var branch in branches) {
+			var branchName = branch.Split('\\').Last();
+			if (Version.TryParse(branchName, out var ver)) {
+				version.Add(ver);
+			}
+		}
+		var latest = version.Max();
+		return latest.ToString();
 	}
 
 	#endregion
