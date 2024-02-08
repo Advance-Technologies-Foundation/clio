@@ -35,12 +35,12 @@ namespace Clio.Command
 		private ApplicationManager _applicationManager;
 
 		public DeployAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
-				ILogger logger, IDataProvider dataProvider, ApplicationManager applicationManager) : base(applicationClient, environmentSettings, logger, dataProvider, applicationManager) {
+				IDataProvider dataProvider, ApplicationManager applicationManager) : base(applicationClient, environmentSettings, dataProvider, applicationManager) {
 			_applicationManager = applicationManager;
 		}
 
 		protected override void ExecuteRemoteCommand(DeployAppOptions options) {
-			_logger.WriteInfo("Start deploy application");
+			Logger.WriteInfo("Start deploy application");
 			_applicationManager.Deploy(options.Name, options.SourceEnvironment, options.DestinationEnvironment);
 
 		}

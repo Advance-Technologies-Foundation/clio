@@ -22,12 +22,12 @@ public class DownloadAppCommand : BaseAppCommand<DownloadAppOptions>
 {
 	protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/ExportApp";
 	
-	public DownloadAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, ILogger logger, IDataProvider dataProvider,
+	public DownloadAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, IDataProvider dataProvider,
 			ApplicationManager applicationManager) 
-		: base(applicationClient, environmentSettings, logger, dataProvider, applicationManager) { }
+		: base(applicationClient, environmentSettings, dataProvider, applicationManager) { }
 	
 	protected override void ExecuteRemoteCommand(DownloadAppOptions options) {
-		_logger.WriteInfo("Downloading application");
+		Logger.WriteInfo("Downloading application");
 		_applicationManager.Download(options.Name, options.Environment, options.FilePath);
 	}
 

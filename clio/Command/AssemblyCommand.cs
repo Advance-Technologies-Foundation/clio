@@ -50,7 +50,7 @@ namespace Clio.Command
 		protected override void ProceedResponse(string response, ExecuteAssemblyOptions options) {
 			base.ProceedResponse(response, options);
 			if (options.WriteResponse) {
-				Console.WriteLine(response);
+				Logger.WriteInfo(response);
 			}
 		}
 	}

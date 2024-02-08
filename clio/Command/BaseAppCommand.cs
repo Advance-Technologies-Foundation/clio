@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Management.Automation;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
 using CommandLine;
 using CreatioModel;
+using OneOf.Types;
 
 namespace Clio.Command.PackageCommand;
 
@@ -23,13 +25,11 @@ public class BaseAppCommand<T>: RemoteCommand<T> where T : BaseAppCommandOptions
 {
 
 	private readonly IDataProvider _dataProvider;
-	protected readonly ILogger _logger;
 	protected readonly ApplicationManager _applicationManager;
 
 	public BaseAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, 
-		ILogger logger, IDataProvider dataProvider, ApplicationManager applicationManager) 
+		IDataProvider dataProvider, ApplicationManager applicationManager) 
 		: base(applicationClient, environmentSettings){
-		_logger = logger;
 		_dataProvider = dataProvider;
 		_applicationManager = applicationManager;
 	}
@@ -41,8 +41,12 @@ public class BaseAppCommand<T>: RemoteCommand<T> where T : BaseAppCommandOptions
 
 		
 	protected SysInstalledApp GetAppFromAppName(string name){
-		return GetApplicationList()
+		var app = GetApplicationList()
 			.FirstOrDefault(a=> a.Name.ToUpper() == name.ToUpper() || a.Code.ToUpper() == name.ToUpper());
+		if (app == null) {
+			throw new ItemNotFoundException($"Application with name '{name}' not found.");
+		}
+		return app;
 	}
 		
 	protected Guid GetAppIdFromAppName(string name) => GetAppFromAppName(name).Id;

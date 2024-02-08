@@ -66,21 +66,21 @@
 				string uploadLicenseServiceUrl = $"/0/{subEndpointPath}/InstallPackageService/UploadFile";
 				string startOperationServiceUrl = $"/0/{subEndpointPath}/InstallPackageService/StartOperation";
 				if (UploadFile(uploadLicenseServiceUrl, options.FilePath, fileId)) {
-					Console.WriteLine($"File uploaded. FileId: {fileId}");
+					Logger.WriteInfo($"File uploaded. FileId: {fileId}");
 					var startOperationUrl = _environmentSettings.Uri + startOperationServiceUrl;
 					string requestData = "{\"environmentName\": \"" + options.EnvironmentName
 						+ "\", \"fileId\": \"" + fileId + "\"}";
 					if (StartOperation(startOperationUrl, requestData)) {
-						Console.WriteLine("Done");
+						Logger.WriteInfo("Done");
 						return 0;
 					}
-					Console.WriteLine($"Operation not started. FileId: {fileId}");
+					Logger.WriteError($"Operation not started. FileId: {fileId}");
 					return 1;
 				}
-				Console.WriteLine($"File not uploaded. FileId: {fileId}");
+				Logger.WriteError($"File not uploaded. FileId: {fileId}");
 				return 1;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				Logger.WriteError(e.Message);
 				return 1;
 			}
 		}
@@ -89,9 +89,9 @@
 			FileInfo fi = new FileInfo(filePath);
 			var uploadLicenseEnpointUrl = _environmentSettings.Uri + uploadLicenseUrl
 					+ "?fileName=" + fi.Name + "&totalFileLength=" + fi.Length + "&fileId=" + fileId;
-			Console.WriteLine($"Start uploading file {fi.Name}");
+			Logger.WriteInfo($"Start uploading file {fi.Name}");
 			string uploadResult = _applicationClient.UploadAlmFileByChunk(uploadLicenseEnpointUrl, filePath);
-			Console.WriteLine($"End of uploading");
+			Logger.WriteInfo($"End of uploading");
 			JObject json = JObject.Parse(uploadResult);
 			return json["success"].ToString() == "True";
 		}
@@ -100,7 +100,7 @@
 			string result = _applicationClient.ExecutePostRequest(startOperationUrl, requestData);
 			JObject startOperationResult = JObject.Parse(result);
 			if (startOperationResult["success"].ToString() == "True") {
-				Console.WriteLine($"Command to deploy packages to environmnet succesfully startetd OpeartionId: {startOperationResult["operationId"]}");
+				Logger.WriteInfo($"Command to deploy packages to environmnet succesfully startetd OpeartionId: {startOperationResult["operationId"]}");
 				return true;
 			}
 			return false;

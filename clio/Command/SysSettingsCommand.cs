@@ -4,7 +4,7 @@ using CommandLine;
 
 namespace Clio.Command.SysSettingsCommand
 {
-	[Verb("set-syssetting", Aliases = new string[] { "syssetting" }, HelpText = "Set setting value")]
+	[Verb("set-syssetting", Aliases = new string[] { "syssetting", "sys-setting" }, HelpText = "Set setting value")]
 	internal class SysSettingsOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Syssetting code")]
@@ -33,28 +33,32 @@ namespace Clio.Command.SysSettingsCommand
 				id, opts.Code, opts.Type) + "}";
 			try {
 				ApplicationClient.ExecutePostRequest(InsertSysSettingsUrl, requestData);
-				Console.WriteLine("SysSettings with code: {0} created.", opts.Code);
+				Logger.WriteInfo($"SysSettings with code: {opts.Code} created.");
 			} catch {
-				Console.WriteLine("SysSettings with code: {0} already exists.", opts.Code);
+				Logger.WriteError($"SysSettings with code: {opts.Code} already exists.");
 			}
 		}
 
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
+			string requestData = string.Empty;
+			if (opts.Type.Contains("Text"))
+			{
+				//Enclosed opts.Value in "", otherwise update fails for all text settings
+				requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":\"{1}\"", opts.Code, opts.Value) + "}}";
+			}
+			else
+			{
+				requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
+			}
+			ApplicationClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
+			Logger.WriteInfo($"SysSettings with code: {opts.Code} updated.");
+		}
+
+		public void TryUpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			try {
-				string requestData = string.Empty;
-				if (opts.Type.Contains("Text"))
-				{
-					//Enclosed opts.Value in "", otherwise update fails for all text settings
-					requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":\"{1}\"", opts.Code, opts.Value) + "}}";
-				}
-				else
-				{
-					requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":{1}", opts.Code, opts.Value) + "}}";
-				}
-				ApplicationClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
-				Console.WriteLine("SysSettings with code: {0} updated.", opts.Code);
+				UpdateSysSetting(opts, settings);
 			} catch {
-				Console.WriteLine("SysSettings with code: {0} is not updated.", opts.Code);
+				Logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
 			}
 		}
 
@@ -63,7 +67,7 @@ namespace Clio.Command.SysSettingsCommand
 				CreateSysSetting(opts);
 				UpdateSysSetting(opts);
 			} catch (Exception ex) {
-				Console.WriteLine($"Error during set setting value occured with message: {ex.Message}");
+				Logger.WriteError($"Error during set setting '{opts.Code}' value occured with message: {ex.Message}");
 				return 1;
 			}
 			return 0;

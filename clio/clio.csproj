@@ -72,9 +72,57 @@
     <None Remove="tpl\ui-project\tsconfig.spec.json" />
     <None Remove="tpl\ui-project\webpack.config.js" />
     <None Remove="tpl\ui-project\webpack.prod.config.js" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\.browserslistrc" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\.editorconfig" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\angular.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\karma.conf.js" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\package.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\README.md" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\app\app.module.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\app\view-elements\.gitkeep" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\assets\.gitkeep" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\bootstrap.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.prod.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\favicon.ico" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\index.html" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\main.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\polyfills.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\styles.scss" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\test.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\tsconfig.app.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\tsconfig.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\tsconfig.spec.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\webpack.config.js" />
+    <None Remove="tpl\ui\8.0.10\ui-project-Empty\webpack.prod.config.js" />
+    <None Remove="tpl\ui\8.0.10\ui-project\.browserslistrc" />
+    <None Remove="tpl\ui\8.0.10\ui-project\.editorconfig" />
+    <None Remove="tpl\ui\8.0.10\ui-project\angular.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project\karma.conf.js" />
+    <None Remove="tpl\ui\8.0.10\ui-project\package.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project\README.md" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\app\app.module.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo-icon.svg" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo.component.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\index.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\index.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\assets\.gitkeep" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\bootstrap.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\environments\environment.prod.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\environments\environment.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\favicon.ico" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\index.html" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\main.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\polyfills.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\styles.scss" />
+    <None Remove="tpl\ui\8.0.10\ui-project\src\test.ts" />
+    <None Remove="tpl\ui\8.0.10\ui-project\tsconfig.app.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project\tsconfig.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project\tsconfig.spec.json" />
+    <None Remove="tpl\ui\8.0.10\ui-project\webpack.config.js" />
+    <None Remove="tpl\ui\8.0.10\ui-project\webpack.prod.config.js" />
     <None Remove="tpl\workspace\.gitignore" />
     <None Remove="tpl\workspace\.gitlab-ci.yml" />
-    <None Remove="tpl\workspace\builds\placeholder.txt" />
     <None Remove="tpl\workspace\Jenkinsfile" />
     <None Remove="tpl\workspace\tasks\git-init-dev-branch.cmd" />
     <None Remove="tpl\workspace\tasks\git-init-workspace.cmd" />
@@ -404,6 +452,153 @@
     <Content Include="tpl\ui-project\webpack.prod.config.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\.browserslistrc">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\.editorconfig">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\angular.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\karma.conf.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\package.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\app\app.module.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\app\view-elements\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\assets\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\bootstrap.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.prod.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\favicon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\index.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\main.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\polyfills.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\styles.scss">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\test.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\tsconfig.app.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\tsconfig.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\tsconfig.spec.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\webpack.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project-Empty\webpack.prod.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\.browserslistrc">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\.editorconfig">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\angular.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\karma.conf.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\package.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\app\app.module.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo-icon.svg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo.component.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\index.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\index.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\assets\.gitkeep">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\bootstrap.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\environments\environment.prod.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\environments\environment.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\favicon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\index.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\main.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\polyfills.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\styles.scss">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\src\test.ts">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\tsconfig.app.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\tsconfig.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\tsconfig.spec.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\webpack.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tpl\ui\8.0.10\ui-project\webpack.prod.config.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="tpl\workspace\.application\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -502,9 +697,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\.vscode\keybinding.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\builds\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="tpl\workspace\Jenkinsfile">

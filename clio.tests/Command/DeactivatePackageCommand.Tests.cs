@@ -20,7 +20,9 @@ public class DeactivatePackageCommandTestCase {
 		var logger = Substitute.For<ILogger>();
 		var packageName = "TestPackageName";
 		packageDeactivator.Deactivate(packageName);
-		var command = new DeactivatePackageCommand(packageDeactivator, applicationClient, new EnvironmentSettings(), logger);
+		var command = new DeactivatePackageCommand(packageDeactivator, applicationClient, new EnvironmentSettings()) {
+			Logger = logger
+		};
 		Assert.AreEqual(0, command.Execute(new DeactivatePkgOptions { PackageName = packageName }));
 		logger.Received().WriteLine($"Start deactivation package: \"{packageName}\"");
 		logger.Received().WriteLine($"Package \"{packageName}\" successfully deactivated.");
@@ -35,7 +37,9 @@ public class DeactivatePackageCommandTestCase {
 		var packageName = "TestPackageName";
 		var errorMessage = "SomeErrorMessage";
 		packageDeactivator.When(deactivator => deactivator.Deactivate(packageName)).Throw(new Exception(errorMessage));
-		var command = new DeactivatePackageCommand(packageDeactivator, applicationClient, new EnvironmentSettings(), logger);
+		var command = new DeactivatePackageCommand(packageDeactivator, applicationClient, new EnvironmentSettings()) { 
+			Logger = logger
+		};
 		Assert.AreEqual(1, command.Execute(new DeactivatePkgOptions { PackageName = packageName}));
 		logger.Received().WriteLine($"Start deactivation package: \"{packageName}\"");
 		logger.Received().WriteLine(errorMessage);

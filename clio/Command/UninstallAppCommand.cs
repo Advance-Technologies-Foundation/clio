@@ -11,14 +11,14 @@ public class UninstallAppOptions : BaseAppCommandOptions{}
 
 public class UninstallAppCommand : BaseAppCommand<UninstallAppOptions>
 {
-	public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings, ILogger logger, IDataProvider dataProvider, ApplicationManager applicationManager)
-		: base(applicationClient, settings, logger, dataProvider, applicationManager) {}
+	public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings, IDataProvider dataProvider, ApplicationManager applicationManager)
+		: base(applicationClient, settings, dataProvider, applicationManager) {}
 		
 
 	protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/UninstallApp";
 		
 	protected override void ExecuteRemoteCommand(UninstallAppOptions options) {
-		_logger.WriteInfo("Uninstalling application");
+		Logger.WriteInfo("Uninstalling application");
 		base.ExecuteRemoteCommand(options);
 	}
 

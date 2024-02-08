@@ -18,15 +18,13 @@ namespace Clio.Command.PackageCommand
 
 	internal class DeactivatePackageCommand : RemoteCommand<DeactivatePkgOptions> {
 		private readonly IPackageDeactivator _packageDeactivator;
-		private readonly ILogger _logger;
 
 		#region Constructors: Public
 
 		public DeactivatePackageCommand(IPackageDeactivator packageDeactivator, IApplicationClient applicationClient,
-			EnvironmentSettings environmentSettings, ILogger logger)
+			EnvironmentSettings environmentSettings)
 			: base(applicationClient, environmentSettings) {
 			_packageDeactivator = packageDeactivator;
-			_logger = logger;
 		}
 
 		#endregion
@@ -36,13 +34,13 @@ namespace Clio.Command.PackageCommand
 		public override int Execute(DeactivatePkgOptions options) {
 			try {
 				string packageName = options.PackageName;
-				_logger.WriteLine($"Start deactivation package: \"{packageName}\"");
+				Logger.WriteLine($"Start deactivation package: \"{packageName}\"");
 				_packageDeactivator.Deactivate(packageName);
-				_logger.WriteLine($"Package \"{packageName}\" successfully deactivated.");
+				Logger.WriteLine($"Package \"{packageName}\" successfully deactivated.");
 				return 0;
 			}
 			catch (Exception e) {
-				_logger.WriteLine(e.Message);
+				Logger.WriteLine(e.Message);
 				return 1;
 			}
 		}

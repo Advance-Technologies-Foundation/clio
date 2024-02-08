@@ -314,7 +314,8 @@ class Program {
 		try {
 			return ExecuteCommands(args);
 		} catch (Exception e) {
-			Console.WriteLine(e.Message);
+			var logger = new ConsoleLogger();
+			logger.WriteError(e.Message);
 			return 1;
 		}
 	}
@@ -390,7 +391,7 @@ class Program {
 				Value = CreatioEnvironment.Settings.Maintainer
 			};
 			var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
-			sysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
+			sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 			UnlockMaintainerPackageInternal(opts);
 			new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
 			Console.WriteLine("Done");

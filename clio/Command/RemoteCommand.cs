@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Net;
 using System.Net.Http;
-using System.Threading;
 using Clio.Common;
 
 namespace Clio.Command
@@ -19,6 +18,18 @@ namespace Clio.Command
 		protected IApplicationClient ApplicationClient { get; }
 		protected EnvironmentSettings EnvironmentSettings { get; }
 
+		private ILogger _logger = new ConsoleLogger();
+		public ILogger Logger
+		{
+			get {
+				return _logger;
+			}
+			set
+			{
+				_logger = value;
+			}
+		}
+
 		protected RemoteCommand(IApplicationClient applicationClient,
 				EnvironmentSettings environmentSettings) {
 			ApplicationClient = applicationClient;
@@ -33,14 +44,14 @@ namespace Clio.Command
 
 		protected int Login() {
 			try {
-				Console.WriteLine($"Try login to {EnvironmentSettings.Uri} with {EnvironmentSettings.Login} credentials...");
+				Logger.WriteInfo($"Try login to {EnvironmentSettings.Uri} with {EnvironmentSettings.Login} credentials...");
 				ApplicationClient.Login();
-				Console.WriteLine("Login done");
+				Logger.WriteInfo("Login done");
 				return 0;
 			} catch (WebException we) {
 				HttpWebResponse errorResponse = we.Response as HttpWebResponse;
 				if (errorResponse.StatusCode == HttpStatusCode.NotFound) {
-					Console.WriteLine($"Application {EnvironmentSettings.Uri} not found");
+					Logger.WriteError($"Application {EnvironmentSettings.Uri} not found");
 				}
 				return 1;
 			}
@@ -50,14 +61,14 @@ namespace Clio.Command
 		public override int Execute(TEnvironmentOptions options) {
 			try {
 				ExecuteRemoteCommand(options);
-				Console.WriteLine("Done");
+				Logger.WriteInfo("Done");
 				return 0;
 			} 
 			catch (SilentException ex) {
 				return 1;
 			}
 			catch (Exception e) {
-				Console.WriteLine(e.Message);
+				Logger.WriteError(e.Message);
 				return 1;
 			}
 		}
