@@ -12,6 +12,7 @@ using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
+using Clio.Package;
 using Clio.UserEnvironment;
 using CommandLine;
 using DocumentFormat.OpenXml.Presentation;
@@ -20,6 +21,9 @@ using Microsoft.Identity.Client;
 using StackExchange.Redis;
 
 namespace Clio.Command;
+
+
+
 
 [Verb("deploy-creatio", HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
@@ -33,11 +37,50 @@ public class PfInstallerOptions : EnvironmentNameOptions
 	[Option("SitePort", Required = false, HelpText = "Site port")]
 	public int SitePort { get; set; }
 
-	[Option("ZipFile", Required = true, HelpText = "Sets Zip File path")]
+	[Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
 	public string ZipFile { get; set; }
+
+	[Option("product", Required = false, HelpText = "Product name")]
 	public string Product { get; internal set; }
-	internal CreatioDBType DBType { get; set; }
-	internal CreatioRuntimePlatform RuntimePlatform { get; set; }
+
+	[Option("db", Required = false, HelpText = "DB type: pg|mssql")]
+	public string DB { get; set; }
+
+	[Option("platform", Required = false, HelpText = "Runtime platform: net6|netframework")]
+	public string Platform { get; set; }
+
+	private CreatioDBType _dbType;
+	internal CreatioDBType DBType {
+		get {
+			if (DB.ToLower() == "pg")
+				return CreatioDBType.PostgreSQL;
+			if (DB.ToLower() == "mssql") {
+				return CreatioDBType.MSSQL;
+
+			}
+			return _dbType;
+		}
+		set {
+			_dbType = value;
+		}
+	}
+
+
+	private CreatioRuntimePlatform _platform;
+	internal CreatioRuntimePlatform RuntimePlatform {
+		get {
+			if (Platform.ToLower() == "net6")
+				return CreatioRuntimePlatform.NET6;
+			if (Platform.ToLower() == "netframework" || Platform.ToLower() == "nf") {
+				return CreatioRuntimePlatform.NETFramework;
+
+			}
+			return _platform;
+		}
+		set {
+			_platform = value;
+		}
+	}
 
 	#endregion
 
@@ -66,7 +109,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			}
 		};
 
-	private string CopyZipLocal(string src)  {
+	private string CopyZipLocal(string src) {
 		if (!Directory.Exists(_productFolder)) {
 			Directory.CreateDirectory(_productFolder);
 		}
@@ -100,8 +143,8 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		}
 		return new DriveInfo(Path.GetPathRoot(path)) switch { { DriveType: DriveType.Network } => CopyZipLocal(path),
 			_ => path
-			};
-		}
+		};
+	}
 
 	private readonly string _iisRootFolder;
 	private readonly string _productFolder;
@@ -162,7 +205,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		} catch {
 			// Windows
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-				Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") {CreateNoWindow = true});
+				Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
 			}
 			//Linux
 			else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
@@ -183,7 +226,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 				{"siteName", options.SiteName},
 				{"port", options.SitePort.ToString()},
 				{"sourceDirectory", unzippedDirectory.FullName},
-				{"destinationDirectory", _iisRootFolder}, 
+				{"destinationDirectory", _iisRootFolder},
 				{"isNetFramework",
 					(InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetFramework)
 					.ToString()
@@ -192,9 +235,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		};
 		return (await _mediator.Send(request)).Value switch {
 			(HandlerError error) => ExitWithErrorMessage(error.ErrorDescription),
-			(CreateIISSiteResponse {Status: BaseHandlerResponse.CompletionStatus.Success} result) => ExitWithOkMessage(
+			(CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Success } result) => ExitWithOkMessage(
 				result.Description),
-			(CreateIISSiteResponse {Status: BaseHandlerResponse.CompletionStatus.Failure} result) =>
+			(CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Failure } result) =>
 				ExitWithErrorMessage(result.Description),
 			_ => ExitWithErrorMessage("Unknown error occured")
 		};
@@ -387,12 +430,12 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			if (dir.Name.ToLower() == productDirectoryName.ToLower()) {
 				zipFolderPath = dir.FullName;
 				break;
-			}	
+			}
 		}
 		string productZipFileName = GetProductFileName(latestProductBuild, product, creatioDBType, platform);
 		var zipFileNameToLower = Path.Combine(zipFolderPath, productZipFileName);
 		var zipFiles = Directory.GetFiles(zipFolderPath);
-		foreach(var zipFile in zipFiles) {
+		foreach (var zipFile in zipFiles) {
 			if (zipFile.ToLower() == zipFileNameToLower.ToLower()) {
 				return zipFile;
 			}
@@ -406,7 +449,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 			return latestVersion;
 		} else {
 			Version previousVersion = new Version(latestVersion.Major, latestVersion.Minor, latestVersion.Build, latestVersion.Revision - 1);
-			return GetLatestProductVersion(latestBranchPath, previousVersion, product,platform);		
+			return GetLatestProductVersion(latestBranchPath, previousVersion, product, platform);
 		}
 	}
 
@@ -420,7 +463,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		return $"{product}{platform.ToRuntimePlatformString()}_Softkey_ENU";
 	}
 
-	
+
 	private static Version GetLatestVersion(string remoteArtifactServerPath) {
 		var branches = Directory.GetDirectories(remoteArtifactServerPath);
 		List<Version> version = new List<Version>();
@@ -435,4 +478,20 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
 	#endregion
 
+}
+
+
+[Verb("get-build-info", Aliases = new string[] { "buildinfo", "bi" }, HelpText = "Deploy Creatio from zip file")]
+public class BuildInfoOptions : PfInstallerOptions
+{
+}
+
+public class BuildInfoCommand : InstallerCommand
+{
+
+	public int Execute(BuildInfoOptions options) {
+		var buildPath = GetBuildDilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
+		Console.WriteLine(buildPath);
+		return 0;
+	}
 }

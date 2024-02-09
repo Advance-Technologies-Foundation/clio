@@ -61,7 +61,7 @@ namespace Clio
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
 				.Build();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
-
+			containerBuilder.RegisterType<BuildInfoCommand>();
 			containerBuilder.RegisterType<PushPackageCommand>();
 			containerBuilder.RegisterType<InstallApplicationCommand>();
 			containerBuilder.RegisterType<OpenCfgCommand>();
