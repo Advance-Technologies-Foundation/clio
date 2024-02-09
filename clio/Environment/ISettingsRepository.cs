@@ -24,5 +24,6 @@ namespace Clio.UserEnvironment
 		
 		string GetIISClioRootPath();
 		string GetCreatioProductsFolder();
+		string GetRemoteArtefactServerPath();
 	}
 }

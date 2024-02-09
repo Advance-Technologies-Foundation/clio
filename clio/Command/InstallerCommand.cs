@@ -147,11 +147,12 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	}
 
 	private readonly string _iisRootFolder;
-	private readonly string _productFolder;
 	private readonly IPackageArchiver _packageArchiver;
 	private readonly k8Commands _k8;
 	private readonly IMediator _mediator;
 	private readonly RegAppCommand _registerCommand;
+	protected string _productFolder;
+	protected string _remoteArtefactServerPath;
 
 	#endregion
 
@@ -165,6 +166,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		_registerCommand = registerCommand;
 		_iisRootFolder = settingsRepository.GetIISClioRootPath();
 		_productFolder = settingsRepository.GetCreatioProductsFolder();
+		_remoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
 	}
 
 	public InstallerCommand() {
@@ -345,7 +347,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
 	public override int Execute(PfInstallerOptions options) {
 		if (string.IsNullOrEmpty(options.ZipFile) && !String.IsNullOrEmpty(options.Product)) {
-			options.ZipFile = GetBuildDilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
+			options.ZipFile = GetBuildFilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
 		}
 		if (!File.Exists(options.ZipFile)) {
 			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
@@ -414,11 +416,11 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		return 0;
 	}
 
-	public string GetBuildDilePathFromOptions(string product, CreatioDBType dBType, CreatioRuntimePlatform runtimePlatform) {
-		throw new NotImplementedException();
+	public string GetBuildFilePathFromOptions(string product, CreatioDBType dBType, CreatioRuntimePlatform runtimePlatform) {
+		return GetBuildFilePathFromOptions(_remoteArtefactServerPath, product, dBType, runtimePlatform);
 	}
 
-	internal object GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform platform) {
+	internal string GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform platform) {
 		var latestBranchVersion = GetLatestVersion(remoteArtifactServerPath);
 		var latestBranchesBuildPath = Path.Combine(remoteArtifactServerPath, latestBranchVersion.ToString());
 		var latestBuildVersion = GetLatestVersion(latestBranchesBuildPath);
@@ -489,8 +491,14 @@ public class BuildInfoOptions : PfInstallerOptions
 public class BuildInfoCommand : InstallerCommand
 {
 
+	public BuildInfoCommand(ISettingsRepository settingsRepository) {
+		_remoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
+		_productFolder = settingsRepository.GetCreatioProductsFolder();
+	}
+
+
 	public int Execute(BuildInfoOptions options) {
-		var buildPath = GetBuildDilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
+		var buildPath = GetBuildFilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
 		Console.WriteLine(buildPath);
 		return 0;
 	}

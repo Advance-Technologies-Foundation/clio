@@ -207,6 +207,11 @@ namespace Clio
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
+		public string RemoteArtefactServerPath
+		{
+			get;
+			set;
+		}
 	}
 
 	public class SettingsRepository : ISettingsRepository
@@ -491,6 +496,11 @@ namespace Clio
 		public string GetCreatioProductsFolder() {
 			return _settings.CreatioProductFolder;
 		}
+
+		public string GetRemoteArtefactServerPath() {
+			return _settings.RemoteArtefactServerPath;
+		}
+
 	}
 
 
