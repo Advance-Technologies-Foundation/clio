@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management.Automation;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -374,34 +375,62 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		throw new NotImplementedException();
 	}
 
-	internal object GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
-		string latestBranch = GetLatestVersion(remoteArtifactServerPath);
-		var latestBranchPath = Path.Combine(remoteArtifactServerPath, latestBranch);
-		string latestBuild = GetLatestVersion(latestBranchPath);
-		string productDirectoryName = GetProductDirectoryName(product);
-		string productZipFileName = GetProductFileName(latestBuild, product, creatioDBType, creatioRuntimePlatform);
-		return Path.Combine(remoteArtifactServerPath,latestBranch,latestBuild,productDirectoryName, productZipFileName);
+	internal object GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform platform) {
+		var latestBranchVersion = GetLatestVersion(remoteArtifactServerPath);
+		var latestBranchesBuildPath = Path.Combine(remoteArtifactServerPath, latestBranchVersion.ToString());
+		var latestBuildVersion = GetLatestVersion(latestBranchesBuildPath);
+		Version latestProductBuild = GetLatestProductVersion(latestBranchesBuildPath, latestBuildVersion, product, platform);
+		string productDirectoryName = GetProductDirectoryName(product, platform);
+		var zipFolderPath = Path.Combine(latestBranchesBuildPath, latestProductBuild.ToString(), productDirectoryName);
+		var parentZipFolder = new DirectoryInfo(zipFolderPath).Parent;
+		foreach (var dir in parentZipFolder.GetDirectories()) {
+			if (dir.Name.ToLower() == productDirectoryName.ToLower()) {
+				zipFolderPath = dir.FullName;
+				break;
+			}	
+		}
+		string productZipFileName = GetProductFileName(latestProductBuild, product, creatioDBType, platform);
+		var zipFileNameToLower = Path.Combine(zipFolderPath, productZipFileName);
+		var zipFiles = Directory.GetFiles(zipFolderPath);
+		foreach(var zipFile in zipFiles) {
+			if (zipFile.ToLower() == zipFileNameToLower.ToLower()) {
+				return zipFile;
+			}
+		}
+		throw new ItemNotFoundException(zipFileNameToLower);
 	}
 
-	private string GetProductFileName(string latestBuild, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
-		return $"{latestBuild}_{product}_Softkey_{creatioDBType}_ENU.zip";
+	private Version GetLatestProductVersion(string latestBranchPath, Version latestVersion, string product, CreatioRuntimePlatform platform) {
+		var dirPath = Path.Combine(latestBranchPath, latestVersion.ToString(), GetProductDirectoryName(product, platform));
+		if (Directory.Exists(dirPath)) {
+			return latestVersion;
+		} else {
+			Version previousVersion = new Version(latestVersion.Major, latestVersion.Minor, latestVersion.Build, latestVersion.Revision - 1);
+			return GetLatestProductVersion(latestBranchPath, previousVersion, product,platform);		
+		}
 	}
 
-	private string GetProductDirectoryName(string product) {
-		return $"{product}_Softkey_ENU";
+
+
+	private string GetProductFileName(Version latestBuild, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
+		return $"{latestBuild.ToString()}_{product}{creatioRuntimePlatform.ToRuntimePlatformString()}_Softkey_{creatioDBType}_ENU.zip";
 	}
 
-	private string GetLatestVersion(string remoteArtifactServerPath) {
+	private string GetProductDirectoryName(string product, CreatioRuntimePlatform platform) {
+		return $"{product}{platform.ToRuntimePlatformString()}_Softkey_ENU";
+	}
+
+	
+	private static Version GetLatestVersion(string remoteArtifactServerPath) {
 		var branches = Directory.GetDirectories(remoteArtifactServerPath);
 		List<Version> version = new List<Version>();
-		foreach(var branch in branches) {
+		foreach (var branch in branches) {
 			var branchName = branch.Split('\\').Last();
 			if (Version.TryParse(branchName, out var ver)) {
 				version.Add(ver);
 			}
 		}
-		var latest = version.Max();
-		return latest.ToString();
+		return version.Max();
 	}
 
 	#endregion

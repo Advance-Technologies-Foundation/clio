@@ -38,4 +38,24 @@ namespace Clio
 		NETFramework,
 		NET6
 	}
+
+	public static class CreatioDBTypeExtensions {
+		public static string ToDBTypeString(this CreatioDBType dbType) {
+			return dbType switch {
+				CreatioDBType.MSSQL => "MSSQL",
+				CreatioDBType.PostgreSQL => "PostgreSQL",
+				_ => throw new NotImplementedException()
+			};
+		}
+	}
+
+	public static class CreatioRuntimePlatformExtensions {
+		public static string ToRuntimePlatformString(this CreatioRuntimePlatform runtimePlatform) {
+			return runtimePlatform switch {
+				CreatioRuntimePlatform.NETFramework => "",
+				CreatioRuntimePlatform.NET6 => "Net6",
+				_ => throw new NotImplementedException()
+			};
+		}
+	}
 }
