@@ -40,8 +40,27 @@ public class PfInstallerOptions : EnvironmentNameOptions
 	[Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
 	public string ZipFile { get; set; }
 
+
+	
 	[Option("product", Required = false, HelpText = "Product name")]
-	public string Product { get; internal set; }
+	public string ProductKey { get; set; }
+
+	private Dictionary<string, string> _productList = new Dictionary<string, string> {
+		{"s","Studio" },
+		{"semse","SalesEnterprise_Marketing_ServiceEnterprise" },
+		{"bcj", "BankSales_BankCustomerJourney_Lending_Marketing"}
+	};
+	public string Product {
+		get {
+			if (_productList.ContainsKey(ProductKey)) {
+				return _productList[ProductKey];
+			}
+			return ProductKey;
+		}
+		set {
+			ProductKey = value;
+		}
+	}
 
 	[Option("db", Required = false, HelpText = "DB type: pg|mssql")]
 	public string DB { get; set; }
