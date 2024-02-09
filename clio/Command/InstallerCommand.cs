@@ -443,7 +443,16 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		var latestBranchVersion = GetLatestVersion(remoteArtifactServerPath);
 		var latestBranchesBuildPath = Path.Combine(remoteArtifactServerPath, latestBranchVersion.ToString());
 		var latestBranchesDireInfo = new DirectoryInfo(latestBranchesBuildPath);
-		var revisionDirectories = latestBranchesDireInfo.GetDirectories().OrderByDescending(dir => dir.CreationTimeUtc);
+		var latestBranchSubdirectories = latestBranchesDireInfo.GetDirectories().OrderByDescending(dir => dir.CreationTimeUtc);
+		List<DirectoryInfo> revisionDirectories = new List<DirectoryInfo>();
+		foreach (var subdir in latestBranchSubdirectories) {
+			if (Version.TryParse(subdir.Name, out var ver)) {
+				revisionDirectories.Add(subdir);
+			}
+		}
+		if (revisionDirectories.Count == 0) {
+			revisionDirectories.Add(latestBranchesDireInfo);
+		}	
 		var productZipFileName = GetProductFileNameWithoutBuildNumber(product, creatioDBType, platform);
 		foreach (var searchDir in revisionDirectories) {
 			var zipFiles = searchDir.GetFiles("*.zip", SearchOption.AllDirectories).ToList().OrderByDescending(product => product.LastWriteTime);

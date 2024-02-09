@@ -112,5 +112,35 @@ namespace Clio.Tests
 			var filePath = installerCommand.GetBuildFilePathFromOptions(remoteArtifactServerPath, product, creatioDBType, creatioRuntimePlatform);
 			filePath.Should().Be("\\\\tscrm.com\\dfs-ts\\builds-7\\8.1.3\\8.1.3.3881\\Studio_Softkey_ENU\\8.1.3.3881_Studio_Softkey_PostgreSQL_ENU.zip");
 		}
+
+		[Test, Category("Unit")]
+		public void FindZipFilePathFromOptionsRemoteServer_PG_NF_SE_Local() {
+			var installerCommand = new InstallerCommand();
+			var options = new PfInstallerOptions() {
+				Product = "SalesEnterprise"
+			};
+			string product = options.Product;
+			CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
+			CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NET6;
+			string remoteArtifactServerPath = "D:\\Projects\\creatio_builds\\";
+			var filePath = installerCommand.GetBuildFilePathFromOptions(remoteArtifactServerPath, product, creatioDBType, creatioRuntimePlatform);
+			filePath.Should().Be("D:\\Projects\\creatio_builds\\8.1.1\\8.1.1.1425_SalesEnterpriseNet6_Softkey_PostgreSQL_ENU.zip");
+		}
+
+
+		[Test, Category("Unit")]
+		public void FindZipFilePathFromOptionsRemoteServer_PG_NF_S_Local() {
+			var installerCommand = new InstallerCommand();
+			var options = new PfInstallerOptions() {
+				Product = "s"
+			};
+			string product = options.Product;
+			CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
+			CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NETFramework;
+			string remoteArtifactServerPath = "D:\\Projects\\creatio_builds\\";
+			var filePath = installerCommand.GetBuildFilePathFromOptions(remoteArtifactServerPath, product, creatioDBType, creatioRuntimePlatform);
+			filePath.Should().Be("D:\\Projects\\creatio_builds\\8.1.1\\8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip");
+		}
+
 	}
 }
