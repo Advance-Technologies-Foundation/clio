@@ -442,26 +442,18 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	internal string GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform platform) {
 		var latestBranchVersion = GetLatestVersion(remoteArtifactServerPath);
 		var latestBranchesBuildPath = Path.Combine(remoteArtifactServerPath, latestBranchVersion.ToString());
-		var latestBuildVersion = GetLatestVersion(latestBranchesBuildPath);
-		Version latestProductBuild = GetLatestProductVersion(latestBranchesBuildPath, latestBuildVersion, product, platform);
-		string productDirectoryName = GetProductDirectoryName(product, platform);
-		var zipFolderPath = Path.Combine(latestBranchesBuildPath, latestProductBuild.ToString(), productDirectoryName);
-		var parentZipFolder = new DirectoryInfo(zipFolderPath).Parent;
-		foreach (var dir in parentZipFolder.GetDirectories()) {
-			if (dir.Name.ToLower() == productDirectoryName.ToLower()) {
-				zipFolderPath = dir.FullName;
-				break;
+		var latestBranchesDireInfo = new DirectoryInfo(latestBranchesBuildPath);
+		var revisionDirectories = latestBranchesDireInfo.GetDirectories().OrderByDescending(dir => dir.CreationTimeUtc);
+		var productZipFileName = GetProductFileNameWithoutBuildNumber(product, creatioDBType, platform);
+		foreach (var searchDir in revisionDirectories) {
+			var zipFiles = searchDir.GetFiles("*.zip", SearchOption.AllDirectories).ToList().OrderByDescending(product => product.LastWriteTime);
+			foreach (var zipFile in zipFiles) {
+				if (zipFile.Name.Contains(productZipFileName, StringComparison.OrdinalIgnoreCase)) {
+					return zipFile.FullName;
+				}
 			}
 		}
-		string productZipFileName = GetProductFileName(latestProductBuild, product, creatioDBType, platform);
-		var zipFileNameToLower = Path.Combine(zipFolderPath, productZipFileName);
-		var zipFiles = Directory.GetFiles(zipFolderPath);
-		foreach (var zipFile in zipFiles) {
-			if (zipFile.ToLower() == zipFileNameToLower.ToLower()) {
-				return zipFile;
-			}
-		}
-		throw new ItemNotFoundException(zipFileNameToLower);
+		throw new ItemNotFoundException(productZipFileName);
 	}
 
 	private Version GetLatestProductVersion(string latestBranchPath, Version latestVersion, string product, CreatioRuntimePlatform platform) {
@@ -476,8 +468,8 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
 
 
-	private string GetProductFileName(Version latestBuild, string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
-		return $"{latestBuild.ToString()}_{product}{creatioRuntimePlatform.ToRuntimePlatformString()}_Softkey_{creatioDBType}_ENU.zip";
+	private string GetProductFileNameWithoutBuildNumber(string product, CreatioDBType creatioDBType, CreatioRuntimePlatform creatioRuntimePlatform) {
+		return $"_{product}{creatioRuntimePlatform.ToRuntimePlatformString()}_Softkey_{creatioDBType}_ENU.zip";
 	}
 
 	private string GetProductDirectoryName(string product, CreatioRuntimePlatform platform) {

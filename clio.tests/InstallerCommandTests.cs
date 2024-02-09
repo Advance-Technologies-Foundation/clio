@@ -98,5 +98,19 @@ namespace Clio.Tests
 			var filePath = installerCommand.GetBuildFilePathFromOptions(remoteArtifactServerPath, product, creatioDBType, creatioRuntimePlatform);
 			filePath.Should().Be("\\\\tscrm.com\\dfs-ts\\builds-7\\8.1.3\\8.1.3.3988\\Studio_Softkey_ENU\\8.1.3.3988_Studio_Softkey_MSSQL_ENU.zip");
 		}
+
+		[Test, Category("Unit")]
+		public void FindZipFilePathFromOptionsRemoteServer_PG_NF_S() {
+			var installerCommand = new InstallerCommand();
+			var options = new PfInstallerOptions() {
+				Product = "s"
+			};
+			string product = options.Product;
+			CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
+			CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NETFramework;
+			string remoteArtifactServerPath = "\\\\tscrm.com\\dfs-ts\\builds-7";
+			var filePath = installerCommand.GetBuildFilePathFromOptions(remoteArtifactServerPath, product, creatioDBType, creatioRuntimePlatform);
+			filePath.Should().Be("\\\\tscrm.com\\dfs-ts\\builds-7\\8.1.3\\8.1.3.3881\\Studio_Softkey_ENU\\8.1.3.3881_Studio_Softkey_PostgreSQL_ENU.zip");
+		}
 	}
 }
