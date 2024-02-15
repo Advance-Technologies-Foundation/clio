@@ -5,6 +5,10 @@ using Clio.Common;
 
 namespace Clio.Command
 {
+	using System.Linq;
+	using System.Reflection;
+	using CommandLine;
+
 	public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentOptions>
 		where TEnvironmentOptions : EnvironmentOptions
 	{
@@ -61,7 +65,8 @@ namespace Clio.Command
 		public override int Execute(TEnvironmentOptions options) {
 			try {
 				ExecuteRemoteCommand(options);
-				Logger.WriteInfo("Done");
+				string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;
+				Logger.WriteInfo($"Done {commandName}");
 				return 0;
 			} 
 			catch (SilentException ex) {
