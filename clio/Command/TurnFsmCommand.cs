@@ -42,12 +42,8 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	public override int Execute(TurnFsmCommandOptions options){
 		if (options.IsFsm == "on") {
 			if (_setFsmConfigCommand.Execute(options) == 0) {
-				Thread.Sleep(TimeSpan.FromSeconds(3));
-				
 				options.IsNetCore = _environmentSettings.IsNetCore;
 				if(options.IsNetCore == true) {
-					//restart app
-					
 					var opt = new RestartOptions
 					{
 						EnvironmentName = options.Environment,
@@ -58,6 +54,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 					};
 					var restartCommand = new RestartCommand(_applicationClient, _environmentSettings);
 					restartCommand.Execute(opt);
+					Thread.Sleep(TimeSpan.FromSeconds(3));
 					_applicationClient.Login();
 				}
 				return _loadPackagesToFileSystemCommand.Execute(options);
