@@ -15,6 +15,7 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
+		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
 		#endregion
 
@@ -151,6 +152,19 @@ namespace Clio.Workspace
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
 				InstallApplication(applicationZip);
 				BuildStandalonePackagesIfNeeded();
+			});
+		}
+
+		public void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool overrideFile = false) {
+			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+				var rootPackedPackagePath =
+					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+				foreach (string packageName in packages) {
+					PackPackage(packageName, rootPackedPackagePath);
+					ResetSchemaChangeStateServiceUrl(packageName);
+				}
+				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+				_fileSystem.CopyFile(applicationZip, Path.Combine(destionationFolderPath, zipFileName), overrideFile);
 			});
 		}
 

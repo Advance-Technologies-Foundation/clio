@@ -20,6 +20,7 @@ namespace Clio.Workspace
 		void Install(string creatioPackagesZipName = null);
 		void AddPackageIfNeeded(string packageName);
 		void SaveWorkspaceEnvironment(string environmentName);
+		void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile);
 		#endregion
 
 	}

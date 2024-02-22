@@ -114,6 +114,10 @@ namespace Clio.Workspace
 			_workspaceSolutionCreator.Create();
 		}
 
+		public void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile) {
+			_workspaceInstaller.Publish(WorkspaceSettings.Packages, zipFileName, destionationFolderPath, overrideFile);
+		}
+
 
 		#endregion
 
