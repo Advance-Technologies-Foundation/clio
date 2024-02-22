@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Threading;
 using Autofac;
 using Clio.Command;
@@ -23,8 +22,7 @@ using Сlio.Command.PackageCommand;
 
 namespace Clio;
 
-class Program
-{
+class Program {
 	private static string UserName => CreatioEnvironment.Settings.Login;
 	private static string UserPassword => CreatioEnvironment.Settings.Password;
 	private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
@@ -33,9 +31,12 @@ class Program
 	private static string AuthAppUrl => CreatioEnvironment.Settings.AuthAppUri;
 	private static string AppUrl {
 		get {
-			if (CreatioEnvironment.IsNetCore) {
+			if (CreatioEnvironment.IsNetCore)
+			{
 				return Url;
-			} else {
+			}
+			else
+			{
 				return Url + @"/0";
 			}
 		}
@@ -59,9 +60,12 @@ class Program
 
 	private static CreatioClient _creatioClientInstance {
 		get {
-			if (string.IsNullOrEmpty(ClientId)) {
+			if (string.IsNullOrEmpty(ClientId))
+			{
 				return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
-			} else {
+			}
+			else
+			{
 				return CreatioClient.CreateOAuth20Client(Url, AuthAppUrl, ClientId, ClientSecret, CreatioEnvironment.IsNetCore);
 			}
 		}
@@ -69,68 +73,89 @@ class Program
 
 	public static bool Safe { get; private set; } = true;
 
-	private static void Configure(EnvironmentOptions options) {
+	private static void Configure(EnvironmentOptions options)
+	{
 		var settingsRepository = new SettingsRepository();
 		CreatioEnvironment.EnvironmentName = options.Environment;
 		CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
 		ICreatioEnvironment creatioEnvironment = Resolve<ICreatioEnvironment>();
 	}
 
-	private static void MessageToConsole(string text, ConsoleColor color) {
+	private static void MessageToConsole(string text, ConsoleColor color)
+	{
 		var currentColor = Console.ForegroundColor;
 		Console.ForegroundColor = color;
 		Console.WriteLine(text);
 		Console.ForegroundColor = currentColor;
 	}
-	public static void SetupAppConnection(EnvironmentOptions options) {
+	public static void SetupAppConnection(EnvironmentOptions options)
+	{
 		Configure(options);
 		CheckApiVersion();
 	}
 
-	public static void CheckApiVersion() {
+	public static void CheckApiVersion()
+	{
 		var dir = AppDomain.CurrentDomain.BaseDirectory;
 		string versionFilePath = Path.Combine(dir, "cliogate", "version.txt");
 		var localApiVersion = new Version(File.ReadAllText(versionFilePath));
 		var appApiVersion = GetAppApiVersion();
-		if (appApiVersion == new Version("0.0.0.0")) {
+		if (appApiVersion == new Version("0.0.0.0"))
+		{
 			MessageToConsole($"Your app does not contain clio API." +
 				$"{Environment.NewLine}You should consider install it via the \'clio install-gate\' command.", ConsoleColor.DarkYellow);
-		} else if (localApiVersion > appApiVersion) {
+		}
+		else if (localApiVersion > appApiVersion)
+		{
 			MessageToConsole($"You are using clio api version {appApiVersion}, however version {localApiVersion} is available." +
 				$"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
 		}
 	}
 
-	private static Version GetAppApiVersion() {
+	private static Version GetAppApiVersion()
+	{
 		var apiVersion = new Version("0.0.0.0");
-		try {
+		try
+		{
 			string appVersionResponse = _creatioClientInstance.ExecuteGetRequest(ApiVersionUrl).Trim('"');
 			apiVersion = new Version(appVersionResponse);
-		} catch (Exception) {
+		}
+		catch (Exception)
+		{
 		}
 		return apiVersion;
 	}
 
-	private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async) {
-		try {
+	private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async)
+	{
+		try
+		{
 			Console.WriteLine("Start download packages ({0}).", packageName);
 			int count = 0;
 			var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 			string requestData = "[" + packageNames + "]";
-			if (!_async) {
+			if (!_async)
+			{
 				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
-			} else {
+			}
+			else
+			{
 				_creatioClientInstance.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty, 10000);
-				new Thread(() => {
-					try {
+				new Thread(() =>
+				{
+					try
+					{
 						_creatioClientInstance.DownloadFile(GetZipPackageUrl, Path.GetTempFileName(), requestData, 2000);
-					} catch { }
+					}
+					catch { }
 				}).Start();
 				bool again = false;
-				do {
+				do
+				{
 					Thread.Sleep(2000);
 					again = !bool.Parse(_creatioClientInstance.ExecutePostRequest(ExistsPackageZipUrl, string.Empty, 10000));
-					if (++count > 600) {
+					if (++count > 600)
+					{
 						throw new TimeoutException("Timeout exception");
 					}
 				} while (again);
@@ -138,12 +163,15 @@ class Program
 				_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
 			}
 			Console.WriteLine("Download packages ({0}) completed.", packageName);
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			Console.WriteLine("Download packages ({0}) not completed.", packageName);
 		}
 	}
 
-	private static string CorrectJson(string body) {
+	private static string CorrectJson(string body)
+	{
 		body = body.Replace("\\\\r\\\\n", Environment.NewLine);
 		body = body.Replace("\\r\\n", Environment.NewLine);
 		body = body.Replace("\\\\n", Environment.NewLine);
@@ -155,50 +183,63 @@ class Program
 		return body;
 	}
 
-	private static void UnZipPackages(string zipFilePath, string destinationPath) {
+	private static void UnZipPackages(string zipFilePath, string destinationPath)
+	{
 		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 		packageArchiver.ExtractPackages(zipFilePath, true, true, true, false, destinationPath);
 	}
 
-	private static void UnZip(string zipFilePath) {
+	private static void UnZip(string zipFilePath)
+	{
 		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 		packageArchiver.UnZip(zipFilePath, true, null);
 	}
 
-	private static int DownloadZipPackages(PullPkgOptions options) {
-		try {
+	private static int DownloadZipPackages(PullPkgOptions options)
+	{
+		try
+		{
 			SetupAppConnection(options);
 			string packageName = options.Name;
-			if (options.Unzip) {
+			if (options.Unzip)
+			{
 				string destPath = options.DestPath ?? Environment.CurrentDirectory;
 				IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>();
-				workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+				workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
+				{
 					string zipFilePath = Path.Combine(tempDirectory, $"{packageName}.zip");
 					DownloadZipPackagesInternal(packageName, zipFilePath, options.Async);
 					UnZipPackages(zipFilePath, destPath);
 				});
-			} else {
+			}
+			else
+			{
 				string destPath = options.DestPath ?? Path.Combine(Environment.CurrentDirectory, $"{packageName}.zip");
-				if (Directory.Exists(destPath)) {
+				if (Directory.Exists(destPath))
+				{
 					destPath = Path.Combine(destPath, $"{packageName}.zip");
 				}
 				DownloadZipPackagesInternal(packageName, destPath, options.Async);
 			}
 			Console.WriteLine("Done");
 			return 0;
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options) {
+	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options)
+	{
 		var settingsRepository = new SettingsRepository();
 		return settingsRepository.GetEnvironment(options);
 	}
 
 	private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
-		params object[] additionalConstructorArgs) {
+		params object[] additionalConstructorArgs)
+	{
 		var settings = GetEnvironmentSettings(options);
 		var creatioClient = string.IsNullOrEmpty(settings.ClientId) ? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore) :
 			CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore);
@@ -208,25 +249,29 @@ class Program
 	}
 
 	private static TCommand CreateRemoteCommandWithoutClient<TCommand>(EnvironmentOptions options,
-		params object[] additionalConstructorArgs) {
+		params object[] additionalConstructorArgs)
+	{
 		var settings = GetEnvironmentSettings(options);
 		var constructorArgs = new object[] { settings }.Concat(additionalConstructorArgs).ToArray();
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 	}
 
 	//ToDo: move to factory
-	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
+	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs)
+	{
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 	}
 
-	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
+	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options)
+	{
 		var settingsRepository = new SettingsRepository();
 		var settings = settingsRepository.GetEnvironment(options);
 		var workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
 		string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
 		string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
 			$"{packageName}.gz");
-		return new PushPkgOptions {
+		return new PushPkgOptions
+		{
 			Environment = options.Environment,
 			Name = packagePath,
 			Login = options.Login,
@@ -240,14 +285,10 @@ class Program
 		};
 	}
 
-	private static T Resolve<T>(object options = null) {
+	private static T Resolve<T>(object options = null)
+	{
 		EnvironmentSettings settings = null;
-		if (options is OptionalEnvironmentOptions) {
-			var environmentOptions = options as EnvironmentOptions;
-			if (environmentOptions != null) {
-				settings = FindEnvironmentSettings(environmentOptions as EnvironmentOptions);
-			}
-		} else if (options is EnvironmentOptions) {
+		if (options is EnvironmentOptions) {
 			var environmentOptions = options as EnvironmentOptions;
 			if (environmentOptions != null) {
 				settings = GetEnvironmentSettings(environmentOptions as EnvironmentOptions);
@@ -257,26 +298,18 @@ class Program
 		return container.Resolve<T>();
 	}
 
-	private static EnvironmentSettings FindEnvironmentSettings(EnvironmentOptions environmentOptions) {
-		try { 
-			return GetEnvironmentSettings(environmentOptions); 
-		} catch { 
-			return null; 
-		}
-	}
-
 	private static void TryCheckForUpdate() {
 		try {
 			var autoupdate = new SettingsRepository().GetAutoupdate();
 			if (autoupdate) {
 				new Thread(UpdateCliCommand.CheckUpdate).Start();
 			}
-		} catch (Exception ex) {
-
+		} catch(Exception ex) { 
+			
 		}
 	}
 
-
+		
 	private static int Main(string[] args) {
 		try {
 			return ExecuteCommands(args);
@@ -286,7 +319,7 @@ class Program
 			return 1;
 		}
 	}
-
+		
 	private static int ExecuteCommands(string[] args) {
 		TryCheckUpdate(args);
 		var creatioEnv = new CreatioEnvironment();
@@ -303,15 +336,16 @@ class Program
 		}
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
 	}
-
+		
 	public static bool EnableUpdate = false;
-	private static void TryCheckUpdate(string[] args) {
-		EnableUpdate = args.Length switch {
+	private static void TryCheckUpdate(string[] args){
+		EnableUpdate = args.Length switch
+		{
 			2 when args[0] == "cfg" && args[1] == "open" => true,
 			_ => EnableUpdate
 		};
 
-		if (!EnableUpdate) {
+		if(!EnableUpdate) {
 			TryCheckForUpdate();
 		}
 	}
@@ -343,13 +377,16 @@ class Program
 		return exitCode;
 	}
 
-	private static int SetDeveloperMode(DeveloperModeOptions opts) {
-		try {
+	private static int SetDeveloperMode(DeveloperModeOptions opts)
+	{
+		try
+		{
 			SetupAppConnection(opts);
 			var repository = new SettingsRepository();
 			CreatioEnvironment.Settings.DeveloperModeEnabled = true;
 			repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
-			var sysSettingOptions = new SysSettingsOptions() {
+			var sysSettingOptions = new SysSettingsOptions()
+			{
 				Code = "Maintainer",
 				Value = CreatioEnvironment.Settings.Maintainer
 			};
@@ -359,61 +396,78 @@ class Program
 			new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
 			Console.WriteLine("Done");
 			return 0;
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions) {
+	private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions)
+	{
 		IPackageLockManager packageLockManager = Resolve<IPackageLockManager>(environmentOptions);
 		packageLockManager.Unlock();
 	}
 
-	private static int AddModels(ItemOptions opts) {
+	private static int AddModels(ItemOptions opts)
+	{
 
-		if (opts.CreateAll) {
+		if (opts.CreateAll)
+		{
 			Console.WriteLine("Generating models...");
 			SetupAppConnection(opts);
-
+				
 			var workingDirectoryProvider = Resolve<IWorkingDirectoriesProvider>();
 			ModelBuilder mb = new ModelBuilder(_creatioClientInstance, AppUrl, opts, workingDirectoryProvider);
 			mb.GetModels();
 			return 0;
 		}
 
-		try {
+		try
+		{
 			SetupAppConnection(opts);
 			var models = GetClassModels(opts.ItemName, opts.Fields);
 			var project = new VSProject(opts.DestinationPath, opts.Namespace);
-			foreach (var model in models) {
+			foreach (var model in models)
+			{
 				project.AddFile(model.Key, model.Value);
 			}
 			project.Reload();
 			Console.WriteLine("Done");
 			return 0;
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static int AddItem(ItemOptions options) {
-		if (options.ItemType.ToLower() == "model") {
+	private static int AddItem(ItemOptions options)
+	{
+		if (options.ItemType.ToLower() == "model")
+		{
 			return AddModels(options);
-		} else {
+		}
+		else
+		{
 			return AddItemFromTemplate(options);
 		}
 	}
 
-	private static int AddItemFromTemplate(ItemOptions options) {
-		try {
+	private static int AddItemFromTemplate(ItemOptions options)
+	{
+		try
+		{
 			var project = new VSProject(options.DestinationPath, options.Namespace);
 			var creatioEnv = new CreatioEnvironment();
 			string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
-			if (!File.Exists(tplPath)) {
+			if (!File.Exists(tplPath))
+			{
 				var envPath = creatioEnv.GetAssemblyFolderPath();
-				if (!string.IsNullOrEmpty(envPath)) {
+				if (!string.IsNullOrEmpty(envPath))
+				{
 					tplPath = Path.Combine(envPath, tplPath);
 				}
 			}
@@ -421,25 +475,29 @@ class Program
 			project.AddFile(options.ItemName, templateBody.Replace("<Name>", options.ItemName));
 			project.Reload();
 			return 0;
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields) {
+	private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields)
+	{
 		var url = string.Format(GetEntityModelsUrl, entitySchemaName, fields);
 		string responseFormServer = _creatioClientInstance.ExecuteGetRequest(url);
 		var result = CorrectJson(responseFormServer);
 		return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 	}
 
-	private static int ConvertPackage(ConvertOptions opts) {
+	private static int ConvertPackage(ConvertOptions opts)
+	{
 		return PackageConverter.Convert(opts);
 	}
-
-
-	private static Type[] CommandOption = new[]{
+		
+		
+	private static Type[] CommandOption = new []{
 		typeof(ExecuteAssemblyOptions),
 		typeof(RestartOptions),
 		typeof(ClearRedisOptions),
@@ -606,8 +664,8 @@ class Program
 			DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
-			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
-			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
+			RestoreDbCommandOptions opts =>Resolve<RestoreDbCommand>(opts).Execute(opts),
+			SetWebServiceUrlOptions opts =>Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

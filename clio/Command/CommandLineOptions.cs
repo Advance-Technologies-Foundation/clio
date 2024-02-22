@@ -5,9 +5,6 @@ using System.Collections.Generic;
 
 namespace Clio
 {
-	public class OptionalEnvironmentOptions : EnvironmentOptions {
-	}
-
 	public class EnvironmentOptions
 	{
 		[Option('u', "uri", Required = false, HelpText = "Application uri")]
