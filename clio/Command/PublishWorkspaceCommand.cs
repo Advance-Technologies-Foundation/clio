@@ -18,7 +18,7 @@
 			HelpText = "Path to package repository folder", Default = null)]
 		public string DestionationFolderPath { get; internal set; }
 
-		[Option('', "overwrite", Required = true,
+		[Option("overwrite", Required = true,
 			HelpText = "Path to package repository folder", Default = null)]
 		public bool Overwrite { get; internal set; }
 	}
