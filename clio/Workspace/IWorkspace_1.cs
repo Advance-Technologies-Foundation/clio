@@ -121,11 +121,10 @@ namespace Clio.Workspaces
 		}
 
 		public string PublishToFolder(string exampleWorkspacePath, string appStorePath, string appName, string appVersion) {
-			_workspacePathBuilder.RootPath = exampleWorkspacePath;
 			string zipFileName = $"{appName}_{appVersion}.zip";
 			string destinationFolderPath = Path.Combine(appStorePath, appName, appVersion);
 			var filePath = Path.Combine(destinationFolderPath, zipFileName);
-			_workspaceInstaller.PublishToFolder(zipFileName, destinationFolderPath, false);
+			_workspaceInstaller.PublishToFolder(exampleWorkspacePath, zipFileName, destinationFolderPath, false);
 			return filePath;
 		}
 

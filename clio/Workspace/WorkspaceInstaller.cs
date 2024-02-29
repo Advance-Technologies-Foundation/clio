@@ -181,6 +181,7 @@ namespace Clio.Workspaces
 					ResetSchemaChangeStateServiceUrl(packageName);
 				}
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+				_fileSystem.CreateDirectoryIfNotExists(destinationFolderPath);
 				_fileSystem.CopyFile(applicationZip, Path.Combine(destinationFolderPath, zipFileName), overwrite);
 			});
 		}
