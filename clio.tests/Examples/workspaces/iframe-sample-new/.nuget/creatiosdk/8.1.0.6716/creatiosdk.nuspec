@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>CreatioSDK</id>
+    <version>8.1.0.6716</version>
+    <authors>Creatio</authors>
+    <owners>Creatio</owners>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <license type="file">license.txt</license>
+    <licenseUrl>https://aka.ms/deprecateLicenseUrl</licenseUrl>
+    <icon>logo.png</icon>
+    <projectUrl>https://www.creatio.com/</projectUrl>
+    <description>Provides project template for development code for creatio platform.</description>
+    <releaseNotes>https://academy.creatio.com/docs/release/release-notes/808-atlas-release-notes</releaseNotes>
+    <copyright>Copyright 2023</copyright>
+    <tags>creatio</tags>
+  </metadata>
+</package>

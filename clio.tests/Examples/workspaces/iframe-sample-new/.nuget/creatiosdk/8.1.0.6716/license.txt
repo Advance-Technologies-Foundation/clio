@@ -1,0 +1,7 @@
+Copyright 2023 <CREATIO EMEA LTD>
+"User" means any active user of Creatio software licensed for on-site deployment or delivered as SaaS services including associated documentation files (the "Software").
+"Authorized Integrator Partner" means any independent contractor/entity who has active Integrator Partner Agreement with CREATIO EMEA LTD or its affiliates and authorized to market, demonstrate, distribute, promote, offer for sale and sell the Software.
+Permission is hereby granted, free of charge, to any User or Authorized Integrator Partner obtaining a copy of the Software , to use, copy, by means of using the development tools included into it to modify it meaning introduce any configurations, business model flows and report designs to the Software, subject to the following conditions:
+Both the abovementioned copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

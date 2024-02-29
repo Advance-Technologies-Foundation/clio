@@ -1,0 +1,15 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{313c9a10-7ddc-48cc-8296-51a0a629376c}") = "IFrameSample", "..\packages\IFrameSample\Files\IFrameSample.csproj", "{b8c2e82d-9990-4f03-b65a-a9fe534e7aa9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+			{b8c2e82d-9990-4f03-b65a-a9fe534e7aa9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+			{b8c2e82d-9990-4f03-b65a-a9fe534e7aa9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+			{b8c2e82d-9990-4f03-b65a-a9fe534e7aa9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+			{b8c2e82d-9990-4f03-b65a-a9fe534e7aa9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

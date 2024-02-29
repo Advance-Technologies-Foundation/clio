@@ -1,0 +1,15 @@
+﻿stages:
+  - deploy
+    
+deploy:
+  stage: deploy
+  dependencies: []
+  tags:
+    - clio
+  only:
+    - master
+  cache:
+  script:
+    - dotnet tool install clio --tool-path ./clio-tool
+    - ./clio-tool/clio.exe pushw -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
+    - ./clio-tool/clio.exe restart -l $STAGING_LOGIN -p $STAGING_PWD -u $STAGING_URL
