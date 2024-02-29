@@ -24,24 +24,23 @@ using Clio.Common.db;
 
 namespace Clio
 {
-	public class BindingsModule
-	{
-		public IContainer Register(EnvironmentSettings settings = null) {
+	public class BindingsModule {
+		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false) {
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
 				.AsImplementedInterfaces();
-			if (settings != null) {
-				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
-				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
+			if (settings != null || registerNullSettingsForTest) {
 				containerBuilder.RegisterInstance(settings);
-				
-				
-				IDataProvider provider = string.IsNullOrEmpty(settings.Login) switch {
-					true=> new RemoteDataProvider(settings.Uri,settings.AuthAppUri,settings.ClientId,settings.ClientSecret, settings.IsNetCore),
-					false=>new RemoteDataProvider(settings.Uri,settings.Login,settings.Password, settings.IsNetCore)
-				};
-				containerBuilder.RegisterInstance(provider).As<IDataProvider>();
+				if (!registerNullSettingsForTest) {
+					var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
+					containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
+					IDataProvider provider = string.IsNullOrEmpty(settings.Login) switch {
+						true => new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore),
+						false => new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore)
+					};
+					containerBuilder.RegisterInstance(provider).As<IDataProvider>();
+				}
 				
 			}
 

@@ -1,9 +1,10 @@
 using System.Threading;
 
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 	using System;
-    using Clio.Common;
+	using System.IO;
+	using Clio.Common;
 	using Clio.UserEnvironment;
 
 
@@ -15,6 +16,7 @@ namespace Clio.Workspace
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
+
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IWorkspaceCreator _workspaceCreator;
 		private readonly IWorkspaceRestorer _workspaceRestorer;
@@ -30,7 +32,7 @@ namespace Clio.Workspace
 				IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
 				IWorkspaceInstaller workspaceInstaller, IWorkspaceSolutionCreator workspaceSolutionCreator,
 				IJsonConverter jsonConverter) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+			//environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			workspaceCreator.CheckArgumentNull(nameof(workspaceCreator));
 			workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
@@ -116,6 +118,15 @@ namespace Clio.Workspace
 
 		public void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile) {
 			_workspaceInstaller.Publish(WorkspaceSettings.Packages, zipFileName, destionationFolderPath, overrideFile);
+		}
+
+		public string PublishToFolder(string exampleWorkspacePath, string appStorePath, string appName, string appVersion) {
+			_workspacePathBuilder.RootPath = exampleWorkspacePath;
+			string zipFileName = $"{appName}_{appVersion}.zip";
+			string destinationFolderPath = Path.Combine(appStorePath, appName, appVersion);
+			var filePath = Path.Combine(destinationFolderPath, zipFileName);
+			_workspaceInstaller.PublishToFolder(zipFileName, destinationFolderPath, false);
+			return filePath;
 		}
 
 

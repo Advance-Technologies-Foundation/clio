@@ -5,7 +5,7 @@ namespace Clio.Command
 	using System;
 	using System.Collections.Generic;
 	using Clio.Common;
-	using Clio.Workspace;
+	using Clio.Workspaces;
 	using CommandLine;
 
 	#region Class: CreateWorkspaceCommandOptions

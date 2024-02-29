@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Clio.Common;
-using Clio.Workspace;
+using Clio.Workspaces;
 
 namespace Clio.Package
 {

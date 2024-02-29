@@ -19,6 +19,15 @@
     <None Include="samplefiles\Proj.csproj">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Examples\workspaces\iframe-sample\.gitignore">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Examples\workspaces\iframe-sample\.gitlab-ci.yml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Examples\workspaces\iframe-sample\README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="YAML\Script\three_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -125,6 +134,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Examples\workspaces\" />
     <Folder Include="TestResults\" />
   </ItemGroup>
 

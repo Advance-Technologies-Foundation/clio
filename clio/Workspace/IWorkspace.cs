@@ -1,4 +1,4 @@
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 
 	#region Interface: IWorkspace
@@ -21,6 +21,7 @@ namespace Clio.Workspace
 		void AddPackageIfNeeded(string packageName);
 		void SaveWorkspaceEnvironment(string environmentName);
 		void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile);
+		string PublishToFolder(string exampleWorkspacePath, string appStorePath, string appName, string appVersion);
 		#endregion
 
 	}

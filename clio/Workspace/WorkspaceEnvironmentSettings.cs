@@ -1,4 +1,4 @@
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 
 	#region Class: WorkspaceEnvironmentSettings

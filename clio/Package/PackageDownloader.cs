@@ -1,4 +1,4 @@
-using Clio.Workspace;
+using Clio.Workspaces;
 
 namespace Clio.Package
 {

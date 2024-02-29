@@ -1,6 +1,6 @@
 using System;
 
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 
 	#region Interface: IWorkspacePathBuilder
@@ -10,7 +10,7 @@ namespace Clio.Workspace
 
 		#region Properties: Public
 		
-		string RootPath { get; }
+		string RootPath { get; set; }
 		bool IsWorkspace { get; }
 		string ClioDirectoryPath { get; }
 		string WorkspaceSettingsPath { get; }

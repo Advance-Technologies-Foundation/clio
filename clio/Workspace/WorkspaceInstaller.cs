@@ -1,12 +1,13 @@
 using System;
 using Clio.Utilities;
 
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 	using System.Collections.Generic;
 	using System.IO;
 	using Clio.Common;
 	using Clio.Package;
+	using Terrasoft.Core;
 
 	#region Interface: IWorkspaceInstaller
 
@@ -16,6 +17,7 @@ namespace Clio.Workspace
 		#region Methods: Public
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
+		void PublishToFolder(string zipFileName, string destinationFolderPath, string destinationFolderPath1, bool v);
 
 		#endregion
 
@@ -165,6 +167,21 @@ namespace Clio.Workspace
 				}
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
 				_fileSystem.CopyFile(applicationZip, Path.Combine(destionationFolderPath, zipFileName), overrideFile);
+			});
+		}
+
+		public void PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite) {
+			_workspacePathBuilder.RootPath = workspaceFolderPath;
+			var packages = Directory.GetDirectories(_workspacePathBuilder.PackagesFolderPath);	
+			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+				var rootPackedPackagePath =
+					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+				foreach (string packageName in packages) {
+					PackPackage(packageName, rootPackedPackagePath);
+					ResetSchemaChangeStateServiceUrl(packageName);
+				}
+				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+				_fileSystem.CopyFile(applicationZip, Path.Combine(destinationFolderPath, zipFileName), overwrite);
 			});
 		}
 

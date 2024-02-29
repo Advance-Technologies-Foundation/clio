@@ -2,7 +2,7 @@
 {
 	using System;
 	using Clio.Common;
-	using Clio.Workspace;
+	using Clio.Workspaces;
 	using CommandLine;
 
 	#region Class: PushWorkspaceCommandOptions
@@ -18,8 +18,8 @@
 			HelpText = "Path to package repository folder", Default = null)]
 		public string DestionationFolderPath { get; internal set; }
 
-		[Option("overwrite", Required = true,
-			HelpText = "Path to package repository folder", Default = null)]
+		[Option("overwrite", Required = false,
+			HelpText = "Path to package repository folder", Default = false)]
 		public bool Overwrite { get; internal set; }
 	}
 

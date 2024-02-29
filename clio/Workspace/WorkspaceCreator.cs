@@ -6,7 +6,7 @@ using Clio.Package;
 using Clio.Project.NuGet;
 using Clio.Utilities;
 
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 
 	#region Interface: IWorkspaceCreator

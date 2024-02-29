@@ -2,7 +2,7 @@
 using Clio.Requests;
 using Clio.UserEnvironment;
 using Clio.Utilities;
-using Clio.Workspace;
+using Clio.Workspaces;
 using CommandLine;
 using DocumentFormat.OpenXml.Wordprocessing;
 using FluentValidation;

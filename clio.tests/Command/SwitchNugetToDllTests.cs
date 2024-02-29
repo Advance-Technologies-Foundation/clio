@@ -1,7 +1,7 @@
 ﻿using System;
 using Clio.Command;
 using Clio.Common;
-using Clio.Workspace;
+using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;

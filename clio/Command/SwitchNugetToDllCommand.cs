@@ -1,6 +1,6 @@
 ﻿using System.Linq;
 using Clio.Common;
-using Clio.Workspace;
+using Clio.Workspaces;
 using CommandLine;
 
 namespace Clio.Command;
