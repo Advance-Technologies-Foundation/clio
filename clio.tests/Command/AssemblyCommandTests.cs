@@ -48,7 +48,7 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 			Name = new Uri(typeof(AssemblyCommand).Assembly.Location).LocalPath,
 			WriteResponse = true
 		});
-		StringAssert.StartsWith("responseFromServer", output.ToString());
+		StringAssert.StartsWith("[INF] - responseFromServer", output.ToString());
 	}
 
 }
