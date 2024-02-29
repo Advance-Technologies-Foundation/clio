@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="cs-CZ">
+	<Group Type="String">
+		<Items>
+			<Item Name="LocalizableStrings.addRecord_0d8td67_caption.Value" Value="Přidat nový" />
+			<Item Name="LocalizableStrings.addRecord_2kkc2vg_caption.Value" Value="Přidat nový" />
+		</Items>
+	</Group>
+</Resources>

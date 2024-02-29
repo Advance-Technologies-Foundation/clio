@@ -1,0 +1,180 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="en-US">
+	<Group Type="String">
+		<Items>
+			<Item Name="Images.40087469-49d5-408b-6b27-0134884d4b79.Image" Type="Image" ContentType="Data" FileExtension=".svg" Value="PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTAgMy43NTk0NUMwIDEuNjgzMTYgMS42ODMxNiAwIDMuNzU5NDQgMEgyOC4yNDA2QzMwLjMxNjggMCAzMiAxLjY4MzE2IDMyIDMuNzU5NDRWMjguMjQwNkMzMiAzMC4zMTY4IDMwLjMxNjggMzIgMjguMjQwNiAzMkgzLjc1OTQ0QzEuNjgzMTYgMzIgMCAzMC4zMTY4IDAgMjguMjQwNlYzLjc1OTQ1WiIgZmlsbD0iI0ZFQ0Y0MCIvPgo8cGF0aCBkPSJNMTkuOTEzMyAxMS43MDIxSDE3Ljk5OEwxOC45OTEyIDEzLjQwNDNMMTkuOTEzMyAxMS43MDIxWiIgZmlsbD0iYmxhY2siLz4KPHBhdGggZD0iTTIyLjU3NTEgMjEuMzEwN0wxNS43NzYyIDEwTDkgMjEuMjg3SDEyLjYyOTJDMTMuMTEzNCAyMS4yODcgMTMuNTg5OCAyMS4xNjQ4IDE0LjAxMDkgMjAuOTMzQzE0LjQ2NTUgMjAuNjgyNSAxNC44MDg3IDIwLjMxOTYgMTUuMDc2OSAxOS44Nzk3QzE1LjM5MDYgMTkuMzY1IDE1LjY5NTMgMTguODQ0MiAxNi4wMDQgMTguMzI2NUwxNi43OTM5IDE3LjAwMUwxNS43NzUyIDE1LjI5MzlMMTUuMzIzNSAxNi4wMjA3QzE0LjgwODcgMTYuODgxNyAxNC4zMjE1IDE3Ljc2MjQgMTMuNzg4IDE4LjYxMTVDMTMuNTE5OCAxOS4wMzc1IDEzLjE2OTcgMTkuNDM5OSAxMi42NTI5IDE5LjU0MzVDMTIuNTc1IDE5LjU1OTIgMTIuNDk1MSAxOS41NjcxIDEyLjQxNTIgMTkuNTcwMUMxMi4zMDg3IDE5LjU3NCAxMi4yMDIyIDE5LjU3MiAxMi4wOTY3IDE5LjU3MkwxNS43NzYyIDEzLjMwNTdMMjAuNTAxMSAyMS4zMTA3SDIyLjU3NTFaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K" />
+			<Item Name="Images.d0ea7beb-61e0-bcb1-697b-d05de6cf271e.Image" Type="Image" ContentType="Data" FileExtension=".svg" Value="PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xMy4xNTkyIDguMDAwMTdDMTMuMTU5MiA1LjE1MDgzIDEwLjg0OTQgMi44NDA5OCA4LjAwMDA0IDIuODQwOThDNS4xNTA3IDIuODQwOTggMi44NDA4NSA1LjE1MDgzIDIuODQwODUgOC4wMDAxN0MyLjg0MDg1IDEwLjg0OTUgNS4xNTA3IDEzLjE1OTQgOC4wMDAwNCAxMy4xNTk0QzEwLjg0OTQgMTMuMTU5NCAxMy4xNTkyIDEwLjg0OTUgMTMuMTU5MiA4LjAwMDE3Wk04LjAwMDA0IDEuNTAwOThDMTEuNTg5NCAxLjUwMDk4IDE0LjQ5OTIgNC40MTA3NyAxNC40OTkyIDguMDAwMTdDMTQuNDk5MiAxMS41ODk2IDExLjU4OTQgMTQuNDk5NCA4LjAwMDA0IDE0LjQ5OTRDNC40MTA2NCAxNC40OTk0IDEuNTAwODUgMTEuNTg5NiAxLjUwMDg1IDguMDAwMTdDMS41MDA4NSA0LjQxMDc3IDQuNDEwNjQgMS41MDA5OCA4LjAwMDA0IDEuNTAwOThaTTcuMTYxNjcgNS4zOTY5QzcuMTYxNjcgNC45MzU3NCA3LjUzNTUxIDQuNTYxOSA3Ljk5NjY3IDQuNTYxOUg4LjAwMzMzQzguNDY0NSA0LjU2MTkgOC44MzgzNCA0LjkzNTc0IDguODM4MzQgNS4zOTY5QzguODM4MzQgNS44NTgwNSA4LjQ2NDUgNi4yMzE5IDguMDAzMzMgNi4yMzE5SDcuOTk2NjdDNy41MzU1MSA2LjIzMTkgNy4xNjE2NyA1Ljg1ODA1IDcuMTYxNjcgNS4zOTY5Wk03Ljk5OTc5IDYuOTU0NTZDOC40NjA5NSA2Ljk1NDk2IDguODM0NDcgNy4zMjkxMiA4LjgzNDA3IDcuNzkwMjhMOC44MzE2MyAxMC42MDY1QzguODMxMjMgMTEuMDY3NiA4LjQ1NzA2IDExLjQ0MTEgNy45OTU5IDExLjQ0MDdDNy41MzQ3NSAxMS40NDAzIDcuMTYxMjMgMTEuMDY2MiA3LjE2MTYzIDEwLjYwNUw3LjE2NDA3IDcuNzg4ODNDNy4xNjQ0NyA3LjMyNzY4IDcuNTM4NjQgNi45NTQxNiA3Ljk5OTc5IDYuOTU0NTZaIiBmaWxsPSIjMEQyRTRFIi8+Cjwvc3ZnPgo=" />
+			<Item Name="LocalizableStrings.addRecord_0d8td67_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_2kkc2vg_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_cjzgd0e_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_d871xfp_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_j18vog1_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_lxl6b00_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_mul04nj_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.addRecord_peavqxg_caption.Value" Value="Add new" />
+			<Item Name="LocalizableStrings.ApolloAccountEnrichmentBtn_caption.Value" Value="Enrich from Apollo.io" />
+			<Item Name="LocalizableStrings.ApolloButtonTooltipIcon_tooltip.Value" Value="You can manage search rules in the &quot;Apollo search rules&quot; lookup." />
+			<Item Name="LocalizableStrings.BulkEmailExpansionPanel_title.Value" Value="Bulk emails" />
+			<Item Name="LocalizableStrings.BulkEmailExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.BulkEmailList_59f54b50.Value" Value="Sent date" />
+			<Item Name="LocalizableStrings.BulkEmailList_d96e6f8c.Value" Value="Type" />
+			<Item Name="LocalizableStrings.BulkEmailRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.BulkEmailSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.BulkEmailSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.Button_8lva7d5_caption.Value" Value="Create lead" />
+			<Item Name="LocalizableStrings.Button_srxtvyo_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.Button_uld37ti_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.CampaignExpansionPanel_title.Value" Value="Campaigns" />
+			<Item Name="LocalizableStrings.CampaignExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.CampaignList_258906ba.Value" Value="Campaign status" />
+			<Item Name="LocalizableStrings.CampaignList_a4608c16.Value" Value="Contact status" />
+			<Item Name="LocalizableStrings.CampaignList_OpenRowItemCaption.Value" Value="Open" />
+			<Item Name="LocalizableStrings.CampaignRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.CampaignSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.CampaignSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.CasesAddButton_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.CasesExpansionPanel_title.Value" Value="Cases" />
+			<Item Name="LocalizableStrings.CasesExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.CasesImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.CasesRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.CasesSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.CasesSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.Channel_placeholder.Value" Value="Select channel" />
+			<Item Name="LocalizableStrings.ComboBox_268yz1f_placeholder.Value" Value="Select source" />
+			<Item Name="LocalizableStrings.ComboBox_3zub1m3_label.Value" Value="Select" />
+			<Item Name="LocalizableStrings.ComboBox_3zub1m3_placeholder.Value" Value="Select channel" />
+			<Item Name="LocalizableStrings.CustomerNeed_placeholder.Value" Value="Select customer need" />
+			<Item Name="LocalizableStrings.EventExpansionPanel_title.Value" Value="Events" />
+			<Item Name="LocalizableStrings.EventExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.EventRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.EventSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.EventSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.ExpansionPanel_1re2q9h_title.Value" Value="Submitted forms" />
+			<Item Name="LocalizableStrings.ExpansionPanel_5etntax_title.Value" Value="Expanded list" />
+			<Item Name="LocalizableStrings.ExpansionPanel_cl6jd1j_title.Value" Value="Expanded list" />
+			<Item Name="LocalizableStrings.ExpansionPanel_orushf4_title.Value" Value="Expanded list" />
+			<Item Name="LocalizableStrings.ExpansionPanel_vnm6t7m_title.Value" Value="Submitted forms" />
+			<Item Name="LocalizableStrings.ExpansionPanel_waeo36h_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.ExpansionPanel_wnddm9x_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_2djs4b4_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_8hnptnp_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_9p9pxsz_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_cwv991v_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_iuanhaw_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_ndfhsfl_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_nn4e4tv_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_pjzbr97_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_us2ka4c_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_vuv87zn_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_wzj2id8_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailAddBtn_z5wul71_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_4fz0vrd_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_64g7yfo_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_d9kp62y_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_iefo8tm_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_qmzntqd_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_rls9rem_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_714xipa_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_950wnaz_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_ay7t1nq_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_czhqpwi_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_f26nmj3_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_fcfuqv2_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_k7c9wfe_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_lyt0jdm_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_mzilom4_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_uknb3rf_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_65ju6sm_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_ajk754f_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_b3l05aw_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_k5ozk6j_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_ypobw9p_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_zda9av2_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_769sr56_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_elz657z_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_hlsnoa9_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_m3w49bc_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_sj49lgw_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_xaaj1yc_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_63wr3ah_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_g626uxc_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_guwzrkm_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_icmycs2_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_l68p3oj_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_weylxjf_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.LeadAddButton_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.LeadConversionScore_tooltip.Value" Value="The score indicates the probability of creating a Lead associated with the Contact. The value is calculated with the ML model" />
+			<Item Name="LocalizableStrings.LeadExpansionPanel_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.LeadExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.LeadImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.LeadRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.LeadSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.LeadSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.MenuItem_smyltlp_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.MenuItem_tc2qcwu_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.MenuItem_tz82vh6_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.MrktApolloLastSyncDate_label.Value" Value="Last enrichment from Apollo" />
+			<Item Name="LocalizableStrings.MrktApolloLastSyncDate_tooltip.Value" Value="This field shows the date of the most recent enrichment from Apollo. If empty, data isn't synced with Apollo yet." />
+			<Item Name="LocalizableStrings.MrktLeadAddButton_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.MrktLeadExpansionPanel_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.MrktLeadExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.MrktLeadImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.MrktLeadSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.MrktLeadSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.OpportunityAddButton_caption.Value" Value="New" />
+			<Item Name="LocalizableStrings.OpportunityExpansionPanel_title.Value" Value="Opportunities" />
+			<Item Name="LocalizableStrings.OpportunityExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.OpportunityImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.OpportunityRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.OpportunitySearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.OpportunitySettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.RecommendedProductExpansionPanel_title.Value" Value="Recommended products" />
+			<Item Name="LocalizableStrings.RecommendedProductExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.RecommendedProductRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.RecommendedProductSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.RecommendedProductSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.RegisterMethod_placeholder.Value" Value="Select registration method" />
+			<Item Name="LocalizableStrings.SalesTab_caption.Value" Value="Sales" />
+			<Item Name="LocalizableStrings.SearchFilter_dyiu0p0_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.ServiceAgreementsExpansionPanel_title.Value" Value="Service agreements" />
+			<Item Name="LocalizableStrings.ServiceAgreementsExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.ServiceAgreementsImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_4f106e3b.Value" Value="Title" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_5f9c7ad3.Value" Value="Number" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_623c7fb3.Value" Value="Owner" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_86478300.Value" Value="Status" />
+			<Item Name="LocalizableStrings.ServiceAgreementsListDS_ServicePact.Value" Value="Service agreement" />
+			<Item Name="LocalizableStrings.ServiceAgreementsRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.ServiceAgreementsSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.ServiceAgreementsSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.ServiceTab_caption.Value" Value="Service" />
+			<Item Name="LocalizableStrings.Slider_nqxtwy2_label.Value" Value="e" />
+			<Item Name="LocalizableStrings.Source_placeholder.Value" Value="Select source" />
+			<Item Name="LocalizableStrings.SubmittedFormExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.SubmittedFormImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.SubmittedFormSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.SubmittedFormSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.TabContainer_c52wspk_caption.Value" Value="YouTube" />
+			<Item Name="LocalizableStrings.TabContainer_mv41ha8_caption.Value" Value="Service" />
+			<Item Name="LocalizableStrings.WebActionExpansionPanel_title.Value" Value="Web actions" />
+			<Item Name="LocalizableStrings.WebActionExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.WebActionImportDataButton_caption.Value" Value="Data import" />
+			<Item Name="LocalizableStrings.WebActionList_a9a6f0cb.Value" Value="Start date" />
+			<Item Name="LocalizableStrings.WebActionList_f312b329.Value" Value="Page URL address" />
+			<Item Name="LocalizableStrings.WebActionRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.WebActionSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.WebActionSettingsButton_caption.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.WebSessionButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.WebSessionExpansionPanel_title.Value" Value="Web sessions" />
+			<Item Name="LocalizableStrings.WebSessionExportDataButton_caption.Value" Value="Export to Excel" />
+			<Item Name="LocalizableStrings.WebSessionList_1259aaa8.Value" Value="Duration, sec" />
+			<Item Name="LocalizableStrings.WebSessionList_439c70ce.Value" Value="City" />
+			<Item Name="LocalizableStrings.WebSessionList_50a6c11c.Value" Value="Start date" />
+			<Item Name="LocalizableStrings.WebSessionList_bb96b5ea.Value" Value="Country" />
+			<Item Name="LocalizableStrings.WebSessionList_fa5fb4d8.Value" Value="Actions" />
+			<Item Name="LocalizableStrings.WebSessionRefreshButton_caption.Value" Value="Refresh" />
+			<Item Name="LocalizableStrings.WebSessionSearchFilter_placeholder.Value" Value="Search" />
+			<Item Name="LocalizableStrings.WebSessionSettingsButton_caption.Value" Value="Actions" />
+		</Items>
+	</Group>
+</Resources>

@@ -1,0 +1,119 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="ru-RU">
+	<Group Type="String">
+		<Items>
+			<Item Name="LocalizableStrings.BulkEmailExpansionPanel_title.Value" Value="Массовые рассылки" />
+			<Item Name="LocalizableStrings.BulkEmailExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.BulkEmailList_59f54b50.Value" Value="Дата отправки" />
+			<Item Name="LocalizableStrings.BulkEmailList_d96e6f8c.Value" Value="Тип" />
+			<Item Name="LocalizableStrings.BulkEmailRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.BulkEmailSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.BulkEmailSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.Button_8lva7d5_caption.Value" Value="Создать лид" />
+			<Item Name="LocalizableStrings.Button_srxtvyo_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.Button_uld37ti_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.CampaignExpansionPanel_title.Value" Value="Кампании" />
+			<Item Name="LocalizableStrings.CampaignExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.CampaignList_258906ba.Value" Value="Статус кампании" />
+			<Item Name="LocalizableStrings.CampaignList_a4608c16.Value" Value="Статус контакта" />
+			<Item Name="LocalizableStrings.CampaignList_OpenRowItemCaption.Value" Value="Открыть" />
+			<Item Name="LocalizableStrings.CampaignRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.CampaignSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.CampaignSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.CasesAddButton_caption.Value" Value="Добавить" />
+			<Item Name="LocalizableStrings.CasesExpansionPanel_title.Value" Value="Обращения" />
+			<Item Name="LocalizableStrings.CasesExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.CasesImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.CasesRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.CasesSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.CasesSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.Channel_placeholder.Value" Value="Выберите канал" />
+			<Item Name="LocalizableStrings.ComboBox_268yz1f_placeholder.Value" Value="Выберите источник" />
+			<Item Name="LocalizableStrings.ComboBox_3zub1m3_placeholder.Value" Value="Выберите канал" />
+			<Item Name="LocalizableStrings.CustomerNeed_placeholder.Value" Value="Выберите тип потребности" />
+			<Item Name="LocalizableStrings.EventExpansionPanel_title.Value" Value="Мероприятия" />
+			<Item Name="LocalizableStrings.EventExportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.EventRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.EventSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.EventSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.ExpansionPanel_vnm6t7m_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.ExpansionPanel_waeo36h_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.ExpansionPanel_wnddm9x_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_iefo8tm_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.GridDetailExportDataBtn_rls9rem_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_czhqpwi_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.GridDetailImportDataBtn_uknb3rf_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.GridDetailRefreshBtn_k5ozk6j_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.GridDetailSearchFilter_769sr56_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_icmycs2_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.GridDetailSettingsBtn_weylxjf_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.LeadAddButton_caption.Value" Value="Добавить" />
+			<Item Name="LocalizableStrings.LeadConversionScore_tooltip.Value" Value="Рейтинг показывает вероятность создания Лида по Контакту. Это значение рассчитывается с помощью модели машинного обучения" />
+			<Item Name="LocalizableStrings.LeadExpansionPanel_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.LeadExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.LeadImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.LeadRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.LeadSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.LeadSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.MenuItem_smyltlp_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.MenuItem_tc2qcwu_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.MenuItem_tz82vh6_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.MrktLeadAddButton_caption.Value" Value="Добавить" />
+			<Item Name="LocalizableStrings.MrktLeadExpansionPanel_title.Value" Value="MQL/SQL" />
+			<Item Name="LocalizableStrings.MrktLeadExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.MrktLeadImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.MrktLeadSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.MrktLeadSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.OpportunityAddButton_caption.Value" Value="Добавить" />
+			<Item Name="LocalizableStrings.OpportunityExpansionPanel_title.Value" Value="Продажи" />
+			<Item Name="LocalizableStrings.OpportunityExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.OpportunityImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.OpportunityRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.OpportunitySearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.OpportunitySettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.RecommendedProductExpansionPanel_title.Value" Value="Рекомендованные продукты" />
+			<Item Name="LocalizableStrings.RecommendedProductExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.RecommendedProductRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.RecommendedProductSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.RecommendedProductSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.RegisterMethod_placeholder.Value" Value="Выберите способ регистрации" />
+			<Item Name="LocalizableStrings.SalesTab_caption.Value" Value="Продажи" />
+			<Item Name="LocalizableStrings.ServiceAgreementsExpansionPanel_title.Value" Value="Сервисные договоры" />
+			<Item Name="LocalizableStrings.ServiceAgreementsExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.ServiceAgreementsImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_4f106e3b.Value" Value="Заголовок" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_5f9c7ad3.Value" Value="Номер" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_623c7fb3.Value" Value="Ответственный" />
+			<Item Name="LocalizableStrings.ServiceAgreementsList_86478300.Value" Value="Состояние" />
+			<Item Name="LocalizableStrings.ServiceAgreementsListDS_ServicePact.Value" Value="Сервисный договор" />
+			<Item Name="LocalizableStrings.ServiceAgreementsRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.ServiceAgreementsSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.ServiceAgreementsSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.ServiceTab_caption.Value" Value="Сервис" />
+			<Item Name="LocalizableStrings.Source_placeholder.Value" Value="Выберите источник" />
+			<Item Name="LocalizableStrings.SubmittedFormExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.SubmittedFormImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.SubmittedFormSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.SubmittedFormSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.TabContainer_mv41ha8_caption.Value" Value="Сервис" />
+			<Item Name="LocalizableStrings.WebActionExpansionPanel_title.Value" Value="Действия на сайте" />
+			<Item Name="LocalizableStrings.WebActionExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.WebActionImportDataButton_caption.Value" Value="Импорт данных" />
+			<Item Name="LocalizableStrings.WebActionList_a9a6f0cb.Value" Value="Начало действия" />
+			<Item Name="LocalizableStrings.WebActionRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.WebActionSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.WebActionSettingsButton_caption.Value" Value="Действия" />
+			<Item Name="LocalizableStrings.WebSessionButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.WebSessionExpansionPanel_title.Value" Value="Сессии на сайте" />
+			<Item Name="LocalizableStrings.WebSessionExportDataButton_caption.Value" Value="Экспорт в Excel" />
+			<Item Name="LocalizableStrings.WebSessionList_1259aaa8.Value" Value="Длительность, сек" />
+			<Item Name="LocalizableStrings.WebSessionList_439c70ce.Value" Value="Город" />
+			<Item Name="LocalizableStrings.WebSessionList_50a6c11c.Value" Value="Начало" />
+			<Item Name="LocalizableStrings.WebSessionList_bb96b5ea.Value" Value="Страна" />
+			<Item Name="LocalizableStrings.WebSessionList_fa5fb4d8.Value" Value="Действий" />
+			<Item Name="LocalizableStrings.WebSessionRefreshButton_caption.Value" Value="Обновить" />
+			<Item Name="LocalizableStrings.WebSessionSearchFilter_placeholder.Value" Value="Поиск" />
+			<Item Name="LocalizableStrings.WebSessionSettingsButton_caption.Value" Value="Действия" />
+		</Items>
+	</Group>
+</Resources>
