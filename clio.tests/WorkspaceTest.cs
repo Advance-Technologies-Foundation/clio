@@ -46,12 +46,12 @@ namespace Clio.Tests
 			var envSettings = GetTestEnvironmentSettings();
 			var workspace = GetTestWorkspace(envSettings);
 			// Act
-			string appStorePath = @"D:\Temp\clio\tests\APP_STORE";
+			string appStorePath = @"C:\Temp\clioAppStore";
 			string appName = "iframe-sample";
 			string appVersion = "1.0.0";
 			string fileName = $"{appName}_{appVersion}.zip";
-			string originClioSourcePath = "D:\\Projects\\ATF\\clio";
-			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "clio.tests","Examples","workspaces",appName);
+			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
+			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples","workspaces",appName);
 			var releaseFileName = workspace.PublishToFolder(exampleWorkspacePath, appStorePath, appName, appVersion);
 			// Assert
 			var expectedFileName = Path.Combine(appStorePath,appName,appVersion, fileName);
