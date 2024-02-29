@@ -43,21 +43,29 @@ namespace Clio.Tests
 		[Test]
 		public void PublishWorkspaceTest() {
 			// Arrange
-			var envSettings = GetTestEnvironmentSettings();
-			var workspace = GetTestWorkspace(envSettings);
-			// Act
 			string appStorePath = @"C:\Temp\clioAppStore";
-			string appName = "iframe-sample";
+			string appName = "iframe-sample"; 
 			string appVersion = "1.0.0";
 			string fileName = $"{appName}_{appVersion}.zip";
-			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples","workspaces",appName);
-			var releaseFileName = workspace.PublishToFolder(exampleWorkspacePath, appStorePath, appName, appVersion);
-			// Assert
+			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
 			var expectedFileName = Path.Combine(appStorePath,appName,appVersion, fileName);
-			Assert.AreEqual(expectedFileName, releaseFileName);
-			var versionFileExist = File.Exists(expectedFileName);
-			Assert.AreEqual(true, versionFileExist);
+			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples","workspaces",appName);
+			try {
+				// Act
+				var envSettings = GetTestEnvironmentSettings();
+				var workspace = GetTestWorkspace(envSettings);
+				var releaseFileName = workspace.PublishToFolder(exampleWorkspacePath, appStorePath, appName, appVersion);
+				// Assert
+				Assert.AreEqual(expectedFileName, releaseFileName);
+				var versionFileExist = File.Exists(expectedFileName);
+				Assert.AreEqual(true, versionFileExist);
+				Assert.True(new FileInfo(expectedFileName).Length > 80000);
+			} finally {
+				if (File.Exists(expectedFileName)) {
+					File.Delete(expectedFileName);
+				}
+			}
+
 		}	
 	}
 }

@@ -5,6 +5,7 @@ namespace Clio.Workspaces
 {
 	using System.Collections.Generic;
 	using System.IO;
+	using System.Linq;
 	using Clio.Common;
 	using Clio.Package;
 	using Terrasoft.Core;
@@ -17,7 +18,7 @@ namespace Clio.Workspaces
 		#region Methods: Public
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
-		void PublishToFolder(string zipFileName, string destinationFolderPath, string destinationFolderPath1, bool v);
+		string PublishToFolder(string zipFileName, string destinationFolderPath, string destinationFolderPath1, bool v);
 
 		#endregion
 
@@ -170,9 +171,10 @@ namespace Clio.Workspaces
 			});
 		}
 
-		public void PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite) {
+		public string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite) {
 			_workspacePathBuilder.RootPath = workspaceFolderPath;
-			var packages = Directory.GetDirectories(_workspacePathBuilder.PackagesFolderPath);	
+			string resultApplicationFilePath = string.Empty;
+			var packages = Directory.GetDirectories(_workspacePathBuilder.PackagesFolderPath).Select(p => new DirectoryInfo(p).Name);	
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				var rootPackedPackagePath =
 					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
@@ -181,9 +183,12 @@ namespace Clio.Workspaces
 					ResetSchemaChangeStateServiceUrl(packageName);
 				}
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+				var filename = Path.GetFileName(applicationZip);
+				resultApplicationFilePath = Path.Combine(destinationFolderPath, filename);
 				_fileSystem.CreateDirectoryIfNotExists(destinationFolderPath);
-				_fileSystem.CopyFile(applicationZip, Path.Combine(destinationFolderPath, zipFileName), overwrite);
+				_fileSystem.CopyFile(applicationZip, resultApplicationFilePath, overwrite);
 			});
+			return resultApplicationFilePath;
 		}
 
 		#endregion
