@@ -7,20 +7,23 @@
 
 	#region Class: PushWorkspaceCommandOptions
 
-	[Verb("publish-workspace", Aliases = new string[] { "publishw" }, HelpText = "Publish workspace to zip file")]
+	[Verb("publish-workspace", Aliases = new string[] { "publishw", "publish-hub", "ph" }, HelpText = "Publish workspace to zip file")]
 	public class PublishWorkspaceCommandOptions
 	{
-		[Option('f', "zipFileName", Required = true,
-			HelpText = "Path to package repository folder", Default = null)]
-		public string ZipFileName { get; internal set; }
+		[Option('h', "app-hub", Required = true,
+			HelpText = "Path to application hub", Default = null)]
+		public string AppHupPath { get; internal set; }
 
-		[Option('r', "repoPath", Required = true,
-			HelpText = "Path to package repository folder", Default = null)]
-		public string DestionationFolderPath { get; internal set; }
+		[Option('r', "repo-path", Required = true,
+			HelpText = "Path to workspace folder", Default = null)]
+		public string WorkspaceFolderPath { get; internal set; }
 
-		[Option("overwrite", Required = false,
-			HelpText = "Path to package repository folder", Default = false)]
-		public bool Overwrite { get; internal set; }
+		[Option('v', "app-version", Required = true,
+			HelpText = "Application version", Default = null)]
+		public string AppVersion { get; internal set; }
+
+		[Option('a', "app-name", Required = false, HelpText = "Overwrite existing file", Default = false)]
+		public string AppName { get; internal set; }
 	}
 
 	#endregion
@@ -49,7 +52,7 @@
 
 		public override int Execute(PublishWorkspaceCommandOptions options) {
 			try {
-				_workspace.PublishZipToFolder(options.ZipFileName, options.DestionationFolderPath, options.Overwrite);
+				_workspace.PublishToFolder(options.WorkspaceFolderPath, options.AppHupPath, options.AppName, options.AppVersion);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

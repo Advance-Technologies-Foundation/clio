@@ -21,7 +21,7 @@ namespace Clio.Workspaces
 		void AddPackageIfNeeded(string packageName);
 		void SaveWorkspaceEnvironment(string environmentName);
 		void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile);
-		string PublishToFolder(string exampleWorkspacePath, string appStorePath, string appName, string appVersion);
+		string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion);
 		#endregion
 
 	}
