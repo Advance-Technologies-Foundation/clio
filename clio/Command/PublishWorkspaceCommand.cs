@@ -7,22 +7,22 @@
 
 	#region Class: PushWorkspaceCommandOptions
 
-	[Verb("publish-workspace", Aliases = new string[] { "publishw", "publish-hub", "ph" }, HelpText = "Publish workspace to zip file")]
-	public class PublishWorkspaceCommandOptions
+	[Verb("publish-app", Aliases = new string[] { "publishw", "publish-hub", "ph", "publish-workspace" }, HelpText = "Publish workspace to zip file")]
+	public class PublishWorkspaceCommandOptions: EnvironmentOptions
 	{
 		[Option('h', "app-hub", Required = true,
 			HelpText = "Path to application hub", Default = null)]
 		public string AppHupPath { get; internal set; }
 
 		[Option('r', "repo-path", Required = true,
-			HelpText = "Path to workspace folder", Default = null)]
+			HelpText = "Path to application workspace folder", Default = null)]
 		public string WorkspaceFolderPath { get; internal set; }
 
 		[Option('v', "app-version", Required = true,
 			HelpText = "Application version", Default = null)]
 		public string AppVersion { get; internal set; }
 
-		[Option('a', "app-name", Required = false, HelpText = "Overwrite existing file", Default = false)]
+		[Option('a', "app-name", Required = true, HelpText = "Application name", Default = false)]
 		public string AppName { get; internal set; }
 	}
 

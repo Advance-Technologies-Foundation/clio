@@ -138,7 +138,7 @@ namespace Clio
 			containerBuilder.RegisterType<UnzipRequestValidator>();
 			containerBuilder.RegisterType<GitSyncCommand>();
 			containerBuilder.RegisterType<DeactivatePackageCommand>();
-
+			containerBuilder.RegisterType<PublishWorkspaceCommand>();
 			return containerBuilder.Build();
 		}
 	}
