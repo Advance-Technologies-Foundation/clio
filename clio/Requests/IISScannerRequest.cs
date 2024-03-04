@@ -67,7 +67,7 @@ namespace Clio.Requests
 
 				int i = 1;
 
-				getSites(_powerShellFactory)?.ToList().ForEach(async site =>
+				GetSites(_powerShellFactory)?.ToList().ForEach(async site =>
 				{
 					Console.WriteLine($"({i++}) {site.Key} - {site.Value}");
 				});
@@ -167,7 +167,7 @@ namespace Clio.Requests
 		/// Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
 		/// </summary>
 
-		public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> getSites = (psf) =>
+		public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> GetSites = (psf) =>
 		{
 			Dictionary<string, Uri> result = new();
 
@@ -304,7 +304,7 @@ namespace Clio.Requests
 		{
 		}
 
-		internal enum SiteType
+		public enum SiteType
 		{
 			NetFramework,
 			Core,

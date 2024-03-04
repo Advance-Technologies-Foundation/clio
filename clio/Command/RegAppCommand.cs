@@ -47,7 +47,7 @@ namespace Clio.Command
 			try {
 				if (options.FromIis) {
 					_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
-					var sites = IISScannerHandler.getSites(_powerShellFactory);
+					var sites = IISScannerHandler.GetSites(_powerShellFactory);
 
 					sites.ToList().ForEach(site => {
 						_settingsRepository.ConfigureEnvironment(site.Key, new EnvironmentSettings() {
