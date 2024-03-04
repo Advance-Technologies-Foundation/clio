@@ -4,11 +4,14 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
 using ATF.Repository;
+using cliogate.Files.cs.Dto;
 using ClioGate.Functions.SQL;
 using Common.Logging;
 using Newtonsoft.Json;
@@ -21,6 +24,7 @@ using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.Core.Packages;
 using Terrasoft.Core.ServiceModelContract;
+using Terrasoft.Core.Store;
 using Terrasoft.Web.Common;
 using Terrasoft.Web.Http.Abstractions;
 #if NETSTANDARD2_0
@@ -478,10 +482,84 @@ namespace cliogate.Files.cs
 			return entities[0].GetTypedColumnValue<string>(columndId.Name);
 		}
 
+		
+		// /rest/CreatioApiGateway/GetSysInfo
+		[OperationContract]
+		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public SysInfo GetSysInfo(){
+			if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				return new SysInfo {
+					Success = false,
+					ErrorInfo = new ErrorInfo {
+						Message = "You don't have permission for operation CanManageSolution"
+					}
+				};
+			}
+
+			SysInfo sysInfo = new SysInfo {
+				IsNetFramework = HttpContextAccessor.GetInstance().Request.BaseUrl.EndsWith("/0"),
+				OsInfo = new OsInfo {
+					FrameworkDescription = RuntimeInformation.FrameworkDescription,
+					OsArchitecture = RuntimeInformation.OSArchitecture.ToString(),
+					OsDescription = RuntimeInformation.OSDescription
+				},
+				CoreVersion = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version.ToString()
+			};
+
+			LicManager lm = UserConnection.AppConnection.LicManager;
+			sysInfo.LicenseInfo = new LicenseInfo {
+				CustomerId = lm.CustomerId
+			};
+			IDataStore appData = UserConnection.AppConnection.SystemUserConnection.ApplicationData;
+			if (appData.Keys.Contains("IsDemoMode")) {
+				object isDemoMode = appData["IsDemoMode"];
+				if (isDemoMode != null) {
+					bool isBool = bool.TryParse(isDemoMode.ToString(), out bool demoMode);
+					if (isBool) {
+						sysInfo.LicenseInfo.IsDemoMode = demoMode;
+					}
+				}
+			}
+
+			string sql;
+			DBEngineType dbEngine = UserConnection.DBEngine.DBEngineType;
+			switch (dbEngine) {
+				case DBEngineType.MSSql: {
+					const string mSql = "Select @@version;";
+					sql = mSql;
+					break;
+				}
+				case DBEngineType.PostgreSql: {
+					const string pSql = "select version();";
+					sql = pSql;
+					break;
+				}
+				case DBEngineType.Oracle: {
+					const string oSql = "select * from v$version;";
+					sql = oSql;
+					break;
+				}
+				default:
+					throw new ArgumentOutOfRangeException("DBEngineType", dbEngine, "DBEngineType not supported.");
+			}
+
+			try {
+				CustomQuery cq = new CustomQuery(UserConnection, sql);
+				string qr = cq.ExecuteScalar<string>();
+				sysInfo.DbInfo = new DbInfo {
+					DbEngineType = dbEngine.ToString(),
+					DbDescription = qr
+				};
+			} catch (Exception e) {
+				ILog logger = LogManager.GetLogger("custom");
+				logger.ErrorFormat("Could not get db version with custom query <{0}>: {1}", sql, e.Message);
+			}
+
+			return sysInfo;
+		}
 		#endregion
-
+		
 	}
-
 	
 	public class PackageExplorer
 	{
