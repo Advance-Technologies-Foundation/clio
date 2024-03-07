@@ -661,6 +661,20 @@ clio healthcheck <ENVIRONMENT NAME> -a true -h true
 clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 ```
 
+## Get Creatio Platform Info
+
+This command is designed to retrieve information about the Creatio instance, version, 
+underlying runtime and database type and product name.
+
+```bash
+clio get-info -e <ENVIRONMENT_NAME>
+
+//OR
+
+clio get-info <ENVIRONMENT_NAME>
+````
+
+
 
 # Development
 

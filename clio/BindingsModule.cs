@@ -126,6 +126,7 @@ namespace Clio
 			containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
 			containerBuilder.RegisterType<SetWebServiceUrlCommand>();
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
+			containerBuilder.RegisterType<GetCreatioInfoCommand>();
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()
