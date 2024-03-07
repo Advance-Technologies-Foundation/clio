@@ -10,7 +10,7 @@ public interface IPackageDeactivator {
     #region Methods: Internal
 
     /// <summary>
-    /// Deactivate package by UId.
+    /// Deactivate package by name.
     /// </summary>
     /// <param name="packageName"></param>
     void Deactivate(string packageName);
