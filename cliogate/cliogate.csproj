@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net472</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <ProjectGuid>{E24226F9-C177-458F-AF34-9338E2699983}</ProjectGuid>
     <OutputPath Condition="'$(TargetFramework)' == 'net472'">Files\Bin\</OutputPath>
     <OutputPath Condition="'$(TargetFramework)' == 'netstandard2.0'">Files\Bin\netstandard\</OutputPath>
@@ -36,6 +36,9 @@
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
     <None Include="descriptor.json" />
+    <None Update="Files\data\product_info.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Schemas\**\*.cs" />

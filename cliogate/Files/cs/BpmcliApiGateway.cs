@@ -498,12 +498,9 @@ namespace cliogate.Files.cs
 
 			SysInfo sysInfo = new SysInfo {
 				IsNetFramework = HttpContextAccessor.GetInstance().Request.BaseUrl.EndsWith("/0"),
-				OsInfo = new OsInfo {
-					FrameworkDescription = RuntimeInformation.FrameworkDescription,
-					OsArchitecture = RuntimeInformation.OSArchitecture.ToString(),
-					OsDescription = RuntimeInformation.OSDescription
-				},
-				CoreVersion = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version.ToString()
+				CoreVersion = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version.ToString(),
+				DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
+				ProductName = "Unknown for now"
 			};
 
 			LicManager lm = UserConnection.AppConnection.LicManager;
@@ -520,41 +517,6 @@ namespace cliogate.Files.cs
 					}
 				}
 			}
-
-			string sql;
-			DBEngineType dbEngine = UserConnection.DBEngine.DBEngineType;
-			switch (dbEngine) {
-				case DBEngineType.MSSql: {
-					const string mSql = "Select @@version;";
-					sql = mSql;
-					break;
-				}
-				case DBEngineType.PostgreSql: {
-					const string pSql = "select version();";
-					sql = pSql;
-					break;
-				}
-				case DBEngineType.Oracle: {
-					const string oSql = "select * from v$version;";
-					sql = oSql;
-					break;
-				}
-				default:
-					throw new ArgumentOutOfRangeException("DBEngineType", dbEngine, "DBEngineType not supported.");
-			}
-
-			try {
-				CustomQuery cq = new CustomQuery(UserConnection, sql);
-				string qr = cq.ExecuteScalar<string>();
-				sysInfo.DbInfo = new DbInfo {
-					DbEngineType = dbEngine.ToString(),
-					DbDescription = qr
-				};
-			} catch (Exception e) {
-				ILog logger = LogManager.GetLogger("custom");
-				logger.ErrorFormat("Could not get db version with custom query <{0}>: {1}", sql, e.Message);
-			}
-
 			return sysInfo;
 		}
 		#endregion
