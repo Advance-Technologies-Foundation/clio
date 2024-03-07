@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using cliogate.Files.cs.Dto;
 
 namespace cliogate.Files.cs
@@ -32,7 +33,6 @@ namespace cliogate.Files.cs
 								Packages = lineItems[2].Split(new []{','}, StringSplitOptions.RemoveEmptyEntries)
 							};
 							productInfos.Add(product);
-							
 						}
 					}
 				}
@@ -42,13 +42,21 @@ namespace cliogate.Files.cs
 		
 		public string FindProductNameByPackages(IEnumerable<string> packages, Version coreVersion){
 			
-			var products = GetProductInfoByVersion(coreVersion);
+			var products = GetProductInfoByVersion(coreVersion)
+				.OrderByDescending(p => p.Packages.Length)
+				.ThenByDescending(p=> p.Name.Length);
 			
-			
-			//1 perfect match
-			
-			
-			return "";
+			foreach (ProductInfo product in products) {
+				if(product.Packages.Intersect(packages).Count() == product.Packages.Length) {
+					return product.Name
+						.Replace("linux","")
+						.Replace("& customer360","")
+						.Replace("customerCenter","customer center")
+						.Replace("compatibility edition","")
+						.TrimEnd();
+				}
+			}
+			return "UNKNOWN PRODUCT";
 		}
 	}
 }

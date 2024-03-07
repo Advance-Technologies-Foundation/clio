@@ -20,4 +20,10 @@
       <ProjectReference Include="..\cliogate\cliogate.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <None Update="data\8.1.2.3842.txt">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
 </Project>

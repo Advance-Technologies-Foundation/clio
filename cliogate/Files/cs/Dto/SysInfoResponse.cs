@@ -4,11 +4,23 @@ using Terrasoft.Core.ServiceModelContract;
 namespace cliogate.Files.cs.Dto
 {
 	
-	[DataContract(Name = nameof(SysInfo))]
-	public class SysInfo : BaseResponse
+	[DataContract(Name = nameof(SysInfoResponse))]
+	public class SysInfoResponse : BaseResponse
 	{
 
 		#region Properties: Public
+
+
+		[DataMember(Name = nameof(SysInfo), Order = 10)]
+		public CreatioPlatformInfo SysInfo { get; set; }
+		
+		
+		#endregion
+	}
+	
+	[DataContract]
+	public class CreatioPlatformInfo
+	{
 
 		[DataMember(Name = nameof(ProductName), Order = 10)]
 		public string ProductName { get; set; }
@@ -16,19 +28,17 @@ namespace cliogate.Files.cs.Dto
 		[DataMember(Name = nameof(CoreVersion), Order = 20)]
 		public string CoreVersion { get; set; }
 		
-		[DataMember(Name = nameof(IsNetFramework), Order = 30)]
-		public bool IsNetFramework { get; set; }
+		[DataMember(Name = nameof(Runtime), Order = 30)]
+		public string Runtime { get; set; }
 
 		[DataMember(Name = nameof(DbEngineType), Order = 40)]
 		public string DbEngineType { get; set; }
 
 		[DataMember(Name = nameof(LicenseInfo), Order = 50)]
 		public LicenseInfo LicenseInfo { get; set; }
-		
-		#endregion
+
 	}
 	
-
 	[DataContract(Name = nameof(LicenseInfo))]
 	public class LicenseInfo
 	{

@@ -486,9 +486,9 @@ namespace cliogate.Files.cs
 		// /rest/CreatioApiGateway/GetSysInfo
 		[OperationContract]
 		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public SysInfo GetSysInfo(){
+		public SysInfoResponse GetSysInfo(){
 			if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
-				return new SysInfo {
+				return new SysInfoResponse {
 					Success = false,
 					ErrorInfo = new ErrorInfo {
 						Message = "You don't have permission for operation CanManageSolution"
@@ -496,15 +496,28 @@ namespace cliogate.Files.cs
 				};
 			}
 
-			SysInfo sysInfo = new SysInfo {
-				IsNetFramework = HttpContextAccessor.GetInstance().Request.BaseUrl.EndsWith("/0"),
-				CoreVersion = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version.ToString(),
-				DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
-				ProductName = "Unknown for now"
+			EntitySchemaQuery esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
+			esq.AddAllSchemaColumns();
+			var packages = esq.GetEntityCollection(UserConnection);
+			List<string> packageNames = new List<string>();
+			foreach (Entity package in packages) {
+				string name = package.GetTypedColumnValue<string>("Name");
+				packageNames.Add(name);
+			}
+		
+			var ver = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version;
+			ProductManager pm  = new ProductManager();
+			SysInfoResponse sysInfoResponse = new SysInfoResponse {
+				SysInfo = new CreatioPlatformInfo(){
+					Runtime = RuntimeInformation.FrameworkDescription,
+					CoreVersion = ver.ToString(),
+					DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
+					ProductName = pm.FindProductNameByPackages(packageNames, ver)
+				}
 			};
 
 			LicManager lm = UserConnection.AppConnection.LicManager;
-			sysInfo.LicenseInfo = new LicenseInfo {
+			sysInfoResponse.SysInfo.LicenseInfo = new LicenseInfo {
 				CustomerId = lm.CustomerId
 			};
 			IDataStore appData = UserConnection.AppConnection.SystemUserConnection.ApplicationData;
@@ -513,11 +526,11 @@ namespace cliogate.Files.cs
 				if (isDemoMode != null) {
 					bool isBool = bool.TryParse(isDemoMode.ToString(), out bool demoMode);
 					if (isBool) {
-						sysInfo.LicenseInfo.IsDemoMode = demoMode;
+						sysInfoResponse.SysInfo.LicenseInfo.IsDemoMode = demoMode;
 					}
 				}
 			}
-			return sysInfo;
+			return sysInfoResponse;
 		}
 		#endregion
 		

@@ -2,10 +2,10 @@
   "Descriptor": {
     "UId": "e24226f9-c177-458f-af34-9338e2699983",
     "PackageVersion": "2.0.0.27",
-    "Name": "cliogate_netcore",
+    "Name": "cliogate",
     "Type": 0,
     "ProjectPath": "",
-    "ModifiedOnUtc": "/Date(1709841655000)/",
+    "ModifiedOnUtc": "/Date(1709852347000)/",
     "Maintainer": "Advanced Technologies Foundation",
     "DependsOn": []
   }
