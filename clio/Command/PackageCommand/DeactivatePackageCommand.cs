@@ -14,7 +14,7 @@ namespace Clio.Command.PackageCommand
 		}
 	}
 
-	#region Class: GetPackageVersionCommand
+	#region Class: DeactivatePackageCommand
 
 	internal class DeactivatePackageCommand : RemoteCommand<DeactivatePkgOptions> {
 		private readonly IPackageDeactivator _packageDeactivator;

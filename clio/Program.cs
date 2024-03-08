@@ -580,6 +580,7 @@ class Program {
 		typeof(SetWebServiceUrlOptions),
 		typeof(PublishWorkspaceCommandOptions),
 		typeof(GetCreatioInfoCommandOptions),
+		typeof(ActivatePkgOptions)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -670,6 +671,9 @@ class Program {
 			SetWebServiceUrlOptions opts =>Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
+			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
+			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
+			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

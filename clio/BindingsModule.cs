@@ -140,6 +140,8 @@ namespace Clio
 			containerBuilder.RegisterType<GitSyncCommand>();
 			containerBuilder.RegisterType<DeactivatePackageCommand>();
 			containerBuilder.RegisterType<PublishWorkspaceCommand>();
+			containerBuilder.RegisterType<ActivatePackageCommand>();
+
 			return containerBuilder.Build();
 		}
 	}
