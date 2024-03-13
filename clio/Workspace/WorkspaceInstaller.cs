@@ -180,7 +180,7 @@ namespace Clio.Workspaces
 					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
 				foreach (string packageName in packages) {
 					PackPackage(packageName, rootPackedPackagePath);
-					ResetSchemaChangeStateServiceUrl(packageName);
+					//ResetSchemaChangeStateServiceUrl(packageName);
 				}
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
 				var filename = Path.GetFileName(applicationZip);

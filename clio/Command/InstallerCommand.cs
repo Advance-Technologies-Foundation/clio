@@ -170,6 +170,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	private readonly k8Commands _k8;
 	private readonly IMediator _mediator;
 	private readonly RegAppCommand _registerCommand;
+	private readonly IFileSystem _fileSystem;
 	protected string _productFolder;
 	protected string _remoteArtefactServerPath;
 
@@ -178,11 +179,12 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Constructors: Public
 
 	public InstallerCommand(IPackageArchiver packageArchiver, k8Commands k8,
-		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository) {
+		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository, IFileSystem fileSystem) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
 		_registerCommand = registerCommand;
+		_fileSystem = fileSystem;
 		_iisRootFolder = settingsRepository.GetIISClioRootPath();
 		_productFolder = settingsRepository.GetCreatioProductsFolder();
 		_remoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
@@ -486,7 +488,9 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	}
 
 
-	private static Version GetLatestVersion(string remoteArtifactServerPath) {
+	internal Version GetLatestVersion(string remoteArtifactServerPath) {
+		
+		var branchDirs = _fileSystem.GetDirectories(remoteArtifactServerPath);
 		var branches = Directory.GetDirectories(remoteArtifactServerPath);
 		List<Version> version = new List<Version>();
 		foreach (var branch in branches) {
