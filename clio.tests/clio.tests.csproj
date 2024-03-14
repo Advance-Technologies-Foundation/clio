@@ -128,7 +128,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Examples\workspaces\" />
     <Folder Include="TestResults\" />
   </ItemGroup>
 

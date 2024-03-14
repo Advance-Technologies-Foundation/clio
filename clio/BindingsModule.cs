@@ -22,6 +22,7 @@ using FileSystem = System.IO.Abstractions.FileSystem;
 using ATF.Repository.Providers;
 using Clio.Common.db;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
+using Clio.Command.ApplicationCommand;
 
 namespace Clio
 {
@@ -140,6 +141,7 @@ namespace Clio
 			containerBuilder.RegisterType<SetWebServiceUrlCommand>();
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
 			containerBuilder.RegisterType<GetCreatioInfoCommand>();
+			containerBuilder.RegisterType<SetApplicationVersionCommand>();
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()

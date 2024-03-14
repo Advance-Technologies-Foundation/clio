@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using Autofac;
 using Clio.Command;
+using Clio.Command.ApplicationCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.SysSettingsCommand;
@@ -580,7 +581,8 @@ class Program {
 		typeof(SetWebServiceUrlOptions),
 		typeof(PublishWorkspaceCommandOptions),
 		typeof(GetCreatioInfoCommandOptions),
-		typeof(ActivatePkgOptions)
+		typeof(ActivatePkgOptions),
+		typeof(SetApplicationVersionOption)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -672,6 +674,7 @@ class Program {
 			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
+			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};
