@@ -13,6 +13,9 @@ namespace Clio.Common
 	{
 
 		#region Methods: Public
+
+		public IDirectoryInfo GetDirectoryInfo(string path);
+		
 		
 		/// <summary>
 		/// Creates a symbolic link at the specified path that points to the target path.

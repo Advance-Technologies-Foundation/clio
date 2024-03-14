@@ -80,7 +80,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		_logger.WriteInfo($"Copied backup file to server \r\n\tfrom: {backUpFilePath} \r\n\tto  : {dbServer.WorkingFolder}");
 		
 		_logger.WriteInfo("Started db restore...");
-		var result =  mssql.CreateDb(dbName, Path.GetFileName(backUpFilePath)) ? 0 : 1;
+		int result =  mssql.CreateDb(dbName, Path.GetFileName(backUpFilePath)) ? 0 : 1;
 		_logger.WriteInfo($"Created database {dbName} from file {backUpFilePath}");
 		return result;
 	}

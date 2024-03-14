@@ -18,43 +18,48 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions> 
 {
-	[Ignore("need fix")]
+	
 	[Test]
 	public void Test(){
 		//Arrange
-		var logger = Substitute.For<ILogger>();
-		var fileSystem = Substitute.For<IFileSystem>();
-		var dbClientFactory = Substitute.For<IDbClientFactory>();
-		var mssql = Substitute.For<IMssql>();
-		var settingsRepository = Substitute.For<ISettingsRepository>();
-		string existingDbName = "db-that-exists";
-		string newDbName = "new-db-name";
-		mssql.CreateDb(newDbName, Arg.Any<string>())
-			.Returns(true);
+		ILogger logger = Substitute.For<ILogger>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IDbClientFactory dbClientFactory = Substitute.For<IDbClientFactory>();
+		IMssql mssql = Substitute.For<IMssql>();
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		const string backUpFilePath = @"D:\Projects\CreatioProductBuild\8.1.2.2482_Studio_Softkey_MSSQL_ENU\db\BPMonline812Studio.bak";
+		const string existingDbName = "db-that-exists";
+		const string newDbName = "new-db-name";
+		mssql.CreateDb(newDbName, "BPMonline812Studio.bak").Returns(true);
 		mssql.CheckDbExists(existingDbName).Returns(true);
 		mssql.CheckDbExists(Arg.Is<string>(s=> s!= existingDbName)).Returns(false);
 		
-		int port = 1433;
-		string username = "SA";
-		string password = "SA_PASSWORD";
-		string host = "127.0.0.1";
-		dbClientFactory.CreateMssql(host, port, username, password)
-			.Returns(mssql);
+		const int port = 1433;
+		const string username = "SA";
+		const string password = "SA_PASSWORD";
+		const string host = "127.0.0.1";
+		dbClientFactory.CreateMssql(host, port, username, password).Returns(mssql);
 		
 		RestoreDbCommandOptions options = new() {
 			Uri = $"mssql://{username}:{password}@{host}:{port}",
-			BackUpFilePath = @"D:\Projects\CreatioProductBuild\8.1.2.2482_Studio_Softkey_MSSQL_ENU\db\BPMonline812Studio.bak",
+			BackUpFilePath = backUpFilePath,
 			DbWorknigFolder = @"\\wsl.localhost\rancher-desktop\mnt\clio-infrastructure\mssql\data",
-			DbName = existingDbName
+			DbName = newDbName
 		};
-		
+		settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings {
+			DbServer = new DbServer {
+				Uri = new Uri(options.Uri)
+			},
+			DbName = options.DbName,
+			BackupFilePath = options.BackUpFilePath
+		});
 		RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository);
 		
-		var input = new StringReader(newDbName);
+		StringReader input = new (newDbName);
 		Console.SetIn(input);
 		
 		//Act
-		var actual = sut.Execute(options);
+		int actual = sut.Execute(options);
 
 		//Assert
 		actual.Should().Be(0);

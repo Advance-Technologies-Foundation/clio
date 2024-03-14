@@ -17,7 +17,7 @@ namespace Clio.Tests.Command;
 public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsOptions>
 {
 
-	[Ignore("need fix")]
+	
 	[Test]
 	public void Repository_ShouldBeCalled()
 	{
@@ -36,7 +36,7 @@ public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsO
 				{"Id", Guid.NewGuid()},
 				{"Name", "Fake name"},
 				{"Code", "FakeCode"},
-				{"Description", "Fake description"}
+				{"Version", "1.0.0"}
 			}
 		]);
 		
@@ -47,11 +47,13 @@ public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsO
 		command.Execute(options);
 
 		//Assert
+		
+		callCount.Should().Be(1);
 		loggerMock.Received(1).PrintTable(Arg.Is<ConsoleTable>(table => 
 			table.Rows.Count == 1 
-			&& (string)table.Rows[0].GetValue(1) == "Fake name"
-			&& (string)table.Rows[0].GetValue(2) == "FakeCode"
-			&& (string)table.Rows[0].GetValue(3) == "Fake description"
+			&& (string)table.Rows[0].GetValue(0) == "Fake name"
+			&& (string)table.Rows[0].GetValue(1) == "FakeCode"
+			&& (string)table.Rows[0].GetValue(2) == "1.0.0"
 			)
 		);
 	}

@@ -21,10 +21,22 @@ using k8s;
 using FileSystem = System.IO.Abstractions.FileSystem;
 using ATF.Repository.Providers;
 using Clio.Common.db;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio
 {
 	public class BindingsModule {
+
+		private readonly IFileSystem _mockFs;
+
+		public BindingsModule(){
+				
+		}
+
+		public BindingsModule(System.IO.Abstractions.IFileSystem mockFs){
+			_mockFs = mockFs;
+		}
+		
 		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false) {
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
@@ -54,7 +66,12 @@ namespace Clio
 
 			}
 			
-			containerBuilder.RegisterType<FileSystem>().As<System.IO.Abstractions.IFileSystem>();
+			if(_mockFs is not null) {
+				containerBuilder.RegisterInstance(_mockFs).As<System.IO.Abstractions.IFileSystem>();
+			}else {
+				containerBuilder.RegisterType<FileSystem>().As<System.IO.Abstractions.IFileSystem>();
+			}
+			
 
 			var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
