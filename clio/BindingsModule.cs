@@ -27,14 +27,10 @@ namespace Clio
 {
 	public class BindingsModule {
 
-		private readonly IFileSystem _mockFs;
+		private readonly IFileSystem _fileSystem;
 
-		public BindingsModule(){
-				
-		}
-
-		public BindingsModule(System.IO.Abstractions.IFileSystem mockFs){
-			_mockFs = mockFs;
+		public BindingsModule(IFileSystem fileSystem = null){
+			_fileSystem = fileSystem;
 		}
 		
 		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false) {
@@ -66,10 +62,10 @@ namespace Clio
 
 			}
 			
-			if(_mockFs is not null) {
-				containerBuilder.RegisterInstance(_mockFs).As<System.IO.Abstractions.IFileSystem>();
+			if(_fileSystem is not null) {
+				containerBuilder.RegisterInstance(_fileSystem).As<IFileSystem>();
 			}else {
-				containerBuilder.RegisterType<FileSystem>().As<System.IO.Abstractions.IFileSystem>();
+				containerBuilder.RegisterType<FileSystem>().As<IFileSystem>();
 			}
 			
 
