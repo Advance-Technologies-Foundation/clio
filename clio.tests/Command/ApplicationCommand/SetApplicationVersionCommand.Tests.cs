@@ -11,7 +11,7 @@ namespace Clio.Tests.Command.ApplicationCommand
 
 	internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplicationVersionOption>
 	{
-
+		private static string mockApplicationPath = Path.Combine("C:", "MockApplicationFolder");
 		private static string mockWorspacePath = Path.Combine("C:", "MockWorkspaceFolder");
 		private static string appDescriptorJsonPath = Path.Combine(mockWorspacePath, "packages", "IFrameSample", "Files", "app-descriptor.json");
 
@@ -103,6 +103,25 @@ namespace Clio.Tests.Command.ApplicationCommand
 				WorspaceFolderPath = worspaceFolderPath,
 				PackageName = extendPackageName
 			});
+		}
+
+		[TestCase("app-descriptor_v.json")]
+		[TestCase("app-descriptor_wv.json")]
+		[TestCase("app-descriptor_dv.json")]
+		public void SetVersion_WhenSetAppFolderPathForOneApplication(string descriptorPath) {
+			_fileSystem = CreateFs(descriptorPath);
+			string expectedVersion = "8.1.1";
+			var command = new SetApplicationVersionCommand(_fileSystem);
+			string worspaceFolderPath = mockWorspacePath;
+			command.Execute(new SetApplicationVersionOption() {
+				Version = expectedVersion,
+				ApplicationFolderPath = mockApplicationPath
+			});
+			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(appDescriptorJsonPath));
+			string actualVersion = objectJson["Version"];
+			Assert.True(_fileSystem.FileExists(appDescriptorJsonPath));
+			Assert.AreEqual(expectedVersion, actualVersion);
+			Assert.Greater(20, _fileSystem.File.ReadAllLines(appDescriptorJsonPath).Length);
 		}
 
 	}
