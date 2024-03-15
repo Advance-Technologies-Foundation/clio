@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Json;
 using Clio.Command.ApplicationCommand;
+using Clio.ComposableApplication;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.ApplicationCommand
@@ -48,7 +49,8 @@ namespace Clio.Tests.Command.ApplicationCommand
 		public void SetVersion_WhenWorkspaceContainsOneApplication(string descriptorPath) {
 			_fileSystem = CreateFs(descriptorPath, mockWorkspaceAppPackageFolderPath);
 			string expectedVersion = "8.1.1";
-			var command = new SetApplicationVersionCommand(_fileSystem);
+			var composableApplicationManager = new ComposableApplicationManager(_fileSystem);
+			var command = new SetApplicationVersionCommand(composableApplicationManager);
 			string worspaceFolderPath = mockWorspacePath;
 			command.Execute(new SetApplicationVersionOption() {
 				Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
@@ -66,8 +68,9 @@ namespace Clio.Tests.Command.ApplicationCommand
 			appDescriptions.Add("Package1", "app1-app-descriptor.json");
 			appDescriptions.Add("Package2", "app2-app-descriptor.json");
 			_fileSystem = CreateFs(appDescriptions);
+			var composableApplicationManager = new ComposableApplicationManager(_fileSystem);
+			var command = new SetApplicationVersionCommand(composableApplicationManager);
 			string expectedVersion = "8.1.1";
-			var command = new SetApplicationVersionCommand(_fileSystem);
 			string worspaceFolderPath = mockWorspacePath;
 			var exception = Assert.Throws<Exception>( () => command.Execute(new SetApplicationVersionOption() { 
 				Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath }));
@@ -82,7 +85,8 @@ namespace Clio.Tests.Command.ApplicationCommand
 			appDescriptions.Add("Package2", "app1-ext-app-descriptor.json");
 			_fileSystem = CreateFs(appDescriptions);
 			string expectedVersion = "8.1.1";
-			var command = new SetApplicationVersionCommand(_fileSystem);
+			var composableApplicationManager = new ComposableApplicationManager(_fileSystem);
+			var command = new SetApplicationVersionCommand(composableApplicationManager);
 			string worspaceFolderPath = mockWorspacePath;
 			var exception = Assert.Throws<Exception>(() => command.Execute(new SetApplicationVersionOption() { 
 				Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath }));
@@ -97,8 +101,9 @@ namespace Clio.Tests.Command.ApplicationCommand
 			appDescriptions.Add("Package1", "app1-app-descriptor.json");
 			appDescriptions.Add(extendPackageName, "app1-ext-app-descriptor.json");
 			_fileSystem = CreateFs(appDescriptions);
-			string expectedVersion = "8.1.1";
-			var command = new SetApplicationVersionCommand(_fileSystem);
+			string expectedVersion = "8.1.1"; 
+			var composableApplicationManager = new ComposableApplicationManager(_fileSystem);
+			var command = new SetApplicationVersionCommand(composableApplicationManager); 
 			string worspaceFolderPath = mockWorspacePath;
 			command.Execute(new SetApplicationVersionOption() {
 				Version = expectedVersion,
@@ -113,7 +118,8 @@ namespace Clio.Tests.Command.ApplicationCommand
 		public void SetVersion_WhenSetAppFolderPathForOneApplication(string descriptorPath) {
 			_fileSystem = CreateFs(descriptorPath, mockPackageFolderPath);
 			string expectedVersion = "8.1.1";
-			var command = new SetApplicationVersionCommand(_fileSystem);
+			var composableApplicationManager = new ComposableApplicationManager(_fileSystem);
+			var command = new SetApplicationVersionCommand(composableApplicationManager);
 			command.Execute(new SetApplicationVersionOption() {
 				Version = expectedVersion,
 				PackageFolderPath = mockPackageFolderPath

@@ -45,17 +45,16 @@ namespace Clio.Command.ApplicationCommand
 
 	internal class SetApplicationVersionCommand : Command<SetApplicationVersionOption>
 	{
-		private readonly IFileSystem fileSystem;
+		private readonly IComposableApplicationManager _composableApplicationManager;
 
-		public SetApplicationVersionCommand(IFileSystem fileSystem)
+		public SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager)
         {
-			this.fileSystem = fileSystem;
+			_composableApplicationManager = composableApplicationManager;
 		}
         public override int Execute(SetApplicationVersionOption options) {
 			string packagesFolderPath = options.PackageFolderPath.IsNotNullOrEmpty() ?
 						options.PackageFolderPath : Path.Combine(options.WorspaceFolderPath, "packages");
-			var compAppManager = new ComposableApplicationManager(fileSystem);
-			compAppManager.SetVersion(packagesFolderPath, options.Version, options.PackageName);
+			_composableApplicationManager.SetVersion(packagesFolderPath, options.Version, options.PackageName);
 			return 0;
 		}
 	}
