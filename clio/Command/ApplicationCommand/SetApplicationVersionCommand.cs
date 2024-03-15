@@ -20,7 +20,7 @@ namespace Clio.Command.ApplicationCommand
 			internal set;
 		}
 
-		[Value(0, MetaName = "workspace", Required = true, HelpText = "Workspace folder path")]
+		[Value(0, MetaName = "workspace", Required = false, HelpText = "Workspace folder path")]
 		public string WorspaceFolderPath
 		{
 			get;
