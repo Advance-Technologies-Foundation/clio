@@ -5,6 +5,7 @@ namespace Clio.Workspaces
 	using System;
 	using System.IO;
 	using Clio.Common;
+	using Clio.ComposableApplication;
 	using Clio.UserEnvironment;
 
 
@@ -23,6 +24,7 @@ namespace Clio.Workspaces
 		private readonly IWorkspaceInstaller _workspaceInstaller;
 		private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
 		private readonly IJsonConverter _jsonConverter;
+		private IComposableApplicationManager _composableApplicationManager;
 
 		#endregion
 
@@ -31,7 +33,7 @@ namespace Clio.Workspaces
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
 				IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
 				IWorkspaceInstaller workspaceInstaller, IWorkspaceSolutionCreator workspaceSolutionCreator,
-				IJsonConverter jsonConverter) {
+				IJsonConverter jsonConverter, IComposableApplicationManager composableApplicationManager) {
 			//environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			workspaceCreator.CheckArgumentNull(nameof(workspaceCreator));
@@ -46,6 +48,7 @@ namespace Clio.Workspaces
 			_workspaceInstaller = workspaceInstaller;
 			_workspaceSolutionCreator = workspaceSolutionCreator;
 			_jsonConverter = jsonConverter;
+			_composableApplicationManager = composableApplicationManager;
 			ResetLazyWorkspaceSettings();
 		}
 
@@ -120,11 +123,16 @@ namespace Clio.Workspaces
 			_workspaceInstaller.Publish(WorkspaceSettings.Packages, zipFileName, destionationFolderPath, overrideFile);
 		}
 
-		public string PublishToFolder(string exampleWorkspacePath, string appStorePath, string appName, string appVersion) {
+	
+
+		public string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion) {
+			_workspacePathBuilder.RootPath = workspacePath;
+			var packagesFolderPath = _workspacePathBuilder.PackagesFolderPath;
+			_composableApplicationManager.TrySetVersion(workspacePath, appVersion);
 			string zipFileName = $"{appName}_{appVersion}";
 			string destinationFolderPath = Path.Combine(appStorePath, appName, appVersion);
 			var filePath = Path.Combine(destinationFolderPath, zipFileName);
-			return _workspaceInstaller.PublishToFolder(exampleWorkspacePath, zipFileName, destinationFolderPath, false);
+			return _workspaceInstaller.PublishToFolder(workspacePath, zipFileName, destinationFolderPath, false);
 		}
 
 

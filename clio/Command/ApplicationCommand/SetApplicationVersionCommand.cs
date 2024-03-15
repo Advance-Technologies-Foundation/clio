@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Json;
 using System.Text;
+using Clio.ComposableApplication;
 using CommandLine;
 using Terrasoft.Common;
 
@@ -51,37 +52,10 @@ namespace Clio.Command.ApplicationCommand
 			this.fileSystem = fileSystem;
 		}
         public override int Execute(SetApplicationVersionOption options) {
-			string packagesFolderPath = options.PackageFolderPath.IsNotNullOrEmpty() 
-				? options.PackageFolderPath : Path.Combine(options.WorspaceFolderPath, "packages");
-			string[] appDescriptorPaths = fileSystem.Directory.GetFiles(packagesFolderPath, "app-descriptor.json", SearchOption.AllDirectories);
-			if (appDescriptorPaths.Length > 1) {
-				string code = string.Empty;
-				foreach (var descriptor in appDescriptorPaths) {
-					string actualCode = JsonObject.Parse(fileSystem.File.ReadAllText(descriptor))["Code"].ToString();
-					if (code != actualCode && code != string.Empty) {
-						StringBuilder exceptionMessage = new StringBuilder();
-						exceptionMessage.AppendLine("Find more than one applications: ");
-						foreach (var path in appDescriptorPaths) {
-							exceptionMessage.AppendLine(path);
-						}
-						throw new Exception(exceptionMessage.ToString());
-					} else {
-						code = actualCode;
-					}
-				}
-				if (options.PackageName.IsNullOrEmpty()) {
-					StringBuilder exceptionMessage = new StringBuilder();
-					exceptionMessage.AppendLine($"Find more than one descriptors for application {code}. Specify package name.");
-					foreach (var path in appDescriptorPaths) {
-						exceptionMessage.AppendLine(path);
-					}
-					throw new Exception(exceptionMessage.ToString());
-				}
-			}
-			string appDescriptorPath = appDescriptorPaths[0];
-			var objectJson = JsonObject.Parse(fileSystem.File.ReadAllText(appDescriptorPath));
-			objectJson["Version"] = options.Version;
-			fileSystem.File.WriteAllText(appDescriptorPath, objectJson.ToString());
+			string packagesFolderPath = options.PackageFolderPath.IsNotNullOrEmpty() ?
+						options.PackageFolderPath : Path.Combine(options.WorspaceFolderPath, "packages");
+			var compAppManager = new ComposableApplicationManager(fileSystem);
+			compAppManager.SetVersion(packagesFolderPath, options.Version, options.PackageName);
 			return 0;
 		}
 	}

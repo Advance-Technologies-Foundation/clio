@@ -159,7 +159,7 @@ docker run -it --rm clio reg-web-app -help
   - [Restore configuration](#restore-configuration)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
-  - [Get Marketplace catalog](#marketplace-catalog)
+  - [Set application version](#set-application-version)
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
@@ -390,6 +390,19 @@ Set a specified package version into descriptor.json by specified package path.
 
 ```
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
+```
+
+## Set application version
+
+Set a specified composable application version into application-descriptor.json by specified workspace or package path.
+
+```
+clio set-app-version <WORKSPACE PATH> -v <APP VERSION>
+
+// or
+
+clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
+
 ```
 
 ## Marketplace Catalog

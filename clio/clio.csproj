@@ -950,7 +950,9 @@
     <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-secrets.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\README.md" Pack="true" PackagePath="\">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
     <None Remove="tpl\UnitTestLibs\Terrasoft.TestFramework.dll" />
     <Content Include="tpl\UnitTestLibs\Terrasoft.TestFramework.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

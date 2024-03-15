@@ -12,3 +12,4 @@ switch-nuget-to-dll-reference:nuget2dll
 get-app-list:list-installed-applications
 manage-windows-features:manage-requirment-windows-features
 get-info:get-creatio-platform-info
+set-app-version:set-application-version
