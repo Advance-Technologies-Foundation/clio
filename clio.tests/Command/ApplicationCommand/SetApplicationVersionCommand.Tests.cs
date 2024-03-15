@@ -11,17 +11,19 @@ namespace Clio.Tests.Command.ApplicationCommand
 
 	internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplicationVersionOption>
 	{
-		private static string mockApplicationPath = Path.Combine("C:", "MockApplicationFolder");
+		private static string mockPackageFolderPath = Path.Combine("C:", "MockPackageFolder");
+		private static string mockPackageAppDescriptorPath = Path.Combine(mockPackageFolderPath, "Files", "app-descriptor.json");
 		private static string mockWorspacePath = Path.Combine("C:", "MockWorkspaceFolder");
-		private static string appDescriptorJsonPath = Path.Combine(mockWorspacePath, "packages", "IFrameSample", "Files", "app-descriptor.json");
+		private static string mockWorkspaceAppPackageFolderPath = Path.Combine(mockWorspacePath, "packages", "IFrameSample");
+		private static string mockWorkspaceAppDescriptorPath = Path.Combine(mockWorkspaceAppPackageFolderPath, "Files", "app-descriptor.json");
 
-		private static MockFileSystem CreateFs(string filePath) {
+		private static MockFileSystem CreateFs(string filePath, string packagePath) {
 			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
 			string appDescriptorExamplesDescriptorPath = Path.Combine(originClioSourcePath, "Examples", "AppDescriptors", filePath);
-
+			string mockAppDescriptorFilePath = Path.Combine(packagePath, "Files", "app-descriptor.json");
 			return new MockFileSystem(new Dictionary<string, MockFileData> {
 				{
-					appDescriptorJsonPath,
+					mockAppDescriptorFilePath,
 					new MockFileData(File.ReadAllText(appDescriptorExamplesDescriptorPath))
 				}
 			});
@@ -44,18 +46,18 @@ namespace Clio.Tests.Command.ApplicationCommand
 		[TestCase("app-descriptor_wv.json")]
 		[TestCase("app-descriptor_dv.json")]
 		public void SetVersion_WhenWorkspaceContainsOneApplication(string descriptorPath) {
-			_fileSystem = CreateFs(descriptorPath);
+			_fileSystem = CreateFs(descriptorPath, mockWorkspaceAppPackageFolderPath);
 			string expectedVersion = "8.1.1";
 			var command = new SetApplicationVersionCommand(_fileSystem);
 			string worspaceFolderPath = mockWorspacePath;
 			command.Execute(new SetApplicationVersionOption() {
 				Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
 			});
-			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(appDescriptorJsonPath));
+			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(mockWorkspaceAppDescriptorPath));
 			string actualVersion = objectJson["Version"];
-			Assert.True(_fileSystem.FileExists(appDescriptorJsonPath));
+			Assert.True(_fileSystem.FileExists(mockWorkspaceAppDescriptorPath));
 			Assert.AreEqual(expectedVersion, actualVersion);
-			Assert.Greater(20, _fileSystem.File.ReadAllLines(appDescriptorJsonPath).Length);
+			Assert.Greater(20, _fileSystem.File.ReadAllLines(mockWorkspaceAppDescriptorPath).Length);
 		}
 
 		[Test]
@@ -109,19 +111,18 @@ namespace Clio.Tests.Command.ApplicationCommand
 		[TestCase("app-descriptor_wv.json")]
 		[TestCase("app-descriptor_dv.json")]
 		public void SetVersion_WhenSetAppFolderPathForOneApplication(string descriptorPath) {
-			_fileSystem = CreateFs(descriptorPath);
+			_fileSystem = CreateFs(descriptorPath, mockPackageFolderPath);
 			string expectedVersion = "8.1.1";
 			var command = new SetApplicationVersionCommand(_fileSystem);
-			string worspaceFolderPath = mockWorspacePath;
 			command.Execute(new SetApplicationVersionOption() {
 				Version = expectedVersion,
-				ApplicationFolderPath = mockApplicationPath
+				PackageFolderPath = mockPackageFolderPath
 			});
-			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(appDescriptorJsonPath));
+			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(mockPackageAppDescriptorPath));
 			string actualVersion = objectJson["Version"];
-			Assert.True(_fileSystem.FileExists(appDescriptorJsonPath));
+			Assert.True(_fileSystem.FileExists(mockPackageAppDescriptorPath));
 			Assert.AreEqual(expectedVersion, actualVersion);
-			Assert.Greater(20, _fileSystem.File.ReadAllLines(appDescriptorJsonPath).Length);
+			Assert.Greater(20, _fileSystem.File.ReadAllLines(mockPackageAppDescriptorPath).Length);
 		}
 
 	}

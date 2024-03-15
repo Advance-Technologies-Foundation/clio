@@ -13,22 +13,29 @@ namespace Clio.Command.ApplicationCommand
 	[Verb("set-app-version", Aliases = new string[] { "appversion" }, HelpText = "Set application version")]
 	internal class SetApplicationVersionOption
 	{
-		[Option('v', "AppVersion", Required = true, HelpText = "Application version")]
+		[Option('v', "app-version", Required = true, HelpText = "Application version")]
 		public string Version
 		{
 			get;
 			internal set;
 		}
 
-		[Value(0, MetaName = "WorkspacePath", Required = true, HelpText = "Workspace folder path")]
+		[Value(0, MetaName = "workspace", Required = true, HelpText = "Workspace folder path")]
 		public string WorspaceFolderPath
 		{
 			get;
 			internal set;
 		}
 
-		[Option('p', "PackageName", Required = false, HelpText = "Package name")]
+		[Option('p', "package-name", Required = false, HelpText = "Package name")]
 		public string PackageName
+		{
+			get;
+			internal set;
+		}
+
+		[Option('f', "package-folder", Required = false, HelpText = "Package folder path")]
+		public string PackageFolderPath
 		{
 			get;
 			internal set;
@@ -44,7 +51,8 @@ namespace Clio.Command.ApplicationCommand
 			this.fileSystem = fileSystem;
 		}
         public override int Execute(SetApplicationVersionOption options) {
-			string packagesFolderPath = Path.Combine(options.WorspaceFolderPath, "packages");
+			string packagesFolderPath = options.PackageFolderPath.IsNotNullOrEmpty() 
+				? options.PackageFolderPath : Path.Combine(options.WorspaceFolderPath, "packages");
 			string[] appDescriptorPaths = fileSystem.Directory.GetFiles(packagesFolderPath, "app-descriptor.json", SearchOption.AllDirectories);
 			if (appDescriptorPaths.Length > 1) {
 				string code = string.Empty;
