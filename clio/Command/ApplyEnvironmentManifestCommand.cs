@@ -12,7 +12,7 @@ namespace Clio.Command
 
 	internal class ApplyEnvironmentManifestOptions
 	{
-		public object ManifestFilePath { get; internal set; }
+		public string ManifestFilePath { get; set; }
 	}
 
 	internal class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestOptions>

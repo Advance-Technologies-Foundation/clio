@@ -4,26 +4,22 @@ using System;
 using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
+using Clio.Tests.Extensions;
 
 namespace Clio.Tests
 {
 	[TestFixture]
 	internal class EnvironmentManagerTest
 	{
+		const string FolderName = "Examples";
 		IFileSystem _fileSystem;
 
 		[SetUp]
 		public void SetupFileSystem() {
-			_fileSystem = new FileSystem();
 			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-			string examplesFilePath = Path.Combine(originClioSourcePath, "Examples", "deployments-manifest");
-			string preprodConfigExapleFilePath = Path.Combine(examplesFilePath, "preprod-creatio-config.yaml");
-			var exampleFiles = Directory.GetFiles(examplesFilePath);
+			string examplesFilePath = Path.Combine(originClioSourcePath, FolderName, "deployments-manifest");
 			var mockFileSystem = new MockFileSystem();
-			foreach (var exampleFile in exampleFiles) {
-				FileInfo fileInfo = new FileInfo(exampleFile);
-				mockFileSystem.AddFile(fileInfo.Name, new MockFileData(File.ReadAllBytes(fileInfo.FullName));
-			}
+			mockFileSystem.MockFolder(examplesFilePath);
 			_fileSystem = mockFileSystem;
 		}
 
