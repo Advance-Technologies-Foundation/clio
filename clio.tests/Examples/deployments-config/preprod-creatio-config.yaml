@@ -1,0 +1,41 @@
+environment
+  url: https://preprod.creatio.com
+  username: admin # or use OAuth token
+  password: password # or use OAuth token
+  client-id: "{client-id}"
+  client-secret: "{client-secret}"
+  oauth-url: https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login
+  platform-version: 8.1.1
+  platform-type: "NET6" # "NET6" or "NETFramework"
+apps
+  - name: CrtCustomer360
+    version: 1.0.1
+    app-hub: MyAppHub
+  - name: CrtCaseManagment
+    version: 1.0.2
+    app-hub: CreatioMarketplace
+syssettings
+  - name: SysSettings1
+    value: Value1
+  - name: SysSettings2
+    value: Value2
+features
+  - name: Feature1
+    enabled: true
+  - name: Feature2
+    enabled: false
+webservices
+  - name: WebService1
+    url: https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc/
+  - name: WebService2
+    url: https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc/
+packages
+  - name: Package1
+    version: 1.0.1
+  - name: Package2
+    version: 1.0.2
+app-hubs
+  - name: MyAppHub
+    path: //tscrm.com/dfs-ts/MyAppHub
+  - name: CreatioMarketplace
+    url: https://marketplace.creatio.com/apps
