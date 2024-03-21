@@ -7,6 +7,7 @@ using System.Json;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace Clio.ComposableApplication
 {
@@ -45,9 +46,11 @@ namespace Clio.ComposableApplication
 				}
 			}
 			string appDescriptorPath = appDescriptorPaths[0];
-			var objectJson = JsonObject.Parse(fileSystem.File.ReadAllText(appDescriptorPath));
+			JsonValue objectJson = JsonObject.Parse(fileSystem.File.ReadAllText(appDescriptorPath));
 			objectJson["Version"] = version;
-			fileSystem.File.WriteAllText(appDescriptorPath, objectJson.ToString());
+			var jsonObject = JsonConvert.DeserializeObject(objectJson.ToString());
+			string formattedJsonString = JsonConvert.SerializeObject(jsonObject, Formatting.Indented);
+			fileSystem.File.WriteAllText(appDescriptorPath, formattedJsonString);
 		}
 
 		public bool TrySetVersion(string workspacePath, string appVersion) {
