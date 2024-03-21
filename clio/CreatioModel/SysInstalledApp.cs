@@ -4,6 +4,7 @@ using System;
 using ATF.Repository;
 using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
+using YamlDotNet.Serialization;
 
 namespace CreatioModel
 {
@@ -13,9 +14,11 @@ namespace CreatioModel
 	public class SysInstalledApp : BaseModel
 	{
 
+		[YamlMember(Alias = "name")]
 		[SchemaProperty("Name")]
 		public string Name { get; set; }
 
+		[YamlMember(Alias = "code")]
 		[SchemaProperty("Code")]
 		public string Code { get; set; }
 
@@ -24,6 +27,7 @@ namespace CreatioModel
 		public string Description { get; set; }
 
 		private string _version;
+		[YamlMember(Alias = "version")]
 		[SchemaProperty("Version")]
 		public string Version {
 			get { 
@@ -37,6 +41,9 @@ namespace CreatioModel
 		public override string ToString() {
 			return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
 		}
+
+		[YamlMember(Alias = "apphub")]
+		public string AppHubName { get; set; }
 
 	}
 

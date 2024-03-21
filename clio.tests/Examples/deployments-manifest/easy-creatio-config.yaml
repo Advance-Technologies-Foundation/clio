@@ -1,0 +1,15 @@
+apps:
+  - name: CrtCustomer360
+    version: "1.0.1"
+    apphub: MyAppHub
+  - name: CrtCaseManagment
+    version: "1.0.2"
+    apphub: MyAppHub
+  - name: MrktAppollo
+    version: "1.0.2"
+
+app_hubs:
+  - name: MyAppHub
+    path: "//tscrm.com/dfs-ts/MyAppHub"
+  - name: CreatioMarketplace
+    url: "https://marketplace.creatio.com/apps"

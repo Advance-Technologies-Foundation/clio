@@ -1,58 +1,58 @@
-environment
+environment:
   url: https://preprod.creatio.com
   username: admin # or use OAuth token
   password: password # or use OAuth token
-  client-id: "{client-id}"
-  client-secret: "{client-secret}"
-  oauth-url: https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login
-  platform-version: 8.1.1
-  platform-type: "NET6" # "NET6" or "NETFramework"
+  clientid: "{client-id}"
+  clientsecret: "{client-secret}"
+  oauthurl: "https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login"
+  platformversion: "8.1.1"
+  platformtype: "NET6" # "NET6" or "NETFramework"
 
-apps
+apps:
   - name: CrtCustomer360
-    version: 1.0.1
-    app-hub: MyAppHub
+    version: "1.0.1"
+    apphub: MyAppHub
   - name: CrtCaseManagment
-    version: 1.0.2
-    app-hub: CreatioMarketplace
+    version: "1.0.2"
+    apphub: CreatioMarketplace
 
-syssettings
+syssettings:
   - name: SysSettings1
     value: Value1
   - name: SysSettings2
     value: Value2
 
-features
+features:
   - name: Feature1
-    enabled: true
+    enabled: "true"
   - name: Feature2
-    enabled: false
+    enabled: "false"
 
-webservices
+webservices:
   - name: WebService1
-    url: https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc/
+    url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
   - name: WebService2
-    url: https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc/
+    url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
 
-packages
+packages:
   - name: Package1
-    version: 1.0.1
+    version: "1.0.1"
   - name: Package2
-    version: 1.0.2
+    version: "1.0.2"
 
-app-hubs
+apphubs:
   - name: MyAppHub
-    path: //tscrm.com/dfs-ts/MyAppHub
+    path: "//tscrm.com/dfs-ts/MyAppHub"
   - name: CreatioMarketplace
-    url: https://marketplace.creatio.com/apps
+    url: "https://marketplace.creatio.com/apps"
 
-preflight-actions
+preflightactions:
   - name: PreflightAction1
     type: "Clio.Creatio.PreFlightActions.ExamplePreflightAction, Clio.Creatio.PreFlightActions"
   - name: PreflightAction2
     type: "Clio.Creatio.PreFlightActions.ExamplePreflightAction, Clio.Creatio.PreFlightActions"
 
-postflight-actions
+postflightactions:
   - name: PostflightAction1
     type: "Clio.Creatio.PostFlightActions.ExamplePostflightAction, Clio.Creatio.PostFlightActions"
   - name: PostflightAction2

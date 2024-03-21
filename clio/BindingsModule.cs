@@ -72,6 +72,7 @@ namespace Clio
 
 			var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
+				.IgnoreUnmatchedProperties()
 				.Build();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 			containerBuilder.RegisterType<BuildInfoCommand>();
