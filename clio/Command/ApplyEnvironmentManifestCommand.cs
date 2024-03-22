@@ -28,11 +28,12 @@ namespace Clio.Command
 
 		public override int Execute(ApplyEnvironmentManifestOptions options) {
 			var apps = _environmentManager.FindApllicationsInAppHub(options.ManifestFilePath);
-			var environment = _environmentManager.GetEnvironmentFromManifest(options.ManifestFilePath);
+			var manifestEnvironment = _environmentManager.GetEnvironmentFromManifest(options.ManifestFilePath);
+			var environmentInstance = manifestEnvironment.Fill(options);
 			foreach (var app in apps) {
-				_applicationInstaller.Install(app.ZipFileName, environment);
+				_applicationInstaller.Install(app.ZipFileName, environmentInstance);
 			}
-			return _environmentManager.ApplyManifest(options.ManifestFilePath);
+			return 0;
 		}
 	}
 
