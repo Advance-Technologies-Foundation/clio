@@ -4,7 +4,7 @@ environment:
   password: password # or use OAuth token
   clientid: "{client-id}"
   clientsecret: "{client-secret}"
-  oauthurl: "https://production.creatio.com/0/ServiceModel/AuthService.svc/Login"
+  authappurl: https://production.creatio.com/0/ServiceModel/AuthService.svc/Login
   platformversion: "8.1.1"
   platformtype: "NET6" # "NET6" or "NETFramework"
 

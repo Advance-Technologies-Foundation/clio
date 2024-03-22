@@ -66,13 +66,14 @@ namespace Clio.Tests
 			Assert.AreEqual(resultPath, app.ZipFileName);
 		}
 
-		[TestCase("easy-creatio-config.yaml", "https://preprod.creatio.com")]
-		[TestCase("full-creatio-config.yaml", "https://production.creatio.com")]
-		public void GetEnvironmentUrl_FromManifest(string manifestFileName, string url) {
+		[TestCase("easy-creatio-config.yaml", "https://preprod.creatio.com", "https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login")]
+		[TestCase("full-creatio-config.yaml", "https://production.creatio.com", "https://production.creatio.com/0/ServiceModel/AuthService.svc/Login")]
+		public void GetEnvironmentUrl_FromManifest(string manifestFileName, string url, string authAppUrl) {
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			EnvironmentSettings env = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 			Assert.AreEqual(url, env.Uri);
+			Assert.AreEqual(authAppUrl, env.AuthAppUri);
 		}
 
 	}

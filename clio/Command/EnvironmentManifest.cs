@@ -18,5 +18,6 @@ namespace Clio.Command
 			get;
 			internal set;
 		}
+
 	}
 }

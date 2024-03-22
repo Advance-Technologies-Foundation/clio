@@ -67,6 +67,7 @@ namespace Clio
 		}
 
 		private string _authAppUri;
+		[YamlMember(Alias = "authappurl")]
 		public string AuthAppUri {
 			get {
 				if (string.IsNullOrEmpty(_authAppUri)) {
