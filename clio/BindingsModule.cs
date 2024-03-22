@@ -143,6 +143,8 @@ namespace Clio
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
 			containerBuilder.RegisterType<GetCreatioInfoCommand>();
 			containerBuilder.RegisterType<SetApplicationVersionCommand>();
+			containerBuilder.RegisterType<ApplyEnvironmentManifestCommand>();
+			containerBuilder.RegisterType<EnvironmentManager>();
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()

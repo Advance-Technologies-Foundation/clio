@@ -59,7 +59,7 @@ namespace Clio.Tests.Command.ApplicationCommand
 			string actualVersion = objectJson["Version"];
 			Assert.True(_fileSystem.FileExists(mockWorkspaceAppDescriptorPath));
 			Assert.AreEqual(expectedVersion, actualVersion);
-			Assert.Greater(20, _fileSystem.File.ReadAllLines(mockWorkspaceAppDescriptorPath).Length);
+			Assert.Greater(_fileSystem.File.ReadAllLines(mockWorkspaceAppDescriptorPath).Length, 20);
 		}
 
 		[Test]
@@ -128,7 +128,7 @@ namespace Clio.Tests.Command.ApplicationCommand
 			string actualVersion = objectJson["Version"];
 			Assert.True(_fileSystem.FileExists(mockPackageAppDescriptorPath));
 			Assert.AreEqual(expectedVersion, actualVersion);
-			Assert.Greater(20, _fileSystem.File.ReadAllLines(mockPackageAppDescriptorPath).Length);
+			Assert.Greater(_fileSystem.File.ReadAllLines(mockPackageAppDescriptorPath).Length, 20);
 		}
 
 	}

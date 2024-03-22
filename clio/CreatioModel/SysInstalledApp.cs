@@ -5,6 +5,7 @@ using ATF.Repository;
 using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
 using YamlDotNet.Serialization;
+using Guid = System.Guid;
 
 namespace CreatioModel
 {
@@ -22,7 +23,7 @@ namespace CreatioModel
 		[SchemaProperty("Code")]
 		public string Code { get; set; }
 
-
+		
 		[SchemaProperty("Description")]
 		public string Description { get; set; }
 

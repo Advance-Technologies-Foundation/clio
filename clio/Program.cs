@@ -582,7 +582,8 @@ class Program {
 		typeof(PublishWorkspaceCommandOptions),
 		typeof(GetCreatioInfoCommandOptions),
 		typeof(ActivatePkgOptions),
-		typeof(SetApplicationVersionOption)
+		typeof(SetApplicationVersionOption),
+		typeof(ApplyEnvironmentManifestOptions)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -675,6 +676,7 @@ class Program {
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
 			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
+			ApplyEnvironmentManifestOptions opts => Resolve<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

@@ -6,7 +6,7 @@ using YamlDotNet.Serialization;
 
 namespace Clio.Command
 {
-	internal class EnvironmentManager:IEnvironmentManager
+	public class EnvironmentManager:IEnvironmentManager
 	{
 		private IFileSystem fileSystem;
 		private IDeserializer yamlDesirializer;

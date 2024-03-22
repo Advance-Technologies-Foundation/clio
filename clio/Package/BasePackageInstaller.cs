@@ -25,11 +25,11 @@
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
-		private readonly IApplicationClientFactory _applicationClientFactory;
+		protected readonly IApplicationClientFactory _applicationClientFactory;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly ISqlScriptExecutor _scriptExecutor;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private readonly ILogger _logger;
+		protected readonly ILogger _logger;
 		private readonly IApplication _application;
 		private string _reportPath;
 
@@ -77,7 +77,7 @@
 
 		#region Methods: Private
 
-		private string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
+		protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
 			_serviceUrlBuilder.Build(url, environmentSettings);
 
 		private bool DeveloperModeEnabled(EnvironmentSettings environmentSettings) =>
