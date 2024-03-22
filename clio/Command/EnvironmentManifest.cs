@@ -11,5 +11,12 @@ namespace Clio.Command
 
 		[YamlMember(Alias = "app_hubs")]
 		public List<AppHubInfo> AppHubs { get; set; }
+
+		[YamlMember(Alias = "environment")]
+		public EnvironmentSettings EnvironmentSettings
+		{
+			get;
+			internal set;
+		}
 	}
 }

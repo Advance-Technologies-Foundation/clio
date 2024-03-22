@@ -45,6 +45,12 @@ namespace CreatioModel
 		[YamlMember(Alias = "apphub")]
 		public string AppHubName { get; set; }
 
+
+		public string ZipFileName
+		{
+			get;
+			internal set;
+		}
 	}
 
 	[ExcludeFromCodeCoverage]

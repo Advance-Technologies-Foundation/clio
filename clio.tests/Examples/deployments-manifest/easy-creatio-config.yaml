@@ -1,3 +1,6 @@
+environment:
+  url: https://preprod.creatio.com
+
 apps:
   - name: CrtCustomer360
     version: "1.0.1"

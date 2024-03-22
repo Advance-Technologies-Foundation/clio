@@ -27,12 +27,15 @@ namespace Clio.Command
 			foreach(var app in applications) {
 				foreach(var app_hub in appHubs) {
 					if(app_hub.Name == app.AppHubName) {
+						app.ZipFileName = app_hub.GetAppZipFileName(app.Name, app.Version);
 						appsFromAppHub.Add(app);
 					}
 				}	
 			}
 			return appsFromAppHub;
 		}
+
+
 
 		private IEnumerable<AppHubInfo> GetAppHubsFromManifest(string manifestFilePath) {
 			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
@@ -45,6 +48,12 @@ namespace Clio.Command
 			var envManiifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
 			return envManiifest.Applications;
 		}
+
+		public EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath) {
+			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
+			var envManiifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
+			return envManiifest.EnvironmentSettings;
+		}
 	}
 
 	public interface IEnvironmentManager
@@ -54,5 +63,6 @@ namespace Clio.Command
 		int ApplyManifest(string manifestFilePath);
 
 		List<SysInstalledApp> FindApllicationsInAppHub(string manifestFilePath);
+		EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath);
 	}
 }

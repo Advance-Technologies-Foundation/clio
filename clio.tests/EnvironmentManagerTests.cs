@@ -8,6 +8,9 @@ using Clio.Tests.Extensions;
 using Clio.Tests.Infrastructure;
 using Autofac;
 using CreatioModel;
+using System.Collections.Generic;
+using Quartz.Impl.Matchers;
+using System.Linq;
 
 namespace Clio.Tests
 {
@@ -51,7 +54,25 @@ namespace Clio.Tests
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			var applicationsFromAppHub = environmentManager.FindApllicationsInAppHub(manifestFilePath);
 			Assert.AreEqual(2, applicationsFromAppHub.Count);
+		}
 
+		[TestCase("easy-creatio-config.yaml", "CrtCustomer360", "//tscrm.com/dfs-ts/MyAppHub/CrtCustomer360/1.0.1/CrtCustomer360_1.0.1.zip")]
+		[TestCase("easy-creatio-config.yaml", "CrtCaseManagment", "//tscrm.com/dfs-ts/MyAppHub/CrtCaseManagment/1.0.2/CrtCaseManagment_1.0.2.zip")]
+		public void FindAppHubPath_In_FromManifest(string manifestFileName, string appName, string path) {
+			string resultPath = path.Replace('/', Path.DirectorySeparatorChar);
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+			var app = environmentManager.FindApllicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();
+			Assert.AreEqual(resultPath, app.ZipFileName);
+		}
+
+		[TestCase("easy-creatio-config.yaml", "https://preprod.creatio.com")]
+		[TestCase("full-creatio-config.yaml", "https://production.creatio.com")]
+		public void GetEnvironmentUrl_FromManifest(string manifestFileName, string url) {
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+			EnvironmentSettings env = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
+			Assert.AreEqual(url, env.Uri);
 		}
 
 	}
