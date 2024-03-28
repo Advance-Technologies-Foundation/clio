@@ -11,6 +11,9 @@ using CreatioModel;
 using System.Collections.Generic;
 using Quartz.Impl.Matchers;
 using System.Linq;
+using FluentAssertions;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace Clio.Tests
 {
@@ -75,6 +78,37 @@ namespace Clio.Tests
 			Assert.AreEqual(url, env.Uri);
 			Assert.AreEqual(authAppUrl, env.AuthAppUri);
 		}
+		
+		[TestCase("feature-creatio-config.yaml", 3)]
+		public void testOne(string manifestFileName, int count) {
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+			IEnumerable<Feature> features = environmentManager.GetFeaturesFromManifest(manifestFilePath);
+			features.Count().Should().Be(count);
+			
+			List<Feature> expected = [
+				new Feature {
+					Code = "Feature1",
+					Value = true
+				},
 
+				new Feature {
+					Code = "Feature2",
+					Value = false,
+					UserValues = new Dictionary<string, bool>() {
+						{"user1", true},
+						{"user2", false},
+						{"user3", true},
+						{"user4", true},
+					}
+				},
+
+				new Feature {
+					Code = "Feature3",
+					Value = false
+				}
+			];
+			features.Should().BeEquivalentTo(expected);	
+		}
 	}
 }

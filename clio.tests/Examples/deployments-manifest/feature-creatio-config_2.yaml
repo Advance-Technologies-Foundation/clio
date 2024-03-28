@@ -21,13 +21,18 @@ app_hubs:
 features:
   - code: Feature1
     value: true
-  - code: Feature2
-    value: false
     users_values:
       Supervisor: true
       "System administrators": false
-      Developer: true
+      Developer: false
       2nd-line support: true
-  - code: Feature3
+  - code: Feature2
     value: false
-  
+    users_values:
+      
+      "System administrators": false
+      Developer: false
+      2nd-line support: false
+      1st-line support: false
+  - code: Feature3
+    value: true

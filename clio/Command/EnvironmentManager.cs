@@ -11,7 +11,7 @@ namespace Clio.Command
 		private IFileSystem fileSystem;
 		private IDeserializer yamlDesirializer;
 
-		public EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer) {
+		public EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer) {
 			this.fileSystem = fileSystem;
 			this.yamlDesirializer = deserializer;
 		}
@@ -45,15 +45,26 @@ namespace Clio.Command
 
 		public  List<SysInstalledApp> GetApplicationsFromManifest(string manifestFilePath) {
 			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
-			var envManiifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
-			return envManiifest.Applications;
+			var envManifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
+			return envManifest.Applications;
 		}
 
 		public EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath) {
 			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
-			var envManiifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
-			return envManiifest.EnvironmentSettings;
+			var envManifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
+			return envManifest.EnvironmentSettings;
 		}
+
+		public IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath){
+			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
+			var envManifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
+			
+			
+			
+			
+			return envManifest.Features;
+		}
+
 	}
 
 	public interface IEnvironmentManager
@@ -64,5 +75,23 @@ namespace Clio.Command
 
 		List<SysInstalledApp> FindApllicationsInAppHub(string manifestFilePath);
 		EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath);
+
+		IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath);
+
+	}
+
+	public class Feature
+	{
+
+		[YamlMember(Alias = "code")]
+		public string Code { get; set; }
+
+		[YamlMember(Alias = "value")]
+		public bool Value { get; set; }
+		
+		
+		[YamlMember(Alias = "users_values")]
+		public Dictionary<string, bool> UserValues { get; set; } = new Dictionary<string, bool>();
+
 	}
 }

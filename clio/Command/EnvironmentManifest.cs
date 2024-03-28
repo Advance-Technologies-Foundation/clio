@@ -18,6 +18,13 @@ namespace Clio.Command
 			get;
 			internal set;
 		}
+	
+		[YamlMember(Alias = "features")]
+		public List<Feature> Features
+		{
+			get;
+			internal set;
+		}
 
 	}
 }

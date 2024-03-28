@@ -23,15 +23,17 @@ namespace Clio.Command
 
 		private readonly EnvironmentManager _environmentManager;
 		private readonly IApplicationInstaller _applicationInstaller;
+		private readonly FeatureCommand _featureCommand;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
-			IApplicationInstaller applicationInstaller){
+			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand){
 			_environmentManager = environmentManager;
 			_applicationInstaller = applicationInstaller;
+			_featureCommand = featureCommand;
 		}
 
 		#endregion
@@ -44,17 +46,44 @@ namespace Clio.Command
 			EnvironmentSettings manifestEnvironment
 				= _environmentManager.GetEnvironmentFromManifest(options.ManifestFilePath);
 			EnvironmentSettings environmentInstance = manifestEnvironment.Fill(options);
-			IDataProvider provider = string.IsNullOrEmpty(environmentInstance.Login) switch {
-				true => new RemoteDataProvider(environmentInstance.Uri, environmentInstance.AuthAppUri,
-					environmentInstance.ClientId, environmentInstance.ClientSecret, environmentInstance.IsNetCore),
-				false => new RemoteDataProvider(environmentInstance.Uri, environmentInstance.Login,
-					environmentInstance.Password, environmentInstance.IsNetCore)
-			};
+			 IDataProvider provider = string.IsNullOrEmpty(environmentInstance.Login) switch {
+			 	true => new RemoteDataProvider(environmentInstance.Uri, environmentInstance.AuthAppUri,
+			 		environmentInstance.ClientId, environmentInstance.ClientSecret, environmentInstance.IsNetCore),
+			 	false => new RemoteDataProvider(environmentInstance.Uri, environmentInstance.Login,
+			 		environmentInstance.Password, environmentInstance.IsNetCore)
+			 };
 
-			List<SysInstalledApp> remoteApplications = AppDataContextFactory.GetAppDataContext(provider)
-				.Models<SysInstalledApp>()
-				.ToList();
+			 List<SysInstalledApp> remoteApplications = AppDataContextFactory.GetAppDataContext(provider)
+			 	.Models<SysInstalledApp>()
+			 	.ToList();
 
+			ApplyApplicationFromManifest(options, remoteApplications, manifestApplications, environmentInstance);
+			
+			var features = _environmentManager.GetFeaturesFromManifest(options.ManifestFilePath);
+			ApplyFeaturesFromManifest(options, features, environmentInstance);
+			
+			return 0;
+		}
+
+		private void ApplyFeaturesFromManifest(ApplyEnvironmentManifestOptions options,IEnumerable<Feature> features, EnvironmentSettings environmentInstance){
+
+			foreach (Feature feature in features) {
+				var featureCommandOptions = new FeatureOptions() {
+					Code = feature.Code,
+					State = feature.Value ? 1:0
+				};
+				featureCommandOptions.CopyFromEnvironmentSettings(options); ;
+				_featureCommand.SetFeatureStateDefValue(featureCommandOptions);
+				foreach (KeyValuePair<string, bool> userValue in feature?.UserValues) {
+					featureCommandOptions.SysAdminUnitName = userValue.Key;
+					featureCommandOptions.State = userValue.Value ? 1:0;
+					_featureCommand.SetFeatureStateForUser(featureCommandOptions);
+				}
+			}
+		}
+		
+		private void ApplyApplicationFromManifest(ApplyEnvironmentManifestOptions options, List<SysInstalledApp> remoteApplications,
+			List<SysInstalledApp> manifestApplications, EnvironmentSettings environmentInstance){
 			foreach (SysInstalledApp remoteApp in remoteApplications) {
 				bool inManifest
 					= manifestApplications.Any(app => app.Name == remoteApp.Code || app.Name == remoteApp.Name);
@@ -67,7 +96,6 @@ namespace Clio.Command
 			foreach (SysInstalledApp app in apps) {
 				_applicationInstaller.Install(app.ZipFileName, environmentInstance);
 			}
-			return 0;
 		}
 
 		#endregion

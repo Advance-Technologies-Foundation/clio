@@ -5,125 +5,158 @@ using System.Collections.Generic;
 
 namespace Clio
 {
-	public class EnvironmentOptions
-	{
-		[Option('u', "uri", Required = false, HelpText = "Application uri")]
-		public string Uri { get; set; }
+		public class EnvironmentOptions
+		{
+			[Option('u', "uri", Required = false, HelpText = "Application uri")]
+			public string Uri { get; set; }
 
-		[Option('p', "Password", Required = false, HelpText = "User password")]
-		public string Password { get; set; }
+			[Option('p', "Password", Required = false, HelpText = "User password")]
+			public string Password { get; set; }
 
-		[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
-		public string Login { get; set; }
+			[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
+			public string Login { get; set; }
 
-		[Option('i', "IsNetCore", Required = false, HelpText = "Use NetCore application)", Default = null)]
-		public bool? IsNetCore { get; set; }
+			[Option('i', "IsNetCore", Required = false, HelpText = "Use NetCore application)", Default = null)]
+			public bool? IsNetCore { get; set; }
 
-		[Option('e', "Environment", Required = false, HelpText = "Environment name")]
-		public string Environment { get; set; }
+			[Option('e', "Environment", Required = false, HelpText = "Environment name")]
+			public string Environment { get; set; }
 
-		[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
-		public string Maintainer { get; set; }
+			[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
+			public string Maintainer { get; set; }
 
-		[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
-		public string DevMode { get; set; }
+			[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
+			public string DevMode { get; set; }
 
-		[Option("WorkspacePathes", Required = false, HelpText = "Workspace path")]
-		public string WorkspacePathes {
-			get; set;
-		}
+			[Option("WorkspacePathes", Required = false, HelpText = "Workspace path")]
+			public string WorkspacePathes {
+				get; set;
+			}
 
-		public bool? DeveloperModeEnabled {
-			get {
-				if (!string.IsNullOrEmpty(DevMode))
-				{
-					if (bool.TryParse(DevMode, out bool result))
+			public bool? DeveloperModeEnabled {
+				get {
+					if (!string.IsNullOrEmpty(DevMode))
 					{
-						return result;
+						if (bool.TryParse(DevMode, out bool result))
+						{
+							return result;
+						}
 					}
+					return null;
 				}
-				return null;
+				set {
+					DevMode = value.ToString();
+				}
 			}
-			set {
-				DevMode = value.ToString();
-			}
-		}
 
-		[Option('s', "Safe", Required = false, HelpText = "Safe action in this environment")]
-		public string Safe { get; set; }
+			[Option('s', "Safe", Required = false, HelpText = "Safe action in this environment")]
+			public string Safe { get; set; }
 
-		[Option("clientId", Required = false, HelpText = "OAuth client id")]
-		public string ClientId { get; set; }
+			[Option("clientId", Required = false, HelpText = "OAuth client id")]
+			public string ClientId { get; set; }
 
-		[Option("clientSecret", Required = false, HelpText = "OAuth client secret")]
-		public string ClientSecret { get; set; }
+			[Option("clientSecret", Required = false, HelpText = "OAuth client secret")]
+			public string ClientSecret { get; set; }
 
-		[Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
-		public string AuthAppUri { get; set; }
+			[Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
+			public string AuthAppUri { get; set; }
 
 
-		[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
-		public bool IsSilent { get; set; }
+			[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
+			public bool IsSilent { get; set; }
 
 
-		public bool? SafeValue {
-			get {
-				if (!string.IsNullOrEmpty(Safe))
-				{
-					if (bool.TryParse(Safe, out bool result))
+			public bool? SafeValue {
+				get {
+					if (!string.IsNullOrEmpty(Safe))
 					{
-						return result;
+						if (bool.TryParse(Safe, out bool result))
+						{
+							return result;
+						}
 					}
+					return null;
 				}
-				return null;
 			}
-		}
 
-		[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
-		public bool RestartEnvironment { get; set; }
+			[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
+			public bool RestartEnvironment { get; set; }
 
-		public static bool IsNullOrEmpty(EnvironmentOptions options) {
-			if (options == null) {
+			public static bool IsNullOrEmpty(EnvironmentOptions options) {
+				if (options == null) {
+					return true;
+				}
+				if (string.IsNullOrEmpty(options.Uri) &&
+						string.IsNullOrEmpty(options.Login) &&
+						string.IsNullOrEmpty(options.Password) &&
+						string.IsNullOrEmpty(options.ClientId) &&
+						string.IsNullOrEmpty(options.ClientSecret) &&
+						string.IsNullOrEmpty(options.AuthAppUri) &&
+						string.IsNullOrEmpty(options.Maintainer)) {
+					return true;
+				}
+				return false;
+			}
+
+			public virtual bool ShowDefaultEnvironment() {
 				return true;
 			}
-			if (string.IsNullOrEmpty(options.Uri) &&
-					string.IsNullOrEmpty(options.Login) &&
-					string.IsNullOrEmpty(options.Password) &&
-					string.IsNullOrEmpty(options.ClientId) &&
-					string.IsNullOrEmpty(options.ClientSecret) &&
-					string.IsNullOrEmpty(options.AuthAppUri) &&
-					string.IsNullOrEmpty(options.Maintainer)) {
-				return true;
-			}
-			return false;
+			
+			[Option("db-server-uri", Required = false, HelpText = "Db server uri")]
+			public string DbServerUri { get; set; }
+
+			[Option("db-user", Required = false, HelpText = "Database user")]
+			public string DbUser { get; set; }
+
+			[Option("db-password", Required = false, HelpText = "Database password")]
+			public string DbPassword { get; set; }
+			
+			[Option("backup-file", Required = false, HelpText = "Full path to backup file")]
+			public string BackUpFilePath { get; set; }
+		
+			[Option("db-working-folder", Required = false, HelpText = "Folder visible to db server")]
+			public string DbWorknigFolder { get; set; }
+		
+			[Option("db-name", Required = false, HelpText = "Desired database name")]
+			public string DbName { get; set; }
+			
+			[Option("force", Required = false, HelpText = "Force restore")]
+			public bool Force { get; set; }
+			
+			public void CopyFromEnvironmentSettings(EnvironmentOptions source)
+            {
+                if (source == null)
+                {
+                    throw new ArgumentNullException(nameof(source), "Source environment options cannot be null.");
+                }
+            
+                // Copy all the properties
+                this.Uri = source.Uri;
+                this.Password = source.Password;
+                this.Login = source.Login;
+                this.IsNetCore = source.IsNetCore;
+                this.Environment = source.Environment;
+                this.Maintainer = source.Maintainer;
+                this.DevMode = source.DevMode;
+                this.WorkspacePathes = source.WorkspacePathes;
+                // Note: No need to copy DeveloperModeEnabled as it is derived from DevMode
+                this.Safe = source.Safe;
+                this.ClientId = source.ClientId;
+                this.ClientSecret = source.ClientSecret;
+                this.AuthAppUri = source.AuthAppUri;
+                this.IsSilent = source.IsSilent;
+                // Note: No need to copy SafeValue as it is derived from Safe
+                this.RestartEnvironment = source.RestartEnvironment;
+                this.DbServerUri = source.DbServerUri;
+                this.DbUser = source.DbUser;
+                this.DbPassword = source.DbPassword;
+                this.BackUpFilePath = source.BackUpFilePath;
+                this.DbWorknigFolder = source.DbWorknigFolder;
+                this.DbName = source.DbName;
+                this.Force = source.Force;
+            }
+			
 		}
-
-		public virtual bool ShowDefaultEnvironment() {
-			return true;
-		}
-		
-		[Option("db-server-uri", Required = false, HelpText = "Db server uri")]
-		public string DbServerUri { get; set; }
-
-		[Option("db-user", Required = false, HelpText = "Database user")]
-		public string DbUser { get; set; }
-
-		[Option("db-password", Required = false, HelpText = "Database password")]
-		public string DbPassword { get; set; }
-		
-		[Option("backup-file", Required = false, HelpText = "Full path to backup file")]
-		public string BackUpFilePath { get; set; }
-	
-		[Option("db-working-folder", Required = false, HelpText = "Folder visible to db server")]
-		public string DbWorknigFolder { get; set; }
-	
-		[Option("db-name", Required = false, HelpText = "Desired database name")]
-		public string DbName { get; set; }
-		
-		[Option("force", Required = false, HelpText = "Force restore")]
-		public bool Force { get; set; }
-		
-	}
 
 	public class EnvironmentNameOptions : EnvironmentOptions
 	{

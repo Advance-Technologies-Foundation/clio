@@ -74,7 +74,15 @@ namespace Clio
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
 				.IgnoreUnmatchedProperties()
 				.Build();
+			
+			var serializer = new SerializerBuilder()
+				.WithNamingConvention(UnderscoredNamingConvention.Instance)
+                				.Build();
+			
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
+			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
+			
+			containerBuilder.RegisterType<FeatureCommand>();
 			containerBuilder.RegisterType<BuildInfoCommand>();
 			containerBuilder.RegisterType<PushPackageCommand>();
 			containerBuilder.RegisterType<InstallApplicationCommand>();
