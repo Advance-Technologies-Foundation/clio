@@ -84,6 +84,11 @@ namespace Clio.Command
 		
 		private void ApplyApplicationFromManifest(ApplyEnvironmentManifestOptions options, List<SysInstalledApp> remoteApplications,
 			List<SysInstalledApp> manifestApplications, EnvironmentSettings environmentInstance){
+			
+			if(manifestApplications is null || manifestApplications.Count == 0) {
+				return;
+			}
+			
 			foreach (SysInstalledApp remoteApp in remoteApplications) {
 				bool inManifest
 					= manifestApplications.Any(app => app.Name == remoteApp.Code || app.Name == remoteApp.Name);
