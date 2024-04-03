@@ -61,6 +61,11 @@ namespace cliogate.Files.cs
 	public class CreatioApiGateway : BaseService
 	{
 
+		private readonly UserConnection _userConnection;
+		public CreatioApiGateway(){
+			_userConnection = ClassFactory.Get<UserConnection>();
+		}
+		
 		#region Fields: Private
 
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
@@ -90,8 +95,13 @@ namespace cliogate.Files.cs
 				$"attachment; filename=\"{fileName}\"");
 
 		private void CheckCanManageSolution(){
-			if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+			if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				throw new Exception("You don't have permission for operation CanManageSolution");
+			}
+		}
+		private void CheckCanManageSysSettings(){
+			if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSysSettings")) {
+				throw new Exception("You don't have permission for operation CanManageSysSettings");
 			}
 		}
 
@@ -143,6 +153,16 @@ namespace cliogate.Files.cs
 
 		#region Methods: Public
 
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public string GetSysSettingValueByCode(string code){
+			CheckCanManageSysSettings();
+			bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
+			return isValue ? value.ToString() : string.Empty;
+		}
+		
+		
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
