@@ -433,6 +433,9 @@
     <None Update="tpl\propItem-netstandard.xml.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="tpl\dataservice-requests\selectIdByDisplayValue.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

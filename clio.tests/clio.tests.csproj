@@ -52,6 +52,12 @@
     <None Update="Examples\deployments-manifest\feature-creatio-config_2.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Examples\deployments-manifest\setting-creatio-config-broken.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Examples\deployments-manifest\integration-test-manifest.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

@@ -1,11 +1,18 @@
 ﻿using System;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using ATF.Repository;
+using ATF.Repository.Providers;
 using Clio.Common;
 using CommandLine;
+using CreatioModel;
+using Newtonsoft.Json.Linq;
 
-namespace Clio.Command.SysSettingsCommand
+namespace Clio.Command
 {
 	[Verb("set-syssetting", Aliases = new string[] { "syssetting", "sys-setting" }, HelpText = "Set setting value")]
-	internal class SysSettingsOptions : EnvironmentOptions
+	public class SysSettingsOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Syssetting code")]
 		public string Code { get; set; }
@@ -18,14 +25,23 @@ namespace Clio.Command.SysSettingsCommand
 
 	}
 
-	class SysSettingsCommand : RemoteCommand<SysSettingsOptions>
+	public class SysSettingsCommand : RemoteCommand<SysSettingsOptions>
 	{
-		public SysSettingsCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings) {
+		private readonly IDataProvider _dataProvider;
+		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+		private readonly IFileSystem _filesystem;
+
+		public SysSettingsCommand(IApplicationClient applicationClient, EnvironmentSettings settings, 
+			IDataProvider dataProvider, IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem)
+			: base(applicationClient, settings){
+			_dataProvider = dataProvider;
+			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_filesystem = filesystem;
 		}
 
 		private string InsertSysSettingsUrl => RootPath + @"/DataService/json/SyncReply/InsertSysSettingRequest";
 		private string PostSysSettingsValuesUrl => RootPath + @"/DataService/json/SyncReply/PostSysSettingsValues";
+		private string SelectQueryUrl => RootPath + @"/DataService/json/SyncReply/SelectQuery";
 
 		private void CreateSysSetting(SysSettingsOptions opts) {
 			Guid id = Guid.NewGuid();
@@ -39,10 +55,33 @@ namespace Clio.Command.SysSettingsCommand
 			}
 		}
 
+		
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			string requestData = string.Empty;
-			if (opts.Type.Contains("Text"))
+			
+			var sysSetting = GetSysSettingType(opts.Code);
+			string optionsType = opts.Type ?? sysSetting.ValueTypeName;
+			
+			
+			if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Lookup"))
 			{
+				if(optionsType == "Lookup") {
+					
+					bool isGuid = Guid.TryParse(opts.Value, out Guid id);
+					if(!isGuid) {
+						Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
+						string entityName = GetSysSchemaNameByUid(referenceSchemaUIduid);
+						var entityid = GetEntityIdByDisplayValue(entityName, opts.Value);
+						opts.Value = entityid.ToString();
+					}
+				}
+				
+				
+				
+				if(optionsType.Contains("Date")) {
+					opts.Value = DateTime.Parse(opts.Value, CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss");
+				}
+				
 				//Enclosed opts.Value in "", otherwise update fails for all text settings
 				requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + string.Format("\"{0}\":\"{1}\"", opts.Code, opts.Value) + "}}";
 			}
@@ -52,6 +91,49 @@ namespace Clio.Command.SysSettingsCommand
 			}
 			ApplicationClient.ExecutePostRequest(PostSysSettingsValuesUrl, requestData);
 			Logger.WriteInfo($"SysSettings with code: {opts.Code} updated.");
+		}
+
+		private Guid GetEntityIdByDisplayValue(string entityName, string optsValue){
+			
+			string jsonFilePath = Path.Join(
+				_workingDirectoriesProvider.TemplateDirectory, "dataservice-requests","selectIdByDisplayValue.json");
+			
+			string jsonContent = _filesystem.ReadAllText(jsonFilePath);
+			jsonContent = jsonContent.Replace("{{rootSchemaName}}", entityName);
+			jsonContent = jsonContent.Replace("{{diplayvalue}}",optsValue);
+			
+			
+			string responseJson = ApplicationClient.ExecutePostRequest(SelectQueryUrl, jsonContent);
+			JObject json = JObject.Parse(responseJson);
+			string jsonPath = "$.rows[0].Id";
+			string id = (string)json.SelectToken(jsonPath);
+			
+			bool isGuid = Guid.TryParse(id, out Guid value);
+			
+			if(isGuid) {
+				return value;
+			}else {
+				return Guid.Empty;
+			}
+			
+		}
+
+		
+		
+		
+		private VwSysSetting GetSysSettingType(string code){
+			var sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
+            			.Models<VwSysSetting>()
+						.Where(i=> i.Code == code)
+            			.ToList().FirstOrDefault();
+			return sysSetting;
+		}
+		private string GetSysSchemaNameByUid(Guid uid){
+			var sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
+            			.Models<SysSchema>()
+						.Where(i=> i.UId == uid)
+            			.ToList().FirstOrDefault();
+			return sysSchema.Name;
 		}
 
 		public void TryUpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {

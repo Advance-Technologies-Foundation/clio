@@ -83,6 +83,7 @@ namespace Clio
 			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
 			
 			containerBuilder.RegisterType<FeatureCommand>();
+			containerBuilder.RegisterType<SysSettingsCommand>();
 			containerBuilder.RegisterType<BuildInfoCommand>();
 			containerBuilder.RegisterType<PushPackageCommand>();
 			containerBuilder.RegisterType<InstallApplicationCommand>();

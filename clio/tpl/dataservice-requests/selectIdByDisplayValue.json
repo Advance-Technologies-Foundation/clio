@@ -1,0 +1,45 @@
+﻿{
+  "rootSchemaName": "{{rootSchemaName}}",
+  "filters": {
+    "isEnabled": true,
+    "trimDateTimeParameterToDate": false,
+    "filterType": 6,
+    "logicalOperation": 0,
+    "items": {
+      "8caf69f4-9583-4e77-86c0-716c07ce4ec7": {
+        "filterType": 1,
+        "comparisonType": 3,
+        "isEnabled": true,
+        "trimDateTimeParameterToDate": false,
+        "leftExpression": {
+          "expressionType": 1,
+          "functionType": 1,
+          "macrosType": 35
+        },
+        "isAggregative": false,
+        "dataValueType": 1,
+        "rightExpression": {
+          "expressionType": 2,
+          "parameter": {
+            "dataValueType": 1,
+            "value": "{{diplayvalue}}",
+            "className": "Terrasoft.Parameter"
+          },
+          "className": "Terrasoft.ParameterExpression"
+        },
+        "className": "Terrasoft.CompareFilter"
+      }
+    }
+  },
+  "useLocalization": true,
+  "columns": {
+    "items": {
+      "Id": {
+        "expression": {
+          "expressionType": 0,
+          "columnPath": "Id"
+        }
+      }
+    }
+  }
+}

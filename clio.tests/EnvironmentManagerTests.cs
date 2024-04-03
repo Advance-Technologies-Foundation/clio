@@ -112,12 +112,84 @@ namespace Clio.Tests
 		}
 
 
-		[TestCase("settings-creatio-config.yaml", 7)]
+		[TestCase("setting-creatio-config.yaml", 7)]
 		public void GetSettingsFromManifest(string manifestFileName, int count) {
+			 //Arrange
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
+
+			//Act
 			IEnumerable<CreatioManifestSetting> settings = environmentManager.GetSettingsFromManifest(manifestFilePath);
+			//Assert
 			settings.Count().Should().Be(count);
+			
+			List<CreatioManifestSetting> expected = [
+            				new CreatioManifestSetting {
+            					Code = "IntSysSettingsATF",
+            					Value = "10"
+            				},
+							new CreatioManifestSetting {
+            					Code = "FloatSysSettingsATF",
+            					Value = "0.5"
+            				},
+            
+							new CreatioManifestSetting {
+            					Code = "StringSettingsATF",
+            					Value = "ATF"
+            				},
+            
+							new CreatioManifestSetting {
+            					Code = "DateTimeSettingsATF",
+            					Value = "2021-01-01T00:00:00"
+            				},
+            
+							new CreatioManifestSetting {
+            					Code = "GuidSettingsATF",
+            					Value = "00000000-0000-0000-0000-000000000001"
+            				},
+            
+							new CreatioManifestSetting {
+            					Code = "LookupSettingsATF",
+            					Value = "TextLookupValue"
+            				},
+            				new CreatioManifestSetting {
+            					Code = "BooleanSettingsATF",
+            					Value = "false",
+            					UserValues = new Dictionary<string, string>() {
+            						{"Supervisor", "true"},
+            						{"System administrators", "false"},
+            						{"Developer", "true"},
+            						{"2nd-line support", "true"},
+            					}
+            				}
+            			];
+			settings.Should().BeEquivalentTo(expected);
+			
+		}
+		
+		
+		[TestCase("setting-creatio-config-broken.yaml", 7)]
+		public void GetSettingsFromManifest_Throws_When_YAML_ValueNull(string manifestFileName, int count) {
+			 //Arrange
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+
+			//Act + Assert
+			Action act = ()=>environmentManager.GetSettingsFromManifest(manifestFilePath);
+			act.Should().Throw<Exception>("null values should throw")
+				.WithMessage("Setting value cannot be null for: [IntSysSettingsATF]");
+		}
+		
+		[TestCase("setting-creatio-config-broken.yaml", 7)]
+		public void GetSettingsFromManifest_Throws_When_YAML_CodeNull(string manifestFileName, int count) {
+			 //Arrange
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+
+			//Act + Assert
+			Action act = ()=>environmentManager.GetSettingsFromManifest(manifestFilePath);
+			act.Should().Throw<Exception>("null values should throw")
+				.WithMessage("Setting code cannot be null or empty. Found invalid values on lines *");
 		}
 	}
 }

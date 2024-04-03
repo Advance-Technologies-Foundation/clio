@@ -24,16 +24,18 @@ namespace Clio.Command
 		private readonly EnvironmentManager _environmentManager;
 		private readonly IApplicationInstaller _applicationInstaller;
 		private readonly FeatureCommand _featureCommand;
+		private readonly SysSettingsCommand _sysSettingCommand;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
-			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand){
+			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand){
 			_environmentManager = environmentManager;
 			_applicationInstaller = applicationInstaller;
 			_featureCommand = featureCommand;
+			_sysSettingCommand = sysSettingCommand;
 		}
 
 		#endregion
@@ -60,13 +62,19 @@ namespace Clio.Command
 			ApplyApplicationFromManifest(options, remoteApplications, manifestApplications, environmentInstance);
 			
 			var features = _environmentManager.GetFeaturesFromManifest(options.ManifestFilePath);
+			var settings = _environmentManager.GetSettingsFromManifest(options.ManifestFilePath);
 			ApplyFeaturesFromManifest(options, features, environmentInstance);
+			ApplySettingsFromManifest(options, settings, environmentInstance);
 			
 			return 0;
 		}
 
 		private void ApplyFeaturesFromManifest(ApplyEnvironmentManifestOptions options,IEnumerable<Feature> features, EnvironmentSettings environmentInstance){
 
+			if(features is null || features.Count() == 0) {
+				return;
+			}
+			
 			foreach (Feature feature in features) {
 				var featureCommandOptions = new FeatureOptions() {
 					Code = feature.Code,
@@ -82,6 +90,23 @@ namespace Clio.Command
 			}
 		}
 		
+		private void ApplySettingsFromManifest(ApplyEnvironmentManifestOptions options,IEnumerable<CreatioManifestSetting> settings, EnvironmentSettings environmentInstance){
+
+			if(settings is null || settings.Count() == 0) {
+            	return;
+            }
+			
+			foreach (var setting in settings) {
+				
+				var sysSettingOption = new SysSettingsOptions() {
+					Code = setting.Code,
+					Value = setting.Value,
+				};
+				sysSettingOption.CopyFromEnvironmentSettings(options);
+				_sysSettingCommand.UpdateSysSetting(sysSettingOption);
+			}
+			
+		}
 		private void ApplyApplicationFromManifest(ApplyEnvironmentManifestOptions options, List<SysInstalledApp> remoteApplications,
 			List<SysInstalledApp> manifestApplications, EnvironmentSettings environmentInstance){
 			
