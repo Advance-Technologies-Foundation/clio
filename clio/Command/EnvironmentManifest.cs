@@ -26,5 +26,11 @@ namespace Clio.Command
 			internal set;
 		}
 
+		[YamlMember(Alias = "settings")]
+		public List<CreatioManifestSetting> Settings {
+			get;
+			internal set;
+		}
+
 	}
 }

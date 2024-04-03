@@ -110,5 +110,14 @@ namespace Clio.Tests
 			];
 			features.Should().BeEquivalentTo(expected);	
 		}
+
+
+		[TestCase("settings-creatio-config.yaml", 7)]
+		public void GetSettingsFromManifest(string manifestFileName, int count) {
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+			IEnumerable<CreatioManifestSetting> settings = environmentManager.GetSettingsFromManifest(manifestFilePath);
+			settings.Count().Should().Be(count);
+		}
 	}
 }

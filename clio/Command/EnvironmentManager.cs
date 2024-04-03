@@ -65,6 +65,13 @@ namespace Clio.Command
 			return envManifest.Features;
 		}
 
+		public IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath) {
+			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
+			var envManifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
+			return envManifest.Settings;
+		}
+
+
 	}
 
 	public interface IEnvironmentManager
@@ -77,7 +84,11 @@ namespace Clio.Command
 		EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath);
 
 		IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath);
+		IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath);
+	}
 
+	public class CreatioManifestSetting
+	{
 	}
 
 	public class Feature
@@ -94,4 +105,5 @@ namespace Clio.Command
 		public Dictionary<string, bool> UserValues { get; set; } = new Dictionary<string, bool>();
 
 	}
+
 }
