@@ -554,11 +554,19 @@ clio compile-configuration --all
 ```
 ## System settings
 
-For set system settings value
+To set system settings value
 
 ```bash
 clio set-syssetting <CODE> <VALUE>
 ```
+
+To read system settings value
+
+```bash
+get-syssetting <CODE> --GET -e <ENVIRONMENT_NAME>
+```
+
+
 
 ## Set Base WebService Url
 

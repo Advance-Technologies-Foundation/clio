@@ -11,13 +11,13 @@ using Newtonsoft.Json.Linq;
 
 namespace Clio.Command
 {
-	[Verb("set-syssetting", Aliases = new string[] { "syssetting", "sys-setting" }, HelpText = "Set setting value")]
+	[Verb("set-syssetting", Aliases = new string[] { "syssetting", "sys-setting", "get-syssetting"}, HelpText = "Set setting value")]
 	public class SysSettingsOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Syssetting code")]
 		public string Code { get; set; }
 
-		[Value(1, MetaName = "Value", Required = true, HelpText = "Syssetting Value")]
+		[Value(1, MetaName = "Value", Required = false, HelpText = "Syssetting Value")]
 		public string Value { get; set; }
 
 		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Boolean")]
