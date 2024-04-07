@@ -122,7 +122,7 @@ namespace Clio.Command
 				}
 			}
 
-			List<SysInstalledApp> apps = _environmentManager.FindApllicationsInAppHub(options.ManifestFilePath);
+			List<SysInstalledApp> apps = _environmentManager.FindApplicationsInAppHub(options.ManifestFilePath);
 			foreach (SysInstalledApp app in apps) {
 				_applicationInstaller.Install(app.ZipFileName, environmentInstance);
 			}

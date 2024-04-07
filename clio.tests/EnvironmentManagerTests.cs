@@ -55,7 +55,7 @@ namespace Clio.Tests
 		public void FindApplicationsFromManifest_In_AppHub(string manifestFileName) {
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
-			var applicationsFromAppHub = environmentManager.FindApllicationsInAppHub(manifestFilePath);
+			var applicationsFromAppHub = environmentManager.FindApplicationsInAppHub(manifestFilePath);
 			Assert.AreEqual(2, applicationsFromAppHub.Count);
 		}
 
@@ -65,7 +65,7 @@ namespace Clio.Tests
 			string resultPath = path.Replace('/', Path.DirectorySeparatorChar);
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
-			var app = environmentManager.FindApllicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();
+			var app = environmentManager.FindApplicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();
 			Assert.AreEqual(resultPath, app.ZipFileName);
 		}
 

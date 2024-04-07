@@ -23,13 +23,13 @@ using ATF.Repository.Providers;
 using Clio.Common.db;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 using Clio.Command.ApplicationCommand;
+using Creatio.Client;
 
 namespace Clio
 {
 	public class BindingsModule {
 
 		private readonly IFileSystem _fileSystem;
-
 		public BindingsModule(IFileSystem fileSystem = null){
 			_fileSystem = fileSystem;
 		}
@@ -78,10 +78,23 @@ namespace Clio
 			var serializer = new SerializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
                 				.Build();
+
+
+			#region Epiremental CreatioCLient
+
+			if(settings is not null) {
+				CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId) 
+					? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore) 
+					: CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore);
+				IApplicationClient clientAdapter = new CreatioClientAdapter(creatioClient);
+				containerBuilder.RegisterInstance(clientAdapter).As<IApplicationClient>();
+				
+				containerBuilder.RegisterType<SysSettingsManager>();
+			}
+			#endregion
 			
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
-			
 			containerBuilder.RegisterType<FeatureCommand>();
 			containerBuilder.RegisterType<SysSettingsCommand>();
 			containerBuilder.RegisterType<BuildInfoCommand>();
@@ -171,5 +184,9 @@ namespace Clio
 
 			return containerBuilder.Build();
 		}
+		
+		
+		
+		
 	}
 }

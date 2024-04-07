@@ -23,7 +23,7 @@ namespace Clio.Command
 			throw new NotImplementedException();
 		}
 
-		public List<SysInstalledApp> FindApllicationsInAppHub(string manifestFilePath) {
+		public List<SysInstalledApp> FindApplicationsInAppHub(string manifestFilePath) {
 			var applications = GetApplicationsFromManifest(manifestFilePath);
 			var appHubs = GetAppHubsFromManifest(manifestFilePath);
 			List<SysInstalledApp> appsFromAppHub = new List<SysInstalledApp>();
@@ -124,7 +124,7 @@ namespace Clio.Command
 
 		int ApplyManifest(string manifestFilePath);
 
-		List<SysInstalledApp> FindApllicationsInAppHub(string manifestFilePath);
+		List<SysInstalledApp> FindApplicationsInAppHub(string manifestFilePath);
 		EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath);
 
 		IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath);
