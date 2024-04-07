@@ -20,17 +20,10 @@ namespace Clio.Command
 		}
 	
 		[YamlMember(Alias = "features")]
-		public List<Feature> Features
-		{
-			get;
-			internal set;
-		}
+		public List<Feature> Features { get; set; } = new();
 
 		[YamlMember(Alias = "settings")]
-		public List<CreatioManifestSetting> Settings {
-			get;
-			internal set;
-		}
+		public List<CreatioManifestSetting> Settings { get; set; } = new ();
 
 	}
 }

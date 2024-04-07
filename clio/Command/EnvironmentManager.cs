@@ -62,16 +62,14 @@ namespace Clio.Command
 			}
 			
 			foreach (var setting in envManifest.Settings) {
-            	if(setting.Value is null) {
-            		sb.AppendLine($"Setting value cannot be null for: [{setting.Code}]");
-            		hasError = true;
-            	}
-            }
-            if(hasError) {
-            	throw new Exception(sb.ToString());
-            }
-			
-			
+				if(setting.Value is null) {
+					sb.AppendLine($"Setting value cannot be null for: [{setting.Code}]");
+					hasError = true;
+				}
+			}
+			if(hasError) {
+				throw new Exception(sb.ToString());
+			}
 			return envManifest;
 		}
 

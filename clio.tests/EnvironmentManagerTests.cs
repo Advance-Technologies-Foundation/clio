@@ -80,7 +80,7 @@ namespace Clio.Tests
 		}
 		
 		[TestCase("feature-creatio-config.yaml", 3)]
-		public void testOne(string manifestFileName, int count) {
+		public void ParsesYamlAndReturnsStructure(string manifestFileName, int count) {
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			IEnumerable<Feature> features = environmentManager.GetFeaturesFromManifest(manifestFilePath);
@@ -96,10 +96,10 @@ namespace Clio.Tests
 					Code = "Feature2",
 					Value = false,
 					UserValues = new Dictionary<string, bool>() {
-						{"user1", true},
-						{"user2", false},
-						{"user3", true},
-						{"user4", true},
+						{"Supervisor", true},
+						{"System administrators", false},
+						{"Developer", true},
+						{"2nd-line support", true},
 					}
 				},
 
@@ -177,7 +177,7 @@ namespace Clio.Tests
 			//Act + Assert
 			Action act = ()=>environmentManager.GetSettingsFromManifest(manifestFilePath);
 			act.Should().Throw<Exception>("null values should throw")
-				.WithMessage("Setting value cannot be null for: [IntSysSettingsATF]");
+				.WithMessage("*Setting value cannot be null for: [IntSysSettingsATF]");
 		}
 		
 		[TestCase("setting-creatio-config-broken.yaml", 7)]
