@@ -40,7 +40,7 @@ namespace Clio.Command
 
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.26";
+		private const string _gateVersion = "2.0.0.29";
 		public override int Execute(InfoCommandOptions options)
 		{
 			if (options is object && options.Clio)
