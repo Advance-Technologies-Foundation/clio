@@ -22,6 +22,9 @@ namespace Clio.Command
 
 		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Boolean")]
 		public string Type { get; set; }
+		
+		[Option("GET", Required = false, HelpText = "", Default = "Boolean")]
+		public bool IsGet { get; set; }
 
 	}
 
@@ -30,13 +33,16 @@ namespace Clio.Command
 		private readonly IDataProvider _dataProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _filesystem;
+		private readonly ISysSettingsManager _sysSettingsManager;
 
 		public SysSettingsCommand(IApplicationClient applicationClient, EnvironmentSettings settings, 
-			IDataProvider dataProvider, IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem)
+			IDataProvider dataProvider, IWorkingDirectoriesProvider workingDirectoriesProvider, 
+			IFileSystem filesystem, ISysSettingsManager sysSettingsManager)
 			: base(applicationClient, settings){
 			_dataProvider = dataProvider;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_filesystem = filesystem;
+			_sysSettingsManager = sysSettingsManager;
 		}
 
 		private string InsertSysSettingsUrl => RootPath + @"/DataService/json/SyncReply/InsertSysSettingRequest";
@@ -145,6 +151,14 @@ namespace Clio.Command
 		}
 
 		public override int Execute(SysSettingsOptions opts) {
+			
+			
+			if(opts.IsGet) {
+				var value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
+				Logger.WriteInfo($"SysSetting {opts.Code} : {value}");
+				return 0;
+			}
+			
 			try {
 				CreateSysSetting(opts);
 				UpdateSysSetting(opts);
@@ -156,4 +170,7 @@ namespace Clio.Command
 		}
 
 	}
+	
+	
+    
 }
