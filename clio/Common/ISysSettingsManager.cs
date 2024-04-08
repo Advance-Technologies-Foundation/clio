@@ -1,6 +1,13 @@
 ﻿using System;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using ATF.Repository;
+using ATF.Repository.Providers;
+using CreatioModel;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Common;
 
@@ -35,6 +42,12 @@ public interface ISysSettingsManager
 	/// </remarks>
 	T GetSysSettingValueByCode<T>(string code);
 
+	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
+		bool cached = false,
+		string description = "", bool valueForCurrentUser = true);
+
+	bool UpdateSysSetting(string code, object value, string valueTypeName = "");
+	
 	#endregion
 
 }
@@ -46,6 +59,9 @@ public class SysSettingsManager : ISysSettingsManager
 
 	private readonly IApplicationClient _creatioClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IDataProvider _dataProvider;
+	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private readonly IFileSystem _filesystem;
 
 	private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
 		WriteIndented = false,
@@ -58,9 +74,13 @@ public class SysSettingsManager : ISysSettingsManager
 	#region Constructors: Public
 
 	public SysSettingsManager(IApplicationClient creatioClient,
-		IServiceUrlBuilder serviceUrlBuilder){
+		IServiceUrlBuilder serviceUrlBuilder, IDataProvider dataProvider,
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem){
 		_creatioClient = creatioClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_dataProvider = dataProvider;
+		_workingDirectoriesProvider = workingDirectoriesProvider;
+		_filesystem = filesystem;
 	}
 
 	#endregion
@@ -84,12 +104,12 @@ public class SysSettingsManager : ISysSettingsManager
 		return isDecimal ? (object)decValue
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Decimal)}");
 	}
-	
+
 	private static object ConvertToGuid(string value){
-    		bool isGuid = Guid.TryParse(value, out Guid decValue);
-    		return isGuid ? (object)decValue
-    			: throw new InvalidCastException($"Could not convert {value} to {nameof(Guid)}");
-    	}
+		bool isGuid = Guid.TryParse(value, out Guid decValue);
+		return isGuid ? (object)decValue
+			: throw new InvalidCastException($"Could not convert {value} to {nameof(Guid)}");
+	}
 
 	private static object ConvertToInt(string value){
 		const NumberStyles style = NumberStyles.Integer | NumberStyles.AllowThousands;
@@ -97,6 +117,39 @@ public class SysSettingsManager : ISysSettingsManager
 		bool isInt = int.TryParse(value, style, provider, out int intValue);
 		return isInt ? (object)intValue
 			: throw new InvalidCastException($"Could not convert {value} to to {nameof(Int32)}");
+	}
+
+	private Guid GetEntityIdByDisplayValue(string entityName, string optsValue){
+		string jsonFilePath = Path.Join(
+			_workingDirectoriesProvider.TemplateDirectory, "dataservice-requests", "selectIdByDisplayValue.json");
+
+		string jsonContent = _filesystem.ReadAllText(jsonFilePath);
+		jsonContent = jsonContent.Replace("{{rootSchemaName}}", entityName);
+		jsonContent = jsonContent.Replace("{{diplayvalue}}", optsValue);
+
+		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
+		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, jsonContent);
+		JObject json = JObject.Parse(responseJson);
+		string jsonPath = "$.rows[0].Id";
+		string id = (string)json.SelectToken(jsonPath);
+		bool isGuid = Guid.TryParse(id, out Guid value);
+		return isGuid ? value : Guid.Empty;
+	}
+
+	private string GetSysSchemaNameByUid(Guid uid){
+		SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSchema>()
+			.Where(i => i.UId == uid)
+			.ToList().FirstOrDefault();
+		return sysSchema.Name;
+	}
+
+	private VwSysSetting GetSysSettingType(string code){
+		VwSysSetting sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<VwSysSetting>()
+			.Where(i => i.Code == code)
+			.ToList().FirstOrDefault();
+		return sysSetting;
 	}
 
 	#endregion
@@ -124,8 +177,271 @@ public class SysSettingsManager : ISysSettingsManager
 		};
 	}
 
+	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
+		bool cached = false,
+		string description = "", bool valueForCurrentUser = true){
+		CreatioSysSetting sysSetting = valueTypeName switch {
+			"Text" => new TextSetting(name, code, null, cached, description, valueForCurrentUser),
+			"ShortText" => new ShortText(name, code, null, cached, description, valueForCurrentUser),
+			"MediumText" => new MediumText(name, code, null, cached, description, valueForCurrentUser),
+			"LongText" => new LongText(name, code, null, cached, description, valueForCurrentUser),
+			"SecureText" => new SecureText(name, code, null, cached, description, valueForCurrentUser),
+			"MaxSizeText" => new MaxSizeText(name, code, null, cached, description, valueForCurrentUser),
+			var _ => throw new ArgumentOutOfRangeException(nameof(valueTypeName), valueTypeName,
+				"Unsupported SysSettingType")
+		};
+		string json = sysSetting.ToString();
+		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
+		string url = _serviceUrlBuilder.Build(endpoint);
+		string response = _creatioClient.ExecutePostRequest(url, json);
+		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
+	}
+
+	public bool UpdateSysSetting(string code, object value, string valueTypeName = ""){
+		string requestData = string.Empty;
+		VwSysSetting sysSetting = GetSysSettingType(code);
+		string optionsType = string.IsNullOrWhiteSpace(valueTypeName)
+			? sysSetting.ValueTypeName : valueTypeName;
+
+		if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Lookup")) {
+			if (optionsType == "Lookup") {
+				bool isGuid = Guid.TryParse(value.ToString(), out Guid id);
+				if (!isGuid) {
+					Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
+					string entityName = GetSysSchemaNameByUid(referenceSchemaUIduid);
+					Guid entityId = GetEntityIdByDisplayValue(entityName, value.ToString());
+					value = entityId.ToString();
+				}
+			}
+			if (optionsType.Contains("Date")) {
+				value = DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss");
+			}
+
+			//Enclosed opts.Value in "", otherwise update fails for all text settings
+			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
+		} else {
+			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":{value}" + "}}";
+		}
+		string postSysSettingsValuesUrl
+				= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
+		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+
+		return true;
+	}
+
 	#endregion
 
 	internal record GetSettingRequestData(string Code);
+
+	internal record InsertSysSettingRequest(Guid Id, string Name, string Code, string ValueTypeName, bool IsCacheable);
+
+	public record InsertSysSettingResponse([property: JsonPropertyName("responseStatus")]
+		ResponseStatus ResponseStatus,
+		[property: JsonPropertyName("id")] Guid Id,
+		[property: JsonPropertyName("rowsAffected")]
+		int RowsAffected,
+		[property: JsonPropertyName("nextPrcElReady")]
+		bool NextPrcElReady,
+		[property: JsonPropertyName("success")]
+		bool Success);
+
+	public record ResponseStatus([property: JsonPropertyName("ErrorCode")]
+		string ErrorCode,
+		[property: JsonPropertyName("Message")]
+		string Message,
+		[property: JsonPropertyName("Errors")] object[] Errors);
+
+}
+
+public sealed class TextSetting : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public TextSetting(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public TextSetting(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Text";
+
+	#endregion
+
+}
+
+public sealed class ShortText : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public ShortText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public ShortText(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "ShortText";
+
+	#endregion
+
+}
+
+public sealed class MediumText : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public MediumText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public MediumText(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "MediumText";
+
+	#endregion
+
+}
+
+public sealed class LongText : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public LongText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public LongText(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "LongText";
+
+	#endregion
+
+}
+
+public sealed class SecureText : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public SecureText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public SecureText(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "SecureText";
+
+	#endregion
+
+}
+
+public sealed class MaxSizeText : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public MaxSizeText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public MaxSizeText(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "MaxSizeText";
+
+	#endregion
+
+}
+
+public abstract class CreatioSysSetting
+{
+
+	#region Fields: Private
+
+	private static readonly JsonSerializerOptions JsonSerializerOptions = new() {
+		WriteIndented = false,
+		AllowTrailingCommas = false,
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+	};
+
+	#endregion
+
+	#region Properties: Public
+
+	[JsonPropertyName("valueTypeName")]
+	public abstract string ValueTypeName { get; }
+
+	[JsonPropertyName("code")]
+	public string Code { get; set; }
+
+	[JsonPropertyName("description")]
+	public string Description { get; set; }
+
+	[JsonPropertyName("isCacheable")]
+	public bool IsCacheable { get; set; }
+
+	[JsonPropertyName("isPersonal")]
+	public bool IsPersonal { get; set; }
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+
+	#endregion
+
+	#region Methods: Public
+
+	public override string ToString() => JsonSerializer.Serialize(this, JsonSerializerOptions);
+
+	#endregion
+
+	private protected CreatioSysSetting(string name, string code, string value, bool isCacheable, string description,
+		bool isPersonal){
+		Name = name;
+		Code = code;
+		Value = value;
+		IsCacheable = isCacheable;
+		Description = description;
+		IsPersonal = isPersonal;
+	}
+
+	private protected CreatioSysSetting(string name, string code, object value, bool isCacheable, string description,
+		bool isPersonal){
+		Name = name;
+		Code = code;
+		Value = value.ToString();
+		IsCacheable = isCacheable;
+		Description = description;
+		IsPersonal = isPersonal;
+	}
 
 }

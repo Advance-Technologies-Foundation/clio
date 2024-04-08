@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
+using ATF.Repository.Providers;
 using Autofac;
 using Clio.Common;
 using Clio.Tests.Infrastructure;
@@ -44,9 +46,8 @@ public class SysSettingsManagerTests
 
 	#endregion
 
-	#region Methods: Public
+	#region Method : GetSysSettingValueByCode
 
-	#region Method : GetSysSettingValueByCode 
 	[TestCase("true")]
 	[TestCase("True")]
 	[TestCase("false")]
@@ -57,7 +58,10 @@ public class SysSettingsManagerTests
 		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -96,7 +100,10 @@ public class SysSettingsManagerTests
 		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
 			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
@@ -117,13 +124,12 @@ public class SysSettingsManagerTests
 
 		//Act
 		DateTime actual = sut.GetSysSettingValueByCode<DateTime>(sysSettingCode);
-		
+
 		//Assert
 		DateTime.TryParse(value, out DateTime dtValue);
 		actual.Should().Be(dtValue);
 	}
-	
-	
+
 	[TestCase("0C5715C6-D067-45F5-ABC6-B2BDAE909393")]
 	[TestCase("00000000-0000-0000-0000-000000000000")]
 	public void GetSysSettingValueByCode_Returns_CorrectGuidValue(string value){
@@ -132,7 +138,10 @@ public class SysSettingsManagerTests
 		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
 			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
@@ -153,12 +162,12 @@ public class SysSettingsManagerTests
 
 		//Act
 		Guid actual = sut.GetSysSettingValueByCode<Guid>(sysSettingCode);
-		
+
 		//Assert
 		Guid.TryParse(value, out Guid guidValue);
 		actual.Should().Be(guidValue);
 	}
-	
+
 	[TestCase("123")]
 	[TestCase("123.00")]
 	[TestCase("123.00000")]
@@ -173,7 +182,10 @@ public class SysSettingsManagerTests
 		decimal sysSettingValue = decimal.Parse(value);
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -208,12 +220,15 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectIntValue(string value){
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		CultureInfo provider = new CultureInfo("en-US");
+		CultureInfo provider = new("en-US");
 		int sysSettingValue = (int)decimal.Parse(value, provider);
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -245,12 +260,12 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Throws(string value){
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		CultureInfo provider = new CultureInfo("en-US");
-		int sysSettingValue = (int)decimal.Parse(value, provider);
-
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -271,13 +286,12 @@ public class SysSettingsManagerTests
 				Arg.Is(expectedRequestData))
 			.Returns(value);
 
-		//Act
+		//Act + Assert
 		Action act = () => sut.GetSysSettingValueByCode<int>(sysSettingCode);
 		act.Should()
 			.Throw<InvalidCastException>()
 			.WithMessage($"Could not convert {value} to to {nameof(Int32)}");
 	}
-
 
 	[Test]
 	public void GetSysSettingValueByCode_Returns_Value(){
@@ -287,7 +301,11 @@ public class SysSettingsManagerTests
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder);
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -321,6 +339,101 @@ public class SysSettingsManagerTests
 	}
 
 	#endregion
-	
+
+	#region Method : InsertSysSetting
+
+	[TestCase("Text")]
+	[TestCase("ShortText")]
+	[TestCase("MediumText")]
+	[TestCase("LongText")]
+	[TestCase("SecureText")]
+	[TestCase("MaxSizeText")]
+	public void CreatioCanCreateSetting(string valueTypeName){
+		//Arrange
+		const string sysSettingCode = "nonExistingCode";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+
+		string segment = EnvironmentSettings.IsNetCore switch {
+			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
+			false => "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+		};
+		string expectedUrl = EnvironmentSettings.Uri + segment;
+
+		applicationClient
+			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Is<string>(s => EvalValueTypeName(s, valueTypeName)))
+			.Returns(
+				"""
+					{
+						"id": "acf40078-ba48-4285-9f3b-44ebafa28cac",
+						"rowsAffected": 1,
+						"nextPrcElReady": false,
+						"success": true
+					}
+				"""
+			);
+
+		//Act
+		SysSettingsManager.InsertSysSettingResponse actual
+			= sut.InsertSysSetting(sysSettingCode, sysSettingCode, valueTypeName);
+
+		//Assert
+		actual.Id.Should().Be("acf40078-ba48-4285-9f3b-44ebafa28cac");
+	}
+
+	private static bool EvalValueTypeName(string json, string valueTypeName){
+		Dictionary<string, object> sysSetting = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+		return sysSetting["valueTypeName"].ToString() == valueTypeName;
+	}
+
+	[Test]
+	public void CreatioCannotCanCreateSetting(){
+		//Arrange
+		const string sysSettingCode = "nonExistingCode";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+
+		string segment = EnvironmentSettings.IsNetCore switch {
+			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
+			false => "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+		};
+		string expectedUrl = EnvironmentSettings.Uri + segment;
+		applicationClient
+			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
+			.Returns(
+				"""
+					{
+				               "responseStatus": {
+				                 "ErrorCode": "DbOperationException",
+				                 "Message": "Violation of PRIMARY KEY constraint 'PKO0XjBowul8kHVr5gXrx2yS4A0Lc'. Cannot insert duplicate key in object 'dbo.SysSettings'. The duplicate key value is (c7363e33-f8cc-4059-9761-a7c379088489).\r\nThe statement has been terminated.",
+				                 "Errors": []
+				               },
+				               "rowsAffected": -1,
+				               "nextPrcElReady": false,
+				               "success": false
+				             }
+				"""
+			);
+
+		//Act
+		SysSettingsManager.InsertSysSettingResponse actual
+			= sut.InsertSysSetting(sysSettingCode, sysSettingCode, "Text");
+
+		//Assert
+		actual.Id.Should().Be(Guid.Empty);
+		actual.Success.Should().BeFalse();
+		actual.ResponseStatus.ErrorCode.Should().Be("DbOperationException");
+		actual.ResponseStatus.Message.Should().StartWith("Violation of PRIMARY KEY constraint");
+	}
+
 	#endregion
+
 }
