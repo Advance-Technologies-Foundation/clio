@@ -34,7 +34,7 @@ namespace Clio.Command
 		private void CreateSysSetting(SysSettingsOptions opts) {
 			
 			SysSettingsManager.InsertSysSettingResponse result = 
-				_sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type, true);
+				_sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type);
 			
 			string text = result switch {
 				{ Success: true, Id: var id } when id != Guid.Empty => $"SysSettings with code: {opts.Code} created.",

@@ -43,11 +43,10 @@ public interface ISysSettingsManager
 	T GetSysSettingValueByCode<T>(string code);
 
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
-		bool cached = false,
-		string description = "", bool valueForCurrentUser = true);
+		bool cached = true, string description = "", bool valueForCurrentUser = false);
 
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "");
-	
+
 	#endregion
 
 }
@@ -94,7 +93,7 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	private static object ConvertToDateTime(string value){
-		bool isDateTime = DateTime.TryParse(value, out DateTime boolValue);
+		bool isDateTime = System.DateTime.TryParse(value, out System.DateTime boolValue);
 		return isDateTime ? (object)boolValue
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
 	}
@@ -178,8 +177,7 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
-		bool cached = false,
-		string description = "", bool valueForCurrentUser = true){
+		bool cached = true, string description = "", bool valueForCurrentUser = false){
 		CreatioSysSetting sysSetting = valueTypeName switch {
 			"Text" => new TextSetting(name, code, null, cached, description, valueForCurrentUser),
 			"ShortText" => new ShortText(name, code, null, cached, description, valueForCurrentUser),
@@ -187,8 +185,17 @@ public class SysSettingsManager : ISysSettingsManager
 			"LongText" => new LongText(name, code, null, cached, description, valueForCurrentUser),
 			"SecureText" => new SecureText(name, code, null, cached, description, valueForCurrentUser),
 			"MaxSizeText" => new MaxSizeText(name, code, null, cached, description, valueForCurrentUser),
+			"Boolean" => new CBoolean(name, code, null, cached, description, valueForCurrentUser),
+			"DateTime" => new CDateTime(name, code, null, cached, description, valueForCurrentUser),
+			"Date" => new CDate(name, code, null, cached, description, valueForCurrentUser),
+			"Time" => new CTime(name, code, null, cached, description, valueForCurrentUser),
+			"Integer" => new CInteger(name, code, null, cached, description, valueForCurrentUser),
+			"Currency" => new CCurrency(name, code, null, cached, description, valueForCurrentUser),
+			"Decimal" => new CDecimal(name, code, null, cached, description, valueForCurrentUser),
+			"Lookup" => new Lookup(name, code, null, cached, description, valueForCurrentUser),
 			var _ => throw new ArgumentOutOfRangeException(nameof(valueTypeName), valueTypeName,
-				"Unsupported SysSettingType")
+				"Unsupported SysSettingType, Allowed values (Text, ShortText, MediumText, LongText, SecureText, " +
+				"MaxSizeText, Boolean, DateTime, Date, Time, Integer, Currency, Decimal, Lookup)")
 		};
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
@@ -213,17 +220,21 @@ public class SysSettingsManager : ISysSettingsManager
 					value = entityId.ToString();
 				}
 			}
-			if (optionsType.Contains("Date")) {
-				value = DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss");
+			if (new[] {"Date", "DateTime", "Time"}.Contains(optionsType)) {
+				value = System.DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss");
 			}
 
 			//Enclosed opts.Value in "", otherwise update fails for all text settings
 			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
 		} else {
+			if (optionsType.Contains("Boolean")) {
+				value = bool.Parse(value.ToString()).ToString().ToLower();
+			}
+
 			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":{value}" + "}}";
 		}
 		string postSysSettingsValuesUrl
-				= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
+			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
 		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
 
 		return true;
@@ -374,6 +385,174 @@ public sealed class MaxSizeText : CreatioSysSetting
 	#region Properties: Public
 
 	public override string ValueTypeName => "MaxSizeText";
+
+	#endregion
+
+}
+
+public sealed class CBoolean : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CBoolean(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CBoolean(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Boolean";
+
+	#endregion
+
+}
+
+public sealed class CDateTime : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CDateTime(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CDateTime(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "DateTime";
+
+	#endregion
+
+}
+
+public sealed class CTime : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CTime(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CTime(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Time";
+
+	#endregion
+
+}
+
+public sealed class CDate : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CDate(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CDate(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Date";
+
+	#endregion
+
+}
+
+public sealed class CInteger : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CInteger(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CInteger(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Integer";
+
+	#endregion
+
+}
+
+public sealed class CCurrency : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CCurrency(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CCurrency(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Currency";
+
+	#endregion
+
+}
+
+public sealed class CDecimal : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CDecimal(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CDecimal(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Decimal";
+
+	#endregion
+
+}
+
+public sealed class Lookup : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public Lookup(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public Lookup(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Lookup";
 
 	#endregion
 
