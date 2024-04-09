@@ -93,8 +93,13 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	private static object ConvertToDateTime(string value){
-		bool isDateTime = System.DateTime.TryParse(value, out System.DateTime boolValue);
-		return isDateTime ? (object)boolValue
+		bool isDateTime = System.DateTime.TryParse(value, out System.DateTime dtValue);
+		return isDateTime ? (object)dtValue
+			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
+	}
+	private static object ConvertToDate(string value){
+		bool isDateTime = System.DateTime.TryParse(value, out System.DateTime dateValue);
+		return isDateTime ? (object)dateValue.Date
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
 	}
 
@@ -221,7 +226,7 @@ public class SysSettingsManager : ISysSettingsManager
 				}
 			}
 			if (new[] {"Date", "DateTime", "Time"}.Contains(optionsType)) {
-				value = System.DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss");
+				value = System.DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss.fff");
 			}
 
 			//Enclosed opts.Value in "", otherwise update fails for all text settings
@@ -510,7 +515,7 @@ public sealed class CCurrency : CreatioSysSetting
 
 	#region Properties: Public
 
-	public override string ValueTypeName => "Currency";
+	public override string ValueTypeName => "Money";
 
 	#endregion
 
@@ -531,7 +536,7 @@ public sealed class CDecimal : CreatioSysSetting
 
 	#region Properties: Public
 
-	public override string ValueTypeName => "Decimal";
+	public override string ValueTypeName => "Float";
 
 	#endregion
 
