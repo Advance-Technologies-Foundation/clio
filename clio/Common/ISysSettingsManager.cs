@@ -49,6 +49,8 @@ public interface ISysSettingsManager
 
 	#endregion
 
+	void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
+
 }
 
 public class SysSettingsManager : ISysSettingsManager
@@ -61,6 +63,7 @@ public class SysSettingsManager : ISysSettingsManager
 	private readonly IDataProvider _dataProvider;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly IFileSystem _filesystem;
+	private readonly ILogger _logger;
 
 	private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
 		WriteIndented = false,
@@ -74,12 +77,13 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public SysSettingsManager(IApplicationClient creatioClient,
 		IServiceUrlBuilder serviceUrlBuilder, IDataProvider dataProvider,
-		IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem){
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem, ILogger logger){
 		_creatioClient = creatioClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_dataProvider = dataProvider;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_filesystem = filesystem;
+		_logger = logger;
 	}
 
 	#endregion
@@ -147,8 +151,10 @@ public class SysSettingsManager : ISysSettingsManager
 			.ToList().FirstOrDefault();
 		return sysSchema.Name;
 	}
+	
+	
 
-	private VwSysSetting GetSysSettingType(string code){
+	private VwSysSetting GetSysSettingByCode(string code){
 		VwSysSetting sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<VwSysSetting>()
 			.Where(i => i.Code == code)
@@ -183,6 +189,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
 		bool cached = true, string description = "", bool valueForCurrentUser = false){
+		
 		CreatioSysSetting sysSetting = valueTypeName switch {
 			"Text" => new TextSetting(name, code, null, cached, description, valueForCurrentUser),
 			"ShortText" => new ShortText(name, code, null, cached, description, valueForCurrentUser),
@@ -211,7 +218,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = ""){
 		string requestData = string.Empty;
-		VwSysSetting sysSetting = GetSysSettingType(code);
+		VwSysSetting sysSetting = GetSysSettingByCode(code);
 		string optionsType = string.IsNullOrWhiteSpace(valueTypeName)
 			? sysSetting.ValueTypeName : valueTypeName;
 
@@ -240,8 +247,22 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		_creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+		var result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
 		return true;
+	}
+
+	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
+		
+		var sysSetting = GetSysSettingByCode(code); 
+		if(sysSetting is null) {
+			var result = InsertSysSetting(optsCode, code, optsType);
+			string text = result switch {
+				{Success: true, Id: var id} when id != Guid.Empty => $"SysSettings with code: {code} created.",
+				{Success: false, Id: var id} when id == Guid.Empty =>
+					$"SysSettings with code: {code} already exists."
+			};
+			_logger.WriteInfo(text);
+		}
 	}
 
 	#endregion

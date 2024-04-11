@@ -31,16 +31,18 @@ namespace Clio.Command
 			_logger = logger;
 		}
 		
-		private void CreateSysSetting(SysSettingsOptions opts) {
+		private void CreateSysSettingIfNotExists(SysSettingsOptions opts) {
 			
-			SysSettingsManager.InsertSysSettingResponse result = 
-				_sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type);
+			// SysSettingsManager.InsertSysSettingResponse result = 
+			// 	_sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type);
 			
-			string text = result switch {
-				{ Success: true, Id: var id } when id != Guid.Empty => $"SysSettings with code: {opts.Code} created.",
-				{ Success: false, Id: var id } when id == Guid.Empty => $"SysSettings with code: {opts.Code} already exists."
-			};
-			 _logger.WriteInfo(text);
+			_sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type);
+			
+			// string text = result switch {
+			// 	{ Success: true, Id: var id } when id != Guid.Empty => $"SysSettings with code: {opts.Code} created.",
+			// 	{ Success: false, Id: var id } when id == Guid.Empty => $"SysSettings with code: {opts.Code} already exists."
+			// };
+			//  _logger.WriteInfo(text);
 		}
 		
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
@@ -69,7 +71,7 @@ namespace Clio.Command
 			}
 			
 			try {
-				CreateSysSetting(opts);
+				CreateSysSettingIfNotExists(opts);
 				UpdateSysSetting(opts);
 			} catch (Exception ex) {
 				_logger.WriteError($"Error during set setting '{opts.Code}' value occured with message: {ex.Message}");

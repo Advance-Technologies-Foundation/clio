@@ -80,6 +80,7 @@ namespace clio.ApiTest.Features
         [NUnit.Framework.CategoryAttribute("SysSetting")]
         [NUnit.Framework.CategoryAttribute("UPSERT")]
         [NUnit.Framework.TestCaseAttribute("Text", "ClioText", "ClioTextValue", "ClioTextValue", "Text", null)]
+        [NUnit.Framework.TestCaseAttribute("", "ClioText", "", "", "Text", null)]
         [NUnit.Framework.TestCaseAttribute("ShortText", "ClioShortText", "ClioShortTextValue", "ClioShortTextValue", "ShortText", null)]
         [NUnit.Framework.TestCaseAttribute("MediumText", "ClioMediumText", "ClioMediumTextValue", "ClioMediumTextValue", "MediumText", null)]
         [NUnit.Framework.TestCaseAttribute("LongText", "ClioLongText", "ClioLongTextValue", "ClioLongTextValue", "LongText", null)]

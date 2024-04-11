@@ -12,6 +12,7 @@ Clio can perform INSERT, READ, UPDATE operations on Creatio System settings.
 		Examples:
 		| valueNameType | sysSettingName   | sysSettingValue      | expectedValue        | expectedValueNameType |
 		| Text          | ClioText         | ClioTextValue        | ClioTextValue        | Text                  |
+		|               | ClioText         |                      |                      | Text                  |
 		| ShortText     | ClioShortText    | ClioShortTextValue   | ClioShortTextValue   | ShortText             |
 		| MediumText    | ClioMediumText   | ClioMediumTextValue  | ClioMediumTextValue  | MediumText            |
 		| LongText      | ClioLongText     | ClioLongTextValue    | ClioLongTextValue    | LongText              |

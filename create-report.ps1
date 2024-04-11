@@ -1,4 +1,5 @@
 $env:URL = "http://kkrylovn.tscrm.com:40015";
+#$env:URL = "http://ts1-mrkt-web01:88/clio-f";
 $env:LOGIN = "Supervisor";
 $env:PASSWORD = "Supervisor";
 $env:IS_NETCORE = "false";

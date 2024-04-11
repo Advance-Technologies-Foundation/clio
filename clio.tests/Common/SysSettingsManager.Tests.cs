@@ -61,7 +61,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -103,7 +104,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
 			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
@@ -141,7 +143,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
 			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
@@ -185,7 +188,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -228,7 +232,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -265,7 +270,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -304,7 +310,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 
 		string segment = EnvironmentSettings.IsNetCore switch {
@@ -356,7 +363,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
@@ -399,7 +407,8 @@ public class SysSettingsManagerTests
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem);
+		ILogger logger = Substitute.For<ILogger>();
+        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
