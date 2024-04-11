@@ -975,6 +975,9 @@
     <Content Update="tpl\workspace\tests\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Update="tpl\workspace\tasks\set-clio-working-directory.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

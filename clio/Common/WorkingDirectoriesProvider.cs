@@ -13,7 +13,15 @@ namespace Clio.Common
 
 		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
 		public string TemplateDirectory =>  Path.Combine(ExecutingDirectory, "tpl");
-		public string BaseTempDirectory =>  Path.Combine(Path.GetTempPath(), "clio");
+		public string BaseTempDirectory {
+			get {
+				string tempDir = Environment.GetEnvironmentVariable("CLIO_WORKING_DIRECTORY");
+				return Path.Combine(string.IsNullOrEmpty(tempDir) 
+					? Path.GetTempPath() 
+					: tempDir, "clio");
+			}
+		}
+
 		public string CurrentDirectory => Directory.GetCurrentDirectory();
 
 		#endregion
