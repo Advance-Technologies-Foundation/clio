@@ -1,11 +1,4 @@
-﻿### Protected Access
-< set-request-base_url.js
-
-POST {{base_url}}/0/DataService/json/SyncReply/SelectQuery HTTP/1.1
-Content-Type: application/json
-BPMCSRF: {{BPMCSRF}}
-
-{
+﻿{
   "rootSchemaName": "VwWebServiceV2",
   "filters": {
     "isEnabled": true,

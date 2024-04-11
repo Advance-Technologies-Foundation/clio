@@ -582,7 +582,9 @@ class Program {
 		typeof(GetCreatioInfoCommandOptions),
 		typeof(ActivatePkgOptions),
 		typeof(SetApplicationVersionOption),
-		typeof(ApplyEnvironmentManifestOptions)
+		typeof(ApplyEnvironmentManifestOptions),
+		typeof(GetWebServiceUrlOptions),
+		
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -677,6 +679,7 @@ class Program {
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
 			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
 			ApplyEnvironmentManifestOptions opts => Resolve<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
+			GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};
