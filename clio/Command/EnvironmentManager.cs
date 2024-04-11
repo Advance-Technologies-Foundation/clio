@@ -113,7 +113,9 @@ namespace Clio.Command
 			return LoadEnvironmentManifestFromFile(manifestFilePath).Settings;
 		}
 
-
+		public IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath) {
+			return LoadEnvironmentManifestFromFile(manifestFilePath).WebServices;
+		}
 	}
 
 	public interface IEnvironmentManager
@@ -127,6 +129,7 @@ namespace Clio.Command
 
 		IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath);
 		IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath);
+		IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath);
 	}
 
 	public class CreatioManifestSetting
@@ -140,6 +143,15 @@ namespace Clio.Command
 		
 		[YamlMember(Alias = "users_values")]
         public Dictionary<string, string> UserValues { get; set; } = new Dictionary<string, string>();
+	}
+
+	public class CreatioManifestWebService
+	{ 
+		[YamlMember(Alias = "url")]
+		public string Url { get; set; }
+
+		[YamlMember(Alias = "name")]
+		public string Name { get; set; }
 	}
 
 	public class Feature

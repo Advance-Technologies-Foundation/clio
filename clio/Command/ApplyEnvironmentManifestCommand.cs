@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -25,17 +26,20 @@ namespace Clio.Command
 		private readonly IApplicationInstaller _applicationInstaller;
 		private readonly FeatureCommand _featureCommand;
 		private readonly SysSettingsCommand _sysSettingCommand;
+		private readonly SetWebServiceUrlCommand _setWebServiceUrlCommand;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
-			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand){
+			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand, 
+			SetWebServiceUrlCommand setWebServiceUrlCommand){
 			_environmentManager = environmentManager;
 			_applicationInstaller = applicationInstaller;
 			_featureCommand = featureCommand;
 			_sysSettingCommand = sysSettingCommand;
+			_setWebServiceUrlCommand = setWebServiceUrlCommand;
 		}
 
 		#endregion
@@ -63,10 +67,25 @@ namespace Clio.Command
 			
 			var features = _environmentManager.GetFeaturesFromManifest(options.ManifestFilePath);
 			var settings = _environmentManager.GetSettingsFromManifest(options.ManifestFilePath);
+			var webservices = _environmentManager.GetWebServicesFromManifest(options.ManifestFilePath);
 			ApplyFeaturesFromManifest(options, features, environmentInstance);
 			ApplySettingsFromManifest(options, settings, environmentInstance);
-			
+			ApplyWebservicesFromManifest(options, webservices, environmentInstance);
 			return 0;
+		}
+
+		private void ApplyWebservicesFromManifest(ApplyEnvironmentManifestOptions options, IEnumerable<CreatioManifestWebService> webservices, EnvironmentSettings environmentInstance) {
+			if (webservices is null || webservices.Count() == 0) {
+				return;
+			}
+			foreach (var webservice in webservices) {
+				var webserviceUrlOption = new SetWebServiceUrlOptions() {
+					WebServiceName = webservice.Name,
+					WebServiceUrl = webservice.Url
+				};
+				webserviceUrlOption.CopyFromEnvironmentSettings(options);
+				_setWebServiceUrlCommand.Execute(webserviceUrlOption);
+			}
 		}
 
 		private void ApplyFeaturesFromManifest(ApplyEnvironmentManifestOptions options,IEnumerable<Feature> features, EnvironmentSettings environmentInstance){
@@ -89,7 +108,7 @@ namespace Clio.Command
 				}
 			}
 		}
-		
+
 		private void ApplySettingsFromManifest(ApplyEnvironmentManifestOptions options,IEnumerable<CreatioManifestSetting> settings, EnvironmentSettings environmentInstance){
 
 			if(settings is null || settings.Count() == 0) {
