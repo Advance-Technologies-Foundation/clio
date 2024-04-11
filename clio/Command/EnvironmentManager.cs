@@ -113,7 +113,7 @@ namespace Clio.Command
 			return LoadEnvironmentManifestFromFile(manifestFilePath).Settings;
 		}
 
-		IEnumerable<CreatioManifestWebService> IEnvironmentManager.GetWebServicesFromManifest(string manifestFilePath) {
+		public IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath) {
 			return LoadEnvironmentManifestFromFile(manifestFilePath).WebServices;
 		}
 	}

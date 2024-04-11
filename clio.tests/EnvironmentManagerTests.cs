@@ -216,27 +216,20 @@ namespace Clio.Tests
 			webservices.Should().BeEquivalentTo(expected);
 		}
 
-		[TestCase("web-services-creatio.yaml", 2)]
-		public void GetWebServicesFromManifest(string manifestFileName, int count) {
+		[TestCase("sections-without-items-creatio.yaml")]
+		public void GetWebServicesFromManifest_WhenExistsSectionButNotExistsItems(string manifestFileName) {
 			//Arrange
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
 
 			//Act
-			IEnumerable<CreatioManifestWebService> webservices = environmentManager.GetWebServicesFromManifest(manifestFilePath);
+			var webservices = environmentManager.GetWebServicesFromManifest(manifestFilePath);
+			var features = environmentManager.GetFeaturesFromManifest(manifestFilePath);
+			var settings = environmentManager.GetSettingsFromManifest(manifestFilePath);
 			//Assert
-			webservices.Count().Should().Be(count);
-			List<CreatioManifestWebService> expected = [
-				new CreatioManifestWebService {
-					Name = "WebService1",
-					Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
-				},
-				new CreatioManifestWebService {
-					Name = "WebService2",
-					Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
-				}
-			];
-			webservices.Should().BeEquivalentTo(expected);
+			webservices.Count().Should().Be(0);
+			features.Count().Should().Be(0);
+			settings.Count().Should().Be(0);
 		}
 	}
 }

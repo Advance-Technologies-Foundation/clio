@@ -9,3 +9,7 @@ environment:
   platformtype: "NET6" # "NET6" or "NETFramework"
 
 webservices:
+
+features:
+
+settings:
