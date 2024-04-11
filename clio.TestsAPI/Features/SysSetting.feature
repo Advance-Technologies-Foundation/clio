@@ -21,9 +21,9 @@ Clio can perform INSERT, READ, UPDATE operations on Creatio System settings.
 		| Boolean       | ClioBooleanTwo   | true                 | True                 | Boolean               |
 		| Boolean       | ClioBooleanThree | False                | False                | Boolean               |
 		| Boolean       | ClioBooleanFour  | false                | False                | Boolean               |
-		| DateTime      | ClioDateTime     | "21-Jan-2024 18:00"  | 21-Jan-2024 18:00    | DateTime              |
+		| DateTime      | ClioDateTime     | "21-Jan-2024 18:00"  | 21-Jan-2024 18:00:00 | DateTime              |
 		| Date          | ClioDate         | 21-Jan-2024          | 21-Jan-2024          | Date                  |
-		| Time          | ClioTime         | 18:00                | 18:00                | Time                  |
+		| Time          | ClioTime         | 18:00                | 18:00:00             | Time                  |
 		| Integer       | ClioInteger      | 10                   | 10                   | Integer               |
 		| Currency      | ClioCurrency     | 11.50                | 11.50                | Money                 |
 		| Decimal       | ClioDecimal      | 12.50                | 12.50                | Float                 |

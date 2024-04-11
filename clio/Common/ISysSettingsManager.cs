@@ -93,12 +93,12 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	private static object ConvertToDateTime(string value){
-		bool isDateTime = System.DateTime.TryParse(value, out System.DateTime dtValue);
+		bool isDateTime = DateTime.TryParse(value, out DateTime dtValue);
 		return isDateTime ? (object)dtValue
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
 	}
 	private static object ConvertToDate(string value){
-		bool isDateTime = System.DateTime.TryParse(value, out System.DateTime dateValue);
+		bool isDateTime = DateTime.TryParse(value, out DateTime dateValue);
 		return isDateTime ? (object)dateValue.Date
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
 	}
@@ -215,7 +215,7 @@ public class SysSettingsManager : ISysSettingsManager
 		string optionsType = string.IsNullOrWhiteSpace(valueTypeName)
 			? sysSetting.ValueTypeName : valueTypeName;
 
-		if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Lookup")) {
+		if (optionsType.Contains("Text") || optionsType.Contains("Date") ||optionsType.Contains("Time") || optionsType.Contains("Lookup")) {
 			if (optionsType == "Lookup") {
 				bool isGuid = Guid.TryParse(value.ToString(), out Guid id);
 				if (!isGuid) {
@@ -226,22 +226,21 @@ public class SysSettingsManager : ISysSettingsManager
 				}
 			}
 			if (new[] {"Date", "DateTime", "Time"}.Contains(optionsType)) {
-				value = System.DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss.fff");
+				value = DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss.fff");
 			}
 
 			//Enclosed opts.Value in "", otherwise update fails for all text settings
 			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
 		} else {
 			if (optionsType.Contains("Boolean")) {
-				value = bool.Parse(value.ToString()).ToString().ToLower();
+				value = bool.Parse(value.ToString()).ToString().ToLower(CultureInfo.InvariantCulture);
 			}
 
 			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":{value}" + "}}";
 		}
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
-
+		_creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
 		return true;
 	}
 

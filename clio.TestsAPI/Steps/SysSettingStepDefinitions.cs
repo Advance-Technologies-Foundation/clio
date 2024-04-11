@@ -5,7 +5,6 @@ using ATF.Repository.Providers;
 using CreatioModel;
 using FluentAssertions;
 using NUnit.Framework;
-using NUnit.Framework.Constraints;
 
 namespace clio.ApiTest.Steps;
 
@@ -42,7 +41,7 @@ public class SysSettingStepDefinitions
 		
 		string mainLocation = Assembly.GetExecutingAssembly().Location;
 		string mainLocationDirPath = Path.GetDirectoryName(mainLocation);
-		string clio_dev_path = Path.Combine(mainLocationDirPath,"..","..","..","..","clio","bin","Debug","net6.0", "clio.exe");
+		string clioDevPath = Path.Combine(mainLocationDirPath,"..","..","..","..","clio","bin","Debug","net6.0", "clio.exe");
 		
 		var url = _appSettings.URL;
 		var username = _appSettings.LOGIN;
@@ -51,8 +50,8 @@ public class SysSettingStepDefinitions
 		string envArgs = $"-u {url} -l {username} -p {password} -i {isNetCore}";
 		
 		
-		ProcessStartInfo psi = new ProcessStartInfo() {
-			FileName = clio_dev_path,
+		ProcessStartInfo psi = new () {
+			FileName = clioDevPath,
 			Arguments = $"{commandName} {clioArgs} {envArgs}",
 			RedirectStandardOutput = true,
 			RedirectStandardError = true
@@ -76,9 +75,8 @@ public class SysSettingStepDefinitions
 
 	[Then(@"SysSetting exists in Creatio with ""(.*)"" ""(.*)""")]
 	public void ThenSysSettingExistsInCreatioWith(string sysSettingName, string valueNameType){
-		var ctx= AppDataContextFactory.GetAppDataContext(_dataProvider);
 		List<VwSysSetting> settings = DataContext.Models<VwSysSetting>()
-			.Where(s=> s.Code == sysSettingName).ToList()
+			.Where(s=> s.Code == sysSettingName)
 			.ToList();
 		
 		settings.Should().HaveCount(1);

@@ -159,7 +159,37 @@ namespace cliogate.Files.cs
 		public string GetSysSettingValueByCode(string code){
 			CheckCanManageSysSettings();
 			bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
-			return isValue ? value.ToString() : string.Empty;
+			if(!isValue) {
+				return string.Empty;
+			}
+			
+			
+			const string schemaName = "SysSettings";
+			Entity sysSettingsEntity = _userConnection.EntitySchemaManager
+				.FindInstanceByName(schemaName).CreateEntity(_userConnection);
+			
+			bool isFetched = sysSettingsEntity.FetchFromDB("Code", code, false);
+			string valueTypeName = sysSettingsEntity.GetTypedColumnValue<string>("ValueTypeName");
+
+			string returnValue;
+			switch (valueTypeName) {
+				case "DateTime":
+					DateTime dt1 = DateTime.Parse(value.ToString());
+					returnValue = dt1.ToString("dd-MMM-yyyy HH:mm:ss");
+					break;
+				case "Date":
+					DateTime dt2 = DateTime.Parse(value.ToString()).Date;
+					returnValue = dt2.ToString("dd-MMM-yyyy");
+					break;
+				case "Time":
+					DateTime dt3 = DateTime.Parse(value.ToString());
+					returnValue = dt3.ToString(@"HH:mm:ss");
+					break;
+				default:
+					returnValue = value.ToString();
+					break;
+			}
+			return returnValue;
 		}
 		
 		

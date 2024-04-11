@@ -1,7 +1,4 @@
-using System;
-using TechTalk.SpecFlow;
-
-namespace clio.Tests.Api.Hooks
+namespace clio.ApiTest.Hooks
 {
 	[Binding]
 	public class Hooks

@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Collections.Generic;
 using cliogate.Files.cs;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using Terrasoft.Configuration.Tests;
 using Terrasoft.Core;
+using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.TestFramework;
 
@@ -16,6 +18,8 @@ namespace cliogate.tests
 	public class CreatioApiGatewayTestFixture : BaseMarketplaceTestFixture
 	{
 
+		private Entity _sysSettingsEntity;
+		private Guid _sysSettingId = Guid.NewGuid();
 		#region Constants: Private
 
 		private const string SysSettingCode = "SysSettingOne_Code";
@@ -23,6 +27,37 @@ namespace cliogate.tests
 
 		#endregion
 
+		
+		private void MockSysSettingsEntity(string code, string valueTypeName) {
+			const string schemaName = "SysSettings";
+			MockEntitySchemaWithColumns(schemaName, new Dictionary<string, DataValueType> {
+				{"Code", DataValueType.Text},
+				{"ValueTypeName", DataValueType.Text}
+			});
+
+			SetUpTestData(schemaName, new Dictionary<string, object> {
+				{"Code", code},
+				{"ValueTypeName", valueTypeName}
+			});
+		}
+		
+		private void MockSysSetting(string code, object value){
+			UserConnection.SettingsValues.Add(code, value);
+            GlobalAppSettings.FeatureUseSysSettingsEngine = true;
+            FakeSysSettings settings = new FakeSysSettings {
+            	Code = code
+            };
+            FakeSysSettings.Setup(new[] {settings});
+            FakeSysSettingsEngine engine = Substitute.For<FakeSysSettingsEngine>();
+            FakeSysSettingsEngine.Setup(engine);
+            engine.TryGetSettingsValue(Arg.Is(code), Arg.Any<Guid>(),
+            		out object vv)
+            	.Returns(x => {
+            		x[2] = value;
+            		return true;
+            	});
+		}
+		
 		#region Methods: Protected
 
 		protected override void SetUp(){
@@ -32,20 +67,7 @@ namespace cliogate.tests
 
 		protected override void SetupSysSettings(){
 			base.SetupSysSettings();
-			UserConnection.SettingsValues.Add(SysSettingCode, SysSettingValue);
-			GlobalAppSettings.FeatureUseSysSettingsEngine = true;
-			FakeSysSettings settings = new FakeSysSettings {
-				Code = SysSettingCode
-			};
-			FakeSysSettings.Setup(new[] {settings});
-			FakeSysSettingsEngine engine = Substitute.For<FakeSysSettingsEngine>();
-			FakeSysSettingsEngine.Setup(engine);
-			engine.TryGetSettingsValue(Arg.Is(SysSettingCode), Arg.Any<Guid>(),
-					out object vv)
-				.Returns(x => {
-					x[2] = SysSettingValue;
-					return true;
-				});
+			MockSysSetting(SysSettingCode, SysSettingValue);
 		}
 
 		#endregion
@@ -57,10 +79,12 @@ namespace cliogate.tests
 				.Returns(true);
 
 			CreatioApiGateway sut = new CreatioApiGateway();
-
+			const string sysSettingCode = "fake_code";
+			MockSysSettingsEntity(sysSettingCode, "Text");
+			
 			//Act
-			string actual = sut.GetSysSettingValueByCode("fake_code");
-
+			string actual = sut.GetSysSettingValueByCode(sysSettingCode);
+			
 			//Assert
 			actual.Should().Be("");
 		}
@@ -72,6 +96,8 @@ namespace cliogate.tests
 				.Returns(true);
 			CreatioApiGateway sut = new CreatioApiGateway();
 
+			MockSysSettingsEntity(SysSettingCode, "Text");
+			
 			//Act
 			string actual = sut.GetSysSettingValueByCode(SysSettingCode);
 
@@ -94,5 +120,39 @@ namespace cliogate.tests
 				.WithMessage("You don't have permission for operation CanManageSysSettings");
 		}
 
+		[TestCaseSource("DateTimeData")]
+		public void GetSysSettingValueByCode_Returns_PrettyValue(TestDataItem testItem){
+			//Arrange
+			UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSysSettings")
+				.Returns(true);
+			CreatioApiGateway sut = new CreatioApiGateway();
+			const string code = "SysSetting_DateTime";
+			MockSysSetting(code, testItem.Value);
+			MockSysSettingsEntity(code, testItem.ValueTypeName);
+
+			//Act
+			string actual = sut.GetSysSettingValueByCode(code);
+
+			//Assert
+			actual.Should().Be(testItem.Value.ToString(testItem.FormatString));
+		}
+		
+		public static IEnumerable<TestDataItem> DateTimeData = new List<TestDataItem> {
+			new TestDataItem("DateTime", "dd-MMM-yyyy HH:mm:ss"),
+			new TestDataItem("Date", "dd-MMM-yyyy"),
+			new TestDataItem("Time", "HH:mm:ss")
+		};
+	}
+	public class TestDataItem
+	{
+		public TestDataItem(string valueTypeName, string formatString){
+			Value = DateTime.Now;
+			ValueTypeName = valueTypeName;
+			FormatString = formatString;
+		}
+		public DateTime Value {get;}
+		public string ValueTypeName {get;}
+		public string FormatString {get;}
+		
 	}
 }
