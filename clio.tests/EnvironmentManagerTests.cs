@@ -14,6 +14,7 @@ using System.Linq;
 using FluentAssertions;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Clio.Tests
 {
@@ -190,6 +191,30 @@ namespace Clio.Tests
 			Action act = ()=>environmentManager.GetSettingsFromManifest(manifestFilePath);
 			act.Should().Throw<Exception>("null values should throw")
 				.WithMessage("Setting code cannot be null or empty. Found invalid values on lines *");
+		}
+
+		[TestCase("web-services-creatio.yaml", 2)]
+		public void GetWebServicesFromManifest(string manifestFileName, int count) {
+			//Arrange
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+
+			//Act
+			IEnumerable<CreatioManifestWebService> webservices = environmentManager.GetWebServicesFromManifest(manifestFilePath);
+			//Assert
+			webservices.Count().Should().Be(count);
+
+			List<CreatioManifestWebService> expected = [
+				new CreatioManifestWebService {
+					Name = "WebService1",
+					Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
+				},
+				new CreatioManifestWebService {
+					Name = "WebService2",
+					Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
+				}
+			];
+			webservices.Should().BeEquivalentTo(expected);
 		}
 	}
 }

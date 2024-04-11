@@ -25,5 +25,7 @@ namespace Clio.Command
 		[YamlMember(Alias = "settings")]
 		public List<CreatioManifestSetting> Settings { get; set; } = new ();
 
+		[YamlMember(Alias = "webservices")]
+		public List<CreatioManifestWebService> WebServices { get; set; } = new ();
 	}
 }
