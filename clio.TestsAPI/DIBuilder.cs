@@ -1,4 +1,5 @@
 ﻿using ATF.Repository.Providers;
+using Creatio.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -37,6 +38,16 @@ public class DIBuilder
 			};
 		});
 
+		services.AddTransient<ICreatioClient>(sp => {
+			return string.IsNullOrEmpty(appSettings.LOGIN) switch {
+				true => CreatioClient.CreateOAuth20Client(appSettings.URL, appSettings.AuthAppUri, appSettings.ClientId,
+					appSettings.ClientSecret, appSettings.IS_NETCORE),
+				false => new CreatioClient(appSettings.URL, appSettings.LOGIN, appSettings.PASSWORD,
+					appSettings.IS_NETCORE)
+			};
+		});
+
+		services.AddTransient<ICLioRunner, ClioRunner>();
 		services.AddScoped<TestContext>();
 		return services;
 	}
