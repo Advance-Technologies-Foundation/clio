@@ -26,18 +26,20 @@ namespace Clio.Command
 		private readonly IApplicationInstaller _applicationInstaller;
 		private readonly FeatureCommand _featureCommand;
 		private readonly SysSettingsCommand _sysSettingCommand;
-		private readonly SetWebServiceUrlCommand _webserviceUrlCommand;
+		private readonly SetWebServiceUrlCommand _setWebServiceUrlCommand;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
-			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand){
+			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand, 
+			SetWebServiceUrlCommand setWebServiceUrlCommand){
 			_environmentManager = environmentManager;
 			_applicationInstaller = applicationInstaller;
 			_featureCommand = featureCommand;
 			_sysSettingCommand = sysSettingCommand;
+			_setWebServiceUrlCommand = setWebServiceUrlCommand;
 		}
 
 		#endregion
@@ -82,7 +84,7 @@ namespace Clio.Command
 					WebServiceUrl = webservice.Url
 				};
 				webserviceUrlOption.CopyFromEnvironmentSettings(options);
-				_webserviceUrlCommand.Execute(webserviceUrlOption);
+				_setWebServiceUrlCommand.Execute(webserviceUrlOption);
 			}
 		}
 
