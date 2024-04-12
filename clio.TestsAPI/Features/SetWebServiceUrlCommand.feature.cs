@@ -35,9 +35,9 @@ namespace clio.ApiTest.Features
         public virtual void FeatureSetup()
         {
             testRunner = TechTalk.SpecFlow.TestRunnerManager.GetTestRunner();
-            TechTalk.SpecFlow.FeatureInfo featureInfo = new TechTalk.SpecFlow.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "SetWebServiceUrlCommand", "\tUser can set webservice url in locked a package\r\n\tSee [Set Base WebService Url](" +
-                    "https://github.com/Advance-Technologies-Foundation/clio?tab=readme-ov-file#set-b" +
-                    "ase-webservice-url)", ProgrammingLanguage.CSharp, featureTags);
+            TechTalk.SpecFlow.FeatureInfo featureInfo = new TechTalk.SpecFlow.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "SetWebServiceUrlCommand", "User can set webservice url in locked a package\r\nSee [Set Base WebService Url](ht" +
+                    "tps://github.com/Advance-Technologies-Foundation/clio?tab=readme-ov-file#set-bas" +
+                    "e-webservice-url)", ProgrammingLanguage.CSharp, featureTags);
             testRunner.OnFeatureStart(featureInfo);
         }
         

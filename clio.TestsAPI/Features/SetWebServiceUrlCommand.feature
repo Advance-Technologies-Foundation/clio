@@ -1,6 +1,6 @@
 ﻿Feature: SetWebServiceUrlCommand
-	User can set webservice url in locked a package
-	See [Set Base WebService Url](https://github.com/Advance-Technologies-Foundation/clio?tab=readme-ov-file#set-base-webservice-url)
+User can set webservice url in a locked package
+See [Set Base WebService Url](https://github.com/Advance-Technologies-Foundation/clio?tab=readme-ov-file#set-base-webservice-url)
 
 @SetWebServiceUrlCommand
 Scenario: Service base url is updated
