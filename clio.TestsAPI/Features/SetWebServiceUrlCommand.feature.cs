@@ -35,7 +35,9 @@ namespace clio.ApiTest.Features
         public virtual void FeatureSetup()
         {
             testRunner = TechTalk.SpecFlow.TestRunnerManager.GetTestRunner();
-            TechTalk.SpecFlow.FeatureInfo featureInfo = new TechTalk.SpecFlow.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "SetWebServiceUrlCommand", "\tUser can set webservice url in locked package", ProgrammingLanguage.CSharp, featureTags);
+            TechTalk.SpecFlow.FeatureInfo featureInfo = new TechTalk.SpecFlow.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "SetWebServiceUrlCommand", "\tUser can set webservice url in locked a package\r\n\tSee [Set Base WebService Url](" +
+                    "https://github.com/Advance-Technologies-Foundation/clio?tab=readme-ov-file#set-b" +
+                    "ase-webservice-url)", ProgrammingLanguage.CSharp, featureTags);
             testRunner.OnFeatureStart(featureInfo);
         }
         
@@ -76,8 +78,8 @@ namespace clio.ApiTest.Features
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Service base url is updated")]
         [NUnit.Framework.CategoryAttribute("SetWebServiceUrlCommand")]
-        [NUnit.Framework.TestCaseAttribute("CreatioMarketplaceApi", "https://marketplace.creatio.com/api/", null)]
         [NUnit.Framework.TestCaseAttribute("CreatioMarketplaceApi", "https://google.ca", null)]
+        [NUnit.Framework.TestCaseAttribute("CreatioMarketplaceApi", "https://marketplace.creatio.com/api/", null)]
         public void ServiceBaseUrlIsUpdated(string serviceName, string baseUrl, string[] exampleTags)
         {
             string[] @__tags = new string[] {
@@ -91,7 +93,7 @@ namespace clio.ApiTest.Features
             argumentsOfScenario.Add("serviceName", serviceName);
             argumentsOfScenario.Add("baseUrl", baseUrl);
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Service base url is updated", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 5
+#line 6
 this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -101,11 +103,11 @@ this.ScenarioInitialize(scenarioInfo);
             else
             {
                 this.ScenarioStart();
-#line 6
+#line 7
  testRunner.When(string.Format("user executes command with clio set-webservice-url \"{0}\" \"{1}\"", serviceName, baseUrl), ((string)(null)), ((TechTalk.SpecFlow.Table)(null)), "When ");
 #line hidden
-#line 7
- testRunner.Then("service is updated", ((string)(null)), ((TechTalk.SpecFlow.Table)(null)), "Then ");
+#line 8
+ testRunner.Then(string.Format("command clio get-webservice-url \"{0}\" returns \"{1}\"", serviceName, baseUrl), ((string)(null)), ((TechTalk.SpecFlow.Table)(null)), "Then ");
 #line hidden
             }
             this.ScenarioCleanup();

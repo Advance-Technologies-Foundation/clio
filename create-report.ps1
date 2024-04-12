@@ -5,7 +5,8 @@ $env:PASSWORD = "Supervisor";
 $env:IS_NETCORE = "false";
 
 dotnet build clio\clio.csproj;
-dotnet test clio.TestsAPI\clio.TestsAPI.csproj;
+#dotnet test clio.TestsAPI\clio.TestsAPI.csproj;
+dotnet test --filter Category=SetWebServiceUrlCommand  clio.TestsAPI\clio.TestsAPI.csproj;
 
 livingdoc test-assembly .\clio.TestsAPI\bin\Debug\net8.0\clio.TestsAPI.dll `
 -t .\clio.TestsAPI\bin\Debug\net8.0\TestExecution.json `
