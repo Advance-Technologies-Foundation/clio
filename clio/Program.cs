@@ -577,7 +577,9 @@ class Program {
 		typeof(ListInstalledAppsOptions),
 		typeof(RestoreDbCommandOptions),
 		typeof(SetWebServiceUrlOptions),
-		typeof(ActivatePkgOptions)
+		typeof(ActivatePkgOptions),
+		typeof(StartPackageHotFixCommandOptions),
+		typeof(FinishPackageHotFixCommandOptions)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -666,6 +668,8 @@ class Program {
 			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
 			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
+			StartPackageHotFixCommandOptions opts => Resolve<StartPackageHotFixCommand>(opts).Execute(opts),
+			FinishPackageHotFixCommandOptions opts => Resolve<FinishPackageHotFixCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

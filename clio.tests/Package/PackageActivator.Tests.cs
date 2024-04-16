@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using Clio.Common;
 using Clio.Common.Responses;
 using Clio.Package;
 using Clio.Package.Responses;
@@ -10,24 +9,20 @@ using NUnit.Framework;
 namespace Clio.Tests.Package;
 
 [TestFixture]
-public class PackageActivatorTestCase
+public class PackageActivatorTestCase : BasePackageOperationTestCase
 {
 	#region Properties: Private
 
-	private IApplicationClient _applicationClient;
-	private IServiceUrlBuilder _serviceUrlBuilder;
 	private PackageActivator _packageActivator;
 
 	#endregion
 
 	#region Methods: Public
 
-	[SetUp]
-	public void Init()
+	public override void Init()
 	{
-		_applicationClient = Substitute.For<IApplicationClient>();
-		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		_packageActivator = new PackageActivator(_applicationClient, _serviceUrlBuilder);
+		base.Init();
+		_packageActivator = new PackageActivator(ApplicationPackageListProvider, ApplicationClient, ServiceUrlBuilder);
 	}
 
 	[Test, Category("Unit")]
@@ -37,7 +32,7 @@ public class PackageActivatorTestCase
 		const string packageName1 = "TestPackageName1";
 		const string packageName2 = "TestPackageName2";
 		const string fullUrl = "TestUrl";
-		_serviceUrlBuilder.Build("/ServiceModel/PackageService.svc/ActivatePackage").Returns(fullUrl);
+		SetupBuildUrl("/ServiceModel/PackageService.svc/ActivatePackage", fullUrl);
 		var activationResponse = new PackageActivationResponse
 		{
 			Success = true,
@@ -63,7 +58,7 @@ public class PackageActivatorTestCase
 				}
 			]
 		};
-		_applicationClient.ExecutePostRequest<PackageActivationResponse>(fullUrl,
+		ApplicationClient.ExecutePostRequest<PackageActivationResponse>(fullUrl,
 				Arg.Is<string>(data => data.Contains(packageName)))
 			.Returns(activationResponse);
 		var packageActivationResults = _packageActivator.Activate(packageName).ToArray();
@@ -81,7 +76,7 @@ public class PackageActivatorTestCase
 	{
 		const string packageName = "TestPackageName";
 		const string errorMessage = "Some error";
-		_applicationClient.ExecutePostRequest<PackageActivationResponse>(Arg.Any<string>(),
+		ApplicationClient.ExecutePostRequest<PackageActivationResponse>(Arg.Any<string>(),
 				Arg.Is<string>(data => data.Contains(packageName)))
 			.Returns(new PackageActivationResponse
 			{
@@ -95,5 +90,4 @@ public class PackageActivatorTestCase
 	}
 
 	#endregion
-
 }
