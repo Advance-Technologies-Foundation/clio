@@ -9,7 +9,6 @@ namespace ClioGate.Functions.SQL
 	public static class SQLFunctions
 	{
 		private static bool GetIsChangeStateScript(string script) {
-			script = script.ToLower();
 			var result = script.StartsWith("update") || script.StartsWith("insert") ||
 				script.StartsWith("delete");
 			return result;
@@ -23,6 +22,7 @@ namespace ClioGate.Functions.SQL
 				var count = query.Execute();
 				return count.ToString();
 			}
+			
 			var records = query.ExecuteReader(userConnection.EnsureDBConnection());
 			var dataTable = new DataTable {
 				TableName = "clioTable"

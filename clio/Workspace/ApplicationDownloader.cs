@@ -4,7 +4,7 @@ using System.Linq;
 using Clio.Common;
 using Clio.WebApplication;
 
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 
 	#region Interface: ILibrariesDownloader

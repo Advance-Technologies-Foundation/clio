@@ -130,6 +130,12 @@ public class FileSystem : IFileSystem
 		return new FileInfo[0] ;
 	}
 
+	public Ms.IDirectoryInfo GetDirectoryInfo(string path){
+		
+		Ms.IDirectoryInfoFactory dirInfoFactory = _msFileSystem.DirectoryInfo;
+		return dirInfoFactory.New(path);
+	}
+	
 	public bool IsReadOnlyFile(string filePath) {
 		if (!_msFileSystem.File.Exists(filePath)) {
 			return false;

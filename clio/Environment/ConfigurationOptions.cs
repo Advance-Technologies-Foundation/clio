@@ -8,12 +8,14 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
+using YamlDotNet.Serialization;
 
 namespace Clio
 {
 
 	public class EnvironmentSettings
 	{
+		[YamlMember(Alias = "url")]
 		public string Uri {
 			get; set;
 		}
@@ -65,6 +67,7 @@ namespace Clio
 		}
 
 		private string _authAppUri;
+		[YamlMember(Alias = "authappurl")]
 		public string AuthAppUri {
 			get {
 				if (string.IsNullOrEmpty(_authAppUri)) {
@@ -150,6 +153,69 @@ namespace Clio
 			get => DeveloperModeEnabled ?? false;
 		}
 
+		public EnvironmentSettings Fill(EnvironmentOptions options) {
+			var result = new EnvironmentSettings();
+			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
+			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
+			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? this.DeveloperModeEnabled;
+			result.Login = string.IsNullOrEmpty(options.Login) ? this.Login : options.Login;
+			result.Password = string.IsNullOrEmpty(options.Password) ? this.Password : options.Password;
+			result.ClientId = string.IsNullOrEmpty(options.ClientId) ? this.ClientId : options.ClientId;
+			result.ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? this.ClientSecret : options.ClientSecret;
+			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? this.AuthAppUri : options.AuthAppUri;
+			result.Maintainer =
+				string.IsNullOrEmpty(options.Maintainer) ? this.Maintainer : options.Maintainer;
+			if (this.Safe.HasValue && this.Safe.Value) {
+				Console.WriteLine($"You try to apply the action on the production site {this.Uri}");
+				Console.Write($"Do you want to continue? [Y/N]:");
+				var answer = Console.ReadKey();
+				Console.WriteLine();
+				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
+					Console.WriteLine("Operation was canceled by user");
+					System.Environment.Exit(1);
+				}
+			}
+			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? this.WorkspacePathes : options.WorkspacePathes;
+
+			bool isUri = System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
+			if (isUri) {
+
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.Uri = uri;
+			}
+
+			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.WorkingFolder = options.DbWorknigFolder;
+
+			}
+
+			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.Login = options.DbUser;
+			}
+
+			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
+				if (result.DbServer == null) {
+					result.DbServer = new DbServer();
+				}
+				result.DbServer.Password = options.DbPassword;
+			}
+
+			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
+				result.BackupFilePath = options.BackUpFilePath;
+			}
+			if (!string.IsNullOrEmpty(options.DbName)) {
+				result.DbName = options.DbName;
+			}
+			return result;
+		}
 	}
 
 	public class Settings
@@ -206,6 +272,11 @@ namespace Clio
 
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
+		}
+		public string RemoteArtefactServerPath
+		{
+			get;
+			set;
 		}
 	}
 
@@ -352,81 +423,17 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
-			var result = new EnvironmentSettings();
 			var settingsRepository = new SettingsRepository();
 			var _settings = settingsRepository.FindEnvironment(options.Environment);
 			if (_settings == null) {
-				if (!string.IsNullOrEmpty(options.Environment)) {
-					throw new Exception($"Environment with key '{options.Environment}' not found. Check youre config file or command arguments.");
+				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
+				if (!settingsRepository.IsEnvironmentExists(envName) && string.IsNullOrEmpty(options.Uri)) {
+					throw new Exception($"Environment with key '{envName}' not found. Check youre config file or command arguments.");
 				} else {
 					_settings = new EnvironmentSettings();
 				}
 			}
-			if (options.Environment == null && options.ShowDefaultEnvironment() && options.Uri == null
-					&& !Program.IsEnvironmentReported) {
-				Program.IsEnvironmentReported = true;
-				Console.WriteLine($"{this._settings.ActiveEnvironmentKey}: {_settings.Uri}");
-			}
-			result.Uri = string.IsNullOrEmpty(options.Uri) ? _settings.Uri : options.Uri;
-			result.IsNetCore = options.IsNetCore ?? _settings.IsNetCore;
-			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? _settings.DeveloperModeEnabled;
-			result.Login = string.IsNullOrEmpty(options.Login) ? _settings.Login : options.Login;
-			result.Password = string.IsNullOrEmpty(options.Password) ? _settings.Password : options.Password;
-			result.ClientId = string.IsNullOrEmpty(options.ClientId) ? _settings.ClientId : options.ClientId;
-			result.ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? _settings.ClientSecret : options.ClientSecret;
-			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? _settings.AuthAppUri : options.AuthAppUri;
-			result.Maintainer =
-				string.IsNullOrEmpty(options.Maintainer) ? _settings.Maintainer : options.Maintainer;
-			if (_settings.Safe.HasValue && _settings.Safe.Value) {
-				Console.WriteLine($"You try to apply the action on the production site {_settings.Uri}");
-				Console.Write($"Do you want to continue? [Y/N]:");
-				var answer = Console.ReadKey();
-				Console.WriteLine();
-				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
-					Console.WriteLine("Operation was canceled by user");
-					System.Environment.Exit(1);
-				}
-			}
-			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? _settings.WorkspacePathes : options.WorkspacePathes;
-
-			bool isUri = Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
-			if (isUri) {
-				
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.Uri = uri;
-			}
-
-			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.WorkingFolder = options.DbWorknigFolder;
-				
-			}
-
-			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.Login = options.DbUser;
-			}
-
-			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.Password = options.DbPassword;
-			}
-
-			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
-				result.BackupFilePath = options.BackUpFilePath;
-			}
-			if (!string.IsNullOrEmpty(options.DbName)) {
-				result.DbName = options.DbName;
-			}
-
+			EnvironmentSettings result = _settings.Fill(options);
 			return result;
 		}
 
@@ -491,6 +498,11 @@ namespace Clio
 		public string GetCreatioProductsFolder() {
 			return _settings.CreatioProductFolder;
 		}
+
+		public string GetRemoteArtefactServerPath() {
+			return _settings.RemoteArtefactServerPath;
+		}
+
 	}
 
 

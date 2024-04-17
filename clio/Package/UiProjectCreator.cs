@@ -6,7 +6,7 @@
 	using System.Linq;
 	using System.Text.RegularExpressions;
 	using Clio.Common;
-	using Clio.Workspace;
+	using Clio.Workspaces;
 
 	#region Interface: IUiProjectCreator
 

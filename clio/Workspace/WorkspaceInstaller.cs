@@ -1,12 +1,14 @@
 using System;
 using Clio.Utilities;
 
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 	using System.Collections.Generic;
 	using System.IO;
+	using System.Linq;
 	using Clio.Common;
 	using Clio.Package;
+	using Terrasoft.Core;
 
 	#region Interface: IWorkspaceInstaller
 
@@ -14,7 +16,12 @@ namespace Clio.Workspace
 	{
 
 		#region Methods: Public
+
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
+
+		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
+
+		string PublishToFolder(string zipFileName, string destinationFolderPath, string destinationFolderPath1, bool v);
 
 		#endregion
 
@@ -54,11 +61,11 @@ namespace Clio.Workspace
 		#region Constructors: Public
 
 		public WorkspaceInstaller(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
-				IApplicationClientFactory applicationClientFactory, IPackageInstaller packageInstaller, 
-				IPackageArchiver packageArchiver, IPackageBuilder packageBuilder,
-				IStandalonePackageFileManager standalonePackageFileManager, IServiceUrlBuilder serviceUrlBuilder, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
-				IOSPlatformChecker osPlatformChecker) {
+			IApplicationClientFactory applicationClientFactory, IPackageInstaller packageInstaller,
+			IPackageArchiver packageArchiver, IPackageBuilder packageBuilder,
+			IStandalonePackageFileManager standalonePackageFileManager, IServiceUrlBuilder serviceUrlBuilder,
+			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
+			IOSPlatformChecker osPlatformChecker){
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
@@ -82,7 +89,6 @@ namespace Clio.Workspace
 			_osPlatformChecker = osPlatformChecker;
 			_applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
 			_resetSchemaChangeStateServiceUrl = serviceUrlBuilder.Build(ResetSchemaChangeStateServicePath);
-
 		}
 
 		#endregion
@@ -95,38 +101,36 @@ namespace Clio.Workspace
 
 		#region Methods: Private
 
-		private IApplicationClient CreateClient() =>
-			_applicationClientFactory.CreateClient(_environmentSettings);
+		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
 
 		private void ResetSchemaChangeStateServiceUrl(string packageName) =>
 			ApplicationClient.ExecutePostRequest(_resetSchemaChangeStateServiceUrl,
 				"{\"packageName\":\"" + packageName + "\"}");
 
-		private void PackPackage(string packageName, string rootPackedPackagePath) {
+		private void PackPackage(string packageName, string rootPackedPackagePath){
 			string packagePath = Path.Combine(_workspacePathBuilder.PackagesFolderPath, packageName);
 			string packedPackagePath = Path.Combine(rootPackedPackagePath, $"{packageName}.gz");
 			_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 		}
 
-		private string CreateRootPackedPackageDirectory(string creatioPackagesZipName, string tempDirectory) {
+		private string CreateRootPackedPackageDirectory(string creatioPackagesZipName, string tempDirectory){
 			string rootPackedPackagePath = Path.Combine(tempDirectory, creatioPackagesZipName);
 			_fileSystem.CreateDirectory(rootPackedPackagePath);
 			return rootPackedPackagePath;
 		}
 
-		private string ZipPackages(string creatioPackagesZipName, string tempDirectory, string rootPackedPackagePath) {
+		private string ZipPackages(string creatioPackagesZipName, string tempDirectory, string rootPackedPackagePath){
 			string applicationZip = Path.Combine(tempDirectory, $"{creatioPackagesZipName}.zip");
 			_packageArchiver.ZipPackages(rootPackedPackagePath,
 				applicationZip, true);
 			return applicationZip;
 		}
 
-
-		private void InstallApplication(string applicationZip) {
+		private void InstallApplication(string applicationZip){
 			_packageInstaller.Install(applicationZip, _environmentSettings);
 		}
 
-		private void BuildStandalonePackagesIfNeeded() {
+		private void BuildStandalonePackagesIfNeeded(){
 			if (_osPlatformChecker.IsWindowsEnvironment || _environmentSettings.IsNetCore) {
 				return;
 			}
@@ -139,10 +143,10 @@ namespace Clio.Workspace
 
 		#region Methods: Public
 
-		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null) {
+		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null){
 			creatioPackagesZipName ??= CreatioPackagesZipName;
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-				var rootPackedPackagePath = 
+				var rootPackedPackagePath =
 					CreateRootPackedPackageDirectory(creatioPackagesZipName, tempDirectory);
 				foreach (string packageName in packages) {
 					PackPackage(packageName, rootPackedPackagePath);
@@ -154,10 +158,45 @@ namespace Clio.Workspace
 			});
 		}
 
+		public void Publish(IList<string> packages, string zipFileName, string destionationFolderPath,
+			bool overrideFile = false){
+			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+				var rootPackedPackagePath =
+					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+				foreach (string packageName in packages) {
+					PackPackage(packageName, rootPackedPackagePath);
+					ResetSchemaChangeStateServiceUrl(packageName);
+				}
+				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+				_fileSystem.CopyFile(applicationZip, Path.Combine(destionationFolderPath, zipFileName), overrideFile);
+			});
+		}
+
+		public string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath,
+			bool overwrite){
+			_workspacePathBuilder.RootPath = workspaceFolderPath;
+			string resultApplicationFilePath = string.Empty;
+			var packages = Directory.GetDirectories(_workspacePathBuilder.PackagesFolderPath)
+				.Select(p => new DirectoryInfo(p).Name);
+			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+				var rootPackedPackagePath =
+					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+				foreach (string packageName in packages) {
+					PackPackage(packageName, rootPackedPackagePath);
+					//ResetSchemaChangeStateServiceUrl(packageName);
+				}
+				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+				var filename = Path.GetFileName(applicationZip);
+				resultApplicationFilePath = Path.Combine(destinationFolderPath, filename);
+				_fileSystem.CreateDirectoryIfNotExists(destinationFolderPath);
+				_fileSystem.CopyFile(applicationZip, resultApplicationFilePath, overwrite);
+			});
+			return resultApplicationFilePath;
+		}
+
 		#endregion
 
 	}
 
 	#endregion
-
 }

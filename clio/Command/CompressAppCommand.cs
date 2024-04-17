@@ -15,7 +15,6 @@ namespace Clio
 		[Option('s', "SourcePath", Required = true, HelpText = "Folder path to package repository")]
 		public string RepositoryFolderPath { get; set; }
 
-
 		[Option('p', "Packages", Required = true)]
 		public string Packages { get; set; }
 

@@ -28,25 +28,16 @@ namespace Clio.Command
 				string response = ApplicationClient.ExecuteGetRequest(ServiceUri);
 				if (string.IsNullOrEmpty(response))
 				{
-					var originalColor = Console.ForegroundColor;
-					Console.ForegroundColor = ConsoleColor.Green;
-					Console.WriteLine("\t{0} - OK",checkName);
-					Console.ForegroundColor = originalColor;
+					Logger.WriteInfo($"\t{checkName} - OK");
 				}
 			}
 			catch (WebException ex)
 			{
-				var originalColor = Console.ForegroundColor;
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.WriteLine("\tError: {0}",ex.Message);
-				Console.ForegroundColor = originalColor;
+				Logger.WriteError($"\tError: {ex.Message}");
 			}
 			catch(Exception ex)
 			{
-				var originalColor = Console.ForegroundColor;
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.WriteLine("\tUnknown Error: {0}", ex.Message);
-				Console.ForegroundColor = originalColor;
+				Logger.WriteError($"\tUnknown Error: {ex.Message}");
 				throw;
 			}
 			return 0;
@@ -57,14 +48,14 @@ namespace Clio.Command
 			if (options.WebApp == "true")
 			{
 				ServicePath = "/api/HealthCheck/Ping";
-				Console.WriteLine($"Checking WebAppLoader {ServiceUri} ...");
+				Logger.WriteInfo($"Checking WebAppLoader {ServiceUri} ...");
 				result = ExecuteGetRequest("WebAppLoader");
 			}
 			
 			if (options.WebHost == "true")
 			{
 				ServicePath = "/0/api/HealthCheck/Ping";
-				Console.WriteLine($"Checking WebHost {ServiceUri} ...");
+				Logger.WriteInfo($"Checking WebHost {ServiceUri} ...");
 				result += ExecuteGetRequest("WebHost");
 			}
 			return result;

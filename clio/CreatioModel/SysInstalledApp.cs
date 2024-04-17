@@ -4,6 +4,8 @@ using System;
 using ATF.Repository;
 using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
+using YamlDotNet.Serialization;
+using Guid = System.Guid;
 
 namespace CreatioModel
 {
@@ -13,17 +15,20 @@ namespace CreatioModel
 	public class SysInstalledApp : BaseModel
 	{
 
+		[YamlMember(Alias = "name")]
 		[SchemaProperty("Name")]
 		public string Name { get; set; }
 
+		[YamlMember(Alias = "code")]
 		[SchemaProperty("Code")]
 		public string Code { get; set; }
 
-
+		
 		[SchemaProperty("Description")]
 		public string Description { get; set; }
 
 		private string _version;
+		[YamlMember(Alias = "version")]
 		[SchemaProperty("Version")]
 		public string Version {
 			get { 
@@ -38,9 +43,16 @@ namespace CreatioModel
 			return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
 		}
 
+		[YamlMember(Alias = "apphub")]
+		public string AppHubName { get; set; }
+
+
+		public string ZipFileName
+		{
+			get;
+			internal set;
+		}
 	}
-
-
 
 	[ExcludeFromCodeCoverage]
 	[Schema("Contact")]
@@ -55,4 +67,5 @@ namespace CreatioModel
 	}
 
 }
+
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.

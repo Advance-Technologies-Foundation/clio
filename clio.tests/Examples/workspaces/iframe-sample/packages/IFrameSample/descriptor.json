@@ -1,0 +1,15 @@
+﻿{
+  "Descriptor": {
+    "UId": "80d59e2d-c6ff-48ec-bd4a-1d97fc501a00",
+    "PackageVersion": "7.8.0",
+    "Name": "IFrameSample",
+    "Type": 1,
+    "ModifiedOnUtc": "\/Date(1703146416000)\/",
+    "Maintainer": "Creatio",
+    "ProjectPath": "Files/IFrameSample.csproj",
+    "Description": "#OriginalMaintainer:Customer",
+    "DependsOn": [
+      
+    ]
+  }
+}

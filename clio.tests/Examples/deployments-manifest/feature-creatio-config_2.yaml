@@ -1,0 +1,38 @@
+environment:
+  url: https://preprod.creatio.com
+  authappurl: https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login
+
+apps:
+  - name: CrtCustomer360
+    version: "1.0.1"
+    apphub: MyAppHub
+  - name: CrtCaseManagment
+    version: "1.0.2"
+    apphub: MyAppHub
+  - name: MrktAppollo
+    version: "1.0.2"
+
+app_hubs:
+  - name: MyAppHub
+    path: "//tscrm.com/dfs-ts/MyAppHub"
+  - name: CreatioMarketplace
+    url: "https://marketplace.creatio.com/apps"
+
+features:
+  - code: Feature1
+    value: true
+    users_values:
+      Supervisor: true
+      "System administrators": false
+      Developer: false
+      2nd-line support: true
+  - code: Feature2
+    value: false
+    users_values:
+      
+      "System administrators": false
+      Developer: false
+      2nd-line support: false
+      1st-line support: false
+  - code: Feature3
+    value: true

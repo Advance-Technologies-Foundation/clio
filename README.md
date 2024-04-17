@@ -159,7 +159,7 @@ docker run -it --rm clio reg-web-app -help
   - [Restore configuration](#restore-configuration)
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
-  - [Get Marketplace catalog](#marketplace-catalog)
+  - [Set application version](#set-application-version)
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
@@ -392,6 +392,19 @@ Set a specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
+## Set application version
+
+Set a specified composable application version into application-descriptor.json by specified workspace or package path.
+
+```
+clio set-app-version <WORKSPACE PATH> -v <APP VERSION>
+
+// or
+
+clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
+
+```
+
 ## Marketplace Catalog
 
 List marketplace applications
@@ -541,11 +554,19 @@ clio compile-configuration --all
 ```
 ## System settings
 
-For set system settings value
+To set system settings value
 
 ```bash
 clio set-syssetting <CODE> <VALUE>
 ```
+
+To read system settings value
+
+```bash
+get-syssetting <CODE> --GET -e <ENVIRONMENT_NAME>
+```
+
+
 
 ## Set Base WebService Url
 
@@ -661,6 +682,20 @@ clio healthcheck <ENVIRONMENT NAME> -a true -h true
 clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 ```
 
+## Get Creatio Platform Info
+
+This command is designed to retrieve information about the Creatio instance, version, 
+underlying runtime and database type and product name.
+
+```bash
+clio get-info -e <ENVIRONMENT_NAME>
+
+//OR
+
+clio get-info <ENVIRONMENT_NAME>
+````
+
+
 
 # Development
 
@@ -682,6 +717,13 @@ Create workspace in local directory with all editable packages from environment,
 
 ```bash
 C:\Demo> clio create-workspace -e demo
+```
+
+Create workspace in local directory with packages in app, execute create-workspace command
+To get list of app codes execute `clio lia -e <ENVIRONMENT>`
+
+```bash
+C:\Demo> clio create-workspace --AppCode <APP_CODE>
 ```
 
 Restore packages in you file system via command from selected environment
@@ -1065,7 +1107,7 @@ By default, database will be available on default port
 To restore database for Creatio environments, you can use the next command:
 
 ```bash
-clio restore-db --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> -f <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
+clio restore-db --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> --backup-file <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
 #use --force to overwrite existing database without prompt
 ```
 

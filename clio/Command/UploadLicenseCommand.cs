@@ -3,7 +3,7 @@
 	using System;
 	using Clio.Common;
     using Clio.WebApplication;
-    using Clio.Workspace;
+    using Clio.Workspaces;
     using CommandLine;
 
     #region Class: UploadLicenseCommandOptions

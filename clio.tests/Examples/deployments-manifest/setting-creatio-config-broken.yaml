@@ -1,0 +1,53 @@
+environment:
+  url: https://preprod.creatio.com
+  authappurl: https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login
+
+apps:
+  - name: CrtCustomer360
+    version: "1.0.1"
+    apphub: MyAppHub
+  - name: CrtCaseManagment
+    version: "1.0.2"
+    apphub: MyAppHub
+  - name: MrktAppollo
+    version: "1.0.2"
+
+app_hubs:
+  - name: MyAppHub
+    path: "//tscrm.com/dfs-ts/MyAppHub"
+  - name: CreatioMarketplace
+    url: "https://marketplace.creatio.com/apps"
+
+features:
+  - code: Feature1
+    value: true
+  - code: Feature2
+    value: false
+    users_values:
+      Supervisor: true
+      "System administrators": false
+      Developer: true
+      2nd-line support: true
+  - code: Feature3
+    value: false
+  
+settings:
+  - code: "IntSysSettingsATF"
+    value: 
+  - code: ""
+    value: ""
+  - code: 
+    value: "ATF"
+  - code: "DateTimeSettingsATF"
+    value: "2021-01-01T00:00:00"
+  - code: "GuidSettingsATF"
+    value: "00000000-0000-0000-0000-000000000001"
+  - code: "LookupSettingsATF"
+    value: "TextLookupValue"
+  - code: "BooleanSettingsATF"
+    value: false
+    users_values:
+      Supervisor: true
+      "System administrators": false
+      Developer: true
+      2nd-line support: true

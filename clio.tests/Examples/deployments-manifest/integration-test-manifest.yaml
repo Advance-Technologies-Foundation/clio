@@ -1,0 +1,25 @@
+environment:
+  url: http://localhost:40015
+    
+settings:
+#  - code: "Maintainer"
+#    value: "Customer"
+#  - code: "TestSetting1"
+#    value: "true"
+#  - code: "TestSetting2"
+#    value: 10
+#  - code: "TestSetting3"
+#    value: 0.5
+#  - code: "TestSetting4"
+#    value: "2024-12-31 17:20"
+#  - code: "TestSetting5"
+#    value: "2024-05-07"
+#  - code: "TestSetting6"
+#    value: "A470B005-E8BB-DF11-B00F-001D60E938C6"
+#  - code: "TestSetting6"
+#    value: "Canada"
+webservices:
+  - name: CreatioMarketplaceApi
+#    url: https://github.com/Advance-Technologies-Foundation/clio
+    url: https://marketplace.creatio.com/api
+  

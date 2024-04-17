@@ -5,6 +5,10 @@
 			"type":"string",
 			"description": "Default IIS folder where Creatio instances will run from"
 		},
+		"RemoteArtefactServerPath":{
+			"type":"string",
+			"description": "Path to remote artefact server"
+		},
 		"ActiveEnvironmentKey":{
 			"type":"string",
 			"description": "Default environment key"

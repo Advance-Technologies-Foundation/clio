@@ -4,11 +4,14 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
 using ATF.Repository;
+using cliogate.Files.cs.Dto;
 using ClioGate.Functions.SQL;
 using Common.Logging;
 using Newtonsoft.Json;
@@ -21,6 +24,7 @@ using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.Core.Packages;
 using Terrasoft.Core.ServiceModelContract;
+using Terrasoft.Core.Store;
 using Terrasoft.Web.Common;
 using Terrasoft.Web.Http.Abstractions;
 #if NETSTANDARD2_0
@@ -57,6 +61,11 @@ namespace cliogate.Files.cs
 	public class CreatioApiGateway : BaseService
 	{
 
+		private readonly UserConnection _userConnection;
+		public CreatioApiGateway(){
+			_userConnection = ClassFactory.Get<UserConnection>();
+		}
+		
 		#region Fields: Private
 
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
@@ -86,8 +95,13 @@ namespace cliogate.Files.cs
 				$"attachment; filename=\"{fileName}\"");
 
 		private void CheckCanManageSolution(){
-			if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+			if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
 				throw new Exception("You don't have permission for operation CanManageSolution");
+			}
+		}
+		private void CheckCanManageSysSettings(){
+			if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSysSettings")) {
+				throw new Exception("You don't have permission for operation CanManageSysSettings");
 			}
 		}
 
@@ -139,6 +153,46 @@ namespace cliogate.Files.cs
 
 		#region Methods: Public
 
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public string GetSysSettingValueByCode(string code){
+			CheckCanManageSysSettings();
+			bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
+			if(!isValue) {
+				return string.Empty;
+			}
+			
+			
+			const string schemaName = "SysSettings";
+			Entity sysSettingsEntity = _userConnection.EntitySchemaManager
+				.FindInstanceByName(schemaName).CreateEntity(_userConnection);
+			
+			bool isFetched = sysSettingsEntity.FetchFromDB("Code", code, false);
+			string valueTypeName = sysSettingsEntity.GetTypedColumnValue<string>("ValueTypeName");
+
+			string returnValue;
+			switch (valueTypeName) {
+				case "DateTime":
+					DateTime dt1 = DateTime.Parse(value.ToString());
+					returnValue = dt1.ToString("dd-MMM-yyyy HH:mm:ss");
+					break;
+				case "Date":
+					DateTime dt2 = DateTime.Parse(value.ToString()).Date;
+					returnValue = dt2.ToString("dd-MMM-yyyy");
+					break;
+				case "Time":
+					DateTime dt3 = DateTime.Parse(value.ToString());
+					returnValue = dt3.ToString(@"HH:mm:ss");
+					break;
+				default:
+					returnValue = value.ToString();
+					break;
+			}
+			return returnValue;
+		}
+		
+		
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
@@ -478,10 +532,59 @@ namespace cliogate.Files.cs
 			return entities[0].GetTypedColumnValue<string>(columndId.Name);
 		}
 
+		
+		// /rest/CreatioApiGateway/GetSysInfo
+		[OperationContract]
+		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public SysInfoResponse GetSysInfo(){
+			if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+				return new SysInfoResponse {
+					Success = false,
+					ErrorInfo = new ErrorInfo {
+						Message = "You don't have permission for operation CanManageSolution"
+					}
+				};
+			}
+
+			EntitySchemaQuery esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
+			esq.AddAllSchemaColumns();
+			var packages = esq.GetEntityCollection(UserConnection);
+			List<string> packageNames = new List<string>();
+			foreach (Entity package in packages) {
+				string name = package.GetTypedColumnValue<string>("Name");
+				packageNames.Add(name);
+			}
+		
+			var ver = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version;
+			ProductManager pm  = new ProductManager();
+			SysInfoResponse sysInfoResponse = new SysInfoResponse {
+				SysInfo = new CreatioPlatformInfo(){
+					Runtime = RuntimeInformation.FrameworkDescription,
+					CoreVersion = ver.ToString(),
+					DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
+					ProductName = pm.FindProductNameByPackages(packageNames, ver)
+				}
+			};
+
+			LicManager lm = UserConnection.AppConnection.LicManager;
+			sysInfoResponse.SysInfo.LicenseInfo = new LicenseInfo {
+				CustomerId = lm.CustomerId
+			};
+			IDataStore appData = UserConnection.AppConnection.SystemUserConnection.ApplicationData;
+			if (appData.Keys.Contains("IsDemoMode")) {
+				object isDemoMode = appData["IsDemoMode"];
+				if (isDemoMode != null) {
+					bool isBool = bool.TryParse(isDemoMode.ToString(), out bool demoMode);
+					if (isBool) {
+						sysInfoResponse.SysInfo.LicenseInfo.IsDemoMode = demoMode;
+					}
+				}
+			}
+			return sysInfoResponse;
+		}
 		#endregion
-
+		
 	}
-
 	
 	public class PackageExplorer
 	{

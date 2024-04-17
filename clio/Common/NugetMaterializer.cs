@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Xml.Linq;
 using Clio.Project.NuGet;
-using Clio.Workspace;
+using Clio.Workspaces;
 
 namespace Clio.Common;
 

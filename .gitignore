@@ -23,9 +23,11 @@ _UpgradeReport_Files/
 # Directories #
 ###############
 packages/
+!**/Examples/workspaces/**/packages/
 bin/
 obj/
 TestResults/
+!/TestResults/Api-Test-Results/.gitkeep
 
 ###################
 # Web publish log #

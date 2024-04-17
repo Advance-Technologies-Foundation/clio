@@ -1,0 +1,23 @@
+{
+  "Name": "Apollo.io connector for Creatio",
+  "Description": "Apollo connector allows you to enrich contact and account records.",
+  "Maintainer": "Creatio",
+  "Icon": "PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTIzLjgyNjYgNy40MDQzSDE5Ljk5NjFMMjEuOTgyMyAxMC44MDg3TDIzLjgyNjYgNy40MDQzWiIgZmlsbD0id2hpdGUiLz4KPHBhdGggZD0iTTI5LjE1MDEgMjYuNjIxNUwxNS41NTI0IDRMMiAyNi41NzQxSDkuMjU4NDJDMTAuMjI2OSAyNi41NzQxIDExLjE3OTYgMjYuMzI5NiAxMi4wMjE4IDI1Ljg2NjFDMTIuOTMxIDI1LjM2NTEgMTMuNjE3NCAyNC42MzkyIDE0LjE1MzkgMjMuNzU5NEMxNC43ODExIDIyLjcyOTkgMTUuMzkwNiAyMS42ODg0IDE2LjAwOCAyMC42NTI5TDE3LjU4NzkgMTguMDAyMUwxNS41NTA0IDE0LjU4NzhMMTQuNjQ3IDE2LjA0MTRDMTMuNjE3NCAxNy43NjM0IDEyLjY0MzEgMTkuNTI0NyAxMS41NzYgMjEuMjIyOUMxMS4wMzk1IDIyLjA3NTEgMTAuMzM5MyAyMi44Nzk4IDkuMzA1NzYgMjMuMDg3QzkuMTQ5OTUgMjMuMTE4NSA4Ljk5MDE5IDIzLjEzNDIgOC44MzA0MyAyMy4xNDAyQzguNjE3NCAyMy4xNDgxIDguNDA0MzkgMjMuMTQ0MSA4LjE5MzM0IDIzLjE0NDFMMTUuNTUyNCAxMC42MTE1TDI1LjAwMjEgMjYuNjIxNUgyOS4xNTAxWiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+Cg==",
+  "IconName": "ApolloLogo.svg",
+  "Color": "#FFAC07",
+  "MarketplaceLink": "",
+  "HelpLink": "",
+  "OrderLink": "",
+  "SupportEmail": "",
+  "Code": "MrktApolloApp",
+  "Packages": [
+    {
+      "UId": "d40c3488-7718-4ddc-9173-949868871326",
+      "Name": "MrktApolloApp"
+    },
+    {
+      "UId": "a2a415ef-1679-4f0e-85a3-92c34ac5fdbe",
+      "Name": "MrktApolloInC360"
+    }
+  ]
+}

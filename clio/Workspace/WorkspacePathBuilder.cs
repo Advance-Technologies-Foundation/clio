@@ -1,4 +1,4 @@
-namespace Clio.Workspace
+namespace Clio.Workspaces
 {
 	using System;
 	using System.IO;
@@ -64,8 +64,17 @@ namespace Clio.Workspace
 
 		#region Properties: Public
 
+		private string _rootPath;
 		private readonly Lazy<string> _rootPathLazy;
-		public string RootPath => _rootPathLazy.Value;
+		public string RootPath { 
+			get {
+				return _rootPath ?? _rootPathLazy.Value;
+			}
+			set {
+				_rootPath = value;
+			}
+		}
+
 		public bool IsWorkspace => _fileSystem.ExistsFile(WorkspaceSettingsPath);
 		public string ClioDirectoryPath => Path.Combine(RootPath, ClioDirectoryName);
 

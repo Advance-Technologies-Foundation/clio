@@ -27,7 +27,7 @@ namespace Clio.Command
 				WebBrowser.OpenUrl(env.SimpleloginUri);
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				Logger.WriteError(e.ToString());
 				return 1;
 			}
 		}

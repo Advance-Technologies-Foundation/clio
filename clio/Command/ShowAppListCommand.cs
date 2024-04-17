@@ -22,6 +22,7 @@ namespace Clio.Command
 
 		public override int Execute(AppListOptions options) {
 			try {
+				Console.OutputEncoding = System.Text.Encoding.UTF8;
 				_settingsRepository.ShowSettingsTo(Console.Out, options.Name);
 				return 0;
 			} catch (Exception e) {

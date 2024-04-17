@@ -1,7 +1,6 @@
 ﻿namespace Clio.Command.PackageCommand
 {
 	using System.IO;
-	using System.Text;
 	using Clio.Common;
 
 	public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>

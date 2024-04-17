@@ -1,2 +1,2 @@
-﻿call ..\.solution\set-framework-environment.cmd
+call ..\.solution\set-framework-environment.cmd
 START ..\.solution\CreatioPackages.sln

@@ -19,13 +19,13 @@ namespace Clio.Command
 
 		private int ExecuteGetRequest() {
 			ApplicationClient.ExecuteGetRequest(RootPath);
-			Console.WriteLine("Done");
+			Logger.WriteInfo("Done");
 			return 0;
 		}
 
 		public override int Execute(PingAppOptions options) {
 			ServicePath = options.Endpoint;
-			Console.WriteLine($"Ping {ServiceUri} ...");
+			Logger.WriteInfo($"Ping {ServiceUri} ...");
 			return EnvironmentSettings.IsNetCore ? ExecuteGetRequest() : base.Execute(options);
 		}
 

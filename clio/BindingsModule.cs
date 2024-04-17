@@ -21,27 +21,35 @@ using k8s;
 using FileSystem = System.IO.Abstractions.FileSystem;
 using ATF.Repository.Providers;
 using Clio.Common.db;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
+using Clio.Command.ApplicationCommand;
+using Creatio.Client;
 
 namespace Clio
 {
-	public class BindingsModule
-	{
-		public IContainer Register(EnvironmentSettings settings = null) {
+	public class BindingsModule {
+
+		private readonly IFileSystem _fileSystem;
+		public BindingsModule(IFileSystem fileSystem = null){
+			_fileSystem = fileSystem;
+		}
+		
+		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false) {
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
 				.AsImplementedInterfaces();
-			if (settings != null) {
-				var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
-				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
+			if (settings != null || registerNullSettingsForTest) {
 				containerBuilder.RegisterInstance(settings);
-				
-				
-				IDataProvider provider = string.IsNullOrEmpty(settings.Login) switch {
-					true=> new RemoteDataProvider(settings.Uri,settings.AuthAppUri,settings.ClientId,settings.ClientSecret, settings.IsNetCore),
-					false=>new RemoteDataProvider(settings.Uri,settings.Login,settings.Password, settings.IsNetCore)
-				};
-				containerBuilder.RegisterInstance(provider).As<IDataProvider>();
+				if (!registerNullSettingsForTest) {
+					var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
+					containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
+					IDataProvider provider = string.IsNullOrEmpty(settings.Login) switch {
+						true => new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore),
+						false => new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore)
+					};
+					containerBuilder.RegisterInstance(provider).As<IDataProvider>();
+				}
 				
 			}
 
@@ -55,13 +63,41 @@ namespace Clio
 
 			}
 			
-			containerBuilder.RegisterType<FileSystem>().As<System.IO.Abstractions.IFileSystem>();
+			if(_fileSystem is not null) {
+				containerBuilder.RegisterInstance(_fileSystem).As<IFileSystem>();
+			}else {
+				containerBuilder.RegisterType<FileSystem>().As<IFileSystem>();
+			}
+			
 
 			var deserializer = new DeserializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
+				.IgnoreUnmatchedProperties()
 				.Build();
-			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
+			
+			var serializer = new SerializerBuilder()
+				.WithNamingConvention(UnderscoredNamingConvention.Instance)
+                				.Build();
 
+
+			#region Epiremental CreatioCLient
+
+			if(settings is not null) {
+				CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId) 
+					? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore) 
+					: CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore);
+				IApplicationClient clientAdapter = new CreatioClientAdapter(creatioClient);
+				containerBuilder.RegisterInstance(clientAdapter).As<IApplicationClient>();
+				
+				containerBuilder.RegisterType<SysSettingsManager>();
+			}
+			#endregion
+			
+			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
+			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
+			containerBuilder.RegisterType<FeatureCommand>();
+			containerBuilder.RegisterType<SysSettingsCommand>();
+			containerBuilder.RegisterType<BuildInfoCommand>();
 			containerBuilder.RegisterType<PushPackageCommand>();
 			containerBuilder.RegisterType<InstallApplicationCommand>();
 			containerBuilder.RegisterType<OpenCfgCommand>();
@@ -127,6 +163,11 @@ namespace Clio
 			containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
 			containerBuilder.RegisterType<SetWebServiceUrlCommand>();
 			containerBuilder.RegisterType<ListInstalledAppsCommand>();
+			containerBuilder.RegisterType<GetCreatioInfoCommand>();
+			containerBuilder.RegisterType<SetApplicationVersionCommand>();
+			containerBuilder.RegisterType<ApplyEnvironmentManifestCommand>();
+			containerBuilder.RegisterType<EnvironmentManager>();
+			containerBuilder.RegisterType<GetWebServiceUrlCommand>();
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()
@@ -139,10 +180,15 @@ namespace Clio
 			containerBuilder.RegisterType<UnzipRequestValidator>();
 			containerBuilder.RegisterType<GitSyncCommand>();
 			containerBuilder.RegisterType<DeactivatePackageCommand>();
+			containerBuilder.RegisterType<PublishWorkspaceCommand>();
 			containerBuilder.RegisterType<ActivatePackageCommand>();
 			containerBuilder.RegisterType<StartPackageHotFixCommand>();
 			containerBuilder.RegisterType<FinishPackageHotFixCommand>();
 			return containerBuilder.Build();
 		}
+		
+		
+		
+		
 	}
 }

@@ -1,0 +1,45 @@
+﻿### Protected Access
+< set-request-base_url.js
+
+POST {{base_url}}/0/DataService/json/SyncReply/SelectQuery HTTP/2
+Content-Type: application/json
+BPMCSRF: {{BPMCSRF}}
+
+{
+  "rootSchemaName": "VwWebServiceV2",
+  "filters": {
+    "isEnabled": true,
+    "trimDateTimeParameterToDate": false,
+    "filterType": 6,
+    "logicalOperation": 0,
+    "items": {
+      "0c16048b-4d2a-524e-f68e-7a72f3a362bc": {
+        "isEnabled": true,
+        "trimDateTimeParameterToDate": false,
+        "filterType": 1,
+        "comparisonType": 3,
+        "leftExpression": {
+          "expressionType": 0,
+          "columnPath": "Name"
+        },
+        "rightExpression": {
+          "expressionType": 2,
+          "parameter": {
+            "dataValueType": 1,
+            "value": "CreatioMarketplaceApi"
+          }
+        }
+      }
+    }
+  },
+  "columns": {
+    "items": {
+      "MetaData": {
+        "expression": {
+          "expressionType": 0,
+          "columnPath": "MetaData"
+        }
+      }
+    }
+  }
+}

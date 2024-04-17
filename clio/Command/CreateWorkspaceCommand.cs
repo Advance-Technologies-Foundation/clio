@@ -1,8 +1,11 @@
+using System.Linq;
+
 namespace Clio.Command
 {
 	using System;
+	using System.Collections.Generic;
 	using Clio.Common;
-	using Clio.Workspace;
+	using Clio.Workspaces;
 	using CommandLine;
 
 	#region Class: CreateWorkspaceCommandOptions
@@ -10,6 +13,14 @@ namespace Clio.Command
 	[Verb("create-workspace", Aliases = new string[] { "createw" }, HelpText = "Create open project cmd file")]
 	public class CreateWorkspaceCommandOptions : EnvironmentOptions
 	{
+
+		#region Properties: Public
+
+		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
+		public string AppCode { get; set; }
+
+		#endregion
+
 	}
 
 	#endregion
@@ -22,14 +33,16 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IWorkspace _workspace;
+		private readonly IInstalledApplication _installedApplication;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CreateWorkspaceCommand(IWorkspace workspace) {
+		public CreateWorkspaceCommand(IWorkspace workspace, IInstalledApplication installedApplication) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
+			_installedApplication = installedApplication;
 		}
 
 		#endregion
@@ -45,7 +58,17 @@ namespace Clio.Command
 				if (options.Environment == null) {
 					_workspace.Create(options.Environment);
 				} else {
-					_workspace.Create(options.Environment, true);
+					var appCodeNotExists = options.AppCode != null ? false : true;
+						_workspace.Create(options.Environment, appCodeNotExists);
+					if (!appCodeNotExists) {
+						InstalledAppInfo app = _installedApplication.GetInstalledAppInfo(options.AppCode);
+						if (app != null) {
+							IEnumerable<string> packages = app.GetPackages();
+							foreach (string package in packages) {
+								_workspace.AddPackageIfNeeded(package);
+							}
+						}
+					}
 					_workspace.Restore();
 				}
 				Console.WriteLine("Done");

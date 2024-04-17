@@ -5,9 +5,9 @@ using System.Linq;
 using System.Threading;
 using Autofac;
 using Clio.Command;
+using Clio.Command.ApplicationCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
-using Clio.Command.SysSettingsCommand;
 using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Package;
@@ -314,7 +314,8 @@ class Program {
 		try {
 			return ExecuteCommands(args);
 		} catch (Exception e) {
-			Console.WriteLine(e.Message);
+			var logger = new ConsoleLogger();
+			logger.WriteError(e.Message);
 			return 1;
 		}
 	}
@@ -390,7 +391,7 @@ class Program {
 				Value = CreatioEnvironment.Settings.Maintainer
 			};
 			var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
-			sysSettingsCommand.UpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
+			sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 			UnlockMaintainerPackageInternal(opts);
 			new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
 			Console.WriteLine("Done");
@@ -559,6 +560,7 @@ class Program {
 		typeof(InstallApplicationOptions),
 		typeof(ConfigureWorkspaceOptions),
 		typeof(GitSyncOptions),
+		typeof(BuildInfoOptions),
 		typeof(PfInstallerOptions),
 		typeof(CreateInfrastructureOptions),
 		typeof(OpenInfrastructureOptions),
@@ -569,7 +571,6 @@ class Program {
 		typeof(ListenOptions),
 		typeof(ShowPackageFileContentOptions),
 		typeof(SwitchNugetToDllOptions),
-		typeof(ShowPackageFileContentOptions),
 		typeof(CompilePackageOptions),
 		typeof(UninstallAppOptions),
 		typeof(DownloadAppOptions),
@@ -580,6 +581,13 @@ class Program {
 		typeof(ActivatePkgOptions),
 		typeof(StartPackageHotFixCommandOptions),
 		typeof(FinishPackageHotFixCommandOptions)
+		typeof(PublishWorkspaceCommandOptions),
+		typeof(GetCreatioInfoCommandOptions),
+		typeof(ActivatePkgOptions),
+		typeof(SetApplicationVersionOption),
+		typeof(ApplyEnvironmentManifestOptions),
+		typeof(GetWebServiceUrlOptions),
+		
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -606,7 +614,8 @@ class Program {
 				.Execute(CreateClioGatePkgOptions(opts)),
 			ItemOptions opts => AddItem(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
-			SysSettingsOptions opts => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
+			//SysSettingsOptions opts => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
+			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
 			FeatureOptions opts => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
@@ -650,6 +659,7 @@ class Program {
 			ScenarioRunnerOptions opts => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
 			ConfigureWorkspaceOptions opts => Resolve<ConfigureWorkspaceCommand>(opts).Execute(opts),
 			GitSyncOptions opts => Resolve<GitSyncCommand>(opts).Execute(opts),
+			BuildInfoOptions opts => Resolve<BuildInfoCommand>(opts).Execute(opts),
 			PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
 			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
 			OpenInfrastructureOptions opts => Resolve<OpenInfrastructureCommand>().Execute(opts),
@@ -665,11 +675,16 @@ class Program {
 			DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
-			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
-			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
+			RestoreDbCommandOptions opts =>Resolve<RestoreDbCommand>(opts).Execute(opts),
+			SetWebServiceUrlOptions opts =>Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
+			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
+			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
 			StartPackageHotFixCommandOptions opts => Resolve<StartPackageHotFixCommand>(opts).Execute(opts),
 			FinishPackageHotFixCommandOptions opts => Resolve<FinishPackageHotFixCommand>(opts).Execute(opts),
+			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
+			ApplyEnvironmentManifestOptions opts => Resolve<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
+			GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

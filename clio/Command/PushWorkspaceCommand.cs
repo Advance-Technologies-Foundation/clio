@@ -2,7 +2,7 @@ namespace Clio.Command
 {
 	using System;
 	using Clio.Common;
-	using Clio.Workspace;
+	using Clio.Workspaces;
 	using CommandLine;
 
 	#region Class: PushWorkspaceCommandOptions
