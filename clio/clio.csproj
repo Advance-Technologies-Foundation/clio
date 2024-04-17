@@ -978,6 +978,10 @@
     <Content Update="tpl\workspace\tasks\set-clio-working-directory.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="tpl\workspace\tasks\set-clio-working-directory.cmd" />
+    <Content Include="tpl\workspace\tasks\set-clio-working-directory.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

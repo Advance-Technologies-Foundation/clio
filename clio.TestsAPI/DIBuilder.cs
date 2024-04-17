@@ -7,7 +7,13 @@ using SolidToken.SpecFlow.DependencyInjection;
 
 namespace clio.ApiTest;
 
-public class DIBuilder
+/// <summary>
+/// Creates DI container that will be available in tests
+/// </summary>
+/// <remarks>
+/// See usage exmaples from <a href="https://github.com/solidtoken/SpecFlow.DependencyInjection">SpecFlow.DependencyInjection</a>
+/// </remarks>
+public static class DiBuilder
 {
 
 	#region Methods: Public
@@ -15,7 +21,6 @@ public class DIBuilder
 	[ScenarioDependencies]
 	public static IServiceCollection CreateServices(){
 		ServiceCollection services = [];
-
 		IConfiguration configuration = new ConfigurationBuilder()
 			.SetBasePath(Directory.GetCurrentDirectory())
 			.AddJsonFile("appsettings.json", false, true)
@@ -24,12 +29,10 @@ public class DIBuilder
 
 		AppSettings? appSettings = configuration.Get<AppSettings>();
 		if (appSettings is null) {
-			throw new MissingFieldException("Could not find appsetings in file or env variable, can not continue");
+			throw new MissingFieldException("Could not find appsetings in file appsettings.json file or env variable, can not continue");
 		}
 		services.AddSingleton(appSettings);
-
 		services.AddSingleton<IDataProvider>(sp => {
-			AppSettings? appSetting = sp.GetService<AppSettings>();
 			return string.IsNullOrEmpty(appSettings.LOGIN) switch {
 				true => new RemoteDataProvider(appSettings.URL, appSettings.AuthAppUri, appSettings.ClientId,
 					appSettings.ClientSecret, appSettings.IS_NETCORE),
@@ -37,7 +40,6 @@ public class DIBuilder
 					appSettings.IS_NETCORE)
 			};
 		});
-
 		services.AddTransient<ICreatioClient>(sp => {
 			return string.IsNullOrEmpty(appSettings.LOGIN) switch {
 				true => CreatioClient.CreateOAuth20Client(appSettings.URL, appSettings.AuthAppUri, appSettings.ClientId,
@@ -46,7 +48,6 @@ public class DIBuilder
 					appSettings.IS_NETCORE)
 			};
 		});
-
 		services.AddTransient<ICLioRunner, ClioRunner>();
 		services.AddScoped<TestContext>();
 		return services;

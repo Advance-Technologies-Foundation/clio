@@ -27,6 +27,7 @@ packages/
 bin/
 obj/
 TestResults/
+!/TestResults/Api-Test-Results/.gitkeep
 
 ###################
 # Web publish log #
