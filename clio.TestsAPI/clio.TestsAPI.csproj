@@ -12,7 +12,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="ATF.Repository" Version="2.0.1.7" />
+        <PackageReference Include="ATF.Repository" Version="2.0.2" />
         <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
         <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
@@ -31,9 +31,6 @@
         <Link>create-report.ps1</Link>
       </Content>
       <None Remove="json\GetWebServices.json" />
-      <Content Include="json\GetWebServices.json">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </Content>
     </ItemGroup>
 
     <ItemGroup>

@@ -9,6 +9,11 @@ namespace Clio.Common
 	public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
 	{
 
+		private readonly ILogger _logger;
+
+		public WorkingDirectoriesProvider(ILogger logger){
+			_logger = logger;
+		}
 		#region Properties: Public
 
 		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
@@ -16,9 +21,13 @@ namespace Clio.Common
 		public string BaseTempDirectory {
 			get {
 				string tempDir = Environment.GetEnvironmentVariable("CLIO_WORKING_DIRECTORY");
-				return Path.Combine(string.IsNullOrEmpty(tempDir) 
+				string path = Path.Combine(string.IsNullOrEmpty(tempDir) 
 					? Path.GetTempPath() 
 					: tempDir, "clio");
+#if DEBUG
+				_logger.WriteInfo($"Clio temptDir path: {path}");
+#endif
+				return path;
 			}
 		}
 

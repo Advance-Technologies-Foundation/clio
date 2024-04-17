@@ -1,5 +1,5 @@
 ﻿### Authenticate
-POST {{base_url}}/ServiceModel/AuthService.svc/Login HTTP/1.1
+POST {{base_url}}/ServiceModel/AuthService.svc/Login HTTP/2
 Content-Type: application/json
 
 {"UserName":"{{UserName}}","UserPassword":"{{UserPassword}}"}
