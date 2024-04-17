@@ -23,6 +23,7 @@ using ATF.Repository.Providers;
 using Clio.Common.db;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 using Clio.Command.ApplicationCommand;
+using Clio.Package;
 using Creatio.Client;
 
 namespace Clio
@@ -184,6 +185,7 @@ namespace Clio
 			containerBuilder.RegisterType<ActivatePackageCommand>();
 			containerBuilder.RegisterType<StartPackageHotFixCommand>();
 			containerBuilder.RegisterType<FinishPackageHotFixCommand>();
+			containerBuilder.RegisterType<PackageEditableMutator>();
 			return containerBuilder.Build();
 		}
 		

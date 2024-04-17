@@ -580,7 +580,7 @@ class Program {
 		typeof(SetWebServiceUrlOptions),
 		typeof(ActivatePkgOptions),
 		typeof(StartPackageHotFixCommandOptions),
-		typeof(FinishPackageHotFixCommandOptions)
+		typeof(FinishPackageHotFixCommandOptions),
 		typeof(PublishWorkspaceCommandOptions),
 		typeof(GetCreatioInfoCommandOptions),
 		typeof(ActivatePkgOptions),

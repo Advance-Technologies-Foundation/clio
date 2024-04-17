@@ -2,14 +2,35 @@ using System;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-[TestFixture]
-public class StartPackageHotFixCommandTestCase
+[TestFixture(Category = "Unit")]
+public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHotFixCommandOptions>
 {
+
+	#region Setup/Teardown
+
+	[SetUp]
+	public void Init(){
+		_packageEditableMutator = Substitute.For<IPackageEditableMutator>();
+		_logger = Substitute.For<ILogger>();
+		_command = new StartPackageHotFixCommand(_packageEditableMutator, new EnvironmentSettings()) {
+			Logger = _logger
+		};
+	}
+
+	#endregion
+
+	#region Constants: Private
+
+	private const string PackageName = "TestPackageName";
+
+	#endregion
+
 	#region Fields: Private
 
 	private StartPackageHotFixCommand _command;
@@ -18,47 +39,41 @@ public class StartPackageHotFixCommandTestCase
 
 	#endregion
 
-	#region Methods: Public
 
-	[SetUp]
-	public void Init()
-	{
-		_packageEditableMutator = Substitute.For<IPackageEditableMutator>();
-		_logger = Substitute.For<ILogger>();
-		_command = new StartPackageHotFixCommand(_packageEditableMutator, _logger, new EnvironmentSettings());
-	}
-
-	[Test, Category("Unit")]
-	public void Execute_StartsHotFixMode()
-	{
-		string packageName = "TestPackageName";
-		var options = new StartPackageHotFixCommandOptions
-		{
-			PackageName = packageName
+	[Test]
+	[Category("Unit")]
+	public void Execute_ShowsErrorMessage_WhenPackageHotFixModeNotSet(){
+		//Arrange
+		const string errorMessage = "SomeErrorMessage";
+		StartPackageHotFixCommandOptions options = new() {
+			PackageName = PackageName
 		};
-		var result = _command.Execute(options);
-		Assert.AreEqual(0, result);
-		_logger.Received().WriteLine($"Starts hotfix state for package: \"{packageName}\"");
-		_logger.Received().WriteLine("Done");
-		_packageEditableMutator.Received(1).StartPackageHotfix(packageName);
-	}
-
-	[Test, Category("Unit")]
-	public void Execute_ShowsErrorMessage_WhenPackageHotFixModeNotSet()
-	{
-		var packageName = "TestPackageName";
-		var errorMessage = "SomeErrorMessage";
-		var options = new StartPackageHotFixCommandOptions
-		{
-			PackageName = packageName
-		};
-		_packageEditableMutator.When(mutator => mutator.StartPackageHotfix(packageName))
+		_packageEditableMutator.When(mutator => mutator.StartPackageHotfix(PackageName))
 			.Throw(new Exception(errorMessage));
-		Assert.AreEqual(1, _command.Execute(options));
-		_logger.Received().WriteLine($"Starts hotfix state for package: \"{packageName}\"");
-		_logger.Received().WriteLine(errorMessage);
-		_logger.DidNotReceive().WriteLine($"Done.");
+
+		//Act
+		Action act = () => _command.Execute(options);
+
+		//Assert
+		act.Should().Throw<Exception>().WithMessage(errorMessage);
+		_logger.Received().WriteInfo($"Starts hotfix state for package: \"{PackageName}\"");
 	}
 
-	#endregion
+	[Test]
+	[Category("Unit")]
+	public void Execute_StartsHotFixMode(){
+		//Arrange
+		StartPackageHotFixCommandOptions options = new() {
+			PackageName = PackageName
+		};
+
+		//Act
+		int result = _command.Execute(options);
+
+		//Assert
+		result.Should().Be(0);
+		_logger.Received().WriteInfo($"Starts hotfix state for package: \"{PackageName}\"");
+		_packageEditableMutator.Received(1).StartPackageHotfix(PackageName);
+	}
+
 }

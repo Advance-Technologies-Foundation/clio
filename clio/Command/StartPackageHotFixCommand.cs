@@ -1,47 +1,49 @@
-using System;
-using Clio.Common;
 using Clio.Package;
+using CommandLine;
 
 namespace Clio.Command;
 
+[Verb("start-pkg-hotfix", Aliases = new[] {"hotfix-start"}, HelpText = "Starts hotfix state for package.")]
+public class StartPackageHotFixCommandOptions : EnvironmentOptions
+{
+
+	#region Properties: Public
+
+	[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+	public string PackageName { get; set; }
+
+	#endregion
+
+}
+
 public class StartPackageHotFixCommand : RemoteCommand<StartPackageHotFixCommandOptions>
 {
+
 	#region Fields: Private
 
 	private readonly IPackageEditableMutator _packageEditableMutator;
-	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public StartPackageHotFixCommand(IPackageEditableMutator packageEditableMutator, ILogger logger,
+	public StartPackageHotFixCommand(IPackageEditableMutator packageEditableMutator,
 		EnvironmentSettings environmentSettings)
-		: base(environmentSettings)
-	{
+		: base(environmentSettings){
 		_packageEditableMutator = packageEditableMutator;
-		_logger = logger;
 	}
 
 	#endregion
 
 	#region Methods: Public
 
-	public override int Execute(StartPackageHotFixCommandOptions commandOptions)
-	{
-		_logger.WriteLine($"Starts hotfix state for package: \"{commandOptions.PackageName}\"");
-		try
-		{
-			_packageEditableMutator.StartPackageHotfix(commandOptions.PackageName);
-			_logger.WriteLine("Done");
-			return 0;
-		}
-		catch (Exception e)
-		{
-			_logger.WriteLine(e.Message);
-			return 1;
-		}
+	public override int Execute(StartPackageHotFixCommandOptions commandOptions){
+		Logger.WriteInfo($"Starts hotfix state for package: \"{commandOptions.PackageName}\"");
+		_packageEditableMutator.StartPackageHotfix(commandOptions.PackageName);
+		Logger.WriteInfo($"Hotfix mode successfully applied to {commandOptions.PackageName} package");
+		return 0;
 	}
 
 	#endregion
+
 }

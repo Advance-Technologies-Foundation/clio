@@ -1,47 +1,43 @@
-using System;
-using Clio.Common;
 using Clio.Package;
+using CommandLine;
 
 namespace Clio.Command;
 
+[Verb("finish-pkg-hotfix", Aliases = new [] { "hotfix-finish" }, HelpText = "Finishes hotfix state for package.")]
+public class FinishPackageHotFixCommandOptions : EnvironmentOptions
+{
+	[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+	public string PackageName { get; set; }
+}
+
 public class FinishPackageHotFixCommand : RemoteCommand<FinishPackageHotFixCommandOptions>
 {
+
 	#region Fields: Private
 
 	private readonly IPackageEditableMutator _packageEditableMutator;
-	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public FinishPackageHotFixCommand(IPackageEditableMutator packageEditableMutator, ILogger logger,
+	public FinishPackageHotFixCommand(IPackageEditableMutator packageEditableMutator,
 		EnvironmentSettings environmentSettings)
-		: base(environmentSettings)
-	{
+		: base(environmentSettings){
 		_packageEditableMutator = packageEditableMutator;
-		_logger = logger;
 	}
 
 	#endregion
 
 	#region Methods: Public
 
-	public override int Execute(FinishPackageHotFixCommandOptions commandOptions)
-	{
-		_logger.WriteLine($"Finishes hotfix state for package: \"{commandOptions.PackageName}\"");
-		try
-		{
-			_packageEditableMutator.FinishPackageHotfix(commandOptions.PackageName);
-			_logger.WriteLine("Done");
-			return 0;
-		}
-		catch (Exception e)
-		{
-			_logger.WriteLine(e.Message);
-			return 1;
-		}
+	public override int Execute(FinishPackageHotFixCommandOptions commandOptions){
+		Logger.WriteInfo($"Ends hotfix state for package: \"{commandOptions.PackageName}\"");
+		_packageEditableMutator.FinishPackageHotfix(commandOptions.PackageName);
+		Logger.WriteInfo("Done");
+		return 0;
 	}
 
 	#endregion
+
 }
