@@ -14,6 +14,8 @@ namespace Clio.Command
 
 
 		public BaseDataContextCommand(IDataProvider provider, ILogger logger) {
+			_provider = provider;
+			_logger = logger;
 		}
 
 	}
