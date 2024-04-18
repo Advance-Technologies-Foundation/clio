@@ -1,0 +1,5 @@
+webservices:
+- url: https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc
+  name: WebService1
+- url: https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc
+  name: WebService2

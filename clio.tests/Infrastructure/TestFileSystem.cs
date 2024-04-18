@@ -1,12 +1,8 @@
 ﻿using Clio.Tests.Extensions;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Clio.Tests.Infrastructure
 {
@@ -20,6 +16,17 @@ namespace Clio.Tests.Infrastructure
 			var examplesTestFolder = Path.Combine(ExamplesFolderPath, exampleFolderName);
 			mockFileSystem.MockFolder(examplesTestFolder);
 			return mockFileSystem;
+		}
+
+		internal static IFileSystem MockFileSystem() {
+			var mockFileSystem = new MockFileSystem();
+			return mockFileSystem;
+		}
+
+
+		public static string ReadExamplesFile(string folderName, string fileName) {
+			var filePath = Path.Combine(ExamplesFolderPath, folderName, fileName);
+			return File.ReadAllText(filePath);
 		}
 	}
 }

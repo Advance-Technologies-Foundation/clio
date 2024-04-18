@@ -174,6 +174,7 @@ docker run -it --rm clio reg-web-app -help
   - [Open application](#open-application)
   - [Ping application](#ping-application)
 - [Using for CI/CD systems](#using-for-cicd-systems)
+- [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
   --[Manage requirment Windows features](#manage-requirment-windows-features)
 
@@ -943,6 +944,64 @@ In CI/CD systems, you can specify configuration options when calling commands:
 
 ```
 clio restart -u https://mysite.creatio.com -l administrator -p password
+```
+
+# GitOps
+
+To support GitOps approach clio provides yaml manifest file.  This file has following structure to describes desired state of Creatio instance.
+Example of manifest:
+
+```yaml
+environment:
+  url: https://production.creatio.com
+  username: admin # or use OAuth token
+  password: password # or use OAuth token
+  clientid: "{client-id}"
+  clientsecret: "{client-secret}"
+  authappurl: https://production.creatio.com/0/ServiceModel/AuthService.svc/Login
+  platformversion: "8.1.1"
+  platformtype: "NET6" # "NET6" or "NETFramework"
+
+apps:
+  - name: CrtCustomer360
+    version: "1.0.1"
+    apphub: MyAppHub
+  - name: CrtCaseManagment
+    version: "1.0.2"
+    apphub: CreatioMarketplace
+
+syssettings:
+  - name: SysSettings1
+    value: Value1
+  - name: SysSettings2
+    value: Value2
+
+features:
+  - name: Feature1
+    enabled: "true"
+  - name: Feature2
+    enabled: "false"
+
+webservices:
+  - name: WebService1
+    url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
+  - name: WebService2
+    url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
+
+apphubs:
+  - name: MyAppHub
+    path: "//tscrm.com/dfs-ts/MyAppHub"
+  - name: CreatioMarketplace
+    url: "https://marketplace.creatio.com/apps"
+
+```
+
+## Create manifest from Creatio instance
+
+To control changes of an instance download state to manifest file and store it in Git. To download state use the following command
+
+```
+clio save-state "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
 ```
 
 ## Automation scenarios

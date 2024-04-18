@@ -954,7 +954,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <None Include="..\README.md" Pack="true" PackagePath="\">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
     <None Remove="tpl\UnitTestLibs\Terrasoft.TestFramework.dll" />
     <Content Include="tpl\UnitTestLibs\Terrasoft.TestFramework.dll">

@@ -78,7 +78,9 @@ namespace Clio
 			
 			var serializer = new SerializerBuilder()
 				.WithNamingConvention(UnderscoredNamingConvention.Instance)
-                				.Build();
+				.ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults | DefaultValuesHandling.OmitEmptyCollections)
+				
+				.Build();
 
 
 			#region Epiremental CreatioCLient
