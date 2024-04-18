@@ -1,38 +1,37 @@
-using System;
 using System.Collections.Generic;
 using Clio.Common;
 using Clio.Package.Responses;
 
 namespace Clio.Package;
 
-public class PackageActivator: IPackageActivator
+internal class PackageActivator : BasePackageOperation, IPackageActivator
 {
-	private readonly IApplicationClient _applicationClient;
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	#region Constructors: Public
 
-	public PackageActivator(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+	public PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
+		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
+		base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
 	{
-		_applicationClient = applicationClient;
-		_serviceUrlBuilder = serviceUrlBuilder;
 	}
 
-	private static string CreateRequestData(string packageName) {
-		return "\"" + packageName + "\"";
-	}
-	private PackageActivationResponse SendActivationRequest(string packageName) {
-		return _applicationClient.ExecutePostRequest<PackageActivationResponse>(
-			_serviceUrlBuilder.Build("/ServiceModel/PackageService.svc/ActivatePackage"),
-			CreateRequestData(packageName));
-	}
+	#endregion
+
+	#region Methods: Protected
+
+	protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
+
+	#endregion
+
+	#region Methods: Public
 
 	public IEnumerable<PackageActivationResultDto> Activate(string packageName)
 	{
 		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		PackageActivationResponse activationResponse = SendActivationRequest(packageName);
-		if (!activationResponse.Success)
-		{
-			throw new Exception(activationResponse.ErrorInfo?.Message);
-		}
+		PackageActivationResponse activationResponse =
+			SendRequest<string, PackageActivationResponse>(PackageServiceUrl, "ActivatePackage", packageName);
+		ThrowsErrorIfUnsuccessfulResponseReceived(activationResponse);
 		return activationResponse.PackagesActivationResults;
 	}
+
+	#endregion
 }

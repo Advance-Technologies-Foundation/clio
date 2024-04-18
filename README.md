@@ -405,6 +405,24 @@ clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
 
 ```
 
+## Finish pkg hotfix
+
+```bash
+clio finish-pkg-hotfix <PACKAGE_NAME> -e <ENVIRONMENT_NAME> 
+```
+
+[See Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
+)
+
+## Start pkg hotfix
+
+```bash
+clio start-pkg-hotfix <PACKAGE_NAME> -e <ENVIRONMENT_NAME> 
+```
+
+[See Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
+)
+
 ## Marketplace Catalog
 
 List marketplace applications

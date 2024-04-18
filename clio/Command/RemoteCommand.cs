@@ -25,9 +25,7 @@ namespace Clio.Command
 		private ILogger _logger = new ConsoleLogger();
 		public ILogger Logger
 		{
-			get {
-				return _logger;
-			}
+			get => _logger;
 			set
 			{
 				_logger = value;
