@@ -14,9 +14,10 @@ dotnet build clio\clio.csproj;
 # dotnet test --filter Category=SetWebServiceUrlCommand  clio.TestsAPI\clio.TestsAPI.csproj;
 # dotnet test --filter Category=PublishWorkspaceCommand  clio.TestsAPI\clio.TestsAPI.csproj;
 # dotnet test --filter Category=SysSetting  clio.TestsAPI\clio.TestsAPI.csproj;
+dotnet test --filter Category=HotFixCommand  clio.TestsAPI\clio.TestsAPI.csproj;
 
 # when filter is omited then all tests are run
-dotnet test clio.TestsAPI\clio.TestsAPI.csproj;
+#dotnet test clio.TestsAPI\clio.TestsAPI.csproj;
 
 
 # ****** IMPORTANT ******

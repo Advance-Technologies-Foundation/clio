@@ -11,6 +11,8 @@ public class PackageHotFixCommandOptions : EnvironmentOptions
 
 	[Value(0, MetaName = "PackageName", Required = true, HelpText = "Package name")]
 	public string PackageName { get; set; }
+	
+	[Value(1, MetaName = "HotFixState", Required = true, HelpText = "HotFix state")]
 	public bool Enable { get; internal set; }
 
 	#endregion
