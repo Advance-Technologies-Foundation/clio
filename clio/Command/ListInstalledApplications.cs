@@ -17,21 +17,12 @@ public class ListInstalledAppsOptions : EnvironmentOptions
 	public bool JsonFormat { get; set; }
 }
 
-public class ListInstalledAppsCommand : Command<ListInstalledAppsOptions>
+public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledAppsOptions>
 {
-
-	#region Fields: Private
-
-	private readonly IDataProvider _provider;
-	private readonly ILogger _logger;
-
-	#endregion
 
 	#region Constructors: Public
 
-	public ListInstalledAppsCommand(IDataProvider provider, ILogger logger){
-		_provider = provider;
-		_logger = logger;
+	public ListInstalledAppsCommand(IDataProvider provider, ILogger logger) : base(provider, logger) {
 	}
 
 	#endregion
