@@ -8,7 +8,7 @@ namespace clio.ApiTest.Steps;
 public class PackagePropertyStepDefinition: BaseServiceStepDefinition<GetPackagesResponse>
 {
 
-	internal string Route = "/ServiceModel/PackageService.svc/GetPackages";
+	internal override string Route => "/ServiceModel/PackageService.svc/GetPackages";
 
 	public PackagePropertyStepDefinition(ICreatioClient creatioClient, AppSettings appSettings) : base(creatioClient, appSettings) {
 	}

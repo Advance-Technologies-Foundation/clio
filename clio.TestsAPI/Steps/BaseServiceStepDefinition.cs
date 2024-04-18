@@ -10,7 +10,7 @@ namespace clio.ApiTest.Steps
 		internal readonly ICreatioClient _creatioClient;
 		internal readonly AppSettings _appSettings;
 
-		internal string Route;
+		internal virtual string Route { get; set; }
 
 		internal string Url {
 			get {
