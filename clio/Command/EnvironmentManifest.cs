@@ -20,7 +20,7 @@ namespace Clio.Command
 			internal set;
 		}
 
-		private List<Feature> _features;
+		private List<Feature> _features = new();
 
 		[YamlMember(Alias = "features")]
 		public List<Feature> Features {
@@ -32,7 +32,7 @@ namespace Clio.Command
 			}
 		}
 
-		private List<CreatioManifestSetting> _settings;
+		private List<CreatioManifestSetting> _settings = new();
 
 		[YamlMember(Alias = "settings")]
 		public List<CreatioManifestSetting> Settings {
