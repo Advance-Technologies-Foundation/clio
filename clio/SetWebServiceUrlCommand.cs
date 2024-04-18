@@ -109,17 +109,15 @@ public class GetWebServiceUrlCommand : Command<GetWebServiceUrlOptions>
 	private readonly IApplicationClient _client;
 	private readonly IDataProvider _dataProvider;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IWebServiceManager _webServiceManager;
 	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public GetWebServiceUrlCommand(IApplicationClient client, IDataProvider dataProvider,
-		IServiceUrlBuilder serviceUrlBuilder, ILogger logger){
-		_client = client;
-		_dataProvider = dataProvider;
-		_serviceUrlBuilder = serviceUrlBuilder;
+	public GetWebServiceUrlCommand(IWebServiceManager webServiceManager, ILogger logger){
+		_webServiceManager = webServiceManager;
 		_logger = logger;
 	}
 
@@ -128,11 +126,7 @@ public class GetWebServiceUrlCommand : Command<GetWebServiceUrlOptions>
 	#region Methods: Public
 
 	public override int Execute(GetWebServiceUrlOptions options){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-
-		
-		List<VwWebServiceV2> webService = ctx.Models<VwWebServiceV2>().ToList();
-
+		List<VwWebServiceV2> webService = _webServiceManager.GetAllServices();
 		List<VwWebServiceV2> webs = webService;
 		if(!string.IsNullOrEmpty(options.WebServiceName)) {
 			webs = webService
@@ -140,50 +134,12 @@ public class GetWebServiceUrlCommand : Command<GetWebServiceUrlOptions>
 				.ToList();
 		}
 		webs.ForEach(w=> {
-			string serviceUrl = GetServiceUrl(w.PackageUId, w.UId);
+			string serviceUrl = _webServiceManager.GetServiceUrl(w.PackageUId, w.UId);
 			_logger.WriteInfo($"{w.Name}: {serviceUrl}");
 		});
 		return 0;
 	}
-
-	
-	private string GetServiceUrl(Guid packageUId, Guid serviceUId){
-		const string endpoint = "DataService/json/SyncReply/ServiceSchemaRequest";
-		string url = _serviceUrlBuilder.Build(endpoint);
-
-		var payload = new {
-			uId = serviceUId.ToString(),
-			packageUId = packageUId.ToString()
-		};
-		string json = JsonConvert.SerializeObject(payload);
-		string response = _client.ExecutePostRequest(url, json);
-
-		JObject jObject = JObject.Parse(response);
-		JToken serviceToken = jObject.SelectToken("$.schema.baseUri");
-		string serviceUrl = serviceToken?.ToString();
-		return serviceUrl;
-	}
-	
-	
 	#endregion
 
 }
 
-public record SetWebServiceUrlPayload
-{
-
-	#region Properties: Public
-
-	public string contractName { get; init; }
-
-	public string managerName { get; init; }
-
-	public string propertyName { get; init; }
-
-	public string propertyValue { get; init; }
-
-	public Guid schemaId { get; init; }
-
-	#endregion
-
-}

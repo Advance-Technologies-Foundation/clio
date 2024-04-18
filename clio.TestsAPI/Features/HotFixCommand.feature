@@ -2,7 +2,7 @@
 Feature: HotFixCommand
 See [Enable/Disable pkg hotfix mode](https://github.com/Advance-Technologies-Foundation/clio/tree/hot-fix-mode-refactor?tab=readme-ov-file#enabledisable-pkg-hotfix-mode)
 
-	Scenario: User can enable hotfix mode
+	Scenario: 01 User can enable hotfix mode
 		When command is run with "<commandName>" "<packageName> <state>"
 		Then package "<packageName>" has property "<propertyname>" with value "<expectedState>"
 
@@ -10,7 +10,7 @@ See [Enable/Disable pkg hotfix mode](https://github.com/Advance-Technologies-Fou
 	| commandName | packageName | state | expectedState | propertyname |
 	| hotfix      | Base        | true  | 1             | hotfixState  |
 
-	Scenario: User can disable hotfix mode
+	Scenario: 02 User can disable hotfix mode
 		When command is run with "<commandName>" "<packageName> <state>"
 		Then package "<packageName>" has property "<propertyname>" with value "<expectedState>"
 

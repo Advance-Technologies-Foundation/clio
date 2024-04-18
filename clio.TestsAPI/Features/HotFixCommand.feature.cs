@@ -78,9 +78,9 @@ namespace clio.ApiTest.Features
         }
         
         [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("User can enable hotfix mode")]
+        [NUnit.Framework.DescriptionAttribute("01 User can enable hotfix mode")]
         [NUnit.Framework.TestCaseAttribute("hotfix", "Base", "true", "1", "hotfixState", null)]
-        public void UserCanEnableHotfixMode(string commandName, string packageName, string state, string expectedState, string propertyname, string[] exampleTags)
+        public void _01UserCanEnableHotfixMode(string commandName, string packageName, string state, string expectedState, string propertyname, string[] exampleTags)
         {
             string[] tagsOfScenario = exampleTags;
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
@@ -89,7 +89,7 @@ namespace clio.ApiTest.Features
             argumentsOfScenario.Add("state", state);
             argumentsOfScenario.Add("expectedState", expectedState);
             argumentsOfScenario.Add("propertyname", propertyname);
-            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("User can enable hotfix mode", null, tagsOfScenario, argumentsOfScenario, featureTags);
+            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("01 User can enable hotfix mode", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 5
  this.ScenarioInitialize(scenarioInfo);
 #line hidden
@@ -111,9 +111,9 @@ namespace clio.ApiTest.Features
         }
         
         [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("User can disable hotfix mode")]
+        [NUnit.Framework.DescriptionAttribute("02 User can disable hotfix mode")]
         [NUnit.Framework.TestCaseAttribute("hotfix", "Base", "false", "2", "hotfixState", null)]
-        public void UserCanDisableHotfixMode(string commandName, string packageName, string state, string expectedState, string propertyname, string[] exampleTags)
+        public void _02UserCanDisableHotfixMode(string commandName, string packageName, string state, string expectedState, string propertyname, string[] exampleTags)
         {
             string[] tagsOfScenario = exampleTags;
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
@@ -122,7 +122,7 @@ namespace clio.ApiTest.Features
             argumentsOfScenario.Add("state", state);
             argumentsOfScenario.Add("expectedState", expectedState);
             argumentsOfScenario.Add("propertyname", propertyname);
-            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("User can disable hotfix mode", null, tagsOfScenario, argumentsOfScenario, featureTags);
+            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("02 User can disable hotfix mode", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 13
  this.ScenarioInitialize(scenarioInfo);
 #line hidden
