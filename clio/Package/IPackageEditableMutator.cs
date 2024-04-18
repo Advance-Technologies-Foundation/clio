@@ -11,13 +11,7 @@ public interface IPackageEditableMutator
 	/// Starts hotfix state for package.
 	/// </summary>
 	/// <param name="packageName">Package name.</param>
-	void StartPackageHotfix(string packageName);
-
-	/// <summary>
-	/// Finishes hotfix state for package.
-	/// </summary>
-	/// <param name="packageName">Package name.</param>
-	void FinishPackageHotfix(string packageName);
+	void SetPackageHotfix(string packageName, bool state);
 
 	#endregion
 }

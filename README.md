@@ -405,23 +405,21 @@ clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
 
 ```
 
-## Finish pkg hotfix
+## Enable/Disable pkg hotfix mode
 
-```bash
-clio finish-pkg-hotfix <PACKAGE_NAME> -e <ENVIRONMENT_NAME> 
-```
-
-[See Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
+To see full description about Hot Fix mode visit [Creatio Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
 )
 
-## Start pkg hotfix
-
 ```bash
-clio start-pkg-hotfix <PACKAGE_NAME> -e <ENVIRONMENT_NAME> 
-```
 
-[See Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
-)
+# To enable hot-fix mode for a package  
+clio pkg-hotfix <PACKAGE_NAME> true -e <ENVIRONMENT_NAME> 
+
+# To disable hot-fix mode for a package 
+clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME> 
+
+
+```
 
 ## Marketplace Catalog
 

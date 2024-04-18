@@ -48,7 +48,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 	}
 
 	[Test, Category("UnitTests")]
-	public void StartPackageHotfix_StartsHotFixMode()
+	public void StartPackageHotfix_EnableHotFixMode()
 	{
 		string packageName = "TestPackageName";
 		Guid packageUId = Guid.NewGuid();
@@ -60,7 +60,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 		const string fullUrl = "TestUrl";
 		SetupPackagesServiceBuildUrl("StartPackageHotfix", fullUrl);
 		SetupSuccessfulPostRequest(fullUrl, packageUId);
-		Assert.DoesNotThrow(() => _packageEditableMutator.StartPackageHotfix(packageName));
+		Assert.DoesNotThrow(() => _packageEditableMutator.SetPackageHotfix(packageName, true));
 	}
 
 	[Test, Category("Unit")]
@@ -68,7 +68,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 	[TestCase(null)]
 	public void StartPackageHotfix_ThrowsException_WhenPackageByNameIsNotValid(string packageName)
 	{
-		Assert.Throws<ArgumentNullException>(() => _packageEditableMutator.StartPackageHotfix(packageName));
+		Assert.Throws<ArgumentNullException>(() => _packageEditableMutator.SetPackageHotfix(packageName, true));
 	}
 
 	[Test, Category("Unit")]
@@ -76,7 +76,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 	{
 		const string packageName = "TestPackageName";
 		SetupGetPackagesResponse(CreatePackageInfo("SomePackage"));
-		Assert.Throws<Exception>(() => _packageEditableMutator.StartPackageHotfix(packageName),
+		Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false),
 			$"Package with name {packageName} not found");
 	}
 
@@ -88,11 +88,11 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 		const string errorMessage = "Some error";
 		SetupGetPackagesResponse(CreatePackageInfo(packageName, packageUId));
 		SetupUnsuccessfulPostRequest(packageUId, errorMessage);
-		Assert.Throws<Exception>(() => _packageEditableMutator.StartPackageHotfix(packageName), errorMessage);
+		Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false), errorMessage);
 	}
 
 	[Test, Category("UnitTests")]
-	public void FinishPackageHotfix_FinishesHotFixMode()
+	public void FinishPackageHotfix_DisableHotFixMode()
 	{
 		string packageName = "TestPackageName";
 		Guid packageUId = Guid.NewGuid();
@@ -104,7 +104,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 		const string fullUrl = "TestUrl";
 		SetupPackagesServiceBuildUrl("FinishPackageHotfix", fullUrl);
 		SetupSuccessfulPostRequest(fullUrl, packageUId);
-		Assert.DoesNotThrow(() => _packageEditableMutator.FinishPackageHotfix(packageName));
+		Assert.DoesNotThrow(() => _packageEditableMutator.SetPackageHotfix(packageName, false));
 	}
 
 	[Test, Category("Unit")]
@@ -112,7 +112,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 	[TestCase(null)]
 	public void FinishPackageHotfix_ThrowsException_WhenPackageByNameIsNotValid(string packageName)
 	{
-		Assert.Throws<ArgumentNullException>(() => _packageEditableMutator.FinishPackageHotfix(packageName));
+		Assert.Throws<ArgumentNullException>(() => _packageEditableMutator.SetPackageHotfix(packageName, false));
 	}
 
 	[Test, Category("Unit")]
@@ -120,7 +120,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 	{
 		const string packageName = "TestPackageName";
 		SetupGetPackagesResponse(CreatePackageInfo("SomePackage"));
-		Assert.Throws<Exception>(() => _packageEditableMutator.FinishPackageHotfix(packageName),
+		Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false),
 			$"Package with name {packageName} not found");
 	}
 
@@ -132,7 +132,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 		const string errorMessage = "Some error";
 		SetupGetPackagesResponse(CreatePackageInfo(packageName, packageUId));
 		SetupUnsuccessfulPostRequest(packageUId, errorMessage);
-		Assert.Throws<Exception>(() => _packageEditableMutator.FinishPackageHotfix(packageName), errorMessage);
+		Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false), errorMessage);
 	}
 
 	#endregion

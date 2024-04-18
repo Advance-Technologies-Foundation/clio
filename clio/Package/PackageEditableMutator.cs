@@ -27,23 +27,21 @@ internal class PackageEditableMutator : BasePackageOperation, IPackageEditableMu
 
 	#region Methods: Public
 
-	/// <inheritdoc cref="IPackageEditableMutator.StartPackageHotfix"/>
-	public void StartPackageHotfix(string packageName)
+	/// <inheritdoc cref="IPackageEditableMutator.SetPackageHotfix"/>
+	public void SetPackageHotfix(string packageName, bool state)
 	{
 		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
 		Guid packageUId = GetPackageUId(packageName);
-		BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "StartPackageHotfix", packageUId);
-		ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+		if (state) {
+			BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "StartPackageHotfix", packageUId);
+			ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+		} else {
+			BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "FinishPackageHotfix", packageUId);
+			ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+		}
+
 	}
 
-	/// <inheritdoc cref="IPackageEditableMutator.FinishPackageHotfix"/>
-	public void FinishPackageHotfix(string packageName)
-	{
-		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		Guid packageUId = GetPackageUId(packageName);
-		BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "FinishPackageHotfix", packageUId);
-		ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
-	}
 
 	#endregion
 }

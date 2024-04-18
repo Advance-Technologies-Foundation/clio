@@ -9,7 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture(Category = "Unit")]
-public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHotFixCommandOptions>
+public class PackageHotFixCommandTestCase : BaseCommandTests<PackageHotFixCommandOptions>
 {
 
 	#region Setup/Teardown
@@ -18,7 +18,7 @@ public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHo
 	public void Init(){
 		_packageEditableMutator = Substitute.For<IPackageEditableMutator>();
 		_logger = Substitute.For<ILogger>();
-		_command = new StartPackageHotFixCommand(_packageEditableMutator, new EnvironmentSettings()) {
+		_command = new PackageHotFixCommand(_packageEditableMutator, new EnvironmentSettings()) {
 			Logger = _logger
 		};
 	}
@@ -33,7 +33,7 @@ public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHo
 
 	#region Fields: Private
 
-	private StartPackageHotFixCommand _command;
+	private PackageHotFixCommand _command;
 	private ILogger _logger;
 	private IPackageEditableMutator _packageEditableMutator;
 
@@ -45,10 +45,11 @@ public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHo
 	public void Execute_ShowsErrorMessage_WhenPackageHotFixModeNotSet(){
 		//Arrange
 		const string errorMessage = "SomeErrorMessage";
-		StartPackageHotFixCommandOptions options = new() {
-			PackageName = PackageName
+		PackageHotFixCommandOptions options = new() {
+			PackageName = PackageName,
+			Enable = true
 		};
-		_packageEditableMutator.When(mutator => mutator.StartPackageHotfix(PackageName))
+		_packageEditableMutator.When(mutator => mutator.SetPackageHotfix(PackageName, true))
 			.Throw(new Exception(errorMessage));
 
 		//Act
@@ -56,15 +57,16 @@ public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHo
 
 		//Assert
 		act.Should().Throw<Exception>().WithMessage(errorMessage);
-		_logger.Received().WriteInfo($"Starts hotfix state for package: \"{PackageName}\"");
+		_logger.Received().WriteInfo($"Enable hotfix state for package: \"{PackageName}\"");
 	}
 
 	[Test]
 	[Category("Unit")]
 	public void Execute_StartsHotFixMode(){
 		//Arrange
-		StartPackageHotFixCommandOptions options = new() {
-			PackageName = PackageName
+		PackageHotFixCommandOptions options = new() {
+			PackageName = PackageName,
+			Enable = true
 		};
 
 		//Act
@@ -72,8 +74,29 @@ public class StartPackageHotFixCommandTestCase : BaseCommandTests<StartPackageHo
 
 		//Assert
 		result.Should().Be(0);
-		_logger.Received().WriteInfo($"Starts hotfix state for package: \"{PackageName}\"");
-		_packageEditableMutator.Received(1).StartPackageHotfix(PackageName);
+		_logger.Received().WriteInfo($"Enable hotfix state for package: \"{PackageName}\"");
+		_logger.Received().WriteInfo("Done");
+		_packageEditableMutator.Received(1).SetPackageHotfix(PackageName, true);
 	}
+
+	[Test]
+	[Category("Unit")]
+	public void Execute_DisableHotFixMode() {
+		//Arrange
+		PackageHotFixCommandOptions options = new() {
+			PackageName = PackageName,
+			Enable = false
+		};
+
+		//Act
+		int result = _command.Execute(options);
+
+		//Assert
+		result.Should().Be(0);
+		_logger.Received().WriteInfo($"Disable hotfix state for package: \"{PackageName}\"");
+		_logger.Received().WriteInfo("Done");
+		_packageEditableMutator.Received(1).SetPackageHotfix(PackageName, false);
+	}
+
 
 }
