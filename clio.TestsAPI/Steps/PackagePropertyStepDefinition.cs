@@ -5,26 +5,21 @@ using FluentAssertions;
 namespace clio.ApiTest.Steps;
 
 [Binding]
-public class PackagePropertyStepDefinition
+public class PackagePropertyStepDefinition: BaseServiceStepDefinition<GetPackagesResponse>
 {
 
-	private readonly ICreatioClient _creatioClient;
-	private readonly AppSettings _appSettings;
+	internal string Route = "/ServiceModel/PackageService.svc/GetPackages";
 
-	const string Route = "/ServiceModel/PackageService.svc/GetPackages";
-	public PackagePropertyStepDefinition(ICreatioClient creatioClient, AppSettings appSettings){
-		_creatioClient = creatioClient;
-		_appSettings = appSettings;
+	public PackagePropertyStepDefinition(ICreatioClient creatioClient, AppSettings appSettings) : base(creatioClient, appSettings) {
 	}
 
 	[Then(@"package ""(.*)"" has property ""(.*)"" with value ""(.*)""")]
 	public void ThenPackageHasPropertyWithValue(string packageName, string propertyName, string expectedPropertyValue){
-		string url = _appSettings.IS_NETCORE ? _appSettings.URL+Route : _appSettings.URL + "/0" + Route;
-		var response = _creatioClient.ExecutePostRequest(url, string.Empty);
-		Packages? package = JsonSerializer.Deserialize<GetPackagesResponse>(response)
+        GetPackagesResponse serviceResponse = GetServiceResopnse();
+        var package = serviceResponse
 			.packages
 			.FirstOrDefault(p=> p.name == packageName);
-		string actualPropertyValue = package.GetType().GetProperty(propertyName).GetValue(package).ToString();
+		string actualPropertyValue = GeObjectPropertyValue(package, propertyName);
 		actualPropertyValue.Should().Be(expectedPropertyValue);
 	}
 
