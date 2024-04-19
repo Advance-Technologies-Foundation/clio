@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -50,10 +51,10 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 
 	public override int Execute(SaveSettingsToManifestOptions options){
 		List<CreatioManifestWebService> services = _webServiceManager.GetCreatioManifestWebServices();
-		//List<Feature> features = GetFeatureValues();
+		List<Feature> features = GetFeatureValues();
 		EnvironmentManifest environmentManifest = new() {
 			WebServices = services,
-			//Features = features
+			Features = features
 		};
 		string manifestContent = _yamlSerializer.Serialize(environmentManifest);
 		_fileSystem.WriteAllTextToFile(options.ManifestFileName, manifestContent);
@@ -71,15 +72,33 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 				Code = feature.Code
 			};
 			f.UserValues = new Dictionary<string, bool>();
-			var states = ctx.Models<AppFeatureState>()
-				.Where(i=> i.FeatureId ==feature.Id).ToList();
 			
-			states.ForEach(ff=> {
-				var name = ff.AdminUnit.Name;
-				var value = ff.FeatureState;
-					f.UserValues.Add(name, value);
+			var featureStateId = ctx.Models<AdminUnitFeatureState>()
+				.Where(f => f.FeatureId == feature.Id).ToList();
+			
+			
+			featureStateId.ForEach(fsi=> {
+				var state = ctx.Models<AppFeatureState>()
+					.Where(i=> i.Id ==fsi.Id).ToList();
+				
+				state.ForEach(ff=> {
+					var name = ff?.AdminUnit?.Name;
+					var value = ff?.FeatureState ?? false;
+					if(!string.IsNullOrEmpty(name)) {
+						if(f.UserValues.ContainsKey(name)) {
+							f.UserValues.Add($"{name}_DOUBLE_{ff.AdminUnitId}", value);
+						}else {
+							f.UserValues.Add(name, value);
+						}
+					}
+				});
+				
 			});
-			resultList.Add(f);
+			if(f.UserValues.Count == 0 && f.Value == false) {
+				
+			}else {
+				resultList.Add(f);
+			}
 		}
 		return resultList;
 	}
