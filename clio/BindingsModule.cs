@@ -187,6 +187,7 @@ namespace Clio
 			containerBuilder.RegisterType<ActivatePackageCommand>();
 			containerBuilder.RegisterType<PackageHotFixCommand>();
 			containerBuilder.RegisterType<PackageEditableMutator>();
+			containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
 			return containerBuilder.Build();
 		}
 		

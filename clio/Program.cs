@@ -585,6 +585,7 @@ class Program {
 		typeof(SetApplicationVersionOption),
 		typeof(ApplyEnvironmentManifestOptions),
 		typeof(GetWebServiceUrlOptions),
+		typeof(SaveSettingsToManifestOptions),
 		
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -682,6 +683,7 @@ class Program {
 			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
 			ApplyEnvironmentManifestOptions opts => Resolve<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
 			GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
+			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
+using Clio.Command;
 using CreatioModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -14,9 +15,9 @@ public interface IWebServiceManager
 
 	#region Methods: Public
 
+	public List<CreatioManifestWebService> GetCreatioManifestWebServices();
 	public List<VwWebServiceV2> GetAllServices();
-
-	string GetServiceUrl(Guid packageUId, Guid serviceUId);
+	public string GetServiceUrl(Guid packageUId, Guid serviceUId);
 
 	#endregion
 
@@ -53,6 +54,18 @@ public class WebServiceManager : IWebServiceManager
 		return ctx.Models<VwWebServiceV2>().ToList();
 	}
 
+	public List<CreatioManifestWebService> GetCreatioManifestWebServices(){
+		List<CreatioManifestWebService> webservices = new();
+		GetAllServices().ForEach(s => {
+			string serviceUrl = GetServiceUrl(s.PackageUId, s.UId);
+			webservices.Add(new CreatioManifestWebService {
+				Name = s.Name,
+				Url = serviceUrl
+			});
+		});
+		return webservices;
+	}
+
 	public string GetServiceUrl(Guid packageUId, Guid serviceUId){
 		const string endpoint = "DataService/json/SyncReply/ServiceSchemaRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
@@ -72,7 +85,6 @@ public class WebServiceManager : IWebServiceManager
 
 	#endregion
 
-	
 }
 
 public record SetWebServiceUrlPayload

@@ -1,6 +1,7 @@
 #pragma warning disable CS8618, // Non-nullable field is uninitialized.
 
 using System;
+using System.Collections.Generic;
 using ATF.Repository;
 using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
@@ -31,6 +32,7 @@ namespace CreatioModel
 
 		[SchemaProperty("Source")]
 		public string Source { get; set; }
+		
 
 	}
 }
