@@ -982,6 +982,7 @@
     <Content Include="tpl\workspace\tasks\set-clio-working-directory.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="tpl\package\Files\app-descriptor.json" />
   </ItemGroup>
 
   <ItemGroup>

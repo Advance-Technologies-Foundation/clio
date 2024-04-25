@@ -18,6 +18,12 @@ public class FileSystem : IFileSystem
 		_msFileSystem = msFileSystem;
 	}
 
+	public Ms.FileSystemStream CreateFile(string filePath){
+		return _msFileSystem.File.Create(filePath);
+	}
+	
+	
+	
 	#region Methods: Public
 
 	public static void CreateLink(string link, string target) {

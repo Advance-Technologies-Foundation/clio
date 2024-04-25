@@ -10,7 +10,15 @@ public static class FileSystemExtension
 		var exampleFiles = Directory.GetFiles(folderPath);
         foreach (var exampleFile in exampleFiles) {
             FileInfo fileInfo = new FileInfo(exampleFile);
-            mockFileSystem.AddFile(fileInfo.Name, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
+            mockFileSystem.AddFile(fileInfo.FullName, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
         }
+				
+		var subDirs = Directory.GetDirectories(folderPath);
+		
+		foreach(string subFolder in subDirs) {
+			mockFileSystem.AddDirectory(subFolder);
+			MockFolder(mockFileSystem, subFolder);
+			
+		}
 	}
 }

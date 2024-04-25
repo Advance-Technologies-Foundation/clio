@@ -9,6 +9,14 @@
 	public class JsonConverter : IJsonConverter
 	{
 
+		private readonly IFileSystem _fileSystem;
+
+		public JsonConverter(IFileSystem fileSystem){
+			_fileSystem = fileSystem;
+		}
+		public JsonConverter(){
+			
+		}
 		#region Methods: Public
 
 		public string CorrectJson(string body) {
@@ -28,19 +36,20 @@
 		}
 
 		public T DeserializeObjectFromFile<T>(string jsonPath) {
-			if (!File.Exists(jsonPath)) {
+			if (!_fileSystem.ExistsFile(jsonPath)) {
 				throw new FileNotFoundException($"Json file not found by path: '{jsonPath}'");
 			}
-			string json = File.ReadAllText(jsonPath);
+			string json = _fileSystem.ReadAllText(jsonPath);
 			return DeserializeObject<T>(json);
 		}
 
 		public void SerializeObjectToFile<T>(T value, string jsonPath) {
-			if (!File.Exists(jsonPath)) {
-				FileStream fileStream = File.Create(jsonPath);
+			if (!_fileSystem.ExistsFile(jsonPath)) {
+				
+				var fileStream = _fileSystem.CreateFile(jsonPath);
 				fileStream.Close();
 			}
-			File.WriteAllText(jsonPath, JsonConvert.SerializeObject(value, Formatting.Indented));
+			_fileSystem.WriteAllTextToFile(jsonPath, JsonConvert.SerializeObject(value, Formatting.Indented));
 		}
 
 		public string SerializeObject<T>(T value) => JsonConvert.SerializeObject(value, Formatting.Indented);

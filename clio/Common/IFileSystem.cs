@@ -11,6 +11,7 @@ namespace Clio.Common
 	/// </summary>
 	public interface IFileSystem
 	{
+		public FileSystemStream CreateFile(string filePath);
 
 		#region Methods: Public
 

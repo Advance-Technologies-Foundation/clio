@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using Clio.Common;
 using Clio.Workspaces;
+using JsonConverter = System.Text.Json.Serialization.JsonConverter;
 
 namespace Clio.Package
 {
@@ -159,8 +161,42 @@ namespace Clio.Package
 		}
 
 		public void Create(string packagesPath, string packageName) {
+			Create(packagesPath, packageName, false);
+		}
+		public void Create(string packagesPath, string packageName, bool asApp) {
 			CreatePackageIfNotExists(packagesPath, packageName);
 			AddPackageToWorkspaceIfNeeded(packageName);
+			
+			
+			var descriptorContent = _fileSystem.ReadAllText(Path.Combine(packagesPath,packageName,"descriptor.json"));
+			var descriptor = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+			
+			AppDescriptorJson addDescriptorDto = new () {
+				Name = packageName,
+				Maintainer = "Customer",
+				Description = "",
+				Icon = "",
+				IconName = "",
+				MarketplaceLink = "",
+				OrderLink = "",
+				SupportEmail ="",
+				HelpLink = "",
+				Color = "#FFAC07",
+				Version = "0.1.0",
+				Code = packageName,
+				Packages = new []{
+					new Package() {
+					UId = descriptor.Descriptor.UId.ToString(),
+					Name = descriptor.Descriptor.Name
+				}}
+			};
+			var options = new JsonSerializerOptions() {
+				WriteIndented = true,
+				
+			};
+			string appDescriptorContent = JsonSerializer.Serialize(addDescriptorDto,options);
+			var appDescriptorPath = Path.Combine(packagesPath,packageName, "Files","app-descriptor.json");
+			_fileSystem.WriteAllTextToFile(appDescriptorPath, appDescriptorContent);
 		}
 
 		#endregion
@@ -168,5 +204,29 @@ namespace Clio.Package
 	}
 
 	#endregion
+public class AppDescriptorJson
+{
+    public string Name { get; set; }
+    public string Description { get; set; }
+    public string Maintainer { get; set; }
+    public string Icon { get; set; }
+    public string IconName { get; set; }
+    public string Color { get; set; }
+    public string Version { get; set; }
+    public string MarketplaceLink { get; set; }
+    public string HelpLink { get; set; }
+    public string OrderLink { get; set; }
+    public string SupportEmail { get; set; }
+    public string Code { get; set; }
+    public IEnumerable<Package> Packages { get; set; }
+}
+
+public class Package
+{
+    public string UId { get; set; }
+    public string Name { get; set; }
 
 }
+}
+
+
