@@ -1,5 +1,7 @@
+using Castle.Components.DictionaryAdapter;
 using System;
 using System.IO;
+using System.Management.Automation;
 
 namespace Clio.Common
 {
@@ -60,8 +62,8 @@ namespace Clio.Common
 
 		public string CreateTempDirectory() {
 			Directory.CreateDirectory(BaseTempDirectory);
-			string directoryName = DateTime.Now.Ticks.ToString();
-			string tempDirectory = Path.Combine(BaseTempDirectory, directoryName);
+			var tempDirectoryPath = GenerateTempDirectoryPath();
+			string tempDirectory = Path.Combine(BaseTempDirectory, tempDirectoryPath);
 			Directory.CreateDirectory(tempDirectory);
 			return tempDirectory;
 		}
@@ -82,6 +84,10 @@ namespace Clio.Common
 			} finally {
 				DeleteDirectoryIfExists(tempDirectoryPath);
 			}
+		}
+
+		internal string GenerateTempDirectoryPath() {
+			return Guid.NewGuid().ToString("N");
 		}
 
 		#endregion
