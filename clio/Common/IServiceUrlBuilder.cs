@@ -1,20 +1,18 @@
-﻿namespace Clio.Common
+﻿namespace Clio.Common;
+
+public interface IServiceUrlBuilder
 {
-	public interface IServiceUrlBuilder
-	{
 
-		#region Properties: Public
+	#region Methods: Public
 
-		public string RootPath { get; }
+	string Build(string serviceEndpoint);
 
-		#endregion
+	string Build(ServiceUrlBuilder.KnownRoute knownRoute);
 
-		#region Methods: Public
+	string Build(string serviceEndpoint, EnvironmentSettings environmentSettings);
 
-		string Build(string serviceEndpoint);
-		string Build(string serviceEndpoint, EnvironmentSettings environmentSettings);
+	string Build(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings);
 
-		#endregion
+	#endregion
 
-	}
 }

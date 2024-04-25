@@ -24,14 +24,7 @@ namespace Clio.Package
 
 	public class PackageBuilder : IPackageBuilder
 	{
-
-		#region Constants: Private
-
-		private static string BuildPackageUrl = @"/ServiceModel/WorkspaceExplorerService.svc/BuildPackage";
-		private static string RebuildPackageUrl = @"/ServiceModel/WorkspaceExplorerService.svc/RebuildPackage";
-
-		#endregion
-
+		
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
@@ -44,7 +37,7 @@ namespace Clio.Package
 		#region Constructors: Public
 
 		public PackageBuilder(EnvironmentSettings environmentSettings,
-			IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
+			IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder, ILogger logger){
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
@@ -54,25 +47,28 @@ namespace Clio.Package
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
 		}
+
 		#endregion
 
 		#region Methods: Private
 
-		private static string CreateRequestData(string packageName) =>
-			"{ \"packageName\":\"" + packageName + "\" }";
+		private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
 
-		private IApplicationClient CreateClient() =>
-			_applicationClientFactory.CreateClient(_environmentSettings);
+		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
 
-		private string GetSafePackageName(string packageName) => packageName
-			.Replace(" ", string.Empty)
-			.Replace(",", "\",\"");
+		private string GetSafePackageName(string packageName) =>
+			packageName
+				.Replace(" ", string.Empty)
+				.Replace(",", "\",\"");
 
-		private void Compilation(IEnumerable<string> packagesNames, bool force) {
+		private void Compilation(IEnumerable<string> packagesNames, bool force){
 			IApplicationClient applicationClient = CreateClient();
-			string compilationUrl = force ? RebuildPackageUrl : BuildPackageUrl;
 			string compilationName = force ? "rebuild" : "build";
-			string fullBuildPackageUrl = _serviceUrlBuilder.Build(compilationUrl);
+			string fullBuildPackageUrl = _serviceUrlBuilder.Build(
+				force
+				? ServiceUrlBuilder.KnownRoute.RebuildPackage 
+				: ServiceUrlBuilder.KnownRoute.BuildPackage);
+
 			foreach (string packageName in packagesNames) {
 				string safePackageName = GetSafePackageName(packageName);
 				_logger.WriteLine($"Start {compilationName} packages ({safePackageName}).");
@@ -86,16 +82,13 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		public void Build(IEnumerable<string> packagesNames) =>
-			Compilation(packagesNames, false);
+		public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
 
-		public void Rebuild(IEnumerable<string> packagesNames) =>
-			Compilation(packagesNames, true);
+		public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
 
 		#endregion
 
 	}
 
 	#endregion
-
 }
