@@ -3,7 +3,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-public class BaseCommandTests<T>
+public class BaseCommandTests<T> : BaseClioModuleTests
 {
 
 	private static readonly ReadmeChecker ReadmeChecker = ClioTestsSetup.GetService<ReadmeChecker>();

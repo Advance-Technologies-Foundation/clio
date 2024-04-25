@@ -16,23 +16,6 @@ namespace Clio.Tests.Command;
 internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettingsToManifestOptions>
 {
 
-	#region Setup/Teardown
-
-	[SetUp]
-	public void Setup(){
-		BindingsModule bindingModule = new(_fileSystem);
-		_container = bindingModule.Register();
-	}
-
-	#endregion
-
-	#region Fields: Private
-
-	private readonly IFileSystem _fileSystem = TestFileSystem.MockFileSystem();
-	private IContainer _container;
-
-	#endregion
-
 	[Test]
 	public void SaveWebServiceToFile(){
 

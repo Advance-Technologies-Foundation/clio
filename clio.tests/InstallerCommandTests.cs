@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using Autofac;
 using Clio.Command;
+using Clio.Tests.Command;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace Clio.Tests
 {
-	internal class InstallerCommandTests
+	internal class InstallerCommandTests :BaseClioModuleTests
 	{
 
 		#region Constants: Private
@@ -19,26 +20,23 @@ namespace Clio.Tests
 
 		#region Fields: Private
 
-		private readonly MockFileSystem _fileSystem;
-		private readonly EnvironmentSettings _mockSettings = new();
-		private readonly IContainer _container;
-		private readonly InstallerCommand _installerCommand;
+		private InstallerCommand _installerCommand;
 
-		#endregion
+        #endregion
 
-		#region Constructors: Public
+        #region Constructors: Public
 
-		public InstallerCommandTests(){
-			_fileSystem = CreateFs();
-			_container = new BindingsModule(_fileSystem).Register(_mockSettings, true);
-			_installerCommand = _container.Resolve<InstallerCommand>();
-		}
+        public override void Setup() {
+            base.Setup();
+            _installerCommand = _container.Resolve<InstallerCommand>();
+            
+        }
 
-		#endregion
+        #endregion
 
-		#region Methods: Private
+        #region Methods: Private
 
-		private static MockFileSystem CreateFs(){
+        protected override MockFileSystem CreateFs(){
 			return new MockFileSystem(new Dictionary<string, MockFileData> {
 				{
 					@"\\tscrm.com\dfs-ts\builds-7\8.1.2\8.1.2.3888\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.1.2.3888_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip",
