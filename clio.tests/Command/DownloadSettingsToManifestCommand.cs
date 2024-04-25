@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using ATF.Repository.Mock;
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -34,30 +35,43 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 	[Test]
 	public void SaveWebServiceToFile(){
+
+		//Arrange
 		SaveSettingsToManifestOptions saveSettingsToManifestOptions = new() {
 			ManifestFileName = @"web-service-manifest.yaml"
 		};
-		List<CreatioManifestWebService> webServices = new List<CreatioManifestWebService> {
-			new() {
+		List<CreatioManifestWebService> webServices = [
+			new CreatioManifestWebService {
 				Name = "Creatio",
 				Url = "https://creatio.com"
 			},
-			new() {
+
+			new CreatioManifestWebService {
 				Name = "Google",
 				Url = "https://google.ca"
 			}
-		};
+		];
 		IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
 		webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
 
-		SaveSettingsToManifestCommand command = new(null, null,
+		DataProviderMock providerMock = new();
+		ILogger loggerMock = Substitute.For<ILogger>();
+		
+		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
 			_container.Resolve<Clio.Common.IFileSystem>(), _container.Resolve<ISerializer>(), webServiceManagerMock);
+		
+		//Act
 		command.Execute(saveSettingsToManifestOptions);
+
+
+		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-manifest.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
+		
+		loggerMock.Received(1).WriteInfo("Done");
 	}
 
 }
