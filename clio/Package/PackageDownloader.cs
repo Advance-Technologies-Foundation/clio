@@ -12,12 +12,7 @@ namespace Clio.Package
 
 	public class PackageDownloader : IPackageDownloader
 	{
-
-		#region Constants: Private
-
-		private static string GetZipPackageUrl = @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
-
-		#endregion
+		
 
 		#region Fields: Private
 
@@ -65,8 +60,8 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
-			_serviceUrlBuilder.Build(url, environmentSettings);
+		private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
+			_serviceUrlBuilder.Build(knownRoute, environmentSettings);
 
 		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
 			_applicationClientFactory.CreateClient(environmentSettings);
@@ -88,7 +83,7 @@ namespace Clio.Package
 				string requestData = $"[\"{safePackageName}\"]";
 				string packageZipPath = GetPackageZipPath(packageName, destinationPath);
 				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-				string url = GetCompleteUrl(GetZipPackageUrl, environmentSettings);
+				string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
 				applicationClient.DownloadFile(url, packageZipPath, requestData);
 				_logger.WriteLine($"Download packages ({safePackageName}) completed.");
 			} catch (Exception) {
