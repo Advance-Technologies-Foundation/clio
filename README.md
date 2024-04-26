@@ -108,6 +108,7 @@ docker run -it --rm clio reg-web-app -help
 - [Arguments](#arguments)
 - [Packages](#packages)
   - [Creating new package](#creating-new-package)
+  - [Adding new package to workspace](#add-package)
   - [Installing package](#installing-package)
   - [Compile package](#compile-package)
   - [Pull package from remote application](#pull-package-from-remote-application)
@@ -200,6 +201,18 @@ you can set reference on local core assembly by using Creatio file design mode w
 ```
  clio new-pkg <PACKAGE_NAME> -r bin
 ```
+
+## add package
+When creating package with option -a True then an `app-descriptor.json` will be created.
+All subsequent packages will be added to `app-descriptor.json`.
+```bash
+#To add package with app descriptor
+ clio add-package <PACKAGE_NAME> -a True
+
+ #To add package without app descriptor
+ clio add-package <PACKAGE_NAME> -a False
+```
+
 
 ## Installing package
 
