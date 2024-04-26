@@ -1,30 +1,32 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Abstractions.TestingHelpers;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
-using Autofac;
-using Clio.Command;
+﻿using Autofac;
 using Clio.Common;
 using Clio.Package;
 using Clio.Tests.Command;
 using Clio.Tests.Extensions;
-using Clio.Tests.Infrastructure;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using System;
+using System.IO;
+using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
+using System.Text.Json;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Package
 {
+	[TestFixture]
     internal class PackageCreator_Test : BaseClioModuleTests
     {
 
-        protected override IFileSystem CreateFs(){
+		string packagesPath = @"T:\\";
+		string packageNameOne = "TestPackageOne";
+		string packageNameTwo = "TestPackageTwo";
+		string packageNameThree = "TestPackageThree";
+
+
+		protected override IFileSystem CreateFs(){
             var x =  (MockFileSystem)base.CreateFs();
             var logger = Substitute.For<ILogger>();
             var wdp = new WorkingDirectoriesProvider(logger);
@@ -33,46 +35,41 @@ namespace Clio.Tests.Package
             return x;
         }
 
+        private PackageCreator InitCreator() {
+			return new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
+				_container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
+				_container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
+				_container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
+		}
+
         [Test]
         public void Create_With() {
 
             //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath= @"T:\\";
-            string packageName ="TestPackage";
+            
+            var creator = InitCreator();
 
             //Act
-            creator.Create(packagesPath,packageName, true);
+            creator.Create(packagesPath,packageNameOne, true);
 
             //Assert
-            string appDescriptorContent = _fileSystem.File.ReadAllText(Path.Combine(packagesPath,packageName,"Files","app-descriptor.json"));
+            string appDescriptorContent = _fileSystem.File.ReadAllText(Path.Combine(packagesPath, packageNameOne, "Files","app-descriptor.json"));
             var appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
             
-            appDescriptor.Name.Should().Be(packageName);
-            appDescriptor.Code.Should().Be(packageName);
+            appDescriptor.Name.Should().Be(packageNameOne);
+            appDescriptor.Code.Should().Be(packageNameOne);
             appDescriptor.Color.Should().Be("#FFAC07");
             appDescriptor.Maintainer.Should().Be("Customer");
             appDescriptor.Version.Should().Be("0.1.0");
             appDescriptor.Packages.Should().HaveCount(1);
-            appDescriptor.Packages.First().Name.Should().Be(packageName);
+            appDescriptor.Packages.First().Name.Should().Be(packageNameOne);
         }
 
         [Test]
         public void Create_TwoPackages() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne, true);
@@ -93,15 +90,8 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_AddTwoPackagesInEmptyWorkspaceByDefault() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne);
@@ -118,16 +108,8 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_AddPackageToWorkspaceWithTwoApplication() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
-            string packageNameThree = "TestPackageThree";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne, true);
@@ -147,15 +129,8 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_AddTwoApplicationsToWorkplace() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne, true);
@@ -172,15 +147,8 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_AddTwoPackagesWithoutApplication() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne, false);
@@ -197,14 +165,8 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_ThrowExceptionIfPackageExists() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne, false);
@@ -215,16 +177,9 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_RewritePackageIfPackageWithSameNameExistsOnDescriptor() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
-
+			//Arrange
+			var creator = InitCreator();
+            
             //Act
             creator.Create(packagesPath, packageNameOne, true);
             creator.Create(packagesPath, packageNameTwo);
@@ -239,15 +194,8 @@ namespace Clio.Tests.Package
         [Test]
         public void Create_RewritePackageIfPackagesWithSameNamesExistsOnDescriptor() {
 
-            //Arrange
-            PackageCreator creator = new PackageCreator(_container.Resolve<EnvironmentSettings>(), _container.Resolve<IWorkspace>(), _container.Resolve<IWorkspaceSolutionCreator>(),
-                _container.Resolve<ITemplateProvider>(), _container.Resolve<IWorkspacePathBuilder>(),
-                _container.Resolve<IStandalonePackageFileManager>(), _container.Resolve<IJsonConverter>(),
-                _container.Resolve<IWorkingDirectoriesProvider>(), _container.Resolve<Clio.Common.IFileSystem>());
-
-            string packagesPath = @"T:\\";
-            string packageNameOne = "TestPackageOne";
-            string packageNameTwo = "TestPackageTwo";
+			//Arrange
+			var creator = InitCreator();
 
             //Act
             creator.Create(packagesPath, packageNameOne, true);
