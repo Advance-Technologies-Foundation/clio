@@ -18,6 +18,8 @@ namespace Clio.Tests.Infrastructure
 			return mockFileSystem;
 		}
 
+		
+		
 		internal static IFileSystem MockFileSystem() {
 			var mockFileSystem = new MockFileSystem();
 			return mockFileSystem;

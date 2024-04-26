@@ -21,8 +21,9 @@ namespace Clio.Tests
 	[TestFixture]
 	internal class EnvironmentManagerTest
 	{
-		IFileSystem _fileSystem = TestFileSystem.MockExamplesFolder("deployments-manifest");
-		IContainer _container;
+
+		readonly IFileSystem _fileSystem = TestFileSystem.MockExamplesFolder("deployments-manifest");
+		private IContainer _container;
 
 		[SetUp]
 		public void Setup() {
