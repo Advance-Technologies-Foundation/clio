@@ -3,10 +3,11 @@ namespace Clio.Command
 	using System;
 	using CommandLine;
 	using Clio.Package;
+    using Clio.Common;
 
-	#region Class: AddPackageOptions
+    #region Class: AddPackageOptions
 
-	[Verb("add-package", Aliases = new string[] { "ap" }, HelpText = "Add package to workspace or local folder")]
+    [Verb("add-package", Aliases = new string[] { "ap" }, HelpText = "Add package to workspace or local folder")]
 	public class AddPackageOptions : EnvironmentOptions
 	{
 
@@ -14,6 +15,11 @@ namespace Clio.Command
 
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
+
+        [Option('a', "asApp", Required = false,
+            HelpText = "Create application in package", Default = false)]
+        public bool asApp {
+		 get; set; }
 
 		#endregion
 
@@ -29,29 +35,25 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IPackageCreator _packageCreator;
+        private readonly ILogger _logger;
 
-		#endregion
+        #endregion
 
-		#region Constructors: Public
+        #region Constructors: Public
 
-		public AddPackageCommand(IPackageCreator packageCreator) {
+        public AddPackageCommand(IPackageCreator packageCreator, ILogger logger) {
 			_packageCreator = packageCreator;
-		}
+            this._logger = logger;
+        }
 
 		#endregion
 
 		#region Methods: Public
 
 		public override int Execute(AddPackageOptions options) {
-			try {
-				_packageCreator.Create(options.Name);
-				Console.WriteLine();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
+			_packageCreator.Create(options.Name, options.asApp);
+            _logger.WriteInfo("Done");
+			return 0;
 		}
 
 		#endregion
