@@ -1,6 +1,7 @@
 ﻿using CreatioModel;
 using DocumentFormat.OpenXml.Spreadsheet;
 using System.Collections.Generic;
+using Clio.CreatioModel;
 using YamlDotNet.Serialization;
 
 namespace Clio.Command

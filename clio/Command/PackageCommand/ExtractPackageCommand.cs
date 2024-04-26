@@ -1,11 +1,9 @@
 ﻿using System;
 using System.IO;
-using Clio;
-using Clio.Command;
 using Clio.Common;
 using CommandLine;
 
-namespace Сlio.Command.PackageCommand
+namespace Clio.Command.PackageCommand
 {
 
 	#region Class: UnzipPkgOptions

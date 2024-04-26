@@ -1,8 +1,7 @@
-﻿using System;
-using System.IO;
+﻿using System.IO;
 using YamlDotNet.Serialization;
 
-namespace CreatioModel
+namespace Clio.CreatioModel
 {
 	public class AppHubInfo
 	{

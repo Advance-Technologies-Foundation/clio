@@ -14,7 +14,6 @@ using System.Reflection;
 using Clio.Common.K8;
 using YamlDotNet.Serialization.NamingConventions;
 using YamlDotNet.Serialization;
-using Сlio.Command.PackageCommand;
 using Clio.Common.ScenarioHandlers;
 using Clio.YAML;
 using k8s;

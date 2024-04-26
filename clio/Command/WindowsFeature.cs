@@ -1,4 +1,6 @@
-﻿public class WindowsFeature
+﻿namespace Clio.Command;
+
+public class WindowsFeature
 {
 	public string Name { get; set; }
 

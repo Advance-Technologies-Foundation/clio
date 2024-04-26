@@ -1,11 +1,12 @@
-﻿using Castle.Components.DictionaryAdapter;
-using Clio.Common;
-using Microsoft.Dism;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management;
+using Clio.Common;
+using Microsoft.Dism;
+
+namespace Clio.Command;
 
 public interface IWindowsFeatureManager
 {
@@ -32,7 +33,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 	private string GetInactiveFeaturesCode(string featureName) {
 		var windowsFeatures = GetWindowsFeatures();
 		var feature = windowsFeatures.FirstOrDefault(i => i.Name.ToLower() == featureName.ToLower() ||
-				i.Caption.ToLower() == featureName.ToLower());
+			i.Caption.ToLower() == featureName.ToLower());
 		return feature.Name;
 	}
 

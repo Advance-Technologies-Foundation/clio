@@ -5,6 +5,7 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Clio.CreatioModel;
 using YamlDotNet.Serialization;
 
 namespace Clio.Command
