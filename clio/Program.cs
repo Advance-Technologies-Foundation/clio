@@ -290,10 +290,17 @@ class Program {
 	private static T ResolveEnvSettings<T>(ApplyEnvironmentManifestOptions options = null) {
 		EnvironmentOptions optionFromFile = ReadEnvironmentOptionsFromManifestFile(options.ManifestFilePath);
 		EnvironmentOptions combinedOption = CombinedOption(optionFromFile, options);
-		return Resolve<T>(options);
+		return Resolve<T>(combinedOption, true);
 	}
 
 	public static EnvironmentOptions CombinedOption(EnvironmentOptions optionFromFile, EnvironmentOptions optionsFromCommandLine) {
+		if (optionFromFile == null && optionsFromCommandLine == null) {
+			return null;
+		}
+		if (optionFromFile == null && optionsFromCommandLine.IsEmpty()) {
+			return optionsFromCommandLine;
+
+        }
 		if (string.IsNullOrEmpty(optionsFromCommandLine.Environment)) {
 			var result = new EnvironmentNameOptions();
 			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile.Uri;
@@ -318,7 +325,10 @@ class Program {
 		var manifest = fileSystem is null ? File.ReadAllText(manifestFilePath) : fileSystem.ReadAllText(manifestFilePath);
 		var envManifest = deserializer.Deserialize<EnvironmentManifest>(manifest);
 		var envManifestSettings = envManifest.EnvironmentSettings;
-		var environmnetOptions = new EnvironmentOptions() {
+		if (envManifestSettings == null) {
+			return null;
+		}
+        var environmnetOptions = new EnvironmentOptions() {
 				Uri = envManifestSettings.Uri,
 				Login = envManifestSettings.Login,
 				Password = envManifestSettings.Password,
@@ -330,7 +340,7 @@ class Program {
 		return environmnetOptions;
 	}
 
-	private static T Resolve<T>(object options = null)
+	private static T Resolve<T>(object options = null, bool logAndSettings = false)
 	{
 		EnvironmentSettings settings = null;
 		if (options is EnvironmentOptions) {
@@ -339,6 +349,9 @@ class Program {
 				settings = GetEnvironmentSettings(environmentOptions as EnvironmentOptions);
 			}
 		}
+		if (logAndSettings) {
+            new ConsoleLogger().WriteInfo(settings.Uri);
+        }
 		var container = new BindingsModule().Register(settings);
 		return container.Resolve<T>();
 	}

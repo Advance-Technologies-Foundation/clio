@@ -155,8 +155,11 @@ namespace Clio
                 this.DbName = source.DbName;
                 this.Force = source.Force;
             }
-			
-		}
+
+        internal bool IsEmpty() {
+			return string.IsNullOrEmpty(Uri);
+        }
+    }
 
 	public class EnvironmentNameOptions : EnvironmentOptions
 	{

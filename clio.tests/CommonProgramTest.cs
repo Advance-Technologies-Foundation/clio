@@ -76,7 +76,44 @@ namespace Clio.Tests
 			Assert.AreEqual(optionsFromCommandLine.AuthAppUri, resultOptions.AuthAppUri);
 		}
 
-		[Test]
+        [Test]
+        public void ApplyEnvManifestOptionsWhenOptionInFileNullTest() {
+			EnvironmentOptions optionsFromFile = null;
+            var optionsFromCommandLine = new EnvironmentOptions() {
+                Environment = "myEnv"
+            };
+            var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
+            Assert.AreEqual(optionsFromCommandLine.Uri, resultOptions.Uri);
+            Assert.AreEqual(optionsFromCommandLine.Login, resultOptions.Login);
+            Assert.AreEqual(optionsFromCommandLine.Password, resultOptions.Password);
+            Assert.AreEqual(optionsFromCommandLine.ClientId, resultOptions.ClientId);
+            Assert.AreEqual(optionsFromCommandLine.ClientSecret, resultOptions.ClientSecret);
+            Assert.AreEqual(optionsFromCommandLine.AuthAppUri, resultOptions.AuthAppUri);
+        }
+
+        [Test]
+        public void ApplyEnvManifestOptionsWhenOptionInFileNullAndCommandLineOptionsIsNullTest() {
+            EnvironmentOptions optionsFromFile = null;
+            EnvironmentOptions optionsFromCommandLine = null;
+            var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
+            Assert.IsNull(resultOptions);
+        }
+
+        [Test]
+        public void ApplyEnvManifestOptionsWhenOptionInFileNullAndCommandLineIsEmpty() {
+            EnvironmentOptions optionsFromFile = null;
+			var optionsFromCommandLine = new EnvironmentOptions();
+            var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
+            Assert.AreEqual(optionsFromCommandLine.Environment, resultOptions.Environment);
+            Assert.AreEqual(optionsFromCommandLine.Uri, resultOptions.Uri);
+            Assert.AreEqual(optionsFromCommandLine.Login, resultOptions.Login);
+            Assert.AreEqual(optionsFromCommandLine.Password, resultOptions.Password);
+            Assert.AreEqual(optionsFromCommandLine.ClientId, resultOptions.ClientId);
+            Assert.AreEqual(optionsFromCommandLine.ClientSecret, resultOptions.ClientSecret);
+            Assert.AreEqual(optionsFromCommandLine.AuthAppUri, resultOptions.AuthAppUri);
+        }
+
+        [Test]
 		public void ReadEnvironmentOptionsFromManifestFile() {
 			_fileSystem.MockExamplesFolder("deployments-manifest");
 			var manifestFileName = "full-creatio-config.yaml";
@@ -90,5 +127,17 @@ namespace Clio.Tests
 			Assert.AreEqual(envSettingsFromFile.Password, environmnetOptionsFromFile.Password);
 		}
 
-	}
+        [Test]
+        public void ReadEnvironmentOptionsFromOnlySettingsManifestFile() {
+            _fileSystem.MockExamplesFolder("deployments-manifest");
+            var manifestFileName = "only-settings.yaml";
+            var environmentManager = _container.Resolve<IEnvironmentManager>();
+            var manifestFilePath = $"C:\\{manifestFileName}";
+            EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
+            var commonFileSystem = new Clio.Common.FileSystem(_fileSystem);
+            var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
+            Assert.IsNull(environmnetOptionsFromFile);
+        }
+
+    }
 }

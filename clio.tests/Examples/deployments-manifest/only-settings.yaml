@@ -1,0 +1,5 @@
+settings:
+  - code: "ShowWidgetOnLoginPage"
+    value: true
+  - code: "ShowWidgetOnIntroPage"
+    value: true

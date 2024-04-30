@@ -27,20 +27,24 @@ namespace Clio.Command
 		private readonly FeatureCommand _featureCommand;
 		private readonly SysSettingsCommand _sysSettingCommand;
 		private readonly SetWebServiceUrlCommand _setWebServiceUrlCommand;
+        private readonly IDataProvider _dataProvider;
+        private readonly EnvironmentSettings _environmentSettings;
 
-		#endregion
+        #endregion
 
-		#region Constructors: Public
+        #region Constructors: Public
 
-		public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
+        public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
 			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand, 
-			SetWebServiceUrlCommand setWebServiceUrlCommand){
+			SetWebServiceUrlCommand setWebServiceUrlCommand, IDataProvider dataProvider, EnvironmentSettings environmentSettings){
 			_environmentManager = environmentManager;
 			_applicationInstaller = applicationInstaller;
 			_featureCommand = featureCommand;
 			_sysSettingCommand = sysSettingCommand;
 			_setWebServiceUrlCommand = setWebServiceUrlCommand;
-		}
+            _dataProvider = dataProvider;
+            _environmentSettings = environmentSettings;
+        }
 
 		#endregion
 
@@ -49,28 +53,18 @@ namespace Clio.Command
 		public override int Execute(ApplyEnvironmentManifestOptions options){
 			List<SysInstalledApp> manifestApplications
 				= _environmentManager.GetApplicationsFromManifest(options.ManifestFilePath);
-			EnvironmentSettings manifestEnvironment
-				= _environmentManager.GetEnvironmentFromManifest(options.ManifestFilePath);
-			EnvironmentSettings environmentInstance = manifestEnvironment.Fill(options);
-			 IDataProvider provider = string.IsNullOrEmpty(environmentInstance.Login) switch {
-			 	true => new RemoteDataProvider(environmentInstance.Uri, environmentInstance.AuthAppUri,
-			 		environmentInstance.ClientId, environmentInstance.ClientSecret, environmentInstance.IsNetCore),
-			 	false => new RemoteDataProvider(environmentInstance.Uri, environmentInstance.Login,
-			 		environmentInstance.Password, environmentInstance.IsNetCore)
-			 };
-
-			 List<SysInstalledApp> remoteApplications = AppDataContextFactory.GetAppDataContext(provider)
+			 List<SysInstalledApp> remoteApplications = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			 	.Models<SysInstalledApp>()
 			 	.ToList();
 
-			ApplyApplicationFromManifest(options, remoteApplications, manifestApplications, environmentInstance);
+			ApplyApplicationFromManifest(options, remoteApplications, manifestApplications, _environmentSettings);
 			
 			var features = _environmentManager.GetFeaturesFromManifest(options.ManifestFilePath);
 			var settings = _environmentManager.GetSettingsFromManifest(options.ManifestFilePath);
 			var webservices = _environmentManager.GetWebServicesFromManifest(options.ManifestFilePath);
-			ApplyFeaturesFromManifest(options, features, environmentInstance);
-			ApplySettingsFromManifest(options, settings, environmentInstance);
-			ApplyWebservicesFromManifest(options, webservices, environmentInstance);
+			ApplyFeaturesFromManifest(options, features, _environmentSettings);
+			ApplySettingsFromManifest(options, settings, _environmentSettings);
+			ApplyWebservicesFromManifest(options, webservices, _environmentSettings);
 			return 0;
 		}
 
