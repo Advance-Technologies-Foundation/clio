@@ -1020,7 +1020,7 @@ webservices:
   - name: WebService2
     url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
 
-apphubs:
+app_hubs:
   - name: MyAppHub
     path: "//tscrm.com/dfs-ts/MyAppHub"
   - name: CreatioMarketplace
