@@ -1,6 +1,7 @@
 ﻿using Autofac;
 using Clio.Tests.Infrastructure;
 using NUnit.Framework;
+using System.IO.Abstractions.TestingHelpers;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
@@ -22,7 +23,7 @@ public abstract class BaseClioModuleTests
 
 	#region Fields: Protected
 
-	protected IFileSystem _fileSystem;
+	protected MockFileSystem _fileSystem;
 	protected IContainer _container;
 
 	protected EnvironmentSettings _environmentSettings = new() {
@@ -35,7 +36,7 @@ public abstract class BaseClioModuleTests
 
 	#region Methods: Protected
 
-	protected virtual IFileSystem CreateFs(){
+	protected virtual MockFileSystem CreateFs(){
 		return TestFileSystem.MockFileSystem();
 	}
 

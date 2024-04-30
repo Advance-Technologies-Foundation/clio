@@ -18,10 +18,13 @@ using Clio.Utilities;
 using CommandLine;
 using Creatio.Client;
 using Newtonsoft.Json;
+using YamlDotNet.Serialization.NamingConventions;
+using YamlDotNet.Serialization;
 
 namespace Clio;
 
 class Program {
+
 	private static string UserName => CreatioEnvironment.Settings.Login;
 	private static string UserPassword => CreatioEnvironment.Settings.Password;
 	private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
@@ -282,6 +285,49 @@ class Program {
 			ClientSecret = options.ClientSecret,
 			ClientId = options.ClientId
 		};
+	}
+
+	private static T ResolveEnvSettings<T>(ApplyEnvironmentManifestOptions options = null) {
+		EnvironmentOptions optionFromFile = ReadEnvironmentOptionsFromManifestFile(options.ManifestFilePath);
+		EnvironmentOptions combinedOption = CombinedOption(optionFromFile, options);
+		return Resolve<T>(options);
+	}
+
+	public static EnvironmentOptions CombinedOption(EnvironmentOptions optionFromFile, EnvironmentOptions optionsFromCommandLine) {
+		if (string.IsNullOrEmpty(optionsFromCommandLine.Environment)) {
+			var result = new EnvironmentNameOptions();
+			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile.Uri;
+			result.Login = optionsFromCommandLine.Login ?? optionFromFile.Login;
+			result.Password = optionsFromCommandLine.Password ?? optionFromFile.Password;
+			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile.AuthAppUri;
+			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile.ClientId;
+			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile.ClientSecret;
+			result.IsNetCore = optionsFromCommandLine.IsNetCore.HasValue ? optionsFromCommandLine.IsNetCore : optionFromFile.IsNetCore;
+			return result;
+		} else {
+			return optionsFromCommandLine;
+		}
+
+	}
+
+	public static EnvironmentOptions ReadEnvironmentOptionsFromManifestFile(string manifestFilePath, IFileSystem fileSystem = null) {
+		var deserializer = new DeserializerBuilder()
+				.WithNamingConvention(UnderscoredNamingConvention.Instance)
+				.IgnoreUnmatchedProperties()
+				.Build();
+		var manifest = fileSystem is null ? File.ReadAllText(manifestFilePath) : fileSystem.ReadAllText(manifestFilePath);
+		var envManifest = deserializer.Deserialize<EnvironmentManifest>(manifest);
+		var envManifestSettings = envManifest.EnvironmentSettings;
+		var environmnetOptions = new EnvironmentOptions() {
+				Uri = envManifestSettings.Uri,
+				Login = envManifestSettings.Login,
+				Password = envManifestSettings.Password,
+				ClientId = envManifestSettings.ClientId,
+				ClientSecret = envManifestSettings.ClientSecret,
+				AuthAppUri = envManifestSettings.AuthAppUri,
+				IsNetCore = envManifestSettings.IsNetCore
+			};
+		return environmnetOptions;
 	}
 
 	private static T Resolve<T>(object options = null)

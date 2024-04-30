@@ -43,7 +43,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 	#region Methods: Protected
 
-	protected override IFileSystem CreateFs(){
+	protected override MockFileSystem CreateFs(){
 		MockFileSystem x = (MockFileSystem)base.CreateFs();
 		ILogger logger = Substitute.For<ILogger>();
 		WorkingDirectoriesProvider wdp = new (logger);

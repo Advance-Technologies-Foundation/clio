@@ -8,26 +8,24 @@ namespace Clio.Tests.Infrastructure
 {
 	internal class TestFileSystem
 	{
-		public static string OriginFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-		public static string ExamplesFolderPath = Path.Combine(OriginFolderPath, "Examples");
+
 
 		internal static IFileSystem MockExamplesFolder(string exampleFolderName) {
 			var mockFileSystem = new MockFileSystem();
-			var examplesTestFolder = Path.Combine(ExamplesFolderPath, exampleFolderName);
-			mockFileSystem.MockFolder(examplesTestFolder);
+			mockFileSystem.MockExamplesFolder(exampleFolderName);
 			return mockFileSystem;
 		}
 
 		
 		
-		internal static IFileSystem MockFileSystem() {
+		internal static MockFileSystem MockFileSystem() {
 			var mockFileSystem = new MockFileSystem();
 			return mockFileSystem;
 		}
 
 
 		public static string ReadExamplesFile(string folderName, string fileName) {
-			var filePath = Path.Combine(ExamplesFolderPath, folderName, fileName);
+			var filePath = Path.Combine(FileSystemExtension.ExamplesFolderPath, folderName, fileName);
 			return File.ReadAllText(filePath);
 		}
 	}

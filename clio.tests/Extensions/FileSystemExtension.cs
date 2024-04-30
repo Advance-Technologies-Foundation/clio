@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 
 namespace Clio.Tests.Extensions;
@@ -6,7 +7,15 @@ namespace Clio.Tests.Extensions;
 public static class FileSystemExtension
 {
 
+	public static string OriginFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
+	public static string ExamplesFolderPath = Path.Combine(OriginFolderPath, "Examples");
+
 	#region Methods: Public
+
+	internal static void MockExamplesFolder(this MockFileSystem mockFileSystem, string exampleFolderName) {
+		var examplesTestFolder = Path.Combine(ExamplesFolderPath, exampleFolderName);
+		mockFileSystem.MockFolder(examplesTestFolder);
+	}
 
 	public static void MockFolder(this MockFileSystem mockFileSystem, string folderPath){
 		string[] exampleFiles = Directory.GetFiles(folderPath);
