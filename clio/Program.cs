@@ -726,7 +726,7 @@ class Program {
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
 			PackageHotFixCommandOptions opts => Resolve<PackageHotFixCommand>(opts).Execute(opts),
 			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
-			ApplyEnvironmentManifestOptions opts => Resolve<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
+			ApplyEnvironmentManifestOptions opts => ResolveEnvSettings<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
 			GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
 			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
 			_ => 1,

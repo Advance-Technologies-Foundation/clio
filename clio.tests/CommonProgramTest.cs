@@ -83,7 +83,8 @@ namespace Clio.Tests
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
-			var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, _fileSystem);
+			var commonFileSystem = new Clio.Common.FileSystem(_fileSystem);
+			var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
 			Assert.AreEqual(envSettingsFromFile.Uri, environmnetOptionsFromFile.Uri);
 			Assert.AreEqual(envSettingsFromFile.Login, environmnetOptionsFromFile.Login);
 			Assert.AreEqual(envSettingsFromFile.Password, environmnetOptionsFromFile.Password);
