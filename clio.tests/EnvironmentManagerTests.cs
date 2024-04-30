@@ -15,22 +15,20 @@ using FluentAssertions;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Clio.Tests.Command;
 
 namespace Clio.Tests
 {
 	[TestFixture]
-	internal class EnvironmentManagerTest
+	internal class EnvironmentManagerTest: BaseClioModuleTests
 	{
 
-		readonly IFileSystem _fileSystem = TestFileSystem.MockExamplesFolder("deployments-manifest");
-		private IContainer _container;
+		protected override MockFileSystem CreateFs() {
+			var mockFS = base.CreateFs();
+			mockFS.MockExamplesFolder("deployments-manifest");
+			return mockFS;
 
-		[SetUp]
-		public void Setup() {
-			var bindingModule = new BindingsModule(_fileSystem);
-			_container = bindingModule.Register();
 		}
-
 
 		[TestCase("easy-creatio-config.yaml", 3)]
 		[TestCase("full-creatio-config.yaml", 2)]
@@ -41,9 +39,9 @@ namespace Clio.Tests
 			Assert.AreEqual(appCount, applications.Count);
 		}
 
-		[TestCase(0, "CrtCustomer360", "1.0.1", "easy-creatio-config.yaml")]
+		[TestCase(0, "CrtCustomer360", "1.5.2", "easy-creatio-config.yaml")]
 		[TestCase(1, "CrtCaseManagment", "1.0.2", "easy-creatio-config.yaml")]
-		[TestCase(0, "CrtCustomer360", "1.0.1", "full-creatio-config.yaml")]
+		[TestCase(0, "CrtCustomer360", "1.5.2", "full-creatio-config.yaml")]
 		[TestCase(1, "CrtCaseManagment", "1.0.2", "full-creatio-config.yaml")]
 		public void GetApplicationsFrommanifest_if_applicationExists(int appIndex, string appName, string appVersion, string manifestFileName) {
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
@@ -61,10 +59,20 @@ namespace Clio.Tests
 			Assert.AreEqual(2, applicationsFromAppHub.Count);
 		}
 
-		[TestCase("easy-creatio-config.yaml", "CrtCustomer360", "//tscrm.com/dfs-ts/MyAppHub/CrtCustomer360/1.0.1/CrtCustomer360_1.0.1.zip")]
+		[TestCase("easy-creatio-config.yaml", "CrtCustomer360", "//tscrm.com/dfs-ts/MyAppHub/CrtCustomer360/1.5.2/CrtCustomer360_1.5.2.zip")]
 		[TestCase("easy-creatio-config.yaml", "CrtCaseManagment", "//tscrm.com/dfs-ts/MyAppHub/CrtCaseManagment/1.0.2/CrtCaseManagment_1.0.2.zip")]
 		public void FindAppHubPath_In_FromManifest(string manifestFileName, string appName, string path) {
 			string resultPath = path.Replace('/', Path.DirectorySeparatorChar);
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+			var app = environmentManager.FindApplicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();
+			Assert.AreEqual(resultPath, app.ZipFileName);
+		}
+
+		[TestCase("easy-creatio-config.yaml", "CrtCustomer360", "//tscrm.com/dfs-ts/MyAppHub/Customer360/1.5.2/Customer360_1.5.2.zip")]
+		public void FindAppHubPath_In_FromManifest_ByAliases(string manifestFileName, string appName, string path) {
+			string resultPath = path.Replace('/', Path.DirectorySeparatorChar);
+			_fileSystem.MockFile(resultPath);
 			var environmentManager = _container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			var app = environmentManager.FindApplicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();

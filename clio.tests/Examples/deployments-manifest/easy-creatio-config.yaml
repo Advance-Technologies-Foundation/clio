@@ -4,8 +4,9 @@ environment:
 
 apps:
   - name: CrtCustomer360
-    version: "1.0.1"
+    version: "1.5.2"
     apphub: MyAppHub
+    aliases: ["Customer360"]
   - name: CrtCaseManagment
     version: "1.0.2"
     apphub: MyAppHub

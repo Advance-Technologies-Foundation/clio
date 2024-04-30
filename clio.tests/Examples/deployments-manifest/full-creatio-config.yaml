@@ -10,7 +10,7 @@ environment:
 
 apps:
   - name: CrtCustomer360
-    version: "1.0.1"
+    version: "1.5.2"
     apphub: MyAppHub
   - name: CrtCaseManagment
     version: "1.0.2"

@@ -31,7 +31,17 @@ namespace Clio.Command
 			foreach(var app in applications) {
 				foreach(var app_hub in appHubs) {
 					if(app_hub.Name == app.AppHubName) {
-						app.ZipFileName = app_hub.GetAppZipFileName(app.Name, app.Version);
+						var zipFileName = app_hub.GetAppZipFileName(app.Name, app.Version);
+						if (!fileSystem.File.Exists(app.ZipFileName) && app.Aliases != null) {
+							foreach(var aliases in app.Aliases) {
+								var aliasFileName = app_hub.GetAppZipFileName(aliases, app.Version);
+								if (fileSystem.File.Exists(aliasFileName)) {
+									zipFileName = aliasFileName;
+									break;
+								}
+							}
+						}
+						app.ZipFileName = zipFileName;
 						appsFromAppHub.Add(app);
 					}
 				}	

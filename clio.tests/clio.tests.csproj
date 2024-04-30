@@ -13,6 +13,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Examples\deployments-manifest\full-creatio-config.yaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Examples\deployments-manifest\full-creatio-config.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="samplefiles\AssemblyInfo.cs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

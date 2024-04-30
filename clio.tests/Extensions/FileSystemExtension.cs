@@ -25,6 +25,18 @@ public static class FileSystemExtension
 		}
 	}
 
+	public static void MockFile(this MockFileSystem mockFileSystem, string filePath) {
+		var filePathBlocks = filePath.Split(Path.DirectorySeparatorChar);
+		string currentPath = string.Empty;
+		for(int i = 0; i < filePathBlocks.Length - 2; i++) {
+			currentPath = Path.Combine(currentPath, filePathBlocks[i]);
+			if (!string.IsNullOrEmpty(currentPath)) {
+				mockFileSystem.AddDirectory(currentPath);
+			}
+		}
+		mockFileSystem.AddFile(filePath, new MockFileData("{empty file}"));
+	}
+
 	public static void MockFolderWithDir(this MockFileSystem mockFileSystem, string folderPath){
 		string[] exampleFiles = Directory.GetFiles(folderPath);
 		foreach (string exampleFile in exampleFiles) {

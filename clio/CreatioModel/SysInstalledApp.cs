@@ -23,7 +23,11 @@ namespace CreatioModel
 		[SchemaProperty("Code")]
 		public string Code { get; set; }
 
-		
+		[YamlMember(Alias = "aliases")]
+		[SchemaProperty("Aliases")]
+		public string[] Aliases { get; set; }
+
+
 		[SchemaProperty("Description")]
 		public string Description { get; set; }
 
