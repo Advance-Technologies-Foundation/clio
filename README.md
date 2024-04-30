@@ -131,6 +131,7 @@ docker run -it --rm clio reg-web-app -help
   - [Clear redis database](#clear-redis-database)
   - [Compile configuration](#compile-configuration)
   - [System settings](#system-settings) 
+  - [Features](#features)
   - [Set Base WebService Url](#set-base-webservice-url)
 - [Environment settings](#environment-settings)
   - [Create/Update an environment](#createupdate-an-environment)
@@ -596,7 +597,25 @@ To read system settings value
 get-syssetting <CODE> --GET -e <ENVIRONMENT_NAME>
 ```
 
+## Features
 
+To enable feature
+
+```bash
+clio set-feature <CODE> 1
+```
+
+To disable feature
+
+```bash
+clio set-feature <CODE> 0
+```
+
+To specify User or Role, use SysAdminUnitName options
+
+```bash
+clio set-feature <CODE> 1 --SysAdminUnitName Supervisor
+```
 
 ## Set Base WebService Url
 
