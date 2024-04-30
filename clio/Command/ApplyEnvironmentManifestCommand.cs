@@ -129,7 +129,8 @@ namespace Clio.Command
 			
 			foreach (SysInstalledApp remoteApp in remoteApplications) {
 				bool inManifest
-					= manifestApplications.Any(app => app.Name == remoteApp.Code || app.Name == remoteApp.Name);
+					= manifestApplications.Any(app => app.Name == remoteApp.Code
+					|| app.Name == remoteApp.Name || app.Aliases.Contains(remoteApp.Name) || app.Aliases.Contains(remoteApp.Code));
 				if (!inManifest) {
 					_applicationInstaller.UnInstall(remoteApp, environmentInstance);
 				}

@@ -22,22 +22,26 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
 
 	#region Constructors: Public
 
-	public ListInstalledAppsCommand(IDataProvider provider, ILogger logger) : base(provider, logger) {
+	public ListInstalledAppsCommand(IDataProvider provider, ILogger logger, IApplicationClient applicationClient, EnvironmentSettings environmentSettings)
+			: base(provider, logger, applicationClient, environmentSettings) {
 	}
 
-	#endregion
+    #endregion
 
-	#region Methods: Public
+    #region Methods: Public
 
-	public override int Execute(ListInstalledAppsOptions options){
+    public override int Execute(ListInstalledAppsOptions options){
+		base.Execute(options);
 		ConsoleTable table = new();
 		table.Columns.Add(nameof(SysInstalledApp.Name));
 		table.Columns.Add(nameof(SysInstalledApp.Code));
 		table.Columns.Add(nameof(SysInstalledApp.Version));
-		var applications = AppDataContextFactory.GetAppDataContext(_provider)
+        
+        var applications = AppDataContextFactory.GetAppDataContext(_provider)
 			.Models<SysInstalledApp>()
 			.ToList();
-		if (!options.JsonFormat) {
+
+        if (!options.JsonFormat) {
 			applications.ForEach(m => { table.AddRow(m.Name, m.Code, m.Version); });
 			_logger.PrintTable(table);
 		} else {
