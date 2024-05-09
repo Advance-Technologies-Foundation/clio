@@ -331,5 +331,14 @@ namespace Clio.Tests
 			var actualFile = _fileSystem.File.ReadAllText(actualManifestFileName);
 			Assert.AreEqual(expectedFile, actualFile);
 		}
+
+		[Test]
+		public void ThrowException_If_SaveEnvironmnetManifest_in_ExistingFile() {
+			var existingManifestFilePath = $"C:\\creatio-config-package.yaml";
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var environmentManifest = new EnvironmentManifest();
+			Action act = () => environmentManager.SaveManifestToFile(existingManifestFilePath, environmentManifest);
+			act.Should().Throw<Exception>().WithMessage($"Manifest file already exists: {existingManifestFilePath}");	
+		}
 	}
 }
