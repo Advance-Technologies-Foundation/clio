@@ -10,14 +10,16 @@ using YamlDotNet.Serialization;
 
 namespace Clio.Command
 {
-	public class EnvironmentManager:IEnvironmentManager
+	public class EnvironmentManager : IEnvironmentManager
 	{
 		private IFileSystem fileSystem;
 		private IDeserializer yamlDesirializer;
+		private readonly ISerializer serializer;
 
 		public EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer) {
 			this.fileSystem = fileSystem;
 			this.yamlDesirializer = deserializer;
+			this.serializer = serializer;
 		}
 
 		public int ApplyManifest(string manifestFilePath) {
@@ -127,6 +129,15 @@ namespace Clio.Command
 		public IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath) {
 			return LoadEnvironmentManifestFromFile(manifestFilePath).WebServices;
 		}
+
+		List<CreatioManifestPackage> IEnvironmentManager.GetPackagesGromManifest(string manifestFileName) {
+			return LoadEnvironmentManifestFromFile(manifestFileName).Packages;
+		}
+
+		public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest) {
+			var manifestContent = serializer.Serialize(envManifest);
+			fileSystem.File.WriteAllText(manifestFileName, manifestContent);
+		}
 	}
 
 	public interface IEnvironmentManager
@@ -141,6 +152,8 @@ namespace Clio.Command
 		IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath);
 		IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath);
 		IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath);
+		List<CreatioManifestPackage> GetPackagesGromManifest(string manifestFileName);
+		void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest);
 	}
 
 	public class CreatioManifestSetting
@@ -178,6 +191,16 @@ namespace Clio.Command
 		[YamlMember(Alias = "users_values")]
 		public Dictionary<string, bool> UserValues { get; set; } = new Dictionary<string, bool>();
 
+	}
+
+	public class CreatioManifestPackage
+	{
+		[YamlMember(Alias = "name")]
+		public string Name { get; set; }
+
+
+		[YamlMember(Alias = "hash")]
+		public string Hash { get; set; }
 	}
 
 }

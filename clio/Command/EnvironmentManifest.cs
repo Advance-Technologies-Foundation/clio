@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using System.Collections.Generic;
 using Clio.CreatioModel;
 using YamlDotNet.Serialization;
+using System.Linq;
 
 namespace Clio.Command
 {
@@ -54,6 +55,18 @@ namespace Clio.Command
 			}
 			set {
 				_webServices = value ?? new () ;
+			}
+		}
+
+
+		private List<CreatioManifestPackage> _packages = new();
+		[YamlMember(Alias = "packages")]
+		public List<CreatioManifestPackage> Packages {
+			get {
+				return _packages;
+			}
+			set {
+				_packages = value?.OrderBy(p => p.Name).ToList() ?? new();
 			}
 		}
 	}

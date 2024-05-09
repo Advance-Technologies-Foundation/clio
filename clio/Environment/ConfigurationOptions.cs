@@ -82,6 +82,7 @@ namespace Clio
 			}
 		}
 
+		[YamlIgnore]
 		public string SimpleloginUri {
 			get {
 				var cleanUri = Uri;

@@ -19,6 +19,8 @@ public class ListInstalledAppsOptions : EnvironmentOptions
 
 public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledAppsOptions>
 {
+	public ListInstalledAppsCommand(IDataProvider provider, ILogger logger) : base(provider, logger) {
+	}
 
 	#region Constructors: Public
 

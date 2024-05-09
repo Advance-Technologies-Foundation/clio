@@ -1,0 +1,7 @@
+environment:
+  url: https://preprod.atf.com
+packages:
+- name: Base
+  hash: 1234567890
+- name: UI
+  hash: 0987654321

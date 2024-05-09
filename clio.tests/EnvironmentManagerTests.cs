@@ -16,6 +16,8 @@ using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Clio.Tests.Command;
+using NRedisStack.Search;
+using DocumentFormat.OpenXml.Vml.Spreadsheet;
 
 namespace Clio.Tests
 {
@@ -239,6 +241,95 @@ namespace Clio.Tests
 			webservices.Count().Should().Be(0);
 			features.Count().Should().Be(0);
 			settings.Count().Should().Be(0);
+		}
+
+		[Test]
+		public void GetEnvironmnetPackagesManifest() {
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFileName = $"C:\\creatio-config-package.yaml";
+			var expectedPackagesCount = 2;
+			List<CreatioManifestPackage> packages = environmentManager.GetPackagesGromManifest(manifestFileName);
+			Assert.AreEqual(expectedPackagesCount, packages.Count);
+			List<CreatioManifestPackage> expected = [
+				new CreatioManifestPackage {
+					Name = "Base",
+					Hash = "1234567890"
+				},
+				new CreatioManifestPackage {
+					Name = "UI",
+					Hash = "0987654321"
+				}
+			];
+			packages.Should().BeEquivalentTo(expected);
+		}
+
+		[Test]
+		public void GetEnvironmnetEmptyPackagesManifest() {
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFileName = $"C:\\creatio-config-empty-package.yaml";
+			var expectedPackagesCount = 0;
+			List<CreatioManifestPackage> packages = environmentManager.GetPackagesGromManifest(manifestFileName);
+			Assert.AreEqual(expectedPackagesCount, packages.Count);
+		}
+
+		[Test]
+		public void SaveEnvironmnetPackagesManifest() {
+			string environmentUrl = "https://preprod.atf.com";
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var expectedManifestFileName = $"C:\\creatio-config-package.yaml";
+			var actualManifestFileName = $"C:\\actual-creatio-config-package.yaml";
+			var expectedPackagesCount = 2;
+			List<CreatioManifestPackage> environmnetPackages = [
+				new CreatioManifestPackage {
+					Name = "Base",
+					Hash = "1234567890"
+				},
+				new CreatioManifestPackage {
+					Name = "UI",
+					Hash = "0987654321"
+				}
+			];
+			var environmentManifest = new EnvironmentManifest() {
+				EnvironmentSettings = new EnvironmentSettings() {
+					Uri = environmentUrl,
+					AuthAppUri = null
+				},
+				Packages = environmnetPackages
+			};
+			environmentManager.SaveManifestToFile(actualManifestFileName, environmentManifest);
+			var expectedFile = _fileSystem.File.ReadAllText(expectedManifestFileName);
+			var actualFile = _fileSystem.File.ReadAllText(actualManifestFileName);
+			Assert.AreEqual(expectedFile, actualFile);
+		}
+
+		[Test]
+		public void SaveEnvironmnetPackagesInReversOrderManifest() {
+			string environmentUrl = "https://preprod.atf.com";
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var expectedManifestFileName = $"C:\\creatio-config-package.yaml";
+			var actualManifestFileName = $"C:\\actual-creatio-config-package.yaml";
+			var expectedPackagesCount = 2;
+			List<CreatioManifestPackage> environmnetPackages = [
+				new CreatioManifestPackage {
+					Name = "UI",
+					Hash = "0987654321"
+				},
+				new CreatioManifestPackage {
+					Name = "Base",
+					Hash = "1234567890"
+				}
+			];
+			var environmentManifest = new EnvironmentManifest() {
+				EnvironmentSettings = new EnvironmentSettings() {
+					Uri = environmentUrl,
+					AuthAppUri = null
+				},
+				Packages = environmnetPackages
+			};
+			environmentManager.SaveManifestToFile(actualManifestFileName, environmentManifest);
+			var expectedFile = _fileSystem.File.ReadAllText(expectedManifestFileName);
+			var actualFile = _fileSystem.File.ReadAllText(actualManifestFileName);
+			Assert.AreEqual(expectedFile, actualFile);
 		}
 	}
 }

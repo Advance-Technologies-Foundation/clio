@@ -13,10 +13,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Examples\deployments-manifest\creatio-config-empty-package.yaml" />
+    <None Remove="Examples\deployments-manifest\creatio-config-package.yaml" />
     <None Remove="Examples\deployments-manifest\full-creatio-config.yaml" />
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Examples\deployments-manifest\creatio-config-empty-package.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\deployments-manifest\creatio-config-package.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="Examples\deployments-manifest\full-creatio-config.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
