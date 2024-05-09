@@ -32,17 +32,19 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	private readonly IFileSystem _fileSystem;
 	private readonly ISerializer _yamlSerializer;
 	private readonly IWebServiceManager _webServiceManager;
+	private readonly EnvironmentManager environmentManager;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public SaveSettingsToManifestCommand(IDataProvider provider, ILogger logger, IFileSystem fileSystem,
-		ISerializer yamlSerializer, IWebServiceManager webServiceManager)
+		ISerializer yamlSerializer, IWebServiceManager webServiceManager, EnvironmentManager environmentManager)
 		: base(provider, logger){
 		_fileSystem = fileSystem;
 		_yamlSerializer = yamlSerializer;
 		_webServiceManager = webServiceManager;
+		this.environmentManager = environmentManager;
 	}
 
 	#endregion
@@ -52,14 +54,34 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	public override int Execute(SaveSettingsToManifestOptions options){
 		List<CreatioManifestWebService> services = _webServiceManager.GetCreatioManifestWebServices();
 		List<Feature> features = GetFeatureValues();
+		List<CreatioManifestPackage> packages = GetPackages();
 		EnvironmentManifest environmentManifest = new() {
 			WebServices = services,
-			Features = features
+			Features = features,
+			Packages = packages
 		};
-		string manifestContent = _yamlSerializer.Serialize(environmentManifest);
-		_fileSystem.WriteAllTextToFile(options.ManifestFileName, manifestContent);
+		environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest);
 		_logger.WriteInfo("Done");
 		return 0;
+	}
+
+	private List<CreatioManifestPackage> GetPackages() {
+		List<CreatioManifestPackage> packages = new List<CreatioManifestPackage>();
+		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_provider);
+		List<SysPackage> sysPackages = ctx.Models<SysPackage>().ToList();
+        foreach (var sysPackage in sysPackages)
+        {
+			var manifestPackages = new CreatioManifestPackage() {
+				Name = sysPackage.Name,
+				Hash = GetSysPackageHash(sysPackage)
+			};
+			packages.Add(manifestPackages);
+        }
+        return packages;
+	}
+
+	private string GetSysPackageHash(SysPackage sysPackage) {
+		return sysPackage.Name + "Hash";
 	}
 
 	private List<Feature> GetFeatureValues(){
