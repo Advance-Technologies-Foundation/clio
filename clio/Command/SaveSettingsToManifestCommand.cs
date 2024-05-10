@@ -13,7 +13,7 @@ using YamlDotNet.Serialization;
 
 namespace Clio.Command;
 
-[Verb("save-state", Aliases = new[] {"state"}, HelpText = "Save state of Creatio instance to file")]
+[Verb("save-state", Aliases = new[] {"state", "save-manifest"}, HelpText = "Save state of Creatio instance to file")]
 internal class SaveSettingsToManifestOptions : EnvironmentNameOptions
 {
 
