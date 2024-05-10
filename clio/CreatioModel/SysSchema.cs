@@ -22,6 +22,18 @@ public class SysSchema : BaseModel
 	[SchemaProperty("UId")]
 	public Guid UId { get; set; }
 
+	[SchemaProperty("ModifiedOn")]
+	public DateTime ModifiedOn { get; set; }
+
+	[SchemaProperty("Checksum")]
+	public string Checksum { get; set; }
+
+	[SchemaProperty("SysPackage")]
+	public Guid SysPackageId { get; set; }
+ 
+	[LookupProperty("SysPackage")]
+	public virtual SysPackage SysPackage { get; set; }
+
 	#endregion
 
 }

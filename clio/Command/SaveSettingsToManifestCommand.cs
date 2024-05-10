@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Security.Policy;
+using System.Text;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -19,6 +22,10 @@ internal class SaveSettingsToManifestOptions : EnvironmentNameOptions
 	[Value(0, MetaName = "ManifestName", Required = true, HelpText = "Path to Manifest file")]
 	public string ManifestFileName { get; internal set; }
 
+	[Option("overwrite", Required = false,
+			HelpText = "Overwrite manifest file if exists", Default = true)]
+	public bool Overwrite { get; internal set; }
+
 	#endregion
 
 }
@@ -32,14 +39,14 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	private readonly IFileSystem _fileSystem;
 	private readonly ISerializer _yamlSerializer;
 	private readonly IWebServiceManager _webServiceManager;
-	private readonly EnvironmentManager environmentManager;
+	private readonly IEnvironmentManager environmentManager;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public SaveSettingsToManifestCommand(IDataProvider provider, ILogger logger, IFileSystem fileSystem,
-		ISerializer yamlSerializer, IWebServiceManager webServiceManager, EnvironmentManager environmentManager)
+		ISerializer yamlSerializer, IWebServiceManager webServiceManager, IEnvironmentManager environmentManager)
 		: base(provider, logger){
 		_fileSystem = fileSystem;
 		_yamlSerializer = yamlSerializer;
@@ -52,15 +59,22 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	#region Methods: Public
 
 	public override int Execute(SaveSettingsToManifestOptions options){
+		_logger.WriteInfo($"Operating on environment: {options.Uri}");
+		_logger.WriteInfo("Loading information about webservices");
 		List<CreatioManifestWebService> services = _webServiceManager.GetCreatioManifestWebServices();
+		_logger.WriteInfo("Loading features");
 		List<Feature> features = GetFeatureValues();
+		_logger.WriteInfo("Loading packages");
 		List<CreatioManifestPackage> packages = GetPackages();
 		EnvironmentManifest environmentManifest = new() {
 			WebServices = services,
 			Features = features,
 			Packages = packages
 		};
-		environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest);
+		if (options.Uri != null) {
+			environmentManifest.EnvironmentSettings = new EnvironmentSettings() { Uri = options.Uri };
+		}
+		environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
 		_logger.WriteInfo("Done");
 		return 0;
 	}
@@ -69,8 +83,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		List<CreatioManifestPackage> packages = new List<CreatioManifestPackage>();
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_provider);
 		List<SysPackage> sysPackages = ctx.Models<SysPackage>().ToList();
-        foreach (var sysPackage in sysPackages)
-        {
+        foreach (var sysPackage in sysPackages.OrderBy(p => p.Name)) {
 			var manifestPackages = new CreatioManifestPackage() {
 				Name = sysPackage.Name,
 				Hash = GetSysPackageHash(sysPackage)
@@ -81,15 +94,29 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	}
 
 	private string GetSysPackageHash(SysPackage sysPackage) {
-		return sysPackage.Name + "Hash";
+		StringBuilder sb = new StringBuilder();
+		sb.Append(sysPackage.Name);
+		sb.Append(sysPackage.ModifiedOn);
+		var unOrderList = sysPackage.SysSchemas.ToList();
+
+		foreach (var schema in unOrderList.OrderBy(schema => schema.UId)) {
+			sb.Append(schema.UId);
+			sb.Append(schema.Checksum);
+			sb.Append(schema.ModifiedOn);
+        }
+		string hashSource = sb.ToString();
+		byte[] bytes = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes(hashSource));
+		string md5Hash = BitConverter.ToString(bytes).Replace("-", string.Empty);
+		return md5Hash;
 	}
 
 	private List<Feature> GetFeatureValues(){
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_provider);
 		List<Feature> resultList = new();
 		List<AppFeature> features = ctx.Models<AppFeature>().ToList();
-		
+		int count = 0;
 		foreach(var feature in features) {
+			count++;
 			var f = new Feature() {
 				Code = feature.Code
 			};
@@ -121,7 +148,9 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 			}else {
 				resultList.Add(f);
 			}
+			_logger.Write($"Loaded {count} out of {features.Count} features.\r ");
 		}
+		_logger.WriteLine(string.Empty);
 		return resultList;
 	}
 	

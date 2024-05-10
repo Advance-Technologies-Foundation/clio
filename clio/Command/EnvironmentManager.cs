@@ -134,8 +134,11 @@ namespace Clio.Command
 			return LoadEnvironmentManifestFromFile(manifestFileName).Packages;
 		}
 
-		public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest) {
+		public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false) {
 			var manifestContent = serializer.Serialize(envManifest);
+			if (overwrite && fileSystem.File.Exists(manifestFileName)) {
+			
+			}
 			fileSystem.File.WriteAllText(manifestFileName, manifestContent);
 		}
 	}
@@ -153,7 +156,7 @@ namespace Clio.Command
 		IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath);
 		IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath);
 		List<CreatioManifestPackage> GetPackagesGromManifest(string manifestFileName);
-		void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest);
+		void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false);
 	}
 
 	public class CreatioManifestSetting

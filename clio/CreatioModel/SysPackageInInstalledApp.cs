@@ -2,6 +2,8 @@
 
 using ATF.Repository;
 using ATF.Repository.Attributes;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 
 namespace CreatioModel
@@ -15,6 +17,11 @@ namespace CreatioModel
 		[SchemaProperty("Name")]
 		public string Name { get; set; }
 
+		[SchemaProperty("ModifiedOn")]
+		public DateTime ModifiedOn { get; set; }
+
+		[DetailProperty("SysPackageId")]
+		public virtual List<SysSchema> SysSchemas { get; set; }
 	}
 }
 
