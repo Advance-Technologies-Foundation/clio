@@ -134,14 +134,11 @@ namespace Clio.Command
 			return LoadEnvironmentManifestFromFile(manifestFileName).Packages;
 		}
 
-		public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest) {
-			if (fileSystem.File.Exists(manifestFileName)) {
+		public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false) {
+			if (!overwrite && fileSystem.File.Exists(manifestFileName)) {
 				throw new Exception($"Manifest file already exists: {manifestFileName}");
 			}
 			var manifestContent = serializer.Serialize(envManifest);
-			if (overwrite && fileSystem.File.Exists(manifestFileName)) {
-			
-			}
 			fileSystem.File.WriteAllText(manifestFileName, manifestContent);
 		}
 	}
