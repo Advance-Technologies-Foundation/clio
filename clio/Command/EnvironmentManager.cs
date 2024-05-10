@@ -135,6 +135,9 @@ namespace Clio.Command
 		}
 
 		public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest) {
+			if (fileSystem.File.Exists(manifestFileName)) {
+				throw new Exception($"Manifest file already exists: {manifestFileName}");
+			}
 			var manifestContent = serializer.Serialize(envManifest);
 			fileSystem.File.WriteAllText(manifestFileName, manifestContent);
 		}
