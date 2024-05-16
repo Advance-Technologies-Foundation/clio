@@ -1,0 +1,20 @@
+settings:
+  - code: "IntSysSettingsATF"
+    value: 10
+  - code: "FloatSysSettingsATF"
+    value: 0.5
+  - code: "StringSettingsATF"
+    value: "ATF"
+  - code: "DateTimeSettingsATF"
+    value: "2021-01-01T00:00:00"
+  - code: "GuidSettingsATF"
+    value: "00000000-0000-0000-0000-000000000001"
+  - code: "LookupSettingsATF"
+    value: "TextLookupValue"
+  - code: "BooleanSettingsATF"
+    value: false
+    users_values:
+      Supervisor: true
+      "System administrators": false
+      Developer: true
+      2nd-line support: true

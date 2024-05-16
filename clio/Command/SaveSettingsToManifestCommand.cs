@@ -61,15 +61,17 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	public override int Execute(SaveSettingsToManifestOptions options){
 		_logger.WriteInfo($"Operating on environment: {options.Uri}");
 		_logger.WriteInfo("Loading information about webservices");
-		List<CreatioManifestWebService> services = _webServiceManager.GetCreatioManifestWebServices();
+		List<CreatioManifestWebService> services = _webServiceManager?.GetCreatioManifestWebServices();
 		_logger.WriteInfo("Loading features");
 		List<Feature> features = GetFeatureValues();
 		_logger.WriteInfo("Loading packages");
 		List<CreatioManifestPackage> packages = GetPackages();
+		List<CreatioManifestSetting> settings = GetSysSettingsValue();
 		EnvironmentManifest environmentManifest = new() {
 			WebServices = services,
 			Features = features,
-			Packages = packages
+			Packages = packages,
+			Settings = settings
 		};
 		if (options.Uri != null) {
 			environmentManifest.EnvironmentSettings = new EnvironmentSettings() { Uri = options.Uri };
@@ -77,6 +79,10 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
 		_logger.WriteInfo("Done");
 		return 0;
+	}
+
+	private List<CreatioManifestSetting> GetSysSettingsValue() {
+		return null;
 	}
 
 	private List<CreatioManifestPackage> GetPackages() {

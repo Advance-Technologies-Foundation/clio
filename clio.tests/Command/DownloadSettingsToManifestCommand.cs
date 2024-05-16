@@ -55,12 +55,19 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-manifest.yaml");
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expectedCreatioManifestValue-saved-manifest.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}
+
+	[Test]
+	public void SaveSysSettingsFromEnvironmentToFile() {
+
+		
+	}
+
 
 	[TestCase(true)]
 	[TestCase(false)]
@@ -99,7 +106,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest-WithoutSchemas.yaml");
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expectedCreatioManifestValue-saved-full-manifest-WithoutSchemas.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
@@ -146,7 +153,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expectedCreatioManifestValue-saved-full-manifest.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -84,6 +85,10 @@ public class SysSettingsManager : ISysSettingsManager
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_filesystem = filesystem;
 		_logger = logger;
+	}
+
+	public SysSettingsManager(IDataProvider providerMock) {
+		_dataProvider = providerMock;
 	}
 
 	#endregion
@@ -263,6 +268,10 @@ public class SysSettingsManager : ISysSettingsManager
 			};
 			_logger.WriteInfo(text);
 		}
+	}
+
+	internal List<SysSetting> GetAllSysSettingsWithValues() {
+		throw new NotImplementedException();
 	}
 
 	#endregion
