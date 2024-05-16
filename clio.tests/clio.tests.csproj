@@ -79,14 +79,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2" />
+    <PackageReference Include="ATF.Repository.Mock" Version="2.0.1.5" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
-    <PackageReference Include="NSubstitute" Version="5.1.0" />
+    <PackageReference Include="NSubstitute" Version="5.0.0" />
     <PackageReference Include="nunit" Version="3.13.3" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.3.1" />
-    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.0.2" />
+    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="20.0.4" />
     <!--<PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.2" />-->
   </ItemGroup>
 	<PropertyGroup>
@@ -95,7 +95,7 @@
 		<SonarQubeTestProject>true</SonarQubeTestProject>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="coverlet.msbuild" Version="6.0.2">
+		<PackageReference Include="coverlet.msbuild" Version="3.2.0">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
