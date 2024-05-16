@@ -986,33 +986,33 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="2.0.2" />
-    <PackageReference Include="Autofac" Version="8.0.0" />
+    <PackageReference Include="ATF.Repository" Version="2.0.1.7" />
+    <PackageReference Include="Autofac" Version="6.5.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.6.1" />
-    <PackageReference Include="creatio.client" Version="1.0.23" />
+    <PackageReference Include="creatio.client" Version="1.0.22" />
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
-    <PackageReference Include="FluentValidation" Version="11.9.1" />
-    <PackageReference Include="KubernetesClient" Version="13.0.37" />
-    <PackageReference Include="MediatR" Version="12.2.0" />
-    <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="12.0.0" />
+    <PackageReference Include="FluentValidation" Version="11.5.2" />
+    <PackageReference Include="KubernetesClient" Version="12.0.16" />
+    <PackageReference Include="MediatR" Version="12.0.1" />
+    <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="10.0.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
-    <PackageReference Include="Microsoft.Dism" Version="3.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.2.19" />
+    <PackageReference Include="Microsoft.Dism" Version="3.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="7.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="7.0.0" />
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.2.10" />
     <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
-    <PackageReference Include="NRedisStack" Version="0.12.0" />
-    <PackageReference Include="OneOf" Version="3.0.263" />
-    <PackageReference Include="System.IO.Abstractions" Version="21.0.2" />
+    <PackageReference Include="NRedisStack" Version="0.9.0" />
+    <PackageReference Include="OneOf" Version="3.0.223" />
+    <PackageReference Include="System.IO.Abstractions" Version="20.0.4" />
     <PackageReference Include="System.Json" Version="4.7.1" />
-	<PackageReference Include="Ignore" Version="0.1.50" />
-	<PackageReference Include="YamlDotNet" Version="15.1.2" />
+	<PackageReference Include="Ignore" Version="0.1.46" />
+	<PackageReference Include="YamlDotNet" Version="13.4.0" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
   </ItemGroup>
   <ItemGroup>
