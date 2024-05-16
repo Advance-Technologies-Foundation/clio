@@ -159,9 +159,17 @@ public class SysSettingsManager : ISysSettingsManager
 	
 	
 
-	private VwSysSetting GetSysSettingByCode(string code){
-		VwSysSetting sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<VwSysSetting>()
+	private SysSettings GetSysSettingByCode(string code){
+		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSettings>()
+			.ToList();
+
+		var sysSettingsValue = AppDataContextFactory.GetAppDataContext(_dataProvider)
+		.Models<SysSettingsValue>()
+		.ToList();
+
+		var sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSettings>()
 			.Where(i => i.Code == code)
 			.ToList().FirstOrDefault();
 		return sysSetting;
@@ -223,7 +231,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = ""){
 		string requestData = string.Empty;
-		VwSysSetting sysSetting = GetSysSettingByCode(code);
+		var sysSetting = GetSysSettingByCode(code);
 		string optionsType = string.IsNullOrWhiteSpace(valueTypeName)
 			? sysSetting.ValueTypeName : valueTypeName;
 
@@ -270,9 +278,9 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 	}
 
-	internal List<VwSysSetting> GetAllSysSettingsWithValues() {
+	internal List<SysSettings> GetAllSysSettingsWithValues() {
 		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<VwSysSetting>()
+			.Models<SysSettings>()
 			.ToList();
 		return sysSettings;
 	}

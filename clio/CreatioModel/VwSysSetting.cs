@@ -12,12 +12,38 @@ namespace CreatioModel
 
 	[ExcludeFromCodeCoverage]
 	[Schema("VwSysSetting")]
-	public class VwSysSetting: SysSettings
-	{
+	public class VwSysSetting:BaseModel {
+
+		[SchemaProperty("Name")]
+		public string Name { get; set; }
+
+		[SchemaProperty("Description")]
+		public string Description { get; set; }
+
+		[SchemaProperty("Code")]
+		public string Code { get; set; }
+
+		[SchemaProperty("ValueTypeName")]
+		public string ValueTypeName { get; set; }
+
+		[SchemaProperty("ReferenceSchemaUId")]
+		public Guid ReferenceSchemaUIdId { get; set; }
+
+		[LookupProperty("ReferenceSchemaUId")]
+		public virtual SysSchema ReferenceSchemaUId { get; set; }
+
+		[SchemaProperty("IsPersonal")]
+		public bool IsPersonal { get; set; }
+
+		[SchemaProperty("IsCacheable")]
+		public bool IsCacheable { get; set; }
+
+		[SchemaProperty("IsSSPAvailable")	]
+		public bool IsSSPAvailable { get; set; }
 
 	}
 
-
+	
 	[ExcludeFromCodeCoverage]
 	[Schema("SysSettings")]
 	public class SysSettings : BaseModel
@@ -50,8 +76,8 @@ namespace CreatioModel
 		[SchemaProperty("IsSSPAvailable")]
 		public bool IsSSPAvailable { get; set; }
 
-		[DetailProperty("SysSettingsId")]
-		public virtual List<SysSettingsValue> GetSysSettingsValues { get; set; }
+		//[DetailProperty("SysSettingsId")]
+		//public virtual List<SysSettingsValue> GetSysSettingsValues { get; set; }
 
 	}
 
@@ -91,9 +117,6 @@ namespace CreatioModel
 
 		[SchemaProperty("GuidValue")]
 		public Guid GuidValue { get; set; }
-
-		[SchemaProperty("BinaryValue")]
-		public byte[] BinaryValue { get; set; }
 
 	}
 }
