@@ -64,8 +64,14 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 	[Test]
 	public void SaveSysSettingsFromEnvironmentToFile() {
-
+		// mock syssettings from odata files
 		
+
+		// get syssettings from syssettingsmanager and convert to manifest settings
+
+		// save manifest settings
+
+		// read manu=ifest settings and compare with expected syssettings value from origin odata files		
 	}
 
 

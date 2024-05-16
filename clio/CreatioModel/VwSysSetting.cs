@@ -59,7 +59,7 @@ namespace CreatioModel
 	[Schema("SysSettingsValue")]
 	public class SysSettingsValue : BaseModel
 	{
-[SchemaProperty("SysSettings")]
+		[SchemaProperty("SysSettings")]
 		public Guid SysSettingsId { get; set; }
 
 		[LookupProperty("SysSettings")]
