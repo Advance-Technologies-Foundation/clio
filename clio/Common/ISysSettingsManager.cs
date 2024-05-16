@@ -270,8 +270,11 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 	}
 
-	internal List<SysSetting> GetAllSysSettingsWithValues() {
-		throw new NotImplementedException();
+	internal List<VwSysSetting> GetAllSysSettingsWithValues() {
+		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<VwSysSetting>()
+			.ToList();
+		return sysSettings;
 	}
 
 	#endregion

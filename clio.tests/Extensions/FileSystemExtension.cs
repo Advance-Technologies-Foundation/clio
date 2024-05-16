@@ -12,16 +12,20 @@ public static class FileSystemExtension
 
 	#region Methods: Public
 
-	internal static void MockExamplesFolder(this MockFileSystem mockFileSystem, string exampleFolderName) {
+	internal static void MockExamplesFolder(this MockFileSystem mockFileSystem, string exampleFolderName, string destinationFolderName = null) {
 		var examplesTestFolder = Path.Combine(ExamplesFolderPath, exampleFolderName);
-		mockFileSystem.MockFolder(examplesTestFolder);
+		mockFileSystem.MockFolder(examplesTestFolder, destinationFolderName);
 	}
 
-	public static void MockFolder(this MockFileSystem mockFileSystem, string folderPath){
-		string[] exampleFiles = Directory.GetFiles(folderPath);
+	public static void MockFolder(this MockFileSystem mockFileSystem, string folderName, string destinationFolderName = null){
+		string[] exampleFiles = Directory.GetFiles(folderName);
+		if (string.IsNullOrEmpty(destinationFolderName)) {
+			mockFileSystem.AddDirectory(destinationFolderName);
+		}
 		foreach (string exampleFile in exampleFiles) {
 			FileInfo fileInfo = new(exampleFile);
-			mockFileSystem.AddFile(fileInfo.Name, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
+			var destinationFilePath = string.IsNullOrEmpty(destinationFolderName) ? fileInfo.Name : Path.Combine(destinationFolderName, fileInfo.Name);
+			mockFileSystem.AddFile(destinationFilePath, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
 		}
 	}
 

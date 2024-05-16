@@ -32,7 +32,7 @@ internal class SysSettingsCommandTests : BaseCommandTests<SysSettingsOptions>
 		int actual = sut.Execute(options);
 
 		//Assert
-		string expectedLogMessage = $"SysSetting {options.Code} : {mockValue}";
+		string expectedLogMessage = $"SysSettings {options.Code} : {mockValue}";
 		logger.Received(1).WriteInfo(expectedLogMessage);
 		actual.Should().Be(0);
 	}

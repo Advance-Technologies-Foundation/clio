@@ -16,6 +16,8 @@
     <None Remove="Examples\deployments-manifest\creatio-config-empty-package.yaml" />
     <None Remove="Examples\deployments-manifest\creatio-config-package.yaml" />
     <None Remove="Examples\deployments-manifest\full-creatio-config.yaml" />
+    <None Remove="Examples\odata_data_examples\syssettings-odata-json.json" />
+    <None Remove="Examples\odata_data_examples\syssettingsvalue-odata.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +28,12 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Examples\deployments-manifest\full-creatio-config.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\odata_data_examples\syssettings-odata-json.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\odata_data_examples\syssettingsvalue-odata.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

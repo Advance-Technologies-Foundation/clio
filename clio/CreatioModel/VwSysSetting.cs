@@ -12,15 +12,15 @@ namespace CreatioModel
 
 	[ExcludeFromCodeCoverage]
 	[Schema("VwSysSetting")]
-	public class VwSysSetting: SysSetting
+	public class VwSysSetting: SysSettings
 	{
 
 	}
 
 
 	[ExcludeFromCodeCoverage]
-	[Schema("SysSetting")]
-	public class SysSetting : BaseModel
+	[Schema("SysSettings")]
+	public class SysSettings : BaseModel
 	{
 
 		[SchemaProperty("Name")]
@@ -63,7 +63,7 @@ namespace CreatioModel
 		public Guid SysSettingsId { get; set; }
 
 		[LookupProperty("SysSettings")]
-		public virtual SysSettings SysSettings { get; set; }
+		public virtual Terrasoft.Core.Configuration.SysSettings SysSettings { get; set; }
 
 		[SchemaProperty("SysAdminUnit")]
 		public Guid SysAdminUnitId { get; set; }

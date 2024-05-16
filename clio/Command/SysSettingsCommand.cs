@@ -66,7 +66,7 @@ namespace Clio.Command
 			
 			if(opts.IsGet) {
 				var value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
-				_logger.WriteInfo($"SysSetting {opts.Code} : {value}");
+				_logger.WriteInfo($"SysSettings {opts.Code} : {value}");
 				return 0;
 			}
 			

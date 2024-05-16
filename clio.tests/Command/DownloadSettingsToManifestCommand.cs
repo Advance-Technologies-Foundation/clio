@@ -1,16 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using ATF.Repository.Mock;
+using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
 using Clio.Common;
+using Clio.Tests.Extensions;
 using Clio.Tests.Infrastructure;
 using CreatioModel;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NSubstitute;
 using NUnit.Framework;
+using Terrasoft.Common.Json;
 using Terrasoft.Core.Entities;
 using YamlDotNet.Serialization;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -20,6 +24,11 @@ namespace Clio.Tests.Command;
 [TestFixture]
 internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettingsToManifestOptions>
 {
+	protected override MockFileSystem CreateFs() {
+		var mockFS = base.CreateFs();
+		mockFS.MockExamplesFolder("odata_data_examples", "odata_data_examples");
+		return mockFS;
+	}
 
 	[Test]
 	public void SaveWebServiceToFile() {
@@ -64,10 +73,19 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 	[Test]
 	public void SaveSysSettingsFromEnvironmentToFile() {
-		// mock syssettings from odata files
-		
 
-		// get syssettings from syssettingsmanager and convert to manifest settings
+		// mock syssettings from odata files
+		var appUrl = "";
+		var login = "";
+		var password = "";
+		var remoteDataProvider = new RemoteDataProvider(appUrl, login, password);
+		//MockDataFromFolder(providerMock, "odata_data_examples");
+		SysSettingsManager sysSettingsManager = new(remoteDataProvider);
+		var sysSettingsWithValues = sysSettingsManager.GetAllSysSettingsWithValues();
+		Assert.NotNull(sysSettingsWithValues);
+		Assert.NotZero(sysSettingsWithValues.Count);
+
+		// get syssettings from syssettingsmanager and convert to manifest setting
 
 		// save manifest settings
 
@@ -218,5 +236,37 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 			list.Reverse();
 		}
 		mock.Returns(list);
+	}
+	private void MockDataFromFolder(DataProviderMock providerMock, string folderName) {
+		var files = _fileSystem.Directory.GetFiles(folderName);
+		foreach(var file in files) {
+			var content = _fileSystem.File.ReadAllText(file);
+			var oDataResponse = ParseOdataResponse(content);
+			var mock = providerMock.MockItems(oDataResponse.SchemaName);
+			var list = new List<Dictionary<string, object>>();
+			foreach (var record in oDataResponse.Records) {
+				list.Add(record);
+			}
+			mock.Returns(list);
+		}
+	}
+
+	private ODataResponse ParseOdataResponse(string content) {
+		return Json.Deserialize<ODataResponse>(content);
+	}
+
+	[Test]
+	public void TestParseOdataResponse() {
+		var odataFoldferName = "odata_data_examples";
+		var files = _fileSystem.Directory.GetFiles(odataFoldferName);
+		List<ODataResponse> odataResponses = new();
+		foreach (var file in files) {
+			var content = _fileSystem.File.ReadAllText(file);
+			var oDataResponse = ParseOdataResponse(content);
+			odataResponses.Add(oDataResponse);
+		}
+		Assert.AreEqual(odataResponses.Count, files.Length);
+		Assert.IsTrue(odataResponses.Any(x => x.SchemaName == "SysSettings"));
+		Assert.IsTrue(odataResponses.Any(x => x.SchemaName == "SysSettingsValue"));
 	}
 }
