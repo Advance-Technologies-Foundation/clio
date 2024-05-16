@@ -22,7 +22,7 @@ namespace Clio.Tests.Command
 
 		[Test]
 		public void ChechVersionFromGitHubAndNuget() {
-			var versionFromNuget = UpdateCliCommand.GetLatestVersionFromGitHub();
+			var versionFromNuget = UpdateCliCommand.GetLatestVersionFromNuget();
 			var versionFromGitHub = UpdateCliCommand.GetLatestVersionFromGitHub();
 			Assert.AreEqual(versionFromNuget, versionFromGitHub);
 		}
