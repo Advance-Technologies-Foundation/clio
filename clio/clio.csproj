@@ -26,7 +26,6 @@
 	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 	  <LangVersion>11</LangVersion>
-          <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
