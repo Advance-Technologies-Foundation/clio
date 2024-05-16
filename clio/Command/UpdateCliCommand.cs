@@ -6,8 +6,10 @@ using System.Json;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Threading.Tasks;
 using Clio.Utilities;
 using CommandLine;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Command.UpdateCliCommand
 {
@@ -49,7 +51,12 @@ namespace Clio.Command.UpdateCliCommand
 			return url;
 		}
 
-		private static string GetLatestVersion() {
+		public static string GetLatestVersion() {
+			return GetLatestVersionFromNuget();
+
+		}
+
+		internal static string GetLatestVersionFromGitHub() {
 			System.Threading.Tasks.Task<byte[]> body;
 			using (var client = new HttpClient()) {
 				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
@@ -69,10 +76,37 @@ namespace Clio.Command.UpdateCliCommand
 			return version;
 		}
 
-		private static string GetCurrentVersion() {
+		internal static string GetCurrentVersion() {
 			System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
 			var fileVersionInfo = FileVersionInfo.GetVersionInfo(assembly.Location);
 			return fileVersionInfo.FileVersion;
 		}
+
+		internal static string GetLatestVersionFromNuget() {
+			return GetLatestPackageVersionAsync("clio").GetAwaiter().GetResult();
+		}
+
+		static async Task<string> GetLatestPackageVersionAsync(string packageName) {
+			string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
+
+			try {
+				using (HttpClient client = new HttpClient()) {
+					HttpResponseMessage response = await client.GetAsync(searchUrl);
+					response.EnsureSuccessStatusCode();
+
+					string responseBody = await response.Content.ReadAsStringAsync();
+					JObject data = JObject.Parse(responseBody);
+
+					// Extracting the latest version from the response
+					string latestVersion = data["versions"].Last.ToString();
+
+					return latestVersion;
+				}
+			} catch (HttpRequestException e) {
+				Console.WriteLine($"Error fetching data: {e.Message}");
+				return null;
+			}
+		}
+
 	}
 }
