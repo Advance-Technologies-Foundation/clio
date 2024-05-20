@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing.Drawing2D;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Reflection;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Autofac;
@@ -10,11 +12,13 @@ using Clio.Common;
 using Clio.Tests.Extensions;
 using Clio.Tests.Infrastructure;
 using CreatioModel;
+using DocumentFormat.OpenXml.Drawing;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NSubstitute;
 using NUnit.Framework;
 using Terrasoft.Common.Json;
+using Terrasoft.Core;
 using Terrasoft.Core.Entities;
 using YamlDotNet.Serialization;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -269,4 +273,120 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		Assert.IsTrue(odataResponses.Any(x => x.SchemaName == "SysSettings"));
 		Assert.IsTrue(odataResponses.Any(x => x.SchemaName == "SysSettingsValue"));
 	}
+	
+	
+	[Test(Description = "Validate that we can mock from OData Json response and get all SysSettings with values.")]
+	public void GetAllSysSettingsWithValues_ReturnsMockValues(){
+
+		//Arrange
+		DataProviderMock dataProviderMock = new ();
+		List<ODataResponse> responses = GetOdataResponses("odata_data_examples");
+		List<Dictionary<string, object>> records = responses
+			.Where(r=> r.SchemaName == "SysSettings")
+			.ToList()
+			.SelectMany(r => r.Records)
+			.ToList();
+
+		MockItem("SysSettings", dataProviderMock, records);
+		MockFileSystem mockFileSystem = TestFileSystem.MockFileSystem();
+		BindingsModule bm = new (mockFileSystem);
+		EnvironmentSettings environmentSettings = new () {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = false
+		};
+		
+		//Let's create a real container but with mock Items, see additionalRegistrations
+		IContainer container = bm.Register(
+			settings: environmentSettings, 
+			registerNullSettingsForTest: false, 
+			additionalRegistrations: builder => {
+				builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
+			});
+		
+		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
+		
+		//Act
+		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
+
+		//Assert
+		int count = responses
+			.Where(r=>r.SchemaName == nameof(SysSettings))
+			.SelectMany(r=> r.Records)
+			.Count();
+		settings.Should().HaveCount(count);
+		
+	}
+	
+	private List<ODataResponse> GetOdataResponses(string folderName) {
+		var files = _fileSystem.Directory.GetFiles(folderName);
+		List<ODataResponse> odataResponses = new();
+		foreach (var file in files) {
+			var content = _fileSystem.File.ReadAllText(file);
+			var oDataResponse = ParseOdataResponse(content);
+			odataResponses.Add(oDataResponse);
+		}
+		return odataResponses;
+	}
+	
+	private void MockItem(string schemaName,DataProviderMock dataProviderMock, List<Dictionary<string, object>> records){
+		IItemsMock mock = dataProviderMock.MockItems(schemaName);
+
+		//Recors count 444 (all syssettings)
+		var a = records;
+		
+		var sysSettings = new SysSettings();
+		
+		//We need to convert records odata collection into collection of expected Types
+		foreach(Dictionary<string, object> record in records) {
+			foreach(string key in record.Keys) {
+				
+				//We also need to make sure that when OData feed missing peoprtyValue,
+				// for instance ReferenceSchemaUId, then we either remove it from the model or set it to default value
+				// in case we do nothing it throws an exception, because its casing null into Guid
+				PropertyInfo p = sysSettings.GetType().GetProperty(key);
+				if(p is null) {
+					record.Remove(key);
+					continue;
+				}
+				
+				if (p.PropertyType.IsAssignableFrom(typeof(string)))
+				{
+					record[key] = record[key].ToString();
+				}
+				else if (p.PropertyType.IsAssignableFrom(typeof(Guid)))
+				{
+					var isGuid = Guid.TryParse(record[key].ToString(), out Guid value);
+					if(isGuid) {
+						record[key] = value;
+					}else {
+						record[key] = Guid.Empty;
+					}
+				}
+				else if (p.PropertyType.IsAssignableFrom(typeof(bool)))
+				{
+					record[key]= bool.Parse(record[key].ToString() ?? "False");
+				}
+				else if (p.PropertyType.IsAssignableFrom(typeof(int)))
+				{
+					record[key] = int.Parse(record[key].ToString() ?? "0");
+				}
+				else if (p.PropertyType.IsAssignableFrom(typeof(DateTime)))
+				{
+					record[key] =  DateTime.Parse(record[key].ToString() ?? "1970-01-01T00:00:0.000000Z");
+				}
+				else if (p.PropertyType.IsAssignableFrom(typeof(decimal)))
+				{
+					record[key] =  decimal.Parse(record[key].ToString() ?? "0.00");
+				}
+				else if (p.PropertyType.IsAssignableFrom(typeof(float)))
+				{
+					record[key] =  float.Parse(record[key].ToString() ?? "0.00");
+				}
+			}
+		}
+		mock.Returns(records);
+	}
+	
 }

@@ -1,4 +1,5 @@
-﻿using Autofac;
+﻿using System;
+using Autofac;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
@@ -34,7 +35,9 @@ namespace Clio
 			_fileSystem = fileSystem;
 		}
 		
-		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false) {
+		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false
+		, Action<ContainerBuilder> additionalRegistrations = null
+		) {
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
@@ -187,6 +190,7 @@ namespace Clio
 			containerBuilder.RegisterType<PackageHotFixCommand>();
 			containerBuilder.RegisterType<PackageEditableMutator>();
 			containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
+			additionalRegistrations?.Invoke(containerBuilder);
 			return containerBuilder.Build();
 		}
 		

@@ -64,8 +64,8 @@ namespace CreatioModel
 		[SchemaProperty("ReferenceSchemaUId")]
 		public Guid ReferenceSchemaUIdId { get; set; }
 
-		[LookupProperty("ReferenceSchemaUId")]
-		public virtual SysSchema ReferenceSchemaUId { get; set; }
+		// [LookupProperty("ReferenceSchemaUId")]
+		// public virtual SysSchema ReferenceSchemaUId { get; set; }
 
 		[SchemaProperty("IsPersonal")]
 		public bool IsPersonal { get; set; }
@@ -76,8 +76,8 @@ namespace CreatioModel
 		[SchemaProperty("IsSSPAvailable")]
 		public bool IsSSPAvailable { get; set; }
 
-		//[DetailProperty("SysSettingsId")]
-		//public virtual List<SysSettingsValue> GetSysSettingsValues { get; set; }
+		[DetailProperty("SysSettingsId")]
+		public virtual List<SysSettingsValue> SysSettingsValues { get; set; }
 
 	}
 

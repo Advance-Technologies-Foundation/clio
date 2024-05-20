@@ -51,6 +51,8 @@ public interface ISysSettingsManager
 	#endregion
 
 	void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
+	
+	internal List<SysSettings> GetAllSysSettingsWithValues();
 
 }
 
@@ -278,7 +280,7 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 	}
 
-	internal List<SysSettings> GetAllSysSettingsWithValues() {
+	public List<SysSettings> GetAllSysSettingsWithValues() {
 		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSettings>()
 			.ToList();
