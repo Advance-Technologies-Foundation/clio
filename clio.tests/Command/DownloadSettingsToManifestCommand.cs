@@ -287,7 +287,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 			.SelectMany(r => r.Records)
 			.ToList();
 
-		MockItem("SysSettings", dataProviderMock, records);
+		MockItems("SysSettings", dataProviderMock, records);
 		MockFileSystem mockFileSystem = TestFileSystem.MockFileSystem();
 		BindingsModule bm = new (mockFileSystem);
 		EnvironmentSettings environmentSettings = new () {
@@ -297,7 +297,8 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 			IsNetCore = false
 		};
 		
-		//Let's create a real container but with mock Items, see additionalRegistrations
+		// Let's create a real container but with mock Items, see additionalRegistrations
+		// Autofac returns last registration, so we can override the real data provider with the mock one
 		IContainer container = bm.Register(
 			settings: environmentSettings, 
 			registerNullSettingsForTest: false, 
@@ -305,6 +306,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
 			});
 		
+		// Getting SysSettingsManager from the container, we real deps but mock data provider
 		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
 		
 		//Act
@@ -330,21 +332,21 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		return odataResponses;
 	}
 	
-	private void MockItem(string schemaName,DataProviderMock dataProviderMock, List<Dictionary<string, object>> records){
+	private void MockItems(string schemaName,DataProviderMock dataProviderMock, List<Dictionary<string, object>> records){
 		IItemsMock mock = dataProviderMock.MockItems(schemaName);
-
-		//Recors count 444 (all syssettings)
-		var a = records;
 		
-		var sysSettings = new SysSettings();
+		// We don't have a way to get the type of the model from the schemaName
+		// I decided to use reflection to get the type of the model. There is a better way but its mych longer
+		SysSettings sysSettings = new ();
 		
 		//We need to convert records odata collection into collection of expected Types
 		foreach(Dictionary<string, object> record in records) {
 			foreach(string key in record.Keys) {
 				
-				//We also need to make sure that when OData feed missing peoprtyValue,
+				//We also need to make sure that when OData feed missing propertyValue,
 				// for instance ReferenceSchemaUId, then we either remove it from the model or set it to default value
-				// in case we do nothing it throws an exception, because its casing null into Guid
+				// in case we do nothing it throws an exception, because its casing null into Guid.
+				// For now I simply commented out the ReferenceSchemaUId property in SysSettings models
 				PropertyInfo p = sysSettings.GetType().GetProperty(key);
 				if(p is null) {
 					record.Remove(key);
@@ -357,7 +359,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				}
 				else if (p.PropertyType.IsAssignableFrom(typeof(Guid)))
 				{
-					var isGuid = Guid.TryParse(record[key].ToString(), out Guid value);
+					bool isGuid = Guid.TryParse(record[key].ToString(), out Guid value);
 					if(isGuid) {
 						record[key] = value;
 					}else {
@@ -388,5 +390,4 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		}
 		mock.Returns(records);
 	}
-	
 }
