@@ -79,14 +79,8 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 	[Test]
 	public void SaveSysSettingsFromEnvironmentToFile() {
-
-		// mock syssettings from odata files
-		var appUrl = "";
-		var login = "";
-		var password = "";
-		var remoteDataProvider = new RemoteDataProvider(appUrl, login, password);
-		//MockDataFromFolder(providerMock, "odata_data_examples");
-		SysSettingsManager sysSettingsManager = new(remoteDataProvider);
+		var container = GetContainer();
+		var sysSettingsManager = container.Resolve<ISysSettingsManager>();
 		var sysSettingsWithValues = sysSettingsManager.GetAllSysSettingsWithValues();
 		Assert.NotNull(sysSettingsWithValues);
 		Assert.NotZero(sysSettingsWithValues.Count);
