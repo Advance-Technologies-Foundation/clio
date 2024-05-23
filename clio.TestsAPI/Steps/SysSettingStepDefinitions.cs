@@ -69,7 +69,7 @@ public class SysSettingStepDefinitions
 	public void ThenTheOutputShouldBeInfSysSettingClioText(string expectedName, string expectedValue){
 		//[INF] - SysSetting ClioBooleanFour : "False"
 		string actual = _thenOutput.Trim().Replace("\"","");
-		string expected = $"[INF] - SysSetting {expectedName} : {expectedValue}";
+		string expected = $"[INF] - SysSettings {expectedName} : {expectedValue}";
 		actual.Should().Be(expected,"values should match");
 	}
 
