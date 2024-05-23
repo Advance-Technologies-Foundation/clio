@@ -93,12 +93,14 @@ public class SysSettingsManagerTests
 		}
 	}
 
-	[TestCase("10/29/2013 4:42:51 PM")]
-	[TestCase("10/29/2013 4:42:51 AM")]
-	public void GetSysSettingValueByCode_Returns_CorrectDateTimeValue(string value){
+	[TestCase("10/29/2013 4:42:51 PM", "MM/dd/yyyy h:mm:ss tt")]
+	[TestCase("10/29/2013 4:42:51 AM", "MM/dd/yyyy h:mm:ss tt")]
+	public void GetSysSettingValueByCode_Returns_CorrectDateTimeValue(string dateValue, string format){
 		//Arrange
+		DateTime.TryParseExact(dateValue, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dtValue);
+		string stringDateTimeValue = dtValue.ToString();
 		const string sysSettingCode = "nonExistingCode";
-		string sysSettingValue = value;
+		string sysSettingValue = stringDateTimeValue;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
@@ -128,7 +130,6 @@ public class SysSettingsManagerTests
 		DateTime actual = sut.GetSysSettingValueByCode<DateTime>(sysSettingCode);
 
 		//Assert
-		DateTime.TryParse(value, out DateTime dtValue);
 		actual.Should().Be(dtValue);
 	}
 
