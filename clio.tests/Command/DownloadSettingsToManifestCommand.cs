@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Reflection;
@@ -182,6 +183,14 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 			.Be(expectedContent.Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
+	}
+
+
+	[Test]
+	public void TestFormatDateTime() {
+		var dateTime = new DateTime(2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
+		string expectedString = "12/10/2024 12:00:00 AM";
+		Assert.AreEqual(expectedString, dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpper());
 	}
 
 	private void MockSysPackage(DataProviderMock providerMock, bool packageAccending, bool withSchemas = false, bool schemaAccending = false) {

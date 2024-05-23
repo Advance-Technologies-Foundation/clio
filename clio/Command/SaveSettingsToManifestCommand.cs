@@ -100,15 +100,16 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	}
 
 	private string GetSysPackageHash(SysPackage sysPackage) {
+		string dateTimeFormat = "M/dd/yyyy hh:mm:ss tt";
 		StringBuilder sb = new StringBuilder();
 		sb.Append(sysPackage.Name);
-		sb.Append(sysPackage.ModifiedOn);
+		sb.Append(sysPackage.ModifiedOn.ToString(dateTimeFormat).ToUpper());
 		var unOrderList = sysPackage.SysSchemas.ToList();
 
 		foreach (var schema in unOrderList.OrderBy(schema => schema.UId)) {
 			sb.Append(schema.UId);
 			sb.Append(schema.Checksum);
-			sb.Append(schema.ModifiedOn);
+			sb.Append(schema.ModifiedOn.ToString(dateTimeFormat).ToUpper());
         }
 		string hashSource = sb.ToString();
 		byte[] bytes = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes(hashSource));
