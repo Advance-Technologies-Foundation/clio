@@ -4,6 +4,8 @@ using System.Drawing.Drawing2D;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Reflection;
+using ATF.Repository;
+using ATF.Repository.Attributes;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Autofac;
@@ -353,7 +355,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 		MockSysSettingsItems("SysSettings", dataProviderMock, mockSysSettingsRecords);
 		MockSysSettingsValueItems("SysSettingsValue", dataProviderMock, mockSysSettingsValueRecords);
-
+		
 
 		return dataProviderMock;
 		// Let's create a real container but with mock Items, see additionalRegistrations
@@ -440,7 +442,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		SysSettingsValue sysSettingsValue = new();
 
 		//We need to convert records odata collection into collection of expected Types
+		List<Dictionary<string, object>> resultRecords = new();
 		foreach (Dictionary<string, object> record in records) {
+			var resultRecord = new Dictionary<string, object>();
 			foreach (string key in record.Keys) {
 
 				//We also need to make sure that when OData feed missing propertyValue,
@@ -473,8 +477,19 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				} else if (p.PropertyType.IsAssignableFrom(typeof(float))) {
 					record[key] = float.Parse(record[key].ToString() ?? "0.00");
 				}
+				
+				IEnumerable<CustomAttributeData> customAttributes = p.CustomAttributes;
+				var c = customAttributes
+					.FirstOrDefault(c=> c.AttributeType == typeof(SchemaPropertyAttribute));
+				if (c!= null) {
+					var entitySchemaColumnName = c.ConstructorArguments[0].Value.ToString();
+					resultRecord[entitySchemaColumnName] = record[key];
+				}
 			}
+			
+			resultRecords.Add(resultRecord);
 		}
-		mock.Returns(records);
+		mock.Returns(resultRecords);
+		//mock.Returns(records);
 	}
 }
