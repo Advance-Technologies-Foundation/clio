@@ -19,7 +19,7 @@ public static class FileSystemExtension
 
 	public static void MockFolder(this MockFileSystem mockFileSystem, string folderName, string destinationFolderName = null){
 		string[] exampleFiles = Directory.GetFiles(folderName);
-		if (string.IsNullOrEmpty(destinationFolderName)) {
+		if (!string.IsNullOrEmpty(destinationFolderName)) {
 			mockFileSystem.AddDirectory(destinationFolderName);
 		}
 		foreach (string exampleFile in exampleFiles) {
