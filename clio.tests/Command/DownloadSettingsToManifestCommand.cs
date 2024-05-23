@@ -383,55 +383,54 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		SysSettings sysSettings = new ();
 		
 		//We need to convert records odata collection into collection of expected Types
-		foreach(Dictionary<string, object> record in records) {
-			foreach(string key in record.Keys) {
-				
+		List<Dictionary<string, object>> resultRecords = new();
+		foreach (Dictionary<string, object> record in records) {
+			var resultRecord = new Dictionary<string, object>();
+			foreach (string key in record.Keys) {
+
 				//We also need to make sure that when OData feed missing propertyValue,
 				// for instance ReferenceSchemaUId, then we either remove it from the model or set it to default value
 				// in case we do nothing it throws an exception, because its casing null into Guid.
 				// For now I simply commented out the ReferenceSchemaUId property in SysSettings models
 				PropertyInfo p = sysSettings.GetType().GetProperty(key);
-				if(p is null) {
+				if (p is null) {
 					record.Remove(key);
 					continue;
 				}
-				
-				if (p.PropertyType.IsAssignableFrom(typeof(string)))
-				{
+
+				if (p.PropertyType.IsAssignableFrom(typeof(string))) {
 					record[key] = record[key].ToString();
-				}
-				else if (p.PropertyType.IsAssignableFrom(typeof(Guid)))
-				{
+				} else if (p.PropertyType.IsAssignableFrom(typeof(Guid))) {
 					bool isGuid = Guid.TryParse(record[key].ToString(), out Guid value);
-					if(isGuid) {
+					if (isGuid) {
 						record[key] = value;
-					}else {
+					} else {
 						record[key] = Guid.Empty;
 					}
-				}
-				else if (p.PropertyType.IsAssignableFrom(typeof(bool)))
-				{
-					record[key]= bool.Parse(record[key].ToString() ?? "False");
-				}
-				else if (p.PropertyType.IsAssignableFrom(typeof(int)))
-				{
+				} else if (p.PropertyType.IsAssignableFrom(typeof(bool))) {
+					record[key] = bool.Parse(record[key].ToString() ?? "False");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(int))) {
 					record[key] = int.Parse(record[key].ToString() ?? "0");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(DateTime))) {
+					record[key] = DateTime.Parse(record[key].ToString() ?? "1970-01-01T00:00:0.000000Z");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(decimal))) {
+					record[key] = decimal.Parse(record[key].ToString() ?? "0.00");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(float))) {
+					record[key] = float.Parse(record[key].ToString() ?? "0.00");
 				}
-				else if (p.PropertyType.IsAssignableFrom(typeof(DateTime)))
-				{
-					record[key] =  DateTime.Parse(record[key].ToString() ?? "1970-01-01T00:00:0.000000Z");
-				}
-				else if (p.PropertyType.IsAssignableFrom(typeof(decimal)))
-				{
-					record[key] =  decimal.Parse(record[key].ToString() ?? "0.00");
-				}
-				else if (p.PropertyType.IsAssignableFrom(typeof(float)))
-				{
-					record[key] =  float.Parse(record[key].ToString() ?? "0.00");
+				
+				IEnumerable<CustomAttributeData> customAttributes = p.CustomAttributes;
+				var c = customAttributes
+					.FirstOrDefault(c=> c.AttributeType == typeof(SchemaPropertyAttribute));
+				if (c!= null) {
+					var entitySchemaColumnName = c.ConstructorArguments[0].Value.ToString();
+					resultRecord[entitySchemaColumnName] = record[key];
 				}
 			}
+			
+			resultRecords.Add(resultRecord);
 		}
-		mock.Returns(records);
+		mock.Returns(resultRecords);
 	}
 
 	private void MockSysSettingsValueItems(string schemaName, DataProviderMock dataProviderMock, List<Dictionary<string, object>> records) {
@@ -490,6 +489,5 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 			resultRecords.Add(resultRecord);
 		}
 		mock.Returns(resultRecords);
-		//mock.Returns(records);
 	}
 }
