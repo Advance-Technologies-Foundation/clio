@@ -52,7 +52,7 @@ public interface ISysSettingsManager
 
 	void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
 	
-	internal List<SysSettings> GetAllSysSettingsWithValues();
+	public List<SysSettings> GetAllSysSettingsWithValues();
 
 }
 
