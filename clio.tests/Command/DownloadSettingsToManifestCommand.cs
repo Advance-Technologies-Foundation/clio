@@ -281,13 +281,20 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Arrange
 		DataProviderMock dataProviderMock = new ();
 		List<ODataResponse> responses = GetOdataResponses("odata_data_examples");
-		List<Dictionary<string, object>> records = responses
+		List<Dictionary<string, object>> mockSysSettingsRecords = responses
 			.Where(r=> r.SchemaName == "SysSettings")
-			.ToList()
+			.SelectMany(r => r.Records)
+			.Where(s => s["ValueTypeName"].ToString() != "Binary")
+			.ToList();
+
+		List<Dictionary<string, object>> mockSysSettingsValueRecords = responses
+			.Where(r => r.SchemaName == "SysSettingsValue")
 			.SelectMany(r => r.Records)
 			.ToList();
 
-		MockItems("SysSettings", dataProviderMock, records);
+		MockSysSettingsItems("SysSettings", dataProviderMock, mockSysSettingsRecords);
+		MockSysSettingsValueItems("SysSettingsValue", dataProviderMock, mockSysSettingsValueRecords);
+
 		MockFileSystem mockFileSystem = TestFileSystem.MockFileSystem();
 		BindingsModule bm = new (mockFileSystem);
 		EnvironmentSettings environmentSettings = new () {
@@ -311,14 +318,15 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		
 		//Act
 		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
-
-		//Assert
-		int count = responses
-			.Where(r=>r.SchemaName == nameof(SysSettings))
-			.SelectMany(r=> r.Records)
-			.Count();
-		settings.Should().HaveCount(count);
 		
+		//Assert
+		settings.Should().HaveCount(mockSysSettingsRecords.Count);
+		settings.Any(s => s.ValueTypeName == "Binary").Should().BeFalse();
+		var sysettingsValueCount = 0;
+		foreach(var setting in settings) {
+			sysettingsValueCount += setting.SysSettingsValues.Count;
+		}
+		sysettingsValueCount.Should().Be(430);
 	}
 	
 	private List<ODataResponse> GetOdataResponses(string folderName) {
@@ -332,8 +340,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		return odataResponses;
 	}
 	
-	private void MockItems(string schemaName,DataProviderMock dataProviderMock, List<Dictionary<string, object>> records){
+	private void MockSysSettingsItems(string schemaName,DataProviderMock dataProviderMock, List<Dictionary<string, object>> records){
 		IItemsMock mock = dataProviderMock.MockItems(schemaName);
+		mock.FilterHas("Binary");
 		
 		// We don't have a way to get the type of the model from the schemaName
 		// I decided to use reflection to get the type of the model. There is a better way but its mych longer
@@ -385,6 +394,52 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				else if (p.PropertyType.IsAssignableFrom(typeof(float)))
 				{
 					record[key] =  float.Parse(record[key].ToString() ?? "0.00");
+				}
+			}
+		}
+		mock.Returns(records);
+	}
+
+	private void MockSysSettingsValueItems(string schemaName, DataProviderMock dataProviderMock, List<Dictionary<string, object>> records) {
+		IItemsMock mock = dataProviderMock.MockItems(schemaName);
+
+		// We don't have a way to get the type of the model from the schemaName
+		// I decided to use reflection to get the type of the model. There is a better way but its mych longer
+		SysSettingsValue sysSettingsValue = new();
+
+		//We need to convert records odata collection into collection of expected Types
+		foreach (Dictionary<string, object> record in records) {
+			foreach (string key in record.Keys) {
+
+				//We also need to make sure that when OData feed missing propertyValue,
+				// for instance ReferenceSchemaUId, then we either remove it from the model or set it to default value
+				// in case we do nothing it throws an exception, because its casing null into Guid.
+				// For now I simply commented out the ReferenceSchemaUId property in SysSettings models
+				PropertyInfo p = sysSettingsValue.GetType().GetProperty(key);
+				if (p is null) {
+					record.Remove(key);
+					continue;
+				}
+
+				if (p.PropertyType.IsAssignableFrom(typeof(string))) {
+					record[key] = record[key].ToString();
+				} else if (p.PropertyType.IsAssignableFrom(typeof(Guid))) {
+					bool isGuid = Guid.TryParse(record[key].ToString(), out Guid value);
+					if (isGuid) {
+						record[key] = value;
+					} else {
+						record[key] = Guid.Empty;
+					}
+				} else if (p.PropertyType.IsAssignableFrom(typeof(bool))) {
+					record[key] = bool.Parse(record[key].ToString() ?? "False");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(int))) {
+					record[key] = int.Parse(record[key].ToString() ?? "0");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(DateTime))) {
+					record[key] = DateTime.Parse(record[key].ToString() ?? "1970-01-01T00:00:0.000000Z");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(decimal))) {
+					record[key] = decimal.Parse(record[key].ToString() ?? "0.00");
+				} else if (p.PropertyType.IsAssignableFrom(typeof(float))) {
+					record[key] = float.Parse(record[key].ToString() ?? "0.00");
 				}
 			}
 		}

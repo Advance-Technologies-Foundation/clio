@@ -283,7 +283,18 @@ public class SysSettingsManager : ISysSettingsManager
 	public List<SysSettings> GetAllSysSettingsWithValues() {
 		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSettings>()
+			.Where(s => s.ValueTypeName != "Binary")
 			.ToList();
+
+		var sysSettingsValues = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSettingsValue>()
+			.ToList();
+		foreach(var sysSetting in sysSettings) {
+			var currentSysSettingValue = sysSettingsValues
+				.Where(i => i.SysSettingsId == sysSetting.Id)
+				.ToList();
+			sysSetting.SysSettingsValues = currentSysSettingValue;
+		}		
 		return sysSettings;
 	}
 

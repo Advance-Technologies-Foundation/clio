@@ -85,11 +85,8 @@ namespace CreatioModel
 	[Schema("SysSettingsValue")]
 	public class SysSettingsValue : BaseModel
 	{
-		[SchemaProperty("SysSettings")]
+		[SchemaProperty("SysSettingsId")]
 		public Guid SysSettingsId { get; set; }
-
-		[LookupProperty("SysSettings")]
-		public virtual Terrasoft.Core.Configuration.SysSettings SysSettings { get; set; }
 
 		[SchemaProperty("SysAdminUnit")]
 		public Guid SysAdminUnitId { get; set; }
