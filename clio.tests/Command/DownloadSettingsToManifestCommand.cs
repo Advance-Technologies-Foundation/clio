@@ -68,7 +68,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expectedCreatioManifestValue-saved-manifest.yaml");
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-manifest.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
@@ -134,7 +134,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expectedCreatioManifestValue-saved-full-manifest-WithoutSchemas.yaml");
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest-WithoutSchemas.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
@@ -181,7 +181,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expectedCreatioManifestValue-saved-full-manifest.yaml");
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
 		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
@@ -279,10 +279,69 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 	public void GetAllSysSettingsWithValues_ReturnsMockValues(){
 
 		//Arrange
-		DataProviderMock dataProviderMock = new ();
+		var container = GetContainer();
+		// Getting SysSettingsManager from the container, we real deps but mock data provider
+		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
+		
+		//Act
+		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
+		
+		//Assert
+		settings.Should().HaveCount(434);
+		settings.Any(s => s.ValueTypeName == "Binary").Should().BeFalse();
+		var sysettingsValueCount = 0;
+		foreach(var setting in settings) {
+			sysettingsValueCount += setting.SysSettingsValues.Count;
+		}
+		sysettingsValueCount.Should().Be(430);
+	}
+
+
+	[Test(Description = "Validate that we can mock from OData Json response and get all SysSettings with values.")]
+	public void SaveSysSettingsToManifest() {
+
+		//Arrange
+		var container = GetContainer();
+		// Getting SysSettingsManager from the container, we real deps but mock data provider
+		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
+
+		//Act
+		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
+
+		//Assert
+		settings.Should().HaveCount(434);
+		settings.Any(s => s.ValueTypeName == "Binary").Should().BeFalse();
+		var sysettingsValueCount = 0;
+		foreach (var setting in settings) {
+			sysettingsValueCount += setting.SysSettingsValues.Count;
+		}
+		sysettingsValueCount.Should().Be(430);
+	}
+
+	private IContainer GetContainer() {
+		var dataProviderMock = GetMockSysSettingsData();
+		MockFileSystem mockFileSystem = TestFileSystem.MockFileSystem();
+		BindingsModule bm = new(mockFileSystem);
+		EnvironmentSettings environmentSettings = new() {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = false
+		};
+		IContainer container = bm.Register(
+		settings: environmentSettings,
+		registerNullSettingsForTest: false,
+		additionalRegistrations: builder => {
+			builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
+		});
+		return container;
+	}
+
+	private DataProviderMock GetMockSysSettingsData() {
+		DataProviderMock dataProviderMock = new();
 		List<ODataResponse> responses = GetOdataResponses("odata_data_examples");
 		List<Dictionary<string, object>> mockSysSettingsRecords = responses
-			.Where(r=> r.SchemaName == "SysSettings")
+			.Where(r => r.SchemaName == "SysSettings")
 			.SelectMany(r => r.Records)
 			.Where(s => s["ValueTypeName"].ToString() != "Binary")
 			.ToList();
@@ -295,40 +354,13 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		MockSysSettingsItems("SysSettings", dataProviderMock, mockSysSettingsRecords);
 		MockSysSettingsValueItems("SysSettingsValue", dataProviderMock, mockSysSettingsValueRecords);
 
-		MockFileSystem mockFileSystem = TestFileSystem.MockFileSystem();
-		BindingsModule bm = new (mockFileSystem);
-		EnvironmentSettings environmentSettings = new () {
-			Uri = "http://localhost",
-			Login = "Supervisor",
-			Password = "Supervisor",
-			IsNetCore = false
-		};
-		
+
+		return dataProviderMock;
 		// Let's create a real container but with mock Items, see additionalRegistrations
 		// Autofac returns last registration, so we can override the real data provider with the mock one
-		IContainer container = bm.Register(
-			settings: environmentSettings, 
-			registerNullSettingsForTest: false, 
-			additionalRegistrations: builder => {
-				builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
-			});
 		
-		// Getting SysSettingsManager from the container, we real deps but mock data provider
-		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
-		
-		//Act
-		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
-		
-		//Assert
-		settings.Should().HaveCount(mockSysSettingsRecords.Count);
-		settings.Any(s => s.ValueTypeName == "Binary").Should().BeFalse();
-		var sysettingsValueCount = 0;
-		foreach(var setting in settings) {
-			sysettingsValueCount += setting.SysSettingsValues.Count;
-		}
-		sysettingsValueCount.Should().Be(430);
 	}
-	
+
 	private List<ODataResponse> GetOdataResponses(string folderName) {
 		var files = _fileSystem.Directory.GetFiles(folderName);
 		List<ODataResponse> odataResponses = new();
