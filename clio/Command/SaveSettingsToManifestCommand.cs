@@ -108,7 +108,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 					result.Add(s);
 				}
 			}
-			return result;
+			return result.OrderBy(s => s.Code).ToList();
 		} else {
 			return null;
 		}
