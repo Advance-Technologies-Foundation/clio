@@ -109,7 +109,7 @@ namespace CreatioModel
 					case "Float":
 					case "Decimal":
 					case "Currency":
-						return sysSettingsValue.FloatValue.ToString();
+						return sysSettingsValue.FloatValue.ToString(CultureInfo.InvariantCulture);
 					case "Lookup":
 						return sysSettingsValue.GuidValue.ToString();
 				}
