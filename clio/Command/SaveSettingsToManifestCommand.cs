@@ -77,6 +77,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		List<Feature> features = GetFeatureValues();
 		_logger.WriteInfo("Loading packages");
 		List<CreatioManifestPackage> packages = GetPackages();
+		_logger.WriteInfo("Loading sys settings");
 		List<CreatioManifestSetting> settings = GetSysSettingsValue();
 		EnvironmentManifest environmentManifest = new() {
 			WebServices = services,
@@ -87,6 +88,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		if (options.Uri != null) {
 			environmentManifest.EnvironmentSettings = new EnvironmentSettings() { Uri = options.Uri };
 		}
+		_logger.WriteInfo($"Saving file {options.ManifestFileName}");
 		_environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
 		_logger.WriteInfo("Done");
 		return 0;
@@ -101,7 +103,9 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 					Code = setting.Code,
 					Value = setting.DefValue
 				};
-				result.Add(s);
+				if(s.HasValue()) {
+					result.Add(s);
+				}
 			}
 			return result;
 		} else {

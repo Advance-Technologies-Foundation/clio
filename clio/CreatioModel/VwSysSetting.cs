@@ -6,6 +6,7 @@ using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
 using Terrasoft.Core.Configuration;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace CreatioModel
@@ -102,9 +103,9 @@ namespace CreatioModel
 					case "Integer":
 						return sysSettingsValue.IntegerValue.ToString();
 					case "Date":
-						return sysSettingsValue.DateTimeValue.ToString("yyyy-MM-dd");
+						return sysSettingsValue.DateTimeValue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 					case "Time":
-						return sysSettingsValue.DateTimeValue.ToLongTimeString();
+						return sysSettingsValue.DateTimeValue.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 					case "Float":
 					case "Decimal":
 					case "Currency":
