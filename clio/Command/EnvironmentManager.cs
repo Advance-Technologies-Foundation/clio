@@ -172,7 +172,7 @@ namespace Clio.Command
         public Dictionary<string, string> UserValues { get; set; } = new Dictionary<string, string>();
 
 		internal bool HasValue() {
-			return !string.IsNullOrEmpty(Value);
+			return !string.IsNullOrEmpty(Value) && Value != "undefined";
 		}
 	}
 

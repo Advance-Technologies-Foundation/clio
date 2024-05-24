@@ -106,6 +106,8 @@ namespace CreatioModel
 						return sysSettingsValue.DateTimeValue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 					case "Time":
 						return sysSettingsValue.DateTimeValue.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+					case "DateTime":
+						return sysSettingsValue.DateTimeValue.ToString("o", CultureInfo.InvariantCulture);
 					case "Float":
 					case "Decimal":
 					case "Currency":
