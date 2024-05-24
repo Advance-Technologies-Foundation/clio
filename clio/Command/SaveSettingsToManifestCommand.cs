@@ -39,19 +39,30 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	private readonly IFileSystem _fileSystem;
 	private readonly ISerializer _yamlSerializer;
 	private readonly IWebServiceManager _webServiceManager;
-	private readonly IEnvironmentManager environmentManager;
+	private readonly IEnvironmentManager _environmentManager;
+	private readonly ISysSettingsManager _sysSettingsManager;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public SaveSettingsToManifestCommand(IDataProvider provider, ILogger logger, IFileSystem fileSystem,
-		ISerializer yamlSerializer, IWebServiceManager webServiceManager, IEnvironmentManager environmentManager)
+		ISerializer yamlSerializer, IWebServiceManager webServiceManager, IEnvironmentManager environmentManager, ISysSettingsManager sysSettingsManager)
 		: base(provider, logger){
 		_fileSystem = fileSystem;
 		_yamlSerializer = yamlSerializer;
 		_webServiceManager = webServiceManager;
-		this.environmentManager = environmentManager;
+		this._environmentManager = environmentManager;
+		this._sysSettingsManager = sysSettingsManager;
+	}
+
+	public SaveSettingsToManifestCommand(IDataProvider provider, ILogger logger, IFileSystem fileSystem,
+	ISerializer yamlSerializer, IWebServiceManager webServiceManager, IEnvironmentManager environmentManager)
+	: base(provider, logger) {
+		_fileSystem = fileSystem;
+		_yamlSerializer = yamlSerializer;
+		_webServiceManager = webServiceManager;
+		this._environmentManager = environmentManager;
 	}
 
 	#endregion
@@ -76,13 +87,26 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		if (options.Uri != null) {
 			environmentManifest.EnvironmentSettings = new EnvironmentSettings() { Uri = options.Uri };
 		}
-		environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
+		_environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
 		_logger.WriteInfo("Done");
 		return 0;
 	}
 
 	private List<CreatioManifestSetting> GetSysSettingsValue() {
-		return null;
+		if (_sysSettingsManager != null) {
+			List<SysSettings> settings = _sysSettingsManager.GetAllSysSettingsWithValues();
+			List<CreatioManifestSetting> result = new();
+			foreach (var setting in settings) {
+				var s = new CreatioManifestSetting() {
+					Code = setting.Code,
+					Value = setting.DefValue
+				};
+				result.Add(s);
+			}
+			return result;
+		} else {
+			return null;
+		}
 	}
 
 	private List<CreatioManifestPackage> GetPackages() {

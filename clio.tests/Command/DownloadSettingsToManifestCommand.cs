@@ -93,6 +93,89 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		// read manu=ifest settings and compare with expected syssettings value from origin odata files		
 	}
 
+	[TestCase("ShowWidgetOnIntroPage", "true")]
+	[TestCase("Maintainer", "Customer")]
+	[TestCase("QueryExecutionTimeout", "10")]
+	[TestCase("LastAgeActualizationDate", "2024-05-16")]
+	[TestCase("AutomaticAgeActualizationTime", "05:30:00")]
+	[TestCase("AutomaticAgeActualizationTime", "05:30:00")]
+	[TestCase("SyncMemoryLimitToDeallocate", "100.1")]
+	[TestCase("PrimaryCurrency", "915e8a55-98d6-df11-9b2a-001d60e938c6")]
+	public void SaveSysSettingsToFile(string sysSettingsCode, string sysSettingsStringValue) {
+		var container = GetContainer();
+		var fileSystem = container.Resolve<Clio.Common.IFileSystem>();
+		//Arrange
+		SaveSettingsToManifestOptions saveSettingsToManifestOptions = new() {
+			ManifestFileName = @"save-syssettings-manifest.yaml"
+		};
+		List<CreatioManifestWebService> webServices = [];
+
+		DataProviderMock providerMock = new();
+		
+
+		IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
+		webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
+
+		ILogger loggerMock = Substitute.For<ILogger>();
+
+		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
+			fileSystem, container.Resolve<ISerializer>(), webServiceManagerMock,
+			container.Resolve<IEnvironmentManager>(), 
+			container.Resolve<ISysSettingsManager>());
+
+		//Act
+		command.Execute(saveSettingsToManifestOptions);
+
+		//Assert
+		fileSystem.ExistsFile(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
+		string expectedContent
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
+
+		var envManager = container.Resolve<IEnvironmentManager>();
+		var actualSettings = envManager.GetSettingsFromManifest(saveSettingsToManifestOptions.ManifestFileName);
+		var settings = actualSettings.FirstOrDefault(s => s.Code == sysSettingsCode);
+		Assert.AreEqual(sysSettingsStringValue, settings.Value);
+		loggerMock.Received(1).WriteInfo("Done");
+	}
+
+
+	public void SaveSysSettingsToFile() {
+		var container = GetContainer();
+		var fileSystem = container.Resolve<Clio.Common.IFileSystem>();
+		//Arrange
+		SaveSettingsToManifestOptions saveSettingsToManifestOptions = new() {
+			ManifestFileName = @"save-syssettings-manifest.yaml"
+		};
+		List<CreatioManifestWebService> webServices = [];
+
+		DataProviderMock providerMock = new();
+
+
+		IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
+		webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
+
+		ILogger loggerMock = Substitute.For<ILogger>();
+
+		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
+			fileSystem, container.Resolve<ISerializer>(), webServiceManagerMock,
+			container.Resolve<IEnvironmentManager>(),
+			container.Resolve<ISysSettingsManager>());
+
+		//Act
+		command.Execute(saveSettingsToManifestOptions);
+
+		//Assert
+		fileSystem.ExistsFile(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
+		string expectedContent
+			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
+
+		var envManager = container.Resolve<IEnvironmentManager>();
+		var actualSettings = envManager.GetSettingsFromManifest(saveSettingsToManifestOptions.ManifestFileName);
+		actualSettings.Should().NotBeNull();
+		actualSettings.Count().Should().Be(434);
+		loggerMock.Received(1).WriteInfo("Done");
+	}
+
 
 	[TestCase(true)]
 	[TestCase(false)]

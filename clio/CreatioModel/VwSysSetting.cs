@@ -6,6 +6,7 @@ using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
 using Terrasoft.Core.Configuration;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace CreatioModel
 {
@@ -43,7 +44,7 @@ namespace CreatioModel
 
 	}
 
-	
+
 	[ExcludeFromCodeCoverage]
 	[Schema("SysSettings")]
 	public class SysSettings : BaseModel
@@ -79,6 +80,41 @@ namespace CreatioModel
 		[DetailProperty("SysSettingsId")]
 		public virtual List<SysSettingsValue> SysSettingsValues { get; set; }
 
+		public string DefValue {
+			get {
+				return GetDefaultValue();
+			}
+		}
+
+		private Guid AllUsersId = new Guid("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
+		private string GetDefaultValue(string adminUnitName = null) {
+			var sysSettingsValue = SysSettingsValues?.Where(x => x.SysAdminUnitId == AllUsersId)?.FirstOrDefault();
+			if (sysSettingsValue != null) {
+				switch (ValueTypeName) {
+					case "Boolean":
+						return sysSettingsValue.BooleanValue.ToString().ToLower();
+					case "MediumText":
+					case "ShortText":
+					case "LongText":
+					case "Text":
+						return sysSettingsValue.TextValue;
+					case "Integer":
+						return sysSettingsValue.IntegerValue.ToString();
+					case "Date":
+						return sysSettingsValue.DateTimeValue.ToString("yyyy-MM-dd");
+					case "Time":
+						return sysSettingsValue.DateTimeValue.ToLongTimeString();
+					case "Float":
+					case "Decimal":
+					case "Currency":
+						return sysSettingsValue.FloatValue.ToString();
+					case "Lookup":
+						return sysSettingsValue.GuidValue.ToString();
+				}
+			}
+			return "undefined";
+		}
 	}
 
 	[ExcludeFromCodeCoverage]

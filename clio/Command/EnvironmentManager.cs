@@ -170,6 +170,10 @@ namespace Clio.Command
 		
 		[YamlMember(Alias = "users_values")]
         public Dictionary<string, string> UserValues { get; set; } = new Dictionary<string, string>();
+
+		internal bool HasValue() {
+			return !string.IsNullOrEmpty(Value);
+		}
 	}
 
 	public class CreatioManifestWebService
