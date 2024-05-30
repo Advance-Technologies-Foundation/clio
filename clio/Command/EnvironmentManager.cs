@@ -141,6 +141,11 @@ namespace Clio.Command
 			var manifestContent = serializer.Serialize(envManifest);
 			fileSystem.File.WriteAllText(manifestFileName, manifestContent);
 		}
+
+		public EnvironmentManifest GetDiffManifest(EnvironmentSettings sourceManifest, EnvironmentSettings targetManifest) {
+			var diffManifest = new EnvironmentManifest();
+			return diffManifest;
+		}
 	}
 
 	public interface IEnvironmentManager
@@ -157,6 +162,7 @@ namespace Clio.Command
 		IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath);
 		List<CreatioManifestPackage> GetPackagesGromManifest(string manifestFileName);
 		void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false);
+		EnvironmentManifest GetDiffManifest(EnvironmentSettings sourceManifest, EnvironmentSettings targetManifest);
 	}
 
 	public class CreatioManifestSetting

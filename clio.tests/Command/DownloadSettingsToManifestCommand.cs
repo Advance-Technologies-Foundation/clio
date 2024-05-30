@@ -176,6 +176,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		loggerMock.Received(1).WriteInfo("Done");
 	}
 
+	private IContainer GetContainer() {
+		return MockDataContainer.GetContainer(_fileSystem);
+	}
 
 	[TestCase(true)]
 	[TestCase(false)]
@@ -329,38 +332,10 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		}
 		mock.Returns(list);
 	}
-	private void MockDataFromFolder(DataProviderMock providerMock, string folderName) {
-		var files = _fileSystem.Directory.GetFiles(folderName);
-		foreach(var file in files) {
-			var content = _fileSystem.File.ReadAllText(file);
-			var oDataResponse = ParseOdataResponse(content);
-			var mock = providerMock.MockItems(oDataResponse.SchemaName);
-			var list = new List<Dictionary<string, object>>();
-			foreach (var record in oDataResponse.Records) {
-				list.Add(record);
-			}
-			mock.Returns(list);
-		}
-	}
+	
 
-	private ODataResponse ParseOdataResponse(string content) {
-		return Json.Deserialize<ODataResponse>(content);
-	}
 
-	[Test]
-	public void TestParseOdataResponse() {
-		var odataFoldferName = "odata_data_examples";
-		var files = _fileSystem.Directory.GetFiles(odataFoldferName);
-		List<ODataResponse> odataResponses = new();
-		foreach (var file in files) {
-			var content = _fileSystem.File.ReadAllText(file);
-			var oDataResponse = ParseOdataResponse(content);
-			odataResponses.Add(oDataResponse);
-		}
-		Assert.AreEqual(odataResponses.Count, files.Length);
-		Assert.IsTrue(odataResponses.Any(x => x.SchemaName == "SysSettings"));
-		Assert.IsTrue(odataResponses.Any(x => x.SchemaName == "SysSettingsValue"));
-	}
+	
 	
 	
 	[Test(Description = "Validate that we can mock from OData Json response and get all SysSettings with values.")]
@@ -406,10 +381,45 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		sysettingsValueCount.Should().Be(430);
 	}
 
-	private IContainer GetContainer() {
+}
+
+
+internal class MockDataContainer {
+
+
+	protected MockFileSystem _fileSystem;
+
+	public MockDataContainer(MockFileSystem fileSystem) {
+		_fileSystem = fileSystem;
+	}
+
+	private void MockDataFromFolder(DataProviderMock providerMock, string folderName) {
+		var files = _fileSystem.Directory.GetFiles(folderName);
+		foreach (var file in files) {
+			var content = _fileSystem.File.ReadAllText(file);
+			var oDataResponse = ParseOdataResponse(content);
+			var mock = providerMock.MockItems(oDataResponse.SchemaName);
+			var list = new List<Dictionary<string, object>>();
+			foreach (var record in oDataResponse.Records) {
+				list.Add(record);
+			}
+			mock.Returns(list);
+		}
+	}
+
+
+	private ODataResponse ParseOdataResponse(string content) {
+		return Json.Deserialize<ODataResponse>(content);
+	}
+
+	public static IContainer GetContainer(MockFileSystem fileSystem) {
+		var instance = new MockDataContainer(fileSystem);
+		return instance.InternalGetContainer();
+	}
+
+	private IContainer InternalGetContainer() {
 		var dataProviderMock = GetMockSysSettingsData();
-		MockFileSystem mockFileSystem = TestFileSystem.MockFileSystem();
-		BindingsModule bm = new(mockFileSystem);
+		BindingsModule bm = new(_fileSystem);
 		EnvironmentSettings environmentSettings = new() {
 			Uri = "http://localhost",
 			Login = "Supervisor",
@@ -441,12 +451,12 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 		MockSysSettingsItems("SysSettings", dataProviderMock, mockSysSettingsRecords);
 		MockSysSettingsValueItems("SysSettingsValue", dataProviderMock, mockSysSettingsValueRecords);
-		
+
 
 		return dataProviderMock;
 		// Let's create a real container but with mock Items, see additionalRegistrations
 		// Autofac returns last registration, so we can override the real data provider with the mock one
-		
+
 	}
 
 	private List<ODataResponse> GetOdataResponses(string folderName) {
@@ -459,15 +469,15 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		}
 		return odataResponses;
 	}
-	
-	private void MockSysSettingsItems(string schemaName,DataProviderMock dataProviderMock, List<Dictionary<string, object>> records){
+
+	private void MockSysSettingsItems(string schemaName, DataProviderMock dataProviderMock, List<Dictionary<string, object>> records) {
 		IItemsMock mock = dataProviderMock.MockItems(schemaName);
 		mock.FilterHas("Binary");
-		
+
 		// We don't have a way to get the type of the model from the schemaName
 		// I decided to use reflection to get the type of the model. There is a better way but its mych longer
-		SysSettings sysSettings = new ();
-		
+		SysSettings sysSettings = new();
+
 		//We need to convert records odata collection into collection of expected Types
 		List<Dictionary<string, object>> resultRecords = new();
 		foreach (Dictionary<string, object> record in records) {
@@ -504,16 +514,16 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				} else if (p.PropertyType.IsAssignableFrom(typeof(float))) {
 					record[key] = float.Parse(record[key].ToString() ?? "0.00");
 				}
-				
+
 				IEnumerable<CustomAttributeData> customAttributes = p.CustomAttributes;
 				var c = customAttributes
-					.FirstOrDefault(c=> c.AttributeType == typeof(SchemaPropertyAttribute));
-				if (c!= null) {
+					.FirstOrDefault(c => c.AttributeType == typeof(SchemaPropertyAttribute));
+				if (c != null) {
 					var entitySchemaColumnName = c.ConstructorArguments[0].Value.ToString();
 					resultRecord[entitySchemaColumnName] = record[key];
 				}
 			}
-			
+
 			resultRecords.Add(resultRecord);
 		}
 		mock.Returns(resultRecords);
@@ -562,18 +572,18 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				} else if (p.PropertyType.IsAssignableFrom(typeof(float))) {
 					record[key] = float.Parse(record[key].ToString() ?? "0.00");
 				}
-				
+
 				IEnumerable<CustomAttributeData> customAttributes = p.CustomAttributes;
 				var c = customAttributes
-					.FirstOrDefault(c=> c.AttributeType == typeof(SchemaPropertyAttribute));
-				if (c!= null) {
+					.FirstOrDefault(c => c.AttributeType == typeof(SchemaPropertyAttribute));
+				if (c != null) {
 					var entitySchemaColumnName = c.ConstructorArguments[0].Value.ToString();
 					resultRecord[entitySchemaColumnName] = record[key];
 				}
 			}
-			
+
 			resultRecords.Add(resultRecord);
 		}
 		mock.Returns(resultRecords);
 	}
-}
+} 

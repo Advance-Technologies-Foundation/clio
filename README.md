@@ -1036,6 +1036,14 @@ To control changes of an instance download state to manifest file and store it i
 clio save-state "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
 ```
 
+## Show difference in settings for two Creatio intances
+
+To compare two Creatio instances and show it use the following command
+
+```
+clio show-diff --source production --target qa
+```
+
 ## Automation scenarios
 You can combine multiple commands into one scenario and execute it with 
 ```

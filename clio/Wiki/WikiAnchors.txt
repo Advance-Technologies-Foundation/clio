@@ -15,3 +15,4 @@ get-info:get-creatio-platform-info
 set-app-version:set-application-version
 pkg-hotfix:enable/disable-pkg-hotfix-mode
 save-state:create-manifest-from-creatio-instance
+show-diff:show-difference-in-settings-for-two-creatio-intances
