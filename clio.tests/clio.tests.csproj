@@ -16,8 +16,20 @@
     <None Remove="Examples\deployments-manifest\creatio-config-empty-package.yaml" />
     <None Remove="Examples\deployments-manifest\creatio-config-package.yaml" />
     <None Remove="Examples\deployments-manifest\full-creatio-config.yaml" />
+    <None Remove="Examples\diff-manifest\packages-diff.yaml" />
+    <None Remove="Examples\diff-manifest\packages-source-env-manifest.yaml" />
+    <None Remove="Examples\diff-manifest\packages-target-env-manifest.yaml" />
+    <None Remove="Examples\diff-manifest\syssettings-diff.yaml" />
+    <None Remove="Examples\diff-manifest\syssettings-source-env-manifest.yaml" />
+    <None Remove="Examples\diff-manifest\syssettings-target-env-manifest.yaml" />
     <None Remove="Examples\odata_data_examples\syssettings-odata.json" />
     <None Remove="Examples\odata_data_examples\syssettingsvalue-odata.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Examples\diff-manifest\packages-diff.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -28,6 +40,21 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Examples\deployments-manifest\full-creatio-config.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\diff-manifest\syssettings-diff.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\diff-manifest\syssettings-target-env-manifest.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\diff-manifest\syssettings-source-env-manifest.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\diff-manifest\packages-target-env-manifest.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\diff-manifest\packages-source-env-manifest.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Examples\odata_data_examples\syssettingsvalue-odata.json">
