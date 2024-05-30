@@ -35,12 +35,12 @@ namespace Clio.Project.NuGet
 			_versions.Sort();
 			_versions.Reverse();
 		}
-		public Version FindSdkVersion(Version applicationVersion)
+		public Version FindLatestSdkVersion(Version applicationVersion)
 		{
 			return _versions.FirstOrDefault(v => 
 				v.Major == applicationVersion.Major && 
 				v.Minor == applicationVersion.Minor && 
-				v.Build == applicationVersion.Build);
+				v.Build == applicationVersion.Build) ?? LastVersion;
 		}
 	}
 

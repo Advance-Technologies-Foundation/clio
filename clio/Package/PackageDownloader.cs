@@ -76,7 +76,7 @@ namespace Clio.Package
 		}
 
 		private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
-				string destinationPath) {
+				string destinationPath, bool throwOnError = false) {
 			string safePackageName = GetSafePackageName(packageName);
 			try {
 				_logger.WriteLine($"Start download packages ({safePackageName}).");
@@ -84,10 +84,18 @@ namespace Clio.Package
 				string packageZipPath = GetPackageZipPath(packageName, destinationPath);
 				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
 				string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
+				applicationClient.Login();
 				applicationClient.DownloadFile(url, packageZipPath, requestData);
 				_logger.WriteLine($"Download packages ({safePackageName}) completed.");
-			} catch (Exception) {
+			} catch (Exception e) {
+#if DEBUG
+				_logger.WriteError(e.Message+"\r\n"+e.StackTrace);
+#endif
 				_logger.WriteLine($"Download packages ({safePackageName}) not completed.");
+				if(throwOnError) {
+					throw;
+				}
+				
 			}
 		}
 
@@ -116,10 +124,12 @@ namespace Clio.Package
 				return;
 			}
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
-			_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, true);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				foreach (string packageName in packagesNames) {
-					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory);
+					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory, true);
+				}
+				_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, true);
+				foreach (string packageName in packagesNames) {
 					string packageZipPath = GetPackageZipPath(packageName, tempDirectory);
 					_packageArchiver.UnZipPackages(packageZipPath, true, true, true, 
 						false, destinationPath);

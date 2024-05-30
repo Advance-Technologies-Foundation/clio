@@ -72,7 +72,7 @@ namespace Clio.Workspaces
 		#region Methods: Public
 
 		public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings) {
-			Version creatioSdkVersion = _creatioSdk.FindSdkVersion(workspaceSettings.ApplicationVersion);
+			Version creatioSdkVersion = _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion);
 			_packageDownloader.DownloadPackages(workspaceSettings.Packages, environmentSettings,
 				_workspacePathBuilder.PackagesFolderPath);
 			RestoreNugetCreatioSdk(creatioSdkVersion);

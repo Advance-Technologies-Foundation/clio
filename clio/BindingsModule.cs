@@ -24,6 +24,7 @@ using Clio.Common.db;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 using Clio.Command.ApplicationCommand;
 using Clio.Package;
+using Clio.Project.NuGet;
 using Creatio.Client;
 
 namespace Clio
@@ -97,7 +98,7 @@ namespace Clio
 				containerBuilder.RegisterType<SysSettingsManager>();
 			}
 			#endregion
-			
+			containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSdk>();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
 			containerBuilder.RegisterType<FeatureCommand>();

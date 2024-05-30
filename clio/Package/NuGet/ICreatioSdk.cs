@@ -15,7 +15,7 @@ namespace Clio.Project.NuGet
 
 		#region Methods: Public
 
-		Version FindSdkVersion(Version applicationVersion);
+		Version FindLatestSdkVersion(Version applicationVersion);
 
 		#endregion
 
