@@ -1,0 +1,32 @@
+environment:
+  url: https://production.creatio.com
+  username: admin # or use OAuth token
+  password: password # or use OAuth token
+  clientid: "{client-id}"
+  clientsecret: "{client-secret}"
+  authappurl: https://production.creatio.com/0/ServiceModel/AuthService.svc/Login
+  platformversion: "8.1.1"
+  platformtype: "NET6" # "NET6" or "NETFramework"
+
+syssettings:
+  - name: SysSettings1
+    value: Value3
+
+
+features:
+  - name: Feature1
+    enabled: "true"
+  - name: Feature2
+    enabled: "false"
+
+webservices:
+  - name: WebService1
+    url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
+  - name: WebService2
+    url: "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc"
+
+packages:
+  - name: Package1
+    version: "1.0.1"
+  - name: Package2
+    version: "1.0.2"

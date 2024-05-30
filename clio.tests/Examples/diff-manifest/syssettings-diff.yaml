@@ -1,0 +1,5 @@
+syssettings:
+  - name: SysSettings1
+    value: Value1
+  - name: SysSettings2
+    value: Value2
