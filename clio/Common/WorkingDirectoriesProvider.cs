@@ -26,9 +26,7 @@ namespace Clio.Common
 				string path = Path.Combine(string.IsNullOrEmpty(tempDir) 
 					? Path.GetTempPath() 
 					: tempDir, "clio");
-#if DEBUG
-				_logger.WriteInfo($"Clio temptDir path: {path}");
-#endif
+
 				return path;
 			}
 		}

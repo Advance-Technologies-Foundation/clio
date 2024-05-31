@@ -58,7 +58,7 @@ namespace Clio.Command
 			return envManiifest.AppHubs;
 		}
 
-		private EnvironmentManifest LoadEnvironmentManifestFromFile(string manifestFilePath){
+		public EnvironmentManifest LoadEnvironmentManifestFromFile(string manifestFilePath){
 			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
 			var envManifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
 			
@@ -97,6 +97,8 @@ namespace Clio.Command
 			var envManifest = yamlDesirializer.Deserialize<EnvironmentManifest>(manifest);
 			return envManifest.EnvironmentSettings;
 		}
+		
+		
 
 		public IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath){
 			var manifest = fileSystem.File.ReadAllText(manifestFilePath);
@@ -142,8 +144,23 @@ namespace Clio.Command
 			fileSystem.File.WriteAllText(manifestFileName, manifestContent);
 		}
 
-		public EnvironmentManifest GetDiffManifest(EnvironmentSettings sourceManifest, EnvironmentSettings targetManifest) {
+		public EnvironmentManifest GetDiffManifest(EnvironmentManifest sourceManifest, EnvironmentManifest targetManifest) {
 			var diffManifest = new EnvironmentManifest();
+			
+			diffManifest.Packages = sourceManifest.Packages
+				.Where(p => !targetManifest.Packages.Any(sp => sp.Name == p.Name))
+				.ToList();
+			
+			diffManifest.Settings = sourceManifest.Settings
+				.Where(p => !targetManifest.Settings.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
+				.ToList();
+			
+			diffManifest.Features = sourceManifest.Features
+				.Where(p => !targetManifest.Features.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
+				.ToList();
+			
+			
+			
 			return diffManifest;
 		}
 	}
@@ -152,6 +169,7 @@ namespace Clio.Command
 	{
 		List<SysInstalledApp> GetApplicationsFromManifest(string manifestFilePath);
 
+		EnvironmentManifest LoadEnvironmentManifestFromFile(string manifestFilePath);
 		int ApplyManifest(string manifestFilePath);
 
 		List<SysInstalledApp> FindApplicationsInAppHub(string manifestFilePath);
@@ -162,7 +180,7 @@ namespace Clio.Command
 		IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath);
 		List<CreatioManifestPackage> GetPackagesGromManifest(string manifestFileName);
 		void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false);
-		EnvironmentManifest GetDiffManifest(EnvironmentSettings sourceManifest, EnvironmentSettings targetManifest);
+		EnvironmentManifest GetDiffManifest(EnvironmentManifest sourceManifest, EnvironmentManifest targetManifest);
 	}
 
 	public class CreatioManifestSetting

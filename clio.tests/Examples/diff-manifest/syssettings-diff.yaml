@@ -1,4 +1,4 @@
-syssettings:
+settings:
   - name: SysSettings1
     value: Value1
   - name: SysSettings2

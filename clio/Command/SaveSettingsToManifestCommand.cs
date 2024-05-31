@@ -27,6 +27,8 @@ internal class SaveSettingsToManifestOptions : EnvironmentNameOptions
 			HelpText = "Overwrite manifest file if exists", Default = true)]
 	public bool Overwrite { get; internal set; }
 
+	public bool SkipDone { get; set; }
+
 	#endregion
 
 }
@@ -91,7 +93,10 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		}
 		_logger.WriteInfo($"Saving file {options.ManifestFileName}");
 		_environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
-		_logger.WriteInfo("Done");
+		
+		if(!options.SkipDone) {
+			_logger.WriteInfo("Done");
+		}
 		return 0;
 	}
 

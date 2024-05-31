@@ -8,17 +8,17 @@ environment:
   platformversion: "8.1.1"
   platformtype: "NET6" # "NET6" or "NETFramework"
 
-syssettings:
-  - name: SysSettings1
+settings:
+  - code: SysSettings1
     value: Value1
-  - name: SysSettings2
+  - code: SysSettings2
     value: Value2
 
 features:
-  - name: Feature1
-    enabled: "true"
-  - name: Feature2
-    enabled: "false"
+  - code: Feature1
+    value: "true"
+  - code: Feature2
+    value: "false"
 
 webservices:
   - name: WebService1

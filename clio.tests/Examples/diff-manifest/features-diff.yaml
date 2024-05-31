@@ -1,5 +1,5 @@
 features:
-  - name: Feature2
-    enabled: "true"
-  - name: Feature3
-    enabled: "false"
+  - code: Feature2
+    value: "true"
+  - code: Feature3
+    value: "false"

@@ -98,6 +98,7 @@ namespace Clio
 				containerBuilder.RegisterType<SysSettingsManager>();
 			}
 			#endregion
+			
 			containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSdk>();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
@@ -191,6 +192,7 @@ namespace Clio
 			containerBuilder.RegisterType<PackageHotFixCommand>();
 			containerBuilder.RegisterType<PackageEditableMutator>();
 			containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
+			containerBuilder.RegisterType<ShowDiffEnvironmentsCommand>();
 			additionalRegistrations?.Invoke(containerBuilder);
 			return containerBuilder.Build();
 		}

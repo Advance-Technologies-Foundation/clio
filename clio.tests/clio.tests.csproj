@@ -63,6 +63,10 @@
     <Content Include="Examples\odata_data_examples\syssettings-odata.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="Examples\diff-manifest\packages-diff.yaml" />
+    <Content Include="Examples\diff-manifest\packages-diff.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
