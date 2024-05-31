@@ -1044,6 +1044,13 @@ To compare two Creatio instances and show it use the following command
 clio show-diff --source production --target qa
 ```
 
+To save diff manifest to file, specify arguments file
+
+```
+clio show-diff --source production --target qa --file diff-production-qa.yaml
+```
+
+
 ## Automation scenarios
 You can combine multiple commands into one scenario and execute it with 
 ```
