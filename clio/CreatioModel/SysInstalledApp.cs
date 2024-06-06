@@ -43,6 +43,7 @@ namespace CreatioModel
 			}
 		}
 
+
 		public override string ToString() {
 			return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
 		}
@@ -56,6 +57,9 @@ namespace CreatioModel
 			get;
 			internal set;
 		}
+
+		[YamlMember(Alias = "branch")]
+		public string Branch { get;  set; }
 	}
 
 	[ExcludeFromCodeCoverage]

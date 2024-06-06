@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Clio.CreatioModel;
 using YamlDotNet.Serialization;
+using Clio.Workspaces;
 
 namespace Clio.Command
 {
@@ -33,10 +34,16 @@ namespace Clio.Command
 			foreach(var app in applications) {
 				foreach(var app_hub in appHubs) {
 					if(app_hub.Name == app.AppHubName) {
-						var zipFileName = app_hub.GetAppZipFileName(app.Name, app.Version);
+						var zipFileName = app.Branch switch {
+							_ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(Workspace.GetSanitizeFileNameFromString(app.Name), app.Version, Workspace.GetSanitizeFileNameFromString(app.Branch)),
+							_ => app_hub.GetAppZipFileName(Workspace.GetSanitizeFileNameFromString(app.Name), app.Version)
+						};
 						if (!fileSystem.File.Exists(app.ZipFileName) && app.Aliases != null) {
-							foreach(var aliases in app.Aliases) {
-								var aliasFileName = app_hub.GetAppZipFileName(aliases, app.Version);
+							foreach(var alias in app.Aliases) {
+								var aliasFileName = app.Branch switch {
+									_ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(Workspace.GetSanitizeFileNameFromString(alias), app.Version, Workspace.GetSanitizeFileNameFromString(app.Branch)),
+									_ => app_hub.GetAppZipFileName(Workspace.GetSanitizeFileNameFromString(alias), app.Version)
+								};
 								if (fileSystem.File.Exists(aliasFileName)) {
 									zipFileName = aliasFileName;
 									break;

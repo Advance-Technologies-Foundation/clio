@@ -1,33 +1,27 @@
-﻿using Clio.Command;
-using NUnit.Framework;
-using System;
-using System.IO;
-using System.IO.Abstractions;
-using System.IO.Abstractions.TestingHelpers;
-using Clio.Tests.Extensions;
-using Clio.Tests.Infrastructure;
-using Autofac;
-using CreatioModel;
+﻿using System;
 using System.Collections.Generic;
-using Quartz.Impl.Matchers;
+using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
-using FluentAssertions;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
-using DocumentFormat.OpenXml.Wordprocessing;
+using Autofac;
+using Clio.Command;
 using Clio.Tests.Command;
-using NRedisStack.Search;
-using DocumentFormat.OpenXml.Vml.Spreadsheet;
+using Clio.Tests.Extensions;
+using FluentAssertions;
+using NUnit.Framework;
 
 namespace Clio.Tests
 {
 	[TestFixture]
-	internal class EnvironmentManagerTest: BaseClioModuleTests
-	{
+	internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 		protected override MockFileSystem CreateFs() {
 			var mockFS = base.CreateFs();
 			mockFS.MockExamplesFolder("deployments-manifest");
+			mockFS.AddFile("\\MyAppHub\\cliogate\\master\\cliogate_master_2.1.1.zip", "testbody");
+			mockFS.AddFile("\\MyAppHub\\cliogate-netcore\\master\\cliogate-netcore_master_2.0.2.zip", "testbody");
+			mockFS.AddFile("\\MyAppHub\\cliogate-netcore\\master___\\cliogate-netcore_master____2.3.4.zip", "testbody");
+			mockFS.AddFile("\\MyAppHub\\cliogate-netcore\\master_\\cliogate-netcore_master__2.4.6.zip", "testbody");
 			return mockFS;
 
 		}
@@ -59,6 +53,29 @@ namespace Clio.Tests
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			var applicationsFromAppHub = environmentManager.FindApplicationsInAppHub(manifestFilePath);
 			Assert.AreEqual(2, applicationsFromAppHub.Count);
+		}
+
+		public static IEnumerable<TestCaseData> FindApplicationsFromManifestTestCases {
+			get
+			{
+				yield return new TestCaseData("easy-creatio-config-with-branches.yaml",
+					new []{ "\\MyAppHub\\cliogate\\master\\cliogate_master_2.1.1.zip",
+						"\\MyAppHub\\cliogate-netcore\\master\\cliogate-netcore_master_2.0.2.zip",
+						"\\MyAppHub\\cliogate-netcore\\master___\\cliogate-netcore_master____2.3.4.zip",
+						"\\MyAppHub\\cliogate-netcore\\master_\\cliogate-netcore_master__2.4.6.zip"
+					});
+			}
+		}
+
+		[TestCaseSource(nameof(FindApplicationsFromManifestTestCases))]
+		public void FindApplicationsFromManifest_InAppHub_WithCorrectBranch(string manifestFileName, string[] zipFilePathes) {
+			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var manifestFilePath = $"C:\\{manifestFileName}";
+			var applicationsFromAppHub = environmentManager.FindApplicationsInAppHub(manifestFilePath);
+			Assert.AreEqual(3, applicationsFromAppHub.Count);
+			foreach (var app in applicationsFromAppHub) {
+				zipFilePathes.Contains(app.ZipFileName).Should().BeTrue($"App zip fil name{app.ZipFileName} should exists.");
+			}
 		}
 
 		[TestCase("easy-creatio-config.yaml", "CrtCustomer360", "//tscrm.com/dfs-ts/MyAppHub/CrtCustomer360/1.5.2/CrtCustomer360_1.5.2.zip")]

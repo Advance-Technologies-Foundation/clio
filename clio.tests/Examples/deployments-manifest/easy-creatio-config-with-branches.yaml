@@ -1,0 +1,23 @@
+environment:
+  url: https://preprod.creatio.com
+  authappurl: https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login
+
+apps:
+  - name: cliogate
+    version: "2.1.1"
+    apphub: MyAppHub
+    branch: master
+  - name: cliogate-netcore
+    version: "2.3.4"
+    apphub: MyAppHub
+    branch: master\|/
+  - name: cliogate-netcore
+    version: "2.4.6"
+    apphub: MyAppHub
+    branch: master<
+
+app_hubs:
+  - name: MyAppHub
+    path: "/MyAppHub"
+  - name: MyAppHub2
+    path: "/MyAppHub2"

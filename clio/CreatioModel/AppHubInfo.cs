@@ -17,5 +17,9 @@ namespace Clio.CreatioModel
 		internal string GetAppZipFileName(string name, string version) {
 			return Path.Combine(RootPath.Replace('/', Path.DirectorySeparatorChar), name, version, $"{name}_{version}.zip");
 		}
+
+		internal string GetAppZipFileNameWithBranch(string name, string version, string branch) {
+			return Path.Combine(RootPath.Replace('/', Path.DirectorySeparatorChar), name, branch, $"{name}_{branch}_{version}.zip");
+		}
 	}
 }
