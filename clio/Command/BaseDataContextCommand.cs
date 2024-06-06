@@ -16,6 +16,11 @@ namespace Clio.Command
 
         #endregion
 
+        internal BaseDataContextCommand()
+        {
+            
+        }
+
         public BaseDataContextCommand(IDataProvider provider, ILogger logger) {
             _provider = provider;
             _logger = logger;

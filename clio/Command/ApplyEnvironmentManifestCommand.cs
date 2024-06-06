@@ -34,6 +34,11 @@ namespace Clio.Command
 
         #region Constructors: Public
 
+        internal ApplyEnvironmentManifestCommand()
+        {
+            
+        }
+
         public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
 			IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand, 
 			SetWebServiceUrlCommand setWebServiceUrlCommand, IDataProvider dataProvider, EnvironmentSettings environmentSettings){

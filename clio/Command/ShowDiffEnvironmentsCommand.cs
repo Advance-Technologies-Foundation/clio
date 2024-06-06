@@ -44,6 +44,8 @@ namespace Clio.Command
 		private readonly ISerializer _serializer;
 		private readonly ISettingsRepository _settingsRepository;
 
+		public ShowDiffEnvironmentsCommand() { }
+
 		public ShowDiffEnvironmentsCommand(IEnvironmentManager environmentManager, IDataProvider provider,
 			ILogger logger, IWorkingDirectoriesProvider workingDirectoriesProvider,
 			ISerializer serializer, ISettingsRepository settingsRepository)
