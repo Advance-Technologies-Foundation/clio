@@ -44,12 +44,12 @@ namespace Clio.Tests
 		public void PublishWorkspaceTest() {
 			// Arrange
 			string appStorePath = @"C:\Temp\clioAppStore";
-			string appName = "iframe-sample"; 
+			string appName = "iframe-sample";
 			string appVersion = "1.0.0";
 			string fileName = $"{appName}_{appVersion}.zip";
 			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-			var expectedFileName = Path.Combine(appStorePath,appName,appVersion, fileName);
-			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples","workspaces",appName);
+			var expectedFileName = Path.Combine(appStorePath, appName, appVersion, fileName);
+			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
 			try {
 				// Act
 				var envSettings = GetTestEnvironmentSettings();
@@ -65,7 +65,40 @@ namespace Clio.Tests
 					File.Delete(expectedFileName);
 				}
 			}
+		}
 
-		}	
+		[TestCase("trunk")]
+		[TestCase("master")]
+		[TestCase("feature/rnd-2035")]
+		[TestCase("bugf%i_:{}x/rnd-2035")]
+		[TestCase("feature/rnd-2035")]
+		public void PublishWorkspaceWithBranchTest(string branch) {
+			// Arrange
+			string appStorePath = @"C:\Temp\clioAppStore";
+			string appName = "iframe-sample";
+			string appVersion = "1.0.0";
+			string expectedFileName = Workspace.GetSanitizeFileNameFromString($"{appName}_{branch}_{appVersion}.zip");
+			string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
+			string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
+			string branchFolderName = Workspace.GetSanitizeFileNameFromString(branch);
+			// app_store_path\app_name\bramch\file_name
+			var expectedFilePath = Path.Combine(appStorePath, appName, branchFolderName, expectedFileName);
+			try {
+				// Act
+				var envSettings = GetTestEnvironmentSettings();
+				var workspace = GetTestWorkspace(envSettings);
+				var releaseFileName = workspace.PublishToFolder(exampleWorkspacePath, appStorePath, appName, appVersion, branch);
+				// Assert
+				Assert.AreEqual(expectedFilePath, releaseFileName);
+				var versionFileExist = File.Exists(expectedFilePath);
+				Assert.AreEqual(true, versionFileExist);
+				Assert.True(new FileInfo(expectedFilePath).Length > 80000);
+			} finally {
+				if (File.Exists(expectedFilePath)) {
+					File.Delete(expectedFilePath);
+				}
+			}
+
+		}
 	}
 }

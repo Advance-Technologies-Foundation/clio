@@ -125,19 +125,28 @@ namespace Clio.Workspaces
 
 	
 
-		public string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion) {
+		public string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion, string branch = null) {
+			var hasBranch = !string.IsNullOrEmpty(branch);
+			var branchFolderName = hasBranch ? GetSanitizeFileNameFromString(branch) : null;
 			_workspacePathBuilder.RootPath = workspacePath;
 			var packagesFolderPath = _workspacePathBuilder.PackagesFolderPath;
 			_composableApplicationManager.TrySetVersion(workspacePath, appVersion);
 			string zipFileName = $"{appName}_{appVersion}";
-			string destinationFolderPath = Path.Combine(appStorePath, appName, appVersion);
-			var filePath = Path.Combine(destinationFolderPath, zipFileName);
-			return _workspaceInstaller.PublishToFolder(workspacePath, zipFileName, destinationFolderPath, false);
+			if (hasBranch) {
+				zipFileName = $"{appName}_{branch}_{appVersion}";
+			}
+			string destinationFolderPath = hasBranch ? Path.Combine(appStorePath, appName, branchFolderName)
+				: Path.Combine(appStorePath, appName, appVersion);
+			string sanitizeFileName = GetSanitizeFileNameFromString(zipFileName);
+			return _workspaceInstaller.PublishToFolder(workspacePath, sanitizeFileName, destinationFolderPath, false);
 		}
 
 
 		#endregion
 
+		public static string GetSanitizeFileNameFromString(string fileName) {
+			return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
+		}
 	}
 
 	#endregion

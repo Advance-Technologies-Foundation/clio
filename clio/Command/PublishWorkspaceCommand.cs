@@ -10,6 +10,10 @@
 	[Verb("publish-app", Aliases = new string[] { "publishw", "publish-hub", "ph", "publish-workspace" }, HelpText = "Publish workspace to zip file")]
 	public class PublishWorkspaceCommandOptions: EnvironmentOptions
 	{
+		[Option('b', "branch", Required = false,
+			HelpText = "Branch name", Default = null)]
+		public string Branch { get; set; }
+
 		[Option('h', "app-hub", Required = true,
 			HelpText = "Path to application hub", Default = null)]
 		public string AppHupPath { get; internal set; }
@@ -52,7 +56,7 @@
 
 		public override int Execute(PublishWorkspaceCommandOptions options) {
 			try {
-				_workspace.PublishToFolder(options.WorkspaceFolderPath, options.AppHupPath, options.AppName, options.AppVersion);
+				_workspace.PublishToFolder(options.WorkspaceFolderPath, options.AppHupPath, options.AppName, options.AppVersion, options.Branch);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
