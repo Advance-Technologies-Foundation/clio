@@ -24,8 +24,7 @@
 
 		[Option('a', "Async", Required = false,
 			HelpText = "Async download file.", Default = false)]
-		public bool Async
-		{
+		public bool Async {
 			get; set;
 		}
 

@@ -21,6 +21,7 @@ namespace Clio.Common
 		string CreateTempDirectory();
 		void CreateTempDirectory(Action<string> onCreated);
 		T CreateTempDirectory<T>(Func<string, T> onCreated);
+		void DeleteDirectoryIfExists(string path);
 
 		#endregion
 

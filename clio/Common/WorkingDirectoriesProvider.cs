@@ -35,17 +35,6 @@ namespace Clio.Common
 
 		#endregion
 
-		#region Methods: Private
-
-		private void DeleteDirectoryIfExists(string path) {
-			path.CheckArgumentNull(nameof(path));
-			if (Directory.Exists(path)) {
-				Directory.Delete(path, true);
-			}
-		}
-
-		#endregion
-
 		#region Methods: Public
 
 		public string GetTemplatePath(string templateName) {
@@ -81,6 +70,13 @@ namespace Clio.Common
 				return onCreated(tempDirectoryPath);
 			} finally {
 				DeleteDirectoryIfExists(tempDirectoryPath);
+			}
+		}
+
+		public void DeleteDirectoryIfExists(string path) {
+			path.CheckArgumentNull(nameof(path));
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, true);
 			}
 		}
 
