@@ -23,8 +23,6 @@ namespace Clio.Command
 		HelpText = "Clone one environment to another")]
 	internal class CloneEnvironmentOptions : ShowDiffEnvironmentsOptions
 	{
-		[Option("working-directory", Required = true, HelpText = "Working directory ")]
-		public string WorkingDirectory { get; internal set; }
 	}
 
 	internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironmentOptions>
@@ -64,8 +62,10 @@ namespace Clio.Command
 			string workingDirectoryPath = useTempDirectory
 					? _workingDirectoriesProvider.CreateTempDirectory()
 					: options.WorkingDirectory;
-			var bindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
-			this.pushPackageCommand = bindingModule.Resolve<PushPackageCommand>();
+			if (pushPackageCommand == null) {
+				var bindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
+				this.pushPackageCommand = bindingModule.Resolve<PushPackageCommand>();
+			}
 			try {
 				options.FileName = Path.Combine(workingDirectoryPath, $"from_{options.Source}_to_{options.Target}.yaml");
 				showDiffEnvironmentsCommand.Execute(options);

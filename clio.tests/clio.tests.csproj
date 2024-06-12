@@ -16,6 +16,7 @@
     <None Remove="Examples\deployments-manifest\creatio-config-empty-package.yaml" />
     <None Remove="Examples\deployments-manifest\creatio-config-package.yaml" />
     <None Remove="Examples\deployments-manifest\full-creatio-config.yaml" />
+    <None Remove="Examples\diff-manifest\clone-diff-manifest.yaml" />
     <None Remove="Examples\diff-manifest\packages-diff.yaml" />
     <None Remove="Examples\diff-manifest\packages-source-env-manifest.yaml" />
     <None Remove="Examples\diff-manifest\packages-target-env-manifest.yaml" />
@@ -27,6 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Examples\diff-manifest\clone-diff-manifest.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="Examples\diff-manifest\packages-diff.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

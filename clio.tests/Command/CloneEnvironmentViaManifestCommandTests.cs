@@ -43,7 +43,7 @@ namespace Clio.Tests.Command
 			});
 			CloneEnvironmentCommand cloneEnvironmentCommand = new CloneEnvironmentCommand(showDiffEnvironmentsCommand, 
 				applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager,loggerMock,
-				provider, compressionUtilities, workingDirectoriesProvider, fileSystem);
+				provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null);
 			
 			var cloneEnvironmentCommandOptions = new CloneEnvironmentOptions() {
 				Source = "sourceEnv",
@@ -115,7 +115,7 @@ namespace Clio.Tests.Command
 			});
 			CloneEnvironmentCommand cloneEnvironmentCommand = new CloneEnvironmentCommand(showDiffEnvironmentsCommand,
 				applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
-				provider, compressionUtilities, workingDirectoriesProvider, fileSystem);
+				provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null);
 			var cloneEnvironmentCommandOptions = new CloneEnvironmentOptions() {
 				Source = "sourceEnv",
 				Target = "targetEnv",
