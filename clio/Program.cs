@@ -197,7 +197,7 @@ class Program {
 		packageArchiver.UnZip(zipFilePath, true, null);
 	}
 
-	private static int DownloadZipPackages(PullPkgOptions options)
+	internal static int DownloadZipPackages(PullPkgOptions options)
 	{
 		try
 		{

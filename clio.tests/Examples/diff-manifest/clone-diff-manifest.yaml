@@ -1,0 +1,5 @@
+﻿packages:
+  - name: Package1
+    version: "1.0.1"
+  - name: Package2
+    version: "1.0.2"

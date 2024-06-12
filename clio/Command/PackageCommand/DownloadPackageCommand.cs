@@ -30,4 +30,11 @@
 		}
 
 	}
+
+	internal class PullPkgCommand : Command<PullPkgOptions> {
+
+		public override int Execute(PullPkgOptions options) {
+			return Program.DownloadZipPackages(options);
+		}
+	}
 }

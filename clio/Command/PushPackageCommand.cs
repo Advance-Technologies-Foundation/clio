@@ -58,6 +58,9 @@
 		#endregion
 
 		#region Constructors: Public
+
+		public PushPackageCommand() { } // for tests
+
 		public PushPackageCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller, IMarketplace marketplace)
 		{
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
