@@ -19,8 +19,8 @@ using Clio.Command.PackageCommand;
 
 namespace Clio.Command
 {
-	[Verb("show-diff", Aliases = new[] { "diff", "compare" },
-		HelpText = "Show difference in settings for two Creatio intances")]
+	[Verb("clone-env", Aliases = new[] { "clone" },
+		HelpText = "Clone one environment to another")]
 	internal class CloneEnvironmentOptions : ShowDiffEnvironmentsOptions
 	{
 	}

@@ -644,6 +644,7 @@ class Program {
 		typeof(ApplyEnvironmentManifestOptions),
 		typeof(GetWebServiceUrlOptions),
 		typeof(SaveSettingsToManifestOptions),
+		typeof(CloneEnvironmentOptions),
 		typeof(ShowDiffEnvironmentsOptions),
 		
 	};
@@ -743,6 +744,7 @@ class Program {
 			ApplyEnvironmentManifestOptions opts => ResolveEnvSettings<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
 			GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
 			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
+			CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
 			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
 			_ => 1,
 		};

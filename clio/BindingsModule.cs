@@ -193,6 +193,10 @@ namespace Clio
 			containerBuilder.RegisterType<PackageEditableMutator>();
 			containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
 			containerBuilder.RegisterType<ShowDiffEnvironmentsCommand>();
+			containerBuilder.RegisterType<CloneEnvironmentCommand>();
+			containerBuilder.RegisterType<PullPkgCommand>();
+			
+			
 			additionalRegistrations?.Invoke(containerBuilder);
 			return containerBuilder.Build();
 		}
