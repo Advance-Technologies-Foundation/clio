@@ -20,6 +20,8 @@ namespace Clio.Common
 
 		#region Constructors: Public
 
+		public CompressionUtilities() { } // for tests
+
 		public CompressionUtilities(IFileSystem fileSystem)
 		{
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
@@ -185,6 +187,13 @@ namespace Clio.Common
 			}
 		}
 
+		public virtual void Unzip(string zipFilePath, string destinationDirectory) {
+			ZipFile.ExtractToDirectory(zipFilePath, destinationDirectory);
+		}
+
+		public virtual void Zip(string directoryPath, string zipFilePath) {
+			ZipFile.CreateFromDirectory(directoryPath, zipFilePath);
+		}
 
 		#endregion
 

@@ -10,6 +10,7 @@ using ATF.Repository.Providers;
 using NSubstitute.ReceivedExtensions;
 using Clio.Command.PackageCommand;
 using System.Collections.Generic;
+using System.IO.Compression;
 
 namespace Clio.Tests.Command
 {
