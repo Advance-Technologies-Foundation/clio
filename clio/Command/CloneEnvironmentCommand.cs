@@ -23,6 +23,8 @@ namespace Clio.Command
 		HelpText = "Clone one environment to another")]
 	internal class CloneEnvironmentOptions : ShowDiffEnvironmentsOptions
 	{
+		[Option("working-directory", Required = true, HelpText = "Working directory ")]
+		public string WorkingDirectory { get; internal set; }
 	}
 
 	internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironmentOptions>
@@ -30,35 +32,45 @@ namespace Clio.Command
 		private readonly ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand;
 		private readonly ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand;
 		private readonly PullPkgCommand pullPkgCommand;
-		private readonly PushPackageCommand pushPackageCommand;
+		private PushPackageCommand pushPackageCommand;
 		private readonly IEnvironmentManager environmentManager;
 		private readonly ICompressionUtilities _compressionUtilities;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
+		private readonly ISettingsRepository settingsRepository;
 
 		public CloneEnvironmentCommand(ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand,
 			ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand, PullPkgCommand pullPkgCommand,
 			PushPackageCommand pushPackageCommand, IEnvironmentManager environmentManager, ILogger logger,
 			IDataProvider provider, ICompressionUtilities compressionUtilities,
-			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem)
+			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
+			ISettingsRepository settingsRepository)
 			: base(provider, logger) {
 			this.showDiffEnvironmentsCommand = showDiffEnvironmentsCommand;
 			this.applyEnvironmentManifestCommand = applyEnvironmentManifestCommand;
 			this.pullPkgCommand = pullPkgCommand;
-			this.pushPackageCommand = pushPackageCommand;
 			this.environmentManager = environmentManager;
 			_compressionUtilities = compressionUtilities;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
+			this.settingsRepository = settingsRepository;
+			if (this.settingsRepository == null) {
+				this.pushPackageCommand = pushPackageCommand;
+			} 
 		}
 
 		public override int Execute(CloneEnvironmentOptions options) {
-			string tempDirectoryPath = _workingDirectoriesProvider.CreateTempDirectory();
+			var useTempDirectory = string.IsNullOrEmpty(options.WorkingDirectory);
+			string workingDirectoryPath = useTempDirectory
+					? _workingDirectoriesProvider.CreateTempDirectory()
+					: options.WorkingDirectory;
+			var bindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
+			this.pushPackageCommand = bindingModule.Resolve<PushPackageCommand>();
 			try {
-				options.FileName = Path.Combine(tempDirectoryPath, $"from_{options.Source}_to_{options.Target}.yaml");
+				options.FileName = Path.Combine(workingDirectoryPath, $"from_{options.Source}_to_{options.Target}.yaml");
 				showDiffEnvironmentsCommand.Execute(options);
 				var diffManifest = environmentManager.LoadEnvironmentManifestFromFile(options.FileName);
-				string sourceZipPackagePath = Path.Combine(tempDirectoryPath, "SourceZipPackages");
+				string sourceZipPackagePath = Path.Combine(workingDirectoryPath, "SourceZipPackages");
 				_fileSystem.CreateDirectory(sourceZipPackagePath);
 				int number = 1;
 				int packagesCount = diffManifest.Packages.Count;
@@ -73,7 +85,7 @@ namespace Clio.Command
 					pullPkgCommand.Execute(pullPkgOptions);
 					_logger.WriteInfo($"Done pull package: {package.Name} {progress}");
 				}
-				string sourceGzPackages = Path.Combine(tempDirectoryPath, "SourceGzPackages");
+				string sourceGzPackages = Path.Combine(workingDirectoryPath, "SourceGzPackages");
 				number = 1;
 				foreach (var package in diffManifest.Packages) {
 					string packageZipPath = Path.Combine(sourceZipPackagePath, $"{package.Name}.zip");
@@ -84,7 +96,7 @@ namespace Clio.Command
 				}
 				_fileSystem.CreateDirectory(sourceGzPackages);
 				_logger.WriteInfo($"Start zip packages");
-				string commonPackagesZipPath = Path.Combine(tempDirectoryPath,
+				string commonPackagesZipPath = Path.Combine(workingDirectoryPath,
 					$"from_{options.Source}_to_{options.Target}.zip");
 				_compressionUtilities.Zip(sourceGzPackages, commonPackagesZipPath);
 				_logger.WriteInfo($"Done zip packages");
@@ -99,7 +111,9 @@ namespace Clio.Command
 				};
 				applyEnvironmentManifestCommand.Execute(applyEnvironmentManifestOptions);
 			} finally {
-				_workingDirectoriesProvider.DeleteDirectoryIfExists(tempDirectoryPath);
+				if (useTempDirectory) {
+					_workingDirectoriesProvider.DeleteDirectoryIfExists(workingDirectoryPath);
+				}
 			}
 			_logger.WriteInfo("Done");
 			return 0;
