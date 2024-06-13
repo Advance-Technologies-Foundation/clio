@@ -48,15 +48,12 @@ clio unregister
 ## MacOS
 
 1. Download [.net core](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) for mac
-2. Download and extract clio [release](https://github.com/Advance-Technologies-Foundation/clio/releases/latest)
-3. [Register](https://www.architectryan.com/2012/10/02/add-to-the-path-on-mac-os-x-mountain-lion/) clio folder in PATH system variables if you want to use clio alias
-
-Execute these commands in terminal
-
+2. Register clio as the global tool, with the command:
 ```
-cd ~/clio folder/
-chmod 755 clio
+dotnet tool install clio
 ```
+
+More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
 
 Execute command in terminal for success check
 
