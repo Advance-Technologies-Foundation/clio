@@ -29,6 +29,7 @@ namespace Clio.Tests.Command
 			PullPkgCommand pullPkgCommand = Substitute.For<PullPkgCommand>();
 			PushPackageCommand pushPackageCommand = Substitute.For<PushPackageCommand>();
 			IDataProvider provider = Substitute.For<IDataProvider>();
+			PingAppCommand pingAppCommand = Substitute.For<PingAppCommand>();
 			IEnvironmentManager environmentManager = Substitute.For<IEnvironmentManager>();
 			ICompressionUtilities compressionUtilities = Substitute.For<ICompressionUtilities>();
 			IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
@@ -43,7 +44,7 @@ namespace Clio.Tests.Command
 			});
 			CloneEnvironmentCommand cloneEnvironmentCommand = new CloneEnvironmentCommand(showDiffEnvironmentsCommand, 
 				applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager,loggerMock,
-				provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null);
+				provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 			
 			var cloneEnvironmentCommandOptions = new CloneEnvironmentOptions() {
 				Source = "sourceEnv",
@@ -100,6 +101,7 @@ namespace Clio.Tests.Command
 			ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand = Substitute.For<ApplyEnvironmentManifestCommand>();
 			PullPkgCommand pullPkgCommand = Substitute.For<PullPkgCommand>();
 			PushPackageCommand pushPackageCommand = Substitute.For<PushPackageCommand>();
+			PingAppCommand pingAppCommand = Substitute.For<PingAppCommand>();
 			IDataProvider provider = Substitute.For<IDataProvider>();
 			IEnvironmentManager environmentManager = Substitute.For<IEnvironmentManager>();
 			ICompressionUtilities compressionUtilities = Substitute.For<ICompressionUtilities>();
@@ -115,7 +117,7 @@ namespace Clio.Tests.Command
 			});
 			CloneEnvironmentCommand cloneEnvironmentCommand = new CloneEnvironmentCommand(showDiffEnvironmentsCommand,
 				applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
-				provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null);
+				provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 			var cloneEnvironmentCommandOptions = new CloneEnvironmentOptions() {
 				Source = "sourceEnv",
 				Target = "targetEnv",
@@ -155,6 +157,9 @@ namespace Clio.Tests.Command
 			pushPackageCommand.Received(1)
 				.Execute(Arg.Is<PushPkgOptions>(arg => arg.Environment == cloneEnvironmentCommandOptions.Target
 					&& arg.Name == commonPackagesZipPath));
+
+			pingAppCommand.Received(1)
+				.Execute(Arg.Is<PingAppOptions>(arg => arg.Environment == cloneEnvironmentCommandOptions.Target));
 
 			applyEnvironmentManifestCommand.Received(1)
 				.Execute(Arg.Is<ApplyEnvironmentManifestOptions>(

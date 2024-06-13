@@ -12,6 +12,8 @@ namespace Clio.Command
 	public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentOptions>
 		where TEnvironmentOptions : EnvironmentOptions
 	{
+		public RemoteCommand() { } // for tests
+
 		protected string RootPath => EnvironmentSettings.IsNetCore
 			? EnvironmentSettings.Uri : EnvironmentSettings.Uri + @"/0";
 

@@ -13,6 +13,8 @@ namespace Clio.Command
 
 	public class PingAppCommand : RemoteCommand<PingAppOptions>
 	{
+		public PingAppCommand() { } // for tests
+
 		public PingAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
 			: base(applicationClient, settings) {
 		}

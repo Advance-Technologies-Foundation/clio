@@ -31,6 +31,7 @@ namespace Clio.Command
 		private ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand;
 		private PullPkgCommand pullPkgCommand;
 		private PushPackageCommand pushPackageCommand;
+		private PingAppCommand pingAppCommand;
 		private readonly IEnvironmentManager environmentManager;
 		private readonly ICompressionUtilities _compressionUtilities;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -42,7 +43,7 @@ namespace Clio.Command
 			PushPackageCommand pushPackageCommand, IEnvironmentManager environmentManager, ILogger logger,
 			IDataProvider provider, ICompressionUtilities compressionUtilities,
 			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
-			ISettingsRepository settingsRepository)
+			ISettingsRepository settingsRepository, PingAppCommand pingAppCommand)
 			: base(provider, logger) {
 			this.showDiffEnvironmentsCommand = showDiffEnvironmentsCommand;
 			this.applyEnvironmentManifestCommand = applyEnvironmentManifestCommand;
@@ -57,6 +58,7 @@ namespace Clio.Command
 				this.pullPkgCommand = pullPkgCommand;
 				this.applyEnvironmentManifestCommand = applyEnvironmentManifestCommand;
 				this.showDiffEnvironmentsCommand = showDiffEnvironmentsCommand;
+				this.pingAppCommand = pingAppCommand;
 			}
 		}
 
@@ -72,7 +74,7 @@ namespace Clio.Command
 				var targetBindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
 				this.pushPackageCommand = targetBindingModule.Resolve<PushPackageCommand>();
 				this.applyEnvironmentManifestCommand = targetBindingModule.Resolve<ApplyEnvironmentManifestCommand>();
-
+				this.pingAppCommand = targetBindingModule.Resolve<PingAppCommand>();
 			}
 			try {
 				options.FileName = Path.Combine(workingDirectoryPath, $"from_{options.Source}_to_{options.Target}.yaml");
@@ -82,7 +84,7 @@ namespace Clio.Command
 				_fileSystem.CreateDirectory(sourceZipPackagePath);
 				int number = 1;
 				int packagesCount = diffManifest.Packages.Count;
-				foreach(var package in diffManifest.Packages) {
+				foreach (var package in diffManifest.Packages) {
 					var pullPkgOptions = new PullPkgOptions() {
 						Environment = options.Source
 					};
@@ -113,6 +115,10 @@ namespace Clio.Command
 					Name = commonPackagesZipPath
 				};
 				pushPackageCommand.Execute(pushPackageOptions);
+				var pingCommandOptions = new PingAppOptions() {
+					Environment = options.Target
+				};
+				pingAppCommand.Execute(pingCommandOptions);
 				var applyEnvironmentManifestOptions = new ApplyEnvironmentManifestOptions() {
 					Environment = options.Target,
 					ManifestFilePath = options.FileName
