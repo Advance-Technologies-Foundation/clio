@@ -75,6 +75,8 @@ namespace Clio.Command
 			Overwrite = options.Overwrite;
 			if (string.IsNullOrEmpty(options.WorkingDirectory)) {
 				_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => InternalExecute(tempDirectory));
+			}else {
+				InternalExecute(options.WorkingDirectory);
 			}
 			_logger.WriteInfo("Done");
 			return 0;

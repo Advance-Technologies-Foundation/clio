@@ -115,15 +115,15 @@ namespace Clio.Command
 					Name = commonPackagesZipPath
 				};
 				pushPackageCommand.Execute(pushPackageOptions);
-				var pingCommandOptions = new PingAppOptions() {
-					Environment = options.Target
-				};
-				pingAppCommand.Execute(pingCommandOptions);
-				var applyEnvironmentManifestOptions = new ApplyEnvironmentManifestOptions() {
-					Environment = options.Target,
-					ManifestFilePath = options.FileName
-				};
-				applyEnvironmentManifestCommand.Execute(applyEnvironmentManifestOptions);
+				// var pingCommandOptions = new PingAppOptions() {
+				// 	Environment = options.Target
+				// };
+				//pingAppCommand.Execute(pingCommandOptions);
+				// var applyEnvironmentManifestOptions = new ApplyEnvironmentManifestOptions() {
+				// 	Environment = options.Target,
+				// 	ManifestFilePath = options.FileName
+				// };
+				//applyEnvironmentManifestCommand.Execute(applyEnvironmentManifestOptions);
 			} finally {
 				if (useTempDirectory) {
 					_workingDirectoriesProvider.DeleteDirectoryIfExists(workingDirectoryPath);
