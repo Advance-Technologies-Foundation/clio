@@ -27,9 +27,9 @@ namespace Clio.Command
 
 	internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironmentOptions>
 	{
-		private readonly ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand;
-		private readonly ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand;
-		private readonly PullPkgCommand pullPkgCommand;
+		private ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand;
+		private ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand;
+		private PullPkgCommand pullPkgCommand;
 		private PushPackageCommand pushPackageCommand;
 		private readonly IEnvironmentManager environmentManager;
 		private readonly ICompressionUtilities _compressionUtilities;
@@ -54,7 +54,10 @@ namespace Clio.Command
 			this.settingsRepository = settingsRepository;
 			if (this.settingsRepository == null) {
 				this.pushPackageCommand = pushPackageCommand;
-			} 
+				this.pullPkgCommand = pullPkgCommand;
+				this.applyEnvironmentManifestCommand = applyEnvironmentManifestCommand;
+				this.showDiffEnvironmentsCommand = showDiffEnvironmentsCommand;
+			}
 		}
 
 		public override int Execute(CloneEnvironmentOptions options) {
@@ -62,9 +65,14 @@ namespace Clio.Command
 			string workingDirectoryPath = useTempDirectory
 					? _workingDirectoriesProvider.CreateTempDirectory()
 					: options.WorkingDirectory;
-			if (pushPackageCommand == null) {
-				var bindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
-				this.pushPackageCommand = bindingModule.Resolve<PushPackageCommand>();
+			if (this.settingsRepository != null) {
+				var sourceBindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Source));
+				this.showDiffEnvironmentsCommand = sourceBindingModule.Resolve<ShowDiffEnvironmentsCommand>();
+				this.pullPkgCommand = sourceBindingModule.Resolve<PullPkgCommand>();
+				var targetBindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
+				this.pushPackageCommand = targetBindingModule.Resolve<PushPackageCommand>();
+				this.applyEnvironmentManifestCommand = targetBindingModule.Resolve<ApplyEnvironmentManifestCommand>();
+
 			}
 			try {
 				options.FileName = Path.Combine(workingDirectoryPath, $"from_{options.Source}_to_{options.Target}.yaml");
