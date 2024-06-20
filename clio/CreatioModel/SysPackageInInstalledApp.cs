@@ -22,6 +22,9 @@ namespace CreatioModel
 
 		[DetailProperty("SysPackageId")]
 		public virtual List<SysSchema> SysSchemas { get; set; }
+
+		[SchemaProperty("Maintainer")]
+		public string Maintainer { get; set; }
 	}
 }
 

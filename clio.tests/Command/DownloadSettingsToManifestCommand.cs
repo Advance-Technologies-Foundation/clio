@@ -287,12 +287,14 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 			new Dictionary<string, object>() {
 				{"Id", packageId1},
 				{"Name", "CrtBase"},
-				{"ModifiedOn", new DateTime(2024,5,10, 0, 0, 0, DateTimeKind.Utc)}
+				{"ModifiedOn", new DateTime(2024,5,10, 0, 0, 0, DateTimeKind.Utc)},
+				{"Maintainer", "Creatio" }
 			},
 			new Dictionary<string, object>() {
 				{"Id", packageId2},
 				{"Name", "CrtUI"},
-				{"ModifiedOn", new DateTime(2024,5,10, 0, 0, 0, DateTimeKind.Utc)}
+				{"ModifiedOn", new DateTime(2024,5,10, 0, 0, 0, DateTimeKind.Utc)},
+				{"Maintainer", "ATF" }
 			}
 		};
 		if (!packageAccending) {

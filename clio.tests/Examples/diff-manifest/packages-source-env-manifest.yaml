@@ -28,6 +28,8 @@ webservices:
 
 packages:
   - name: Package1
+    maintainer: "ATF"
     version: "1.0.1"
   - name: Package2
     version: "1.0.2"
+    maintainer: "Customer"

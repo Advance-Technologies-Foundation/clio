@@ -126,7 +126,8 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
         foreach (var sysPackage in sysPackages.OrderBy(p => p.Name)) {
 			var manifestPackages = new CreatioManifestPackage() {
 				Name = sysPackage.Name,
-				Hash = GetSysPackageHash(sysPackage)
+				Hash = GetSysPackageHash(sysPackage),
+				Maintainer = sysPackage.Maintainer
 			};
 			packages.Add(manifestPackages);
         }
