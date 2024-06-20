@@ -172,6 +172,7 @@ docker run -it --rm clio reg-web-app -help
   - [View application options](#view-application-options)
   - [Open application](#open-application)
   - [Ping application](#ping-application)
+  - [Clone environment](#clone-environment)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
@@ -710,6 +711,17 @@ For check options fort selected environment use next command
 ```bash
 clio ping <ENVIRONMENT NAME>
 ```
+
+## Clone environment
+
+For clone environment use next command. 
+
+```bash
+clio clone-env --source Dev --target QA --working-directory [OPTIONAL PATH TO STORE]
+```
+
+The command creates a manifest from the source and target, calculates the difference between them, downloads the changed package from the source environment to the working directory (optional parameter), and installs it in the source environment.
+
 
 ## Healthcheck
 

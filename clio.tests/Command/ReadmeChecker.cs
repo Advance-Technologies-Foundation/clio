@@ -66,9 +66,12 @@ public class ReadmeChecker
 
 	private void PopulateListToCheck(Type T){
 		string commandVerbName = T.GetAttribute<VerbAttribute>().Name;
-		
+		List<string> aliases = T.GetAttribute<VerbAttribute>().Aliases.ToList();
+		aliases.Add(commandVerbName);
 		//Add Verb
-		_namesToCheck.Add(_convertCommandNameToSection(commandVerbName));
+		foreach(var alias in aliases) {
+			_namesToCheck.Add(_convertCommandNameToSection(alias));
+		}
 		foreach (string anchorLine in _wikiAnchorsContent) {
 			var commandName = anchorLine.Split(':');
 			if (commandName[0] == commandVerbName) {
