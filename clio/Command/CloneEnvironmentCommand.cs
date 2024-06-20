@@ -120,12 +120,12 @@ namespace Clio.Command
 				var pingCommandOptions = new PingAppOptions() {
 					Environment = options.Target
 				};
-				pingAppCommand.Execute(pingCommandOptions);
-				var applyEnvironmentManifestOptions = new ApplyEnvironmentManifestOptions() {
-					Environment = options.Target,
-					ManifestFilePath = options.FileName
-				};
-				applyEnvironmentManifestCommand.Execute(applyEnvironmentManifestOptions);
+				//pingAppCommand.Execute(pingCommandOptions);
+				//var applyEnvironmentManifestOptions = new ApplyEnvironmentManifestOptions() {
+				//	Environment = options.Target,
+				//	ManifestFilePath = options.FileName
+				//};
+				//applyEnvironmentManifestCommand.Execute(applyEnvironmentManifestOptions);
 			} finally {
 				if (useTempDirectory) {
 					_workingDirectoriesProvider.DeleteDirectoryIfExists(workingDirectoryPath);
