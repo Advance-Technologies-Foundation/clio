@@ -239,6 +239,9 @@ namespace Clio.Command
 
 		[YamlMember(Alias = "hash")]
 		public string Hash { get; set; }
+
+		[YamlMember(Alias = "maintainer")]
+		public string Maintainer { get; set; }
 	}
 
 }

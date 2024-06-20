@@ -84,7 +84,9 @@ namespace Clio.Command
 				_fileSystem.CreateDirectory(sourceZipPackagePath);
 				int number = 1;
 				int packagesCount = diffManifest.Packages.Count;
-				foreach (var package in diffManifest.Packages) {
+				var selectedMaintainers = string.IsNullOrWhiteSpace(options.Maintainer) ? null : options.Maintainer.Split(',',StringSplitOptions.TrimEntries);
+				var diffPackages = diffManifest.Packages.Where(p => selectedMaintainers == null ? true : selectedMaintainers.Contains(p.Maintainer)); ;
+				foreach (var package in diffPackages) {
 					var pullPkgOptions = new PullPkgOptions() {
 						Environment = options.Source
 					};
@@ -97,7 +99,7 @@ namespace Clio.Command
 				}
 				string sourceGzPackages = Path.Combine(workingDirectoryPath, "SourceGzPackages");
 				number = 1;
-				foreach (var package in diffManifest.Packages) {
+				foreach (var package in diffPackages) {
 					string packageZipPath = Path.Combine(sourceZipPackagePath, $"{package.Name}.zip");
 					string progress = $"({number++} from {packagesCount})";
 					_logger.WriteInfo($"Start unzip package: {package.Name} {progress}");
