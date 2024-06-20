@@ -76,6 +76,11 @@ namespace Clio.Command
 				this.applyEnvironmentManifestCommand = targetBindingModule.Resolve<ApplyEnvironmentManifestCommand>();
 				this.pingAppCommand = targetBindingModule.Resolve<PingAppCommand>();
 			}
+			var selectedMaintainers = string.IsNullOrWhiteSpace(options.Maintainer) ? null : options.Maintainer.Split(',',StringSplitOptions.TrimEntries);
+			var excludedMaintainers = string.IsNullOrWhiteSpace(options.ExcludeMaintainer) ? null : options.ExcludeMaintainer.Split(',',StringSplitOptions.TrimEntries);
+			if (selectedMaintainers != null && excludedMaintainers != null) {
+				throw new ArgumentException("Argument 'Maintainer' cannot be specified with argument 'ExcludeMaintainer'.");		
+			}
 			try {
 				options.FileName = Path.Combine(workingDirectoryPath, $"from_{options.Source}_to_{options.Target}.yaml");
 				showDiffEnvironmentsCommand.Execute(options);
@@ -84,8 +89,8 @@ namespace Clio.Command
 				_fileSystem.CreateDirectory(sourceZipPackagePath);
 				int number = 1;
 				int packagesCount = diffManifest.Packages.Count;
-				var selectedMaintainers = string.IsNullOrWhiteSpace(options.Maintainer) ? null : options.Maintainer.Split(',',StringSplitOptions.TrimEntries);
-				var diffPackages = diffManifest.Packages.Where(p => selectedMaintainers == null ? true : selectedMaintainers.Contains(p.Maintainer)); ;
+				var diffPackages = diffManifest.Packages.Where(p => selectedMaintainers == null ? true : selectedMaintainers.Contains(p.Maintainer))
+					.Where(p => excludedMaintainers == null ? true : !excludedMaintainers.Contains(p.Maintainer));
 				foreach (var package in diffPackages) {
 					var pullPkgOptions = new PullPkgOptions() {
 						Environment = options.Source

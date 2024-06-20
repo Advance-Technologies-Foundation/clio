@@ -35,8 +35,11 @@ namespace Clio.Command
 		[Option("overwrite", Required = false, HelpText = "Overwrite existing file", Default = true)]
 		public bool Overwrite { get; internal set; }
 
-		[Option("working-directory", Required = false, HelpText = "Working directory ")]
+		[Option("working-directory", Required = false, HelpText = "Working directory")]
 		public string WorkingDirectory { get; internal set; }
+
+		[Option("exclude-maintainer", Required = false, HelpText = "Exclude maintainer")]
+		public string ExcludeMaintainer { get; internal set; }
 
 	}
 
