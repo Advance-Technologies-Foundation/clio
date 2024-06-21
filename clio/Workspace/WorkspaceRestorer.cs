@@ -3,6 +3,7 @@ namespace Clio.Workspaces
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
+	using Clio.Command;
 	using Clio.Common;
 	using Clio.Package;
 	using Clio.Project.NuGet;
@@ -71,13 +72,18 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings) {
+		public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
+				WorkspaceOptions restoreWorkspaceOptions) {
 			Version creatioSdkVersion = _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion);
 			_packageDownloader.DownloadPackages(workspaceSettings.Packages, environmentSettings,
 				_workspacePathBuilder.PackagesFolderPath);
-			RestoreNugetCreatioSdk(creatioSdkVersion);
-			CreateSolution();
-			CreateEnvironmentScript(creatioSdkVersion);
+			if (restoreWorkspaceOptions.IsNugetRestore ==true) {
+				RestoreNugetCreatioSdk(creatioSdkVersion);
+				CreateEnvironmentScript(creatioSdkVersion);
+			}
+			if (restoreWorkspaceOptions.IsCreateSolution == true) {
+				CreateSolution();
+			}
 		}
 
 		#endregion

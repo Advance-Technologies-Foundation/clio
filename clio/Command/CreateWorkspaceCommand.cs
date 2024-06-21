@@ -11,7 +11,7 @@ namespace Clio.Command
 	#region Class: CreateWorkspaceCommandOptions
 
 	[Verb("create-workspace", Aliases = new string[] { "createw" }, HelpText = "Create open project cmd file")]
-	public class CreateWorkspaceCommandOptions : EnvironmentOptions
+	public class CreateWorkspaceCommandOptions : WorkspaceOptions
 	{
 
 		#region Properties: Public
@@ -69,7 +69,7 @@ namespace Clio.Command
 							}
 						}
 					}
-					_workspace.Restore();
+					_workspace.Restore(options);
 				}
 				Console.WriteLine("Done");
 				return 0;

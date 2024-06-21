@@ -1,5 +1,6 @@
 namespace Clio.Workspaces
 {
+	using Clio.Command;
 
 	#region Interface: IWorkspace
 
@@ -16,7 +17,7 @@ namespace Clio.Workspaces
 
 		void SaveWorkspaceSettings();
 		void Create(string environmentName, bool isAddedPackageNames = false);
-		void Restore();
+		void Restore(WorkspaceOptions restoreWorkspaceOptions);
 		void Install(string creatioPackagesZipName = null);
 		void AddPackageIfNeeded(string packageName);
 		void SaveWorkspaceEnvironment(string environmentName);

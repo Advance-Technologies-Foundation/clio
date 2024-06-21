@@ -7,9 +7,28 @@ namespace Clio.Command
 
 	#region Class: RestoreWorkspaceOptions
 
-	[Verb("restore-workspace", Aliases = new string[] { "restorew", "pullw", "pull-workspace" }, HelpText = "Restore clio workspace")]
-	public class RestoreWorkspaceOptions : EnvironmentOptions
+	public class WorkspaceOptions : EnvironmentOptions
 	{
+
+		public WorkspaceOptions() {
+			IsNugetRestore = true;
+			IsCreateSolution = true;
+		}
+
+		[Option( "IsNugetRestore", Required = false, HelpText = "True if you need to restore nugget package SDK", Default = true)]
+		public bool? IsNugetRestore { get; set; }
+
+
+		[Option("IsCreateSolution", Required = false, HelpText = "True if you need to create the Solution", Default = true)]
+		public bool? IsCreateSolution { get; set; }
+
+	}
+
+	[Verb("restore-workspace", Aliases = new string[] { "restorew", "pullw", "pull-workspace" },
+		HelpText = "Restore clio workspace")]
+	public class RestoreWorkspaceOptions : WorkspaceOptions
+	{
+
 	}
 
 	#endregion
@@ -38,7 +57,7 @@ namespace Clio.Command
 
 		public override int Execute(RestoreWorkspaceOptions options) {
 			try {
-				_workspace.Restore();
+				_workspace.Restore(options);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
