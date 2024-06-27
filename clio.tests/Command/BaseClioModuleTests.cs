@@ -16,7 +16,7 @@ public abstract class BaseClioModuleTests
 	public virtual void Setup(){
 		_fileSystem = CreateFs();
 		BindingsModule bindingModule = new(_fileSystem);
-		_container = bindingModule.Register(_environmentSettings, true);
+		_container = bindingModule.Register(_environmentSettings, true, AdditionalRegistrations);
 	}
 
 	#endregion
@@ -38,6 +38,9 @@ public abstract class BaseClioModuleTests
 
 	protected virtual MockFileSystem CreateFs(){
 		return TestFileSystem.MockFileSystem();
+	}
+
+	protected virtual void AdditionalRegistrations(ContainerBuilder containerBuilder) {
 	}
 
 	#endregion

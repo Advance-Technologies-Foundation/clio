@@ -19,6 +19,8 @@ namespace Clio.Command
 		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
 		public string AppCode { get; set; }
 
+		internal override bool RequiredEnvironment => false;
+
 		#endregion
 
 	}
@@ -33,21 +35,20 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IWorkspace _workspace;
-		private readonly IInstalledApplication _installedApplication;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CreateWorkspaceCommand(IWorkspace workspace, IInstalledApplication installedApplication) {
+		public CreateWorkspaceCommand(IWorkspace workspace) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
-			_installedApplication = installedApplication;
 		}
 
 		#endregion
 
-		#region Methods: Private
+		#region Property: Private
+
 
 		#endregion
 
@@ -61,7 +62,8 @@ namespace Clio.Command
 					var appCodeNotExists = options.AppCode != null ? false : true;
 						_workspace.Create(options.Environment, appCodeNotExists);
 					if (!appCodeNotExists) {
-						InstalledAppInfo app = _installedApplication.GetInstalledAppInfo(options.AppCode);
+						IInstalledApplication installedApplication = Program.Resolve<IInstalledApplication>(options);
+						InstalledAppInfo app = installedApplication.GetInstalledAppInfo(options.AppCode);
 						if (app != null) {
 							IEnumerable<string> packages = app.GetPackages();
 							foreach (string package in packages) {

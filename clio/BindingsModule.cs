@@ -36,9 +36,8 @@ namespace Clio
 			_fileSystem = fileSystem;
 		}
 		
-		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false
-		, Action<ContainerBuilder> additionalRegistrations = null
-		) {
+		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false,
+			Action<ContainerBuilder> additionalRegistrations = null) {
 			var containerBuilder = new ContainerBuilder();
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())

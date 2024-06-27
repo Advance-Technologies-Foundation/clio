@@ -74,6 +74,7 @@ class Program {
 	}
 
 	public static bool Safe { get; private set; } = true;
+	internal static IContainer Container { get; set; }
 
 	private static void Configure(EnvironmentOptions options)
 	{
@@ -233,10 +234,14 @@ class Program {
 		}
 	}
 
-	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options)
-	{
+	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options) {
 		var settingsRepository = new SettingsRepository();
 		return settingsRepository.GetEnvironment(options);
+	}
+
+	private static EnvironmentSettings FindEnvironmentSettings(EnvironmentOptions options) {
+		var settingsRepository = new SettingsRepository();
+		return settingsRepository.FindEnvironment(options.Environment);
 	}
 
 	private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
@@ -340,19 +345,23 @@ class Program {
 		return environmnetOptions;
 	}
 
-	private static T Resolve<T>(object options = null, bool logAndSettings = false)
+	internal static T Resolve<T>(object options = null, bool logAndSettings = false)
 	{
 		EnvironmentSettings settings = null;
-		if (options is EnvironmentOptions) {
-			var environmentOptions = options as EnvironmentOptions;
-			if (environmentOptions != null) {
+		if (options is EnvironmentOptions environmentOptions) {
+			if (environmentOptions.RequiredEnvironment) {
 				settings = GetEnvironmentSettings(environmentOptions as EnvironmentOptions);
+			} else {
+				settings = FindEnvironmentSettings(environmentOptions as EnvironmentOptions) 
+					?? new EnvironmentSettings() {
+						Login = "default"
+					};
 			}
 		}
 		if (logAndSettings) {
             new ConsoleLogger().WriteInfo(settings.Uri);
         }
-		var container = new BindingsModule().Register(settings);
+		var container = Container ?? new BindingsModule().Register(settings);
 		return container.Resolve<T>();
 	}
 

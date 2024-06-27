@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -308,6 +309,8 @@ namespace Clio
 		public string AppSettingsFilePath => AppSettingsFile;
 		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
+		internal static IFileSystem FileSystem { get; set; } = new FileSystem();
+
 		public SettingsRepository() {
 			InitializeSettingsFile();
 			InitSettings();
@@ -316,8 +319,8 @@ namespace Clio
 		private void InitSettings() {
 			try {
 				var filePath = Path.Combine(Environment.CurrentDirectory, AppSettingsFilePath);
-				if (File.Exists(filePath)) {
-					var fileContent = File.ReadAllText(filePath);
+				if (FileSystem.File.Exists(filePath)) {
+					var fileContent = FileSystem.File.ReadAllText(filePath);
 					if (!String.IsNullOrWhiteSpace(fileContent)) {
 						_settings = JsonConvert.DeserializeObject<Settings>(fileContent);
 						foreach (var environment in _settings.Environments) {
@@ -413,7 +416,7 @@ namespace Clio
 			return environment;
 		}
 
-		private EnvironmentSettings FindEnvironment(string name = null) {
+		public EnvironmentSettings FindEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			try {
 				environment = GetEnvironment(name);

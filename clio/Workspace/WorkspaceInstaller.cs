@@ -50,11 +50,11 @@ namespace Clio.Workspaces
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IPackageBuilder _packageBuilder;
 		private readonly IStandalonePackageFileManager _standalonePackageFileManager;
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
 		private readonly IOSPlatformChecker _osPlatformChecker;
 		private readonly Lazy<IApplicationClient> _applicationClientLazy;
-		private readonly string _resetSchemaChangeStateServiceUrl;
 
 		#endregion
 
@@ -84,11 +84,11 @@ namespace Clio.Workspaces
 			_packageArchiver = packageArchiver;
 			_packageBuilder = packageBuilder;
 			_standalonePackageFileManager = standalonePackageFileManager;
+			_serviceUrlBuilder = serviceUrlBuilder;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_osPlatformChecker = osPlatformChecker;
 			_applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
-			_resetSchemaChangeStateServiceUrl = serviceUrlBuilder.Build(ResetSchemaChangeStateServicePath);
 		}
 
 		#endregion
@@ -96,6 +96,8 @@ namespace Clio.Workspaces
 		#region Properties: Private
 
 		private IApplicationClient ApplicationClient => _applicationClientLazy.Value;
+		
+		private string ResetSchemaChangeStateServiceUrl => _serviceUrlBuilder.Build(ResetSchemaChangeStateServicePath);
 
 		#endregion
 
@@ -103,8 +105,8 @@ namespace Clio.Workspaces
 
 		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
 
-		private void ResetSchemaChangeStateServiceUrl(string packageName) =>
-			ApplicationClient.ExecutePostRequest(_resetSchemaChangeStateServiceUrl,
+		private void ResetSchemaChangeStateServiceUrlByPackage(string packageName) =>
+			ApplicationClient.ExecutePostRequest(ResetSchemaChangeStateServiceUrl,
 				"{\"packageName\":\"" + packageName + "\"}");
 
 		private void PackPackage(string packageName, string rootPackedPackagePath){
@@ -150,7 +152,7 @@ namespace Clio.Workspaces
 					CreateRootPackedPackageDirectory(creatioPackagesZipName, tempDirectory);
 				foreach (string packageName in packages) {
 					PackPackage(packageName, rootPackedPackagePath);
-					ResetSchemaChangeStateServiceUrl(packageName);
+					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
 				InstallApplication(applicationZip);
@@ -165,7 +167,7 @@ namespace Clio.Workspaces
 					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
 				foreach (string packageName in packages) {
 					PackPackage(packageName, rootPackedPackagePath);
-					ResetSchemaChangeStateServiceUrl(packageName);
+					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
 				_fileSystem.CopyFile(applicationZip, Path.Combine(destionationFolderPath, zipFileName), overrideFile);

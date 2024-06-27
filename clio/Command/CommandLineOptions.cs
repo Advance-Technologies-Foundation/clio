@@ -122,7 +122,9 @@ namespace Clio
 			
 			[Option("force", Required = false, HelpText = "Force restore")]
 			public bool Force { get; set; }
-			
+
+			internal virtual bool RequiredEnvironment => true;
+
 			public void CopyFromEnvironmentSettings(EnvironmentOptions source)
             {
                 if (source == null)

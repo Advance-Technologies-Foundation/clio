@@ -14,7 +14,7 @@ namespace Clio.Package
 		#region Fields: Private
 
 		private readonly IJsonConverter _jsonConverter;
-		private readonly string _packagesListServiceUrl;
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly IApplicationClient _applicationClient;
 
 		#endregion
@@ -28,8 +28,13 @@ namespace Clio.Package
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			_applicationClient = applicationClient;
 			_jsonConverter = jsonConverter;
-			_packagesListServiceUrl = serviceUrlBuilder.Build("/rest/CreatioApiGateway/GetPackages");
+			_serviceUrlBuilder = serviceUrlBuilder;
 		}
+
+		#endregion
+
+		#region Properties: Private
+		private string PackagesListServiceUrl => _serviceUrlBuilder.Build("/rest/CreatioApiGateway/GetPackages");
 
 		#endregion
 
@@ -52,7 +57,7 @@ namespace Clio.Package
 		public IEnumerable<PackageInfo> GetPackages() => GetPackages("{}");
 
 		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
-			string responseFormServer = _applicationClient.ExecutePostRequest(_packagesListServiceUrl, scriptData);
+			string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
 			var json = _jsonConverter.CorrectJson(responseFormServer);
 			var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
 			return packages.Select(CreatePackageInfo);
