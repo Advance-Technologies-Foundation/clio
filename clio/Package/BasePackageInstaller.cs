@@ -92,12 +92,12 @@
 
 		private void SaveLogFile(string logText, string reportPath) {
 			if (reportPath != null && !string.IsNullOrWhiteSpace(logText)) {
-				if (File.Exists(reportPath)) {
-					File.Delete(reportPath);
-				} else if (Directory.Exists(reportPath)) {
+				if (_fileSystem.ExistsFile(reportPath)) {
+					_fileSystem.DeleteFile(reportPath);
+				} else if (_fileSystem.ExistsDirectory(reportPath)) {
 					reportPath = Path.Combine(reportPath, DefLogFileName);
 				}
-				File.WriteAllText(reportPath, logText, Encoding.UTF8);
+				_fileSystem.WriteAllTextToFile(reportPath, logText, Encoding.UTF8);
 			}
 		}
 
@@ -222,7 +222,7 @@
 			try {
 				(success, logText) = InstallPackedPackage(packedFilePath, environmentSettings, packageInstallOptions);
 			} finally {
-				File.Delete(packedFilePath);
+				_fileSystem.DeleteFile(packedFilePath);
 			}
 			return (success, logText);
 		}
@@ -234,7 +234,7 @@
 			if (_fileSystem.ExistsFile(packagePackedFileOrFolderPath)) {
 				(success, logText) =
 					InstallPackedPackage(packagePackedFileOrFolderPath, environmentSettings, packageInstallOptions);
-			} else if (Directory.Exists(packagePackedFileOrFolderPath)) {
+			} else if (_fileSystem.ExistsDirectory(packagePackedFileOrFolderPath)) {
 				(success, logText) = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath,
 					environmentSettings, packageInstallOptions);
 			} else {

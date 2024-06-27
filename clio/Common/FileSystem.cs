@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using Ms = System.IO.Abstractions;
 namespace Clio.Common;
@@ -164,8 +165,8 @@ public class FileSystem : IFileSystem
 	public string ReadAllText(string filePath) => 
 		_msFileSystem.File.ReadAllText(filePath);
 
-	public void WriteAllTextToFile(string filePath, string contents) => 
-		_msFileSystem.File.WriteAllText(filePath, contents);
+	public void WriteAllTextToFile(string filePath, string contents) =>
+		WriteAllTextToFile(filePath, contents, Encoding.UTF8);
 
 	public void ClearOrCreateDirectory(string directoryPath) {
 		if (_msFileSystem.Directory.Exists(directoryPath)) {
@@ -335,7 +336,11 @@ public class FileSystem : IFileSystem
 		}
 		return GetFileHash(algorithm, first) == GetFileHash(algorithm, second);
 	}
-		
+
+	public void WriteAllTextToFile(string filePath, string contents, Encoding encoding) {
+		_msFileSystem.File.WriteAllText(filePath, contents, encoding);
+	}
+
 	#endregion
 
 }

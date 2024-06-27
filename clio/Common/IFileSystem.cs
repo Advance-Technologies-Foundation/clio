@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
+using System.Text;
+using System.Text.Unicode;
 
 namespace Clio.Common
 {
@@ -120,6 +122,9 @@ namespace Clio.Common
 
 		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string)"/>
 		void WriteAllTextToFile(string filePath, string contents);
+
+		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
+		void WriteAllTextToFile(string filePath, string contents, Encoding encoding);
 
 		void ClearOrCreateDirectory(string directoryPath);
 
