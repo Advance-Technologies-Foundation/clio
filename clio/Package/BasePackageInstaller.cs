@@ -208,7 +208,11 @@
 				UnlockMaintainerPackageInternal(environmentSettings);
 			}
 			if (DeveloperModeEnabled(environmentSettings) || environmentSettings.IsNetCore) {
-				_application.Restart();
+				try {
+					_application.Restart();
+				} catch (Exception ex) {
+					_logger.WriteLine($"Error while restarting application: {ex.Message}");
+				}
 			}
 			return (success, logText);
 		}
