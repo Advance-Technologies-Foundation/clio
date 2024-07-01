@@ -83,14 +83,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		var container = GetContainer();
 		var sysSettingsManager = container.Resolve<ISysSettingsManager>();
 		var sysSettingsWithValues = sysSettingsManager.GetAllSysSettingsWithValues();
-		Assert.NotNull(sysSettingsWithValues);
-		Assert.NotZero(sysSettingsWithValues.Count);
-
-		// get syssettings from syssettingsmanager and convert to manifest setting
-
-		// save manifest settings
-
-		// read manu=ifest settings and compare with expected syssettings value from origin odata files		
+		
+		sysSettingsWithValues.Should().NotBeNull();
+		sysSettingsWithValues.Count.Should().BeGreaterThan(0);
 	}
 
 	[TestCase("ShowWidgetOnIntroPage", "true")]
@@ -134,7 +129,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		var envManager = container.Resolve<IEnvironmentManager>();
 		var actualSettings = envManager.GetSettingsFromManifest(saveSettingsToManifestOptions.ManifestFileName);
 		var settings = actualSettings.FirstOrDefault(s => s.Code == sysSettingsCode);
-		Assert.AreEqual(sysSettingsStringValue, settings.Value);
+		sysSettingsStringValue.Should().Be(settings.Value);
 		loggerMock.Received(1).WriteInfo("Done");
 	}
 
@@ -276,7 +271,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 	public void TestFormatDateTime() {
 		var dateTime = new DateTime(2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
 		string expectedString = "12/10/2024 12:00:00 AM";
-		Assert.AreEqual(expectedString, dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpper());
+		expectedString.Should().Be(dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpper());
 	}
 
 	private void MockSysPackage(DataProviderMock providerMock, bool packageAccending, bool withSchemas = false, bool schemaAccending = false) {
@@ -334,10 +329,6 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		}
 		mock.Returns(list);
 	}
-	
-
-
-	
 	
 	
 	[Test(Description = "Validate that we can mock from OData Json response and get all SysSettings with values.")]

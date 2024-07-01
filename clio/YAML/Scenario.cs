@@ -65,7 +65,7 @@ public class Scenario : IScenario, IExecutableScenario
 			using TextReader reader = new StreamReader(fileName);
 			try {
 				return deserializer.Deserialize<Dictionary<object, object>>(reader) ?? new Dictionary<object, object>();
-			} catch (Exception e) {
+			} catch (Exception) {
 				Console.WriteLine("Could not deserialize file: " + fileName);
 				return new Dictionary<object, object>();
 			}

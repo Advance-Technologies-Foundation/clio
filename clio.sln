@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "cliogate.tests", "cliogate.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "clio.Tests.Api", "clio.TestsAPI\clio.TestsAPI.csproj", "{DD970BB9-CAD2-4C63-9017-91C6859B39EA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "creatioclient", "..\creatioclient\creatioclient\creatioclient.csproj", "{812AE391-BD40-45DC-B6F6-B4935014BF8E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -45,6 +47,10 @@ Global
 		{DD970BB9-CAD2-4C63-9017-91C6859B39EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DD970BB9-CAD2-4C63-9017-91C6859B39EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DD970BB9-CAD2-4C63-9017-91C6859B39EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

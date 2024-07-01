@@ -3,6 +3,7 @@ using System.Linq;
 using Clio.Common.Responses;
 using Clio.Package;
 using Clio.Package.Responses;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -62,13 +63,15 @@ public class PackageActivatorTestCase : BasePackageOperationTestCase
 				Arg.Is<string>(data => data.Contains(packageName)))
 			.Returns(activationResponse);
 		var packageActivationResults = _packageActivator.Activate(packageName).ToArray();
-		Assert.AreEqual(activationResponse.PackagesActivationResults.Length, packageActivationResults.Length);
-		Assert.IsNotNull(packageActivationResults.First(result =>
-			result.PackageName == packageName && result.Success && string.IsNullOrEmpty(result.Message)));
-		Assert.IsNotNull(packageActivationResults.First(result =>
-			result.PackageName == packageName1 && result.Success && !string.IsNullOrEmpty(result.Message)));
-		Assert.IsNotNull(packageActivationResults.First(result =>
-			result.PackageName == packageName2 && !result.Success));
+		packageActivationResults.Length.Should().Be(activationResponse.PackagesActivationResults.Length);
+		
+		packageActivationResults.First(result =>
+			result.PackageName == packageName && result.Success && string.IsNullOrEmpty(result.Message)).Should().NotBeNull();
+		
+		packageActivationResults.First(result =>
+			result.PackageName == packageName1 && result.Success && !string.IsNullOrEmpty(result.Message)).Should().NotBeNull();
+		packageActivationResults.First(result =>
+			result.PackageName == packageName2 && !result.Success).Should().NotBeNull();
 	}
 
 	[Test, Category("Unit")]
@@ -86,7 +89,8 @@ public class PackageActivatorTestCase : BasePackageOperationTestCase
 					Message = errorMessage
 				}
 			});
-		Assert.Throws<Exception>(() => _packageActivator.Activate(packageName), errorMessage);
+		Action act = () => _packageActivator.Activate(packageName);
+		act.Should().Throw<Exception>().WithMessage(errorMessage);
 	}
 
 	#endregion

@@ -148,7 +148,7 @@
 				var package = packages.FirstOrDefault(p =>
 					p.Descriptor.Name.Equals(packageName, StringComparison.InvariantCultureIgnoreCase));
 				return package;
-			} catch (Exception e) {
+			} catch (Exception) {
 				return null;
 			}
 		}

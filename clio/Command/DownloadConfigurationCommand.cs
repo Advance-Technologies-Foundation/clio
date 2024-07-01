@@ -24,36 +24,31 @@
 
 		private readonly IApplicationDownloader _applicationDownloader;
 		private readonly IWorkspace _workspace;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public DownloadConfigurationCommand(IApplicationDownloader applicationDownloader, IWorkspace workspace) {
+		public DownloadConfigurationCommand(IApplicationDownloader applicationDownloader, IWorkspace workspace, ILogger logger) {
 			applicationDownloader.CheckArgumentNull(nameof(applicationDownloader));
 			workspace.CheckArgumentNull(nameof(workspace));
 			_applicationDownloader = applicationDownloader;
 			_workspace = workspace;
+			_logger = logger;
 		}
-
 		#endregion
 
 		
 		#region Methods: Public
 
 		public override int Execute(DownloadConfigurationCommandOptions options) {
-			try {
-				_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
+			_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
+			_logger.WriteLine("Done");
+			return 0;
 		}
 
 		#endregion
-
 
 	}
 

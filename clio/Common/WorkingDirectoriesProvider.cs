@@ -80,7 +80,7 @@ namespace Clio.Common
 			}
 		}
 
-		internal string GenerateTempDirectoryPath() {
+		public string GenerateTempDirectoryPath() {
 			return Guid.NewGuid().ToString("N");
 		}
 

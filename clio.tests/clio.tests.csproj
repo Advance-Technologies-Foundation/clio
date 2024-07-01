@@ -83,6 +83,9 @@
     <None Update="Examples\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    
+    
+    
     <None Update="YAML\Script\three_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -122,15 +125,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ATF.Repository.Mock" Version="2.0.1.5" />
+    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
-    <PackageReference Include="NSubstitute" Version="5.0.0" />
-    <PackageReference Include="nunit" Version="3.13.3" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.3.1" />
-    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="20.0.4" />
-    <!--<PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.2" />-->
+    <PackageReference Include="NSubstitute" Version="5.1.0" />
+    <PackageReference Include="nunit" Version="4.1.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.0.22" />
+	<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    
   </ItemGroup>
 	<PropertyGroup>
 		<!-- Exclude the project from analysis -->
@@ -138,12 +142,10 @@
 		<SonarQubeTestProject>true</SonarQubeTestProject>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="coverlet.msbuild" Version="3.2.0">
+		<PackageReference Include="coverlet.msbuild" Version="6.0.2">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<!--Required for coverlet.msbuild-->
-		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.4.1" />
 	</ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\clio\clio.csproj" />
@@ -199,6 +201,14 @@
 
   <ItemGroup>
     <Folder Include="TestResults\" />
+    
+    <Folder Include="Examples\CsProjFiles\" />
+    <Content Include="Examples\CsProjFiles\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Update="Examples\CsProjFiles\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

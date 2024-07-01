@@ -25,7 +25,6 @@ public abstract class BaseClioModuleTests
 
 	protected MockFileSystem _fileSystem;
 	protected IContainer _container;
-
 	protected EnvironmentSettings _environmentSettings = new() {
 		Uri = "http://localhost",
 		Login = "",

@@ -57,7 +57,7 @@ namespace Clio.ComposableApplication
 			try {
 				SetVersion(workspacePath, appVersion);
 				return true;
-			} catch(Exception e) {
+			} catch(Exception) {
 				return false;
 			}
 		}

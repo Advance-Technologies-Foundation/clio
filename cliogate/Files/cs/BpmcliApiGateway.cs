@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
@@ -27,6 +28,7 @@ using Terrasoft.Core.ServiceModelContract;
 using Terrasoft.Core.Store;
 using Terrasoft.Web.Common;
 using Terrasoft.Web.Http.Abstractions;
+using Exception = System.Exception;
 #if NETSTANDARD2_0
 using System.Globalization;
 using Terrasoft.Web.Http.Abstractions;
@@ -65,7 +67,7 @@ namespace cliogate.Files.cs
 		public CreatioApiGateway(){
 			_userConnection = ClassFactory.Get<UserConnection>();
 		}
-		
+		private HttpContext HttpContext => HttpContextAccessor.GetInstance();
 		#region Fields: Private
 
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
@@ -104,6 +106,22 @@ namespace cliogate.Files.cs
 				throw new Exception("You don't have permission for operation CanManageSysSettings");
 			}
 		}
+		
+		/// <summary>
+		///  Sets the return status code of the HTTP response.
+		/// </summary>
+		/// <param name="statusCode"></param>
+		private void SetReturnStatusCode(HttpStatusCode statusCode){
+#if NETFRAMEWORK
+			if (WebOperationContext.Current != null) {
+				WebOperationContext.Current.OutgoingResponse.StatusCode = statusCode;
+			}
+			HttpContext.Current.Response.StatusCode = (int)statusCode;
+#elif !NETFRAMEWORK
+			HttpContext.Response.StatusCode = (int)statusCode;
+#endif
+		}
+		
 
 		private PackageInstallUtilities CreateInstallUtilities(){
 			return new PackageInstallUtilities(UserConnection);
@@ -484,8 +502,27 @@ namespace cliogate.Files.cs
 			return new BaseResponse {
 				Success = true
 			};
-			
 		}
+		// 200: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
+		// 404: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
+		[OperationContract]
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public void DownloadFile(string packageName, string dllName){
+			CheckCanManageSolution();
+			PackageExplorer packageExplorer = new PackageExplorer(packageName);
+			bool isNetCore = !HttpContext.Request.BaseUrl.EndsWith("/0");
+			byte[] bytes = packageExplorer.GetBinaryFileContent(dllName, isNetCore);
+			
+			AssignFileResponseContent(bytes.Length, dllName);
+			if(bytes.Length == 0) {
+				SetReturnStatusCode(HttpStatusCode.NotFound);
+			}
+			SetReturnStatusCode(HttpStatusCode.OK);
+			HttpContext.Current.Response.OutputStream.Write(bytes, 0, bytes.Length);
+		}
+		
+		
 		[OperationContract]
 		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
@@ -593,6 +630,7 @@ namespace cliogate.Files.cs
 
 		private readonly string _packageName;
 		private readonly string _baseDir = AppDomain.CurrentDomain.BaseDirectory;
+		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
 
 		#endregion
 
@@ -623,6 +661,9 @@ namespace cliogate.Files.cs
 			return Path.Combine(_baseDir, "Terrasoft.Configuration", "Pkg", _packageName, "Files");
 		}
 
+		
+		private string PackageBinDirectoryPath()=> Path.Combine(PackageDirectoryPath(), "Bin");
+		
 		private bool IsPackageUnlocked(string packageName){
 			var userConnection = ClassFactory.Get<UserConnection>();
 			string maintainerCode = SysSettings.GetValue(userConnection, "Maintainer", "NonImplemented");
@@ -640,6 +681,18 @@ namespace cliogate.Files.cs
 
 		#region Methods: Public
 
+		public byte[] GetBinaryFileContent(string dllName, bool isNetCore){
+			try {
+				CheckNameForDeniedSymbols(dllName);
+				return isNetCore  
+					? File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), "netstandard", dllName))
+					: File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), dllName));
+			}catch(Exception ex) {
+				_log.Error($"Error while reading file {dllName} from package {_packageName}", ex);
+				return Array.Empty<byte>();
+			}
+		}
+		
 		public string GetPackageFileContent(string filePath){
 			CheckNameForDeniedSymbols(filePath);
 			return File.ReadAllText(Path.Combine(PackageDirectoryPath(), filePath));

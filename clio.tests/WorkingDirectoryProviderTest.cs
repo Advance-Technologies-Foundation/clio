@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using FluentAssertions;
 using ConsoleLogger = Clio.Common.ConsoleLogger;
 
 namespace Clio.Tests
@@ -15,7 +16,7 @@ namespace Clio.Tests
 		[Test]
 		public void GetTemplatePath_TemplateName_ReturnsTemplatePath() {
 			// Arrange
-			var logger = new ConsoleLogger(); 
+			var logger = ConsoleLogger.Instance; 
 			var provider = new WorkingDirectoriesProvider(logger);
 			var templateName = "TestTemplate";
 			var expectedPath = Path.Combine(provider.TemplateDirectory, $"{templateName}.tpl");
@@ -24,13 +25,13 @@ namespace Clio.Tests
 			var actualPath = provider.GetTemplatePath(templateName);
 
 			// Assert
-			Assert.AreEqual(expectedPath, actualPath);
+			expectedPath.Should().Be(actualPath);
 		}
 
 		[Test]
 		public void GetTemplatePath_Multiple_Create_Temp_Directory() {
 			// Arrange
-			var logger = new ConsoleLogger();
+			var logger = ConsoleLogger.Instance;
 			var provider = new WorkingDirectoriesProvider(logger);
 			ConcurrentBag<string> paths = new ConcurrentBag<string>();
 			
@@ -42,9 +43,10 @@ namespace Clio.Tests
 
 			var uniqCount = paths.Distinct().Count();
 			var dashContainsCount = paths.Count(p => p.Contains("-"));
+			
 			// Assert
-			Assert.AreEqual(repeatCount, uniqCount);
-			Assert.AreEqual(0, dashContainsCount);
+			paths.Distinct().Should().HaveCount(repeatCount);
+			dashContainsCount.Should().Be(0);
 		}
 	}
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text;
 using Clio.Common;
 using FluentAssertions;
 using FluentAssertions.Specialized;
@@ -500,7 +501,7 @@ public class FileSystemTests
 			.ReadAllText(fileName);
 			
 		//Assert
-		fs.File.Received(1).ReadAllText(fileName);
+		fs.File.Received(1).ReadAllText(fileName, Encoding.UTF8);
 		
 	}
 
@@ -520,7 +521,7 @@ public class FileSystemTests
 			.WriteAllTextToFile(fileName, content);
 			
 		//Assert
-		fs.File.Received(1).WriteAllText(fileName, content);
+		fs.File.Received(1).WriteAllText(fileName, content, Encoding.UTF8);
 	}
 
 	#endregion

@@ -13,18 +13,18 @@ namespace Clio.Tests.Command
 	internal class UpdateClioCommandTests
 	{
 		[Test]
-		public void ChechVersionCommandTests() {
+		public void CheckVersionCommandTests() {
 			var currentVersion = UpdateCliCommand.GetCurrentVersion();
 			var latestVersion = UpdateCliCommand.GetLatestVersion();
 			latestVersion.Should().NotBeNullOrEmpty();
-			Assert.AreEqual(currentVersion, latestVersion);
+			currentVersion.Should().Be(latestVersion);
 		}
 
 		[Test]
-		public void ChechVersionFromGitHubAndNuget() {
+		public void CheckVersionFromGitHubAndNuget() {
 			var versionFromNuget = UpdateCliCommand.GetLatestVersionFromNuget();
 			var versionFromGitHub = UpdateCliCommand.GetLatestVersionFromGitHub();
-			Assert.AreEqual(versionFromNuget, versionFromGitHub);
+			versionFromNuget.Should().Be(versionFromGitHub);
 		}
 	}
 }
