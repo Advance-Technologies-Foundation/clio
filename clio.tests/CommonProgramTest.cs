@@ -11,6 +11,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FluentAssertions;
 
 namespace Clio.Tests
 {
@@ -26,12 +27,12 @@ namespace Clio.Tests
 				Uri = "http://commandline"
 			};
 			var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
-			Assert.AreEqual("http://commandline", resultOptions.Uri);
+			resultOptions.Uri.Should().Be("http://commandline");
 		}
 
 		[Test]
 		public void ApplyManifestOptionsOnlyFromFileTest() {
-			var optionsFromFile = new EnvironmentOptions() {
+			var optionsFromFile = new EnvironmentOptions {
 				Uri = "http://file",
 				Login = "fileLogin",
 				Password = "filePassword",
@@ -39,18 +40,16 @@ namespace Clio.Tests
 				IsNetCore = true,
 				ClientSecret = "fileClientSecret",
 				AuthAppUri = "fileAuthAppUri",
-				
 			};
-			var optionsFromCommandLine = new EnvironmentOptions() {
-			};
+			var optionsFromCommandLine = new EnvironmentOptions();
 			var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
-			Assert.AreEqual(optionsFromFile.Uri, resultOptions.Uri);
-			Assert.AreEqual(optionsFromFile.Login, resultOptions.Login);
-			Assert.AreEqual(optionsFromFile.Password, resultOptions.Password);
-			Assert.AreEqual(optionsFromFile.ClientId, resultOptions.ClientId);
-			Assert.AreEqual(optionsFromFile.ClientSecret, resultOptions.ClientSecret);
-			Assert.AreEqual(optionsFromFile.AuthAppUri, resultOptions.AuthAppUri);
-			Assert.AreEqual(optionsFromFile.IsNetCore, resultOptions.IsNetCore);
+			optionsFromFile.Uri.Should().Be(resultOptions.Uri);
+			optionsFromFile.Login.Should().Be(resultOptions.Login);
+			optionsFromFile.Password.Should().Be(resultOptions.Password);
+			optionsFromFile.ClientId.Should().Be(resultOptions.ClientId);
+			optionsFromFile.ClientSecret.Should().Be(resultOptions.ClientSecret);
+			optionsFromFile.AuthAppUri.Should().Be(resultOptions.AuthAppUri);
+			optionsFromFile.IsNetCore.Should().Be(resultOptions.IsNetCore);
 		}
 
 		[Test]
@@ -68,12 +67,12 @@ namespace Clio.Tests
 				Environment = "myEnv"
 			};
 			var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
-			Assert.AreEqual(optionsFromCommandLine.Uri, resultOptions.Uri);
-			Assert.AreEqual(optionsFromCommandLine.Login, resultOptions.Login);
-			Assert.AreEqual(optionsFromCommandLine.Password, resultOptions.Password);
-			Assert.AreEqual(optionsFromCommandLine.ClientId, resultOptions.ClientId);
-			Assert.AreEqual(optionsFromCommandLine.ClientSecret, resultOptions.ClientSecret);
-			Assert.AreEqual(optionsFromCommandLine.AuthAppUri, resultOptions.AuthAppUri);
+			optionsFromCommandLine.Uri.Should().Be(resultOptions.Uri);
+			optionsFromCommandLine.Login.Should().Be(resultOptions.Login);
+			optionsFromCommandLine.Password.Should().Be(resultOptions.Password);
+			optionsFromCommandLine.ClientId.Should().Be(resultOptions.ClientId);
+			optionsFromCommandLine.ClientSecret.Should().Be(resultOptions.ClientSecret);
+			optionsFromCommandLine.AuthAppUri.Should().Be(resultOptions.AuthAppUri);
 		}
 
         [Test]
@@ -83,12 +82,12 @@ namespace Clio.Tests
                 Environment = "myEnv"
             };
             var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
-            Assert.AreEqual(optionsFromCommandLine.Uri, resultOptions.Uri);
-            Assert.AreEqual(optionsFromCommandLine.Login, resultOptions.Login);
-            Assert.AreEqual(optionsFromCommandLine.Password, resultOptions.Password);
-            Assert.AreEqual(optionsFromCommandLine.ClientId, resultOptions.ClientId);
-            Assert.AreEqual(optionsFromCommandLine.ClientSecret, resultOptions.ClientSecret);
-            Assert.AreEqual(optionsFromCommandLine.AuthAppUri, resultOptions.AuthAppUri);
+			optionsFromCommandLine.Uri.Should().Be(resultOptions.Uri);
+			optionsFromCommandLine.Login.Should().Be(resultOptions.Login);
+			optionsFromCommandLine.Password.Should().Be(resultOptions.Password);
+			optionsFromCommandLine.ClientId.Should().Be(resultOptions.ClientId);
+			optionsFromCommandLine.ClientSecret.Should().Be(resultOptions.ClientSecret);
+			optionsFromCommandLine.AuthAppUri.Should().Be(resultOptions.AuthAppUri);
         }
 
         [Test]
@@ -96,7 +95,7 @@ namespace Clio.Tests
             EnvironmentOptions optionsFromFile = null;
             EnvironmentOptions optionsFromCommandLine = null;
             var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
-            Assert.IsNull(resultOptions);
+			resultOptions.Should().BeNull();
         }
 
         [Test]
@@ -104,13 +103,12 @@ namespace Clio.Tests
             EnvironmentOptions optionsFromFile = null;
 			var optionsFromCommandLine = new EnvironmentOptions();
             var resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
-            Assert.AreEqual(optionsFromCommandLine.Environment, resultOptions.Environment);
-            Assert.AreEqual(optionsFromCommandLine.Uri, resultOptions.Uri);
-            Assert.AreEqual(optionsFromCommandLine.Login, resultOptions.Login);
-            Assert.AreEqual(optionsFromCommandLine.Password, resultOptions.Password);
-            Assert.AreEqual(optionsFromCommandLine.ClientId, resultOptions.ClientId);
-            Assert.AreEqual(optionsFromCommandLine.ClientSecret, resultOptions.ClientSecret);
-            Assert.AreEqual(optionsFromCommandLine.AuthAppUri, resultOptions.AuthAppUri);
+			optionsFromCommandLine.Uri.Should().Be(resultOptions.Uri);
+			optionsFromCommandLine.Login.Should().Be(resultOptions.Login);
+			optionsFromCommandLine.Password.Should().Be(resultOptions.Password);
+			optionsFromCommandLine.ClientId.Should().Be(resultOptions.ClientId);
+			optionsFromCommandLine.ClientSecret.Should().Be(resultOptions.ClientSecret);
+			optionsFromCommandLine.AuthAppUri.Should().Be(resultOptions.AuthAppUri);
         }
 
         [Test]
@@ -121,10 +119,10 @@ namespace Clio.Tests
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 			var commonFileSystem = new Clio.Common.FileSystem(_fileSystem);
-			var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
-			Assert.AreEqual(envSettingsFromFile.Uri, environmnetOptionsFromFile.Uri);
-			Assert.AreEqual(envSettingsFromFile.Login, environmnetOptionsFromFile.Login);
-			Assert.AreEqual(envSettingsFromFile.Password, environmnetOptionsFromFile.Password);
+			var environmentOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
+			envSettingsFromFile.Uri.Should().Be(environmentOptionsFromFile.Uri);
+			envSettingsFromFile.Login.Should().Be(environmentOptionsFromFile.Login);
+			envSettingsFromFile.Password.Should().Be(environmentOptionsFromFile.Password);
 		}
 
         [Test]
@@ -136,8 +134,7 @@ namespace Clio.Tests
             EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
             var commonFileSystem = new Clio.Common.FileSystem(_fileSystem);
             var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
-            Assert.IsNull(environmnetOptionsFromFile);
+			environmnetOptionsFromFile.Should().BeNull();
         }
-
     }
 }

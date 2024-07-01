@@ -26,6 +26,7 @@ using Clio.Command.ApplicationCommand;
 using Clio.Package;
 using Clio.Project.NuGet;
 using Creatio.Client;
+using DocumentFormat.OpenXml.Math;
 
 namespace Clio
 {
@@ -38,10 +39,16 @@ namespace Clio
 		
 		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false,
 			Action<ContainerBuilder> additionalRegistrations = null) {
+			
 			var containerBuilder = new ContainerBuilder();
+			
 			containerBuilder
 				.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
+				.Where(t => t != typeof(ConsoleLogger))
 				.AsImplementedInterfaces();
+			
+			containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
+			
 			if (settings != null || registerNullSettingsForTest) {
 				containerBuilder.RegisterInstance(settings);
 				if (!registerNullSettingsForTest) {
@@ -194,6 +201,7 @@ namespace Clio
 			containerBuilder.RegisterType<ShowDiffEnvironmentsCommand>();
 			containerBuilder.RegisterType<CloneEnvironmentCommand>();
 			containerBuilder.RegisterType<PullPkgCommand>();
+			containerBuilder.RegisterType<AssemblyCommand>();
 			
 			
 			additionalRegistrations?.Invoke(containerBuilder);

@@ -5,6 +5,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Json;
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
+using FluentAssertions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.ApplicationCommand
@@ -57,9 +58,9 @@ namespace Clio.Tests.Command.ApplicationCommand
 			});
 			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(mockWorkspaceAppDescriptorPath));
 			string actualVersion = objectJson["Version"];
-			Assert.True(_fileSystem.FileExists(mockWorkspaceAppDescriptorPath));
-			Assert.AreEqual(expectedVersion, actualVersion);
-			Assert.Greater(_fileSystem.File.ReadAllLines(mockWorkspaceAppDescriptorPath).Length, 20);
+			_fileSystem.FileExists(mockWorkspaceAppDescriptorPath).Should().BeTrue();
+			expectedVersion.Should().Be(actualVersion);
+			_fileSystem.File.ReadAllLines(mockWorkspaceAppDescriptorPath).Length.Should().BeGreaterThan(20);
 		}
 
 		[Test]
@@ -74,8 +75,8 @@ namespace Clio.Tests.Command.ApplicationCommand
 			string worspaceFolderPath = mockWorspacePath;
 			var exception = Assert.Throws<Exception>( () => command.Execute(new SetApplicationVersionOption() { 
 				Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath }));
-			Assert.True(exception.Message.Contains("Package1"));
-			Assert.True(exception.Message.Contains("Package2"));
+			exception.Message.Contains("Package1").Should().BeTrue();
+			exception.Message.Contains("Package2").Should().BeTrue();
 		}
 
 		[Test]
@@ -90,8 +91,8 @@ namespace Clio.Tests.Command.ApplicationCommand
 			string worspaceFolderPath = mockWorspacePath;
 			var exception = Assert.Throws<Exception>(() => command.Execute(new SetApplicationVersionOption() { 
 				Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath }));
-			Assert.True(exception.Message.Contains("Package1"));
-			Assert.True(exception.Message.Contains("Package2"));
+			exception.Message.Contains("Package1").Should().BeTrue();
+			exception.Message.Contains("Package2").Should().BeTrue();
 		}
 
 		[Test]
@@ -126,10 +127,9 @@ namespace Clio.Tests.Command.ApplicationCommand
 			});
 			var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(mockPackageAppDescriptorPath));
 			string actualVersion = objectJson["Version"];
-			Assert.True(_fileSystem.FileExists(mockPackageAppDescriptorPath));
-			Assert.AreEqual(expectedVersion, actualVersion);
-			Assert.Greater(_fileSystem.File.ReadAllLines(mockPackageAppDescriptorPath).Length, 20);
+			_fileSystem.FileExists(mockPackageAppDescriptorPath).Should().BeTrue();
+			expectedVersion.Should().Be(actualVersion);
+			_fileSystem.File.ReadAllLines(mockPackageAppDescriptorPath).Length.Should().BeGreaterThan(20);
 		}
-
 	}
 }

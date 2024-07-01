@@ -112,7 +112,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 						string featureCaption = featureObject["Caption"].ToString();
 						features.Add(featureCaption);
 					}
-				} catch (Exception e) {
+				} catch (Exception) {
 				}
 				_windowsActiveFeatures = features;
 			}

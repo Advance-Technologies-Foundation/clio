@@ -134,7 +134,7 @@
 			try {
 				IApplicationClient applicationClientForLog = CreateApplicationClient(environmentSettings);
 				return applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSettings));
-			} catch (Exception ex) { }
+			} catch (Exception) { }
 			return String.Empty;
 		}
 

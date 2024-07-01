@@ -1,54 +1,70 @@
-﻿namespace Clio.Tests.Command;
-
-using System;
-using System.IO;
+﻿using System;
 using System.Text.Json;
+using Autofac;
 using Clio.Command;
 using Clio.Common;
 using NSubstitute;
 using NUnit.Framework;
 
+namespace Clio.Tests.Command;
+
 [TestFixture]
 public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 {
 
-	private TextWriter _defaultConsoleWriter;
+	#region Fields: Private
 
-	private bool CheckRequest(string body, string executorType) {
+	private readonly IApplicationClient _applicationClientMock = Substitute.For<IApplicationClient>();
+	private readonly ILogger _loggerMock = Substitute.For<ILogger>();
+
+	#endregion
+
+	#region Methods: Private
+
+	private bool CheckRequest(string body, string executorType){
 		try {
-			var reqObj = JsonSerializer.Deserialize<ExecuteScriptRequest>(body);
+			ExecuteScriptRequest reqObj = JsonSerializer.Deserialize<ExecuteScriptRequest>(body);
 			return reqObj.LibraryType == executorType && reqObj.Body.Length > 0;
 		} catch (Exception) {
 			return false;
 		}
 	}
 
-	[SetUp]
-	protected void Setup() {
-		_defaultConsoleWriter = Console.Out;
+	#endregion
+
+	#region Methods: Protected
+
+	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+		containerBuilder.RegisterInstance(_applicationClientMock).As<IApplicationClient>();
+		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
+		base.AdditionalRegistrations(containerBuilder);
 	}
 
-	[TearDown]
-	protected void TearDown() {
-		Console.SetOut(_defaultConsoleWriter);
-	}
+	#endregion
 
-	[Test, Category("Unit")]
-	public void Execute_ShouldWriteResponse_WhenItIsSuccessful() {
-		var applicationClient = Substitute.For<IApplicationClient>();
-		var command = new AssemblyCommand(applicationClient, new EnvironmentSettings());
+	[Test]
+	[Category("Unit")]
+	public void Execute_ShouldWriteResponse_WhenItIsSuccessful(){
+		// Arrange
+		AssemblyCommand command = _container.Resolve<AssemblyCommand>();
+		command.Logger = _loggerMock;
+
 		string executorType = typeof(AssemblyCommand).FullName;
-		applicationClient.ExecutePostRequest(Arg.Is<string>(path => path.EndsWith("/IDE/ExecuteScript")),
-			Arg.Is<string>(request => CheckRequest(request, executorType)))
+		_applicationClientMock.ExecutePostRequest(
+				Arg.Is<string>(path => path.EndsWith("/IDE/ExecuteScript")),
+				Arg.Is<string>(request => CheckRequest(request, executorType)))
 			.Returns("responseFromServer");
-		var output = new StringWriter();
-		Console.SetOut(output);
+
+		// Act
 		command.Execute(new ExecuteAssemblyOptions {
 			ExecutorType = executorType,
 			Name = new Uri(typeof(AssemblyCommand).Assembly.Location).LocalPath,
-			WriteResponse = true
+			WriteResponse = true,
 		});
-		StringAssert.StartsWith("[INF] - responseFromServer", output.ToString());
+
+		// Assert
+		_loggerMock.Received(1).WriteInfo("responseFromServer");
+		_loggerMock.ClearReceivedCalls();
 	}
 
 }
