@@ -54,9 +54,9 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 
 	#region Properties: Protected
 
-	protected IApplicationClient ApplicationClient { get; }
+	internal IApplicationClient ApplicationClient { get; set; }
 
-	protected EnvironmentSettings EnvironmentSettings { get; }
+	internal EnvironmentSettings EnvironmentSettings { get; set; }
 
 	protected string RootPath =>
 		EnvironmentSettings.IsNetCore
@@ -75,17 +75,17 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 	public int RequestTimeout
 	{
 		get;
-		private set;
+		set;
 	}
 	public int RetryCount
 	{
 		get;
-		private set;
+		set;
 	}
 	public int DelaySec
 	{
 		get;
-		private set;
+		set;
 	}
 
 	public ILogger Logger { get; set; } = ConsoleLogger.Instance;

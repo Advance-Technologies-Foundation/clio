@@ -13,11 +13,11 @@ namespace Clio.Command
 
 	public class PingAppCommand : RemoteCommand<PingAppOptions>
 	{
-
 		public PingAppCommand() { } // for tests
 
 		public PingAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
 			: base(applicationClient, settings) {
+			EnvironmentSettings = settings;
 		}
 
 		private int ExecuteGetRequest() {
@@ -28,6 +28,9 @@ namespace Clio.Command
 
 		public override int Execute(PingAppOptions options) {
 			ServicePath = options.Endpoint;
+			RequestTimeout = options.TimeOut;
+			RetryCount = options.RetryCount;
+			DelaySec = options.RetryDelay;
 			Logger.WriteInfo($"Ping {ServiceUri} ...");
 			return EnvironmentSettings.IsNetCore ? ExecuteGetRequest() : base.Execute(options);
 		}
