@@ -55,6 +55,7 @@ namespace Clio.Package
 		#region Methods: Public
 
 		public IEnumerable<PackageInfo> GetPackages() => GetPackages("{}");
+	
 
 		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
 			string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);

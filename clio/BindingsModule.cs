@@ -203,7 +203,7 @@ namespace Clio
 			containerBuilder.RegisterType<PullPkgCommand>();
 			containerBuilder.RegisterType<AssemblyCommand>();
 			
-			
+			containerBuilder.RegisterType<ClioGateway>();
 			additionalRegistrations?.Invoke(containerBuilder);
 			return containerBuilder.Build();
 		}
