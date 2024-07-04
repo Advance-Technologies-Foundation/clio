@@ -3,6 +3,7 @@ using Clio.Command.PackageCommand;
 using Clio.Common;
 using Clio.Package;
 using Clio.Package.Responses;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -38,7 +39,7 @@ public class ActivatePackageCommandTestCase {
 			}
 		});
 		var command = new ActivatePackageCommand(packageActivator, applicationClient, new EnvironmentSettings(), logger);
-		Assert.AreEqual(0, command.Execute(new ActivatePkgOptions { PackageName = packageName }));
+		command.Execute(new ActivatePkgOptions { PackageName = packageName }).Should().Be(0);
 		logger.Received().WriteLine($"Start activation package: \"{packageName}\"");
 		logger.Received().WriteLine($"Package \"{packageName}\" successfully activated.");
 		logger.Received().WriteLine($"Package \"{packageActivatedWithError}\" was activated with errors.");
@@ -55,7 +56,7 @@ public class ActivatePackageCommandTestCase {
 		var errorMessage = "SomeErrorMessage";
 		packageActivator.When(activator => activator.Activate(packageName)).Throw(new Exception(errorMessage));
 		var command = new ActivatePackageCommand(packageActivator, applicationClient, new EnvironmentSettings(), logger);
-		Assert.AreEqual(1, command.Execute(new ActivatePkgOptions { PackageName = packageName}));
+		command.Execute(new ActivatePkgOptions { PackageName = packageName}).Should().Be(1);
 		logger.Received().WriteLine(errorMessage);
 		logger.DidNotReceive().WriteLine($"Package \"{packageName}\" successfully activated.");
 	}

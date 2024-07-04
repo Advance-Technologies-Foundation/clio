@@ -359,7 +359,7 @@ class Program {
 			}
 		}
 		if (logAndSettings) {
-            new ConsoleLogger().WriteInfo(settings.Uri);
+            ConsoleLogger.Instance.WriteInfo(settings.Uri);
         }
 		var container = Container ?? new BindingsModule().Register(settings);
 		return container.Resolve<T>();
@@ -376,14 +376,21 @@ class Program {
 		}
 	}
 
-		
 	private static int Main(string[] args) {
 		try {
+			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(args);
-		} catch (Exception e) {
-			var logger = new ConsoleLogger();
-			logger.WriteError(e.Message);
+		}
+		catch (FileNotFoundException e) {
+			ConsoleLogger.Instance.WriteError(e.Message + e.FileName);
 			return 1;
+		}
+		catch (Exception e) {
+			ConsoleLogger.Instance.WriteError(e.Message);
+			return 1;
+		} 
+		finally {
+			ConsoleLogger.Instance.Stop();
 		}
 	}
 		

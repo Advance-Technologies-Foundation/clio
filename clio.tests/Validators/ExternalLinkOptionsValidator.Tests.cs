@@ -4,6 +4,7 @@ using FluentValidation;
 using NUnit.Framework;
 using System;
 using System.Linq;
+using FluentAssertions;
 
 namespace Clio.Tests.Validators
 {
@@ -31,7 +32,7 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-			Assert.IsTrue(validationResults.IsValid);
+			validationResults.IsValid.Should().BeTrue();
 		}
 
 		[Test, Category("Unit")]
@@ -57,15 +58,12 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-				Assert.AreEqual(1, validationResults.Errors.Count);
-				Assert.AreEqual(expected.Severity, validationResults.Errors.FirstOrDefault().Severity);
-				Assert.AreEqual(expected.ErrorMessage, validationResults.Errors.FirstOrDefault().ErrorMessage);
-				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
-				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
-			});
+			validationResults.IsValid.Should().BeFalse();
+			validationResults.Errors.Should().HaveCount(1);
+			validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
+			validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
+			validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
+			validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
 		}
 
 
@@ -73,7 +71,7 @@ namespace Clio.Tests.Validators
 		[TestCase("")]
 		[TestCase(" ")]
 		[TestCase(null)]
-		public void ExternalLinlValidator_ShouldValidate_As_InValid_EmptyContent(string content)
+		public void ExternalLinkValidator_ShouldValidate_As_InValid_EmptyContent(string content)
 		{
 			//Arange 
 			var request = new ExternalLinkOptions()
@@ -82,12 +80,7 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-			});
-
+			validationResults.IsValid.Should().BeFalse();
 		}
 
 
@@ -96,7 +89,7 @@ namespace Clio.Tests.Validators
 		[TestCase("cl://IISScannerRequest/?return=count")]
 		[TestCase("cli://IISScannerRequest/?return=count")]
 		[TestCase("cli://")]
-		public void ExternalLinlValidator_ShouldValidate_As_InValid_WhenDoesNotStartWithClio(string content)
+		public void ExternalLinkValidator_ShouldValidate_As_InValid_WhenDoesNotStartWithClio(string content)
 		{
 			//Arange 
 			var request = new ExternalLinkOptions()
@@ -114,16 +107,12 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-				Assert.AreEqual(1, validationResults.Errors.Count);
-				Assert.AreEqual(expected.Severity, validationResults.Errors.FirstOrDefault().Severity);
-				Assert.AreEqual(expected.ErrorMessage, validationResults.Errors.FirstOrDefault().ErrorMessage);
-				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
-				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
-			});
+			validationResults.IsValid.Should().BeFalse();
+			validationResults.Errors.Should().HaveCount(1);
+			validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
+			validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
+			validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
+			validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
 
 		}
 
@@ -131,7 +120,7 @@ namespace Clio.Tests.Validators
 		[Test, Category("Unit")]
 		[TestCase("clio://randomCommand/?return=count")]
 		[TestCase("clio://345634/?return=count")]
-		public void ExternalLinlValidator_ShouldValidate_As_InValid_WhenCommandNotFound(string content)
+		public void ExternalLinkValidator_ShouldValidate_As_InValid_WhenCommandNotFound(string content)
 		{
 			//Arange 
 			var request = new ExternalLinkOptions()
@@ -150,16 +139,12 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-				Assert.AreEqual(1, validationResults.Errors.Count);
-				Assert.AreEqual(expected.Severity, validationResults.Errors.FirstOrDefault().Severity);
-				Assert.AreEqual(expected.ErrorMessage, validationResults.Errors.FirstOrDefault().ErrorMessage);
-				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
-				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
-			});
+			validationResults.IsValid.Should().BeFalse();
+			validationResults.Errors.Should().HaveCount(1);
+			validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
+			validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
+			validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
+			validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
 		}
 
 
@@ -167,7 +152,7 @@ namespace Clio.Tests.Validators
 		[TestCase("clio://IISScannerRequest/?return=count")]
 		[TestCase("clio://Restart/?return=count")]
 		[TestCase("clio://OpenUrl/?return=count")]
-		public void ExternalLinlValidator_ShouldValidate_As_Valid_WhenCommandFound(string content)
+		public void ExternalLinkValidator_ShouldValidate_As_Valid_WhenCommandFound(string content)
 		{
 			//Arange 
 			var request = new ExternalLinkOptions()
@@ -186,10 +171,7 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-			Assert.Multiple(() =>
-			{
-				Assert.IsTrue(validationResults.IsValid);
-			});
+			validationResults.IsValid.Should().BeTrue();
 		}
 
 
@@ -215,16 +197,12 @@ namespace Clio.Tests.Validators
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-				Assert.AreEqual(1, validationResults.Errors.Count);
-				Assert.AreEqual(expected.Severity, validationResults.Errors.FirstOrDefault().Severity);
-				Assert.That(validationResults.Errors.FirstOrDefault().ErrorMessage.StartsWith("Query not in correct format key is"));
-				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
-				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
-			});
+			validationResults.IsValid.Should().BeFalse();
+			validationResults.Errors.Should().HaveCount(1);
+			validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
+			validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().StartWith("Query not in correct format key is");
+			validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
+			validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
 		}
 
 		[Test, Category("Unit")]
@@ -235,18 +213,17 @@ namespace Clio.Tests.Validators
 		public void ExternalLinlValidator_ShouldValidate_As_Valid_QueryIsCorrect(string content)
 		{
 			//Arange 
-			var request = new ExternalLinkOptions()
+			var request = new ExternalLinkOptions
 			{
-				Content = content,
+				Content = content
 			};
 
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsTrue(validationResults.IsValid);
-			});
+			
+			//Assert
+			validationResults.IsValid.Should().BeTrue();
+			
 		}
 
 	}

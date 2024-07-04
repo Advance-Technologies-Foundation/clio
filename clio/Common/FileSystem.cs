@@ -34,6 +34,16 @@ public class FileSystem : IFileSystem
 			});
 		mklinkProcess.WaitForExit();
 	}
+	public long GetFileSize(string filePath) {
+		filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
+		Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+		var ff = fileInfoFactory.New(filePath);
+		return ff.Length;
+	}
+	public long GetFileSize(Ms.IFileInfo fileInfo) {
+		return fileInfo.Length;
+	}
+	
 		
 	public Ms.IFileSystemInfo CreateSymLink(string path, string pathToTarget){
 		path.CheckArgumentNullOrWhiteSpace(nameof(path));
@@ -163,7 +173,7 @@ public class FileSystem : IFileSystem
 	}
 
 	public string ReadAllText(string filePath) => 
-		_msFileSystem.File.ReadAllText(filePath);
+		_msFileSystem.File.ReadAllText(filePath, Encoding.UTF8);
 
 	public void WriteAllTextToFile(string filePath, string contents) =>
 		WriteAllTextToFile(filePath, contents, Encoding.UTF8);

@@ -3,6 +3,7 @@ using Clio.Requests.Validators;
 using FluentValidation;
 using NUnit.Framework;
 using System.Linq;
+using FluentAssertions;
 
 namespace Clio.Tests.Validators {
 	public class IISScannerRequestValidatorTestCase {
@@ -26,7 +27,7 @@ namespace Clio.Tests.Validators {
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-			Assert.IsTrue(validationResults.IsValid);
+			validationResults.IsValid.Should().BeTrue();
 		}
 
 		[Test, Category("Unit")]
@@ -49,16 +50,14 @@ namespace Clio.Tests.Validators {
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-				Assert.AreEqual(1, validationResults.Errors.Count);
-				Assert.AreEqual(expected.Severity, validationResults.Errors.FirstOrDefault().Severity);
-				Assert.AreEqual(expected.ErrorMessage, validationResults.Errors.FirstOrDefault().ErrorMessage);
-				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
-				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
-			});
+			validationResults.IsValid.Should().BeFalse();
+			validationResults.Errors.Should().HaveCount(1);
+			validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
+			validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
+			validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
+			validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+			
+			
 
 		}
 
@@ -83,17 +82,12 @@ namespace Clio.Tests.Validators {
 			};
 			//Act
 			var validationResults = _sut.Validate(request);
-
-			Assert.Multiple(() =>
-			{
-				Assert.IsFalse(validationResults.IsValid);
-				Assert.AreEqual(1, validationResults.Errors.Count);
-				Assert.AreEqual(expected.Severity, validationResults.Errors.FirstOrDefault().Severity);
-				Assert.AreEqual(expected.ErrorMessage, validationResults.Errors.FirstOrDefault().ErrorMessage);
-				Assert.AreEqual(expected.ErrorCode, validationResults.Errors.FirstOrDefault().ErrorCode);
-				Assert.AreEqual(expected.AttemptedValue, validationResults.Errors.FirstOrDefault().AttemptedValue);
-			});
-
+			validationResults.IsValid.Should().BeFalse();
+			validationResults.Errors.Should().HaveCount(1);
+			validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
+			validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
+			validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
+			validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
 		}
 	}
 }

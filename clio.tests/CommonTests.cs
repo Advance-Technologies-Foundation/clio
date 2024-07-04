@@ -1,4 +1,5 @@
 ﻿using Clio.Common;
+using FluentAssertions;
 using NUnit.Framework;
 
 namespace Clio.Tests
@@ -10,7 +11,7 @@ namespace Clio.Tests
 			string input = "Test1,Test2, Test3, Test4 , Test5 ";
 			string[] expected = { "Test1", "Test2", "Test3", "Test4", "Test5" };
 			var actual = StringParser.ParseArray(input);
-			Assert.AreEqual(expected, actual);
+			actual.Should().BeEquivalentTo(expected);
 		}
 	}
 }

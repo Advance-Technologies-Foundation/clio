@@ -2,6 +2,7 @@ using System;
 using Clio.Command.PackageCommand;
 using Clio.Common;
 using Clio.Package;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -23,7 +24,7 @@ public class DeactivatePackageCommandTestCase {
 		var command = new DeactivatePackageCommand(packageDeactivator, applicationClient, new EnvironmentSettings()) {
 			Logger = logger
 		};
-		Assert.AreEqual(0, command.Execute(new DeactivatePkgOptions { PackageName = packageName }));
+		command.Execute(new DeactivatePkgOptions { PackageName = packageName }).Should().Be(0);
 		logger.Received().WriteLine($"Start deactivation package: \"{packageName}\"");
 		logger.Received().WriteLine($"Package \"{packageName}\" successfully deactivated.");
 	}
@@ -40,7 +41,7 @@ public class DeactivatePackageCommandTestCase {
 		var command = new DeactivatePackageCommand(packageDeactivator, applicationClient, new EnvironmentSettings()) { 
 			Logger = logger
 		};
-		Assert.AreEqual(1, command.Execute(new DeactivatePkgOptions { PackageName = packageName}));
+		command.Execute(new DeactivatePkgOptions { PackageName = packageName}).Should().Be(1);
 		logger.Received().WriteLine($"Start deactivation package: \"{packageName}\"");
 		logger.Received().WriteLine(errorMessage);
 		logger.DidNotReceive().WriteLine($"Package \"{packageName}\" successfully deactivated.");

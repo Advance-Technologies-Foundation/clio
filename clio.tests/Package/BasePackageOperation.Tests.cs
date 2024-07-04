@@ -3,7 +3,9 @@ using System.Linq;
 using Clio.Common;
 using Clio.Common.Responses;
 using Clio.Package;
+using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Package;
@@ -109,7 +111,7 @@ public class BasePackageOperationTestCase
 		};
 		SetupGetPackagesResponse(packagesInfos);
 		var actualUId = _testPackageOperation.GetPackageByName(packageName);
-		Assert.AreEqual(packageUId, actualUId);
+		packageUId.Should().Be(actualUId);
 	}
 
 	[Test, Category("Unit")]
@@ -122,8 +124,9 @@ public class BasePackageOperationTestCase
 		};
 		SetupGetPackagesResponse(packagesInfos);
 		string packageName = "TestPackage2";
-		var actualError = Assert.Throws<Exception>(() => _testPackageOperation.GetPackageByName(packageName));
-		Assert.AreEqual($"Package with name {packageName} not found", actualError?.Message);
+		
+		Action act = ()=> _testPackageOperation.GetPackageByName(packageName);
+		act.Should().Throw<Exception>().WithMessage($"Package with name {packageName} not found");
 	}
 
 	[Test, Category("Unit")]
@@ -132,8 +135,8 @@ public class BasePackageOperationTestCase
 		InitTestPackageOperation();
 		SetupGetPackagesResponse();
 		string packageName = "TestPackage";
-		var actualError = Assert.Throws<Exception>(() => _testPackageOperation.GetPackageByName(packageName));
-		Assert.AreEqual($"Package with name {packageName} not found", actualError?.Message);
+		Action act = ()=> _testPackageOperation.GetPackageByName(packageName);
+		act.Should().Throw<Exception>().WithMessage($"Package with name {packageName} not found");
 	}
 
 	[Test, Category("Unit")]
@@ -149,7 +152,8 @@ public class BasePackageOperationTestCase
 				Message = errorMessage
 			}
 		};
-		Assert.Throws<Exception>(() => _testPackageOperation.ProcessUnsuccessfulResponse(response), errorMessage);
+		Action act = () => _testPackageOperation.ProcessUnsuccessfulResponse(response);
+		act.Should().Throw<Exception>().WithMessage(errorMessage);
 	}
 
 	[Test, Category("Unit")]
@@ -160,7 +164,8 @@ public class BasePackageOperationTestCase
 		{
 			Success = true,
 		};
-		Assert.DoesNotThrow(() => _testPackageOperation.ProcessUnsuccessfulResponse(response));
+		Action act = ()=> _testPackageOperation.ProcessUnsuccessfulResponse(response);
+		act.Should().NotThrow<Exception>();
 	}
 
 	[Test, Category("Unit")]
@@ -180,7 +185,7 @@ public class BasePackageOperationTestCase
 		};
 		ApplicationClient.ExecutePostRequest<BaseResponse>(fullUrl, testData).Returns(response);
 		var actualResponse = _testPackageOperation.ExecuteRequest(serviceName, methodName, testData);
-		Assert.AreEqual(isSuccess, actualResponse.Success);
+		actualResponse.Success.Should().Be(isSuccess);
 	}
 
 	#endregion

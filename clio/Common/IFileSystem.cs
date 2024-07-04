@@ -19,6 +19,10 @@ namespace Clio.Common
 
 		public IDirectoryInfo GetDirectoryInfo(string path);
 		
+
+		public long GetFileSize(string filePath);
+		long GetFileSize(IFileInfo fileInfo);
+		
 		
 		/// <summary>
 		/// Creates a symbolic link at the specified path that points to the target path.
