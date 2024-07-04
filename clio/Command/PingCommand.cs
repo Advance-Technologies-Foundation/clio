@@ -5,7 +5,7 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("ping-app", Aliases = new string[] { "ping" }, HelpText = "Check current credentional for selected environments")]
-	public class PingAppOptions : EnvironmentNameOptions
+	public class PingAppOptions : RemoteCommandOptions
 	{
 		[Option('x', "Endpoint", Required = false, HelpText = "Relative path for checked endpoint (by default ise Ping service)")]
 		public string Endpoint { get; set; } = "/ping";
@@ -13,6 +13,7 @@ namespace Clio.Command
 
 	public class PingAppCommand : RemoteCommand<PingAppOptions>
 	{
+
 		public PingAppCommand() { } // for tests
 
 		public PingAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
@@ -20,7 +21,7 @@ namespace Clio.Command
 		}
 
 		private int ExecuteGetRequest() {
-			ApplicationClient.ExecuteGetRequest(RootPath);
+			ApplicationClient.ExecuteGetRequest(RootPath, RequestTimeout, RetryCount, DelaySec);
 			Logger.WriteInfo("Done");
 			return 0;
 		}

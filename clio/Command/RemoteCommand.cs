@@ -7,8 +7,29 @@ using CommandLine;
 
 namespace Clio.Command;
 
+public abstract class RemoteCommandOptions : EnvironmentNameOptions
+{
+	public int TimeOut
+	{
+		get;
+		internal set;
+	}
+	public int RetryCount
+	{
+		get;
+		internal set;
+	}
+	public int RetryDelay
+	{
+		get;
+		internal set;
+	}
+
+}
+
+
 public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentOptions>
-	where TEnvironmentOptions : EnvironmentOptions
+	where TEnvironmentOptions : RemoteCommandOptions
 {
 
 	#region Constructors: Protected
@@ -51,20 +72,36 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 
 	public virtual HttpMethod HttpMethod => HttpMethod.Post;
 
+	public int RequestTimeout
+	{
+		get;
+		private set;
+	}
+	public int RetryCount
+	{
+		get;
+		private set;
+	}
+	public int DelaySec
+	{
+		get;
+		private set;
+	}
+
 	public ILogger Logger { get; set; } = ConsoleLogger.Instance;
 
 	#endregion
 
 	#region Methods: Protected
 
-	protected virtual void ExecuteRemoteCommand(TEnvironmentOptions options){
+	protected virtual void ExecuteRemoteCommand(RemoteCommandOptions options){
 		string response = HttpMethod == HttpMethod.Post
 			? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options))
 			: ApplicationClient.ExecuteGetRequest(ServiceUri);
 		ProceedResponse(response, options);
 	}
 
-	protected virtual string GetRequestData(TEnvironmentOptions options){
+	protected virtual string GetRequestData(RemoteCommandOptions options){
 		return "{}";
 	}
 
@@ -83,14 +120,17 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 		}
 	}
 
-	protected virtual void ProceedResponse(string response, TEnvironmentOptions options){ }
+	protected virtual void ProceedResponse(string response, RemoteCommandOptions options){ }
 
 	#endregion
 
 	#region Methods: Public
 
-	public override int Execute(TEnvironmentOptions options){
+	public override int Execute(RemoteCommandOptions options){
 		try {
+			RequestTimeout = options.TimeOut;
+			RetryCount = options.RetryCount;
+			DelaySec = options.RetryDelay;
 			ExecuteRemoteCommand(options);
 			string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;
 			Logger.WriteInfo($"Done {commandName}");
