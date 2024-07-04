@@ -9,7 +9,7 @@ namespace Clio.Command;
 
 public class RemoteCommandOptions : EnvironmentNameOptions
 {
-	public int TimeOut
+	public int TimeOut 
 	{
 		get;
 		internal set;
@@ -96,8 +96,8 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 
 	protected virtual void ExecuteRemoteCommand(TEnvironmentOptions options){
 		string response = HttpMethod == HttpMethod.Post
-			? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options))
-			: ApplicationClient.ExecuteGetRequest(ServiceUri);
+			? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options), RequestTimeout, RetryCount, DelaySec)
+			: ApplicationClient.ExecuteGetRequest(ServiceUri, RequestTimeout, RetryCount, DelaySec);
 		ProceedResponse(response, options);
 	}
 

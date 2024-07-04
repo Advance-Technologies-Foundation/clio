@@ -16,14 +16,14 @@ namespace Clio.Tests.Command
 		private ICreatioClient creatioClient = NSubstitute.Substitute.For<ICreatioClient>();
 
 		protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
-			containerBuilder.RegisterInstance(creatioClient).As<ICreatioClient>();
 			base.AdditionalRegistrations(containerBuilder);
+			containerBuilder.RegisterInstance(creatioClient).As<ICreatioClient>();
 		}
 
 		[Test]
 		public void PingAppCommandShoulBeUsesAllRetryOptions() {
 			PingAppCommand command = _container.Resolve<PingAppCommand>();
-			PingAppOptions options = new PingAppOptions() { TimeOut = 100, RetryCount = 2, RetryDelay = 300 };
+			PingAppOptions options = new PingAppOptions() { TimeOut = 10, RetryCount = 2, RetryDelay = 5 };
 			command.Execute(options);
 
 			//Assert
