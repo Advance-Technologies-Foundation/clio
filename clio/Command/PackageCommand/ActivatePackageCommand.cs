@@ -7,7 +7,7 @@ namespace Clio.Command.PackageCommand
 	using CommandLine;
 
 	[Verb("activate-pkg", Aliases = new[]{"apkg","activate-package", "enable-package"}, HelpText="Activate package in a web application. Will be available in 8.1.2")]
-	internal class ActivatePkgOptions : EnvironmentOptions {
+	internal class ActivatePkgOptions : RemoteCommandOptions {
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string PackageName {
 			get; init;

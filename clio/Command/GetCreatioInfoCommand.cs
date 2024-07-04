@@ -11,7 +11,7 @@ namespace Clio.Command;
 
 [Verb("get-info", Aliases = new[] {"describe", "describe-creatio", "instance-info"},
 	HelpText = "Gets system information for Creatio instance.")]
-public class GetCreatioInfoCommandOptions : EnvironmentOptions
+public class GetCreatioInfoCommandOptions : RemoteCommandOptions
 { }
 
 #endregion

@@ -5,7 +5,7 @@ namespace Clio.Command
 {
 
 	[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
-	public class RestartOptions : EnvironmentNameOptions
+	public class RestartOptions : RemoteCommandOptions
 	{
 	}
 

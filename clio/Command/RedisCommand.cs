@@ -5,7 +5,7 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
-	public class ClearRedisOptions : EnvironmentNameOptions
+	public class ClearRedisOptions : RemoteCommandOptions
 	{
 	}
 

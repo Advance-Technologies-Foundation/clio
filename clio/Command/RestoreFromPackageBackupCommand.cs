@@ -6,7 +6,7 @@
 	#region Class: RestoreFromPackageBackupOptions
 
 	[Verb("restore-configuration", Aliases = new string[] { "restore", "rc" }, HelpText = "Restore configuration from last backup")]
-	public class RestoreFromPackageBackupOptions : EnvironmentOptions
+	public class RestoreFromPackageBackupOptions : RemoteCommandOptions
 	{
 
 		#region Properties: Public

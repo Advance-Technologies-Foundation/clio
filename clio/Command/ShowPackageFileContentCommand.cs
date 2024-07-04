@@ -9,7 +9,7 @@ using System.Security.Policy;
 namespace Clio.Command
 {
 	[Verb("show-package-file-content", Aliases = new string[] { "show-files", "files" }, HelpText = "Show package file context")]
-	public class ShowPackageFileContentOptions : EnvironmentNameOptions
+	public class ShowPackageFileContentOptions : RemoteCommandOptions
 	{
 		[Option("package", Required = true, HelpText = "Package name")]
 		public string PackageName { get; internal set; }

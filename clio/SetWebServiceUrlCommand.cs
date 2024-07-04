@@ -13,7 +13,7 @@ using Newtonsoft.Json.Linq;
 namespace Clio;
 
 [Verb("set-webservice-url", Aliases = new[] {"swu", "webservice"}, HelpText = "Set base url for web service")]
-public class SetWebServiceUrlOptions : EnvironmentOptions
+public class SetWebServiceUrlOptions : RemoteCommandOptions
 {
 
 	#region Properties: Public

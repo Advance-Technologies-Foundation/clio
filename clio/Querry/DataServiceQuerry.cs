@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 namespace Clio.Querry
 {
 	[Verb("dataservice", Aliases = new[] { "ds" }, HelpText = "DataService Request")]
-	public class DataServiceQuerryOptions : EnvironmentNameOptions
+	public class DataServiceQuerryOptions : RemoteCommandOptions
 	{
 		[Option('t', "type", Required = true, HelpText = "Operation type", Separator = ' ')]
 		public string OperationType { get; set; }

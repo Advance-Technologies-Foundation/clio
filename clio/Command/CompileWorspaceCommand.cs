@@ -4,7 +4,7 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("build-workspace", Aliases = new[] { "build", "compile", "compile-all", "rebuild" }, HelpText = "Build/Rebuild worksapce for selected environment")]
-	public class CompileOptions : EnvironmentNameOptions
+	public class CompileOptions : RemoteCommandOptions
 	{
 		[Option('o', "ModifiedItems", HelpText = "Build modified items")]
 		public bool ModifiedItems { get; set; }

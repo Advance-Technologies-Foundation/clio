@@ -12,7 +12,7 @@ using Newtonsoft.Json;
 namespace Clio.Command.SqlScriptCommand
 {
 	[Verb("execute-sql-script", Aliases = new string[] { "sql" }, HelpText = "Execute script on web application")]
-	public class ExecuteSqlScriptOptions : EnvironmentOptions
+	public class ExecuteSqlScriptOptions : RemoteCommandOptions
 	{
 		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
 		public string Script { get; set; }

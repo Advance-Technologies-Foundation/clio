@@ -11,7 +11,7 @@ using OneOf.Types;
 
 namespace Clio.Command.PackageCommand;
 
-public class BaseAppCommandOptions : EnvironmentOptions
+public class BaseAppCommandOptions : RemoteCommandOptions
 {
 
 	[Value(0, MetaName = "Name", Required = true, HelpText = "Application name")]

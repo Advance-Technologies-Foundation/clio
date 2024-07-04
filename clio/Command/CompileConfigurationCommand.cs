@@ -8,7 +8,7 @@ namespace Clio.Command
 	#region Class: CompileConfigurationOptions
 
 	[Verb("compile-configuration", Aliases = new[] { "compile-remote" }, HelpText = "Compile configuration for selected environment")]
-	public class CompileConfigurationOptions : EnvironmentNameOptions
+	public class CompileConfigurationOptions : RemoteCommandOptions
 	{
 
 		[Option("all", Required = false, HelpText = "Compile configuration all", Default = false)]

@@ -7,7 +7,7 @@ using CommandLine;
 
 namespace Clio.Command;
 
-public abstract class RemoteCommandOptions : EnvironmentNameOptions
+public class RemoteCommandOptions : EnvironmentNameOptions
 {
 	public int TimeOut
 	{
@@ -94,14 +94,14 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 
 	#region Methods: Protected
 
-	protected virtual void ExecuteRemoteCommand(RemoteCommandOptions options){
+	protected virtual void ExecuteRemoteCommand(TEnvironmentOptions options){
 		string response = HttpMethod == HttpMethod.Post
 			? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options))
 			: ApplicationClient.ExecuteGetRequest(ServiceUri);
 		ProceedResponse(response, options);
 	}
 
-	protected virtual string GetRequestData(RemoteCommandOptions options){
+	protected virtual string GetRequestData(TEnvironmentOptions options){
 		return "{}";
 	}
 
@@ -120,13 +120,13 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 		}
 	}
 
-	protected virtual void ProceedResponse(string response, RemoteCommandOptions options){ }
+	protected virtual void ProceedResponse(string response, TEnvironmentOptions options){ }
 
 	#endregion
 
 	#region Methods: Public
 
-	public override int Execute(RemoteCommandOptions options){
+	public override int Execute(TEnvironmentOptions options){
 		try {
 			RequestTimeout = options.TimeOut;
 			RetryCount = options.RetryCount;

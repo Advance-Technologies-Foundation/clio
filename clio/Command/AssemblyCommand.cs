@@ -11,7 +11,7 @@ using System.Text.Json;
 	Aliases = new[] { "exec" },
 	HelpText = "Execute an assembly code which implements the IExecutor interface",
 	Hidden = true)]
-public class ExecuteAssemblyOptions : EnvironmentOptions
+public class ExecuteAssemblyOptions : RemoteCommandOptions
 {
 	[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
 	public string Name { get; set; }

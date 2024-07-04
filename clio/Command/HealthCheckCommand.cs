@@ -6,7 +6,7 @@ using CommandLine;
 namespace Clio.Command
 {
 	[Verb("healthcheck", Aliases = new [] { "hc" }, HelpText = "Healthcheck monitoring")]
-	public class HealthCheckOptions : EnvironmentNameOptions
+	public class HealthCheckOptions : RemoteCommandOptions
 	{
 		[Option('h', "WebHost", Required = false, HelpText = "Check web-host", Separator= ' ')]
 		public string WebHost { get; set; }

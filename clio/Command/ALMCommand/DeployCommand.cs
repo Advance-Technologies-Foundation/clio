@@ -12,7 +12,7 @@
 	#region Class: DeployCommandOptions
 
 	[Verb("alm-deploy", Aliases = new string[] { "deploy" }, HelpText = "Install package to selected environment")]
-	public class DeployCommandOptions : EnvironmentOptions
+	public class DeployCommandOptions : RemoteCommandOptions
 	{
 		[Value(0, MetaName = "File", Required = true, HelpText = "Package file path")]
 		public string FilePath { get; set; }

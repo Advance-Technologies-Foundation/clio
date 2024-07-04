@@ -7,7 +7,7 @@ namespace Clio.Command.PackageCommand
 	using CommandLine;
 
 	[Verb("deactivate-pkg", Aliases = new[]{"dpkg","deactivate-package", "disable-package"}, HelpText="Deactivate package from a web application. Will be available in 8.1.2")]
-	internal class DeactivatePkgOptions : EnvironmentOptions {
+	internal class DeactivatePkgOptions : RemoteCommandOptions {
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string PackageName {
 			get; set;

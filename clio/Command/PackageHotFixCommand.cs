@@ -4,7 +4,7 @@ using CommandLine;
 namespace Clio.Command;
 
 [Verb("pkg-hotfix", Aliases = new[] {"hotfix", "hf"}, HelpText = "Enable/disable hotfix state for package.")]
-public class PackageHotFixCommandOptions : EnvironmentOptions
+public class PackageHotFixCommandOptions : RemoteCommandOptions
 {
 
 	#region Properties: Public
