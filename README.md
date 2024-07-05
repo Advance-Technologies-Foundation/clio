@@ -1043,7 +1043,7 @@ To apply manifest to your Creatio instance use the following command
 
 ```
 
-clio appply-manifest "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
+clio apply-manifest "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
 
 ```
 
