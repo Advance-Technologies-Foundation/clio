@@ -25,7 +25,7 @@
 			deleteCommand.Execute(deleteOptions);
 			applicationClient.Received(1).ExecutePostRequest(
 				deleteOptions.Uri + "/0/ServiceModel/AppInstallerService.svc/DeletePackage",
-				"\"TestPackage\"", Arg.Any<int>());
+				"\"TestPackage\"", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		}
 	}
 }

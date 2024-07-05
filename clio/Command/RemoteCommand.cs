@@ -9,21 +9,9 @@ namespace Clio.Command;
 
 public class RemoteCommandOptions : EnvironmentNameOptions
 {
-	public int TimeOut 
-	{
-		get;
-		internal set;
-	}
-	public int RetryCount
-	{
-		get;
-		internal set;
-	}
-	public int RetryDelay
-	{
-		get;
-		internal set;
-	}
+	public int TimeOut { get; internal set; } = 100_000;
+	public int RetryCount { get; internal set; } = 3;
+	public int RetryDelay { get; internal set; } = 1;
 
 }
 
@@ -72,21 +60,9 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 
 	public virtual HttpMethod HttpMethod => HttpMethod.Post;
 
-	public int RequestTimeout
-	{
-		get;
-		set;
-	}
-	public int RetryCount
-	{
-		get;
-		set;
-	}
-	public int DelaySec
-	{
-		get;
-		set;
-	}
+	public int RequestTimeout { get;  set; } 
+	public int RetryCount {  get; set; }
+	public int DelaySec {  get; set; }
 
 	public ILogger Logger { get; set; } = ConsoleLogger.Instance;
 
