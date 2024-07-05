@@ -71,7 +71,7 @@ public class ConsoleLogger : ILogger
 	}
 
 	private void PrintTableInternal(object table){
-		WriteLine(table.ToString());
+		WriteLineInternal(table.ToString());
 	}
 
 	private void WriteErrorInternal(string value){

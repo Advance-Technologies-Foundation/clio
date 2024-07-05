@@ -52,7 +52,9 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 		string executorType = typeof(AssemblyCommand).FullName;
 		_applicationClientMock.ExecutePostRequest(
 				Arg.Is<string>(path => path.EndsWith("/IDE/ExecuteScript")),
-				Arg.Is<string>(request => CheckRequest(request, executorType)))
+				Arg.Is<string>(request => CheckRequest(request, executorType)),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()
+				)
 			.Returns("responseFromServer");
 
 		// Act
