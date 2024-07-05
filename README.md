@@ -1037,6 +1037,16 @@ app_hubs:
 
 ```
 
+## Apply manifest to Creatio instance
+
+To apply manifest to your Creatio instance use the following command
+
+```
+
+clio appply-manifest "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
+
+```
+
 ## Create manifest from Creatio instance
 
 To control changes of an instance download state to manifest file and store it in Git. To download state use the following command
