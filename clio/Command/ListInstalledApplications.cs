@@ -33,7 +33,6 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
     #region Methods: Public
 
     public override int Execute(ListInstalledAppsOptions options){
-		base.Execute(options);
 		ConsoleTable table = new();
 		table.Columns.Add(nameof(SysInstalledApp.Name));
 		table.Columns.Add(nameof(SysInstalledApp.Code));
