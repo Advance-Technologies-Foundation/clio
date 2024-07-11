@@ -1,0 +1,21 @@
+﻿using ATF.Repository.Attributes;
+using ATF.Repository;
+using CreatioModel;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Clio.Tests.Examples.MockDataProjects.Models
+{
+	[Schema("Contact")]
+	public class ContactTestModel : BaseModel
+	{
+	}
+
+	[Schema("Account")]
+	public class AccountTestModel : BaseModel
+	{
+	}
+}

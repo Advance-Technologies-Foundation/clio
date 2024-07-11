@@ -15,11 +15,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "cliogate.tests", "cliogate.tests\cliogate.tests.csproj", "{9DDD1340-FA52-4402-BF10-11C46BA9F7A0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "cliogate.tests", "cliogate.tests\cliogate.tests.csproj", "{9DDD1340-FA52-4402-BF10-11C46BA9F7A0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "clio.Tests.Api", "clio.TestsAPI\clio.TestsAPI.csproj", "{DD970BB9-CAD2-4C63-9017-91C6859B39EA}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "creatioclient", "..\creatioclient\creatioclient\creatioclient.csproj", "{812AE391-BD40-45DC-B6F6-B4935014BF8E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "clio.TestsAPI", "clio.TestsAPI\clio.TestsAPI.csproj", "{DD970BB9-CAD2-4C63-9017-91C6859B39EA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -47,10 +45,6 @@ Global
 		{DD970BB9-CAD2-4C63-9017-91C6859B39EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DD970BB9-CAD2-4C63-9017-91C6859B39EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DD970BB9-CAD2-4C63-9017-91C6859B39EA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{812AE391-BD40-45DC-B6F6-B4935014BF8E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -58,10 +52,7 @@ Global
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2DEC7203-A0AA-4F2B-AEF8-20E88BA5C006}
 	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-	EndGlobalSection
 	GlobalSection(RiderSharedRunConfigurations) = postSolution
-		File = clio.Tests.Api\API Test Report.run.xml
 		File = clio.TestsAPI\API Test Report.run.xml
 	EndGlobalSection
 EndGlobal
