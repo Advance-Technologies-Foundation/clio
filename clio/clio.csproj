@@ -991,9 +991,20 @@
     </Content>
     <None Remove="tpl\package\Files\app-descriptor.json" />
   </ItemGroup>
-
+  <Choose>
+    <When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
+      <ItemGroup>
+        <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
+      </ItemGroup>
+    </When>
+    <Otherwise>
+      <ItemGroup>
+        <PackageReference Include="creatio.client" Version="1.0.24" />
+      </ItemGroup>
+    </Otherwise>
+  </Choose>
   <ItemGroup>
-    <PackageReference Include="creatio.client" Version="1.0.24" />
+<!--    <PackageReference Include="creatio.client" Version="1.0.24" />-->
     <PackageReference Include="ATF.Repository" Version="2.0.2.2" />
     <PackageReference Include="Autofac" Version="8.0.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />

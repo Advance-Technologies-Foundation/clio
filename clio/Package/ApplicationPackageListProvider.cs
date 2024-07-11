@@ -58,10 +58,15 @@ namespace Clio.Package
 	
 
 		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
-			string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
-			var json = _jsonConverter.CorrectJson(responseFormServer);
-			var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
-			return packages.Select(CreatePackageInfo);
+			try {
+				string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
+				var json = _jsonConverter.CorrectJson(responseFormServer);
+				var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
+				return packages.Select(CreatePackageInfo);
+				
+			} catch (Exception e) {
+				return Array.Empty<PackageInfo>();
+			}
 		}
 
 		#endregion
