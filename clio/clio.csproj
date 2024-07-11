@@ -9,7 +9,7 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>6.1.0.27</AssemblyVersion>
+	  <AssemblyVersion>6.1.0.28</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
@@ -1032,6 +1032,7 @@
 	<PackageReference Include="Ignore" Version="0.1.50" />
 	<PackageReference Include="YamlDotNet" Version="15.3.0" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
+	<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="7.1.2.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
