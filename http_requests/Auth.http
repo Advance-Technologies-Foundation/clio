@@ -1,7 +1,0 @@
-﻿### Authenticate
-POST {{base_url}}/ServiceModel/AuthService.svc/Login HTTP/2
-Content-Type: application/json
-
-{"UserName":"{{UserName}}","UserPassword":"{{UserPassword}}"}
-
-> set-auth-cookies.js
