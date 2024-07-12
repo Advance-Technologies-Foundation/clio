@@ -662,6 +662,7 @@ class Program {
 		typeof(SaveSettingsToManifestOptions),
 		typeof(CloneEnvironmentOptions),
 		typeof(ShowDiffEnvironmentsOptions),
+		typeof(MockDataCommandOptions),
 		
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -762,6 +763,7 @@ class Program {
 			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
 			CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
 			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
+			MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};
