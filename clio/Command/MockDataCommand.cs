@@ -56,6 +56,7 @@ namespace Clio.Command
 		private void LoadODataData(string models, string dataFolderPath) {
 			var findedModels = FindModels(models);
 			foreach (var findedModel in findedModels) {
+				Logger.WriteInfo($"Recieved data for  {findedModel} ...");
 				var modelODataDataFilePath = Path.Combine(dataFolderPath,$"{findedModel}.json");
 				var modelOdataData = GetModelDataData(findedModel);
 				_fileSystem.WriteAllTextToFile(modelODataDataFilePath, modelOdataData);
@@ -69,7 +70,9 @@ namespace Clio.Command
 				var fileContent = _fileSystem.ReadAllText(file);
 				schemaNames.AddRange(ExtractSchemaNames(fileContent));
 			}
-			return schemaNames.Distinct().ToList();
+			var result = schemaNames.Distinct().ToList();
+			Logger.WriteInfo($"Found {result} models");
+			return result;
 		}
 
 		private string GetModelDataData(string findedModel) {
