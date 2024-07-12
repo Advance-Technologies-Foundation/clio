@@ -202,6 +202,7 @@ namespace Clio
 			containerBuilder.RegisterType<CloneEnvironmentCommand>();
 			containerBuilder.RegisterType<PullPkgCommand>();
 			containerBuilder.RegisterType<AssemblyCommand>();
+			containerBuilder.RegisterType<UninstallCreatioCommand>();
 			
 			containerBuilder.RegisterType<ClioGateway>();
 			additionalRegistrations?.Invoke(containerBuilder);

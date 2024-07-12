@@ -662,7 +662,7 @@ class Program {
 		typeof(SaveSettingsToManifestOptions),
 		typeof(CloneEnvironmentOptions),
 		typeof(ShowDiffEnvironmentsOptions),
-		
+		typeof(UninstallCreatioCommandOptions),
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -762,6 +762,7 @@ class Program {
 			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
 			CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
 			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
+			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

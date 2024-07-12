@@ -103,9 +103,7 @@ public class Postgres
 			var result = cmd.ExecuteScalar();
 			cnn.Close();
 			
-			return result is long r && r == 1;
-			
-			return true;
+			return result is long and 1;
 		} catch (Exception e)  when (e is PostgresException pe){
 			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
 			return false;

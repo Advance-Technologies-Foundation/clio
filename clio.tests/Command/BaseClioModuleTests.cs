@@ -6,7 +6,7 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
 
-[TestFixture]
+[TestFixture(Category = "UnitTests")]
 public abstract class BaseClioModuleTests
 {
 
