@@ -210,6 +210,11 @@ namespace Clio
 			containerBuilder.RegisterType<UninstallCreatioCommand>();
 			
 			containerBuilder.RegisterType<ClioGateway>();
+			
+			containerBuilder.RegisterType<Mssql>().As<IMssql>();
+			containerBuilder.RegisterType<Postgres>().As<IPostgres>();
+			
+			
 			additionalRegistrations?.Invoke(containerBuilder);
 			return containerBuilder.Build();
 		}

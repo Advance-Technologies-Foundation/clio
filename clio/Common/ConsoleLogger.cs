@@ -27,6 +27,7 @@ public class ConsoleLogger : ILogger
 
 	private ConsoleLogger(){
 		CancellationToken = CancellationTokenSource.Token;
+		Console.OutputEncoding = System.Text.Encoding.UTF8;
 	}
 
 	#endregion

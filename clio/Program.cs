@@ -13,6 +13,7 @@ using Clio.Common;
 using Clio.Package;
 using Clio.Project;
 using Clio.Querry;
+using Clio.Requests;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using CommandLine;
@@ -377,6 +378,9 @@ class Program {
 	}
 
 	private static int Main(string[] args) {
+		
+		// var sites = IISScannerHandler.FindAllCreatioSites();
+		// return 0 ;
 		try {
 			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(args);
