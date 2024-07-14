@@ -46,7 +46,7 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 	[Category("Unit")]
 	public void Execute_ShouldWriteResponse_WhenItIsSuccessful(){
 		// Arrange
-		AssemblyCommand command = _container.Resolve<AssemblyCommand>();
+		AssemblyCommand command = Container.Resolve<AssemblyCommand>();
 		command.Logger = _loggerMock;
 
 		string executorType = typeof(AssemblyCommand).FullName;

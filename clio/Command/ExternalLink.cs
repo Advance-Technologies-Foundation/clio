@@ -81,7 +81,7 @@ namespace Clio.Command {
 			Type runtimeType = GetType().Assembly.GetTypes()
 				.FirstOrDefault(t => t.FullName.ToLower(CultureInfo.InvariantCulture) == $"clio.requests.{_uri.Host}");
 
-			IExtenalLink xRequest = Activator.CreateInstance(runtimeType, true) as IExtenalLink;
+			IExternalLink xRequest = Activator.CreateInstance(runtimeType, true) as IExternalLink;
 			xRequest.Content = options.Content;
 
 			Task.Run(async () =>

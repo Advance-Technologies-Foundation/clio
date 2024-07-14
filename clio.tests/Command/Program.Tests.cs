@@ -24,11 +24,11 @@ public class ProgramTestCase : BaseClioModuleTests
 	public void Resolve_DoesNotThrowException_WhenCommandDoesNotNeedEnvironment() {
 		CreateWorkspaceCommandOptions options = new CreateWorkspaceCommandOptions();
 		bool logAndSettings = false;
-		Program.Container = _container;
+		Program.Container = Container;
 		var filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
-		_fileSystem.AddFile(filePath, new MockFileData(File
+		FileSystem.AddFile(filePath, new MockFileData(File
 			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
-		SettingsRepository.FileSystem = _fileSystem;
+		SettingsRepository.FileSystem = FileSystem;
 		Program.Resolve<CreateWorkspaceCommand>(options, logAndSettings);
 	}
 

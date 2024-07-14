@@ -16,15 +16,22 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Terrasoft.Messaging.Common;
 
 namespace Clio.Requests
 {
-	public class IISScannerRequest : IExtenalLink
+	public class IISScannerRequest : IExternalLink
 	{
 		public string Content {
 			get; set;
 		}
 	}
+	
+	internal class AllSitesRequest: IRequest
+	{
+		public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
+	}
+	
 
 	/// <summary>
 	/// Finds path to appSetting.json
@@ -35,7 +42,7 @@ namespace Clio.Requests
 	/// </remarks>
 	/// <example>
 	/// </example>
-	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>
+	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>, IRequestHandler<AllSitesRequest>
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly RegAppCommand _regCommand;
@@ -49,6 +56,12 @@ namespace Clio.Requests
 			_powerShellFactory = powerShellFactory;
 		}
 
+		public async Task Handle(AllSitesRequest request, CancellationToken cancellationToken){
+			IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
+			request.Callback(sites);
+		}
+		
+		
 		public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
@@ -133,17 +146,14 @@ namespace Clio.Requests
 		/// <summary>
 		/// Finds Creatio Sites in IIS that are not registered with clio
 		/// </summary>
-		internal static readonly Func<IEnumerable<UnregisteredSite>> _findAllCreatioSites = () =>
+		internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () =>
 		{
 			return _getBindings()
 			.Where(site => _detectSiteType(site.path) != SiteType.NotCreatioSite)
-			.Select(site =>
-			{
-				return new UnregisteredSite(
-					siteBinding: site,
-					Uris: _convertBindingToUri(site.binding),
-					siteType: _detectSiteType(site.path));
-			});
+			.Select(site => new UnregisteredSite(
+				siteBinding: site,
+				Uris: _convertBindingToUri(site.binding),
+				siteType: _detectSiteType(site.path)));
 		};
 
 		/// <summary>
@@ -296,6 +306,18 @@ namespace Clio.Requests
 			return SiteType.NotCreatioSite;
 		};
 
+		/// <summary>
+		/// 
+		/// </summary>
+		/// <param name="name">Site name in IIS</param>
+		/// <param name="state"> State of IIS site
+		///	<list type="bullet">
+		/// <item>Started: when IIS site Started</item>
+		/// <item>Stopped: when IIS site Started</item>
+		/// </list>
+		/// </param>
+		/// <param name="binding"></param>
+		/// <param name="path">Site directory path</param>
 		internal sealed record SiteBinding(string name, string state, string binding, string path)
 		{
 		}

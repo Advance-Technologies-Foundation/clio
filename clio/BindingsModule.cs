@@ -188,8 +188,13 @@ namespace Clio
 			containerBuilder.RegisterMediatR(configuration);
 
 			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
+			
+			//Validators
 			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 			containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
+			containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
+			
+			containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
 			containerBuilder.RegisterType<UnzipRequestValidator>();
 			containerBuilder.RegisterType<GitSyncCommand>();
 			containerBuilder.RegisterType<DeactivatePackageCommand>();

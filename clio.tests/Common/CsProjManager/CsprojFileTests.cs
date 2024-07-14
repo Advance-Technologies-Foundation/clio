@@ -33,8 +33,8 @@ public class CsprojFileTests : BaseClioModuleTests
 
 	public override void Setup(){
 		base.Setup();
-		_csprojFile = _container.Resolve<ICsprojFile>();
-		_workspacePathBuilder = _container.Resolve<IWorkspacePathBuilder>();
+		_csprojFile = Container.Resolve<ICsprojFile>();
+		_workspacePathBuilder = Container.Resolve<IWorkspacePathBuilder>();
 	}
 
 	#endregion
@@ -48,8 +48,8 @@ public class CsprojFileTests : BaseClioModuleTests
 		string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 
 		byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-		_fileSystem.AddFile(csProjPath, new MockFileData(content));
-		IFileInfo fileInfo = new MockFileInfo(_fileSystem, csProjPath);
+		FileSystem.AddFile(csProjPath, new MockFileData(content));
+		IFileInfo fileInfo = new MockFileInfo(FileSystem, csProjPath);
 
 		// Act
 		IInitializedCsprojFile result = _csprojFile.Initialize(fileInfo);
@@ -66,7 +66,7 @@ public class CsprojFileTests : BaseClioModuleTests
 		string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 
 		byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-		_fileSystem.AddFile(csProjPath, new MockFileData(content));
+		FileSystem.AddFile(csProjPath, new MockFileData(content));
 
 		// Act
 		IInitializedCsprojFile result = _csprojFile.Initialize(packageName);
@@ -100,7 +100,7 @@ public class CsprojFileTests : BaseClioModuleTests
 		// Arrange
 		string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 		byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-		_fileSystem.AddFile(csProjPath, new MockFileData(content));
+		FileSystem.AddFile(csProjPath, new MockFileData(content));
 		IInitializedCsprojFile initializedCsProj = _csprojFile.Initialize(packageName);
 
 		// Act
@@ -120,7 +120,7 @@ public class CsprojFileTests : BaseClioModuleTests
 		// Arrange
 		string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 		byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-		_fileSystem.AddFile(csProjPath, new MockFileData(content));
+		FileSystem.AddFile(csProjPath, new MockFileData(content));
 		IInitializedCsprojFile initializedCsProj = _csprojFile.Initialize(packageName);
 
 		// Act

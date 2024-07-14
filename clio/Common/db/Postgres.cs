@@ -117,4 +117,26 @@ public class Postgres
 			return false;
 		}
 	}
+	
+	public bool DropDbByName(string dbName){
+		try {
+			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+			using NpgsqlConnection cnn = dataSource.OpenConnection();
+			using NpgsqlCommand cmd = dataSource.CreateCommand($"DROP DATABASE IF EXISTS \"{dbName}\";");
+			cmd.ExecuteNonQuery();
+			cnn.Close();
+			return true;
+		} catch (Exception e)  when (e is PostgresException pe){
+			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			return false;
+		}
+		catch(Exception e) when (e is NpgsqlException ne) {
+			Console.WriteLine(ne.Message);
+			return false;
+		}
+		catch(Exception e) {
+			Console.WriteLine(e.Message);
+			return false;
+		}
+	}
 }

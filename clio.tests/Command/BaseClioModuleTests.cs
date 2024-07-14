@@ -14,18 +14,18 @@ public abstract class BaseClioModuleTests
 
 	[SetUp]
 	public virtual void Setup(){
-		_fileSystem = CreateFs();
-		BindingsModule bindingModule = new(_fileSystem);
-		_container = bindingModule.Register(_environmentSettings, true, AdditionalRegistrations);
+		FileSystem = CreateFs();
+		BindingsModule bindingModule = new(FileSystem);
+		Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
 	}
 
 	#endregion
 
 	#region Fields: Protected
 
-	protected MockFileSystem _fileSystem;
-	protected IContainer _container;
-	protected EnvironmentSettings _environmentSettings = new() {
+	protected MockFileSystem FileSystem;
+	protected IContainer Container;
+	protected EnvironmentSettings EnvironmentSettings = new() {
 		Uri = "http://localhost",
 		Login = "",
 		Password = ""

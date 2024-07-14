@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Clio.Requests
 {
-	public class Restart : IExtenalLink
+	public class Restart : IExternalLink
 	{
 		public string Content {
 			get; set;
