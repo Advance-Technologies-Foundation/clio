@@ -1,0 +1,39 @@
+﻿{
+  "@odata.context": "http://kkrylovn.tscrm.com:40012/0/odata/$metadata#Order",
+  "value": [
+    {
+      "Id": "0297f280-04e8-4110-af7b-b7dff66cd26b",
+      "CreatedOn": "2024-07-04T11:45:01Z",
+      "CreatedById": "410006e1-ca4e-4502-a9ec-e54d922d2c00",
+      "ModifiedOn": "2024-07-05T04:33:37.315174Z",
+      "ModifiedById": "410006e1-ca4e-4502-a9ec-e54d922d2c00",
+      "ProcessListeners": 0,
+      "Number": "ORD-1 (sample)",
+      "AccountId": "405947d0-2ffb-4ded-8675-0475f19f5a81",
+      "Date": "2024-07-04T20:26:49Z",
+      "OwnerId": "410006e1-ca4e-4502-a9ec-e54d922d2c00",
+      "StatusId": "1f3ad326-effd-4ac3-a3e2-957e7def3684",
+      "PaymentStatusId": "bfe38d3d-bd57-48d7-a2d7-82435cd274ca",
+      "DeliveryStatusId": "867ca155-bfa5-4aaa-9172-7813dd4e85f5",
+      "ContactId": "c4ed336c-3e9b-40fe-8b82-5632476472b4",
+      "DueDate": "2024-07-21T03:00:00Z",
+      "ActualDate": "0001-01-01T00:00:00Z",
+      "CurrencyId": "915e8a55-98d6-df11-9b2a-001d60e938c6",
+      "CurrencyRate": 1.00000000,
+      "Amount": "3492.00n_____",
+      "PaymentAmount": "0.00n_____",
+      "PrimaryAmount": "3492.00n_____",
+      "PrimaryPaymentAmount": "0.00n_____",
+      "SourceOrderId": "00000000-0000-0000-0000-000000000000",
+      "Notes": "",
+      "OpportunityId": "6344d6ce-f889-4361-83f2-9cd71dbd6300",
+      "DeliveryAddress": "02111, United States, Massachusetts, Boston, 31 Union Street",
+      "DeliveryTypeId": "50df77d0-7b1f-4dbc-a02d-7b6ebb95dfd0",
+      "PaymentTypeId": "c2d88243-685d-4e8b-a533-73f4cb8e869b",
+      "ReceiverName": "Andrew",
+      "Comment": "",
+      "ContactNumber": "+1 617 440 2031",
+      "CreatedFromOpps": false
+    }
+  ]
+}

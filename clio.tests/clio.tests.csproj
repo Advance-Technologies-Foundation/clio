@@ -23,6 +23,13 @@
     <None Remove="Examples\diff-manifest\syssettings-diff.yaml" />
     <None Remove="Examples\diff-manifest\syssettings-source-env-manifest.yaml" />
     <None Remove="Examples\diff-manifest\syssettings-target-env-manifest.yaml" />
+    <None Remove="Examples\MockDataProjects\Expected\Account.json" />
+    <None Remove="Examples\MockDataProjects\Expected\Contact.json" />
+    <None Remove="Examples\MockDataProjects\Expected\Order.json" />
+    <None Remove="Examples\MockDataProjects\Models\BL.txt" />
+    <None Remove="Examples\MockDataProjects\Models\ExampleModels.txt" />
+    <None Remove="Examples\MockDataProjects\Models\ExampleOrderModels.txt" />
+    <None Remove="Examples\MockDataProjects\Tests\MockData\placeholder.txt" />
     <None Remove="Examples\odata_data_examples\syssettings-odata.json" />
     <None Remove="Examples\odata_data_examples\syssettingsvalue-odata.json" />
   </ItemGroup>
@@ -59,6 +66,24 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Examples\diff-manifest\packages-source-env-manifest.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Expected\Account.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Expected\Order.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Expected\Contact.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Models\BL.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Models\ExampleOrderModels.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Tests\MockData\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Examples\odata_data_examples\syssettingsvalue-odata.json">
@@ -204,6 +229,9 @@
     
     <Folder Include="Examples\CsProjFiles\" />
     <Content Include="Examples\CsProjFiles\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Examples\MockDataProjects\Models\ExampleModels.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <None Update="Examples\CsProjFiles\**">

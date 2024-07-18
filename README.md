@@ -148,6 +148,7 @@ docker run -it --rm clio reg-web-app -help
   - [Help and examples](#help-and-examples)
   - [Add item](#add-item)
   - [Link Workspace to File Design Mode](#link-workspace-to-file-design-mode)
+  - [Mock data for Unit Tests](#mock-data-for-unit-tests)
 - [Packages](#packages)
   - [Creating new package](#creating-new-package)
   - [Installing package](#installing-package)
@@ -978,6 +979,16 @@ To connect your local system in file design mode use command to workspace
 ```
 clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
+
+## Mock data for unit tests
+
+To mock data for unit tests with using [ATF].[Repository] use the following command
+
+```
+
+clio mock-data --models D:\Projects\MyProject --data D:\Projects\MyProject\Tests\TestsData  -e MyDevCreatio
+
+``
 
 # Using for CI/CD systems
 
