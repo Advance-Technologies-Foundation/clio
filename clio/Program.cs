@@ -94,9 +94,15 @@ class Program
 		}
 	}
 
-	private static void Configure(EnvironmentOptions options) {
+	private static void Configure(EnvironmentOptions options, bool checkEnvExist = false) {
 		var settingsRepository = new SettingsRepository();
 		CreatioEnvironment.EnvironmentName = options.Environment;
+		if (checkEnvExist) {
+			var isEnvironmentExists = settingsRepository.IsEnvironmentExists(options.Environment);
+			if (!isEnvironmentExists) {
+				throw new ArgumentException($"Cannot find environment with name {options.Environment}", nameof(options.Environment));
+			}
+		}
 		CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
 		ICreatioEnvironment creatioEnvironment = Resolve<ICreatioEnvironment>();
 	}
@@ -107,8 +113,8 @@ class Program
 		Console.WriteLine(text);
 		Console.ForegroundColor = currentColor;
 	}
-	public static void SetupAppConnection(EnvironmentOptions options) {
-		Configure(options);
+	public static void SetupAppConnection(EnvironmentOptions options, bool checkEnvExist = false) {
+		Configure(options, checkEnvExist);
 		CheckApiVersion();
 	}
 
@@ -430,7 +436,7 @@ class Program
 
 	private static int SetDeveloperMode(DeveloperModeOptions opts) {
 		try {
-			SetupAppConnection(opts);
+			SetupAppConnection(opts, true);
 			var repository = new SettingsRepository();
 			CreatioEnvironment.Settings.DeveloperModeEnabled = true;
 			repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
