@@ -3,11 +3,28 @@ using Npgsql;
 
 namespace Clio.Common.db;
 
-public class Postgres
+
+public interface IPostgres
+{
+	void Init(string host, int port, string username, string password);
+	bool CreateDbFromTemplate(string templateName, string dbName);
+	bool CreateDb(string dbName);
+	bool SetDatabaseAsTemplate(string dbName);
+	bool CheckTemplateExists(string templateName);
+	bool DropDb(string dbName);
+} 
+
+public class Postgres : IPostgres
 {
 
-	private readonly string _connectionString;
+	private string _connectionString;
 
+	public Postgres(){ }
+	
+	public void Init(string host, int port, string username, string password){
+		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
+	}
+	
 	public Postgres(int port, string username, string password) {
 		_connectionString = $"Host=127.0.0.1;Port={port};Username={username};Password={password};Database=postgres";
 	}
@@ -103,8 +120,36 @@ public class Postgres
 			var result = cmd.ExecuteScalar();
 			cnn.Close();
 			
-			return result is long r && r == 1;
+			return result is long and 1;
+		} catch (Exception e)  when (e is PostgresException pe){
+			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			return false;
+		}
+		catch(Exception e) when (e is NpgsqlException ne) {
+			Console.WriteLine(ne.Message);
+			return false;
+		}
+		catch(Exception e) {
+			Console.WriteLine(e.Message);
+			return false;
+		}
+	}
+	
+	public bool DropDb(string dbName){
+		try {
+			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			
+			string killSqlConnections = @$"
+			SELECT pg_terminate_backend(pg_stat_activity.pid)
+			FROM pg_stat_activity
+			WHERE pg_stat_activity.datname = '{dbName}'
+			";
+			using NpgsqlCommand killConnectionCmd = dataSource.CreateCommand(killSqlConnections);
+			killConnectionCmd.ExecuteNonQuery();
+			using NpgsqlCommand cmd = dataSource.CreateCommand($"DROP DATABASE IF EXISTS \"{dbName}\";");
+			cmd.ExecuteNonQuery();
+			cnn.Close();
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
 			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");

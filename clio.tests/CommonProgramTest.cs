@@ -113,12 +113,12 @@ namespace Clio.Tests
 
         [Test]
 		public void ReadEnvironmentOptionsFromManifestFile() {
-			_fileSystem.MockExamplesFolder("deployments-manifest");
+			FileSystem.MockExamplesFolder("deployments-manifest");
 			var manifestFileName = "full-creatio-config.yaml";
-			var environmentManager = _container.Resolve<IEnvironmentManager>();
+			var environmentManager = Container.Resolve<IEnvironmentManager>();
 			var manifestFilePath = $"C:\\{manifestFileName}";
 			EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
-			var commonFileSystem = new Clio.Common.FileSystem(_fileSystem);
+			var commonFileSystem = new Clio.Common.FileSystem(FileSystem);
 			var environmentOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
 			envSettingsFromFile.Uri.Should().Be(environmentOptionsFromFile.Uri);
 			envSettingsFromFile.Login.Should().Be(environmentOptionsFromFile.Login);
@@ -127,12 +127,12 @@ namespace Clio.Tests
 
         [Test]
         public void ReadEnvironmentOptionsFromOnlySettingsManifestFile() {
-            _fileSystem.MockExamplesFolder("deployments-manifest");
+            FileSystem.MockExamplesFolder("deployments-manifest");
             var manifestFileName = "only-settings.yaml";
-            var environmentManager = _container.Resolve<IEnvironmentManager>();
+            var environmentManager = Container.Resolve<IEnvironmentManager>();
             var manifestFilePath = $"C:\\{manifestFileName}";
             EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
-            var commonFileSystem = new Clio.Common.FileSystem(_fileSystem);
+            var commonFileSystem = new Clio.Common.FileSystem(FileSystem);
             var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
 			environmnetOptionsFromFile.Should().BeNull();
         }

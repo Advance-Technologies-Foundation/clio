@@ -2,7 +2,7 @@
 
 namespace Clio.Requests
 {
-	internal interface IExtenalLink : IRequest
+	internal interface IExternalLink : IRequest
 	{
 		public string Content
 		{

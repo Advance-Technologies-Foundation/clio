@@ -26,7 +26,7 @@ public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsO
 		DataProviderMock dataProviderMock = new ();
 		ILogger loggerMock = Substitute.For<ILogger>();
 		IApplicationClient applicationClientMock = Substitute.For<IApplicationClient>();
-		ListInstalledAppsCommand command = new(dataProviderMock, loggerMock, applicationClientMock, _environmentSettings);
+		ListInstalledAppsCommand command = new(dataProviderMock, loggerMock, applicationClientMock, EnvironmentSettings);
 		ListInstalledAppsOptions options = new();
 
 		var mock = dataProviderMock

@@ -177,7 +177,8 @@ docker run -it --rm clio reg-web-app -help
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
-  --[Manage requirment Windows features](#manage-requirment-windows-features)
+  - [Manage required Windows features](#manage-required-windows-features)
+  - [Uninstall Creatio](#uninstall-creatio)
 
 # Arguments
 
@@ -1121,7 +1122,7 @@ To create an empty cluster, we recommend using [Rancher Desktop](https://rancher
 
 > If you already have running MSSQL/PostgresSQL/Redis servers on you local machine you have to configure kubernetes services ports to avoid collisions. Reffer to services.yaml in related directories
 
-## Manage requirment Windows features
+## Manage required Windows features
 
 To manage required windows features execute command
 
@@ -1294,4 +1295,12 @@ You can also specify `DbName` and `BackupFilePath` properties to simplify comman
 
 ```bash
 clio resrore-db -e <ENVIRONMENT_NAME>
+```
+
+## Uninstall Creatio
+
+Uninstall Creatio from your local machine by executing the following command:
+
+```bash
+clio uninstall-creatio -e <ENV_NAME>
 ```

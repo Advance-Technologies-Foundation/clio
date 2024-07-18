@@ -62,17 +62,17 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			_container.Resolve<Clio.Common.IFileSystem>(), _container.Resolve<ISerializer>(), webServiceManagerMock, _container.Resolve<IEnvironmentManager>());
+			Container.Resolve<Clio.Common.IFileSystem>(), Container.Resolve<ISerializer>(), webServiceManagerMock, Container.Resolve<IEnvironmentManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
 
 
 		//Assert
-		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
+		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-manifest.yaml");
-		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
@@ -172,7 +172,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 	}
 
 	private IContainer GetContainer() {
-		return MockDataContainer.GetContainer(_fileSystem);
+		return MockDataContainer.GetContainer(FileSystem);
 	}
 
 	[TestCase(true)]
@@ -204,16 +204,16 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			_container.Resolve<Clio.Common.IFileSystem>(), _container.Resolve<ISerializer>(), webServiceManagerMock, _container.Resolve<IEnvironmentManager>());
+			Container.Resolve<Clio.Common.IFileSystem>(), Container.Resolve<ISerializer>(), webServiceManagerMock, Container.Resolve<IEnvironmentManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
 
 		//Assert
-		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
+		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest-WithoutSchemas.yaml");
-		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
@@ -251,16 +251,16 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			_container.Resolve<Clio.Common.IFileSystem>(), _container.Resolve<ISerializer>(), webServiceManagerMock, _container.Resolve<IEnvironmentManager>());
+			Container.Resolve<Clio.Common.IFileSystem>(), Container.Resolve<ISerializer>(), webServiceManagerMock, Container.Resolve<IEnvironmentManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
 
 		//Assert
-		_fileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
+		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
-		_fileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
 			.Be(expectedContent.Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");

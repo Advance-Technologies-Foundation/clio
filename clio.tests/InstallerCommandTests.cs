@@ -28,7 +28,7 @@ namespace Clio.Tests
 
         public override void Setup() {
             base.Setup();
-            _installerCommand = _container.Resolve<InstallerCommand>();
+            _installerCommand = Container.Resolve<InstallerCommand>();
             
         }
 

@@ -186,8 +186,13 @@ namespace Clio
 			containerBuilder.RegisterMediatR(configuration);
 
 			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
+			
+			//Validators
 			containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 			containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
+			containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
+			
+			containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
 			containerBuilder.RegisterType<UnzipRequestValidator>();
 			containerBuilder.RegisterType<GitSyncCommand>();
 			containerBuilder.RegisterType<DeactivatePackageCommand>();
@@ -200,8 +205,14 @@ namespace Clio
 			containerBuilder.RegisterType<CloneEnvironmentCommand>();
 			containerBuilder.RegisterType<PullPkgCommand>();
 			containerBuilder.RegisterType<AssemblyCommand>();
+			containerBuilder.RegisterType<UninstallCreatioCommand>();
 			
 			containerBuilder.RegisterType<ClioGateway>();
+			
+			containerBuilder.RegisterType<Mssql>().As<IMssql>();
+			containerBuilder.RegisterType<Postgres>().As<IPostgres>();
+			
+			
 			additionalRegistrations?.Invoke(containerBuilder);
 			return containerBuilder.Build();
 		}

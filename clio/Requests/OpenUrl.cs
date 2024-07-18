@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Clio.Requests
 {
-	public class OpenUrl : IExtenalLink
+	public class OpenUrl : IExternalLink
 	{
 		public string Content {
 			get; set;

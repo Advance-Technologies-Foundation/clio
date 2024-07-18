@@ -7,7 +7,8 @@ namespace Clio.Common.db;
 
 public interface IMssql
 {
-
+	void Init(string host, int port, string username, string password);
+	
 	bool CreateDb (string dbName, string backupFileName);
 
 	bool CheckDbExists(string dbName);
@@ -21,8 +22,19 @@ public interface IMssql
 public class Mssql : IMssql
 {
 	
-	private readonly SqlConnectionStringBuilder _builder;
+	private SqlConnectionStringBuilder _builder;
 
+	public Mssql(){}
+	public void Init(string host, int port, string username, string password){
+		_builder = new SqlConnectionStringBuilder {
+			DataSource = $"{host},{port}",
+			UserID = username,
+			Password = password,
+			InitialCatalog = "master",
+			Encrypt = false
+		};
+	}
+	
 	public Mssql(string host, int port, string username, string password) {
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = $"{host},{port}",

@@ -66,7 +66,7 @@ public class ReadmeChecker
 
 	private void PopulateListToCheck(Type T){
 		string commandVerbName = T.GetAttribute<VerbAttribute>().Name;
-		List<string> aliases = T.GetAttribute<VerbAttribute>().Aliases.ToList();
+		List<string> aliases = T.GetAttribute<VerbAttribute>().Aliases?.ToList()  ?? [];
 		aliases.Add(commandVerbName);
 		//Add Verb
 		foreach(var alias in aliases) {
