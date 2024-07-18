@@ -105,7 +105,6 @@ namespace Clio
 			}
 			#endregion
 			
-			containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSdk>();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
 			containerBuilder.RegisterType<FeatureCommand>();
