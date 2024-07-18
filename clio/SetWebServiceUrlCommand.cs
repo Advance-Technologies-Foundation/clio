@@ -18,10 +18,10 @@ public class SetWebServiceUrlOptions : RemoteCommandOptions
 
 	#region Properties: Public
 
-	[Value(0, MetaName = "WebServiceName", Required = true, HelpText = "Web service name")]
+	[Value(1, MetaName = "WebServiceName", Required = true, HelpText = "Web service name")]
 	public string WebServiceName { get; set; }
 
-	[Value(1, MetaName = "baseurl", Required = true, HelpText = "Base url of a web service")]
+	[Value(2, MetaName = "baseurl", Required = true, HelpText = "Base url of a web service")]
 	public string WebServiceUrl { get; set; }
 
 	#endregion
