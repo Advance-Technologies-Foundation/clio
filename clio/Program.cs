@@ -75,6 +75,17 @@ class Program {
 
 	public static bool Safe { get; private set; } = true;
 	internal static IContainer Container { get; set; }
+	public static IAppUpdater AppUpdater { get; set; }
+
+	private static bool? autoUpdate;
+	public static bool AutoUpdate { 
+		get { 
+			return autoUpdate.HasValue ? autoUpdate.Value : new SettingsRepository().GetAutoupdate();
+		}
+		set {
+			autoUpdate = value;
+		}
+	}
 
 	private static void Configure(EnvironmentOptions options)
 	{
@@ -367,10 +378,7 @@ class Program {
 
 	private static void TryCheckForUpdate() {
 		try {
-			var autoupdate = new SettingsRepository().GetAutoupdate();
-			if (autoupdate) {
-				new Thread(UpdateCliCommand.CheckUpdate).Start();
-			}
+			new Thread(AppUpdater.CheckUpdate).Start();
 		} catch(Exception ex) { 
 			
 		}
@@ -394,8 +402,8 @@ class Program {
 		}
 	}
 		
-	private static int ExecuteCommands(string[] args) {
-		TryCheckUpdate(args);
+	internal static int ExecuteCommands(string[] args) {
+		TryCheckUpdateOnStartCommand(args);
 		var creatioEnv = new CreatioEnvironment();
 		string helpFolderName = $"help";
 		string helpDirectoryPath = helpFolderName;
@@ -410,17 +418,21 @@ class Program {
 		}
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
 	}
-		
-	public static bool EnableUpdate = false;
-	private static void TryCheckUpdate(string[] args){
-		EnableUpdate = args.Length switch
+
+	internal static bool IsCfgOpenCommand = false;
+
+	private static void TryCheckUpdateOnStartCommand(string[] args){
+		IsCfgOpenCommand = args.Length switch
 		{
 			2 when args[0] == "cfg" && args[1] == "open" => true,
-			_ => EnableUpdate
+			_ => IsCfgOpenCommand
 		};
 
-		if(!EnableUpdate) {
-			TryCheckForUpdate();
+		if(!IsCfgOpenCommand) {
+			var needCheck = AutoUpdate;
+			if (needCheck) {
+				TryCheckForUpdate();
+			}
 		}
 	}
 

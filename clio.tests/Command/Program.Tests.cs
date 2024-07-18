@@ -7,6 +7,7 @@ using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -32,4 +33,31 @@ public class ProgramTestCase : BaseClioModuleTests
 		Program.Resolve<CreateWorkspaceCommand>(options, logAndSettings);
 	}
 
+
+	[Test]
+	public void TryToRunAutoupdate() {
+		Program.Container = _container;
+		Program.AppUpdater = Substitute.For<IAppUpdater>();
+		var filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
+		_fileSystem.AddFile(filePath, new MockFileData(File
+			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		SettingsRepository.FileSystem = _fileSystem;
+		Program.AutoUpdate = true;
+		Program.ExecuteCommands(new string[] { "ver", "--clio" });	
+		Program.AppUpdater.Received(1).CheckUpdate();
+	}
+
+
+	[Test]
+	public void SkipAutoupdateIfUpdateDisable() {
+		Program.Container = _container;
+		Program.AppUpdater = Substitute.For<IAppUpdater>();
+		var filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
+		_fileSystem.AddFile(filePath, new MockFileData(File
+			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		SettingsRepository.FileSystem = _fileSystem;
+		Program.AutoUpdate = false;
+		Program.ExecuteCommands(new string[] { "ver", "--clio" });
+		Program.AppUpdater.Received(0).CheckUpdate();
+	}
 }
