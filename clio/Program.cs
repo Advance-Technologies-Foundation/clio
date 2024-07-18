@@ -338,8 +338,11 @@ class Program
 		if (logAndSettings) {
 			ConsoleLogger.Instance.WriteInfo(settings.Uri);
 		}
-		var container = Container ?? new BindingsModule().Register(settings);
-		return container.Resolve<T>();
+		if (Container == null) {
+			Container = new BindingsModule().Register(settings);
+		}
+		TryCheckUpdateOnStartCommand();
+		return Container.Resolve<T>();
 	}
 
 	private static void TryCheckForUpdate() {
@@ -352,6 +355,7 @@ class Program
 
 	private static int Main(string[] args) {
 		try {
+			OriginalArgs = args;
 			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(args);
 		} catch (FileNotFoundException e) {
@@ -366,7 +370,6 @@ class Program
 	}
 
 	internal static int ExecuteCommands(string[] args) {
-		TryCheckUpdateOnStartCommand(args);
 		var creatioEnv = new CreatioEnvironment();
 		string helpFolderName = $"help";
 		string helpDirectoryPath = helpFolderName;
@@ -384,9 +387,9 @@ class Program
 
 	internal static bool IsCfgOpenCommand = false;
 
-	private static void TryCheckUpdateOnStartCommand(string[] args) {
-		IsCfgOpenCommand = args.Length switch {
-			2 when args[0] == "cfg" && args[1] == "open" => true,
+	private static void TryCheckUpdateOnStartCommand() {
+		IsCfgOpenCommand = OriginalArgs?.Length switch {
+			2 when OriginalArgs[0] == "cfg" && OriginalArgs[1] == "open" => true,
 			_ => IsCfgOpenCommand
 		};
 
@@ -435,7 +438,7 @@ class Program
 				Code = "Maintainer",
 				Value = CreatioEnvironment.Settings.Maintainer
 			};
-			var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
+			var sysSettingsCommand = Resolve<SysSettingsCommand>(opts);
 			sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 			UnlockMaintainerPackageInternal(opts);
 			new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
@@ -718,6 +721,6 @@ class Program
 		};
 	};
 
-
+	private static string[] OriginalArgs;
 }
 
