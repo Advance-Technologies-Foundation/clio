@@ -52,6 +52,8 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 			.Returns(refs);
 		IServiceUrlBuilder serviceUrlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
+		_clioGatewayMock.IsCompatibleWith("2.0.0.0").Returns(true);
+		
 		// Act
 		downloader.Download(new[] {"CalendarBase"});
 
