@@ -622,6 +622,7 @@ class Program
 		typeof(CloneEnvironmentOptions),
 		typeof(ShowDiffEnvironmentsOptions),
 		typeof(MockDataCommandOptions),
+		typeof(UninstallCreatioCommandOptions),
 
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -723,6 +724,7 @@ class Program
 			CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
 			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
 			MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
+			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};
