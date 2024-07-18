@@ -39,7 +39,7 @@ public class DownloaderTests : BaseClioModuleTests
 	[Test]
 	public void DownloadPackageDll_CopiesDownloadedFile(){
 		// Arrange
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder urlBuilder = Container.Resolve<IServiceUrlBuilder>();
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		const string mockFileContent = "file content";
@@ -53,27 +53,27 @@ public class DownloaderTests : BaseClioModuleTests
 			.When(c =>
 				c.DownloadFile(url, archiveFilePath, requestData))
 			.Do(c => {
-				_fileSystem.AddFile(Path.Combine(tempDir, archiveName), new MockFileData(mockFileContent));
+				FileSystem.AddFile(Path.Combine(tempDir, archiveName), new MockFileData(mockFileContent));
 			});
 
 		_applicationClientFactoryMock.CreateClient(Arg.Any<EnvironmentSettings>())
 			.Returns(_applicationClientMock);
 
 		// Act
-		(_container.Resolve<IDownloader>() as Downloader)?.DownloadPackageDll(downloadInfo, tempDir);
+		(Container.Resolve<IDownloader>() as Downloader)?.DownloadPackageDll(downloadInfo, tempDir);
 
 		// Assert
 		string expectedLog = $"Run download - OK: {archiveName}";
 		_loggerMock.Received(1).WriteInfo(expectedLog);
 		_loggerMock.ClearReceivedCalls();
-		_fileSystem.File.Exists(destinationPath).Should().BeTrue();
-		_fileSystem.File.ReadAllText(destinationPath).Should().Be(mockFileContent);
+		FileSystem.File.Exists(destinationPath).Should().BeTrue();
+		FileSystem.File.ReadAllText(destinationPath).Should().Be(mockFileContent);
 	}
 
 	[Test]
 	public void DownloadPackageDll_WritesWarning_When_DownloadedFileIsSizeOfZero(){
 		// Arrange
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder urlBuilder = Container.Resolve<IServiceUrlBuilder>();
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
@@ -83,15 +83,15 @@ public class DownloaderTests : BaseClioModuleTests
 			.When(c =>
 				c.DownloadFile(url, Arg.Any<string>(), Arg.Any<string>()))
 			.Do(c => {
-				_fileSystem.RemoveFile(destinationPath);
-				_fileSystem.AddEmptyFile(destinationPath);
+				FileSystem.RemoveFile(destinationPath);
+				FileSystem.AddEmptyFile(destinationPath);
 			});
 
 		_applicationClientFactoryMock.CreateClient(Arg.Any<EnvironmentSettings>())
 			.Returns(_applicationClientMock);
 
 		// Act
-		(_container.Resolve<IDownloader>() as Downloader)?.DownloadPackageDll(downloadInfo, tempDir);
+		(Container.Resolve<IDownloader>() as Downloader)?.DownloadPackageDll(downloadInfo, tempDir);
 
 		// Assert
 
@@ -106,7 +106,7 @@ public class DownloaderTests : BaseClioModuleTests
 		// Arrange
 		const string url = "my_url";
 		const string archiveName = "MyPackage.dll";
-		IDownloader downloader = _container.Resolve<IDownloader>();
+		IDownloader downloader = Container.Resolve<IDownloader>();
 
 		string warningMessage = $@"Invalid URI: The format of the URI could not be determined.{Environment.NewLine}";
 		_applicationClientMock
@@ -132,7 +132,7 @@ public class DownloaderTests : BaseClioModuleTests
 	[Test]
 	public void DownloadPackageDll_WritesWarning_WhenDownloadedFileNotFound(){
 		// Arrange
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder urlBuilder = Container.Resolve<IServiceUrlBuilder>();
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
@@ -146,7 +146,7 @@ public class DownloaderTests : BaseClioModuleTests
 				c.DownloadFile(url, Arg.Any<string>(), Arg.Any<string>()));
 
 		// Act
-		(_container.Resolve<IDownloader>() as Downloader)?.DownloadPackageDll(downloadInfo, tempDir);
+		(Container.Resolve<IDownloader>() as Downloader)?.DownloadPackageDll(downloadInfo, tempDir);
 
 		// Assert
 
@@ -160,7 +160,7 @@ public class DownloaderTests : BaseClioModuleTests
 	public void DownloadPackageDll_WriteWarning_When_packageNameEmpty(){
 		// Arrange
 		const string url = "my_url";
-		IDownloader downloader = _container.Resolve<IDownloader>();
+		IDownloader downloader = Container.Resolve<IDownloader>();
 		IEnumerable<DownloadInfo> downloadInfos = [
 			new DownloadInfo(url, "", "", "")
 		];

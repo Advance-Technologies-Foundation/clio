@@ -24,12 +24,12 @@ namespace Clio.Tests.Command
 		[TestCase(false)]
 		public void PingAppCommandShouldBeUsesAllRetryOptions(bool isNetCore) {
 			//Arrange
-			_environmentSettings.IsNetCore = isNetCore;
-			_fileSystem = CreateFs();
-			BindingsModule bindingModule = new(_fileSystem);
-			_container = bindingModule.Register(_environmentSettings, true, AdditionalRegistrations);
+			EnvironmentSettings.IsNetCore = isNetCore;
+			FileSystem = CreateFs();
+			BindingsModule bindingModule = new(FileSystem);
+			Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
 			
-			PingAppCommand command = _container.Resolve<PingAppCommand>();
+			PingAppCommand command = Container.Resolve<PingAppCommand>();
 			PingAppOptions options = new PingAppOptions() { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
 			
 			// Act
@@ -50,10 +50,10 @@ namespace Clio.Tests.Command
 		[TestCase(false)]
 		public void PingAppCommandShouldBeUsesAllRetryOptionsOnNet6Environment(bool isNetCore) {
 			//Arrange
-			_fileSystem = CreateFs();
-			BindingsModule bindingModule = new(_fileSystem);
-			_container = bindingModule.Register(_environmentSettings, true, AdditionalRegistrations);
-			PingAppCommand command = _container.Resolve<PingAppCommand>();
+			FileSystem = CreateFs();
+			BindingsModule bindingModule = new(FileSystem);
+			Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
+			PingAppCommand command = Container.Resolve<PingAppCommand>();
 			PingAppOptions options = new PingAppOptions() {
 				TimeOut = 1,
 				RetryCount = 2,

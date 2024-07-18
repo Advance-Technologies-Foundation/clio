@@ -16,15 +16,31 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Terrasoft.Messaging.Common;
 
 namespace Clio.Requests
 {
-	public class IISScannerRequest : IExtenalLink
+	public class IISScannerRequest : IExternalLink
 	{
 		public string Content {
 			get; set;
 		}
 	}
+	
+	internal class AllSitesRequest: IRequest
+	{
+		public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
+	}
+	
+	internal class StopInstanceByNameRequest: IRequest
+	{
+		public string SiteName { get; set; }
+	}
+	internal class DeleteInstanceByNameRequest: IRequest
+	{
+		public string SiteName { get; set; }
+	}
+	
 
 	/// <summary>
 	/// Finds path to appSetting.json
@@ -35,7 +51,8 @@ namespace Clio.Requests
 	/// </remarks>
 	/// <example>
 	/// </example>
-	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>
+	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>, 
+		IRequestHandler<AllSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,IRequestHandler<StopInstanceByNameRequest>
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly RegAppCommand _regCommand;
@@ -49,6 +66,21 @@ namespace Clio.Requests
 			_powerShellFactory = powerShellFactory;
 		}
 
+		public async Task Handle(AllSitesRequest request, CancellationToken cancellationToken){
+			IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
+			request.Callback(sites);
+		}
+		public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken){
+			var name = request.SiteName;
+			StopSiteByName(name);
+			StopAppPoolByName(name);
+		}
+        
+		public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
+			var name = request.SiteName;
+			RemoveSiteByName(name);
+			RemoveAppPoolByName(name);
+		}
 		public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
@@ -133,19 +165,16 @@ namespace Clio.Requests
 		/// <summary>
 		/// Finds Creatio Sites in IIS that are not registered with clio
 		/// </summary>
-		internal static readonly Func<IEnumerable<UnregisteredSite>> _findAllCreatioSites = () =>
+		internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () =>
 		{
 			return _getBindings()
 			.Where(site => _detectSiteType(site.path) != SiteType.NotCreatioSite)
-			.Select(site =>
-			{
-				return new UnregisteredSite(
-					siteBinding: site,
-					Uris: _convertBindingToUri(site.binding),
-					siteType: _detectSiteType(site.path));
-			});
+			.Select(site => new UnregisteredSite(
+				siteBinding: site,
+				Uris: _convertBindingToUri(site.binding),
+				siteType: _detectSiteType(site.path)));
 		};
-
+	
 		/// <summary>
 		/// Executes appcmd.exe with arguments and captures output
 		/// </summary>
@@ -194,8 +223,28 @@ namespace Clio.Requests
 			return result;
 		};
 
+		private static readonly Action<string> StopAppPoolByName = (name) =>
+		{
+			var r = _appcmd($"stop apppool /apppool.name:{name}");
+		};
 
+		private static readonly Action<string> StopSiteByName = (name) =>
+		{
+			var r = _appcmd($"stop site /site.name:{name}");
+		};
 
+		private static readonly Action<string> RemoveSiteByName = (name) =>
+		{
+			var r = _appcmd($"delete site /site.name:{name}");
+		};
+
+		private static readonly Action<string> RemoveAppPoolByName = (name) =>
+		{
+			var r = _appcmd($"delete apppool /apppool.name:{name}");
+		};
+
+		
+		
 		private static Func<OneOf<Collection<PSObject>, Exception>, Collection<PSObject>> getValue = (oneOf) =>
 		{
 			if (oneOf.Value is Exception ex)
@@ -296,6 +345,18 @@ namespace Clio.Requests
 			return SiteType.NotCreatioSite;
 		};
 
+		/// <summary>
+		/// 
+		/// </summary>
+		/// <param name="name">Site name in IIS</param>
+		/// <param name="state"> State of IIS site
+		///	<list type="bullet">
+		/// <item>Started: when IIS site Started</item>
+		/// <item>Stopped: when IIS site Started</item>
+		/// </list>
+		/// </param>
+		/// <param name="binding"></param>
+		/// <param name="path">Site directory path</param>
 		internal sealed record SiteBinding(string name, string state, string binding, string path)
 		{
 		}

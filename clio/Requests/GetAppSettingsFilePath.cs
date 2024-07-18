@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Clio.Requests
 {
-	public class GetAppSettingsFilePath : IExtenalLink
+	public class GetAppSettingsFilePath : IExternalLink
 	{
 		public string Content {
 			get; set;

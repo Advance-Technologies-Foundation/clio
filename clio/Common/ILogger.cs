@@ -1,4 +1,6 @@
-﻿using ConsoleTables;
+﻿using System.Collections.Generic;
+using ConsoleTables;
+using FluentValidation.Results;
 
 namespace Clio.Common
 {
@@ -66,6 +68,17 @@ namespace Clio.Common
 		/// </remarks>
 		/// <param name="table">Table to be written to the log.</param>
 		void PrintTable(ConsoleTable table);
+		
+		
+		/// <summary>
+		/// Prints a collection of validation errors to the log.
+		/// </summary>
+		/// <remarks>
+		/// Each error in the collection is printed as a separate entry in the log.
+		/// This method is useful for displaying the details of validation failures to the user.
+		/// </remarks>
+		/// <param name="errors">The collection of <see cref="ValidationFailure"/> objects to be printed.</param>
+		void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors);
 	}
 
 }

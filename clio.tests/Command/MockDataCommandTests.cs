@@ -27,7 +27,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 
 	[Test]
 	public void CreateDataFiles(){
-		FileSystem clioFileSystem = new FileSystem(_fileSystem);
+		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		// Arrange
 		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
 		MockDataCommandOptions options = new MockDataCommandOptions {
@@ -35,14 +35,14 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 			Data = @"T:\MockDataProjects\Tests\MockData"
 		};
 		command.Execute(options);
-		_fileSystem.Directory.Exists(options.Models).Should().BeTrue();
-		_fileSystem.Directory.Exists(options.Data).Should().BeTrue();
+		FileSystem.Directory.Exists(options.Models).Should().BeTrue();
+		FileSystem.Directory.Exists(options.Data).Should().BeTrue();
 	}
 
 	[Test]
 	public void FindModels(){
 		// Arrange
-		FileSystem clioFileSystem = new FileSystem(_fileSystem);
+		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
 		MockDataCommandOptions options = new MockDataCommandOptions {
 			Models = @"T:/MockDataProjects",
@@ -57,7 +57,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 	[Test]
 	public void GetODataData(){
 		// Arrange
-		FileSystem clioFileSystem = new FileSystem(_fileSystem);
+		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		IApplicationClient mockCreatioClient = Substitute.For<IApplicationClient>();
 		string contactExpectedContent
 			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Contact.json"));
@@ -84,7 +84,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 
 		//Assert
 		List<string> models = command.FindModels(options.Models);
-		string[] dataFiles = _fileSystem.Directory.GetFiles(options.Data, "*.json", SearchOption.AllDirectories);
+		string[] dataFiles = FileSystem.Directory.GetFiles(options.Data, "*.json", SearchOption.AllDirectories);
 		dataFiles.Count().Should().Be(models.Count);
 		foreach (string dataFile in dataFiles) {
 			string model = Path.GetFileNameWithoutExtension(dataFile);

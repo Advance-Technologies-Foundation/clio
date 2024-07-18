@@ -20,7 +20,7 @@ namespace Clio.Tests
 		[Test]
 		public void RestartApplicationAfterInstallPackageInNet6() {
 			string packagePath = "T:\\TestClioPackage.gz";
-			_fileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
+			FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 			EnvironmentSettings environmentSettings = new EnvironmentSettings();
 			environmentSettings.IsNetCore = true;
 			var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
@@ -29,7 +29,7 @@ namespace Clio.Tests
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
-			var clioFileSystem = new FileSystem(_fileSystem);
+			var clioFileSystem = new FileSystem(FileSystem);
 			ApplicationInstaller applicationInstaller = new ApplicationInstaller(environmentSettings,
 				applicationClientFactory,
 				application,
@@ -47,7 +47,7 @@ namespace Clio.Tests
 		[Test]
 		public void RestartApplicationAfterInstallFolderInNet6() {
 			string packageFolderPath = "T:\\TestClioPackageFolder";
-			_fileSystem.AddDirectory(packageFolderPath);
+			FileSystem.AddDirectory(packageFolderPath);
 			EnvironmentSettings environmentSettings = new EnvironmentSettings();
 			environmentSettings.IsNetCore = true;
 			var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
@@ -55,12 +55,12 @@ namespace Clio.Tests
 			var packageArchiver = Substitute.For<IPackageArchiver>();
 			packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
 			Arg.Any<bool>())).Do( callInfo => {
-				_fileSystem.AddEmptyFile(callInfo[1].ToString());
+				FileSystem.AddEmptyFile(callInfo[1].ToString());
 			});
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
-			var clioFileSystem = new FileSystem(_fileSystem);
+			var clioFileSystem = new FileSystem(FileSystem);
 			ApplicationInstaller applicationInstaller = new ApplicationInstaller(environmentSettings,
 				applicationClientFactory,
 				application,
@@ -77,7 +77,7 @@ namespace Clio.Tests
 		[Test]
 		public void CatchRestartApplicationErrorAfterInstallFolderInNet6() {
 			string packageFolderPath = "T:\\TestClioPackageFolder";
-			_fileSystem.AddDirectory(packageFolderPath);
+			FileSystem.AddDirectory(packageFolderPath);
 			EnvironmentSettings environmentSettings = new EnvironmentSettings();
 			environmentSettings.IsNetCore = true;
 			var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
@@ -86,12 +86,12 @@ namespace Clio.Tests
 			var packageArchiver = Substitute.For<IPackageArchiver>();
 			packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
 			Arg.Any<bool>())).Do(callInfo => {
-				_fileSystem.AddEmptyFile(callInfo[1].ToString());
+				FileSystem.AddEmptyFile(callInfo[1].ToString());
 			});
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
-			var clioFileSystem = new FileSystem(_fileSystem);
+			var clioFileSystem = new FileSystem(FileSystem);
 			ApplicationInstaller applicationInstaller = new ApplicationInstaller(environmentSettings,
 				applicationClientFactory,
 				application,

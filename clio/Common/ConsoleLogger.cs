@@ -1,7 +1,11 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Threading;
 using ConsoleTables;
+using FluentValidation.Results;
 
 namespace Clio.Common;
 
@@ -23,6 +27,7 @@ public class ConsoleLogger : ILogger
 
 	private ConsoleLogger(){
 		CancellationToken = CancellationTokenSource.Token;
+		Console.OutputEncoding = System.Text.Encoding.UTF8;
 	}
 
 	#endregion
@@ -102,7 +107,17 @@ public class ConsoleLogger : ILogger
 	#endregion
 
 	#region Methods: Public
-
+	
+	public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) {
+		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
+			.ToList().ForEach(e =>
+			{
+				string msg = $"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}";
+				WriteError(msg);
+			});
+	}
+	
+	
 	public void PrintTable(ConsoleTable table){
 		_logQueue.Enqueue(new TableMessage(table));
 	}

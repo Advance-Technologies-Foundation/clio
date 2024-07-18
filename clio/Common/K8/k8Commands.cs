@@ -11,7 +11,22 @@ using Npgsql;
 
 namespace Clio.Common.K8;
 
-public class k8Commands
+public interface Ik8Commands
+{
+
+	void CopyBackupFileToPod(k8Commands.PodType podType, string src, string destFileName);
+
+	string DeleteBackupImage(k8Commands.PodType podType, string fileName);
+
+	string RestorePgDatabase(string backupFileName, string dbName);
+
+	k8Commands.ConnectionStringParams GetPostgresConnectionString();
+
+	k8Commands.ConnectionStringParams GetMssqlConnectionString();
+
+}
+
+public class k8Commands : Ik8Commands
 {
 
 	#region Enum: Public
@@ -118,8 +133,6 @@ public class k8Commands
 
 	public k8Commands(IKubernetes client) {
 		_client = client;
-
-		
 	}
 
 	#endregion

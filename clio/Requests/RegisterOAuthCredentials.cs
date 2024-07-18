@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Clio.Requests
 {
-	public class RegisterOAuthCredentials : IExtenalLink
+	public class RegisterOAuthCredentials : IExternalLink
 	{
 		public string Content {
 			get; set;

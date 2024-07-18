@@ -44,7 +44,7 @@ namespace Clio.Tests.Command
 
 		
 		private IContainer GetContainer() {
-			return MockDataContainer.GetContainer(_fileSystem);
+			return MockDataContainer.GetContainer(FileSystem);
 		}
 
 	}

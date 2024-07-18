@@ -177,7 +177,16 @@ namespace cliogate.Files.cs
 		public string GetSysSettingValueByCode(string code){
 			CheckCanManageSysSettings();
 			bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
-			if(!isValue) {
+			
+			if(value == null || !isValue) {
+				var v  = SysSettings.GetDefValue(_userConnection, code);
+				if(v != null) {
+					value = v;
+					isValue = true;
+				}
+			}
+			
+			if(value == null || !isValue) {
 				return string.Empty;
 			}
 			

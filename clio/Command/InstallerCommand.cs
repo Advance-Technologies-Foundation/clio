@@ -18,7 +18,7 @@ using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command;
 
-[Verb("deploy-creatio", Aliases = new string[]{""}, HelpText = "Deploy Creatio from zip file")]
+[Verb("deploy-creatio", Aliases = new []{"dc", "ic", "install-creation"}, HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
 

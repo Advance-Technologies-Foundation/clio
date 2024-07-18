@@ -138,7 +138,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 		if(string.IsNullOrWhiteSpace(env.Uri)) {
 			throw new Exception($"Could not find path to environment: '{envName}'");
 		}
-		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler._findAllCreatioSites();
+		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites();
 		foreach (IISScannerHandler.UnregisteredSite site in sites) {
 			foreach (Uri unregisteredSiteUri in site.Uris) {
 				if(unregisteredSiteUri.ToString() == new Uri(env.Uri).ToString()) {
