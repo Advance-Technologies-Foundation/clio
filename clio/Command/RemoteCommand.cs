@@ -7,7 +7,7 @@ using CommandLine;
 
 namespace Clio.Command;
 
-public class RemoteCommandOptions : EnvironmentNameOptions
+public class RemoteCommandOptions : EnvironmentOptions
 {
 	public int TimeOut { get; internal set; } = 100_000;
 	public int RetryCount { get; internal set; } = 3;
