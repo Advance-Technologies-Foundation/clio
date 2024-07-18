@@ -416,6 +416,7 @@ namespace Clio
 			return environment;
 		}
 
+
 		public EnvironmentSettings FindEnvironment(string name = null) {
 			EnvironmentSettings environment;
 			try {

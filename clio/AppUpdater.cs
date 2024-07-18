@@ -13,7 +13,10 @@ namespace Clio
 	{
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
+		public bool Checked { get; private set; }
+
 		public void CheckUpdate() {
+			Checked = true;
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersionFromNuget();
 			if (currentVersion != latestVersion) {
@@ -100,10 +103,14 @@ namespace Clio
 
 	public interface IAppUpdater
 	{
+		bool Checked { get; }
+
 		void CheckUpdate();
+
 		string GetLatestVersionFromNuget();
 
 		string GetCurrentVersion();
+
 		string GetLatestVersionFromGitHub();
 	}
 }
