@@ -82,14 +82,14 @@ public class CreatioUninstaller : ICreatioUninstaller
 		= (dbName, cn, logger, db) => {
 			db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
 			db.DropDb(dbName);
-			logger.WriteInfo($"Postgres DB: {dbName} dropped 💀");
+			logger.WriteInfo($"Postgres DB: {dbName} dropped");
 		};
 
 	private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
 		= (dbName, cn, logger, db) => {
 			db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
 			db.DropDb(dbName);
-			logger.WriteInfo($"MsSQL DB: {dbName} dropped 💀");
+			logger.WriteInfo($"MsSQL DB: {dbName} dropped");
 		};
 
 	#endregion
@@ -207,20 +207,9 @@ public class CreatioUninstaller : ICreatioUninstaller
 		UninstallByPath(directoryPath);
 		
 		_settingsRepository.RemoveEnvironment(environmentName);
-		_logger.WriteInfo($"Unregisted {environmentName} from clio 💀");
+		_logger.WriteInfo($"Unregisted {environmentName} from clio");
 	}
 
-	/* ALGORITHM
-	* 1. Find environment by name
-	* 2. Find Application in IIS by URL from Environment.URL
-	* 3. IIS - Stop Application and AppPool.
-	* 4. IIS - Delete Application and AppPool.
-	* 5. Find DB from ConnectionString.
-	* 6. If in Rancher, drop DB.
-	* 7. Delete content in /wwwroot/{EnvironmentName}.
-	* 8. Delete content for AppPool User (C:\Users\{AppPoolUser}).
-	*/
-	
 	private void StopIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
 			AllSitesRequest request = new() {
@@ -232,7 +221,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 		if(site is not null) {
 			var removeRequest = new StopInstanceByNameRequest{SiteName = site.siteBinding.name};
 			_mediator.Send(removeRequest);
-			_logger.WriteInfo($"IIS Stopped: {removeRequest.SiteName} ⛔");
+			_logger.WriteInfo($"IIS Stopped: {removeRequest.SiteName}");
 		}else {
 			_logger.WriteWarning($"IIS NOT Stopped Name: {site.siteBinding.name} DIR: {creatioDirectoryPath}");
 		}
@@ -249,7 +238,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 		if(site is not null) {
 			var removeRequest = new DeleteInstanceByNameRequest{SiteName = site.siteBinding.name};
 			_mediator.Send(removeRequest);
-			_logger.WriteInfo($"IIS Removed: {removeRequest.SiteName} 💀");
+			_logger.WriteInfo($"IIS Removed: {removeRequest.SiteName}");
 		}else {
 			_logger.WriteWarning($"IIS NOT Removed: {creatioDirectoryPath}");
 		}
@@ -282,10 +271,8 @@ public class CreatioUninstaller : ICreatioUninstaller
 		} else {
 			_dropPgDbByName(info.DbName, cn, _logger, _postgres);
 		}
-		
-		
 		_fileSystem.DeleteDirectory(creatioDirectoryPath, true);
-		_logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted 💀");
+		_logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
 	}
 
 	#endregion
