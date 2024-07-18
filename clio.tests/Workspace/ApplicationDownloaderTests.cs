@@ -44,15 +44,16 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 	public void Download_Should_DownloadFiles(){
 		// Arrange
 		_csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-		IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+		IApplicationDownloader downloader = _container.Resolve<IApplicationDownloader>();
 		List<Reference> refs = [
 			new Reference("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
 		];
 		_initializedCsprojFile.GetPackageReferences()
 			.Returns(refs);
-		IServiceUrlBuilder serviceUrlBuilder = Container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder serviceUrlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
 		_clioGatewayMock.IsCompatibleWith("2.0.0.0").Returns(true);
+		
 		// Act
 		downloader.Download(new[] {"CalendarBase"});
 
@@ -68,13 +69,13 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 	public void DownloadPackageDll_Skips_When_ClioGateIsOld(){
 		// Arrange
 		_csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-		IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+		IApplicationDownloader downloader = _container.Resolve<IApplicationDownloader>();
 		List<Reference> refs = [
 			new Reference("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
 		];
 		_initializedCsprojFile.GetPackageReferences()
 			.Returns(refs);
-		IServiceUrlBuilder serviceUrlBuilder = Container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder serviceUrlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(false);
 		
 		// Act
@@ -93,7 +94,7 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 	public void Download_Skips_WhenPackagesEmpty(){
 		// Arrange
 		_csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-		IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+		IApplicationDownloader downloader = _container.Resolve<IApplicationDownloader>();
 		_initializedCsprojFile.GetPackageReferences().Returns([]);
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
 		

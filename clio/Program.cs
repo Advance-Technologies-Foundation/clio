@@ -13,7 +13,6 @@ using Clio.Common;
 using Clio.Package;
 using Clio.Project;
 using Clio.Querry;
-using Clio.Requests;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using CommandLine;
@@ -24,7 +23,8 @@ using YamlDotNet.Serialization;
 
 namespace Clio;
 
-class Program {
+class Program
+{
 
 	private static string UserName => CreatioEnvironment.Settings.Login;
 	private static string UserPassword => CreatioEnvironment.Settings.Password;
@@ -34,12 +34,9 @@ class Program {
 	private static string AuthAppUrl => CreatioEnvironment.Settings.AuthAppUri;
 	private static string AppUrl {
 		get {
-			if (CreatioEnvironment.IsNetCore)
-			{
+			if (CreatioEnvironment.IsNetCore) {
 				return Url;
-			}
-			else
-			{
+			} else {
 				return Url + @"/0";
 			}
 		}
@@ -63,12 +60,9 @@ class Program {
 
 	private static CreatioClient _creatioClientInstance {
 		get {
-			if (string.IsNullOrEmpty(ClientId))
-			{
+			if (string.IsNullOrEmpty(ClientId)) {
 				return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
-			}
-			else
-			{
+			} else {
 				return CreatioClient.CreateOAuth20Client(Url, AuthAppUrl, ClientId, ClientSecret, CreatioEnvironment.IsNetCore);
 			}
 		}
@@ -77,89 +71,97 @@ class Program {
 	public static bool Safe { get; private set; } = true;
 	internal static IContainer Container { get; set; }
 
-	private static void Configure(EnvironmentOptions options)
-	{
+	public static IAppUpdater _appUpdater = null;
+	public static IAppUpdater AppUpdater {
+		get {
+			if (_appUpdater == null) {
+				_appUpdater = Container.Resolve<IAppUpdater>();
+			}
+			return _appUpdater;
+		}
+		set {
+			_appUpdater = value;
+		}
+	}
+
+	private static bool? autoUpdate;
+	public static bool AutoUpdate {
+		get {
+			return autoUpdate.HasValue ? autoUpdate.Value : new SettingsRepository().GetAutoupdate();
+		}
+		set {
+			autoUpdate = value;
+		}
+	}
+
+	private static void Configure(EnvironmentOptions options, bool checkEnvExist = false) {
 		var settingsRepository = new SettingsRepository();
 		CreatioEnvironment.EnvironmentName = options.Environment;
+		if (checkEnvExist) {
+			var isEnvironmentExists = settingsRepository.IsEnvironmentExists(options.Environment);
+			if (!isEnvironmentExists) {
+				throw new ArgumentException($"Cannot find environment with name {options.Environment}", nameof(options.Environment));
+			}
+		}
 		CreatioEnvironment.Settings = settingsRepository.GetEnvironment(options);
 		ICreatioEnvironment creatioEnvironment = Resolve<ICreatioEnvironment>();
 	}
 
-	private static void MessageToConsole(string text, ConsoleColor color)
-	{
+	private static void MessageToConsole(string text, ConsoleColor color) {
 		var currentColor = Console.ForegroundColor;
 		Console.ForegroundColor = color;
 		Console.WriteLine(text);
 		Console.ForegroundColor = currentColor;
 	}
-	public static void SetupAppConnection(EnvironmentOptions options)
-	{
-		Configure(options);
+	public static void SetupAppConnection(EnvironmentOptions options, bool checkEnvExist = false) {
+		Configure(options, checkEnvExist);
 		CheckApiVersion();
 	}
 
-	public static void CheckApiVersion()
-	{
+	public static void CheckApiVersion() {
 		var dir = AppDomain.CurrentDomain.BaseDirectory;
 		string versionFilePath = Path.Combine(dir, "cliogate", "version.txt");
 		var localApiVersion = new Version(File.ReadAllText(versionFilePath));
 		var appApiVersion = GetAppApiVersion();
-		if (appApiVersion == new Version("0.0.0.0"))
-		{
+		if (appApiVersion == new Version("0.0.0.0")) {
 			MessageToConsole($"Your app does not contain clio API." +
 				$"{Environment.NewLine}You should consider install it via the \'clio install-gate\' command.", ConsoleColor.DarkYellow);
-		}
-		else if (localApiVersion > appApiVersion)
-		{
+		} else if (localApiVersion > appApiVersion) {
 			MessageToConsole($"You are using clio api version {appApiVersion}, however version {localApiVersion} is available." +
 				$"{Environment.NewLine}You should consider upgrading via the \'clio update-gate\' command.", ConsoleColor.DarkYellow);
 		}
 	}
 
-	private static Version GetAppApiVersion()
-	{
+	private static Version GetAppApiVersion() {
 		var apiVersion = new Version("0.0.0.0");
-		try
-		{
+		try {
 			string appVersionResponse = _creatioClientInstance.ExecuteGetRequest(ApiVersionUrl).Trim('"');
 			apiVersion = new Version(appVersionResponse);
-		}
-		catch (Exception)
-		{
+		} catch (Exception) {
 		}
 		return apiVersion;
 	}
 
-	private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async)
-	{
-		try
-		{
+	private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async) {
+		try {
 			Console.WriteLine("Start download packages ({0}).", packageName);
 			int count = 0;
 			var packageNames = string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 			string requestData = "[" + packageNames + "]";
-			if (!_async)
-			{
+			if (!_async) {
 				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
-			}
-			else
-			{
+			} else {
 				_creatioClientInstance.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty, 10000);
-				new Thread(() =>
-				{
-					try
-					{
+				new Thread(() => {
+					try {
 						_creatioClientInstance.DownloadFile(GetZipPackageUrl, Path.GetTempFileName(), requestData, 2000);
-					}
-					catch { }
+					} catch { }
 				}).Start();
 				bool again = false;
-				do
-				{
+				do {
 					Thread.Sleep(2000);
 					again = !bool.Parse(_creatioClientInstance.ExecutePostRequest(ExistsPackageZipUrl, string.Empty, 10000));
-					if (++count > 600)
-					{
+					if (++count > 600) {
 						throw new TimeoutException("Timeout exception");
 					}
 				} while (again);
@@ -167,15 +169,12 @@ class Program {
 				_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
 			}
 			Console.WriteLine("Download packages ({0}) completed.", packageName);
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			Console.WriteLine("Download packages ({0}) not completed.", packageName);
 		}
 	}
 
-	private static string CorrectJson(string body)
-	{
+	private static string CorrectJson(string body) {
 		body = body.Replace("\\\\r\\\\n", Environment.NewLine);
 		body = body.Replace("\\r\\n", Environment.NewLine);
 		body = body.Replace("\\\\n", Environment.NewLine);
@@ -187,49 +186,38 @@ class Program {
 		return body;
 	}
 
-	private static void UnZipPackages(string zipFilePath, string destinationPath)
-	{
+	private static void UnZipPackages(string zipFilePath, string destinationPath) {
 		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 		packageArchiver.ExtractPackages(zipFilePath, true, true, true, false, destinationPath);
 	}
 
-	private static void UnZip(string zipFilePath)
-	{
+	private static void UnZip(string zipFilePath) {
 		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 		packageArchiver.UnZip(zipFilePath, true, null);
 	}
 
-	internal static int DownloadZipPackages(PullPkgOptions options)
-	{
-		try
-		{
+	internal static int DownloadZipPackages(PullPkgOptions options) {
+		try {
 			SetupAppConnection(options);
 			string packageName = options.Name;
-			if (options.Unzip)
-			{
+			if (options.Unzip) {
 				string destPath = options.DestPath ?? Environment.CurrentDirectory;
 				IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>();
-				workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
-				{
+				workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 					string zipFilePath = Path.Combine(tempDirectory, $"{packageName}.zip");
 					DownloadZipPackagesInternal(packageName, zipFilePath, options.Async);
 					UnZipPackages(zipFilePath, destPath);
 				});
-			}
-			else
-			{
+			} else {
 				string destPath = options.DestPath ?? Path.Combine(Environment.CurrentDirectory, $"{packageName}.zip");
-				if (Directory.Exists(destPath))
-				{
+				if (Directory.Exists(destPath)) {
 					destPath = Path.Combine(destPath, $"{packageName}.zip");
 				}
 				DownloadZipPackagesInternal(packageName, destPath, options.Async);
 			}
 			Console.WriteLine("Done");
 			return 0;
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			Console.WriteLine(e);
 			return 1;
 		}
@@ -246,8 +234,7 @@ class Program {
 	}
 
 	private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
-		params object[] additionalConstructorArgs)
-	{
+		params object[] additionalConstructorArgs) {
 		var settings = GetEnvironmentSettings(options);
 		var creatioClient = string.IsNullOrEmpty(settings.ClientId) ? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore) :
 			CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore);
@@ -257,29 +244,25 @@ class Program {
 	}
 
 	private static TCommand CreateRemoteCommandWithoutClient<TCommand>(EnvironmentOptions options,
-		params object[] additionalConstructorArgs)
-	{
+		params object[] additionalConstructorArgs) {
 		var settings = GetEnvironmentSettings(options);
 		var constructorArgs = new object[] { settings }.Concat(additionalConstructorArgs).ToArray();
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 	}
 
 	//ToDo: move to factory
-	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs)
-	{
+	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs) {
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 	}
 
-	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options)
-	{
+	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options) {
 		var settingsRepository = new SettingsRepository();
 		var settings = settingsRepository.GetEnvironment(options);
 		var workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
 		string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
 		string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
 			$"{packageName}.gz");
-		return new PushPkgOptions
-		{
+		return new PushPkgOptions {
 			Environment = options.Environment,
 			Name = packagePath,
 			Login = options.Login,
@@ -306,7 +289,7 @@ class Program {
 		if (optionFromFile == null && optionsFromCommandLine.IsEmpty()) {
 			return optionsFromCommandLine;
 
-        }
+		}
 		if (string.IsNullOrEmpty(optionsFromCommandLine.Environment)) {
 			var result = new EnvironmentNameOptions();
 			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile.Uri;
@@ -334,72 +317,65 @@ class Program {
 		if (envManifestSettings == null) {
 			return null;
 		}
-        var environmnetOptions = new EnvironmentOptions() {
-				Uri = envManifestSettings.Uri,
-				Login = envManifestSettings.Login,
-				Password = envManifestSettings.Password,
-				ClientId = envManifestSettings.ClientId,
-				ClientSecret = envManifestSettings.ClientSecret,
-				AuthAppUri = envManifestSettings.AuthAppUri,
-				IsNetCore = envManifestSettings.IsNetCore
-			};
+		var environmnetOptions = new EnvironmentOptions() {
+			Uri = envManifestSettings.Uri,
+			Login = envManifestSettings.Login,
+			Password = envManifestSettings.Password,
+			ClientId = envManifestSettings.ClientId,
+			ClientSecret = envManifestSettings.ClientSecret,
+			AuthAppUri = envManifestSettings.AuthAppUri,
+			IsNetCore = envManifestSettings.IsNetCore
+		};
 		return environmnetOptions;
 	}
 
-	internal static T Resolve<T>(object options = null, bool logAndSettings = false)
-	{
+	internal static T Resolve<T>(object options = null, bool logAndSettings = false) {
 		EnvironmentSettings settings = null;
 		if (options is EnvironmentOptions environmentOptions) {
 			if (environmentOptions.RequiredEnvironment) {
 				settings = GetEnvironmentSettings(environmentOptions as EnvironmentOptions);
 			} else {
-				settings = FindEnvironmentSettings(environmentOptions as EnvironmentOptions) 
+				settings = FindEnvironmentSettings(environmentOptions as EnvironmentOptions)
 					?? new EnvironmentSettings() {
 						Login = "default"
 					};
 			}
 		}
 		if (logAndSettings) {
-            ConsoleLogger.Instance.WriteInfo(settings.Uri);
-        }
-		var container = Container ?? new BindingsModule().Register(settings);
-		return container.Resolve<T>();
+			ConsoleLogger.Instance.WriteInfo(settings.Uri);
+		}
+		if (Container == null) {
+			Container = new BindingsModule().Register(settings);
+		}
+		TryCheckUpdateOnStartCommand();
+		return Container.Resolve<T>();
 	}
 
 	private static void TryCheckForUpdate() {
 		try {
-			var autoupdate = new SettingsRepository().GetAutoupdate();
-			if (autoupdate) {
-				new Thread(UpdateCliCommand.CheckUpdate).Start();
-			}
-		} catch(Exception ex) { 
-			
+			new Thread(AppUpdater.CheckUpdate).Start();
+		} catch (Exception ex) {
+
 		}
 	}
 
 	private static int Main(string[] args) {
-		
-		// var sites = IISScannerHandler.FindAllCreatioSites();
-		// return 0 ;
 		try {
+			OriginalArgs = args;
 			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(args);
-		}
-		catch (FileNotFoundException e) {
+		} catch (FileNotFoundException e) {
 			ConsoleLogger.Instance.WriteError(e.Message + e.FileName);
 			return 1;
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			ConsoleLogger.Instance.WriteError(e.Message);
 			return 1;
-		} 
-		finally {
+		} finally {
 			ConsoleLogger.Instance.Stop();
 		}
 	}
-		
-	private static int ExecuteCommands(string[] args) {
-		TryCheckUpdate(args);
+
+	internal static int ExecuteCommands(string[] args) {
 		var creatioEnv = new CreatioEnvironment();
 		string helpFolderName = $"help";
 		string helpDirectoryPath = helpFolderName;
@@ -414,17 +390,20 @@ class Program {
 		}
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
 	}
-		
-	public static bool EnableUpdate = false;
-	private static void TryCheckUpdate(string[] args){
-		EnableUpdate = args.Length switch
-		{
-			2 when args[0] == "cfg" && args[1] == "open" => true,
-			_ => EnableUpdate
+
+	internal static bool IsCfgOpenCommand = false;
+
+	private static void TryCheckUpdateOnStartCommand() {
+		IsCfgOpenCommand = OriginalArgs?.Length switch {
+			2 when OriginalArgs[0] == "cfg" && OriginalArgs[1] == "open" => true,
+			_ => IsCfgOpenCommand
 		};
 
-		if(!EnableUpdate) {
-			TryCheckForUpdate();
+		if (!IsCfgOpenCommand) {
+			var needCheck = AutoUpdate;
+			if (needCheck) {
+				TryCheckForUpdate();
+			}
 		}
 	}
 
@@ -455,97 +434,77 @@ class Program {
 		return exitCode;
 	}
 
-	private static int SetDeveloperMode(DeveloperModeOptions opts)
-	{
-		try
-		{
-			SetupAppConnection(opts);
+	private static int SetDeveloperMode(DeveloperModeOptions opts) {
+		try {
+			SetupAppConnection(opts, true);
 			var repository = new SettingsRepository();
 			CreatioEnvironment.Settings.DeveloperModeEnabled = true;
 			repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
-			var sysSettingOptions = new SysSettingsOptions()
-			{
+			var sysSettingOptions = new SysSettingsOptions() {
 				Code = "Maintainer",
 				Value = CreatioEnvironment.Settings.Maintainer
 			};
-			var sysSettingsCommand = CreateRemoteCommand<SysSettingsCommand>(sysSettingOptions);
+			var sysSettingsCommand = Resolve<SysSettingsCommand>(opts);
 			sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 			UnlockMaintainerPackageInternal(opts);
 			new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(new RestartOptions());
 			Console.WriteLine("Done");
 			return 0;
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions)
-	{
+	private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions) {
 		IPackageLockManager packageLockManager = Resolve<IPackageLockManager>(environmentOptions);
 		packageLockManager.Unlock();
 	}
 
-	private static int AddModels(ItemOptions opts)
-	{
+	private static int AddModels(ItemOptions opts) {
 
-		if (opts.CreateAll)
-		{
+		if (opts.CreateAll) {
 			Console.WriteLine("Generating models...");
 			SetupAppConnection(opts);
-				
+
 			var workingDirectoryProvider = Resolve<IWorkingDirectoriesProvider>();
 			ModelBuilder mb = new ModelBuilder(_creatioClientInstance, AppUrl, opts, workingDirectoryProvider);
 			mb.GetModels();
 			return 0;
 		}
 
-		try
-		{
+		try {
 			SetupAppConnection(opts);
 			var models = GetClassModels(opts.ItemName, opts.Fields);
 			var project = new VSProject(opts.DestinationPath, opts.Namespace);
-			foreach (var model in models)
-			{
+			foreach (var model in models) {
 				project.AddFile(model.Key, model.Value);
 			}
 			project.Reload();
 			Console.WriteLine("Done");
 			return 0;
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static int AddItem(ItemOptions options)
-	{
-		if (options.ItemType.ToLower() == "model")
-		{
+	private static int AddItem(ItemOptions options) {
+		if (options.ItemType.ToLower() == "model") {
 			return AddModels(options);
-		}
-		else
-		{
+		} else {
 			return AddItemFromTemplate(options);
 		}
 	}
 
-	private static int AddItemFromTemplate(ItemOptions options)
-	{
-		try
-		{
+	private static int AddItemFromTemplate(ItemOptions options) {
+		try {
 			var project = new VSProject(options.DestinationPath, options.Namespace);
 			var creatioEnv = new CreatioEnvironment();
 			string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
-			if (!File.Exists(tplPath))
-			{
+			if (!File.Exists(tplPath)) {
 				var envPath = creatioEnv.GetAssemblyFolderPath();
-				if (!string.IsNullOrEmpty(envPath))
-				{
+				if (!string.IsNullOrEmpty(envPath)) {
 					tplPath = Path.Combine(envPath, tplPath);
 				}
 			}
@@ -553,29 +512,25 @@ class Program {
 			project.AddFile(options.ItemName, templateBody.Replace("<Name>", options.ItemName));
 			project.Reload();
 			return 0;
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			Console.WriteLine(e);
 			return 1;
 		}
 	}
 
-	private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields)
-	{
+	private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields) {
 		var url = string.Format(GetEntityModelsUrl, entitySchemaName, fields);
 		string responseFormServer = _creatioClientInstance.ExecuteGetRequest(url);
 		var result = CorrectJson(responseFormServer);
 		return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 	}
 
-	private static int ConvertPackage(ConvertOptions opts)
-	{
+	private static int ConvertPackage(ConvertOptions opts) {
 		return PackageConverter.Convert(opts);
 	}
-		
-		
-	private static Type[] CommandOption = new []{
+
+
+	private static Type[] CommandOption = new[]{
 		typeof(ExecuteAssemblyOptions),
 		typeof(RestartOptions),
 		typeof(ClearRedisOptions),
@@ -666,7 +621,8 @@ class Program {
 		typeof(SaveSettingsToManifestOptions),
 		typeof(CloneEnvironmentOptions),
 		typeof(ShowDiffEnvironmentsOptions),
-		typeof(UninstallCreatioCommandOptions),
+		typeof(MockDataCommandOptions),
+
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -754,8 +710,8 @@ class Program {
 			DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
-			RestoreDbCommandOptions opts =>Resolve<RestoreDbCommand>(opts).Execute(opts),
-			SetWebServiceUrlOptions opts =>Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
+			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
+			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
 			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
@@ -766,11 +722,11 @@ class Program {
 			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
 			CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
 			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
-			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
+			MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};
 
-
+	private static string[] OriginalArgs;
 }
 

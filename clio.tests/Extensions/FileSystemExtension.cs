@@ -27,6 +27,12 @@ public static class FileSystemExtension
 			var destinationFilePath = string.IsNullOrEmpty(destinationFolderName) ? fileInfo.Name : Path.Combine(destinationFolderName, fileInfo.Name);
 			mockFileSystem.AddFile(destinationFilePath, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
 		}
+		string[] subDirs = Directory.GetDirectories(folderName);
+		foreach (string subFolder in subDirs) {
+			var subFolderName = new DirectoryInfo(subFolder).Name;
+			var subFolderPath = Path.Combine(destinationFolderName, subFolderName);
+			MockFolder(mockFileSystem, subFolder, subFolderPath);
+		}
 	}
 
 	public static void MockFile(this MockFileSystem mockFileSystem, string filePath) {

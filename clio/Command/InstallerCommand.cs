@@ -335,7 +335,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	}
 
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
-		Console.WriteLine("[Update connection string] - Started");
+		Console.WriteLine("[CheckUpdate connection string] - Started");
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),

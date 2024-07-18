@@ -333,7 +333,7 @@ namespace Clio
 				}
 			} catch (Exception ex) {
 				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
-				if (Program.EnableUpdate) {
+				if (Program.IsCfgOpenCommand) {
 					_settings = default;
 				} else {
 					throw;
@@ -415,6 +415,7 @@ namespace Clio
 			}
 			return environment;
 		}
+
 
 		public EnvironmentSettings FindEnvironment(string name = null) {
 			EnvironmentSettings environment;

@@ -46,7 +46,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 				if(options.IsNetCore == true) {
 					var opt = new RestartOptions
 					{
-						EnvironmentName = options.Environment,
+						Environment = options.Environment,
 						Uri = options.Uri,
 						Login = options.Login,
 						Password = options.Password,

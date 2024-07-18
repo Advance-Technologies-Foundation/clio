@@ -1,32 +1,30 @@
-﻿using System;
+﻿using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
+using Clio.Command.ApplicationCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Common;
+using Clio.Common.db;
+using Clio.Common.K8;
+using Clio.Common.ScenarioHandlers;
+using Clio.Package;
 using Clio.Querry;
 using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.Utilities;
+using Clio.YAML;
+using Creatio.Client;
+using k8s;
 using MediatR;
 using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
+using System;
 using System.Reflection;
-using Clio.Common.K8;
-using YamlDotNet.Serialization.NamingConventions;
 using YamlDotNet.Serialization;
-using Clio.Common.ScenarioHandlers;
-using Clio.YAML;
-using k8s;
+using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
-using ATF.Repository.Providers;
-using Clio.Common.db;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
-using Clio.Command.ApplicationCommand;
-using Clio.Package;
-using Clio.Project.NuGet;
-using Creatio.Client;
-using DocumentFormat.OpenXml.Math;
 
 namespace Clio
 {
@@ -105,7 +103,6 @@ namespace Clio
 			}
 			#endregion
 			
-			containerBuilder.RegisterInstance(new CreatioSdkOnline()).As<ICreatioSdk>();
 			containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 			containerBuilder.RegisterInstance(serializer).As<ISerializer>();
 			containerBuilder.RegisterType<FeatureCommand>();
@@ -181,6 +178,7 @@ namespace Clio
 			containerBuilder.RegisterType<ApplyEnvironmentManifestCommand>();
 			containerBuilder.RegisterType<EnvironmentManager>();
 			containerBuilder.RegisterType<GetWebServiceUrlCommand>();
+			containerBuilder.RegisterType<MockDataCommand>();
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()
