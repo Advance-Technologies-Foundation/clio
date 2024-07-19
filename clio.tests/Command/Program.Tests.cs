@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
+using System.Threading;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Autofac;
@@ -87,6 +88,7 @@ public class ProgramTestCase : BaseClioModuleTests
 		SettingsRepository.FileSystem = FileSystem;
 		Program.AutoUpdate = true;
 		Program.ExecuteCommands(new string[] { "ver", "--clio" });
+		Thread.Sleep(100);
 		appUpdaterMock.Received(1).CheckUpdate();
 	}
 
@@ -98,6 +100,7 @@ public class ProgramTestCase : BaseClioModuleTests
 		SettingsRepository.FileSystem = FileSystem;
 		Program.AutoUpdate = true;
 		Program.ExecuteCommands(new string[] { "ver", "--clio" }).Should().Be(0);
+		Thread.Sleep(100);
 		Program.AppUpdater.Checked.Should().BeTrue();
 	}
 }
