@@ -37,7 +37,9 @@ namespace Clio.Project.NuGet
 
 				var items = JsonSerializer.Deserialize<Model>(json);
 				var _ver = items.TopItems.FirstOrDefault().Items.Select(i => i.CatalogEntry.Version);
-
+				if (_versions == null) {
+					_versions = new List<Version>();
+				}
 				foreach (var item in _ver) {
 					_versions.Add(new Version(item));
 				}
