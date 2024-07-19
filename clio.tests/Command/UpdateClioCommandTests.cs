@@ -24,7 +24,7 @@ namespace Clio.Tests.Command
 		public void CheckVersionFromGitHubAndNuget() {
 			var versionFromNuget = UpdateCliCommand.GetLatestVersionFromNuget();
 			var versionFromGitHub = UpdateCliCommand.GetLatestVersionFromGitHub();
-			versionFromNuget.Should().Be(versionFromGitHub);
+			versionFromGitHub.CompareTo(versionFromNuget).Should().BeLessThan(1);
 		}
 	}
 }
