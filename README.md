@@ -1,3 +1,5 @@
+[![Build](https://github.com/Advance-Technologies-Foundation/clio/actions/workflows/build.yml/badge.svg)](https://github.com/Advance-Technologies-Foundation/clio/actions/workflows/build.yml)
+
 # Introduction
 
 Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
