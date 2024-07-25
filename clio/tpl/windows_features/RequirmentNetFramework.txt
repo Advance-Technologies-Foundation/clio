@@ -22,3 +22,4 @@ Custom Logging
 Basic Authentication
 Request Filtering
 IP Security
+IIS-HttpCompressionDynamic

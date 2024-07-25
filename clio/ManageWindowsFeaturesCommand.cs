@@ -71,7 +71,6 @@ namespace Clio
 			if (missedComponents.Count > 0) {
 				Console.WriteLine($"Found {missedComponents.Count} missed components");
 				foreach (var item in missedComponents) {
-					Console.WriteLine($"Installed component {item.Name}");
 					_windowsFeatureManager.InstallFeature(item.Name);
 				}
 				Console.WriteLine("Done");
@@ -83,7 +82,6 @@ namespace Clio
 		public void UnistallRequirmentComponents() {
 			var requirmentsFeature = _windowsFeatureManager.GerRequiredComponent();
 			foreach (var feature in requirmentsFeature) {
-				Console.WriteLine($"Unistall component: {feature.Name}");
 				_windowsFeatureManager.UninstallFeature(feature.Name);
 			}
 			Console.WriteLine("Done");

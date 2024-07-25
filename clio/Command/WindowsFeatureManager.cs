@@ -22,6 +22,12 @@ public interface IWindowsFeatureManager
 public class WindowsFeatureManager : IWindowsFeatureManager
 {
 
+	public WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
+		ConsoleProgressbar consoleProgressBar) {
+		_workingDirectoriesProvider = workingDirectoriesProvider;
+		_consoleProgressBar = consoleProgressBar;
+	}
+
 	private string RequirmentNETFrameworkFeaturesFilePaths {
 		get {
 			return Path.Join(_workingDirectoriesProvider.TemplateDirectory, "windows_features", "RequirmentNetFramework.txt");
@@ -82,12 +88,12 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 			if (state) {
 				DismApi.EnableFeature(session, featureCode, false, true, null, progress => {
 					Console.SetCursorPosition(left, top);
-					Console.Write($"{progress.Total} / {progress.Current} ");
+					Console.Write(_consoleProgressBar.GetBuatifyProgress("+ " + featureCode, progress.Current, progress.Total));
 				});
 			} else {
 				DismApi.DisableFeature(session, featureCode, null, true, progress => {
 					Console.SetCursorPosition(left, top);
-					Console.Write($"{progress.Total} / {progress.Current} ");
+				Console.Write(_consoleProgressBar.GetBuatifyProgress("- " + featureCode, progress.Current, progress.Total));
 				});
 			}
 			Console.WriteLine();
@@ -134,8 +140,5 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 	}
 
 	IWorkingDirectoriesProvider _workingDirectoriesProvider;
-
-	public WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider) {
-		_workingDirectoriesProvider = workingDirectoriesProvider;
-	}
+	ConsoleProgressbar _consoleProgressBar;
 }
