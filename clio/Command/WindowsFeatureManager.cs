@@ -87,12 +87,13 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
 	public void InstallMissingFeatures(){
 		List<WindowsFeature> missedComponents = GetMissedComponents();
+		int maxLengthComponentName = GetActionMaxLength(missedComponents.Select(s => s.Name));
+		_consoleProgressBar.MaxActionNameLength = maxLengthComponentName;
 		if (missedComponents.Count > 0) {
 			Console.WriteLine($"Found {missedComponents.Count} missed components");
 			foreach (WindowsFeature item in missedComponents) {
 				InstallFeature(item.Name);
 			}
-			Console.WriteLine("Done");
 		} else {
 			Console.WriteLine("All requirment components installed");
 		}
@@ -100,6 +101,8 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
 	public void UnInstallMissingFeatures(){
 		IEnumerable<WindowsFeature> requirmentsFeature = GerRequiredComponent();
+		int maxLengthComponentName = GetActionMaxLength(requirmentsFeature.Select(s => s.Name));
+		_consoleProgressBar.MaxActionNameLength = maxLengthComponentName;
 		foreach (WindowsFeature feature in requirmentsFeature) {
 			UninstallFeature(feature.Name);
 		}
@@ -117,12 +120,12 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 			if (state) {
 				DismApi.EnableFeature(session, featureCode, false, true, null, progress => {
 					Console.SetCursorPosition(left, top);
-					Console.Write(_consoleProgressBar.GetBuatifyProgress("+ " + featureCode, progress.Current, progress.Total));
+					Console.Write(_consoleProgressBar.GetBuatifyProgress("+ " + featureCode, progress.Current, progress.Total) + " ");
 				});
 			} else {
 				DismApi.DisableFeature(session, featureCode, null, true, progress => {
 					Console.SetCursorPosition(left, top);
-				Console.Write(_consoleProgressBar.GetBuatifyProgress("- " + featureCode, progress.Current, progress.Total));
+				Console.Write(_consoleProgressBar.GetBuatifyProgress("- " + featureCode, progress.Current, progress.Total) + " ");
 				});
 			}
 			Console.WriteLine();
