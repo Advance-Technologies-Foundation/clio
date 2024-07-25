@@ -1,4 +1,6 @@
-﻿namespace Clio.Tests.Command;
+﻿using System.IO.Abstractions.TestingHelpers;
+
+namespace Clio.Tests.Command;
 
 using System.Collections.Generic;
 using Clio.Command;
@@ -17,7 +19,8 @@ public class ScenarioRunnerCommandTests
 	private readonly ScenarioRunnerCommand _sut;
 	private readonly IDeserializer _deserializer = new DeserializerBuilder().Build();
 	private readonly List<object> _receivedOptions = new();
-
+	private readonly MockFileSystem _mockFs;
+	
 	#endregion
 
 	#region Constructors: Public
@@ -25,6 +28,12 @@ public class ScenarioRunnerCommandTests
 	public ScenarioRunnerCommandTests() {
 		IScenario script = new Scenario(_deserializer);
 		_sut = new ScenarioRunnerCommand(script);
+		_mockFs = new MockFileSystem();
+		_sut.FileSystem = _mockFs;
+		
+		var filePath = System.IO.Path.Combine(SettingsRepository.AppSettingsFolderPath, "appsettings.json");
+		var json = System.IO.File.ReadAllText("Examples/clio/appsettings.json");
+		_mockFs.AddFile(filePath, json);
 		Program.ExecuteCommandWithOption = instance => {
 			_receivedOptions.Add(instance);
 			return 0;

@@ -311,7 +311,11 @@ namespace Clio
 
 		internal static IFileSystem FileSystem { get; set; } = new FileSystem();
 
-		public SettingsRepository() {
+		public SettingsRepository(IFileSystem fileSystem = null) {
+			if(fileSystem != null) {
+				FileSystem = fileSystem;
+			}
+			
 			InitializeSettingsFile();
 			InitSettings();
 		}
@@ -342,11 +346,11 @@ namespace Clio
 		}
 
 		private void InitializeSettingsFile() {
-			if (File.Exists(AppSettingsFilePath)) {
+			if (FileSystem.File.Exists(AppSettingsFilePath)) {
 				return;
 			}
-			if (!Directory.Exists(AppSettingsFolderPath)) {
-				Directory.CreateDirectory(AppSettingsFolderPath);
+			if (!FileSystem.Directory.Exists(AppSettingsFolderPath)) {
+				FileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
 			}
 			InitDefaultSettings();
 			Save();
@@ -375,7 +379,7 @@ namespace Clio
 		}
 
 		private void Save() {
-			using (StreamWriter fileWriter = File.CreateText(AppSettingsFilePath)) {
+			using (StreamWriter fileWriter = FileSystem.File.CreateText(AppSettingsFilePath)) {
 				JsonSerializer serializer = new JsonSerializer() {
 					Formatting = Formatting.Indented,
 					NullValueHandling = NullValueHandling.Ignore

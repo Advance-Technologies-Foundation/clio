@@ -83,7 +83,11 @@ public class Downloader : IDownloader
 
 	private IApplicationClient CreateApplicationClient(){
 		ApplicationClient
-			??= new Lazy<IApplicationClient>(() => _applicationClientFactory.CreateClient(_environmentSettings));
+			??= new Lazy<IApplicationClient>(() => {
+				var c =  _applicationClientFactory.CreateClient(_environmentSettings);
+				c.Login();
+				return c;
+			});
 		return ApplicationClient.Value;
 	}
 

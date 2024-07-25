@@ -28,7 +28,7 @@ public interface IExecutableScenario
 
 	#region Methods: Public
 
-	IEnumerable<Tuple<object,string>> GetSteps(Type[] types);
+	IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types);
 
 	#endregion
 	
@@ -43,8 +43,8 @@ public class Scenario : IScenario, IExecutableScenario
 
 	private static readonly Func<string, IReadOnlyDictionary<string, object>, OneOf<object, None>>
 		GetOptionByKey = (key, section) => {
-			if (section.ContainsKey(key)) {
-				return section[key];
+			if (section.TryGetValue(key, out object expression)) {
+				return expression;
 			}
 			string[] segments = key.Split('.');
 			if (!segments.Any() || !section.ContainsKey(segments[0])) {
@@ -191,11 +191,11 @@ public class Scenario : IScenario, IExecutableScenario
 
 	#region Methods: Public
 
-	public IEnumerable<Tuple<object, string>> GetSteps(Type[] types) {
+	public IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types) {
 		return Steps
 			.Select(step => step.Activate(types, _settingLookup, _secretsLookup))
 			.Where(activeStep => activeStep.Item1.Value is not None)
-			.Select(activeStep => new Tuple<object, string>(activeStep.Item1.Value, activeStep.Item2));
+			.Select(activeStep => (activeStep.Item1.Value, activeStep.Item2));
 	}
 
 	/// <summary>
