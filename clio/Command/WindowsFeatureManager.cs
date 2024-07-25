@@ -17,6 +17,12 @@ public interface IWindowsFeatureManager
 
 	void UninstallFeature(string featureName);
 
+	void InstallMissingFeatures();
+
+	void UnInstallMissingFeatures();
+
+	int GetActionMaxLength(IEnumerable<string> items);
+
 }
 
 public class WindowsFeatureManager : IWindowsFeatureManager
@@ -79,6 +85,29 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		SetFeatureState(featureName, false);
 	}
 
+	public void InstallMissingFeatures(){
+		List<WindowsFeature> missedComponents = GetMissedComponents();
+		if (missedComponents.Count > 0) {
+			Console.WriteLine($"Found {missedComponents.Count} missed components");
+			foreach (WindowsFeature item in missedComponents) {
+				InstallFeature(item.Name);
+			}
+			Console.WriteLine("Done");
+		} else {
+			Console.WriteLine("All requirment components installed");
+		}
+	}
+
+	public void UnInstallMissingFeatures(){
+		IEnumerable<WindowsFeature> requirmentsFeature = GerRequiredComponent();
+		foreach (WindowsFeature feature in requirmentsFeature) {
+			UninstallFeature(feature.Name);
+		}
+	}
+
+	public int GetActionMaxLength(IEnumerable<string> action) => action.Max(s=> s.Length);
+	
+	
 	private void SetFeatureState(string featureName, bool state) {
 		DismApi.Initialize(DismLogLevel.LogErrorsWarningsInfo);
 		try {

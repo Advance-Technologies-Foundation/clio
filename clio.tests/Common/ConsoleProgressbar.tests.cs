@@ -40,15 +40,40 @@ namespace Clio.Tests.Common
 		[TestCase(400, 500, 5, "[****.] 80%")]
 		[TestCase(500, 1000, 5, "[**...] 50%")]
 		[TestCase(220, 1000, 5, "[*....] 22%")]
-
 		public void GetBuatifyProgress_CorrectReturnFromCurrentTotal(int value, int total, int scale,
 				string expectedResult) {
+			
 			var progressbar = new ConsoleProgressbar() {
 				Scale = scale
 			};
 			string actionName = "testaction";
 			string result = progressbar.GetBuatifyProgress(actionName, value, total);
 			result.Should().Contain(expectedResult);
+		}
+		
+		
+		[TestCase( "x")]
+		[TestCase( "xx")]
+		[TestCase( "xxx")]
+		[TestCase( "xxxx")]
+		[TestCase( "xxxxx")]
+		[TestCase( "xxxxxx")]
+		[TestCase( "xxxxxxx")]
+		[TestCase( "xxxxxxxx")]
+		[TestCase( "xxxxxxxxx")]
+		[TestCase( "xxxxxxxxxx")]
+
+		public void GetBuatifyProgress_AllignsItem(string actionName) {
+			//Arrange
+			var progressbar = new ConsoleProgressbar() {
+				MaxActionNameLength = 10
+			};
+			
+			//Act
+			string result = progressbar.GetBuatifyProgress(actionName, 1, 1);
+
+			//Assert
+			result.IndexOf("[", StringComparison.InvariantCulture).Should().Be(11);
 		}
 	}
 }
