@@ -180,6 +180,7 @@ namespace Clio
 			containerBuilder.RegisterType<GetWebServiceUrlCommand>();
 			containerBuilder.RegisterType<MockDataCommand>();
 			containerBuilder.RegisterType<ConsoleProgressbar>();
+			containerBuilder.RegisterType<ApplicationLogProvider>();
 			var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()

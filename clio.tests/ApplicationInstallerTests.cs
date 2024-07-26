@@ -3,6 +3,7 @@ using Clio.Package;
 using Clio.Requests;
 using Clio.Tests.Command;
 using Clio.WebApplication;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using System;
@@ -28,9 +29,11 @@ namespace Clio.Tests
 			var packageArchiver = Substitute.For<IPackageArchiver>();
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 			var logger = Substitute.For<ILogger>();
 			var clioFileSystem = new FileSystem(FileSystem);
-			ApplicationInstaller applicationInstaller = new ApplicationInstaller(environmentSettings,
+			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+				environmentSettings,
 				applicationClientFactory,
 				application,
 				packageArchiver,
@@ -54,14 +57,16 @@ namespace Clio.Tests
 			var application = Substitute.For<IApplication>();
 			var packageArchiver = Substitute.For<IPackageArchiver>();
 			packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
-			Arg.Any<bool>())).Do( callInfo => {
+			Arg.Any<bool>())).Do(callInfo => {
 				FileSystem.AddEmptyFile(callInfo[1].ToString());
 			});
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
 			var clioFileSystem = new FileSystem(FileSystem);
-			ApplicationInstaller applicationInstaller = new ApplicationInstaller(environmentSettings,
+			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+				environmentSettings,
 				applicationClientFactory,
 				application,
 				packageArchiver,
@@ -82,7 +87,7 @@ namespace Clio.Tests
 			environmentSettings.IsNetCore = true;
 			var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 			var application = Substitute.For<IApplication>();
-			application.When(r => r.Restart()).Do( _ => throw new Exception("Restart application exception"));
+			application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
 			var packageArchiver = Substitute.For<IPackageArchiver>();
 			packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
 			Arg.Any<bool>())).Do(callInfo => {
@@ -92,7 +97,9 @@ namespace Clio.Tests
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
 			var clioFileSystem = new FileSystem(FileSystem);
-			ApplicationInstaller applicationInstaller = new ApplicationInstaller(environmentSettings,
+			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+				environmentSettings,
 				applicationClientFactory,
 				application,
 				packageArchiver,
@@ -104,7 +111,79 @@ namespace Clio.Tests
 			Assert.DoesNotThrow(
 				() => applicationInstaller.Install(packageFolderPath, environmentSettings)
 			);
-			
+
+		}
+
+		[Test]
+		public void ReturnErrorApplicationErrorAfterInstallFolderInNet6() {
+			string packageFolderPath = "T:\\TestClioPackageFolder";
+			FileSystem.AddDirectory(packageFolderPath);
+			EnvironmentSettings environmentSettings = new EnvironmentSettings();
+			environmentSettings.IsNetCore = true;
+			var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+			var application = Substitute.For<IApplication>();
+			application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
+			var packageArchiver = Substitute.For<IPackageArchiver>();
+			packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>())).Do(callInfo => {
+				FileSystem.AddEmptyFile(callInfo[1].ToString());
+			});
+			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+			var logger = Substitute.For<ILogger>();
+			var clioFileSystem = new FileSystem(FileSystem);
+			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+			applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("SOME LOG WITHOUT SUCCESS MESSAGE");
+			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+				environmentSettings,
+				applicationClientFactory,
+				application,
+				packageArchiver,
+				scriptExecutor,
+				serviceUrlBuilder,
+				clioFileSystem,
+				logger
+			) {
+				CheckLogsOnSuccessMessage = true
+			};
+			bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
+			result.Should().BeFalse();
+		}
+
+		[Test]
+		public void ReturnSuccessIfApplicationLogContainsSuccessMessage() {
+			string packageFolderPath = "T:\\TestClioPackageFolder";
+			FileSystem.AddDirectory(packageFolderPath);
+			EnvironmentSettings environmentSettings = new EnvironmentSettings();
+			environmentSettings.IsNetCore = true;
+			var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+			var application = Substitute.For<IApplication>();
+			application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
+			var packageArchiver = Substitute.For<IPackageArchiver>();
+			packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>())).Do(callInfo => {
+				FileSystem.AddEmptyFile(callInfo[1].ToString());
+			});
+			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+			var logger = Substitute.For<ILogger>();
+			var clioFileSystem = new FileSystem(FileSystem);
+			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+			applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("appLication InstallEd successfully");
+			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+				environmentSettings,
+				applicationClientFactory,
+				application,
+				packageArchiver,
+				scriptExecutor,
+				serviceUrlBuilder,
+				clioFileSystem,
+				logger
+			) {
+				CheckLogsOnSuccessMessage = true
+			};
+			bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
+			result.Should().BeTrue();
 		}
 	}
 }

@@ -15,9 +15,9 @@
 		#region Constants: Private
 
 		private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
-		private const string InstallLogUrl = @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
 		private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private const string DefLogFileName = "cliolog.txt";
+		private readonly IApplicationLogProvider _applicationLogProvider;
 
 		#endregion
 
@@ -42,7 +42,7 @@
 
 		#region Constructors: Public
 
-		public BasePackageInstaller(EnvironmentSettings environmentSettings,
+		public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
 			IApplicationClientFactory applicationClientFactory, IApplication application,
 			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
 			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger) {
@@ -54,6 +54,7 @@
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			logger.CheckArgumentNull(nameof(logger));
+			_applicationLogProvider = applicationLogProvider;
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
 			_application = application;
@@ -71,6 +72,8 @@
 		protected abstract string InstallUrl { get; }
 
 		protected abstract string BackupUrl { get; }
+		public bool CheckLogsOnSuccessMessage { get; set; }
+
 
 		#endregion
 
@@ -130,12 +133,8 @@
 			}
 		}
 
-		private string GetInstallLog(EnvironmentSettings environmentSettings) {
-			try {
-				IApplicationClient applicationClientForLog = CreateApplicationClient(environmentSettings);
-				return applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSettings));
-			} catch (Exception) { }
-			return String.Empty;
+		protected virtual string GetInstallLog(EnvironmentSettings environmentSettings) {
+			return _applicationLogProvider.GetInstallationLog(environmentSettings);
 		}
 
 		private string GetLogDiff(string currentLog, string completeLog) {
@@ -191,8 +190,13 @@
 			cancellationTokenSource.Cancel();
 			task.Wait();
 			var completeInstallLog = GetInstallLog(environmentSettings);
+			bool successLog = true;
+			if (CheckLogsOnSuccessMessage) {
+				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
+			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			return (response != null && response.Success || response == null, completeInstallLog);
+			var success = (response != null && response.Success || response == null) && successLog;
+			return (success, completeInstallLog);
 		}
 
 		private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
@@ -232,7 +236,7 @@
 		}
 
 		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath,
-			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions){
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			bool success = false;
 			string logText = null;
 			if (_fileSystem.ExistsFile(packagePackedFileOrFolderPath)) {

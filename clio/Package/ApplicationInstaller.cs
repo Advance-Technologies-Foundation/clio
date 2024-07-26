@@ -14,11 +14,11 @@ namespace Clio.Package
 
 		#region Constructors: Public
 
-		public ApplicationInstaller(EnvironmentSettings environmentSettings,
+		public ApplicationInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
 			IApplicationClientFactory applicationClientFactory, IApplication application,
 			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
 			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger)
-			: base(environmentSettings, applicationClientFactory, application,
+			: base(applicationLogProvider, environmentSettings, applicationClientFactory, application,
 				packageArchiver, scriptExecutor, serviceUrlBuilder, fileSystem, logger){ }
 
 		#endregion
