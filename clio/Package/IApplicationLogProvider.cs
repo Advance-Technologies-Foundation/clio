@@ -14,14 +14,14 @@ namespace Clio.Package
 		protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
 	_serviceUrlBuilder.Build(url, environmentSettings);
 
-		public ApplicationLogProvider(ApplicationClientFactory applicationClientFactory, ServiceUrlBuilder serviceUrlBuilder)
+		public ApplicationLogProvider(IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder)
         {
 			_applicationClientFactory = applicationClientFactory;
 			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
-        private ApplicationClientFactory _applicationClientFactory;
-		private ServiceUrlBuilder _serviceUrlBuilder;
+        private IApplicationClientFactory _applicationClientFactory;
+		private IServiceUrlBuilder _serviceUrlBuilder;
 
 		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
 	_applicationClientFactory.CreateClient(environmentSettings);
