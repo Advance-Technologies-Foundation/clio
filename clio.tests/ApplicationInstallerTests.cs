@@ -7,11 +7,6 @@ using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Clio.Tests
 {
@@ -143,9 +138,8 @@ namespace Clio.Tests
 				serviceUrlBuilder,
 				clioFileSystem,
 				logger
-			) {
-				CheckLogsOnSuccessMessage = true
-			};
+			);
+			GlobalContext.FailOnError = true;
 			bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
 			result.Should().BeFalse();
 		}
@@ -179,9 +173,8 @@ namespace Clio.Tests
 				serviceUrlBuilder,
 				clioFileSystem,
 				logger
-			) {
-				CheckLogsOnSuccessMessage = true
-			};
+			);
+			GlobalContext.FailOnError = true;
 			bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
 			result.Should().BeTrue();
 		}

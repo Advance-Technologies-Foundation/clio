@@ -72,7 +72,11 @@
 		protected abstract string InstallUrl { get; }
 
 		protected abstract string BackupUrl { get; }
-		public bool CheckLogsOnSuccessMessage { get; set; }
+		public bool CheckLogsOnSuccessMessage {
+			get {
+				return GlobalContext.FailOnError;
+			}
+		}
 
 
 		#endregion
