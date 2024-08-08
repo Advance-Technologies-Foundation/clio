@@ -195,7 +195,7 @@ public class FileSystem : IFileSystem
 		}
 		ClearDirectory(directoryPath);
 	}
-
+	
 	public void ClearDirectory(string directoryPath) {
 		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
 		string[] files = GetFiles(directoryPath);
@@ -220,8 +220,12 @@ public class FileSystem : IFileSystem
 		}
 	}
 
-	public Ms.IDirectoryInfo CreateDirectory(string directoryPath) => 
-		_msFileSystem.Directory.CreateDirectory(directoryPath);
+	public Ms.IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false) {
+		if(throwWhenExists && ExistsDirectory(directoryPath)) {
+			throw new ArgumentException($"Directory {directoryPath} already exists");
+		}
+		return _msFileSystem.Directory.CreateDirectory(directoryPath);
+	}
 
 	public void CreateDirectoryIfNotExists(string directoryPath) {
 		if (_msFileSystem.Directory.Exists(directoryPath)) {
@@ -254,6 +258,11 @@ public class FileSystem : IFileSystem
 		}
 	}
 
+	/// <summary>
+	/// Checks if directory exists
+	/// </summary>
+	/// <param name="directoryPath"></param>
+	/// <returns></returns>
 	public bool ExistsDirectory(string directoryPath) => _msFileSystem.Directory.Exists(directoryPath);
 
 	public string GetCurrentDirectoryIfEmpty(string directoryPath) {

@@ -59,6 +59,13 @@ namespace Clio.Common
 			string templatePath = GetCompatibleVersionTemplatePath(templateFolderName, creatioVersion, group);
 			_fileSystem.CopyDirectory(templatePath, destinationPath, overrideFolder);
 		}
+		
+		public void CopyTemplateFolder(string templateFolderName, string destinationPath, Dictionary<string, string> macrosValues) {
+			templateFolderName.CheckArgumentNullOrWhiteSpace(nameof(templateFolderName));
+			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
+			string templatePath = GetCompatibleVersionTemplatePath(templateFolderName);
+			_fileSystem.CopyDirectory(templatePath, destinationPath, false);
+		}
 
 		private string GetCompatibleVersionTemplatePath(string templateName, string creatioVersion = "",
 			string group = "") {
@@ -90,6 +97,8 @@ namespace Clio.Common
 			return _fileSystem.GetDirectories(templateFolder);
 		}
 
+		
+		
 		#endregion
 
 	}

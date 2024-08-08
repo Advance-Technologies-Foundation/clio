@@ -148,8 +148,8 @@ namespace Clio.Common
 		void CopyDirectory(string source, string destination, bool overwrite);
 
 		/// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateDirectory(string)"/>
-		IDirectoryInfo CreateDirectory(string directoryPath);
-
+		IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false);
+		
 		void CreateDirectoryIfNotExists(string directoryPath);
 
 		void CreateOrClearDirectory(string directoryPath);

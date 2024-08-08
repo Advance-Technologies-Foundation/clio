@@ -1,4 +1,5 @@
-﻿using CommandLine;
+﻿using Clio.Common;
+using CommandLine;
 
 namespace Clio.Command;
 
@@ -13,19 +14,27 @@ public class AddSchemaOptions
 		get; set;
 	}
 
-	[Option("package", Required = true, HelpText = "Package name")]
+	[Option("package-name", Required = true, HelpText = "Package name")]
 	public string Package
 	{
 		get; set;
 	}
+
+	[Option("schema-name", Required = true, HelpText = "Schema Name")]
+	public string SchemaName { get; set; }
 
 }
 
 public class AddSchemaCommand : Command<AddSchemaOptions>
 {
 
+	private readonly ISchemaBuilder _schemaBuilder;
+
+	public AddSchemaCommand(ISchemaBuilder schemaBuilder){
+		_schemaBuilder = schemaBuilder;
+	}
 	public override int Execute(AddSchemaOptions options){
-		//throw new System.NotImplementedException();
+		_schemaBuilder.AddSchema(options.SchemaType, options.SchemaName, options.Package);
 		return 0;
 	}
 

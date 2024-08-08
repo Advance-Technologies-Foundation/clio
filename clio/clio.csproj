@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 	  <OutputType>Exe</OutputType>
@@ -1165,6 +1165,8 @@
     <Folder Include="tpl\package\Resources" />
     <Folder Include="tpl\package\Schemas" />
     <Folder Include="tpl\package\SqlScripts" />
+    <Folder Include="tpl\schemas-template\source-code\Resources\" />
+    <Folder Include="tpl\schemas-template\source-code\Schema\" />
     <Folder Include="tpl\ui\8.0.3\" />
     <Folder Include="tpl\ui\8.0.8\" />
   </ItemGroup>
