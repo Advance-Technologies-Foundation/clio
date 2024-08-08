@@ -496,7 +496,7 @@ class Program
 			return AddItemFromTemplate(options);
 		}
 	}
-
+ // clio add-item csschema "MySchema" -p "MyPkg" -n "MyNamespace"
 	private static int AddItemFromTemplate(ItemOptions options) {
 		try {
 			var project = new VSProject(options.DestinationPath, options.Namespace);
@@ -623,6 +623,7 @@ class Program
 		typeof(ShowDiffEnvironmentsOptions),
 		typeof(MockDataCommandOptions),
 		typeof(UninstallCreatioCommandOptions),
+		typeof(AddSchemaOptions),
 
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -725,6 +726,7 @@ class Program
 			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
 			MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
 			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
+			AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};

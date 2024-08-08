@@ -208,6 +208,7 @@ namespace Clio
 			containerBuilder.RegisterType<PullPkgCommand>();
 			containerBuilder.RegisterType<AssemblyCommand>();
 			containerBuilder.RegisterType<UninstallCreatioCommand>();
+			containerBuilder.RegisterType<AddSchemaCommand>();
 			
 			containerBuilder.RegisterType<ClioGateway>();
 			
