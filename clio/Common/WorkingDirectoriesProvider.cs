@@ -12,13 +12,17 @@ namespace Clio.Common
 	{
 
 		private readonly ILogger _logger;
+		private readonly System.IO.Abstractions.IFileSystem _fileSystem;
 
-		public WorkingDirectoriesProvider(ILogger logger){
+		public WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.IFileSystem fileSystem){
 			_logger = logger;
+			_fileSystem = fileSystem;
 		}
 		#region Properties: Public
-
-		public string ExecutingDirectory => AppDomain.CurrentDomain.BaseDirectory;
+		
+		public static string _executingDirectory;
+		
+		public string ExecutingDirectory  => _executingDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
 		public string TemplateDirectory =>  Path.Combine(ExecutingDirectory, "tpl");
 		public string BaseTempDirectory {
 			get {
@@ -31,7 +35,7 @@ namespace Clio.Common
 			}
 		}
 
-		public string CurrentDirectory => Directory.GetCurrentDirectory();
+		public string CurrentDirectory => _fileSystem.Directory.GetCurrentDirectory();
 
 		#endregion
 
@@ -48,10 +52,10 @@ namespace Clio.Common
 		}
 
 		public string CreateTempDirectory() {
-			Directory.CreateDirectory(BaseTempDirectory);
+			_fileSystem.Directory.CreateDirectory(BaseTempDirectory);
 			var tempDirectoryPath = GenerateTempDirectoryPath();
 			string tempDirectory = Path.Combine(BaseTempDirectory, tempDirectoryPath);
-			Directory.CreateDirectory(tempDirectory);
+			_fileSystem.Directory.CreateDirectory(tempDirectory);
 			return tempDirectory;
 		}
 
@@ -75,8 +79,8 @@ namespace Clio.Common
 
 		public void DeleteDirectoryIfExists(string path) {
 			path.CheckArgumentNull(nameof(path));
-			if (Directory.Exists(path)) {
-				Directory.Delete(path, true);
+			if (_fileSystem.Directory.Exists(path)) {
+				_fileSystem.Directory.Delete(path, true);
 			}
 		}
 

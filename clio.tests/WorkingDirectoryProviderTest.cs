@@ -3,6 +3,7 @@ using Clio.Common;
 using NUnit.Framework;
 using System.Collections.Concurrent;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -17,7 +18,7 @@ namespace Clio.Tests
 		public void GetTemplatePath_TemplateName_ReturnsTemplatePath() {
 			// Arrange
 			var logger = ConsoleLogger.Instance; 
-			var provider = new WorkingDirectoriesProvider(logger);
+			var provider = new WorkingDirectoriesProvider(logger, new MockFileSystem());
 			var templateName = "TestTemplate";
 			var expectedPath = Path.Combine(provider.TemplateDirectory, $"{templateName}.tpl");
 
@@ -32,7 +33,7 @@ namespace Clio.Tests
 		public void GetTemplatePath_Multiple_Create_Temp_Directory() {
 			// Arrange
 			var logger = ConsoleLogger.Instance;
-			var provider = new WorkingDirectoriesProvider(logger);
+			var provider = new WorkingDirectoriesProvider(logger, new MockFileSystem());
 			ConcurrentBag<string> paths = new ConcurrentBag<string>();
 			
 			// Act

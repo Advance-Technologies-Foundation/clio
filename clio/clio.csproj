@@ -991,6 +991,10 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <None Remove="tpl\package\Files\app-descriptor.json" />
+    <None Remove="tpl\schemas-template\source-code\Resources\resource.en-US.xml.tpl" />
+    <Content Include="tpl\schemas-template\source-code\Resources\resource.en-US.xml.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <!-- <Choose>
     <When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">

@@ -33,8 +33,10 @@ public class SchemaBuilder: ISchemaBuilder
 		
 		const string templateFolderName = "source-code";
 		string relativeTemplateFolderPath = Path.Combine("schemas-template", templateFolderName,"Resources");
-		Dictionary<string, string> macrosValues = new Dictionary<string, string>();
-		_templateProvider.CopyTemplateFolder(relativeTemplateFolderPath, resourcesDir,macrosValues);
+		Dictionary<string, string> macrosValues = new Dictionary<string, string>() {
+			{"[SCHEMA_NAME]",schemaName}
+		};
+		_templateProvider.CopyTemplateFolder(relativeTemplateFolderPath, resourcesDir, macrosValues);
 		
 		
 	}

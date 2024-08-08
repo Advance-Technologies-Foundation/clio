@@ -46,7 +46,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 	protected override MockFileSystem CreateFs(){
 		MockFileSystem x = (MockFileSystem)base.CreateFs();
 		ILogger logger = Substitute.For<ILogger>();
-		WorkingDirectoriesProvider wdp = new (logger);
+		WorkingDirectoriesProvider wdp = new (logger, x);
 		x.MockFolderWithDir(wdp.TemplateDirectory);
 		return x;
 	}

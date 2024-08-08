@@ -63,8 +63,28 @@ namespace Clio.Common
 		public void CopyTemplateFolder(string templateFolderName, string destinationPath, Dictionary<string, string> macrosValues) {
 			templateFolderName.CheckArgumentNullOrWhiteSpace(nameof(templateFolderName));
 			destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
-			string templatePath = GetCompatibleVersionTemplatePath(templateFolderName);
-			_fileSystem.CopyDirectory(templatePath, destinationPath, false);
+			
+			var templateDir = Path.Combine(_workingDirectoriesProvider.TemplateDirectory, templateFolderName);
+			var files = _fileSystem.GetFiles(templateDir, "*.tpl", SearchOption.AllDirectories);
+			
+			foreach (var file in files) {
+				
+				var content = _fileSystem.ReadAllText(file);
+				content = ReplaceMacrosInText(content, macrosValues);
+				var relativePath = file.Replace(templateDir, string.Empty).TrimStart(Path.DirectorySeparatorChar);
+				var destinationFilePath = Path.Combine(destinationPath, relativePath);
+				destinationFilePath = destinationFilePath.Replace(".tpl", string.Empty);
+				destinationFilePath = ReplaceMacrosInText(destinationFilePath, macrosValues);
+				_fileSystem.CreateDirectoryIfNotExists(Path.GetDirectoryName(destinationFilePath));
+				_fileSystem.WriteAllTextToFile(destinationFilePath, content);
+			}
+		}
+
+		private string ReplaceMacrosInText(string content, Dictionary<string, string> macrosValues){
+			foreach (var macro in macrosValues) {
+				content = content.Replace(macro.Key, macro.Value);
+			}
+			return content;
 		}
 
 		private string GetCompatibleVersionTemplatePath(string templateName, string creatioVersion = "",
