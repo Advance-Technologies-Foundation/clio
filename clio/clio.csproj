@@ -995,6 +995,22 @@
     <Content Include="tpl\schemas-template\source-code\Resources\resource.en-US.xml.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Remove="tpl\schemas-template\source-code\Schema\[SCHEMA_NAME].cs.tpl" />
+    <Content Include="tpl\schemas-template\source-code\Schema\[SCHEMA_NAME].cs.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\schemas-template\source-code\Schema\descriptor.json.tpl" />
+    <Content Include="tpl\schemas-template\source-code\Schema\descriptor.json.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\schemas-template\source-code\Schema\metadata.json.tpl" />
+    <Content Include="tpl\schemas-template\source-code\Schema\metadata.json.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\schemas-template\source-code\Schema\properties.json.tpl" />
+    <Content Include="tpl\schemas-template\source-code\Schema\properties.json.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <!-- <Choose>
     <When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">

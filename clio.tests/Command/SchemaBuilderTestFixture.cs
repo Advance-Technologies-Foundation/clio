@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Autofac;
 using Clio.Common;
 using System.IO;
@@ -22,6 +23,23 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 		string tplFileContent = File.ReadAllText("tpl/schemas-template/source-code/Resources/resource.en-US.xml.tpl");
 		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Resources\\resource.en-US.xml.tpl", 
 			new MockFileData(tplFileContent));
+		
+		string csFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/[SCHEMA_NAME].cs.tpl");
+		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\[SCHEMA_NAME].cs.tpl", 
+			new MockFileData(csFileContent));
+		
+		string descriptorFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/descriptor.json.tpl");
+		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\descriptor.json.tpl", 
+			new MockFileData(descriptorFileContent));
+		
+		string metadataFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/metadata.json.tpl");
+		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\metadata.json.tpl", 
+			new MockFileData(metadataFileContent));
+		
+		string propertiesFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/properties.json.tpl");
+		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\properties.json.tpl", 
+			new MockFileData(propertiesFileContent));
+		
 		WorkingDirectoriesProvider._executingDirectory= "E:\\Clio";
 
 	}
@@ -70,7 +88,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 
 	
 	[Test]
-	public void AddSchema_CopiesFilesAndAdjustsContent(){
+	public void AddSchema_CopiesResourceFiles_AndAdjustsContent(){
 
 		//Arrange
 		FileSystem.AddDirectory(PackagePath);
@@ -84,6 +102,34 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 		FileSystem.FileExists(enResourceFilePath).Should().BeTrue();
 		FileSystem.File.ReadAllText(enResourceFilePath).Should().NotContain("[SCHEMA_NAME]");
 		FileSystem.File.ReadAllText(enResourceFilePath).Should().Contain($"<Item Name=\"Caption\" Value=\"{SchemaName}\" />");
+
+	}
+	
+	[Test]
+	public void AddSchema_CopiesMetadataFiles_AndAdjustsContent(){
+
+		//Arrange
+		FileSystem.AddDirectory(PackagePath);
+		ISchemaBuilder sut = Container.Resolve<ISchemaBuilder>();
+		
+		//Act
+		sut.AddSchema(SchemaType,SchemaName,PackagePath);
+
+		//Assert
+		string metadataFolderPath =Path.Combine(PackagePath, "Schemas", SchemaName);
+		FileSystem.Directory.Exists(metadataFolderPath).Should().BeTrue();
+		var files = FileSystem.Directory.GetFiles(metadataFolderPath);
+		
+		files.Should().HaveCount(4);
+		files.Should().Contain(f=>f.EndsWith("descriptor.json"));
+		files.Should().Contain(f=>f.EndsWith("metadata.json"));
+		files.Should().Contain(f=>f.EndsWith("properties.json"));
+		files.Should().Contain(f=>f.EndsWith($"{SchemaName}.cs"));
+
+		foreach (string filePath in files) {
+			var fileContent = FileSystem.File.ReadAllText(filePath);
+			sut.SupportedMacroKeys.ForEach(macro => fileContent.Should().NotContain(macro));
+		}
 
 	}
 }
