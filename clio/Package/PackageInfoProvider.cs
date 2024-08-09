@@ -6,6 +6,7 @@ using Clio.Common;
 using Clio.Package;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using FileSystem = System.IO.Abstractions.FileSystem;
 
 namespace Clio
 {
@@ -18,14 +19,16 @@ namespace Clio
 		#region Fields: Private
 
 		protected readonly IJsonConverter _jsonConverter;
+		private readonly System.IO.Abstractions.IFileSystem _fileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PackageInfoProvider(IJsonConverter jsonConverter) {
+		public PackageInfoProvider(IJsonConverter jsonConverter, System.IO.Abstractions.IFileSystem fileSystem) {
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			_jsonConverter = jsonConverter;
+			_fileSystem = fileSystem;
 		}
 
 		#endregion
@@ -35,13 +38,13 @@ namespace Clio
 		public PackageInfo GetPackageInfo(string packagePath) {
 			packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
 			string packageDescriptorPath = PackageUtilities.BuildPackageDescriptorPath(packagePath);
-			if (!File.Exists(packageDescriptorPath)) {
+			if (!_fileSystem.File.Exists(packageDescriptorPath)) {
 				throw new Exception($"Package descriptor not found by path: '{packageDescriptorPath}'"); 
 			}
 			try {
 				PackageDescriptorDto packageDescriptorDto = 
 					_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
-				IEnumerable<string> filePaths = Directory
+				IEnumerable<string> filePaths = _fileSystem.Directory
 					.EnumerateFiles(packagePath, "*.*", SearchOption.AllDirectories);
 				return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths);
 			}

@@ -149,6 +149,7 @@ docker run -it --rm clio reg-web-app -help
   - [Execute dataservice request](#dataservice)
   - [Help and examples](#help-and-examples)
   - [Add item](#add-item)
+  - [Add-Schema](#add-schema)
   - [Link Workspace to File Design Mode](#link-workspace-to-file-design-mode)
   - [Mock data for Unit Tests](#mock-data-for-unit-tests)
 - [Packages](#packages)
@@ -933,6 +934,13 @@ OPTIONS
 | f            | Fields          | Required fields for ATF model class            |
 | a            | All             | Create ATF models for all Entities             |
 | x            | Culture         | Description culture                            |
+
+## Add Schema
+Adds cs schema to a project
+
+```bash
+clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
+````
 
 ## Switch Nuget To Dll Reference
 

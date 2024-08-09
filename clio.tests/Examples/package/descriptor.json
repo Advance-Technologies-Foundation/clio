@@ -1,0 +1,12 @@
+{
+  "Descriptor": {
+    "UId": "e24226f9-c177-458f-af34-9338e2699983",
+    "PackageVersion": "2.0.0.30",
+    "Name": "TestPackage",
+    "Type": 0,
+    "ProjectPath": "",
+    "ModifiedOnUtc": "/Date(1720985138000)/",
+    "Maintainer": "TestMaintainer",
+    "DependsOn": []
+  }
+}
