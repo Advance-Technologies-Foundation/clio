@@ -8,7 +8,7 @@ namespace Clio.Command;
 public class AddSchemaOptions
 {
 	
-	[Option('t',"type", Required = true, HelpText = "Get versions for all known components")]
+	[Option('t',"type", Required = true, HelpText = "Schema type")]
 	public string SchemaType
 	{
 		get; set;
