@@ -21,6 +21,7 @@ using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System;
 using System.Reflection;
+using Clio.Command.CreatioInstallCommand;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -209,6 +210,8 @@ namespace Clio
 			containerBuilder.RegisterType<AssemblyCommand>();
 			containerBuilder.RegisterType<UninstallCreatioCommand>();
 			containerBuilder.RegisterType<AddSchemaCommand>();
+			containerBuilder.RegisterType<CreatioInstallerService>();
+			
 			
 			containerBuilder.RegisterType<ClioGateway>();
 			

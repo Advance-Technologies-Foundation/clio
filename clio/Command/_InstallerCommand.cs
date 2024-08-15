@@ -1,4 +1,5 @@
-﻿using System;
+﻿/*
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -514,3 +515,4 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#endregion
 
 }
+*/

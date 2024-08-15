@@ -6,6 +6,7 @@ using System.Threading;
 using Autofac;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
+using Clio.Command.CreatioInstallCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.UpdateCliCommand;
