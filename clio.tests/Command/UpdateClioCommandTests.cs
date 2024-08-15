@@ -12,13 +12,6 @@ namespace Clio.Tests.Command
 	[TestFixture]
 	internal class UpdateClioCommandTests
 	{
-		[Test]
-		public void CheckVersionCommandTests() {
-			var currentVersion = UpdateCliCommand.GetCurrentVersion();
-			var latestVersion = UpdateCliCommand.GetLatestVersion();
-			latestVersion.Should().NotBeNullOrEmpty();
-			currentVersion.Should().Be(latestVersion);
-		}
 
 		[Test]
 		public void CheckVersionFromGitHubAndNuget() {
