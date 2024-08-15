@@ -20,10 +20,11 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-          dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
-          /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
-          /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
-          dotnet build-server shutdown;
+            $ErrorActionPreference = 'Stop'
+            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
+            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
+
       - name: Build and analyze
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any

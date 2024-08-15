@@ -9,8 +9,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-public class SchemaBuilderTestFixture : BaseClioModuleTests
-{
+public class SchemaBuilderTestFixture : BaseClioModuleTests {
 
 	#region Constants: Private
 
@@ -22,7 +21,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 
 	#region Methods: Private
 
-	private void AssertOnDescriptor(string descriptorPath){
+	private void AssertOnDescriptor(string descriptorPath) {
 		string dContent = FileSystem.File.ReadAllText(descriptorPath);
 		JObject obj = JObject.Parse(dContent);
 		string schemaUid = (string)obj.SelectToken("$.Descriptor.UId");
@@ -35,7 +34,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 		modifiedOnUtc.Should().BeAfter(DateTime.MinValue);
 	}
 
-	private void AssertOnMetaData(string metadataPath){
+	private void AssertOnMetaData(string metadataPath) {
 		string dContent = FileSystem.File.ReadAllText(metadataPath);
 		JObject obj = JObject.Parse(dContent);
 
@@ -57,7 +56,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 		HD1.Should().Be(Guid.Parse("50E3ACC0-26FC-4237-A095-849A1D534BD3"));
 	}
 
-	private void AssertOnSchema(string schemaPath){
+	private void AssertOnSchema(string schemaPath) {
 		IPackageInfoProvider pif = Container.Resolve<IPackageInfoProvider>();
 		PackageInfo packageInfo = pif.GetPackageInfo(PackagePath);
 		string content = FileSystem.File.ReadAllText(schemaPath);
@@ -71,7 +70,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 
 	#region Methods: Public
 
-	public override void Setup(){
+	public override void Setup() {
 		base.Setup();
 		string tplFileContent = File.ReadAllText("tpl/schemas-template/source-code/Resources/resource.en-US.xml.tpl");
 		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Resources\\resource.en-US.xml.tpl",
@@ -98,6 +97,11 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests
 			new MockFileData(pkgDescriptorFileContent));
 
 		WorkingDirectoriesProvider._executingDirectory = "E:\\Clio";
+	}
+
+	[TearDown]
+	public void TearDown() {
+		WorkingDirectoriesProvider._executingDirectory = null;
 	}
 
 	#endregion
