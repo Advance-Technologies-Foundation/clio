@@ -6,3 +6,6 @@ steps:
       uri: http://test.clio.com
       Login: test_login
       Password: test_password
+  - action: ver
+    description: check version
+      
