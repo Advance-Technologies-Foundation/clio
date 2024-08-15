@@ -24,7 +24,6 @@ jobs:
             dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
             /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
             /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
-            dotnet build-server shutdown;
 
       - name: Build and analyze
         env:
