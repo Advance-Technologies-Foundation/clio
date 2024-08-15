@@ -20,15 +20,10 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-         try {
+            $ErrorActionPreference = 'Stop'
             dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
             /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
             /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
-            dotnet build-server shutdown;
-          } catch {
-            Write-Error "Tests failed.";
-            exit 1;
-          }
 
       - name: Build and analyze
         env:
