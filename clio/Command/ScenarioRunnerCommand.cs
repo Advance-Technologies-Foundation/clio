@@ -43,7 +43,7 @@ namespace Clio.Command {
 					// because we don't know that the scenario steps are all executed
 					// on the same env. Further more if the environment is set in the yaml file
 					// then we would execute all command on default environment
-					if(step.CommandOption is EnvironmentOptions stepOptions) {
+					if(step.CommandOption is EnvironmentOptions stepOptions && step.CommandOption is not RegAppOptions) {
 						if(!string.IsNullOrWhiteSpace(stepOptions.Environment)){
 							SettingsRepository settingsRepository = new (FileSystem); //FileSystem is for tests
 							EnvironmentSettings settings = settingsRepository.FindEnvironment(stepOptions.Environment);

@@ -78,6 +78,30 @@ public class ScenarioRunnerCommandTests
 		pullPkgOptions.Unzip.Should().BeTrue();
 	}
 
+
+
+	[Test]
+	public void RegWebAppCommand_Handles() {
+		// Arrange
+		const string fileName = @"YAML/Script/reg_web_app_example.yaml";
+		ScenarioRunnerOptions options = new() {
+			FileName = fileName
+		};
+		_receivedOptions.Clear();
+
+		// Act
+		_sut.Execute(options);
+
+		//Assert
+		_receivedOptions.Should().HaveCount(2);
+		_receivedOptions[0].Should().BeOfType<RegAppOptions>();
+		RegAppOptions regAppOptions = _receivedOptions[0] as RegAppOptions;
+		regAppOptions.Environment.Should().Be("new_env");
+		regAppOptions.Uri.Should().Be("http://localhost:8080");
+		regAppOptions.Login.Should().Be("Supervisor");
+		regAppOptions.Password.Should().Be("Supervisor");
+	}
+
 	[Test]
 	public void Executes_Handles_EmptyFile() {
 		// Arrange

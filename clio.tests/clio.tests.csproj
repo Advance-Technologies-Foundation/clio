@@ -108,6 +108,9 @@
     <None Update="Examples\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="YAML\Script\reg_web_app_example.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     
     
     

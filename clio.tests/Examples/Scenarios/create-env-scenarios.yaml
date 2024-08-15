@@ -1,0 +1,8 @@
+steps:
+  - action: reg-web-app
+    description: create new environment
+    options:
+      EnvironmentName: Scenarios
+      uri: http://test.clio.com
+      Login: test_login
+      Password: test_password
