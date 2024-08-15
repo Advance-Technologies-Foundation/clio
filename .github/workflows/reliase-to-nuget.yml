@@ -1,0 +1,47 @@
+name: release-to-nuget
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: release-to-nuget
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Test Solution
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: powershell
+        run: |
+            $ErrorActionPreference = 'Stop'
+            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
+            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
+
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_URL: ${{ secrets.SONAR_URL }}
+        shell: powershell
+        run: |
+          dotnet sonarscanner begin /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
+          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
+          /d:sonar.cs.opencover.reportsPaths="TestResults\coverage.opencover.xml";
+          dotnet build .\clio\clio.csproj -c Release --no-incremental;
+          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+          dotnet build-server shutdown;
+
+      - name: Pack
+        run: dotnet pack .\clio\clio.csproj --configuration Release --output ./output
+
+      - name: Publish to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.CLIO_NUGET_API_KEY }}
+        run: dotnet nuget push "./output/*.nupkg" --api-key ${{ secrets.CLIO_NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
