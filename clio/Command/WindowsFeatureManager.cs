@@ -29,10 +29,12 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 {
 
 	public WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
-		ConsoleProgressbar consoleProgressBar) {
+		ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider) {
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_consoleProgressBar = consoleProgressBar;
+		_windowsFeatureProvider = windowsFeatureProvider;
 	}
+
 
 	private string RequirmentNETFrameworkFeaturesFilePaths {
 		get {
@@ -43,15 +45,29 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 	
 
 	private string GetInactiveFeaturesCode(string featureName) {
-		var windowsFeatures = GetWindowsFeatures();
+		var windowsFeatures = _windowsFeatureProvider.GetWindowsFeatures();
 		var feature = windowsFeatures.FirstOrDefault(i => i.Name.ToLower() == featureName.ToLower() ||
 			i.Caption.ToLower() == featureName.ToLower());
 		return feature.Name;
 	}
 
-	private List<string> RequirmentNETFrameworkFeatures {
-		get { return File.ReadAllLines(RequirmentNETFrameworkFeaturesFilePaths).ToList(); }
+	private IEnumerable<string> _requirmentNETFrameworkFeatures;
+
+	public IEnumerable<string> RequirmentNETFrameworkFeatures
+	{
+		get
+		{
+			if (_requirmentNETFrameworkFeatures == null) {
+				_requirmentNETFrameworkFeatures = File.ReadAllLines(RequirmentNETFrameworkFeaturesFilePaths);
+			}
+			return _requirmentNETFrameworkFeatures;
+		}
+		set
+		{
+			_requirmentNETFrameworkFeatures = value;
+		}
 	}
+
 
 	public List<WindowsFeature> GetMissedComponents() {
 		var missedComponents = new List<WindowsFeature>();
@@ -87,9 +103,9 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
 	public void InstallMissingFeatures(){
 		List<WindowsFeature> missedComponents = GetMissedComponents();
-		int maxLengthComponentName = GetActionMaxLength(missedComponents.Select(s => s.Name));
-		_consoleProgressBar.MaxActionNameLength = maxLengthComponentName;
 		if (missedComponents.Count > 0) {
+			int maxLengthComponentName = GetActionMaxLength(missedComponents.Select(s => s.Name));
+			_consoleProgressBar.MaxActionNameLength = maxLengthComponentName;
 			Console.WriteLine($"Found {missedComponents.Count} missed components");
 			foreach (WindowsFeature item in missedComponents) {
 				InstallFeature(item.Name);
@@ -136,41 +152,17 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		}
 	}
 
-	private List<string> _windowsActiveFeatures;
-	private List<string> windowsActiveFeatures {
+	private IEnumerable<string> _windowsActiveFeatures;
+	private IEnumerable<string> windowsActiveFeatures {
 		get {
 			if (_windowsActiveFeatures == null) {
-				var features = new List<string>();
-				try {
-					ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
-					ManagementObjectCollection featureCollection = searcher.Get();
-					foreach (ManagementObject featureObject in featureCollection) {
-						string featureName = featureObject["Name"].ToString();
-						features.Add(featureName);
-						string featureCaption = featureObject["Caption"].ToString();
-						features.Add(featureCaption);
-					}
-				} catch (Exception) {
-				}
-				_windowsActiveFeatures = features;
+				_windowsActiveFeatures = _windowsFeatureProvider.GetActiveWindowsFeatures();
 			}
 			return _windowsActiveFeatures;
 		}
 	}
 
-	private List<WindowsFeature> GetWindowsFeatures() {
-		var features = new List<WindowsFeature>();
-		ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OptionalFeature");
-		ManagementObjectCollection featureCollection = searcher.Get();
-		foreach (ManagementObject featureObject in featureCollection) {
-			features.Add(new WindowsFeature() {
-				Name = featureObject["Name"].ToString(),
-				Caption = featureObject["Caption"].ToString()
-			});
-		}
-		return features;
-	}
-
 	IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	ConsoleProgressbar _consoleProgressBar;
+	private IWindowsFeatureProvider _windowsFeatureProvider;
 }

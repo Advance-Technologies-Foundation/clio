@@ -1,7 +1,11 @@
-﻿using Autofac;
+﻿using System;
+using System.Collections.Generic;
+using Autofac;
 using Clio.Command;
+using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -47,4 +51,73 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 		
 	}
 
+	[Test, Category("Unit")]
+	public void GetMissedComponents_ShouldInstallMissedComponents() {
+		// Arrange
+		var existingComponents = new List<WindowsFeature> {
+			new WindowsFeature { Name = "Feature3", Installed = false },
+			new WindowsFeature { Name = "Feature4", Installed = false }
+		};
+
+		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider) {
+			RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"],
+		};
+
+		// Act
+		var missingComponents = windowsFeatureManager.GetMissedComponents();
+
+		// Assert
+		missingComponents.Should().HaveCount(2);
+	}
+
+	[Test, Category("Unit")]
+	public void GetMissedComponents_CorrectWorking_IfAllFeatureExisting() {
+		// Arrange
+		var existingComponents = new List<WindowsFeature> {
+			new WindowsFeature { Name = "Feature1", Installed = true },
+			new WindowsFeature { Name = "Feature2", Installed = true }
+		};
+
+		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+		windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
+		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider) {
+			RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"],
+		};
+
+		// Act
+		var missingComponents = windowsFeatureManager.GetMissedComponents();
+
+		// Assert
+		missingComponents.Should().HaveCount(0);
+	}
+
+	[Test, Category("Unit")]
+	public void InstallMissingFeatures_NotThrow_IfAllFeatureExisting() {
+		// Arrange
+		var existingComponents = new List<WindowsFeature> {
+			new WindowsFeature { Name = "Feature1", Installed = true },
+			new WindowsFeature { Name = "Feature2", Installed = true }
+		};
+
+		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+		windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
+		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider) {
+			RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"],
+		};
+
+		// Act
+		Action act = () =>  windowsFeatureManager.InstallMissingFeatures();
+		// Assert
+		act.Should().NotThrow();
+
+	}
+
 }
+
