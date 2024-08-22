@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Management.Automation;
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -116,6 +117,29 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 		Action act = () =>  windowsFeatureManager.InstallMissingFeatures();
 		// Assert
 		act.Should().NotThrow();
+
+	}
+
+	[Test, Category("Unit")]
+	public void InstpallMissingFeatures_ThrowItemNotExistException_IfFeatureMissingOnServer() {
+		// Arrange
+		var existingComponents = new List<WindowsFeature> {
+			new WindowsFeature { Name = "Feature1", Installed = true },
+			new WindowsFeature { Name = "Feature2", Installed = true }
+		};
+
+		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+		windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
+		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider) {
+			RequirmentNETFrameworkFeatures = ["Feature3"]
+		};
+
+		// Act
+		Action act = () => windowsFeatureManager.InstallMissingFeatures();
+		// Assert
+		act.Should().Throw<ItemNotFoundException>();
 
 	}
 

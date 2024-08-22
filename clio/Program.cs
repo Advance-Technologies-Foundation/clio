@@ -362,14 +362,20 @@ class Program
 
 	private static int Main(string[] args) {
 		try {
+			var clearArgs = args.Where(x => x.ToLower() != "--debug").ToArray();
+			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			OriginalArgs = args;
 			ConsoleLogger.Instance.Start();
-			return ExecuteCommands(args);
+			return ExecuteCommands(clearArgs);
 		} catch (FileNotFoundException e) {
 			ConsoleLogger.Instance.WriteError(e.Message + e.FileName);
 			return 1;
 		} catch (Exception e) {
-			ConsoleLogger.Instance.WriteError(e.Message);
+			if (IsDebugMode) {
+				ConsoleLogger.Instance.WriteError(e.ToString());
+			} else {
+				ConsoleLogger.Instance.WriteError(e.Message);
+			}
 			return 1;
 		} finally {
 			ConsoleLogger.Instance.Stop();
@@ -497,7 +503,7 @@ class Program
 			return AddItemFromTemplate(options);
 		}
 	}
- // clio add-item csschema "MySchema" -p "MyPkg" -n "MyNamespace"
+	// clio add-item csschema "MySchema" -p "MyPkg" -n "MyNamespace"
 	private static int AddItemFromTemplate(ItemOptions options) {
 		try {
 			var project = new VSProject(options.DestinationPath, options.Namespace);
@@ -731,6 +737,8 @@ class Program
 			_ => 1,
 		};
 	};
+
+	public static bool IsDebugMode { get; private set; }
 
 	private static string[] OriginalArgs;
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management;
+using System.Management.Automation;
 using Clio.Common;
 using Microsoft.Dism;
 
@@ -46,8 +47,11 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
 	private string GetInactiveFeaturesCode(string featureName) {
 		var windowsFeatures = _windowsFeatureProvider.GetWindowsFeatures();
-		var feature = windowsFeatures.FirstOrDefault(i => i.Name.ToLower() == featureName.ToLower() ||
-			i.Caption.ToLower() == featureName.ToLower());
+		var feature = windowsFeatures.FirstOrDefault(i => i.Name?.ToLower() == featureName.ToLower() ||
+			i.Caption?.ToLower() == featureName.ToLower());
+		if (feature is null) {
+			throw new ItemNotFoundException($"Windows feature [{featureName}] not found in the System");
+		}
 		return feature.Name;
 	}
 
@@ -128,9 +132,9 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 	
 	
 	private void SetFeatureState(string featureName, bool state) {
-		DismApi.Initialize(DismLogLevel.LogErrorsWarningsInfo);
 		try {
 			var featureCode = GetInactiveFeaturesCode(featureName);
+			DismApi.Initialize(DismLogLevel.LogErrorsWarningsInfo);
 			using var session = DismApi.OpenOnlineSession();
 			var (left, top) = Console.GetCursorPosition();
 			if (state) {
@@ -145,9 +149,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 				});
 			}
 			Console.WriteLine();
-		} catch (Exception e) {
-			Console.WriteLine(e.Message);
-		} finally {
+		}  finally {
 			DismApi.Shutdown();
 		}
 	}
