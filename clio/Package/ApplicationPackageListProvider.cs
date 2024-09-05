@@ -31,6 +31,13 @@ namespace Clio.Package
 			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
+		public ApplicationPackageListProvider() {
+		}
+
+		public ApplicationPackageListProvider(IJsonConverter jsonConverter) {
+			_jsonConverter = jsonConverter;
+		}
+
 		#endregion
 
 		#region Properties: Private
@@ -43,11 +50,11 @@ namespace Clio.Package
 		private PackageInfo CreatePackageInfo(Dictionary<string, string> package) {
 			var descriptor = new PackageDescriptor {
 				Name = package["Name"],
-				Maintainer = package["Maintainer"],
 				UId = Guid.Parse(package["UId"]),
-				PackageVersion = package["Version"]
+				Maintainer = package.ContainsKey("Maintainer") ? package["Maintainer"] : string.Empty,
+				PackageVersion = package.ContainsKey("Version") ? package["Version"] : string.Empty
 			};
-			return new PackageInfo(descriptor,string.Empty, Enumerable.Empty<string>());
+			return new PackageInfo(descriptor, string.Empty, Enumerable.Empty<string>());
 		}
 
 		#endregion
@@ -60,13 +67,16 @@ namespace Clio.Package
 		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
 			try {
 				string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
-				var json = _jsonConverter.CorrectJson(responseFormServer);
-				var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
-				return packages.Select(CreatePackageInfo);
-				
+				return ParsePackageInfoResponse(responseFormServer);
 			} catch (Exception e) {
 				return Array.Empty<PackageInfo>();
 			}
+		}
+
+		internal IEnumerable<PackageInfo> ParsePackageInfoResponse(string responseData) {
+			var json = _jsonConverter.CorrectJson(responseData);
+			var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
+			return packages.Select(CreatePackageInfo);
 		}
 
 		#endregion
