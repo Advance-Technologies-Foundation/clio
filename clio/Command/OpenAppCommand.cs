@@ -24,6 +24,19 @@ namespace Clio.Command
 			try {
 				var settings = new SettingsRepository();
 				var env = settings.GetEnvironment(options);
+				
+				if(string.IsNullOrEmpty(env.Uri)) {
+					Logger.WriteError($"Environment:{options.Environment ?? ""} has empty url. Use 'clio reg-web-app' command to configure it.");
+					return 1;
+				}
+				
+				if(!Uri.TryCreate(env.Uri, UriKind.Absolute, out Uri _)) {
+					Logger.WriteError($"Environment:{options.Environment ?? ""} has incorrect url format. Actual Url: '{env.Uri}' " +
+						$"Use \r\n\r\n\tclio cfg -e {options.Environment} -u <correct-url-here>\r\n\r\n command to configure it.");
+					return 1;
+				}
+				
+				
 				WebBrowser.OpenUrl(env.SimpleloginUri);
 				return 0;
 			} catch (Exception e) {

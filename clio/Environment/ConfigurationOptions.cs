@@ -84,8 +84,12 @@ namespace Clio
 		}
 
 		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
 		public string SimpleloginUri {
 			get {
+				if(Uri == null) {
+					return "";
+				}
 				var cleanUri = Uri;
 				if (!string.IsNullOrEmpty(cleanUri)) {
 					var domain = ".creatio.com";
