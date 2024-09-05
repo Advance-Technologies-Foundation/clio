@@ -48,7 +48,7 @@ namespace Clio.Package
 		#region Methods: Private
 
 		private PackageInfo CreatePackageInfo(Dictionary<string, string> package) {
-			var descriptor = new PackageDescriptor {
+			PackageDescriptor descriptor = new () {
 				Name = package["Name"],
 				UId = Guid.Parse(package["UId"]),
 				Maintainer = package.ContainsKey("Maintainer") ? package["Maintainer"] : string.Empty,
@@ -69,13 +69,13 @@ namespace Clio.Package
 				string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
 				return ParsePackageInfoResponse(responseFormServer);
 			} catch (Exception e) {
-				return Array.Empty<PackageInfo>();
+				return Array.Empty<PackageInfo>(); 
 			}
 		}
 
 		internal IEnumerable<PackageInfo> ParsePackageInfoResponse(string responseData) {
-			var json = _jsonConverter.CorrectJson(responseData);
-			var packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
+			string json = _jsonConverter.CorrectJson(responseData);
+			List<Dictionary<string, string>> packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
 			return packages.Select(CreatePackageInfo);
 		}
 
