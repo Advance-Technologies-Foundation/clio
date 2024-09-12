@@ -7,6 +7,7 @@ using Autofac;
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
 using FluentAssertions;
+using ICSharpCode.SharpZipLib.Zip;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -55,8 +56,8 @@ namespace Clio.Tests.Command.ApplicationCommand
 
 		[Test]
 		public void SetApplicationIconCommand_CallsComposableAppmanager() {
-			string iconPath = "iconPath";
-			string appName = "iconPath";
+			string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Files", "icon.svg");
+			string appName = "ExampleAppName";
 			var command = Container.Resolve<SetApplicationIconCommand>();
 			command.Execute(new SetApplicationIconOption {
 				IconPath = iconPath,
