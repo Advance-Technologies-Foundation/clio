@@ -1,0 +1,7 @@
+{
+  "Packages": [
+    "MrktApolloApp",
+    "MrktApolloInC360"
+  ],
+  "ApplicationVersion": "8.1.0"
+}

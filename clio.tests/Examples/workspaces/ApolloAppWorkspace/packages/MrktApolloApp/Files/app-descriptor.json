@@ -1,0 +1,24 @@
+{
+  "Name": "Apollo.io connector for Creatio",
+  "Description": "Apollo connector allows you to enrich contact and account records.",
+  "Maintainer": "Creatio",
+  "Icon": "",
+  "IconName": "",
+  "Color": "#FFAC07",
+  "Version": "1.1.4",
+  "MarketplaceLink": "",
+  "HelpLink": "",
+  "OrderLink": "",
+  "SupportEmail": "",
+  "Code": "MrktApolloApp",
+  "Packages": [
+    {
+      "UId": "d40c3488-7718-4ddc-9173-949868871326",
+      "Name": "MrktApolloApp"
+    },
+    {
+      "UId": "a2a415ef-1679-4f0e-85a3-92c34ac5fdbe",
+      "Name": "MrktApolloInC360"
+    }
+  ]
+}

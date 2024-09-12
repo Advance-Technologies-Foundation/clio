@@ -1,0 +1,21 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{0ce814ea-0465-433b-a0d7-0e64be792f3c}") = "MrktApolloApp", "..\packages\MrktApolloApp\Files\MrktApolloApp.csproj", "{10d189b2-87d8-419d-8d0b-eab9381ba4b3}"
+EndProject
+Project("{f5a3787a-d82e-4b57-89e3-51dde2eaa0ea}") = "MrktApolloInC360", "..\packages\MrktApolloInC360\Files\MrktApolloInC360.csproj", "{d141f70f-aa2e-462f-acea-4ed61b548294}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+			{10d189b2-87d8-419d-8d0b-eab9381ba4b3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+			{10d189b2-87d8-419d-8d0b-eab9381ba4b3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+			{10d189b2-87d8-419d-8d0b-eab9381ba4b3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+			{10d189b2-87d8-419d-8d0b-eab9381ba4b3}.Release|Any CPU.Build.0 = Release|Any CPU
+			{d141f70f-aa2e-462f-acea-4ed61b548294}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+			{d141f70f-aa2e-462f-acea-4ed61b548294}.Debug|Any CPU.Build.0 = Debug|Any CPU
+			{d141f70f-aa2e-462f-acea-4ed61b548294}.Release|Any CPU.ActiveCfg = Release|Any CPU
+			{d141f70f-aa2e-462f-acea-4ed61b548294}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
