@@ -19,6 +19,10 @@ namespace Clio.ComposableApplication
 			this.fileSystem = fileSystem1;
 		}
 
+		public void SetIcon(string packagesFolderPath, string iconPath, string appName) {
+			throw new NotImplementedException();
+		}
+
 		public void SetVersion(string appPackagesFolderPath, string version, string packageName = null) {
 			string[] appDescriptorPaths = fileSystem.Directory.GetFiles(appPackagesFolderPath, "app-descriptor.json", SearchOption.AllDirectories);
 			if (appDescriptorPaths.Length > 1) {
@@ -65,6 +69,7 @@ namespace Clio.ComposableApplication
 
 	public interface IComposableApplicationManager
 	{
+		void SetIcon(string packagesFolderPath, string iconPath, string appName);
 		public void SetVersion(string appPackagesFolderPath, string version, string packageName = null);
 		public bool TrySetVersion(string workspacePath, string appVersion);
 	}

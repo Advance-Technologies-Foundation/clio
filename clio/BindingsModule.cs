@@ -211,6 +211,7 @@ namespace Clio
 			containerBuilder.RegisterType<UninstallCreatioCommand>();
 			containerBuilder.RegisterType<AddSchemaCommand>();
 			containerBuilder.RegisterType<CreatioInstallerService>();
+			containerBuilder.RegisterType<SetApplicationIconCommand>();
 			
 			
 			containerBuilder.RegisterType<ClioGateway>();

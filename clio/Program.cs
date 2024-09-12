@@ -631,6 +631,7 @@ class Program
 		typeof(MockDataCommandOptions),
 		typeof(UninstallCreatioCommandOptions),
 		typeof(AddSchemaOptions),
+		typeof(SetApplicationIconOption),
 
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -734,6 +735,7 @@ class Program
 			MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
 			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 			AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
+			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			_ => 1,
 		};
 	};
