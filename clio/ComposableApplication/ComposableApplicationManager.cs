@@ -116,9 +116,11 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		}
 
 		var matchingFile = matchingFiles[0];
-		string iconFileName = Path.GetFileName(iconPath);
+		
+		string fileExt = Path.GetExtension(iconPath);
+		string iconFileName = Path.GetFileNameWithoutExtension(iconPath);
 		string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-		matchingFile.AppDescriptor.IconName = $"{iconFileName}_{timestamp}";
+		matchingFile.AppDescriptor.IconName = $"{iconFileName}_{timestamp}{fileExt}";
 
 		string base64EncodedIcon = Convert.ToBase64String(_fileSystem.File.ReadAllBytes(iconPath));
 		matchingFile.AppDescriptor.Icon = base64EncodedIcon;

@@ -57,8 +57,8 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 		string appDescriptorContent = FileSystem.File.ReadAllText(expectedFilePath);
 
 		AppDescriptorJson appDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(appDescriptorContent);
-		string iconFileName = Path.GetFileName(IconPath);
-		string timestampPattern = @"\d{14}$"; // Matches the datetime format "yyyyMMddHHmmss"
+		string iconFileName = Path.GetFileNameWithoutExtension(IconPath);
+		string timestampPattern = @"\d{14}.svg$"; // Matches the datetime format "yyyyMMddHHmmss"
 		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
 		appDescriptor.Icon.Should().Be(PartnerSvgBase64);
 	}
