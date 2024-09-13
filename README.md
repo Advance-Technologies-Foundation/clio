@@ -163,6 +163,7 @@ docker run -it --rm clio reg-web-app -help
   - [Get package list](#get-package-list)
   - [Set package version](#set-package-version)
   - [Set application version](#set-application-version)
+  - [Set application icon](#set-application-icon)
 - [NuGet Packages](#nuget-packages)
   - [Pack NuGet package](#pack-nuget-package)
   - [Push NuGet package](#push-nuget-package)
@@ -422,6 +423,29 @@ clio set-app-version <WORKSPACE PATH> -v <APP VERSION>
 clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
 
 ```
+
+
+## Set Application Icon
+
+The `set-app-icon` command is used to set the icon for a specified application 
+by updating the `app-descriptor.json` file.
+
+### Usage
+
+```bash
+clio set-app-icon [options]
+```
+-p, --app-name (required): The name or code of the application.
+-i, --app-icon (required): The path to the SVG icon file to be set.
+-f, --package-folder (required): The path to the folder containing the application packages.
+
+Examples
+Set the icon for an application with a specified name:
+
+```bash
+clio set-app-icon -p MyAppName -i /path/to/icon.svg -f /path/to/package/folder 
+```
+
 
 ## Enable/Disable pkg hotfix mode
 

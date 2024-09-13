@@ -1,0 +1,23 @@
+﻿{
+  "Descriptor": {
+    "UId": "d40c3488-7718-4ddc-9173-949868871326",
+    "PackageVersion": "1.0.0",
+    "Name": "MrktApolloApp",
+    "Type": 1,
+    "ModifiedOnUtc": "\/Date(1701358154000)\/",
+    "Maintainer": "Creatio",
+    "ProjectPath": "Files/MrktApolloApp.csproj",
+    "DependsOn": [
+      {
+        "UId": "06d9ef10-51d8-122c-8933-9212e84236c9",
+        "PackageVersion": "7.8.0",
+        "Name": "CrtBase"
+      },
+      {
+        "UId": "a17d52e6-97ab-6f7f-17aa-f0e197e488ea",
+        "PackageVersion": "7.8.0",
+        "Name": "CrtUIv2"
+      }
+    ]
+  }
+}

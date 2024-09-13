@@ -22,6 +22,7 @@ using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using System;
 using System.Reflection;
 using Clio.Command.CreatioInstallCommand;
+using Clio.ComposableApplication;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -141,6 +142,7 @@ namespace Clio
 			containerBuilder.RegisterType<GetMarketplacecatalogCommand>();
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
 			containerBuilder.RegisterType<CreateUiProjectOptionsValidator>();
+			containerBuilder.RegisterType<SetIconParametersValidator>();
 			containerBuilder.RegisterType<DownloadConfigurationCommand>();
 			containerBuilder.RegisterType<DeployCommand>();
 			containerBuilder.RegisterType<InfoCommand>();

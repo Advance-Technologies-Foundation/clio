@@ -1,0 +1,26 @@
+﻿{
+  "Descriptor": {
+    "UId": "a2a415ef-1679-4f0e-85a3-92c34ac5fdbe",
+    "PackageVersion": "1.0.0",
+    "Name": "MrktApolloInC360",
+    "Type": 1,
+    "InstallBehavior": 1,
+    "ModifiedOnUtc": "\/Date(1701358165000)\/",
+    "Maintainer": "Creatio",
+    "ProjectPath": "Files/MrktApolloInC360.csproj",
+    "DependsOn": [
+      {
+        "UId": "2ecba2bd-b810-47a5-a1b1-08c888529d6c",
+        "PackageVersion": "7.8.0",
+        "Name": "CrtCustomer360App",
+        "Type": 1
+      },
+      {
+        "UId": "d40c3488-7718-4ddc-9173-949868871326",
+        "PackageVersion": "1.0.0",
+        "Name": "MrktApolloApp",
+        "Type": 1
+      }
+    ]
+  }
+}

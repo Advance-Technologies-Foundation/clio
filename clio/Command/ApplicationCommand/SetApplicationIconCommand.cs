@@ -19,9 +19,7 @@ internal class SetApplicationIconOption
 
 	[Option('f', "package-folder", Required = false, HelpText = "Package folder path")]
 	public string PackageFolderPath { get; internal set; }
-
-	[Value(0, MetaName = "workspace", Required = false, HelpText = "Workspace folder path")]
-	public string WorspaceFolderPath { get; internal set; }
+	
 
 	#endregion
 
@@ -47,9 +45,7 @@ internal class SetApplicationIconCommand : Command<SetApplicationIconOption>
 	#region Methods: Public
 
 	public override int Execute(SetApplicationIconOption options){
-		string packagesFolderPath = options.PackageFolderPath.IsNotNullOrEmpty() ?
-			options.PackageFolderPath : Path.Combine(options.WorspaceFolderPath, "packages");
-		_composableApplicationManager.SetIcon(packagesFolderPath, options.IconPath, options.AppName);
+		_composableApplicationManager.SetIcon(options.PackageFolderPath, options.IconPath, options.AppName);
 		return 0;
 	}
 
