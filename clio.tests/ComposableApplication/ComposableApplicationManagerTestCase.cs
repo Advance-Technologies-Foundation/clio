@@ -170,7 +170,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 
 		// Assert
 		FileSystem.FileExists(zipAppPath);
-		Container.Resolve<IPackageArchiver>().ExtractPackages(zipAppPath, true, true, false, false, unzipAppPath);
+		Container.Resolve<IPackageArchiver>().ExtractPackages(zipAppPath, true, true, true, false, unzipAppPath);
 		string appDescriptorContent = FileSystem.File.ReadAllText(Path.Combine(unzipAppPath, "MrktApolloApp", "Files", "app-descriptor.json"));
 		AppDescriptorJson appDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(appDescriptorContent);
 		string iconFileName = Path.GetFileNameWithoutExtension(IconPath);

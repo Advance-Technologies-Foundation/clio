@@ -100,7 +100,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		string unzipAppPath = string.Empty;
 		if (isArchive) {
 			unzipAppPath = _directoriesProvider.CreateTempDirectory();
-			_archiver.ExtractPackages(appPath, true, true, false, false, unzipAppPath);
+			_archiver.ExtractPackages(appPath, true, true, true, false, unzipAppPath);
 			ChangeIcon(unzipAppPath, iconPath, appName);
 			_archiver.ZipPackages(unzipAppPath, appPath, true);
 			return;
