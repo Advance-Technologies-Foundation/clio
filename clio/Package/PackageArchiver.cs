@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using ms = System.IO.Abstractions;
 using System.IO.Compression;
 using System.Linq;
 using Clio.Common;
@@ -27,13 +28,15 @@ namespace Clio
 		private readonly ICompressionUtilities _compressionUtilities;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly ILogger _logger;
+		private readonly ms.IFileSystem _msFileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public PackageArchiver(IPackageUtilities packageUtilities, ICompressionUtilities compressionUtilities, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger) {
+				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
+				ILogger logger, ms.IFileSystem msFileSystem) {
 			packageUtilities.CheckArgumentNull(nameof(packageUtilities));
 			compressionUtilities.CheckArgumentNull(nameof(compressionUtilities));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
@@ -44,6 +47,7 @@ namespace Clio
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_logger = logger;
+			_msFileSystem = msFileSystem;
 		}
 
 		#endregion
@@ -59,17 +63,17 @@ namespace Clio
 			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
 		}
 
-		private static IEnumerable<string> GetAllFiles(string tempPath, bool skipPdb, string packagePath) {
-			var files = Directory
+		private IEnumerable<string> GetAllFiles(string tempPath, bool skipPdb, string packagePath) {
+			var files = _msFileSystem.Directory
 				.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
 				.Where(name => !name.EndsWith(".pdb") || !skipPdb);
 			return ApplyClioIgnore(files, packagePath);
 
 		}
 
-		private static IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath)
+		private IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath)
 		{
-			var wsIgnoreFile = new DirectoryInfo(packagePath)?.Parent?.Parent?
+			var wsIgnoreFile = _msFileSystem.DirectoryInfo.New(packagePath)?.Parent?.Parent?
 			.GetDirectories(".clio")?.FirstOrDefault()?.GetFiles(CreatioPackage.IgnoreFileName)?.FirstOrDefault();
 
 			bool wsIgnoreFileMissing = (wsIgnoreFile == null || !wsIgnoreFile.Exists);
@@ -78,7 +82,7 @@ namespace Clio
 			List<string> filteredFiles = new List<string>();
 			var ignore = new Ignore.Ignore();
 			ignore.OriginalRules.Clear();
-			ignore.Add(File.ReadAllLines(wsIgnoreFile.FullName));
+			ignore.Add(_msFileSystem.File.ReadAllLines(wsIgnoreFile.FullName));
 			foreach (var item in files) {
 				Uri fUri = new Uri(item);
 				if (!ignore.IsIgnored(fUri.ToString())) {
@@ -90,12 +94,12 @@ namespace Clio
 			var ignoreFiles = files.Where(f => f.EndsWith(CreatioPackage.IgnoreFileName)).ToList();
 			foreach (var ignoreFile in ignoreFiles)
 			{
-				FileInfo ignoreFi = new FileInfo(ignoreFile);
+				var ignoreFi = _msFileSystem.FileInfo.New(ignoreFile);
 				var ignoreDir = ignoreFi.Directory.FullName;
 				var filesToCheck = files.Where(f => f.StartsWith(ignoreDir)).ToList();
 
 				ignore.OriginalRules.Clear();
-				var ignoreContent = File.ReadAllLines(ignoreFiles.FirstOrDefault());
+				var ignoreContent = _msFileSystem.File.ReadAllLines(ignoreFiles.FirstOrDefault());
 				ignore.Add(ignoreContent);
 
 				foreach (var item in filesToCheck)
@@ -121,15 +125,15 @@ namespace Clio
 			zipFilePath.CheckArgumentNullOrWhiteSpace(nameof(zipFilePath));
 		}
 
-		private static void DeletePackedPackages(string[] packedPackagesPaths) {
+		private void DeletePackedPackages(string[] packedPackagesPaths) {
 			foreach (string packedPackagePath in packedPackagesPaths) {
-				File.Delete(packedPackagePath);
+				_msFileSystem.File.Delete(packedPackagePath);
 			}
 		}
 
-		private static string[] ExtractPackedPackages(string zipFilePath, string targetDirectoryPath) {
+		private string[] ExtractPackedPackages(string zipFilePath, string targetDirectoryPath) {
 			ZipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath, true);
-			string[] packedPackagesPaths = Directory.GetFiles(targetDirectoryPath, "*.gz");
+			string[] packedPackagesPaths = _msFileSystem.Directory.GetFiles(targetDirectoryPath, "*.gz");
 			return packedPackagesPaths;
 		}
 
@@ -152,15 +156,15 @@ namespace Clio
 			}
 		}
 
-		private static bool ShowDialogOverwriteDestinationPackageDir(string destinationPackagePath) {
+		private bool ShowDialogOverwriteDestinationPackageDir(string destinationPackagePath) {
 			bool overwrite = true;
-			if (Directory.Exists(destinationPackagePath)) {
+			if (_msFileSystem.Directory.Exists(destinationPackagePath)) {
 				Console.Write($"Directory {destinationPackagePath} already exist. Do you want replace it (y/n)? ");
 				var key = Console.ReadKey();
 				Console.WriteLine();
 				overwrite = key.KeyChar == 'y';
 			} else {
-				Directory.CreateDirectory(destinationPackagePath);
+				_msFileSystem.Directory.CreateDirectory(destinationPackagePath);
 			}
 			return overwrite;
 		}
@@ -183,17 +187,18 @@ namespace Clio
 		public string GetPackedGroupPackagesFileName(string groupPackagesName) => $"{groupPackagesName}.{ZipExtension}";
 
 		public void CheckPackedPackageExistsAndNotEmpty(string packedPackagePath) {
-			if (!File.Exists(packedPackagePath)) {
+			if (!_fileSystem.ExistsFile(packedPackagePath)) {
 				throw new Exception($"Package archive {packedPackagePath} not found");
 			}
-			var fileInfo = new FileInfo(packedPackagePath);
+			ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+			var fileInfo = fileInfoFactory.New(packedPackagePath);
 			if (fileInfo.Length == 0) {
 				throw new Exception($"Package archive {packedPackagePath} is empty");
 			}
 		}
 		
 		public IEnumerable<string> FindGzipPackedPackagesFiles(string searchDirectory) {
-			return Directory.EnumerateFiles(searchDirectory, $"*.{GzExtension}", 
+			return _msFileSystem.Directory.EnumerateFiles(searchDirectory, $"*.{GzExtension}", 
 				SearchOption.AllDirectories);
 		}
 

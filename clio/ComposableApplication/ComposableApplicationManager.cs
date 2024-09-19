@@ -4,10 +4,12 @@ using System.IO.Abstractions;
 using System.Json;
 using System.Linq;
 using System.Text;
+using Clio.Common;
 using Clio.Package;
 using FluentValidation;
 using FluentValidation.Results;
 using Newtonsoft.Json;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.ComposableApplication;
 
@@ -20,7 +22,7 @@ public class SetIconParameters
 
 	public string IconPath { get; set; }
 
-	public string PackagesFolderPath { get; set; }
+	public string AppPath { get; set; }
 
 	#endregion
 
@@ -32,11 +34,12 @@ public class SetIconParametersValidator : AbstractValidator<SetIconParameters>
 	#region Constructors: Public
 
 	public SetIconParametersValidator(IFileSystem fileSystem){
-		RuleFor(x => x.PackagesFolderPath)
-			.Cascade(CascadeMode.Stop)			
-			.NotEmpty().WithMessage("Packages folder path is required.")
-			.Must(fileSystem.Directory.Exists)
-			.WithMessage(x => $"Packages folder path '{x.PackagesFolderPath}' must exist.");
+		RuleFor(x => x.AppPath)
+			.Cascade(CascadeMode.Stop)
+			.NotEmpty().WithMessage("App path is required.")
+			.Must(path => fileSystem.Directory.Exists(path) || fileSystem.File.Exists(path))
+			.WithMessage(x => $"Path '{x.AppPath}' must exist as a directory or a file.");
+
 
 		RuleFor(x => x.IconPath)
 			.Cascade(CascadeMode.Stop)
@@ -48,7 +51,8 @@ public class SetIconParametersValidator : AbstractValidator<SetIconParameters>
 		RuleFor(x => x.AppName)
 			.Cascade(CascadeMode.Stop)
 			.NotEmpty()
-			.WithMessage("App name is required.");
+			.When(x => fileSystem.Directory.Exists(x.AppPath))
+			.WithMessage("App name is required when AppPath is a directory.");
 	}
 
 	#endregion
@@ -62,23 +66,28 @@ public class ComposableApplicationManager : IComposableApplicationManager
 
 	private readonly IFileSystem _fileSystem;
 	private readonly IValidator<SetIconParameters> _validator;
+	private readonly IPackageArchiver _archiver;
+	private readonly IWorkingDirectoriesProvider _directoriesProvider;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public ComposableApplicationManager(IFileSystem fileSystem, IValidator<SetIconParameters> validator){
+	public ComposableApplicationManager(IFileSystem fileSystem, IValidator<SetIconParameters> validator,
+			IPackageArchiver archiver, IWorkingDirectoriesProvider directoriesProvider){
 		_fileSystem = fileSystem;
 		_validator = validator;
+		_archiver = archiver;
+		_directoriesProvider = directoriesProvider;
 	}
 
 	#endregion
 
 	#region Methods: Public
 
-	public void SetIcon(string packagesFolderPath, string iconPath, string appName){
+	public void SetIcon(string appPath, string iconPath, string appName) {
 		SetIconParameters parameters = new() {
-			PackagesFolderPath = packagesFolderPath,
+			AppPath = appPath,
 			IconPath = iconPath,
 			AppName = appName
 		};
@@ -87,18 +96,31 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		if (!validationResult.IsValid) {
 			throw new ValidationException(validationResult.Errors);
 		}
+		bool isArchive = _fileSystem.File.Exists(appPath);
+		string unzipAppPath = string.Empty;
+		if (isArchive) {
+			unzipAppPath = _directoriesProvider.CreateTempDirectory();
+			_archiver.ExtractPackages(appPath, true, true, false, false, unzipAppPath);
+			ChangeIcon(unzipAppPath, iconPath, appName);
+			_archiver.ZipPackages(unzipAppPath, appPath, true);
+			return;
+		}
+		ChangeIcon(appPath, iconPath, appName);
+	}
 
+	private void ChangeIcon(string appPath, string iconPath, string appName) {
 		string[] files = _fileSystem.Directory
-			.GetFiles(packagesFolderPath, "app-descriptor.json", SearchOption.AllDirectories);
+					.GetFiles(appPath, "app-descriptor.json", SearchOption.AllDirectories);
 
 		if (files.Length == 0) {
-			throw new FileNotFoundException($"No app-descriptor.json file found in the specified packages folder path. {packagesFolderPath}");
+			throw new FileNotFoundException($"No app-descriptor.json file found in the specified packages folder path. {appPath}");
 		}
 
 		var matchingFiles = files
-			.Select(file => new {File = file, Content = _fileSystem.File.ReadAllText(file)})
+			.Select(file => new { File = file, Content = _fileSystem.File.ReadAllText(file) })
 			.Select(fileContent => new {
-				fileContent.File, AppDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(fileContent.Content)
+				fileContent.File,
+				AppDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(fileContent.Content)
 			})
 			.Where(fileDescriptor => fileDescriptor.AppDescriptor.Code == appName)
 			.ToList();
@@ -116,7 +138,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		}
 
 		var matchingFile = matchingFiles[0];
-		
+
 		string fileExt = Path.GetExtension(iconPath);
 		string iconFileName = Path.GetFileNameWithoutExtension(iconPath);
 		string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");

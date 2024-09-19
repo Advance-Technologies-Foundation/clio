@@ -37,6 +37,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 		base.Setup();
 		FileSystem.MockExamplesFolder("workspaces", "T:\\workspaces");
 		FileSystem.MockExamplesFolder("SVG_Icons", "T:\\SVG_Icons");
+		FileSystem.MockExamplesFolder("AppZips", "T:\\AppZips");
 		_sut = Container.Resolve<IComposableApplicationManager>();
 	}
 
@@ -127,11 +128,11 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 
 		// Assert
 		act.Should().Throw<ValidationException>()
-			.WithMessage($"Validation failed: {Environment.NewLine} -- PackagesFolderPath: Packages folder path 'C:\\NonRealDir' must exist. Severity: Error");
+			.WithMessage($"Validation failed: {Environment.NewLine} -- AppPath: Path 'C:\\NonRealDir' must exist as a directory or a file. Severity: Error");
 	}
 	
 	[Test]
-	public void SetIcon_ShouldThrow_When_PackagesFolderPathIsEmpty(){
+	public void SetIcon_ShouldThrow_When_AppPathIsEmpty(){
 		// Arrange
 		const string appName = "MyAppCode";
 
@@ -140,7 +141,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 
 		// Assert
 		act.Should().Throw<ValidationException>()
-			.WithMessage($"Validation failed: {Environment.NewLine} -- PackagesFolderPath: Packages folder path is required. Severity: Error");
+			.WithMessage($"Validation failed: {Environment.NewLine} -- AppPath: App path is required. Severity: Error");
 	}
 
 	
@@ -156,6 +157,26 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 		// Assert
 		act.Should().Throw<FileNotFoundException>()
 			.WithMessage($"No app-descriptor.json file found in the specified packages folder path. {packagesFolderPath}");
+	}
+
+	[Test]
+	public void SetIcon_ShouldSetCorrectIcon_WhenUsingZipArchive() {
+		// Arrange
+		const string zipAppPath = @"T:\AppZips\MrktApolloApp.zip";
+		const string unzipAppPath = @"T:\AppZips";
+
+		// Act
+		_sut.SetIcon(zipAppPath, IconPath, string.Empty);
+
+		// Assert
+		FileSystem.FileExists(zipAppPath);
+		Container.Resolve<IPackageArchiver>().ExtractPackages(zipAppPath, true, true, false, false, unzipAppPath);
+		string appDescriptorContent = FileSystem.File.ReadAllText(Path.Combine(unzipAppPath, "MrktApolloApp", "Files", "app-descriptor.json"));
+		AppDescriptorJson appDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(appDescriptorContent);
+		string iconFileName = Path.GetFileNameWithoutExtension(IconPath);
+		string timestampPattern = @"\d{14}.svg$";
+		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
+		appDescriptor.Icon.Should().Be(PartnerSvgBase64);
 	}
 
 }
