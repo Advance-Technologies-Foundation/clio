@@ -437,13 +437,13 @@ clio set-app-icon [options]
 ```
 -p, --app-name (required): The name or code of the application.
 -i, --app-icon (required): The path to the SVG icon file to be set.
--f, --package-folder (required): The path to the folder containing the application packages.
+-f, --app-path (required): Path to application package folder or archive.
 
 Examples
 Set the icon for an application with a specified name:
 
 ```bash
-clio set-app-icon -p MyAppName -i /path/to/icon.svg -f /path/to/package/folder 
+clio set-app-icon -p MyAppName -i /path/to/icon.svg -f /path/to/app 
 ```
 
 

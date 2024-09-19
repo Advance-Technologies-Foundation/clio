@@ -17,8 +17,8 @@ internal class SetApplicationIconOption
 	[Option('i', "app-icon", Required = true, HelpText = "Application icon path")]
 	public string IconPath { get; internal set; }
 
-	[Option('f', "package-folder", Required = false, HelpText = "Package folder path")]
-	public string PackageFolderPath { get; internal set; }
+	[Option('f', "app-path", Required = false, HelpText = "Path to application package folder or archive")]
+	public string AppPath { get; internal set; }
 	
 
 	#endregion
@@ -45,7 +45,7 @@ internal class SetApplicationIconCommand : Command<SetApplicationIconOption>
 	#region Methods: Public
 
 	public override int Execute(SetApplicationIconOption options){
-		_composableApplicationManager.SetIcon(options.PackageFolderPath, options.IconPath, options.AppName);
+		_composableApplicationManager.SetIcon(options.AppPath, options.IconPath, options.AppName);
 		return 0;
 	}
 

@@ -39,7 +39,7 @@ internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicati
 		SetApplicationIconCommand command = Container.Resolve<SetApplicationIconCommand>();
 		command.Execute(new SetApplicationIconOption {
 			IconPath = iconPath,
-			PackageFolderPath = MockWorkspaceAppPackageFolderPath,
+			AppPath = MockWorkspaceAppPackageFolderPath,
 			AppName = appName
 		});
 		_composableApplicationManager.Received(1).SetIcon(MockWorkspaceAppPackageFolderPath, iconPath, appName);
