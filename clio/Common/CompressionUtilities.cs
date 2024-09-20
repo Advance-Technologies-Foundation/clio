@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Clio.Common
@@ -15,21 +14,25 @@ namespace Clio.Common
 		#region Fields: Private
 
 		private readonly IFileSystem _fileSystem;
+		private readonly IZipFile _zipFile;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CompressionUtilities(IFileSystem fileSystem)
+		public CompressionUtilities(IFileSystem fileSystem, IZipFile zipFile)
 		{
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_fileSystem = fileSystem;
+			_zipFile = zipFile;
 		}
 
 		#endregion
 
 		#region Methods: Private
 
+		
+		
 		private static void WriteFileName(string relativeFilePath, GZipStream zipStream)
 		{
 			char[] chars = relativeFilePath.ToCharArray();
@@ -40,9 +43,10 @@ namespace Clio.Common
 			}
 		}
 
-		private static void WriteFileContent(string filePath, GZipStream zipStream)
+		private void WriteFileContent(string filePath, GZipStream zipStream)
 		{
-			byte[] bytes = File.ReadAllBytes(filePath);
+			
+			byte[] bytes = _fileSystem.ReadAllBytes(filePath);
 			zipStream.Write(BitConverter.GetBytes(bytes.Length), 0, sizeof(int));
 			zipStream.Write(bytes, 0, bytes.Length);
 		}
@@ -80,7 +84,7 @@ namespace Clio.Common
 			return filePath;
 		}
 
-		private static void ReadFileContent(string targetFilePath, Stream zipStream)
+		private void ReadFileContent(string targetFilePath, Stream zipStream)
 		{
 			var bytes = new byte[sizeof(int)];
 
@@ -103,11 +107,11 @@ namespace Clio.Common
 				totalRead += bytesRead;
 			}
 			string targetDirectoryPath = Path.GetDirectoryName(targetFilePath);
-			if (!Directory.Exists(targetDirectoryPath))
+			if (!_fileSystem.ExistsDirectory(targetDirectoryPath))
 			{
-				Directory.CreateDirectory(targetDirectoryPath);
+				_fileSystem.CreateDirectory(targetDirectoryPath);
 			}
-			using (var stream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+			using (var stream = _fileSystem.FileOpenStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
 			{
 				stream.Write(bytes, 0, fileContentLength);
 			}
@@ -137,8 +141,7 @@ namespace Clio.Common
 		private bool UnpackFromGZip(string destinationDirectory, MemoryStream zipStream)
 		{
 			string fileRelativePath = ReadFileRelativePath(zipStream);
-			if (string.IsNullOrEmpty(fileRelativePath))
-			{
+			if (string.IsNullOrEmpty(fileRelativePath)) {
 				return false;
 			}
 			ReadFileContent(Path.Combine(destinationDirectory, fileRelativePath), zipStream);
@@ -153,44 +156,30 @@ namespace Clio.Common
 		public void PackToGZip(IEnumerable<string> files, string rootDirectoryPath, string destinationPackagePath)
 		{
 			CheckPackToGZipArgument(files, rootDirectoryPath, destinationPackagePath);
-			using (Stream fileStream =
-				File.Open(destinationPackagePath, FileMode.Create, FileAccess.Write, FileShare.None))
-			{
-				using (var zipStream = new GZipStream(fileStream, CompressionMode.Compress))
-				{
-					foreach (string filePath in files)
-					{
-						PackToGZip(filePath, rootDirectoryPath, zipStream);
-					}
-				}
+			using Stream fileStream =
+				_fileSystem.FileOpenStream(destinationPackagePath, FileMode.Create, FileAccess.Write, FileShare.None);
+			using var zipStream = new GZipStream(fileStream, CompressionMode.Compress);
+			foreach (string filePath in files) {
+				PackToGZip(filePath, rootDirectoryPath, zipStream);
 			}
 		}
 
-		public void UnpackFromGZip(string packedPackagePath, string destinationPackageDirectory)
-		{
+		public void UnpackFromGZip(string packedPackagePath, string destinationPackageDirectory){
 			CheckUnpackFromGZipArgument(packedPackagePath, destinationPackageDirectory);
-			using (var fileStream = new FileStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.None))
-			{
-				using (var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true))
-				{
-					var newStream = new MemoryStream();
-					zipStream.CopyTo(newStream);
-
-					newStream.Seek(0, SeekOrigin.Begin);
-
-					while (UnpackFromGZip(destinationPackageDirectory, newStream))
-					{
-					}
-				}
-			}
+			using var fileStream = _fileSystem.FileOpenStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.None);
+			using var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true);
+			var newStream = new MemoryStream();
+			zipStream.CopyTo(newStream);
+			newStream.Seek(0, SeekOrigin.Begin);
+			while (UnpackFromGZip(destinationPackageDirectory, newStream)) { }
 		}
 
 		public void Unzip(string zipFilePath, string destinationDirectory) {
-			ZipFile.ExtractToDirectory(zipFilePath, destinationDirectory);
+			_zipFile.ExtractToDirectory(zipFilePath, destinationDirectory);
 		}
 
 		public void Zip(string directoryPath, string zipFilePath) {
-			ZipFile.CreateFromDirectory(directoryPath, zipFilePath);
+			_zipFile.CreateFromDirectory(directoryPath, zipFilePath);
 		}
 
 		#endregion
@@ -199,4 +188,26 @@ namespace Clio.Common
 
 	#endregion
 
+	public interface IZipFile
+	{
+
+		void ExtractToDirectory(string sourceArchiveFileName, string destinationDirectoryName);
+
+		void CreateFromDirectory(string sourceDirectoryName, string destinationArchiveFileName);
+
+	}
+	
+	public class ZipFileWrapper : IZipFile
+	{
+
+		public void ExtractToDirectory(string sourceArchiveFileName, string destinationDirectoryName) {
+			ZipFile.ExtractToDirectory(sourceArchiveFileName, destinationDirectoryName);
+		}
+
+		public void CreateFromDirectory(string sourceDirectoryName, string destinationArchiveFileName) {
+			ZipFile.CreateFromDirectory(sourceDirectoryName, destinationArchiveFileName);
+		}
+
+	}
+	
 }

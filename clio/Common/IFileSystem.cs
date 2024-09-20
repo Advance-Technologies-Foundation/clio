@@ -17,6 +17,8 @@ namespace Clio.Common
 
 		#region Methods: Public
 
+		byte[] ReadAllBytes(string filePath);
+		FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share);
 		public IDirectoryInfo GetDirectoryInfo(string path);
 		
 

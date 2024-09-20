@@ -18,13 +18,15 @@ public class FileSystem : IFileSystem
 	public FileSystem(Ms.IFileSystem msFileSystem){
 		_msFileSystem = msFileSystem;
 	}
+	public byte[] ReadAllBytes(string filePath) => _msFileSystem.File.ReadAllBytes(filePath);
 
 	public Ms.FileSystemStream CreateFile(string filePath){
 		return _msFileSystem.File.Create(filePath);
 	}
 	
-	
-	
+	public Ms.FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share) => 
+		_msFileSystem.File.Open(filePath, mode, access, share);
+
 	#region Methods: Public
 
 	public static void CreateLink(string link, string target) {

@@ -214,7 +214,8 @@ namespace Clio
 			containerBuilder.RegisterType<AddSchemaCommand>();
 			containerBuilder.RegisterType<CreatioInstallerService>();
 			containerBuilder.RegisterType<SetApplicationIconCommand>();
-			
+			containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
+				
 			
 			containerBuilder.RegisterType<ClioGateway>();
 			

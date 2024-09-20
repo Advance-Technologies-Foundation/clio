@@ -1,6 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
+using System.IO.Compression;
+using System.Linq;
 using Autofac;
+using Clio.Common;
 using Clio.ComposableApplication;
 using Clio.Package;
 using Clio.Tests.Command;
@@ -9,6 +14,8 @@ using FluentAssertions;
 using FluentValidation;
 using Newtonsoft.Json;
 using NUnit.Framework;
+using FileSystem = System.IO.Abstractions.FileSystem;
+using IZipFile = Clio.Common.IZipFile;
 
 namespace Clio.Tests.ComposableApplication;
 
@@ -28,6 +35,19 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 
 	private IComposableApplicationManager _sut;
 	private readonly string workspacesFolderPath = Path.Combine("T:\\", "workspaces");
+
+	#endregion
+
+	#region Methods: Protected
+
+	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+		base.AdditionalRegistrations(containerBuilder);
+		//containerBuilder.RegisterType<ZipFileMockWrapper>().As<IZipFile>();
+		containerBuilder
+			.RegisterInstance(
+				new ZipFileMockWrapper(FileSystem, new WorkingDirectoriesProvider(null, new FileSystem())))
+			.As<IZipFile>();
+	}
 
 	#endregion
 
@@ -65,6 +85,45 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 	}
 
 	[Test]
+	public void SetIcon_ShouldSetCorrectIcon_WhenUsingZipArchive(){
+		// Arrange
+		const string zipAppPath = @"T:\AppZips\MrktApolloApp.zip";
+		//const string zipAppPath = @"C:\Projects\Clio\clio\clio.tests\Examples\AppZips\MrktApolloApp.zip";
+		const string unzipAppPath = @"T:\AppZips";
+
+		// Act
+		_sut.SetIcon(zipAppPath, IconPath, string.Empty);
+
+		// Assert
+		FileSystem.FileExists(zipAppPath);
+		Container
+			.Resolve<IPackageArchiver>()
+			.ExtractPackages(zipAppPath, true, true, true, false, unzipAppPath);
+		string appDescriptorContent
+			= FileSystem.File.ReadAllText(Path.Combine(unzipAppPath, "MrktApolloApp", "Files", "app-descriptor.json"));
+		AppDescriptorJson appDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(appDescriptorContent);
+		string iconFileName = Path.GetFileNameWithoutExtension(IconPath);
+		string timestampPattern = @"\d{14}.svg$";
+		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
+		appDescriptor.Icon.Should().Be(PartnerSvgBase64);
+	}
+
+	[Test]
+	public void SetIcon_ShouldThrow_When_AppDescriptorDoesNotExist(){
+		// Arrange
+		const string appName = "iframe-sample";
+
+		string packagesFolderPath = Path.Combine(workspacesFolderPath, "iframe-sample");
+		// Act
+		Action act = () => _sut.SetIcon(packagesFolderPath, IconPath, appName);
+
+		// Assert
+		act.Should().Throw<FileNotFoundException>()
+			.WithMessage(
+				$"No app-descriptor.json file found in the specified packages folder path. {packagesFolderPath}");
+	}
+
+	[Test]
 	public void SetIcon_ShouldThrow_When_AppNotFound(){
 		// Arrange
 		const string appName = "NonExistingApp";
@@ -76,7 +135,48 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 		act.Should().Throw<ValidationException>()
 			.WithMessage($"App {appName} not found.");
 	}
-	
+
+	[Test]
+	public void SetIcon_ShouldThrow_When_AppPathIsEmpty(){
+		// Arrange
+		const string appName = "MyAppCode";
+
+		// Act
+		Action act = () => _sut.SetIcon(string.Empty, IconPath, appName);
+
+		// Assert
+		act.Should().Throw<ValidationException>()
+			.WithMessage($"Validation failed: {Environment.NewLine} -- AppPath: App path is required. Severity: Error");
+	}
+
+	[Test]
+	public void SetIcon_ShouldThrow_When_IconPathIsEmpty(){
+		// Arrange
+		const string appName = "MyAppCode";
+
+		// Act
+		Action act = () => _sut.SetIcon(workspacesFolderPath, string.Empty, appName);
+
+		// Assert
+		act.Should().Throw<ValidationException>()
+			.WithMessage(
+				$"Validation failed: {Environment.NewLine} -- IconPath: Icon path is required. Severity: Error");
+	}
+
+	[Test]
+	public void SetIcon_ShouldThrow_When_IconPathNonExistant(){
+		// Arrange
+		const string appName = "MyAppCode";
+
+		// Act
+		Action act = () => _sut.SetIcon(workspacesFolderPath, "C:\\1.svg", appName);
+
+		// Assert
+		act.Should().Throw<ValidationException>()
+			.WithMessage(
+				$"Validation failed: {Environment.NewLine} -- IconPath: Icon file 'C:\\1.svg' must exist. Severity: Error");
+	}
+
 	[Test]
 	public void SetIcon_ShouldThrow_When_MultipleAppDescriptorFoundWithAppCode(){
 		// Arrange
@@ -91,33 +191,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 				"T:\\workspaces\\MyAppV1\\packages\\MrktApolloApp\\Files\\app-descriptor.json\n" +
 				"T:\\workspaces\\MyAppV2\\packages\\MrktApolloApp\\Files\\app-descriptor.json\n");
 	}
-	
-	[Test]
-	public void SetIcon_ShouldThrow_When_IconPathNonExistant(){
-		// Arrange
-		const string appName = "MyAppCode";
 
-		// Act
-		Action act = () => _sut.SetIcon(workspacesFolderPath, "C:\\1.svg", appName);
-
-		// Assert
-		act.Should().Throw<ValidationException>()
-			.WithMessage($"Validation failed: {Environment.NewLine} -- IconPath: Icon file 'C:\\1.svg' must exist. Severity: Error");
-	}
-	
-	[Test]
-	public void SetIcon_ShouldThrow_When_IconPathIsEmpty(){
-		// Arrange
-		const string appName = "MyAppCode";
-
-		// Act
-		Action act = () => _sut.SetIcon(workspacesFolderPath, string.Empty, appName);
-
-		// Assert
-		act.Should().Throw<ValidationException>()
-			.WithMessage($"Validation failed: {Environment.NewLine} -- IconPath: Icon path is required. Severity: Error");
-	}
-	
 	[Test]
 	public void SetIcon_ShouldThrow_When_PackagesFolderPathNonExistant(){
 		// Arrange
@@ -128,55 +202,71 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 
 		// Assert
 		act.Should().Throw<ValidationException>()
-			.WithMessage($"Validation failed: {Environment.NewLine} -- AppPath: Path 'C:\\NonRealDir' must exist as a directory or a file. Severity: Error");
-	}
-	
-	[Test]
-	public void SetIcon_ShouldThrow_When_AppPathIsEmpty(){
-		// Arrange
-		const string appName = "MyAppCode";
-
-		// Act
-		Action act = () => _sut.SetIcon(string.Empty, IconPath, appName);
-
-		// Assert
-		act.Should().Throw<ValidationException>()
-			.WithMessage($"Validation failed: {Environment.NewLine} -- AppPath: App path is required. Severity: Error");
+			.WithMessage(
+				$"Validation failed: {Environment.NewLine} -- AppPath: Path 'C:\\NonRealDir' must exist as a directory or a file. Severity: Error");
 	}
 
-	
-	[Test]
-	public void SetIcon_ShouldThrow_When_AppDescriptorDoesNotExist(){
-		// Arrange
-		const string appName = "iframe-sample";
+}
 
-		string packagesFolderPath  = Path.Combine(workspacesFolderPath, "iframe-sample");
-		// Act
-		Action act = () => _sut.SetIcon(packagesFolderPath, IconPath, appName);
+public class ZipFileMockWrapper : IZipFile
+{
 
-		// Assert
-		act.Should().Throw<FileNotFoundException>()
-			.WithMessage($"No app-descriptor.json file found in the specified packages folder path. {packagesFolderPath}");
+	#region Fields: Private
+
+	private readonly MockFileSystem _fileSystem;
+	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+
+	#endregion
+
+	#region Constructors: Public
+
+	public ZipFileMockWrapper(MockFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider){
+		_fileSystem = fileSystem;
+		_workingDirectoriesProvider = workingDirectoriesProvider;
 	}
 
-	[Test]
-	public void SetIcon_ShouldSetCorrectIcon_WhenUsingZipArchive() {
-		// Arrange
-		const string zipAppPath = @"T:\AppZips\MrktApolloApp.zip";
-		const string unzipAppPath = @"T:\AppZips";
+	#endregion
 
-		// Act
-		_sut.SetIcon(zipAppPath, IconPath, string.Empty);
+	#region Methods: Public
 
-		// Assert
-		FileSystem.FileExists(zipAppPath);
-		Container.Resolve<IPackageArchiver>().ExtractPackages(zipAppPath, true, true, true, false, unzipAppPath);
-		string appDescriptorContent = FileSystem.File.ReadAllText(Path.Combine(unzipAppPath, "MrktApolloApp", "Files", "app-descriptor.json"));
-		AppDescriptorJson appDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(appDescriptorContent);
-		string iconFileName = Path.GetFileNameWithoutExtension(IconPath);
-		string timestampPattern = @"\d{14}.svg$";
-		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
-		appDescriptor.Icon.Should().Be(PartnerSvgBase64);
+	public void CreateFromDirectory(string sourceDirectoryName, string destinationArchiveFileName){
+		List<string> allFiles = _fileSystem.Directory
+			.GetFiles(sourceDirectoryName, "*", SearchOption.AllDirectories)
+			.ToList();
+
+		_workingDirectoriesProvider.CreateTempDirectory(tempDir => {
+			foreach (string file in allFiles) {
+				
+				string relativePathFileName =file.Replace(sourceDirectoryName, string.Empty); 
+				string realFsFileName =  Path.Combine(tempDir, relativePathFileName.TrimStart('\\'));
+				Directory.CreateDirectory(Path.GetDirectoryName(realFsFileName));
+				byte[] fakeFsBytes = _fileSystem.File.ReadAllBytes(file);
+				File.WriteAllBytes(realFsFileName, fakeFsBytes); //write to real FS
+			}
+
+			_workingDirectoriesProvider.CreateTempDirectory(realFsSrcPath => {
+				string fileName = Path.Combine(realFsSrcPath, Path.GetFileName(destinationArchiveFileName));
+				ZipFile.CreateFromDirectory(tempDir, fileName);
+				byte[] fakeFsBytes = System.IO.File.ReadAllBytes(fileName);
+				
+				_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(fileName));
+				_fileSystem.File.WriteAllBytes(destinationArchiveFileName, fakeFsBytes); 
+			});
+		});
 	}
+
+	public void ExtractToDirectory(string sourceArchiveFileName, string destinationDirectoryName){
+		_workingDirectoriesProvider.CreateTempDirectory(tempDir => {
+			_workingDirectoriesProvider.CreateTempDirectory(realFsSrcPath => {
+				byte[] fakeFsBytes = _fileSystem.File.ReadAllBytes(sourceArchiveFileName);
+				string fileName = Path.Combine(realFsSrcPath, Path.GetFileName(sourceArchiveFileName));
+				File.WriteAllBytes(fileName, fakeFsBytes); //write to real FS
+				ZipFile.ExtractToDirectory(fileName, tempDir); //write to real FS
+				_fileSystem.MockFolder(tempDir, destinationDirectoryName);
+			});
+		});
+	}
+
+	#endregion
 
 }

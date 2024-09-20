@@ -2,6 +2,7 @@
 using Clio.Tests.Infrastructure;
 using NUnit.Framework;
 using System.IO.Abstractions.TestingHelpers;
+using Terrasoft.Core.Configuration;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
@@ -15,6 +16,7 @@ public abstract class BaseClioModuleTests
 	[SetUp]
 	public virtual void Setup(){
 		FileSystem = CreateFs();
+		
 		BindingsModule bindingModule = new(FileSystem);
 		Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
 	}

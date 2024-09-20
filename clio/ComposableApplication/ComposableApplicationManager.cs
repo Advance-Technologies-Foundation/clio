@@ -122,7 +122,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 				fileContent.File,
 				AppDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(fileContent.Content)
 			})
-			.Where(fileDescriptor => fileDescriptor.AppDescriptor.Code == appName)
+			.Where(fileDescriptor => string.IsNullOrWhiteSpace(appName) || fileDescriptor.AppDescriptor.Code == appName)
 			.ToList();
 
 		if (matchingFiles.Count > 1) {

@@ -29,6 +29,7 @@ namespace Clio
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly ILogger _logger;
 		private readonly ms.IFileSystem _msFileSystem;
+		private readonly IZipFile _zipFile;
 
 		#endregion
 
@@ -36,7 +37,7 @@ namespace Clio
 
 		public PackageArchiver(IPackageUtilities packageUtilities, ICompressionUtilities compressionUtilities, 
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
-				ILogger logger, ms.IFileSystem msFileSystem) {
+				ILogger logger, ms.IFileSystem msFileSystem, IZipFile zipFile) {
 			packageUtilities.CheckArgumentNull(nameof(packageUtilities));
 			compressionUtilities.CheckArgumentNull(nameof(compressionUtilities));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
@@ -48,6 +49,7 @@ namespace Clio
 			_fileSystem = fileSystem;
 			_logger = logger;
 			_msFileSystem = msFileSystem;
+			_zipFile = zipFile;
 		}
 
 		#endregion
@@ -132,10 +134,11 @@ namespace Clio
 		}
 
 		private string[] ExtractPackedPackages(string zipFilePath, string targetDirectoryPath) {
-			var zipBytes = _msFileSystem.File.ReadAllBytes(zipFilePath);
-			MemoryStream stream = new MemoryStream(zipBytes);
-			ZipArchive zipArchive = new ZipArchive(stream, ZipArchiveMode.Read);
-			zipArchive.ExtractToDirectory(targetDirectoryPath, true);
+			// var zipBytes = _msFileSystem.File.ReadAllBytes(zipFilePath);
+			// MemoryStream stream = new MemoryStream(zipBytes);
+			// ZipArchive zipArchive = new ZipArchive(stream, ZipArchiveMode.Read);
+			// zipArchive.ExtractToDirectory(targetDirectoryPath, true);
+			_zipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);			
 			string[] packedPackagesPaths = _msFileSystem.Directory.GetFiles(targetDirectoryPath, "*.gz");
 			return packedPackagesPaths;
 		}
@@ -261,7 +264,7 @@ namespace Clio
 		public void ZipPackages(string sourceGzipFilesFolderPaths, string destinationArchiveFileName, bool overwrite) {
 			CheckZipPackagesArgument(sourceGzipFilesFolderPaths, destinationArchiveFileName);
 			_fileSystem.CheckOrDeleteExistsFile(destinationArchiveFileName, overwrite);
-			ZipFile.CreateFromDirectory(sourceGzipFilesFolderPaths, destinationArchiveFileName);
+			_zipFile.CreateFromDirectory(sourceGzipFilesFolderPaths, destinationArchiveFileName);
 		}
 
 		public void UnZipPackages(string zipFilePath, bool overwrite, bool deleteGzFiles = true, 
@@ -280,7 +283,7 @@ namespace Clio
 		public void UnZip(string zipFilePath, bool overwrite, string destinationPath = null) {
 			CheckUnZipPackagesArgument(zipFilePath);
 			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
-			ZipFile.ExtractToDirectory(zipFilePath, destinationPath ?? Environment.CurrentDirectory);
+			_zipFile.ExtractToDirectory(zipFilePath, destinationPath ?? Environment.CurrentDirectory);
 		}
 		
 		#endregion
