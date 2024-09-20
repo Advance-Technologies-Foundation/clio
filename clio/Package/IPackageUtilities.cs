@@ -11,6 +11,8 @@ namespace Clio.Common
 		#region Methods: Public
 
 		void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite);
+		string GetPackageContentFolderPath(string repositoryPackageFolderPath);
+		string GetPackageContentFolderPath(string repositoryFolderPath, string packageName);
 
 		#endregion
 

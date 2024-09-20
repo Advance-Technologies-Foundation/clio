@@ -134,10 +134,6 @@ namespace Clio
 		}
 
 		private string[] ExtractPackedPackages(string zipFilePath, string targetDirectoryPath) {
-			// var zipBytes = _msFileSystem.File.ReadAllBytes(zipFilePath);
-			// MemoryStream stream = new MemoryStream(zipBytes);
-			// ZipArchive zipArchive = new ZipArchive(stream, ZipArchiveMode.Read);
-			// zipArchive.ExtractToDirectory(targetDirectoryPath, true);
 			_zipFile.ExtractToDirectory(zipFilePath, targetDirectoryPath);			
 			string[] packedPackagesPaths = _msFileSystem.Directory.GetFiles(targetDirectoryPath, "*.gz");
 			return packedPackagesPaths;

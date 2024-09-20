@@ -32,15 +32,18 @@ namespace Clio
 
 		private IJsonConverter _jsonConverter;
 		private readonly IPackageArchiver _packageArchiver;
+		private readonly IPackageUtilities _packageUtilities;
 
-		public CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver packageArchiver) {
+		public CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver packageArchiver,
+				IPackageUtilities packageUtilities) {
 			_jsonConverter = jsonConverter;
 			_packageArchiver = packageArchiver;
+			_packageUtilities = packageUtilities;
 		}
 
 		public override int Execute(CompressAppOptions options) {
 			FolderPackageRepository folderPackageRepository = 
-				new FolderPackageRepository(options.RepositoryFolderPath, _jsonConverter);
+				new FolderPackageRepository(options.RepositoryFolderPath, _jsonConverter, _packageUtilities);
 			var appPackageNames = folderPackageRepository.GetRelatedPackagesNames(options.RootPackageNames);
 			string destinationPath = options.DestinationPath;
 			if (!Directory.Exists(destinationPath)) {
@@ -60,10 +63,13 @@ namespace Clio
 	{
 		private readonly string _repositoryFolderPath;
 		private readonly IJsonConverter _jsonConverter;
+		private readonly IPackageUtilities _packageUtilities;
 
-		public FolderPackageRepository(string repositoryFolderPath, IJsonConverter jsonConverter) {
+		public FolderPackageRepository(string repositoryFolderPath, IJsonConverter jsonConverter,
+				IPackageUtilities packageUtilities) {
 			_jsonConverter = jsonConverter;
 			_repositoryFolderPath = repositoryFolderPath;
+			_packageUtilities = packageUtilities;
 		}
 
 
@@ -93,7 +99,7 @@ namespace Clio
 		}
 
 		public string GetPackageContentFolderPath(string packageName) {
-			return PackageUtilities.GetPackageContentFolderPath(_repositoryFolderPath, packageName);
+			return _packageUtilities.GetPackageContentFolderPath(_repositoryFolderPath, packageName);
 		}
 
 		private PackageDescriptor GetPackageDescriptor(string packageName) {

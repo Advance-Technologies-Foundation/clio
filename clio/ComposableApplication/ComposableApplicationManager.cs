@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.IO;
 using System.IO.Abstractions;
 using System.Json;
@@ -99,10 +100,17 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		bool isArchive = _fileSystem.File.Exists(appPath);
 		string unzipAppPath = string.Empty;
 		if (isArchive) {
-			unzipAppPath = _directoriesProvider.CreateTempDirectory();
-			_archiver.ExtractPackages(appPath, true, true, true, false, unzipAppPath);
-			ChangeIcon(unzipAppPath, iconPath, appName);
-			_archiver.ZipPackages(unzipAppPath, appPath, true);
+			_directoriesProvider.CreateTempDirectory(unzipAppPath => {
+				_archiver.ExtractPackages(appPath, true, true, true, false, unzipAppPath);
+				ChangeIcon(unzipAppPath, iconPath, appName);
+				string[] packageFolders = _fileSystem.Directory.GetDirectories(unzipAppPath);
+				_directoriesProvider.CreateTempDirectory(gzPkgFolder => {
+					foreach (var packagePath in packageFolders) {
+						_archiver.Pack(packagePath, Path.Combine(gzPkgFolder, $"{Path.GetFileName(packagePath)}.gz"), false);
+					}
+					_archiver.ZipPackages(gzPkgFolder, appPath, true);
+				});
+			});
 			return;
 		}
 		ChangeIcon(appPath, iconPath, appName);

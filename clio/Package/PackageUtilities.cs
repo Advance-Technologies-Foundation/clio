@@ -39,7 +39,7 @@ namespace Clio.Common
 
 		private void CopyPackageElement(string sourcePath, string destinationPath, string name) {
 			string fromAssembliesPath = Path.Combine(sourcePath, name);
-			if (Directory.Exists(fromAssembliesPath)) {
+			if (_fileSystem.ExistsDirectory(fromAssembliesPath)) {
 				string toAssembliesPath = Path.Combine(destinationPath, name);
 				_fileSystem.CopyDirectory(fromAssembliesPath, toAssembliesPath, true);
 			}
@@ -57,13 +57,13 @@ namespace Clio.Common
 			foreach (string packageElementName in PackageElementNames) {
 				CopyPackageElement(packageContentPath, destinationPath, packageElementName);
 			}
-			File.Copy(Path.Combine(packageContentPath, "descriptor.json"), 
-				Path.Combine(destinationPath, "descriptor.json"));
+			_fileSystem.CopyFile(Path.Combine(packageContentPath, "descriptor.json"), 
+				Path.Combine(destinationPath, "descriptor.json"), overwrite);
 		}
 
-		public static string GetPackageContentFolderPath(string repositoryPackageFolderPath) {
+		public string GetPackageContentFolderPath(string repositoryPackageFolderPath) {
 			string repositoryPackageFolderBranchesPath = Path.Combine(repositoryPackageFolderPath, "branches");
-			if (Directory.Exists(repositoryPackageFolderBranchesPath)) {
+			if (_fileSystem.ExistsDirectory(repositoryPackageFolderBranchesPath)) {
 				DirectoryInfo[] directories = new DirectoryInfo(repositoryPackageFolderBranchesPath).GetDirectories();
 				if (directories.Count() == 1) {
 					return directories[0].FullName;
@@ -75,7 +75,7 @@ namespace Clio.Common
 			return repositoryPackageFolderPath;
 		}
 
-		public static string GetPackageContentFolderPath(string repositoryFolderPath, string packageName) {
+		public string GetPackageContentFolderPath(string repositoryFolderPath, string packageName) {
 			string fullPackagePath = Path.Combine(repositoryFolderPath, packageName);
 			return GetPackageContentFolderPath(fullPackagePath);
 		}

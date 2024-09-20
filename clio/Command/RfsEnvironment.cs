@@ -37,7 +37,8 @@ namespace Clio.Command
 					Console.WriteLine($"Package '{environmentPackageName}' found in repository.");
 					environmentPackageFolder.Delete(true);
 					string repositoryPackageFolderPath = repositoryPackageFolder.FullName;
-					string packageContentFolderPath = PackageUtilities.GetPackageContentFolderPath(repositoryPackageFolderPath);
+					var packageUtilities = new PackageUtilities(new FileSystem(new System.IO.Abstractions.FileSystem())); 
+					string packageContentFolderPath = packageUtilities.GetPackageContentFolderPath(repositoryPackageFolderPath);
 					FileSystem.CreateLink(packageContentFolderPath, repositoryPackageFolderPath);
 				} else {
 					Console.WriteLine($"Package '{environmentPackageName}' not found in repository.");
@@ -78,8 +79,9 @@ namespace Clio.Command
 					environmentPackageDirectoryPath = Path.Combine(environmentPackagePath, packageName);
 				}
 				var repositoryPackageFolder = repositoryPackageFolders.FirstOrDefault(s => s.Name == packageName);
+				var packageUtilities = new PackageUtilities(new FileSystem(new System.IO.Abstractions.FileSystem()));
 				string repositoryPackageContentFolderPath =
-					PackageUtilities.GetPackageContentFolderPath(repositoryPackageFolder.FullName);
+					packageUtilities.GetPackageContentFolderPath(repositoryPackageFolder.FullName);
 				FileSystem.CreateLink(environmentPackageDirectoryPath, repositoryPackageContentFolderPath);
 			}
 
