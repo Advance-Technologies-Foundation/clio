@@ -98,9 +98,7 @@
     <Content Include="Examples\diff-manifest\packages-diff.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-  </ItemGroup>
 
-  <ItemGroup>
     <Content Include="Examples\deployments-manifest\creatio-config-empty-package.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -153,9 +151,7 @@
     <Content Include="Examples\diff-manifest\packages-diff.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-  </ItemGroup>
 
-  <ItemGroup>
     <None Include="samplefiles\AssemblyInfo.cs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -168,8 +164,6 @@
     <None Update="YAML\Script\reg_web_app_example.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    
-    
     
     <None Update="YAML\Script\three_sections.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -210,15 +204,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2" />
-    <PackageReference Include="FluentAssertions" Version="6.12.0" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
-    <PackageReference Include="Npgsql" Version="8.0.3" />
+    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.6" />
+    <PackageReference Include="FluentAssertions" Version="6.12.1" />
     <PackageReference Include="NSubstitute" Version="5.1.0" />
-    <PackageReference Include="nunit" Version="4.1.0" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
-    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.0.22" />
-	<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="nunit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.0.29" />
+	<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     
   </ItemGroup>
 	<PropertyGroup>
