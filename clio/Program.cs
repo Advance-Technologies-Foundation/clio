@@ -368,7 +368,7 @@ class Program
 			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(clearArgs);
 		}  catch (Exception e) {
-			ConsoleLogger.Instance.WriteError(e.GetReadableMessage(IsDebugMode));
+			ConsoleLogger.Instance.WriteError(e.GetReadableMessageException(IsDebugMode));
 			return 1;
 		} finally {
 			ConsoleLogger.Instance.Stop();
