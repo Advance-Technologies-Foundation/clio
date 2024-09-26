@@ -27,6 +27,7 @@ using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
+using Autofac.Builder;
 
 namespace Clio
 {
@@ -63,15 +64,12 @@ namespace Clio
 				
 			}
 
-			try {
+			containerBuilder.Register<Kubernetes>( provider => {
 				KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
-				IKubernetes k8Client = new Kubernetes(config);
-				containerBuilder.RegisterInstance(k8Client).As<IKubernetes>();
-				containerBuilder.RegisterType<k8Commands>();
-				containerBuilder.RegisterType<InstallerCommand>();
-			} catch {
-
-			}
+				return new Kubernetes(config);
+			}).As<IKubernetes>();
+			containerBuilder.RegisterType<k8Commands>();
+			containerBuilder.RegisterType<InstallerCommand>();
 			
 			if(_fileSystem is not null) {
 				containerBuilder.RegisterInstance(_fileSystem).As<IFileSystem>();
