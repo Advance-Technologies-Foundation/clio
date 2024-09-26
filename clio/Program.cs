@@ -385,9 +385,8 @@ class Program
 	internal static int ExecuteCommands(string[] args) {
 		var creatioEnv = new CreatioEnvironment();
 		string helpFolderName = $"help";
-		string helpDirectoryPath = helpFolderName;
 		var envPath = creatioEnv.GetAssemblyFolderPath();
-		helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
+		string helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 		Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
