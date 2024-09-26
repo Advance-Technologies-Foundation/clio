@@ -22,6 +22,10 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		
 	}
 
+	public override void Setup() {
+		base.Setup();
+	}
+
 	[Test(Description = "Should return without waiting for user input")]
 	public void Execute_ReturnsWithoutWaitingForInput_WhenSilent(){
 		//Arrange
@@ -103,6 +107,13 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		
 		
 		_creatioInstallerServiceMock.Received(1).StartWebBrowser(options);
+	}
+
+	[Test(Description = "Log eroor meassge if regester installer command generate exception")]
+	public void LogError_IfRegisterInstallerCommand_ThrowException() {
+		//Arrange
+		//check console output has message
+
 	}
 
 }
