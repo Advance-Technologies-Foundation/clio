@@ -109,11 +109,4 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		_creatioInstallerServiceMock.Received(1).StartWebBrowser(options);
 	}
 
-	[Test(Description = "Log eroor meassge if regester installer command generate exception")]
-	public void LogError_IfRegisterInstallerCommand_ThrowException() {
-		//Arrange
-		//check console output has message
-
-	}
-
 }
