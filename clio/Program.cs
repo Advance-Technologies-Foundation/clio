@@ -367,15 +367,8 @@ class Program
 			OriginalArgs = args;
 			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(clearArgs);
-		} catch (FileNotFoundException e) {
-			ConsoleLogger.Instance.WriteError(e.Message + e.FileName);
-			return 1;
-		} catch (Exception e) {
-			if (IsDebugMode) {
-				ConsoleLogger.Instance.WriteError(e.ToString());
-			} else {
-				ConsoleLogger.Instance.WriteError(e.Message);
-			}
+		}  catch (Exception e) {
+			ConsoleLogger.Instance.WriteError(e.GetReadableMessage(IsDebugMode));
 			return 1;
 		} finally {
 			ConsoleLogger.Instance.Stop();
