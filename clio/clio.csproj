@@ -2,14 +2,14 @@
 
 	<PropertyGroup>
 	  <OutputType>Exe</OutputType>
-	  <TargetFramework>net6.0</TargetFramework>
+	  <TargetFramework>net8.0</TargetFramework>
 	  <PackAsTool>true</PackAsTool>
 	  <PackageId>clio</PackageId>
 	  <Company>creatio</Company>
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>6.1.0.39</AssemblyVersion>
+	  <AssemblyVersion>8.0.1.1</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
@@ -25,7 +25,8 @@
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <LangVersion>11</LangVersion>
+	  <LangVersion>Latest</LangVersion>
+    <UseAppHost>false</UseAppHost>
       <NoWarn>NU5119;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
 
