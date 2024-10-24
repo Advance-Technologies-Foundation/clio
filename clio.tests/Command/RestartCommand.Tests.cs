@@ -29,6 +29,7 @@
 			applicationClient.Received(1).ExecutePostRequest(
 				environmentSettings.Uri + "/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain",
 				"{}", 100_000,3,1);
+
 		}
 
 		[Test, Category("Unit")]

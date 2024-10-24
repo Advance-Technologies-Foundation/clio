@@ -362,8 +362,9 @@ class Program
 
 	private static int Main(string[] args) {
 		try {
-			var clearArgs = args.Where(x => x.ToLower() != "--debug").ToArray();
+			var clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
+			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			OriginalArgs = args;
 			ConsoleLogger.Instance.Start();
 			return ExecuteCommands(clearArgs);
@@ -733,6 +734,7 @@ class Program
 	};
 
 	public static bool IsDebugMode { get; private set; }
+	public static bool AddTimeStampToOutput { get; internal set; }
 
 	private static string[] OriginalArgs;
 }

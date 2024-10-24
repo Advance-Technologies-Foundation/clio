@@ -34,6 +34,12 @@ public class ConsoleLogger : ILogger
 
 	#region Properties: Private
 
+	private bool AddTimeStampToOutput {
+		get {
+			return Program.AddTimeStampToOutput;
+		}
+	}
+
 	private CancellationToken CancellationToken { get; set; }
 
 	private CancellationTokenSource CancellationTokenSource { get; } = new();
@@ -76,19 +82,26 @@ public class ConsoleLogger : ILogger
 	}
 
 	private void PrintTableInternal(object table){
+		if (AddTimeStampToOutput) {
+			WriteLineInternal(GetTimeStamp());
+		}
 		WriteLineInternal(table.ToString());
 	}
 
 	private void WriteErrorInternal(string value){
 		Console.ForegroundColor = ConsoleColor.Red;
-		Console.Write("[ERR] - ");
+		Console.Write($"{GetTimeStamp()}[ERR] - ");
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
 	}
 
+	private string GetTimeStamp() {
+		return AddTimeStampToOutput ? DateTime.Now.ToString("HH:mm:ss") + " " : string.Empty;
+	}
+
 	private void WriteInfoInternal(string value){
 		Console.ForegroundColor = ConsoleColor.Green;
-		Console.Write("[INF] - ");
+		Console.Write($"{GetTimeStamp()}[INF] - ");
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
 	}
@@ -99,7 +112,7 @@ public class ConsoleLogger : ILogger
 
 	private void WriteWarningInternal(string value){
 		Console.ForegroundColor = ConsoleColor.DarkYellow;
-		Console.Write("[WAR] - ");
+		Console.Write($"{GetTimeStamp()}[WAR] - ");
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
 	}
