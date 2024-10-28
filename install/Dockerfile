@@ -7,13 +7,10 @@ WORKDIR /app
 COPY clio clio
 COPY clio.sln clio.sln
 COPY README.md README.md
-
 # Change the working directory to /app/clio
 WORKDIR /app/clio
 
-# Publish the project, changing the output DLL name to avoid conflicts
-RUN dotnet publish -c Release -o /app/published --framework net8.0 /p:AssemblyName=clio-app
-
+RUN dotnet publish ./clio.csproj -c Release -o /app/published --framework net8.0 /p:AssemblyName=clio-app
 # Final stage: Use the build stage as the base for the final image
 FROM build AS final
 
