@@ -2,7 +2,7 @@
     <PropertyGroup>
         <AppendTargetFrameworkToOutputPath>False</AppendTargetFrameworkToOutputPath>
         <CoreTargetFramework Condition="'$(CoreTargetFramework)' == ''">net472</CoreTargetFramework>
-        <TargetFrameworks>net472</TargetFrameworks>
+        <TargetFramework>$(CoreTargetFramework)</TargetFramework>
     </PropertyGroup>
     <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
         <DebugSymbols>true</DebugSymbols>
