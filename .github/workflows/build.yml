@@ -21,9 +21,10 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-            $ErrorActionPreference = 'Stop'
+            $ErrorActionPreference = 'Stop';
+            dotnet build-server shutdown;
             dotnet test .\clio.tests\clio.tests.csproj --settings .\clio.tests\coverage.runsettings;
-            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.opencover.xml
+            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.opencover.xml;
             Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
           
       - name: Publish UnitTest Results
