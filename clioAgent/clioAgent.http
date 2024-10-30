@@ -1,4 +1,4 @@
-@clioAgent_HostAddress = http://localhost:30400
+@clioAgent_HostAddress = http://localhost:6001
 
 POST {{clioAgent_HostAddress}}/executeAsync/createSite
 Accept: application/json
@@ -22,7 +22,7 @@ X-API-KEY: my-secure-api-key-admin
 POST {{clioAgent_HostAddress}}/executeAsync/restoredb
 Accept: application/json
 Content-Type: application/json
-
+X-API-KEY: my-secure-api-key-admin
 
 {
   "Name": "semse_net472",
@@ -55,15 +55,6 @@ X-API-KEY: my-secure-api-key-readonly
 GET {{clioAgent_HostAddress}}/Job/Status/Steps/{{jobId}}
 Accept: application/json
 X-API-KEY: my-secure-api-key-readonly
-
-
-### Get Job Step Status by Id
-POST {{clioAgent_HostAddress}}/Test/ObjectValidation
-Content-Type: application/json
-
-{}
-
-
 
 
 ### Get Job Step Status by Id

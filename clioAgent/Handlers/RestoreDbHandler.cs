@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Compression;
+using System.Text;
 using clioAgent.DbOperations;
 using ErrorOr;
 
@@ -92,7 +93,13 @@ public sealed class RestoreDbHandler(Settings settings, IFileSystem fileSystem) 
 		}
 
 		//4. RestoreDb
-		ErrorOr<(IList<string> output, IList<string> errors)> restoreDbResult = ExecuteWithTrace(() =>LaunchPgRestoreProcess(name, unzipResult.Value), null, nameof(LaunchPgRestoreProcess));
+		ErrorOr<(List<string> output, List<string> errors)> restoreDbResult = ExecuteWithTrace(() =>LaunchPgRestoreProcess(name, unzipResult.Value), null, nameof(LaunchPgRestoreProcess));
+		
+		using StreamWriter writer = new (@"C:\restoredb_log.txt");
+		StringBuilder sb = new ();
+		restoreDbResult.Value.errors.ForEach(e => sb.AppendLine(e));
+		writer.Write(sb.ToString());
+		
 		return restoreDbResult.IsError ? restoreDbResult.Errors : Result.Success;
 	}
 
@@ -141,7 +148,7 @@ public sealed class RestoreDbHandler(Settings settings, IFileSystem fileSystem) 
 	/// <remarks>
 	/// If the restore process fails, an error is returned with the exception details.
 	/// </remarks>
-	private ErrorOr<(IList<string> output, IList<string> errors)> LaunchPgRestoreProcess(string dbName, IDirectoryInfo unzippedArchiveFolder){
+	private ErrorOr<(List<string> output, List<string> errors)> LaunchPgRestoreProcess(string dbName, IDirectoryInfo unzippedArchiveFolder){
 		Db? dbSection = settings.Db?.FirstOrDefault(db => db.Type == "PGSQL");
 		if (dbSection is null) {
 			return Error.Failure("RestoreDb.DbSettingsNotFound", "Db settings not found");
