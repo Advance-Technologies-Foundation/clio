@@ -204,9 +204,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.6" />
+    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.7" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.msbuild" Version="6.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
-    <PackageReference Include="NSubstitute" Version="5.1.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="nunit" Version="4.2.2" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.0.29" />
@@ -219,16 +227,10 @@
 		<SonarQubeTestProject>true</SonarQubeTestProject>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="coverlet.msbuild" Version="6.0.2">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
+		
 	</ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\clio\clio.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="BinNet472ReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
