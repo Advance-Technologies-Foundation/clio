@@ -697,6 +697,11 @@ or update existing settings
 clio reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
 ```
 
+## Set the active environment
+```
+clio reg-web-app -a <ENVIRONMENT_NAME>
+```
+
 ## Delete the existing environment
 
 ```bash
