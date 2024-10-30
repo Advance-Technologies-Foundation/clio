@@ -24,7 +24,7 @@ jobs:
             $ErrorActionPreference = 'Stop';
             dotnet build-server shutdown;
             dotnet test .\clio.tests\clio.tests.csproj --collect:"XPlat Code Coverage";
-            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.opencover.xml;
+            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.cobertura.xml;
             Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
           
       - name: Publish UnitTest Results
