@@ -22,11 +22,14 @@ jobs:
         shell: powershell
         run: |
             $ErrorActionPreference = 'Stop'
-            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
-            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
-            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
-
-
+#            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+#            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
+#            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
+               
+            dotnet test .\clio.tests\clio.tests.csproj --settings .\clio.tests\coverage.runsettings;
+            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.opencover.xml
+            Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
+          
       - name: Publish UnitTest Results
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
