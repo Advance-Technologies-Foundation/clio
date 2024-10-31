@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Clio.Common;
 using CommandLine;
 
@@ -15,7 +16,8 @@ namespace Clio.Command
 		public bool All {
 			get; set;
 		}
-
+		protected override int DefaultTimeout => Timeout.Infinite;
+		
 	}
 
 	#endregion

@@ -20,7 +20,7 @@
 				Uri = "http://test.domain.com"
 			};
 			RestartCommand restartCommand = new RestartCommand(applicationClient, environmentSettings);
-			var options = Substitute.For<RestartOptions>();
+			RestartOptions options = new();
 
 			//Act
 			restartCommand.Execute(options);
@@ -44,7 +44,7 @@
 				Uri = "http://test.domain.com"
 			};
 			RestartCommand restartCommand = new RestartCommand(applicationClient, environmentSettings);
-			var options = Substitute.For<RestartOptions>();
+			RestartOptions options = new();
 
 			//Act
 			restartCommand.Execute(options);
