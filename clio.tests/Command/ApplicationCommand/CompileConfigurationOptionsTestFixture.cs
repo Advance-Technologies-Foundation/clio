@@ -37,4 +37,13 @@ public class CompileConfigurationOptionsTestFixture {
 		options.TimeOut.Should().Be(100_000);
 	}
 
+	
+	[Test]
+	public void RestartOPtions(){
+		//Arrange
+		RestartOptions options = new();
+
+		//Assert
+		options.TimeOut.Should().Be(100_000);
+	}
 }
