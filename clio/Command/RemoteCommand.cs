@@ -4,12 +4,23 @@ using System.Net.Http;
 using System.Reflection;
 using Clio.Common;
 using CommandLine;
+using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace Clio.Command;
 
 public class RemoteCommandOptions : EnvironmentOptions
 {
-	public int TimeOut { get; internal set; } = 100_000;
+
+	private int? _timeOut;
+	protected virtual int DefaultTimeout { get; set; } = 100_000;
+	
+
+	[Option("timeout", Required = false, HelpText = "Request timeout in milliseconds", Default = 100_000)]
+	public int TimeOut {
+		get => _timeOut ?? DefaultTimeout;
+		internal set => _timeOut = value;
+	}
+
 	public int RetryCount { get; internal set; } = 3;
 	public int RetryDelay { get; internal set; } = 1;
 
