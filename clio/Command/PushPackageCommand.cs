@@ -40,6 +40,9 @@
 		[Option("id", Required = false, HelpText = "Marketplace application id")]
 		public IEnumerable<int> MarketplaceIds { get; set; }
 
+		[Option("force-compilation", Required = false, HelpText = "Runs compilation after install package")]
+		public bool ForceCompilation { get; set; }
+
 		#endregion
 
 	}
@@ -54,6 +57,7 @@
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IPackageInstaller _packageInstaller;
 		private readonly IMarketplace _marketplace;
+		private readonly ICompileConfigurationCommand _compileConfigurationCommand;
 		private readonly PackageInstallOptions _packageInstallOptionsDefault = new PackageInstallOptions();
 		#endregion
 
@@ -61,13 +65,15 @@
 
 		public PushPackageCommand() { } // for tests
 
-		public PushPackageCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller, IMarketplace marketplace)
-		{
+		public PushPackageCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
+				IMarketplace marketplace, ICompileConfigurationCommand compileConfigurationCommand) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
+			compileConfigurationCommand.CheckArgumentNull(nameof(compileConfigurationCommand));
 			_environmentSettings = environmentSettings;
 			_packageInstaller = packageInstaller;
 			_marketplace = marketplace;
+			_compileConfigurationCommand = compileConfigurationCommand;
 		}
 
 		#endregion
@@ -92,6 +98,15 @@
 
 		#region Methods: Public
 
+		/// <summary>
+		/// Executes the push package command with the specified options.
+		/// </summary>
+		/// <param name="options">The options for the push package command.</param>
+		/// <returns>Returns 0 if the command executed successfully, otherwise returns 1.</returns>
+		/// <remarks>
+		/// This method installs a package on a web application. If `MarketplaceIds` are provided, it installs the package
+		/// for each ID. If `ForceCompilation` is true and the installation is successful, it compiles the configuration.
+		/// </remarks>
 		public override int Execute(PushPkgOptions options)
 		{
 			PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
@@ -119,6 +134,10 @@
 					success = _packageInstaller.Install(options.Name, _environmentSettings,
 						packageInstallOptions, options.ReportPath);
 				}
+				if (options.ForceCompilation && success) {
+					CompileConfigurationOptions compileOptions = CreateFromPushPkgOptions(options);
+					success &= _compileConfigurationCommand.Execute(compileOptions) == 0;
+				}
 				Console.WriteLine(success ? "Done" : "Error");
 				return success ? 0 : 1;
 			}
@@ -128,6 +147,17 @@
 				return 1;
 			}
 		}
+
+		private CompileConfigurationOptions CreateFromPushPkgOptions(EnvironmentOptions options) {
+			return new CompileConfigurationOptions {
+				Environment = options.Environment,
+				Login = options.Login,
+				Password = options.Password,
+				Uri = options.Uri,
+				All = true,
+			};
+		}
+
 		#endregion
 	}
 
@@ -142,8 +172,9 @@
 
 		#region Constructors: Public
 		public InstallGatePkgCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
-			IMarketplace marketplace, IApplication applicatom, ILogger logger)
-			: base(environmentSettings, packageInstaller, marketplace) {
+				IMarketplace marketplace, ICompileConfigurationCommand compileConfigurationCommand, IApplication applicatom,
+				ILogger logger)
+			: base(environmentSettings, packageInstaller, marketplace, compileConfigurationCommand) {
 			_application = applicatom;
 			_logger = logger;
 		}

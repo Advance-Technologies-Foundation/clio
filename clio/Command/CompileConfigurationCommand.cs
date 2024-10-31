@@ -22,9 +22,18 @@ namespace Clio.Command
 
 	#endregion
 
+	#region Interface: CompileConfigurationCommand
+
+	public interface ICompileConfigurationCommand {
+		int Execute(CompileConfigurationOptions options);
+
+	}
+
+	#endregion
+
 	#region Class: CompileConfigurationCommand
 	
-	public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions> {
+	public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions>, ICompileConfigurationCommand {
 		
 		#region Constants: Private
 
