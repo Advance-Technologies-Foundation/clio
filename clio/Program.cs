@@ -625,8 +625,9 @@ class Program
 		typeof(UninstallCreatioCommandOptions),
 		typeof(AddSchemaOptions),
 		typeof(SetApplicationIconOption),
+		typeof(LastCompilationLogOptions)
 
-	};
+    };
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
@@ -729,7 +730,8 @@ class Program
 			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 			AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
-			_ => 1,
+            LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
+            _ => 1,
 		};
 	};
 
