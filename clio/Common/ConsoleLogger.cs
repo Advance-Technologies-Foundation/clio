@@ -141,10 +141,17 @@ public class ConsoleLogger : ILogger
 	/// and writes them to the console.
 	/// </summary>
 	public void Start(){
-		Thread printThread = new(PrintInternal);
-		printThread.Start();
+		if (_isStarted) {
+			return;
+		}
+		_printThread = new(PrintInternal);
+		_printThread.Start();
+		_isStarted = true;
 	}
 
+	private Thread _printThread;
+	private bool _isStarted = false; 
+	
 	/// <summary>
 	/// Stops the logging process.
 	/// This method signals the cancellation token to stop the logging thread.
@@ -152,6 +159,8 @@ public class ConsoleLogger : ILogger
 	public void Stop(){
 		CancellationTokenSource.Cancel();
 		CancellationToken = CancellationTokenSource.Token;
+		_isStarted = false;
+		_printThread.Join();
 	}
 
 	public void Write(string value){
