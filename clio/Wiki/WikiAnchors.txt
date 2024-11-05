@@ -19,3 +19,4 @@ show-diff:show-difference-in-settings-for-two-creatio-intances
 mock-dat:mock-data-for-unit-tests
 deploy-creatio:run-creatio-installation
 set-app-icon:set-application-icon
+last-compilation-log:get-last-compilation-log

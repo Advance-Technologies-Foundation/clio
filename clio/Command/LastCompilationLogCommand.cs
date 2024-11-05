@@ -4,16 +4,13 @@ using System;
 
 namespace Clio.Command
 {
-    [Verb("last-compilation-log", Aliases = new[] { "lcl" }, HelpText = "Get last compilation log")]
-    public class LastCompilationLogOptions : RemoteCommandOptions
-    {
-    }
+    [Verb("last-compilation-log", Aliases = ["lcl"], HelpText = "Get last compilation log")]
+    public class LastCompilationLogOptions : RemoteCommandOptions { }
 
     public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions>
     {
         public LastCompilationLogCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-            : base(applicationClient, settings)
-        {
+            : base(applicationClient, settings){
             EnvironmentSettings = settings;
         }
 
@@ -23,13 +20,12 @@ namespace Clio.Command
             {
                 ServicePath = "/api/ConfigurationStatus/GetLastCompilationResult";
                 string result = ApplicationClient.ExecuteGetRequest(ServiceUri);
-                Console.OutputEncoding = System.Text.Encoding.UTF8;
-                Console.WriteLine(result);
+                Logger.WriteLine(result);
                 return 0;
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.Message);
+                Logger.WriteError(e.Message);
                 return 1;
             }
         }
