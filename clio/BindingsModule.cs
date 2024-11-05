@@ -182,7 +182,8 @@ namespace Clio
 			containerBuilder.RegisterType<MockDataCommand>();
 			containerBuilder.RegisterType<ConsoleProgressbar>();
 			containerBuilder.RegisterType<ApplicationLogProvider>();
-			var configuration = MediatRConfigurationBuilder
+            containerBuilder.RegisterType<LastCompilationLogCommand>();
+            var configuration = MediatRConfigurationBuilder
 				.Create(typeof(BindingsModule).Assembly)
 				.WithAllOpenGenericHandlerTypesRegistered()
 				.Build();

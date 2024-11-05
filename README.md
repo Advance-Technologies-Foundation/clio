@@ -610,6 +610,13 @@ for compile all
 ```bash
 clio compile-configuration --all
 ```
+
+Get last compilation log
+
+```bash
+clio last-compilation-log -e <ENVIRONMENT_NAME>
+```
+
 ## System settings
 
 To set system settings value
