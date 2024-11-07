@@ -611,10 +611,17 @@ for compile all
 clio compile-configuration --all
 ```
 
-Get last compilation log
+## Get last compilation log
+
 
 ```bash
+# Display last compilation log, in format similar to IDE
 clio last-compilation-log -e <ENVIRONMENT_NAME>
+```
+
+```bash
+# Display raw output (json)
+clio last-compilation-log -e <ENVIRONMENT_NAME> --raw
 ```
 
 ## System settings

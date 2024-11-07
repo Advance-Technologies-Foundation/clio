@@ -12,7 +12,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-public class LastCompilationLogOptionsTestFixture : BaseCommandTests<LastCompilationLogOptions> {
+public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompilationLogOptions> {
 
 	#region Fields: Private
 
@@ -77,13 +77,15 @@ public class LastCompilationLogOptionsTestFixture : BaseCommandTests<LastCompila
 		_textWriter.ToString().Should().Be($"[ERR] - {expectedErrorMessage}{Environment.NewLine}");
 	}
 
-	[Test]
-	public void  Execute_ShouldReturnZero_WhenServiceReturnsResult(){
+	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
+	[TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json","Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
+	public void  Execute_ShouldReturnZero_WhenServiceReturnsResult(string input, string expectedOutput){
 		//Arrange
-		const string expectedResult = "result";
+		string desiredOutputContent = System.IO.File.ReadAllText(expectedOutput);
+		string inputContent = System.IO.File.ReadAllText(input);
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
-			.Returns(expectedResult);
-
+			.Returns(inputContent);
+		
 		LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
 
 		//Act
@@ -93,7 +95,27 @@ public class LastCompilationLogOptionsTestFixture : BaseCommandTests<LastCompila
 		//Assert
 		result.Should().Be(0);
 		Thread.Sleep(500);
-		_textWriter.ToString().Should().Be(expectedResult + Environment.NewLine);
+		_textWriter.ToString().TrimEnd().Should().Be(desiredOutputContent);
+	}
+	
+	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
+	[TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json","Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
+	public void  Execute_ShouldReturnRawJson_WhenRawOptionUsed(string input, string expectedOutput){
+		//Arrange
+		string inputContent = File.ReadAllText(input);
+		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
+			.Returns(inputContent);
+		
+		LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+
+		//Act
+		int result = command.Execute(new LastCompilationLogOptions{IsRaw = true});
+		
+		
+		//Assert
+		result.Should().Be(0);
+		Thread.Sleep(500);
+		_textWriter.ToString().TrimEnd().Should().Be(inputContent);
 	}
 	
 

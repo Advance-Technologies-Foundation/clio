@@ -23,6 +23,6 @@ namespace Clio.Tests.Command
 
 		[JsonProperty("value")]
 		[JsonPropertyName("value")]
-		public List<Dictionary<string, object>> Records { get; internal set; }
+		public List<Dictionary<string, object>> Records { get; set; }
 	}
 }
