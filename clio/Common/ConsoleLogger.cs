@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using ConsoleTables;
@@ -16,7 +17,7 @@ public class ConsoleLogger : ILogger
 {
 
 	#region Fields: Private
-
+	private StreamWriter _logFileWriter;
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
@@ -73,11 +74,10 @@ public class ConsoleLogger : ILogger
 	
 	
 	private void PrintInternal(){
-		while (CancellationToken.IsCancellationRequested == false) {
+		while (!CancellationToken.IsCancellationRequested) {
 			FlushQueue();
 			Thread.Sleep(100);
 		}
-		
 		FlushQueue();
 	}
 
@@ -90,9 +90,11 @@ public class ConsoleLogger : ILogger
 
 	private void WriteErrorInternal(string value){
 		Console.ForegroundColor = ConsoleColor.Red;
-		Console.Write($"{GetTimeStamp()}[ERR] - ");
+		string linePrefix = GetLinePrefix("[ERR]");
+		Console.Write(linePrefix);
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
+		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 	}
 
 	private string GetTimeStamp() {
@@ -100,22 +102,36 @@ public class ConsoleLogger : ILogger
 	}
 
 	private void WriteInfoInternal(string value){
+		string linePrefix = GetLinePrefix("[INF]");
 		Console.ForegroundColor = ConsoleColor.Green;
-		Console.Write($"{GetTimeStamp()}[INF] - ");
+		Console.Write(linePrefix);
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
+		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 	}
 
 	private void WriteLineInternal(string value){
 		Console.WriteLine(value);
+		string linePrefix = GetLinePrefix();
+		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 	}
 
 	private void WriteWarningInternal(string value){
 		Console.ForegroundColor = ConsoleColor.DarkYellow;
-		Console.Write($"{GetTimeStamp()}[WAR] - ");
+		string linePrefix = GetLinePrefix("[WAR]");
+		Console.Write(linePrefix);
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
+		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 	}
+	
+	private string GetLinePrefix(string severity = ""){
+		string prefix = $"{GetTimeStamp()}{severity}";
+		return string.IsNullOrWhiteSpace(prefix) 
+			? string.Empty 
+			: $"{prefix} - ";
+	}
+	
 	
 	#endregion
 
@@ -129,7 +145,8 @@ public class ConsoleLogger : ILogger
 				WriteError(msg);
 			});
 	}
-	
+
+	private string LogFileName { get; set; }
 	
 	public void PrintTable(ConsoleTable table){
 		_logQueue.Enqueue(new TableMessage(table));
@@ -140,13 +157,19 @@ public class ConsoleLogger : ILogger
 	/// This method initiates a new thread that continuously dequeues log messages from the queue
 	/// and writes them to the console.
 	/// </summary>
-	public void Start(){
+	public void Start(string logFileName = ""){
 		if (_isStarted) {
 			return;
+		}
+		if (!string.IsNullOrEmpty(logFileName)) {
+			_logFileWriter = new StreamWriter(logFileName, append: true) {
+				AutoFlush = true
+			};
 		}
 		_printThread = new(PrintInternal);
 		_printThread.Start();
 		_isStarted = true;
+		LogFileName = logFileName;
 	}
 
 	private Thread _printThread;
@@ -161,6 +184,7 @@ public class ConsoleLogger : ILogger
 		CancellationToken = CancellationTokenSource.Token;
 		_isStarted = false;
 		_printThread.Join();
+		_logFileWriter?.Close();
 	}
 
 	public void Write(string value){
@@ -168,7 +192,6 @@ public class ConsoleLogger : ILogger
 			return;
 		}
 		Console.Write(value);
-		//_logQueue.Enqueue(new UndecoratedMessage(value));
 	}
 
 	/// <summary>

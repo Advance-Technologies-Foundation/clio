@@ -359,14 +359,23 @@ class Program
 
 		}
 	}
-
+	//clio com log filepathValue
 	private static int Main(string[] args) {
 		try {
+			
+			string logFilePath = string.Empty;
+			var isLog = args.Contains("--log");
+			if (isLog) {
+				var logIndex = Array.IndexOf(args, "--log");
+				logFilePath = args[logIndex + 1];
+				args = args.Where(x => x != "--log" && x != logFilePath).ToArray();
+			}
+			
 			var clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			OriginalArgs = args;
-			ConsoleLogger.Instance.Start();
+			ConsoleLogger.Instance.Start(logFilePath);
 			return ExecuteCommands(clearArgs);
 		}  catch (Exception e) {
 			ConsoleLogger.Instance.WriteError(e.GetReadableMessageException(IsDebugMode));

@@ -6,12 +6,11 @@ namespace Clio.Common
 {
 	public interface ILogger
 	{
-		
 		/// <summary>
-		/// Starts the logging thread.
+		/// Starts the logging process.
 		/// </summary>
-		/// <remarks>See <see cref="ConsoleLogger"/>> for details</remarks>
-		public void Start();
+		/// <param name="logFilePath">The path to the log file. If not provided, a default path is used.</param>
+		public void Start(string logFilePath = "");	
 		
 		/// <summary>
 		/// Stops the logging thread.

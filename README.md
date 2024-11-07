@@ -613,6 +613,7 @@ clio compile-configuration --all
 
 ## Get last compilation log
 
+Requires CanManageSolution operation permission
 
 ```bash
 # Display last compilation log, in format similar to IDE
@@ -622,6 +623,12 @@ clio last-compilation-log -e <ENVIRONMENT_NAME>
 ```bash
 # Display raw output (json)
 clio last-compilation-log -e <ENVIRONMENT_NAME> --raw
+```
+
+```bash
+# Save creatio compilation log to file, 
+# --log option can be used jointly with --raw
+clio last-compilation-log -e <ENVIRONMENT_NAME> --log "C:\log.txt"
 ```
 
 ## System settings

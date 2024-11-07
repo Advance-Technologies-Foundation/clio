@@ -86,5 +86,8 @@ namespace Clio.Tests.Common
 			var consoleText = stringBuilder.ToString();
 			consoleText.Should().StartWith("[");
 		}
+		
+		
+		
 	}
 }

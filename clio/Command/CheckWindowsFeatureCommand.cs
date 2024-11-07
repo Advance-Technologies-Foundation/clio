@@ -17,28 +17,30 @@ namespace Clio.Command
 	public class CheckWindowsFeaturesCommand : Command<CheckWindowsFeaturesOptions>
 	{
 		private IWindowsFeatureManager _windowsFeatureManager;
+		private readonly ILogger _logger;
 
-		public CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager) {
+		public CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger){
 			_windowsFeatureManager = windowsFeatureManager;
+			_logger = logger;
 		}
 
 		public override int Execute(CheckWindowsFeaturesOptions options) {
 			var missedComponents = _windowsFeatureManager.GetMissedComponents();
 			var requirmentComponentStates = _windowsFeatureManager.GerRequiredComponent();
-			Console.WriteLine("For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
-			Console.WriteLine($"{Environment.NewLine}Check started:");
+			_logger.WriteLine("For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
+			_logger.WriteInfo($"{Environment.NewLine}Check started:");
 			foreach (var item in requirmentComponentStates) {
-				Console.WriteLine($"{item}");
+				_logger.WriteInfo($"{item}");
 			}
-			Console.WriteLine();
+			_logger.WriteLine("");
 			if (missedComponents.Count > 0) {
-				Console.WriteLine("Windows has missed components:");
+				_logger.WriteInfo("Windows has missed components:");
 				foreach (var item in missedComponents) {
-					Console.WriteLine($"{item}");
+					_logger.WriteInfo($"{item}");
 				}
 				return 1;
 			} else {
-				Console.WriteLine("All requirment components installed");
+				_logger.WriteError("All requirment components installed");
 				return 0;
 			}
 		}
