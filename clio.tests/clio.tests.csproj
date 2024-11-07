@@ -89,6 +89,18 @@
     <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\descriptor.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Examples\CompilationLog\Pair1\pair1-creatio-compilation-log.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Examples\CompilationLog\Pair1\pair1-desired-output.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Examples\CompilationLog\Pair2\pair2-creatio-compilation-log.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Examples\CompilationLog\Pair2\pair2-desired-output.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

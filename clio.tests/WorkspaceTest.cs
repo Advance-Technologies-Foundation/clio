@@ -2,14 +2,9 @@
 using Clio.Workspaces;
 using NUnit.Framework;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
+using System.Text.Json;
 using FluentAssertions;
-using Terrasoft.Common.Json;
 
 namespace Clio.Tests;
 
@@ -31,7 +26,7 @@ internal class WorkspaceTest
 				  ""Safe"": false,
 				  ""DeveloperModeEnabled"": false
 			}";
-		return Json.Deserialize<EnvironmentSettings>(envSettingsJson);
+		return JsonSerializer.Deserialize<EnvironmentSettings>(envSettingsJson);
 	}
 
 	private IWorkspace GetTestWorkspace(EnvironmentSettings envSettings) {
