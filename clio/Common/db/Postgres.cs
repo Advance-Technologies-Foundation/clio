@@ -21,12 +21,12 @@ public class Postgres : IPostgres
 
 	public Postgres(){ }
 	
-	public void Init(string host, int port, string username, string password){
-		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
-	}
-	
 	public Postgres(int port, string username, string password) {
 		_connectionString = $"Host=127.0.0.1;Port={port};Username={username};Password={password};Database=postgres";
+	}
+	
+	public void Init(string host, int port, string username, string password){
+		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
 	}
 	
 	public bool CreateDbFromTemplate (string templateName, string dbName) {
