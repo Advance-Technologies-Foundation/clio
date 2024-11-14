@@ -22,6 +22,11 @@ namespace Clio.Common
 		void Write(string value);
 		
 		/// <summary>
+		/// Write a empty line to the log.
+		/// </summary>
+		void WriteLine();
+
+		/// <summary>
 		/// Writes an undecorated line to the log.
 		/// </summary>
 		/// <remarks>See <see cref="ConsoleLogger"/> for details</remarks>
