@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using Clio.Common;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -11,22 +12,28 @@ namespace Clio
 {
 	public class AppUpdater : IAppUpdater
 	{
+		private readonly ILogger _logger;
+
 		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
 		public bool Checked { get; private set; }
+
+		public AppUpdater(ILogger logger) {
+			_logger = logger;
+		}
 
 		public void CheckUpdate() {
 			Checked = true;
 			var currentVersion = GetCurrentVersion();
 			var latestVersion = GetLatestVersionFromNuget();
 			if (currentVersion != latestVersion) {
-				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
+				_logger.WriteInfo($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
 				ShowNugetUpdateMessage();
 			}
 		}
 
 		private void ShowNugetUpdateMessage() {
-			Console.WriteLine($"You should consider upgrading via the \'dotnet tool update clio -g\' command.", ConsoleColor.DarkYellow);
+			_logger.WriteWarning("You can update the package via the \'dotnet tool update clio -g\' command.");
 		}
 
 		public string GetLatestVersionFromGitHub() {
@@ -76,7 +83,7 @@ namespace Clio
 					return latestVersion;
 				}
 			} catch (HttpRequestException e) {
-				Console.WriteLine($"Error fetching data: {e.Message}");
+				_logger.WriteError($"Error fetching data: {e.Message}");
 				return null;
 			}
 		}
