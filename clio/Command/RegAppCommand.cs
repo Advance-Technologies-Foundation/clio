@@ -61,7 +61,7 @@ public class RegAppCommand : Command<RegAppOptions> {
 		try {
 			if (options.FromIis) {
 				_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
-				Dictionary<string, Uri> sites = IISScannerHandler.getSites(_powerShellFactory);
+				Dictionary<string, Uri> sites = IISScannerHandler.GetSites(_powerShellFactory);
 
 				sites.ToList().ForEach(site => {
 					_settingsRepository.ConfigureEnvironment(site.Key, new EnvironmentSettings {
