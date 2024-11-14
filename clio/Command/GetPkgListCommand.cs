@@ -78,9 +78,9 @@ namespace Clio.Command
 			foreach (PackageInfo pkg in packages) {
 				table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer));
 			}
-			_logger.WriteLine(string.Empty);
+			_logger.WriteLine();
 			_logger.WriteInfo(TextUtilities.ConvertTableToString(table));
-			_logger.WriteLine(string.Empty);
+			_logger.WriteLine();
 		}
 
 		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages, 
@@ -97,7 +97,7 @@ namespace Clio.Command
 				if (filteredPackages.Any()) {
 					PrintPackageList(filteredPackages);
 				}
-				_logger.WriteLine(string.Empty);
+				_logger.WriteLine();
 				_logger.WriteInfo($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
 			}
 		}
