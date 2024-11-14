@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Management;
 using System.Management.Automation;
 using Clio.Common;
 using Microsoft.Dism;
@@ -30,10 +29,11 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 {
 
 	public WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
-		ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider) {
+		ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider, ILogger logger) {
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_consoleProgressBar = consoleProgressBar;
 		_windowsFeatureProvider = windowsFeatureProvider;
+		_logger = logger;
 	}
 
 
@@ -110,12 +110,12 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		if (missedComponents.Count > 0) {
 			int maxLengthComponentName = GetActionMaxLength(missedComponents.Select(s => s.Name));
 			_consoleProgressBar.MaxActionNameLength = maxLengthComponentName;
-			Console.WriteLine($"Found {missedComponents.Count} missed components");
+			_logger.WriteInfo($"Found {missedComponents.Count} missed components");
 			foreach (WindowsFeature item in missedComponents) {
 				InstallFeature(item.Name);
 			}
 		} else {
-			Console.WriteLine("All requirment components installed");
+			_logger.WriteInfo("All requirment components installed");
 		}
 	}
 
@@ -148,7 +148,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 				Console.Write(_consoleProgressBar.GetBuatifyProgress("- " + featureCode, progress.Current, progress.Total) + " ");
 				});
 			}
-			Console.WriteLine();
+			_logger.WriteLine();
 		}  finally {
 			DismApi.Shutdown();
 		}
@@ -167,4 +167,5 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 	IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	ConsoleProgressbar _consoleProgressBar;
 	private IWindowsFeatureProvider _windowsFeatureProvider;
+	private readonly ILogger _logger;
 }

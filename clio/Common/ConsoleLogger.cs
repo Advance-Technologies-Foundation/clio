@@ -218,6 +218,16 @@ public class ConsoleLogger : ILogger
 	}
 
 	/// <summary>
+	/// Write a empty line to the log.
+	/// </summary>
+	public void WriteLine() {
+		if (CancellationToken.IsCancellationRequested) {
+			return;
+		}
+		_logQueue.Enqueue(new UndecoratedMessage(string.Empty));
+	}
+
+	/// <summary>
 	/// Enqueues an error message to the log queue.
 	/// </summary>
 	/// <param name="value">String value to be printed to the log</param>

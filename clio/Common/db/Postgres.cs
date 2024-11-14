@@ -18,15 +18,16 @@ public class Postgres : IPostgres
 {
 
 	private string _connectionString;
+	private readonly ILogger _logger = ConsoleLogger.Instance;
 
 	public Postgres(){ }
 	
-	public void Init(string host, int port, string username, string password){
-		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
-	}
-	
 	public Postgres(int port, string username, string password) {
 		_connectionString = $"Host=127.0.0.1;Port={port};Username={username};Password={password};Database=postgres";
+	}
+	
+	public void Init(string host, int port, string username, string password){
+		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
 	}
 	
 	public bool CreateDbFromTemplate (string templateName, string dbName) {
@@ -47,15 +48,15 @@ public class Postgres : IPostgres
 			cnn.Close();
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
-			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			Console.WriteLine(ne.Message);
+			_logger.WriteError(ne.Message);
 			return false;
 		}
 		catch(Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return false;
 		}
 	}
@@ -70,15 +71,15 @@ public class Postgres : IPostgres
 			cnn.Close();
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
-			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			_logger.WriteInfo($"[{pe.Severity}] - {pe.MessageText}");
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			Console.WriteLine(ne.Message);
+			_logger.WriteError(ne.Message);
 			return false;
 		}
 		catch(Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return false;
 		}
 	}
@@ -93,15 +94,15 @@ public class Postgres : IPostgres
 			cnn.Close();
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
-			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			Console.WriteLine(ne.Message);
+			_logger.WriteError(ne.Message);
 			return false;
 		}
 		catch(Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return false;
 		}
 	}
@@ -119,18 +120,17 @@ public class Postgres : IPostgres
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
 			var result = cmd.ExecuteScalar();
 			cnn.Close();
-			
 			return result is long and 1;
 		} catch (Exception e)  when (e is PostgresException pe){
-			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			Console.WriteLine(ne.Message);
+			_logger.WriteError(ne.Message);
 			return false;
 		}
 		catch(Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return false;
 		}
 	}
@@ -152,15 +152,15 @@ public class Postgres : IPostgres
 			cnn.Close();
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
-			Console.WriteLine($"[{pe.Severity}] - {pe.MessageText}");
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			Console.WriteLine(ne.Message);
+			_logger.WriteError(ne.Message);
 			return false;
 		}
 		catch(Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return false;
 		}
 	}
