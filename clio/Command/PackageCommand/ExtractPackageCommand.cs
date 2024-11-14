@@ -99,7 +99,7 @@ public class ExtractPackageCommand : Command<UnzipPkgOptions> {
 			}
 			return 0;
 		} catch (Exception e) {
-			Console.WriteLine($"{e.Message}");
+			_logger.WriteError(e.Message);
 			return 1;
 		}
 	}

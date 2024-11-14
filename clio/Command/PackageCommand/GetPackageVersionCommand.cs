@@ -26,15 +26,17 @@ namespace Clio.Command.PackageCommand
 		#region Fields: Public
 
 		protected readonly IJsonConverter _jsonConverter;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public GetPackageVersionCommand(IJsonConverter jsonConverter)
+		public GetPackageVersionCommand(IJsonConverter jsonConverter, ILogger logger)
 		{
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			_jsonConverter = jsonConverter;
+			_logger = logger;
 		}
 
 		#endregion
@@ -47,7 +49,7 @@ namespace Clio.Command.PackageCommand
 			try
 			{
 				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
-				Console.WriteLine(dto.Descriptor.PackageVersion);
+				_logger.WriteInfo(dto.Descriptor.PackageVersion);
 			}
 			catch (FileNotFoundException)
 			{
