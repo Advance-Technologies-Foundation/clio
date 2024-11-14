@@ -41,14 +41,16 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IWorkspace _workspace;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public RestoreWorkspaceCommand(IWorkspace workspace) {
+		public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
+			_logger = logger;
 		}
 
 		#endregion
@@ -58,10 +60,10 @@ namespace Clio.Command
 		public override int Execute(RestoreWorkspaceOptions options) {
 			try {
 				_workspace.Restore(options);
-				Console.WriteLine("Done");
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
