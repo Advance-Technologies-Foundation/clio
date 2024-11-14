@@ -1,7 +1,4 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using Clio.Common;
 using CommandLine;
@@ -24,10 +21,12 @@ namespace Clio.Command
 
 		private readonly EnvironmentSettings _settings;
 		private readonly IProcessExecutor _processExecutor;
+		private readonly ILogger _logger;
 
-		public GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor) {
+		public GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger) {
 			_settings = settings;
 			_processExecutor = processExecutor;
+			_logger = logger;
 		}
 
 		public override int Execute(GitSyncOptions options) {
@@ -38,11 +37,11 @@ namespace Clio.Command
 			
             var batPath  = Path.Join(_settings.WorkspacePathes,"tasks",$"{fileName}.{ext}");
 			
-			
-            var result = _processExecutor.Execute(batPath, 
+			var result = _processExecutor.Execute(batPath, 
 				options.Environment, true, _settings.WorkspacePathes, true);
-
-			Console.WriteLine(result);
+			
+			_logger.WriteInfo(result);
+			
 			return 0;
 		}
 
