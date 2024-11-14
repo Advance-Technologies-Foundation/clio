@@ -40,6 +40,7 @@ namespace Clio.Command
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IJsonResponseFormater _jsonResponseFormater;
+		private readonly ILogger _logger;
 
 		#endregion
 
@@ -47,13 +48,15 @@ namespace Clio.Command
 
 		public GetPkgListCommand(EnvironmentSettings environmentSettings, 
 				IApplicationPackageListProvider applicationPackageListProvider,
-				IJsonResponseFormater jsonResponseFormater) {
+				IJsonResponseFormater jsonResponseFormater,
+				ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			jsonResponseFormater.CheckArgumentNull(nameof(jsonResponseFormater));
 			_environmentSettings = environmentSettings;
 			_applicationPackageListProvider = applicationPackageListProvider;
 			_jsonResponseFormater= jsonResponseFormater;
+			_logger = logger;
 		}
 
 		#endregion
@@ -68,16 +71,16 @@ namespace Clio.Command
 			return CreateRow(string.Empty, string.Empty, string.Empty);
 		}
 
-		private static void PrintPackageList(IEnumerable<PackageInfo> packages) {
+		private void PrintPackageList(IEnumerable<PackageInfo> packages) {
 			IList<string[]> table = new List<string[]>();
 			table.Add(CreateRow("Name", "Version", "Maintainer"));
 			table.Add(CreateEmptyRow());
 			foreach (PackageInfo pkg in packages) {
 				table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer));
 			}
-			Console.WriteLine();
-			Console.WriteLine(TextUtilities.ConvertTableToString(table));
-			Console.WriteLine();
+			_logger.WriteLine(string.Empty);
+			_logger.WriteInfo(TextUtilities.ConvertTableToString(table));
+			_logger.WriteLine(string.Empty);
 		}
 
 		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages, 
@@ -89,21 +92,21 @@ namespace Clio.Command
 
 		private void PrintPackageList(PkgListOptions options, IEnumerable<PackageInfo> filteredPackages) {
 			if (options.Json.HasValue && options.Json.Value) {
-				Console.WriteLine(_jsonResponseFormater.Format(filteredPackages));
+				_logger.WriteLine(_jsonResponseFormater.Format(filteredPackages));
 			} else {
 				if (filteredPackages.Any()) {
 					PrintPackageList(filteredPackages);
 				}
-				Console.WriteLine();
-				Console.WriteLine($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
+				_logger.WriteLine(string.Empty);
+				_logger.WriteInfo($"Find {filteredPackages.Count()} packages in {_environmentSettings.Uri}");
 			}
 		}
 
 		private void PrintError(PkgListOptions options, Exception e) {
 			if (options.Json.HasValue && options.Json.Value) {
-				Console.WriteLine(_jsonResponseFormater.Format(e));
+				_logger.WriteInfo(_jsonResponseFormater.Format(e));
 			} else {
-				Console.WriteLine(e);
+				_logger.WriteInfo(e.ToString());
 			}
 		}
 
