@@ -9,7 +9,6 @@ using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
-using Clio.Command.UpdateCliCommand;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project;
