@@ -1,4 +1,5 @@
-﻿using CommandLine;
+﻿using Clio.Common;
+using CommandLine;
 using System;
 using System.Reflection;
 
@@ -41,33 +42,40 @@ namespace Clio.Command
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
 		private const string _gateVersion = "2.0.0.29";
-		public override int Execute(InfoCommandOptions options)
+		private readonly ILogger _logger;
+
+		public InfoCommand(ILogger logger)
+        {
+			_logger = logger;
+		}
+
+        public override int Execute(InfoCommandOptions options)
 		{
 			if (options is object && options.Clio)
 			{
-				Console.WriteLine("clio:   {0}", Assembly.GetEntryAssembly().GetName().Version);
+				_logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
 				return 0;
 			}
 			else if (options is object && options.Runtime)
 			{
-				Console.WriteLine("dotnet: {0}", Environment.Version.ToString());
+				_logger.WriteInfo($"dotnet: {Environment.Version.ToString()}");
 				return 0;
 			}
 			else if (options is object && options.Gate)
 			{
-				Console.WriteLine("gate:   {0}", _gateVersion);
+				_logger.WriteInfo($"gate:   {_gateVersion}");
 				return 0;
 			}
 			else if(options.ShowSettingsFilePath) {
-				Console.WriteLine(SettingsRepository.AppSettingsFile);
+				_logger.WriteInfo(SettingsRepository.AppSettingsFile);
 				return 0;
 			}
 			else if (options is object && options.All || (!options.Runtime && !options.Gate && !options.Clio && !options.ShowSettingsFilePath))
 			{
-				Console.WriteLine("clio:               {0}", Assembly.GetEntryAssembly().GetName().Version);
-				Console.WriteLine("gate:               {0}", _gateVersion);
-				Console.WriteLine("dotnet:             {0}", Environment.Version.ToString());
-				Console.WriteLine("settings file path: {0}", SettingsRepository.AppSettingsFile);
+				_logger.WriteLine($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
+				_logger.WriteInfo($"gate:   {_gateVersion}");
+				_logger.WriteLine($"clio:   {Environment.Version.ToString()}");
+				_logger.WriteInfo($"dotnet: {SettingsRepository.AppSettingsFile}");
 				return 0;
 			}
 			return 1;
