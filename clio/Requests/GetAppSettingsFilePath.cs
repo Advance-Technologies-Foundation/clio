@@ -1,4 +1,5 @@
-﻿using Clio.UserEnvironment;
+﻿using Clio.Common;
+using Clio.UserEnvironment;
 using MediatR;
 using System;
 using System.Threading;
@@ -23,15 +24,17 @@ namespace Clio.Requests
 	internal class GetAppSettingsFilePathHandler : BaseExternalLinkHandler, IRequestHandler<GetAppSettingsFilePath>
 	{
 		private readonly ISettingsRepository _settingsRepository;
+		private readonly ILogger _logger;
 
-		public GetAppSettingsFilePathHandler(ISettingsRepository settingsRepository)
+		public GetAppSettingsFilePathHandler(ISettingsRepository settingsRepository, ILogger logger)
 		{
 			_settingsRepository = settingsRepository;
+			_logger = logger;
 		}
 
 		public Task Handle(GetAppSettingsFilePath request, CancellationToken cancellationToken)
 		{
-			Console.WriteLine(_settingsRepository.AppSettingsFilePath);
+			_logger.WriteInfo(_settingsRepository.AppSettingsFilePath);
 			return Unit.Task;
 		}
 	}
