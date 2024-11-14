@@ -21,17 +21,19 @@ namespace Clio.Command
 	public class CheckNugetUpdateCommand : Command<CheckNugetUpdateOptions>
 	{
 		private INuGetManager _nugetManager;
+		private readonly ILogger _logger;
 
-		public CheckNugetUpdateCommand(INuGetManager nugetManager) {
+		public CheckNugetUpdateCommand(INuGetManager nugetManager, ILogger logger) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			_nugetManager = nugetManager;
+			_logger = logger;
 		}
 
 		private static string GetNameAndVersion(string name, PackageVersion version) {
 			return $"{name} ({version})";
 		}
 
-		private static string GetPackageUpdateMessage(PackageForUpdate packageForUpdate) {
+		private string GetPackageUpdateMessage(PackageForUpdate packageForUpdate) {
 			LastVersionNugetPackages lastVersionNugetPackages = packageForUpdate.LastVersionNugetPackages;
 			PackageInfo applPkg = packageForUpdate.ApplicationPackage;
 			string pkgName = applPkg.Descriptor.Name;
@@ -42,18 +44,18 @@ namespace Clio.Command
 				: $"{message}; Stable: {GetNameAndVersion(pkgName, lastVersionNugetPackages.Stable.Version)}";
 		}
 
-		private static void PrintPackagesForUpdate(IEnumerable<PackageForUpdate> packagesForUpdate) {
-			Console.WriteLine("Packages for update:");
+		private void PrintPackagesForUpdate(IEnumerable<PackageForUpdate> packagesForUpdate) {
+			_logger.WriteInfo("Packages for update:");
 			foreach (PackageForUpdate packageForUpdate in packagesForUpdate) {
-				Console.WriteLine(GetPackageUpdateMessage(packageForUpdate));
+				_logger.WriteLine(GetPackageUpdateMessage(packageForUpdate));
 			}
 		}
 
-		private static void PrintResult(IEnumerable<PackageForUpdate> packagesForUpdate) {
+		private void PrintResult(IEnumerable<PackageForUpdate> packagesForUpdate) {
 			if (packagesForUpdate.Any()) {
 				PrintPackagesForUpdate(packagesForUpdate);
 			} else {
-				Console.WriteLine("No update packages.");
+				_logger.WriteInfo("No update packages.");
 			}
 		}
 
@@ -61,10 +63,10 @@ namespace Clio.Command
 			try {
 				IEnumerable<PackageForUpdate> packagesForUpdate = _nugetManager.GetPackagesForUpdate(options.SourceUrl);
 				PrintResult(packagesForUpdate);
-				Console.WriteLine("Done");
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
