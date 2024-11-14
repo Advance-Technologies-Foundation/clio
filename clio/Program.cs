@@ -535,7 +535,7 @@ class Program
 	}
 
 	private static int ConvertPackage(ConvertOptions opts) {
-		return PackageConverter.Convert(opts);
+		return Resolve<IPackageConverter>().Convert(opts);
 	}
 
 
