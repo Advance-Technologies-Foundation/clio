@@ -11,8 +11,7 @@ namespace Clio.Command;
 
 [Verb("new-ui-project", Aliases = new[] {"create-ui-project", "new-ui", "createup", "uiproject", "ui"},
 	HelpText = "Add new UI project")]
-public class CreateUiProjectOptions : EnvironmentOptions
-{
+public class CreateUiProjectOptions : EnvironmentOptions {
 
 	#region Properties: Public
 
@@ -43,8 +42,7 @@ public class CreateUiProjectOptions : EnvironmentOptions
 
 #region Class: CreateUiProjectOptionsValidator
 
-public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProjectOptions>
-{
+public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProjectOptions> {
 
 	#region Constructors: Public
 
@@ -66,35 +64,36 @@ public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProject
 
 #region Class: CreateUiProjectCommand
 
-internal class CreateUiProjectCommand
-{
+internal class CreateUiProjectCommand {
 
 	#region Fields: Private
 
 	private readonly IUiProjectCreator _uiProjectCreator;
 	private readonly IValidator<CreateUiProjectOptions> _optionsValidator;
+	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator,
-		IValidator<CreateUiProjectOptions> optionsValidator){
+		IValidator<CreateUiProjectOptions> optionsValidator, ILogger logger){
 		uiProjectCreator.CheckArgumentNull(nameof(uiProjectCreator));
 		optionsValidator.CheckArgumentNull(nameof(optionsValidator));
 		_uiProjectCreator = uiProjectCreator;
 		_optionsValidator = optionsValidator;
+		_logger = logger;
 	}
 
 	#endregion
 
 	#region Methods: Private
 
-	private static bool EnableDownloadPackage(string packageName){
-		Console.WriteLine($"Do you wont download package [{packageName}] ? (y/n):");
+	private bool EnableDownloadPackage(string packageName){
+		_logger.WriteInfo($"Do you wont download package [{packageName}] ? (y/n):");
 		string result;
 		do {
-			result = Console.ReadLine().Trim().ToLower();
+			result = Console.ReadLine()?.Trim().ToLower();
 		} while (result != "y" && result != "n");
 		return result == "y";
 	}
@@ -108,16 +107,16 @@ internal class CreateUiProjectCommand
 			ValidationResult result = _optionsValidator.Validate(options);
 			if (!result.IsValid) {
 				foreach (ValidationFailure error in result.Errors) {
-					Console.WriteLine(error.ErrorMessage);
+					_logger.WriteError(error.ErrorMessage);
 				}
 				return 1;
 			}
 			_uiProjectCreator.Create(options.ProjectName, options.PackageName, options.VendorPrefix,
 				options.IsEmpty, options.CreatioVersion, options.IsSilent ? a => false : EnableDownloadPackage);
-			Console.WriteLine("Done");
+			_logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return 1;
 		}
 	}
