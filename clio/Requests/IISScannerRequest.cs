@@ -1,10 +1,4 @@
-﻿using Clio.Command;
-using Clio.UserEnvironment;
-using Clio.Utilities;
-using MediatR;
-using Microsoft.CodeAnalysis;
-using OneOf;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -16,493 +10,481 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using Terrasoft.Messaging.Common;
+using Clio.Command;
+using Clio.Common;
+using Clio.UserEnvironment;
+using Clio.Utilities;
+using MediatR;
 
-namespace Clio.Requests
-{
-	public class IISScannerRequest : IExternalLink
-	{
-		public string Content {
-			get; set;
-		}
+namespace Clio.Requests;
+
+public class IISScannerRequest : IExternalLink {
+
+	#region Properties: Public
+
+	public string Content { get; set; }
+
+	#endregion
+
+}
+
+internal class AllSitesRequest : IRequest {
+
+	#region Fields: Public
+
+	public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
+
+	#endregion
+
+}
+
+internal class StopInstanceByNameRequest : IRequest {
+
+	#region Properties: Public
+
+	public string SiteName { get; set; }
+
+	#endregion
+
+}
+
+internal class DeleteInstanceByNameRequest : IRequest {
+
+	#region Properties: Public
+
+	public string SiteName { get; set; }
+
+	#endregion
+
+}
+
+/// <summary>
+///  Finds path to appSetting.json
+/// </summary>
+/// <remarks>
+///  Handles extenral link requests
+///  <example>
+///   <code>clio externalLink clio://IISScannerRequest</code>
+///  </example>
+/// </remarks>
+/// <example>
+/// </example>
+internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
+	IRequestHandler<AllSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
+	IRequestHandler<StopInstanceByNameRequest> {
+
+	#region Enum: Internal
+
+	internal enum SiteType {
+
+		NetFramework,
+		Core,
+		NotCreatioSite
+
 	}
-	
-	internal class AllSitesRequest: IRequest
-	{
-		public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
-	}
-	
-	internal class StopInstanceByNameRequest: IRequest
-	{
-		public string SiteName { get; set; }
-	}
-	internal class DeleteInstanceByNameRequest: IRequest
-	{
-		public string SiteName { get; set; }
-	}
-	
+
+	#endregion
+
+	#region Fields: Private
 
 	/// <summary>
-	/// Finds path to appSetting.json
+	///  Finds Creatio Sites in IIS that are not registered with clio
 	/// </summary>
-	/// <remarks>
-	/// Handles extenral link requests
-	/// <example><code>clio externalLink clio://IISScannerRequest</code></example>
-	/// </remarks>
-	/// <example>
-	/// </example>
-	internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>, 
-		IRequestHandler<AllSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,IRequestHandler<StopInstanceByNameRequest>
-	{
-		private readonly ISettingsRepository _settingsRepository;
-		private readonly RegAppCommand _regCommand;
-		private readonly PowerShellFactory _powerShellFactory;
-
-
-		public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand, PowerShellFactory powerShellFactory)
-		{
-			_settingsRepository = settingsRepository;
-			_regCommand = regCommand;
-			_powerShellFactory = powerShellFactory;
-		}
-
-		public async Task Handle(AllSitesRequest request, CancellationToken cancellationToken){
-			IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
-			request.Callback(sites);
-		}
-		public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken){
-			var name = request.SiteName;
-			StopSiteByName(name);
-			StopAppPoolByName(name);
-		}
-        
-		public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
-			var name = request.SiteName;
-			RemoveSiteByName(name);
-			RemoveAppPoolByName(name);
-		}
-		public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken)
-		{
-			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
-			IEnumerable<UnregisteredSite> unregSites = _findUnregisteredCreatioSites(_settingsRepository);
-
-			var r = ClioParams?["return"];
-			if (r == "remote")
-			{
-				//clio://IISScannerRequest/?returnremote&host=localhost;
-				string computername = ClioParams?["host"];
-
-				//clio externalLink clio://IISScannerRequest/?return=remote&host=localhost&username=1234&password=5678;
-				string userName = ClioParams?["username"];
-				string password = ClioParams?["password"];
-				_powerShellFactory.Initialize(userName, password, computername);
-
-				int i = 1;
-
-				getSites(_powerShellFactory)?.ToList().ForEach(async site =>
-				{
-					Console.WriteLine($"({i++}) {site.Key} - {site.Value}");
-				});
-
-				//Here I would call regApp command but instead I will write total
-				Console.WriteLine($"**** TOTAL: {i - 1} new sites ****");
-			}
-			if (r == "count")
-			{
-				Console.WriteLine(unregSites.Count());
-			}
-			if (r == "details")
-			{
-				var json = JsonSerializer.Serialize(unregSites);
-				Console.WriteLine(json);
-			}
-			if (r == "registerAll")
-			{
-				unregSites.ToList().ForEach(site =>
-				{
-					_regCommand.Execute(new RegAppOptions
-					{
-						IsNetCore = site.siteType == SiteType.Core,
-						Uri = site.Uris.FirstOrDefault().ToString(),
-						EnvironmentName = site.siteBinding.name,
-						Login = "Supervisor",
-						Password = "Supervisor",
-						Maintainer = "Customer",
-						CheckLogin = false
+	private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> FindUnregisteredCreatioSites = settingsRepository => {
+			return GetBindings().Where(site => {
+					bool isRegisteredEnvironment = false;
+					ConvertBindingToUri(site.binding).ForEach(uri => {
+						string key = settingsRepository.FindEnvironmentNameByUri(uri.ToString());
+						if (!string.IsNullOrEmpty(key) && !isRegisteredEnvironment) {
+							isRegisteredEnvironment = true;
+						}
 					});
-				});
+					return !isRegisteredEnvironment;
+				})
+				.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
+				.Select(site => new UnregisteredSite(
+					site,
+					ConvertBindingToUri(site.binding),
+					DetectSiteType(site.path)));
+		};
+
+	/// <summary>
+	///  Executes appcmd.exe with arguments and captures output
+	/// </summary>
+	private static readonly Func<string, string> _appcmd = args => {
+		const string dirPath = @"C:\Windows\System32\inetsrv\";
+		const string exeName = "appcmd.exe";
+		return Process.Start(new ProcessStartInfo {
+			RedirectStandardError = true,
+			RedirectStandardOutput = true,
+			UseShellExecute = false,
+			Arguments = args,
+			FileName = Path.Join(dirPath, exeName)
+		})?.StandardOutput.ReadToEnd();
+	};
+
+	private static readonly Action<string> StopAppPoolByName = name => { _appcmd($"stop apppool /apppool.name:{name}"); };
+
+	private static readonly Action<string> StopSiteByName = name => { _appcmd($"stop site /site.name:{name}"); };
+
+	private static readonly Action<string> RemoveSiteByName = name => { _appcmd($"delete site /site.name:{name}"); };
+
+	private static readonly Action<string> RemoveAppPoolByName = name => { _appcmd($"delete apppool /apppool.name:{name}"); };
+
+	
+	/// <summary>
+	///  Finds Creatio Sites in IIS that are not registered with clio
+	/// </summary>
+	internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () => {
+		return GetBindings()
+			.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
+			.Select(site => new UnregisteredSite(
+				site,
+				ConvertBindingToUri(site.binding),
+				DetectSiteType(site.path)));
+	};
+
+	/// <summary>
+	///  Gets data from appcmd.exe
+	/// </summary>
+	private static readonly Func<IEnumerable<SiteBinding>> GetBindings = () => {
+		return XElement.Parse(_appcmd("list sites /xml"))
+			.Elements("SITE")
+			.Select(site => GetSiteBindingFromXmlElement(site));
+	};
+
+	/// <summary>
+	///  Splits IIS Binding into list
+	/// </summary>
+	private static readonly Func<string, List<string>> SplitBinding = binding => binding.Contains(',') ? binding.Split(',').ToList() : [binding];
+
+	/// <summary>
+	///  Splits IIS Binding
+	/// </summary>
+	private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding => {
+		List<Uri> result = [];
+
+		//"http/*:7080:localhost,http/*:7080:kkrylovn
+		SplitBinding(binding).ForEach(item => {
+			//http/*:7080:localhost
+			//http/*:80:
+			string[] items = item.Split(':');
+			if (items.Length >= 3) {
+				string hostName = string.IsNullOrEmpty(items[2]) ? "localhost" : items[2];
+				string port = items[1];
+				string other = items[0];
+				string protocol = other.Replace("/*", "");
+				string url = $"{protocol}://{hostName}:{port}";
+
+				if (Uri.TryCreate(url, UriKind.Absolute, out Uri value)) {
+					result.Add(value);
+				}
 			}
+		});
+		return result;
+	};
+
+	/// <summary>
+	///  Converts XElement to Sitebinding
+	/// </summary>
+	private static readonly Func<XElement, SiteBinding> GetSiteBindingFromXmlElement = xmlElement => new SiteBinding(
+		xmlElement.Attribute("SITE.NAME")?.Value,
+		xmlElement.Attribute("state")?.Value,
+		xmlElement.Attribute("bindings")?.Value,
+		_appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
+	);
+
+	/// <summary>
+	///  Detect Site Type
+	/// </summary>
+	private static readonly Func<string, SiteType> DetectSiteType = path => {
+		string webapp = Path.Join(path, "Terrasoft.WebApp");
+		string configuration = Path.Join(path, "Terrasoft.Configuration");
+
+		if (new DirectoryInfo(webapp).Exists) {
+			return SiteType.NetFramework;
 		}
 
-		/// <summary>
-		/// Finds Creatio Sites in IIS that are not registered with clio
-		/// </summary>
-		private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> _findUnregisteredCreatioSites = (_settingsRepository) =>
-		{
-			return _getBindings().Where(site =>
-			{
-				bool isRegisteredEnvironment = false;
-				_convertBindingToUri(site.binding).ForEach(uri =>
-				{
-					var key = _settingsRepository.FindEnvironmentNameByUri(uri.ToString());
-					if (!string.IsNullOrEmpty(key) && !isRegisteredEnvironment)
-					{
-						isRegisteredEnvironment = true;
-					}
-				});
-				return !isRegisteredEnvironment;
-			})
-			.Where(site => _detectSiteType(site.path) != SiteType.NotCreatioSite)
-			.Select(site =>
-			{
-				return new UnregisteredSite(
-					siteBinding: site,
-					Uris: _convertBindingToUri(site.binding),
-					siteType: _detectSiteType(site.path));
-			});
-		};
+		if (new DirectoryInfo(configuration).Exists) {
+			return SiteType.Core;
+		}
 
-		/// <summary>
-		/// Finds Creatio Sites in IIS that are not registered with clio
-		/// </summary>
-		internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () =>
-		{
-			return _getBindings()
-			.Where(site => _detectSiteType(site.path) != SiteType.NotCreatioSite)
-			.Select(site => new UnregisteredSite(
-				siteBinding: site,
-				Uris: _convertBindingToUri(site.binding),
-				siteType: _detectSiteType(site.path)));
-		};
-	
-		/// <summary>
-		/// Executes appcmd.exe with arguments and captures output
-		/// </summary>
-		private static readonly Func<string, string> _appcmd = (args) =>
-		{
-			const string dirPath = "C:\\Windows\\System32\\inetsrv\\";
-			const string exeName = "appcmd.exe";
-			return Process.Start(new ProcessStartInfo
-			{
-				RedirectStandardError = true,
-				RedirectStandardOutput = true,
-				UseShellExecute = false,
-				Arguments = args,
-				FileName = Path.Join(dirPath, exeName),
-			}).StandardOutput.ReadToEnd();
-		};
+		return SiteType.NotCreatioSite;
+	};
 
-		/// <summary>
-		/// Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
-		/// </summary>
+	private readonly ISettingsRepository _settingsRepository;
+	private readonly RegAppCommand _regCommand;
+	private readonly PowerShellFactory _powerShellFactory;
+	private readonly ILogger _logger;
 
-		public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> getSites = (psf) =>
-		{
-			Dictionary<string, Uri> result = new();
+	#endregion
 
-			var sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
-			var webApps = psf.GetInstance().AddCommand("Get-WebApplication").Invoke<WebApp>();
+	#region Fields: Public
 
-			webApps.Where(webApp => webApp.Path.EndsWith("/0") && webApp.PhysicalPath.EndsWith("Terrasoft.WebApp"))
+	/// <summary>
+	///  Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
+	/// </summary>
+	public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> GetSites = psf => {
+		Dictionary<string, Uri> result = new();
+
+		Collection<Site> sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
+		Collection<WebApp> webApps = psf.GetInstance().AddCommand("Get-WebApplication").Invoke<WebApp>();
+
+		webApps.Where(webApp => webApp.Path.EndsWith("/0") && webApp.PhysicalPath.EndsWith("Terrasoft.WebApp"))
 			.ToList()
-			.ForEach(webApp =>
-			{
-
-				Console.WriteLine(webApp.SiteName);
-				var rootSite = sites.Where(site =>
-					site.Name == webApp.SiteName && site.Id == webApp.SiteId)
-				.Select(site => (site.Name, site.Uris)).FirstOrDefault();
+			.ForEach(webApp => {
+				ConsoleLogger.Instance.WriteInfo(webApp.SiteName);
+				(string Name, List<Uri> Uris) rootSite = sites.Where(site =>
+						site.Name == webApp.SiteName && site.Id == webApp.SiteId)
+					.Select(site => (site.Name, site.Uris)).FirstOrDefault();
 
 				string newPath = webApp.Path.Substring(0, webApp.Path.Length - 2);
-				var rootUri = (psf.ComputerName == "localhost") ? rootSite.Uris.FirstOrDefault() : rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
-				if (Uri.TryCreate(rootUri, newPath, out Uri value))
-				{
+				Uri rootUri = psf.ComputerName == "localhost" ? rootSite.Uris.FirstOrDefault()
+					: rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
+				if (Uri.TryCreate(rootUri, newPath, out Uri value)) {
 					result.Add(rootSite.Name + newPath, value);
 				}
 			});
-			return result;
-		};
+		return result;
+	};
 
-		private static readonly Action<string> StopAppPoolByName = (name) =>
-		{
-			var r = _appcmd($"stop apppool /apppool.name:{name}");
-		};
+	#endregion
 
-		private static readonly Action<string> StopSiteByName = (name) =>
-		{
-			var r = _appcmd($"stop site /site.name:{name}");
-		};
+	#region Constructors: Public
 
-		private static readonly Action<string> RemoveSiteByName = (name) =>
-		{
-			var r = _appcmd($"delete site /site.name:{name}");
-		};
+	public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
+		PowerShellFactory powerShellFactory, ILogger logger){
+		_settingsRepository = settingsRepository;
+		_regCommand = regCommand;
+		_powerShellFactory = powerShellFactory;
+		_logger = logger;
+	}
 
-		private static readonly Action<string> RemoveAppPoolByName = (name) =>
-		{
-			var r = _appcmd($"delete apppool /apppool.name:{name}");
-		};
+	#endregion
 
-		
-		
-		private static Func<OneOf<Collection<PSObject>, Exception>, Collection<PSObject>> getValue = (oneOf) =>
-		{
-			if (oneOf.Value is Exception ex)
-			{
-				Console.Write(ex.Message);
-				return default;
-			}
-			return (oneOf.Value as Collection<PSObject>);
-		};
+	#region Methods: Public
 
-		/// <summary>
-		/// Gets data from appcmd.exe
-		/// </summary>
-		private static readonly Func<IEnumerable<SiteBinding>> _getBindings = () =>
-		{
-			return XElement.Parse(_appcmd("list sites /xml"))
-				.Elements("SITE")
-				.Select(site => _getSiteBindingFromXmlElement(site));
-		};
+	public async Task Handle(AllSitesRequest request, CancellationToken cancellationToken){
+		IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
+		request.Callback(sites);
+	}
 
-		/// <summary>
-		/// Splits IIS Binding into list
-		/// </summary>
-		private static readonly Func<string, List<string>> _splitBinding = (binding) =>
-		{
-			if (binding.Contains(','))
-			{
-				return binding.Split(',').ToList();
-			}
-			else
-			{
-				return new List<string> { binding };
-			};
-		};
+	public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken){
+		string name = request.SiteName;
+		StopSiteByName(name);
+		StopAppPoolByName(name);
+	}
 
-		/// <summary>
-		/// Splits IIS Binding
-		/// </summary>
-		private static readonly Func<string, List<Uri>> _convertBindingToUri = (binding) =>
-		{
-			//List<string> internalStrings = new();
-			List<Uri> result = new();
+	public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
+		string name = request.SiteName;
+		RemoveSiteByName(name);
+		RemoveAppPoolByName(name);
+	}
 
-			//"http/*:7080:localhost,http/*:7080:kkrylovn
-			_splitBinding(binding).ForEach(item =>
-			{
-				//http/*:7080:localhost
-				//http/*:80:
-				var items = item.Split(':');
-				if (items.Length >= 3)
-				{
-					string hostName = (string.IsNullOrEmpty(items[2])) ? "localhost" : items[2];
-					string port = items[1];
-					string other = items[0];
-					string protocol = other.Replace("/*", "");
-					string url = $"{protocol}://{hostName}:{port}";
+	public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken){
+		Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
+		IEnumerable<UnregisteredSite> unregSites = FindUnregisteredCreatioSites(_settingsRepository);
 
-					if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
-					{
-						result.Add(value);
-					}
-				}
+		string r = ClioParams?["return"];
+		if (r == "remote") {
+			//clio://IISScannerRequest/?returnremote&host=localhost;
+			string computerName = ClioParams?["host"];
+
+			//clio externalLink clio://IISScannerRequest/?return=remote&host=localhost&username=1234&password=5678;
+			string userName = ClioParams?["username"];
+			string password = ClioParams?["password"];
+			_powerShellFactory.Initialize(userName, password, computerName);
+
+			int i = 1;
+
+			GetSites(_powerShellFactory)?.ToList().ForEach(async site => {
+				_logger.WriteInfo($"({i++}) {site.Key} - {site.Value}");
 			});
-			return result;
-		};
 
-		/// <summary>
-		/// Converts XElement to Sitebinding
-		/// </summary>
-		private static readonly Func<XElement, SiteBinding> _getSiteBindingFromXmlElement = (xmlElement) =>
-		{
-			return new SiteBinding(
-				name: xmlElement.Attribute("SITE.NAME")?.Value,
-				state: xmlElement.Attribute("state")?.Value,
-				binding: xmlElement.Attribute("bindings")?.Value,
-				path: _appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
-			);
-		};
-
-		/// <summary>
-		/// Detect Site Type
-		/// </summary>
-		private static Func<string, SiteType> _detectSiteType = (path) =>
-		{
-			var webapp = Path.Join(path, "Terrasoft.WebApp");
-			var configuration = Path.Join(path, "Terrasoft.Configuration");
-
-			if (new DirectoryInfo(webapp).Exists)
-			{
-				return SiteType.NetFramework;
-			}
-
-			if (new DirectoryInfo(configuration).Exists)
-			{
-				return SiteType.Core;
-			}
-
-			return SiteType.NotCreatioSite;
-		};
-
-		/// <summary>
-		/// 
-		/// </summary>
-		/// <param name="name">Site name in IIS</param>
-		/// <param name="state"> State of IIS site
-		///	<list type="bullet">
-		/// <item>Started: when IIS site Started</item>
-		/// <item>Stopped: when IIS site Started</item>
-		/// </list>
-		/// </param>
-		/// <param name="binding"></param>
-		/// <param name="path">Site directory path</param>
-		internal sealed record SiteBinding(string name, string state, string binding, string path)
-		{
+			//Here I would call regApp command but instead I will write total
+			_logger.WriteInfo($"**** TOTAL: {i - 1} new sites ****");
 		}
-
-		internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
-		{
+		if (r == "count") {
+			_logger.WriteInfo(unregSites.Count().ToString());
 		}
-
-		internal enum SiteType
-		{
-			NetFramework,
-			Core,
-			NotCreatioSite
+		if (r == "details") {
+			string json = JsonSerializer.Serialize(unregSites);
+			_logger.WriteInfo(json);
 		}
-
-		private sealed record WebAppDto(string ElementTagName, string path, string enabledProtocols, string PhysicalPath, string ItemXPath);
-
-		private sealed record WebSiteDto(string name, int id, Bindings bindings);
-
-		private sealed record Bindings(string Collection);
-
-	}
-
-	public record Site
-	{
-		/// <summary>
-		/// IIS Site name
-		/// </summary>
-		public string Name { get; private set; }
-
-
-		/// <summary>
-		/// IIS physical path
-		/// </summary>
-		public string PhysicalPath { get; private set; }
-
-		/// <summary>
-		/// IIS Site Id
-		/// </summary>
-		public long Id { get; private set; }
-
-		/// <summary>
-		/// IIS EnabledProtocols
-		/// </summary>
-		public string EnabledProtocols { get; set; }
-
-		public string Binding { get; private set; }
-
-		public List<Uri> Uris => _convertBindingToUri(Binding);
-
-		public static implicit operator Site(PSObject obj) => _asSite(obj);
-
-
-		/// <summary>
-		/// Converts PSObject to Site
-		/// </summary>
-		private static Func<PSObject, Site> _asSite = (psObject) =>
-		{
-			return new Site()
-			{
-				Name = psObject.Properties["Name"].Value as string,
-				PhysicalPath = psObject.Properties["PhysicalPath"].ToString(),
-				Id = (long)psObject.Properties["Id"].Value,
-				EnabledProtocols = psObject.Properties["EnabledProtocols"].ToString(),
-				Binding = (psObject.Properties["Bindings"].Value as PSObject).
-						Properties.FirstOrDefault(p => p.Name == "Collection")?.Value.ToString()
-			};
-		};
-
-		/// <summary>
-		/// Splits IIS Binding
-		/// </summary>
-		private static readonly Func<string, List<Uri>> _convertBindingToUri = (binding) =>
-		{
-
-			binding = binding.Replace(" *", "/*").Replace(" ", ",");
-
-			//List<string> internalStrings = new();
-			List<Uri> result = new();
-
-			//"http/*:7080:localhost,http/*:7080:kkrylovn
-			_splitBinding(binding).ForEach(item =>
-			{
-				//http/*:7080:localhost
-				//http/*:80:
-				var items = item.Split(':');
-				if (items.Length >= 3)
-				{
-					string hostName = (string.IsNullOrEmpty(items[2])) ? "localhost" : items[2];
-					string port = items[1];
-					string other = items[0];
-					string protocol = other.Replace("/*", "");
-					string url = $"{protocol}://{hostName}:{port}";
-
-					if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
-					{
-						result.Add(value);
-					}
-				}
+		if (r == "registerAll") {
+			unregSites.ToList().ForEach(site => {
+				_regCommand.Execute(new RegAppOptions {
+					IsNetCore = site.siteType == SiteType.Core,
+					Uri = site.Uris.FirstOrDefault().ToString(),
+					EnvironmentName = site.siteBinding.name,
+					Login = "Supervisor",
+					Password = "Supervisor",
+					Maintainer = "Customer",
+					CheckLogin = false
+				});
 			});
-			return result;
+		}
+	}
+
+	#endregion
+
+	/// <summary>
+	/// </summary>
+	/// <param name="name">Site name in IIS</param>
+	/// <param name="state">
+	///  State of IIS site
+	///  <list type="bullet">
+	///   <item>Started: when IIS site Started</item>
+	///   <item>Stopped: when IIS site Started</item>
+	///  </list>
+	/// </param>
+	/// <param name="binding"></param>
+	/// <param name="path">Site directory path</param>
+	internal sealed record SiteBinding(string name, string state, string binding, string path) { }
+
+	internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
+
+}
+
+public record Site {
+
+	#region Fields: Private
+
+	/// <summary>
+	///  Converts PSObject to Site
+	/// </summary>
+	private static readonly Func<PSObject, Site> _asSite = psObject => {
+		return new Site {
+			Name = psObject.Properties["Name"].Value as string,
+			PhysicalPath = psObject.Properties["PhysicalPath"].ToString(),
+			Id = (long)psObject.Properties["Id"].Value,
+			EnabledProtocols = psObject.Properties["EnabledProtocols"].ToString(),
+			Binding = (psObject.Properties["Bindings"].Value as PSObject).Properties
+				.FirstOrDefault(p => p.Name == "Collection")?.Value.ToString()
 		};
-		/// <summary>
-		/// Splits IIS Binding into list
-		/// </summary>
-		private static readonly Func<string, List<string>> _splitBinding = (binding) =>
-		{
-			if (binding.Contains(','))
-			{
-				return binding.Split(',').ToList();
+	};
+
+	/// <summary>
+	///  Splits IIS Binding
+	/// </summary>
+	private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding => {
+		binding = binding.Replace(" *", "/*").Replace(" ", ",");
+
+		List<Uri> result = [];
+
+		//"http/*:7080:localhost,http/*:7080:kkrylovn
+		SplitBinding(binding).ForEach(item => {
+			//http/*:7080:localhost
+			//http/*:80:
+			string[] items = item.Split(':');
+			if (items.Length >= 3) {
+				string hostName = string.IsNullOrEmpty(items[2]) ? "localhost" : items[2];
+				string port = items[1];
+				string other = items[0];
+				string protocol = other.Replace("/*", "");
+				string url = $"{protocol}://{hostName}:{port}";
+
+				if (Uri.TryCreate(url, UriKind.Absolute, out Uri value)) {
+					result.Add(value);
+				}
 			}
-			else
-			{
-				return new List<string> { binding };
-			};
+		});
+		return result;
+	};
+
+	/// <summary>
+	///  Splits IIS Binding into list
+	/// </summary>
+	private static readonly Func<string, List<string>> SplitBinding = binding => 
+		binding.Contains(',') ? binding.Split(',').ToList() : [binding];
+
+	#endregion
+
+	#region Properties: Public
+
+	public string Binding { get; private set; }
+
+	/// <summary>
+	///  IIS EnabledProtocols
+	/// </summary>
+	public string EnabledProtocols { get; set; }
+
+	/// <summary>
+	///  IIS Site Id
+	/// </summary>
+	public long Id { get; private set; }
+
+	/// <summary>
+	///  IIS Site name
+	/// </summary>
+	public string Name { get; private set; }
+
+	/// <summary>
+	///  IIS physical path
+	/// </summary>
+	public string PhysicalPath { get; private set; }
+
+	public List<Uri> Uris => ConvertBindingToUri(Binding);
+
+	#endregion
+
+	#region Methods: Public
+
+	public static implicit operator Site(PSObject obj) => _asSite(obj);
+
+	#endregion
+
+}
+
+public record WebApp {
+
+	#region Constants: Private
+
+	private const string Regex = "(@name=')(.*?)'\\sand\\s@id='(\\d*?)'";
+
+	#endregion
+
+	#region Fields: Private
+
+	private static readonly Func<PSObject, WebApp> AsWebApp = psObject => {
+		string itemXPath = psObject.Properties["ItemXPath"]?.Value as string ?? string.Empty;
+		GroupCollection groups = System.Text.RegularExpressions.Regex.Match(itemXPath, Regex).Groups;
+
+		return new WebApp {
+			ElementTagName = psObject.Properties["ElementTagName"]?.Value as string ?? string.Empty,
+			Path = psObject.Properties["Path"]?.Value as string ?? string.Empty,
+			EnabledProtocols = psObject.Properties["EnabledProtocols"]?.Value as string ?? string.Empty,
+			PhysicalPath = psObject.Properties["PhysicalPath"]?.Value as string ?? string.Empty,
+			ItemXPath = itemXPath,
+			SiteName = groups[2].Value.Trim(),
+			SiteId = long.TryParse(groups[3].Value?.Trim(), out long v) ? v : -1
 		};
-	}
+	};
 
-	public record WebApp
-	{
+	#endregion
 
-		private const string _regex = "(@name=')(.*?)'\\sand\\s@id='(\\d*?)'";
-		public string ElementTagName { get; private set; }
-		public string Path { get; private set; }
-		public string EnabledProtocols { get; private set; }
-		public string PhysicalPath { get; private set; }
-		public string ItemXPath { get; private set; }
-		public string SiteName { get; private set; }
-		public long SiteId { get; private set; }
+	#region Properties: Public
 
-		public static implicit operator WebApp(PSObject obj) => _asWebApp(obj);
-		private static Func<PSObject, WebApp> _asWebApp = (psObject) =>
-		{
-			var itemXPath = psObject.Properties["ItemXPath"]?.Value as string ?? string.Empty;
-			var groups = Regex.Match(itemXPath, _regex).Groups;
+	public string ElementTagName { get; private set; }
 
-			return new WebApp()
-			{
-				ElementTagName = psObject.Properties["ElementTagName"]?.Value as string ?? string.Empty,
-				Path = psObject.Properties["Path"]?.Value as string ?? string.Empty,
-				EnabledProtocols = psObject.Properties["EnabledProtocols"]?.Value as string ?? string.Empty,
-				PhysicalPath = psObject.Properties["PhysicalPath"]?.Value as string ?? string.Empty,
-				ItemXPath = itemXPath,
-				SiteName = groups[2].Value.Trim(),
-				SiteId = long.TryParse(groups[3].Value?.Trim(), out long v) ? v : -1
-			};
-		};
-	}
+	public string EnabledProtocols { get; private set; }
+
+	public string ItemXPath { get; private set; }
+
+	public string Path { get; private set; }
+
+	public string PhysicalPath { get; private set; }
+
+	public long SiteId { get; private set; }
+
+	public string SiteName { get; private set; }
+
+	#endregion
+
+	#region Methods: Public
+
+	public static implicit operator WebApp(PSObject obj) => AsWebApp(obj);
+
+	#endregion
+
 }
