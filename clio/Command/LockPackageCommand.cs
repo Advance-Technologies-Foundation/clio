@@ -11,6 +11,7 @@ namespace Clio.Command
 	using System;
 	using CommandLine;
 	using Clio.Package;
+	using Clio.Common;
 
 	#region Class: LockPackageOptions
 
@@ -37,13 +38,15 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IPackageLockManager _packageLockManager;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public LockPackageCommand(IPackageLockManager packageLockManager) {
+		public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger) {
 			_packageLockManager = packageLockManager;
+			_logger = logger;
 		}
 
 		#endregion
@@ -62,11 +65,11 @@ namespace Clio.Command
 		public override int Execute(LockPackageOptions options) {
 			try {
 				_packageLockManager.Lock(GetPackagesNames(options));
-				Console.WriteLine();
-				Console.WriteLine("Done");
+				_logger.WriteLine();
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
