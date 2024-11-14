@@ -7,6 +7,7 @@ using System.Linq;
 using System.Management.Automation;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
@@ -57,6 +58,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly IMediator _mediator;
 	private readonly RegAppCommand _registerCommand;
 	private readonly IFileSystem _fileSystem;
+	private readonly ILogger _logger;
 
 	#endregion
 
@@ -71,7 +73,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem){
+		IFileSystem fileSystem, ILogger logger) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -80,25 +82,28 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_iisRootFolder = settingsRepository.GetIISClioRootPath();
 		ProductFolder = settingsRepository.GetCreatioProductsFolder();
 		RemoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
+		_logger = logger;
 	}
 
-	public CreatioInstallerService(){ }
+	public CreatioInstallerService() {
+
+	}
 
 	#endregion
 
 	#region Methods: Private
 
-	private static int ExitWithErrorMessage(string message){
-		Console.WriteLine(message);
+	private int ExitWithErrorMessage(string message){
+		_logger.WriteError(message);
 		return 1;
 	}
 
-	private static int ExitWithOkMessage(string message){
-		Console.WriteLine(message);
+	private int ExitWithOkMessage(string message){
+		_logger.WriteInfo(message);
 		return 0;
 	}
 
-	private static int FindEmptyRedisDb(int port){
+	private int FindEmptyRedisDb(int port){
 		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
 		IServer server = redis.GetServer("localhost", port);
 		int count = server.DatabaseCount;
