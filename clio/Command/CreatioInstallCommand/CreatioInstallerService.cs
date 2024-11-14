@@ -160,7 +160,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return dest;
 		}
 
-		Console.WriteLine($"Detected network drive as source, copying to local folder {ProductFolder}");
+		_logger.WriteLine($"Detected network drive as source, copying to local folder {ProductFolder}");
 		Console.Write("Copy Progress:    ");
 		Progress<double> progressReporter = new(progress => {
 			string result = progress switch {
@@ -177,7 +177,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private async Task<int> CreateIISSite(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
-		Console.WriteLine("[Create IIS Site] - Started");
+		_logger.WriteInfo("[Create IIS Site] - Started");
 		CreateIISSiteRequest request = new() {
 			Arguments = new Dictionary<string, string> {
 				{"siteName", options.SiteName},
@@ -209,7 +209,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return;
 		}
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
-		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
 
@@ -217,12 +217,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_k8.RestorePgDatabase(src.Name, tmpDbName);
 		postgres.SetDatabaseAsTemplate(tmpDbName);
 		_k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
-		Console.WriteLine($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
+		_logger.WriteInfo($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
 	}
 
 	private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName){
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
-		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
 
 		k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
@@ -243,7 +243,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		CreatePgTemplate(unzippedDirectory, tmpDbName);
 		postgres.CreateDbFromTemplate(tmpDbName, destDbName);
-		Console.WriteLine($"[Database created] - {destDbName}");
+		_logger.WriteInfo($"[Database created] - {destDbName}");
 		return 0;
 	}
 
@@ -269,7 +269,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
-		Console.WriteLine("[CheckUpdate connection string] - Started");
+		_logger.WriteInfo("[CheckUpdate connection string] - Started");
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
@@ -374,7 +374,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			options.ZipFile = GetBuildFilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
 		}
 		if (!File.Exists(options.ZipFile)) {
-			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
+			_logger.WriteInfo($"Could not find zip file: {options.ZipFile}");
 			return 1;
 		}
 		if (!Directory.Exists(_iisRootFolder)) {
@@ -402,9 +402,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
-		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
+		_logger.WriteInfo($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
-		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
+		_logger.WriteInfo($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
 
 		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {
