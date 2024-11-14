@@ -122,7 +122,7 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 			string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;
 			Logger.WriteInfo($"Done {commandName}");
 			return 0;
-		} catch (SilentException ex) {
+		} catch (SilentException) {
 			return 1;
 		} catch (Exception e) {
 			Logger.WriteError(e.Message);

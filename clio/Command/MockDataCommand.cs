@@ -75,7 +75,7 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 					_fileSystem.WriteAllTextToFile(modelODataDataFilePath, modelOdataData);
 					Logger.WriteInfo(
 						$"[{i} from {totalCount} ] Data for model {foundModel} saved to {modelODataDataFilePath}");
-				} catch (Exception e) {
+				} catch (Exception) {
 					Logger.WriteWarning($"Data for model {foundModel} not saved");
 				}
 			}
@@ -129,7 +129,7 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 			string commandName = typeof(MockDataCommandOptions).GetCustomAttribute<VerbAttribute>()?.Name;
 			Logger.WriteInfo($"Done {commandName}");
 			return 0;
-		} catch (SilentException ex) {
+		} catch (SilentException) {
 			return 1;
 		} catch (Exception e) {
 			Logger.WriteError(e.Message);

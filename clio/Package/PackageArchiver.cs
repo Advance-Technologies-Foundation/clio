@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using ms = System.IO.Abstractions;
+using MicrosoftIO = System.IO.Abstractions;
 using System.IO.Compression;
 using System.Linq;
 using Clio.Common;
@@ -28,7 +28,7 @@ namespace Clio
 		private readonly ICompressionUtilities _compressionUtilities;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly ILogger _logger;
-		private readonly ms.IFileSystem _msFileSystem;
+		private readonly MicrosoftIO.IFileSystem _msFileSystem;
 		private readonly IZipFile _zipFile;
 
 		#endregion
@@ -37,7 +37,7 @@ namespace Clio
 
 		public PackageArchiver(IPackageUtilities packageUtilities, ICompressionUtilities compressionUtilities, 
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
-				ILogger logger, ms.IFileSystem msFileSystem, IZipFile zipFile) {
+				ILogger logger, MicrosoftIO.IFileSystem msFileSystem, IZipFile zipFile) {
 			packageUtilities.CheckArgumentNull(nameof(packageUtilities));
 			compressionUtilities.CheckArgumentNull(nameof(compressionUtilities));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
@@ -192,7 +192,7 @@ namespace Clio
 			if (!_fileSystem.ExistsFile(packedPackagePath)) {
 				throw new Exception($"Package archive {packedPackagePath} not found");
 			}
-			ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+			MicrosoftIO.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
 			var fileInfo = fileInfoFactory.New(packedPackagePath);
 			if (fileInfo.Length == 0) {
 				throw new Exception($"Package archive {packedPackagePath} is empty");
