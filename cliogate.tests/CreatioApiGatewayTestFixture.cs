@@ -18,8 +18,6 @@ namespace cliogate.tests
 	public class CreatioApiGatewayTestFixture : BaseMarketplaceTestFixture
 	{
 
-		private Entity _sysSettingsEntity;
-		private Guid _sysSettingId = Guid.NewGuid();
 		#region Constants: Private
 
 		private const string SysSettingCode = "SysSettingOne_Code";

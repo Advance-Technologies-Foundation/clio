@@ -1,4 +1,5 @@
 ﻿using System;
+using Clio.Common;
 using Clio.Package;
 using CommandLine;
 
@@ -29,13 +30,15 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 	#region Fields: Private
 
 	IPackageBuilder _packageBuilder;
+	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public CompilePackageCommand(IPackageBuilder packageBuilder) {
+	public CompilePackageCommand(IPackageBuilder packageBuilder, ILogger logger) {
 		_packageBuilder = packageBuilder;
+		_logger = logger;
 	}
 
 	#endregion
@@ -49,10 +52,10 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 	public override int Execute(CompilePackageOptions options) {
 		try {
 			_packageBuilder.Rebuild(options.PackageNames);
-			Console.WriteLine("Done");
+			_logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception e) {
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return 1;
 		}
 	}

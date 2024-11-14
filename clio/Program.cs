@@ -170,7 +170,7 @@ class Program
 				_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
 			}
 			Console.WriteLine("Download packages ({0}) completed.", packageName);
-		} catch (Exception e) {
+		} catch (Exception) {
 			Console.WriteLine("Download packages ({0}) not completed.", packageName);
 		}
 	}
@@ -355,7 +355,7 @@ class Program
 	private static void TryCheckForUpdate() {
 		try {
 			new Thread(AppUpdater.CheckUpdate).Start();
-		} catch (Exception ex) {
+		} catch (Exception) {
 
 		}
 	}
