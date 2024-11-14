@@ -1,97 +1,143 @@
-﻿using Newtonsoft.Json.Linq;
-using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Json;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Clio.Common;
+using Newtonsoft.Json.Linq;
 
-namespace Clio
-{
-	public class AppUpdater : IAppUpdater
-	{
-		private static string LastVersionUrl => "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
+namespace Clio;
 
-		public bool Checked { get; private set; }
+public class AppUpdater : IAppUpdater {
 
-		public void CheckUpdate() {
-			Checked = true;
-			var currentVersion = GetCurrentVersion();
-			var latestVersion = GetLatestVersionFromNuget();
-			if (currentVersion != latestVersion) {
-				Console.WriteLine($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
-				ShowNugetUpdateMessage();
-			}
-		}
+	#region Constants: Private
 
-		private void ShowNugetUpdateMessage() {
-			Console.WriteLine($"You should consider upgrading via the \'dotnet tool update clio -g\' command.", ConsoleColor.DarkYellow);
-		}
+	private const string LastVersionUrl
+		= "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
-		public string GetLatestVersionFromGitHub() {
-			System.Threading.Tasks.Task<byte[]> body;
-			using (var client = new HttpClient()) {
-				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
-				using (var response = client.GetAsync(LastVersionUrl).Result) {
-					response.EnsureSuccessStatusCode();
-					body = response.Content.ReadAsByteArrayAsync();
-				}
-			}
-			string json;
-			var jsonStream = new MemoryStream(body.Result) { Position = 0 };
-			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
-				json = reader.ReadToEnd();
-			}
-			var jsonDoc = (JsonObject)JsonValue.Parse(json);
-			var version = jsonDoc["tag_name"];
-			return version;
-		}
+	#endregion
 
-		public string GetCurrentVersion() {
-			System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-			var fileVersionInfo = FileVersionInfo.GetVersionInfo(assembly.Location);
-			return fileVersionInfo.FileVersion;
-		}
+	#region Fields: Private
 
-		public string GetLatestVersionFromNuget() {
-			return GetLatestPackageVersionAsync("clio").GetAwaiter().GetResult();
-		}
+	private readonly ILogger _logger;
 
-		async Task<string> GetLatestPackageVersionAsync(string packageName) {
-			string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
+	#endregion
 
-			try {
-				using (HttpClient client = new HttpClient()) {
-					HttpResponseMessage response = await client.GetAsync(searchUrl);
-					response.EnsureSuccessStatusCode();
+	#region Constructors: Public
 
-					string responseBody = await response.Content.ReadAsStringAsync();
-					JObject data = JObject.Parse(responseBody);
+	public AppUpdater(ILogger logger){
+		_logger = logger;
+	}
 
-					// Extracting the latest version from the response
-					string latestVersion = data["versions"].Last.ToString();
+	#endregion
 
-					return latestVersion;
-				}
-			} catch (HttpRequestException e) {
-				Console.WriteLine($"Error fetching data: {e.Message}");
-				return null;
-			}
+	#region Properties: Public
+
+	public bool Checked { get; private set; }
+
+	#endregion
+
+	#region Methods: Private
+
+	/// <summary>
+	/// Asynchronously retrieves the latest version of a specified package from the NuGet API.
+	/// </summary>
+	/// <param name="packageName">The name of the package to check for the latest version.</param>
+	/// <returns>A task that represents the asynchronous operation. The task result contains the latest version string.</returns>
+	private async Task<string> GetLatestPackageVersionAsync(string packageName){
+		string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
+
+		try {
+			using HttpClient client = new();
+			HttpResponseMessage response = await client.GetAsync(searchUrl);
+			response.EnsureSuccessStatusCode();
+
+			string responseBody = await response.Content.ReadAsStringAsync();
+			JObject data = JObject.Parse(responseBody);
+
+			// Extracting the latest version from the response
+			string latestVersion = data["versions"]?.Last?.ToString() ?? string.Empty;
+
+			return latestVersion;
+		} catch (HttpRequestException e) {
+			_logger.WriteError($"Error fetching data: {e.Message}");
+			return null;
 		}
 	}
 
-	public interface IAppUpdater
-	{
-		bool Checked { get; }
-
-		void CheckUpdate();
-
-		string GetLatestVersionFromNuget();
-
-		string GetCurrentVersion();
-
-		string GetLatestVersionFromGitHub();
+	private void ShowNugetUpdateMessage(){
+		_logger.WriteWarning("You should consider upgrading via the 'dotnet tool update clio -g' command.");
 	}
+
+	#endregion
+
+	#region Methods: Public
+
+	public void CheckUpdate(){
+		Checked = true;
+		string currentVersion = GetCurrentVersion();
+		string latestVersion = GetLatestVersionFromNuget();
+		if (currentVersion != latestVersion) {
+			_logger.WriteInfo($"You are using clio version {currentVersion}, however version {latestVersion} is available.");
+			ShowNugetUpdateMessage();
+		}
+	}
+
+	public string GetCurrentVersion(){
+		Assembly assembly = Assembly.GetExecutingAssembly();
+		FileVersionInfo fileVersionInfo = FileVersionInfo.GetVersionInfo(assembly.Location);
+		return fileVersionInfo.FileVersion;
+	}
+
+	public string GetLatestVersionFromGitHub(){
+		Task<byte[]> body;
+		using (HttpClient client = new()) {
+			client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+			client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
+			using (HttpResponseMessage response = client.GetAsync(LastVersionUrl).Result) {
+				response.EnsureSuccessStatusCode();
+				body = response.Content.ReadAsByteArrayAsync();
+			}
+		}
+		string json;
+		MemoryStream jsonStream = new(body.Result) {Position = 0};
+		using (StreamReader reader = new(jsonStream, Encoding.UTF8)) {
+			json = reader.ReadToEnd();
+		}
+		JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
+		JsonValue version = jsonDoc["tag_name"];
+		return version;
+	}
+
+	public string GetLatestVersionFromNuget(){
+		return GetLatestPackageVersionAsync("clio").GetAwaiter().GetResult();
+	}
+
+	#endregion
+
+}
+
+public interface IAppUpdater {
+
+	#region Properties: Public
+
+	bool Checked { get; }
+
+	#endregion
+
+	#region Methods: Public
+
+	void CheckUpdate();
+
+	string GetCurrentVersion();
+
+	string GetLatestVersionFromGitHub();
+
+	string GetLatestVersionFromNuget();
+
+	#endregion
+
 }
