@@ -23,9 +23,11 @@ namespace Clio.Command
 	public class CompressPackageCommand : Command<GeneratePkgZipOptions>
 	{
 		private readonly IPackageArchiver _packageArchiver;
+		private readonly ILogger _logger;
 
-		public CompressPackageCommand(IPackageArchiver packageArchiver) {
+		public CompressPackageCommand(IPackageArchiver packageArchiver, ILogger logger) {
 			_packageArchiver = packageArchiver;
+			_logger = logger;
 		}
 		public override int Execute(GeneratePkgZipOptions options) {
 			try {
@@ -38,10 +40,10 @@ namespace Clio.Command
 					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
 					_packageArchiver.Pack(options.Name, destinationPath, packages, options.SkipPdb, true);
 				}
-				Console.WriteLine("Done");
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
