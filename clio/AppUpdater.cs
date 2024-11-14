@@ -25,27 +25,8 @@ namespace Clio
 			}
 		}
 
-		private static void ShowNugetUpdateMessage() {
+		private void ShowNugetUpdateMessage() {
 			Console.WriteLine($"You should consider upgrading via the \'dotnet tool update clio -g\' command.", ConsoleColor.DarkYellow);
-		}
-		private static string GetLastReleaseUrl() {
-			System.Threading.Tasks.Task<byte[]> body;
-			using (var client = new HttpClient()) {
-				client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-				client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
-				using (var response = client.GetAsync(LastVersionUrl).Result) {
-					response.EnsureSuccessStatusCode();
-					body = response.Content.ReadAsByteArrayAsync();
-				}
-			}
-			string json;
-			var jsonStream = new MemoryStream(body.Result) { Position = 0 };
-			using (var reader = new StreamReader(jsonStream, Encoding.UTF8)) {
-				json = reader.ReadToEnd();
-			}
-			JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
-			var url = jsonDoc["assets"][0]["browser_download_url"];
-			return url;
 		}
 
 		public string GetLatestVersionFromGitHub() {
