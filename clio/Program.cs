@@ -650,7 +650,7 @@ class Program
 			DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
 			ReferenceOptions opts => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()).Execute(opts),
 			NewPkgOptions opts => CreateCommand<NewPkgCommand>(new SettingsRepository(), CreateCommand<ReferenceCommand>(
-				new CreatioPkgProjectCreator())).Execute(opts),
+				new CreatioPkgProjectCreator()), ConsoleLogger.Instance).Execute(opts),
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => CreateCommand<RegisterCommand>().Execute(opts),
 			UnregisterOptions opts => CreateCommand<UnregisterCommand>().Execute(opts),
