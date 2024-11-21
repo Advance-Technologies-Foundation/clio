@@ -1,13 +1,11 @@
-﻿using Clio.Common;
-using DocumentFormat.OpenXml.InkML;
-using FluentAssertions;
-using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
+using Clio.Common;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+using NUnit.Framework.Internal;
 
 namespace Clio.Tests.Common
 {
@@ -86,8 +84,13 @@ namespace Clio.Tests.Common
 			var consoleText = stringBuilder.ToString();
 			consoleText.Should().StartWith("[");
 		}
-		
-		
-		
+
+		[Test]
+		public void Dispose_test() {
+			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+			logger.LogFileWriter = Substitute.For<System.IO.TextWriter>();
+			logger.Dispose();
+			logger.LogFileWriter.Received().Dispose();
+		}
 	}
 }

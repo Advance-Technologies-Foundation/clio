@@ -13,11 +13,11 @@ namespace Clio.Common;
 #region Class: ConsoleLogger
 
 /// <inheritdoc cref="ILogger"/>
-public class ConsoleLogger : ILogger
+public class ConsoleLogger : ILogger, IDisposable
 {
 
 	#region Fields: Private
-	private StreamWriter _logFileWriter;
+	private TextWriter _logFileWriter;
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
@@ -147,7 +147,11 @@ public class ConsoleLogger : ILogger
 	}
 
 	private string LogFileName { get; set; }
-	
+	public TextWriter LogFileWriter {
+		get => _logFileWriter;
+		internal set => _logFileWriter = value;
+	}
+
 	public void PrintTable(ConsoleTable table){
 		_logQueue.Enqueue(new TableMessage(table));
 	}
@@ -247,6 +251,13 @@ public class ConsoleLogger : ILogger
 			return;
 		}
 		_logQueue.Enqueue(new WarningMessage(value));
+	}
+
+	/// <summary>
+	/// Dispose the log file writer.
+	/// </summary>
+	public void Dispose() {
+		_logFileWriter.Dispose();		
 	}
 
 	#endregion
