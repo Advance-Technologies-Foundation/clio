@@ -88,15 +88,25 @@ namespace Clio.Tests.Common
 		[Test]
 		public void Dispose_test() {
 			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
-			logger.LogFileWriter = Substitute.For<System.IO.TextWriter>();
+			var mockLogFileWtiter = Substitute.For<System.IO.TextWriter>();
+			logger.LogFileWriter = mockLogFileWtiter;
 			logger.Dispose();
-			logger.LogFileWriter.Received().Dispose();
+			mockLogFileWtiter.Received().Dispose();
 		}
 
 		[Test]
 		public void Dispose_WhenLogFileWriterIsNull() {
 			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
 			logger.LogFileWriter = null;
+			Assert.DoesNotThrow(() => logger.Dispose());
+		}
+
+		[Test]
+		public void Dispose_Twice_WhenLogFileWriterIsNull() {
+			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+			logger.LogFileWriter = Substitute.For<System.IO.TextWriter>();
+			logger.Dispose();
+			Assert.That(logger.LogFileWriter, Is.Null);
 			Assert.DoesNotThrow(() => logger.Dispose());
 		}
 

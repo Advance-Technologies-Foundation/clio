@@ -257,7 +257,8 @@ public class ConsoleLogger : ILogger, IDisposable
 	/// Dispose the log file writer.
 	/// </summary>
 	public void Dispose() {
-		_logFileWriter?.Dispose();		
+		_logFileWriter?.Dispose();
+		_logFileWriter = null;
 	}
 
 	#endregion
