@@ -92,5 +92,13 @@ namespace Clio.Tests.Common
 			logger.Dispose();
 			logger.LogFileWriter.Received().Dispose();
 		}
+
+		[Test]
+		public void Dispose_WhenLogFileWriterIsNull() {
+			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+			logger.LogFileWriter = null;
+			Assert.DoesNotThrow(() => logger.Dispose());
+		}
+
 	}
 }
