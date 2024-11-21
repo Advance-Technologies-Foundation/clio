@@ -9,7 +9,7 @@
 	  <Authors>creatio rnd team</Authors>
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
-	  <AssemblyVersion>8.0.1.5</AssemblyVersion>
+	  <AssemblyVersion>8.0.1.6</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
