@@ -411,7 +411,6 @@ internal class MockDataContainer {
 		};
 		IContainer container = bm.Register(
 		settings: environmentSettings,
-		registerNullSettingsForTest: false,
 		additionalRegistrations: builder => {
 			builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
 		});

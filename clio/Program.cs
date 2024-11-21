@@ -640,8 +640,9 @@ class Program
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 			RestartOptions opts => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 			ClearRedisOptions opts => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
-			RegAppOptions opts => CreateCommand<RegAppCommand>(
-				new SettingsRepository(), new ApplicationClientFactory(), new PowerShellFactory()).Execute(opts),
+			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),           
+			//RegAppOptions opts => CreateCommand<RegAppCommand>(
+			//	new SettingsRepository(), new ApplicationClientFactory(), new PowerShellFactory()).Execute(opts),
 			AppListOptions opts => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 			UnregAppOptions opts => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),

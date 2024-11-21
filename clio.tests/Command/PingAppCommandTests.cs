@@ -27,7 +27,7 @@ namespace Clio.Tests.Command
 			EnvironmentSettings.IsNetCore = isNetCore;
 			FileSystem = CreateFs();
 			BindingsModule bindingModule = new(FileSystem);
-			Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
+			Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
 			
 			PingAppCommand command = Container.Resolve<PingAppCommand>();
 			PingAppOptions options = new PingAppOptions() { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
@@ -52,7 +52,7 @@ namespace Clio.Tests.Command
 			//Arrange
 			FileSystem = CreateFs();
 			BindingsModule bindingModule = new(FileSystem);
-			Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
+			Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
 			PingAppCommand command = Container.Resolve<PingAppCommand>();
 			PingAppOptions options = new PingAppOptions() {
 				TimeOut = 1,

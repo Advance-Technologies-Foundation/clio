@@ -38,7 +38,7 @@ namespace Clio
 			_fileSystem = fileSystem;
 		}
 		
-		public IContainer Register(EnvironmentSettings settings = null, bool registerNullSettingsForTest = false,
+		public IContainer Register(EnvironmentSettings settings = null,
 			Action<ContainerBuilder> additionalRegistrations = null) {
 			
 			var containerBuilder = new ContainerBuilder();
@@ -50,18 +50,17 @@ namespace Clio
 			
 			containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
 			
-			if (settings != null || registerNullSettingsForTest) {
-				containerBuilder.RegisterInstance(settings);
-				if (!registerNullSettingsForTest) {
+			if (settings != null) {
+				containerBuilder.Register<IDataProvider>(provider => {
 					var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 					containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
-					IDataProvider provider = string.IsNullOrEmpty(settings.Login) switch {
+					IDataProvider dataProvider = string.IsNullOrEmpty(settings.Login) switch {
 						true => new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore),
 						false => new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore)
 					};
-					containerBuilder.RegisterInstance(provider).As<IDataProvider>();
-				}
-				
+					return dataProvider;
+				});
+				containerBuilder.RegisterInstance(settings);
 			}
 
 			containerBuilder.Register<Kubernetes>( provider => {
