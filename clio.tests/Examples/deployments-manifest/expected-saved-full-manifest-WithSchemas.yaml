@@ -1,0 +1,16 @@
+webservices:
+  - url: https://creatio.com
+    name: Creatio
+  - url: https://google.ca
+    name: Google
+
+packages:
+  - name: CrtBase
+    hash: 05CC580F416C53EF362528B970B3D424
+    maintainer: Creatio
+    schemas:
+      - name: Contact
+      - name: Account
+  - name: CrtUI
+    hash: 1C41FF131358F0817308A46CCBCB43C9
+    maintainer: ATF

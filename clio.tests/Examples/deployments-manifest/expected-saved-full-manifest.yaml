@@ -7,6 +7,16 @@ packages:
 - name: CrtBase
   hash: C45FE1350C0DC2E7B30F840EC64EAAC8
   maintainer: Creatio
+  schemas:
+  - name: Account
+    hash: 4B2DC9BBF9F766D9675E90DA40E697B5
+  - name: Contact
+    hash: A8C5E54ACE3B5476A648D319486C5427
 - name: CrtUI
   hash: 2BC352052A32D01E2AF550468C6ECB28
   maintainer: ATF
+  schemas:
+  - name: Account
+    hash: 4B2DC9BBF9F766D9675E90DA40E697B5
+  - name: Contact
+    hash: A8C5E54ACE3B5476A648D319486C5427

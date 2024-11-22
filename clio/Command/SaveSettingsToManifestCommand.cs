@@ -36,6 +36,7 @@ internal class SaveSettingsToManifestOptions : EnvironmentNameOptions
 
 internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettingsToManifestOptions>
 {
+	string dateTimeFormat = "M/dd/yyyy hh:mm:ss tt";
 
 	#region Fields: Private
 
@@ -127,15 +128,36 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 			var manifestPackages = new CreatioManifestPackage() {
 				Name = sysPackage.Name,
 				Hash = GetSysPackageHash(sysPackage),
-				Maintainer = sysPackage.Maintainer
+				Maintainer = sysPackage.Maintainer,
+				Schemas = GetPackageSchemas(sysPackage)
 			};
 			packages.Add(manifestPackages);
         }
         return packages;
 	}
 
+	private List<CreatioManifestPackageSchema> GetPackageSchemas(SysPackage sysPackage) {
+		List<CreatioManifestPackageSchema> schemas = new List<CreatioManifestPackageSchema>();
+		var orderedSchemas = sysPackage.SysSchemas.OrderBy(s => s.Name);
+		foreach (var schema in orderedSchemas) {
+			
+			StringBuilder sb = new StringBuilder();
+			sb.Append(schema.Checksum);
+			sb.Append(schema.ModifiedOn.ToString(dateTimeFormat, CultureInfo.InvariantCulture).ToUpper());
+			string hashSource = sb.ToString();
+			byte[] bytes = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes(hashSource));
+			var schemaHash = BitConverter.ToString(bytes).Replace("-", string.Empty);
+			var manifestSchema = new CreatioManifestPackageSchema() {
+				Name = schema.Name,
+				Hash = schemaHash
+			};
+			schemas.Add(manifestSchema);
+		}
+		return schemas;
+
+	}
+
 	private string GetSysPackageHash(SysPackage sysPackage) {
-		string dateTimeFormat = "M/dd/yyyy hh:mm:ss tt";
 		StringBuilder sb = new StringBuilder();
 		sb.Append(sysPackage.Name);
 		sb.Append(sysPackage.ModifiedOn.ToString(dateTimeFormat, CultureInfo.InvariantCulture).ToUpper());
