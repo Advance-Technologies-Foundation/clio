@@ -31,7 +31,7 @@ jobs:
           SONAR_URL: ${{ secrets.SONAR_URL }}
         shell: powershell
         run: |
-          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml"
+          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml";
           dotnet sonarscanner begin /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
           /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
           /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml";
