@@ -36,7 +36,7 @@ jobs:
           /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
           /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml";
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
-          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
           dotnet build-server shutdown;
 
       - name: Pack
