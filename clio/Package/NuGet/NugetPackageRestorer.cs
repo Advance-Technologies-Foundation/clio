@@ -74,6 +74,7 @@ namespace Clio.Project.NuGet
 
 		private string RestorePackage(string nugetRestoreProjPath, string nugetSourceUrl,
 				string destinationNupkgDirectory) {
+			nugetSourceUrl = string.IsNullOrEmpty(nugetSourceUrl) ? "https://api.nuget.org/v3/index.json" : nugetSourceUrl;
 			string packCommand = $"restore \"{nugetRestoreProjPath}\" --source {nugetSourceUrl} " +
 				$"--packages \"{destinationNupkgDirectory}\" --force --no-cache";
 			return _dotnetExecutor.Execute(packCommand, true);
@@ -119,7 +120,6 @@ namespace Clio.Project.NuGet
 
 		public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
 				string destinationNupkgDirectory, bool overwrite) {
-			CheckArguments(nugetPackageFullName, nugetSourceUrl);
 			RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
 				gzipPackedPackagesFiles => {
 					_fileSystem.CopyFiles(gzipPackedPackagesFiles, destinationNupkgDirectory, overwrite);

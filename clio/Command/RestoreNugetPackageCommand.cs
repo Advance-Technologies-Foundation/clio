@@ -15,7 +15,7 @@ namespace Clio.Command
 		public string DestinationDirectory { get; set; }
 
 		[Option('s', "Source", Required = false, HelpText = "Specifies the server URL", 
-			Default = "https://www.nuget.org/api/v2")]
+			Default = "")]
 		public string SourceUrl { get; set; }
 
 	}
