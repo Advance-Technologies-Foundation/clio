@@ -92,4 +92,5 @@ docker run -it --rm clio help
 docker run -it --rm clio reg-web-app -help
 ```
 
-[Commands Reference](clio\Commands.md)
+## Commands Reference
+[Explore clio commands](clio/Commands.md)
