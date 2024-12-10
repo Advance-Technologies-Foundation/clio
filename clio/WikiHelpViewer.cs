@@ -41,7 +41,7 @@ namespace Clio
 			return commandName;
 		}
 
-		string baseUrl = "https://github.com/Advance-Technologies-Foundation/clio/blob/master/README.md";
+		string baseUrl = "https://github.com/Advance-Technologies-Foundation/clio/blob/master/clio/Commands.md";
 
 		private string GetCommandHelpUrl(string commandName) {
 			var wikiAnchor = GetWikiAnchor(commandName);
