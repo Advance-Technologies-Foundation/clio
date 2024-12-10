@@ -537,30 +537,33 @@ class Program
 		return Resolve<IPackageConverter>().Convert(opts);
 	}
 
-
-	private static Type[] CommandOption = new[]{
+    // Note: order of types in this array affets how the commands are listed in the 'clio help' output.
+    // Group commands by their purpose.
+    private static Type[] CommandOption = new[]{
+		// Application management
+		typeof(RegAppOptions),
+		typeof(UnregAppOptions),
+		typeof(AppListOptions),
 		typeof(ExecuteAssemblyOptions),
 		typeof(RestartOptions),
 		typeof(ClearRedisOptions),
-		typeof(RegAppOptions),
-		typeof(AppListOptions),
-		typeof(UnregAppOptions),
+		// Package management
 		typeof(GeneratePkgZipOptions),
+		typeof(UnzipPkgOptions),
 		typeof(PushPkgOptions),
+		typeof(PullPkgOptions),
 		typeof(DeletePkgOptions),
-		typeof(ReferenceOptions),
 		typeof(NewPkgOptions),
+		typeof(ReferenceOptions),
 		typeof(ConvertOptions),
 		typeof(RegisterOptions),
 		typeof(UnregisterOptions),
-		typeof(PullPkgOptions),
 		typeof(ExecuteSqlScriptOptions),
 		typeof(InstallGateOptions),
 		typeof(ItemOptions),
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
 		typeof(FeatureOptions),
-		typeof(UnzipPkgOptions),
 		typeof(PingAppOptions),
 		typeof(OpenAppOptions),
 		typeof(PkgListOptions),
@@ -582,6 +585,9 @@ class Program
 		typeof(AddPackageOptions),
 		typeof(UnlockPackageOptions),
 		typeof(LockPackageOptions),
+        typeof(DeactivatePkgOptions),
+        typeof(CompilePackageOptions),
+		// Development
 		typeof(DataServiceQuerryOptions),
 		typeof(RestoreFromPackageBackupOptions),
 		typeof(CreateUiProjectOptions),
@@ -607,11 +613,9 @@ class Program
 		typeof(CheckWindowsFeaturesOptions),
 		typeof(ManageWindowsFeaturesOptions),
 		typeof(CreateTestProjectOptions),
-		typeof(DeactivatePkgOptions),
 		typeof(ListenOptions),
 		typeof(ShowPackageFileContentOptions),
 		typeof(SwitchNugetToDllOptions),
-		typeof(CompilePackageOptions),
 		typeof(UninstallAppOptions),
 		typeof(DownloadAppOptions),
 		typeof(DeployAppOptions),
@@ -622,17 +626,18 @@ class Program
 		typeof(PackageHotFixCommandOptions),
 		typeof(PublishWorkspaceCommandOptions),
 		typeof(GetCreatioInfoCommandOptions),
-		typeof(SetApplicationVersionOption),
-		typeof(ApplyEnvironmentManifestOptions),
 		typeof(GetWebServiceUrlOptions),
+		typeof(ApplyEnvironmentManifestOptions),
 		typeof(SaveSettingsToManifestOptions),
 		typeof(CloneEnvironmentOptions),
 		typeof(ShowDiffEnvironmentsOptions),
 		typeof(MockDataCommandOptions),
 		typeof(UninstallCreatioCommandOptions),
 		typeof(AddSchemaOptions),
+		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
 		typeof(LastCompilationLogOptions),
+		// General operations
 		typeof(InstallTideCommandOptions)
 
     };
