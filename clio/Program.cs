@@ -632,7 +632,8 @@ class Program
 		typeof(UninstallCreatioCommandOptions),
 		typeof(AddSchemaOptions),
 		typeof(SetApplicationIconOption),
-		typeof(LastCompilationLogOptions)
+		typeof(LastCompilationLogOptions),
+		typeof(InstallTideCommandOptions)
 
     };
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
@@ -738,7 +739,8 @@ class Program
 			AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
             LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
-            _ => 1,
+			InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
+			_ => 1,
 		};
 	};
 

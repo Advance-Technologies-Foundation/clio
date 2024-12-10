@@ -460,7 +460,7 @@ namespace cliogate.Files.cs
 				}
 			} else {
 				Query query = new Update(UserConnection, "SysPackage")
-					.Set("InstallType", Column.Parameter(0, "Integer"))
+					.Set("InstallType", Column.Parameter(0))
 					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode));
 				Update update = query as Update;
 				update.Execute();

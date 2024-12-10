@@ -26,6 +26,7 @@ namespace Clio.Tests
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 			var logger = Substitute.For<ILogger>();
+			var packageLockManager = Substitute.For<IPackageLockManager>();
 			var clioFileSystem = new FileSystem(FileSystem);
 			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 				environmentSettings,
@@ -35,7 +36,8 @@ namespace Clio.Tests
 				scriptExecutor,
 				serviceUrlBuilder,
 				clioFileSystem,
-				logger
+				logger,
+				packageLockManager
 			);
 			applicationInstaller.Install(packagePath, environmentSettings);
 			application.Received(1).Restart();
@@ -58,6 +60,7 @@ namespace Clio.Tests
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
+			var packageLockManager = Substitute.For<IPackageLockManager>();
 			var clioFileSystem = new FileSystem(FileSystem);
 			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
@@ -68,7 +71,8 @@ namespace Clio.Tests
 				scriptExecutor,
 				serviceUrlBuilder,
 				clioFileSystem,
-				logger
+				logger,
+				packageLockManager
 			);
 			applicationInstaller.Install(packageFolderPath, environmentSettings);
 			application.Received(1).Restart();
@@ -91,6 +95,7 @@ namespace Clio.Tests
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
+			var packageLockManager = Substitute.For<IPackageLockManager>();
 			var clioFileSystem = new FileSystem(FileSystem);
 			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 			ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
@@ -101,7 +106,8 @@ namespace Clio.Tests
 				scriptExecutor,
 				serviceUrlBuilder,
 				clioFileSystem,
-				logger
+				logger,
+				packageLockManager
 			);
 			Assert.DoesNotThrow(
 				() => applicationInstaller.Install(packageFolderPath, environmentSettings)
@@ -126,6 +132,7 @@ namespace Clio.Tests
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
+			var packageLockManager = Substitute.For<IPackageLockManager>();
 			var clioFileSystem = new FileSystem(FileSystem);
 			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 			applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("SOME LOG WITHOUT SUCCESS MESSAGE");
@@ -137,7 +144,8 @@ namespace Clio.Tests
 				scriptExecutor,
 				serviceUrlBuilder,
 				clioFileSystem,
-				logger
+				logger,
+				packageLockManager
 			);
 			GlobalContext.FailOnError = true;
 			bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
@@ -161,6 +169,7 @@ namespace Clio.Tests
 			var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
 			var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			var logger = Substitute.For<ILogger>();
+			var packageLockManager = Substitute.For<IPackageLockManager>();
 			var clioFileSystem = new FileSystem(FileSystem);
 			var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 			applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("appLication InstallEd successfully");
@@ -172,7 +181,8 @@ namespace Clio.Tests
 				scriptExecutor,
 				serviceUrlBuilder,
 				clioFileSystem,
-				logger
+				logger,
+				packageLockManager
 			);
 			GlobalContext.FailOnError = true;
 			bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);

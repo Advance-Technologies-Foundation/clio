@@ -208,6 +208,7 @@ namespace Clio
 			containerBuilder.RegisterType<PullPkgCommand>();
 			containerBuilder.RegisterType<AssemblyCommand>();
 			containerBuilder.RegisterType<UninstallCreatioCommand>();
+			containerBuilder.RegisterType<InstallTideCommand>();
 			containerBuilder.RegisterType<AddSchemaCommand>();
 			containerBuilder.RegisterType<CreatioInstallerService>();
 			containerBuilder.RegisterType<SetApplicationIconCommand>();
