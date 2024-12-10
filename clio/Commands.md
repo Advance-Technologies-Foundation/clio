@@ -3,21 +3,99 @@ Clio Command Reference
 ## In this article
 
 - [Arguments](#command-arguments)
+- [Help and examples](#help-and-examples)
 - [Package Management](#package-management)
 - [NuGet Packages](#nuget-packages)
-- [Application](#application)
+- [Application Management](#application)
 - [Environment settings](#environment-settings)
 - [Development](#development)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
 
-# Command Arguments
+# Running Clio
+The general syntax for running clio:
+```bash
+clio <COMMAND> [arguments] [command_options]
+```
+Where  `<COMMAND>` is clio command name, use [help](#help) to get list of available commands. `[arguments]` are values relevant to running the command, `[command_options]` behavior modifiers starting with `-` minus symbol.  
 
+## Command arguments
 - `<PACKAGE_NAME>` - package name
 - `<ENVIRONMENT_NAME>` - environment name
-- `<COMMAND_NAME>` - clio command name
+- `<ITEM_NAME>` - item name
 
+## Environment options
+
+- `-u`, `--uri` (optional): Application URI.
+- `-p`, `--Password` (optional): User password.
+- `-l`, `--Login` (optional): User login (administrator permission required).
+- `-i`, `--IsNetCore` (optional, default: `null`): Use NetCore application.
+- `-e`, `--Environment` (optional): Environment name.
+- `-m`, `--Maintainer` (optional): Maintainer name.
+- `-c`, `--dev` (optional): Developer mode state for environment.
+- `--WorkspacePathes` (optional): Workspace path.
+- `-s`, `--Safe` (optional): Safe action in this environment.
+- `--clientId` (optional): OAuth client ID.
+- `--clientSecret` (optional): OAuth client secret.
+- `--authAppUri` (optional): OAuth app URI.
+- `--silent` (optional): Use default behavior without user interaction.
+- `--restartEnvironment` (optional): Restart environment after executing the command.
+- `--db-server-uri` (optional): DB server URI.
+- `--db-user` (optional): Database user.
+- `--db-password` (optional): Database password.
+- `--backup-file` (optional): Full path to backup file.
+- `--db-working-folder` (optional): Folder visible to DB server.
+- `--db-name` (optional): Desired database name.
+- `--force` (optional): Force restore.
+
+## Item options
+
+- `-d`, `--DestinationPath` (optional): Path to the source directory. Default is `null`.
+- `-n`, `--Namespace` (optional): Namespace for service classes. Default is `null`.
+- `-f`, `--Fields` (optional): Required fields for the model class. Default is `null`.
+- `-a`, `--All` (optional, default: `true`): Create all models.
+- `-x`, `--Culture` (optional, default: `en-US`): Description culture.
+
+# Help and examples
+  - [Help](#help)
+  - [Version](#ver)
+
+## help
+
+To display available commands use:
+
+```
+clio help
+```
+
+To display command help use:
+
+```
+clio <COMMAND_NAME> --help
+```
+
+#
+
+Get versions of all known components
+```bash
+clio ver
+```
+
+Get current clio version
+```bash
+clio ver --clio
+```
+
+Get current cliogate version
+```bash
+clio ver --gate
+```
+
+Get dotnet runtime that executes clio
+```bash
+clio ver --runtime
+```
 
 # Package Management
   - [Create a new package](#new-pkg)
@@ -26,16 +104,13 @@ Clio Command Reference
   - [Compile package](#compile-package)
   - [Pull package from remote application](#pull-pkg)
   - [Delete package](#delete-pkg-remote)
-  - [Deploy application](#deploy-application)
-  - [Uninstall application](#uninstall-app-remote)
   - [Compress package](#generate-pkg-zip)
-  - [List installed applications](#get-app-list)
   - [Extract package](#extract-package)
   - [Restore configuration](#restore-configuration)
   - [Get package list](#get-pkg-list)
   - [Set package version](#set-pkg-version)
   - [Set application version](#set-app-version)
-  - [Set Application Icon](#set-app-icon)
+  - [Set application icon](#set-app-icon)
 
 ## new-pkg
 
@@ -144,51 +219,6 @@ for delete for non default application
 ```
 clio delete-pkg-remote <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
 ```
-
-## download-app
-
-```bash
-clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> 
-#or
-clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> --FilePath <FILE_PATH.ZIP>
-```
-
-## deploy-application
-
-```bash
-clio deploy-application <APP_NAME|APP_CODE> -e <SOURCE_ENVIRONMENT_NAME> -d <DESTINATION_ENVIRONMENT_NAME>
-
-#or omit -e argument to take application from default environment
-
-clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
-````
-
-
-
-## uninstall-app-remote
-
-To uninstall application, use the next command:
-
-```
-clio uninstall-app-remote <APP_NAME|APP_CODE>
-```
-
-
-## get-app-list
-
-The `get-app-list` command, also short alias as `apps`, 
-is used to list all the installed applications in the selected environment. 
-This command is useful when you want to check which applications are currently 
-installed in your Creatio environment.
-
-```bash
-clio get-app-list
-
-#or 
-
-clio apps
-```
-
 
 ## generate-pkg-zip
 
@@ -399,6 +429,9 @@ clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
 Default value of 'Source' argument: https://www.nuget.org/api/v2
 
 # Application
+  - [Deploy application](#deploy-application)
+  - [Uninstall application](#uninstall-app-remote)
+  - [List installed applications](#get-app-list)
   - [Upload Licenses](#lic)
   - [Restart application](#restart-web-app)
   - [Clear Redis database](#clear-redis-db)
@@ -408,7 +441,53 @@ Default value of 'Source' argument: https://www.nuget.org/api/v2
   - [Get system setting](#get-syssetting) 
   - [Features](#set-feature)
   - [Set base web wervice url](#set-webservice-url)
-  - [Version](#ver)
+
+## download-app
+
+```bash
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> 
+#or
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> --FilePath <FILE_PATH.ZIP>
+```
+
+## deploy-application
+
+Deploy application from one environment to another
+
+```bash
+clio deploy-application <APP_NAME|APP_CODE> -e <SOURCE_ENVIRONMENT_NAME> -d <DESTINATION_ENVIRONMENT_NAME>
+
+#or omit -e argument to take application from default environment
+
+clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
+````
+
+
+
+## uninstall-app-remote
+
+To uninstall application, use the next command:
+
+```
+clio uninstall-app-remote <APP_NAME|APP_CODE>
+```
+
+
+## get-app-list
+
+The `get-app-list` command, also short alias as `apps`, 
+is used to list all the installed applications in the selected environment. 
+This command is useful when you want to check which applications are currently 
+installed in your Creatio environment.
+
+```bash
+clio get-app-list
+
+#or 
+
+clio apps
+```
+
 ## Upload licenses
 
 To upload licenses to Creatio application, use the next command for default environment:
@@ -535,29 +614,6 @@ clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
 ```
 
 
-## ver
-
-Get versions of all known components
-```bash
-clio ver
-```
-
-Get current clio version
-```bash
-clio ver --clio
-```
-
-Get current cliogate version
-```bash
-clio ver --gate
-```
-
-Get dotnet runtime that executes clio
-```bash
-clio ver --runtime
-```
-
-
 # Environment settings
   - [Create/Update an environment](#createupdate-an-environment)
   - [Delete the existing environment](#delete-the-existing-environment)
@@ -568,7 +624,7 @@ clio ver --runtime
   - [Clone environment](#clone-environment)
   - [Healthcheck](#healthcheck)
 
-Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password.
+Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
 
 ## Create/Update an environment
 
@@ -674,8 +730,6 @@ clio get-info -e <ENVIRONMENT_NAME>
 clio get-info <ENVIRONMENT_NAME>
 ````
 
-
-
 # Development
   - [Create workspace](#create-workspace)
   - [Restore workspace](restore-workspace)
@@ -684,9 +738,8 @@ clio get-info <ENVIRONMENT_NAME>
   - [References](#ref-to)
   - [Execute custom SQL script](#execute-custom-sql-script)
   - [Execute dataservice request](#dataservice)
-  - [Help and examples](#help-and-examples)
   - [Add item](#add-item)
-  - [Add-Schema](#add-schema)
+  - [Add schema](#add-schema)
   - [Link Workspace to File Design Mode](#link-workspace-to-file-design-mode)
   - [Mock data for Unit Tests](#mock-data-for-unit-tests)
 ## Workspaces
@@ -932,7 +985,7 @@ To mock data for unit tests with using [ATF].[Repository] use the following comm
 
 clio mock-data --models D:\Projects\MyProject --data D:\Projects\MyProject\Tests\TestsData  -e MyDevCreatio
 
-``
+```
 
 # Using for CI/CD systems
 
@@ -943,6 +996,11 @@ clio restart -u https://mysite.creatio.com -l administrator -p password
 ```
 
 # GitOps
+
+- [Apply manifest to Creatio instance](#apply-manifest)
+- [Create manifest from Creatio instance](#create-manifest)
+- [Show difference in settings for two Creatio intances](#show-diff)
+- [Automation scenarios](#run-scenario)
 
 To support GitOps approach clio provides yaml manifest file.  This file has following structure to describes desired state of Creatio instance.
 Example of manifest:
@@ -992,7 +1050,7 @@ app_hubs:
 
 ```
 
-## Apply manifest to Creatio instance
+## apply-manifest
 
 To apply manifest to your Creatio instance use the following command
 
@@ -1002,7 +1060,7 @@ clio apply-manifest "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
 
 ```
 
-## Create manifest from Creatio instance
+## save-state
 
 To control changes of an instance download state to manifest file and store it in Git. To download state use the following command
 
@@ -1010,7 +1068,7 @@ To control changes of an instance download state to manifest file and store it i
 clio save-state "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
 ```
 
-## Show difference in settings for two Creatio intances
+## show-diff
 
 To compare two Creatio instances and show it use the following command
 
@@ -1024,8 +1082,7 @@ To save diff manifest to file, specify arguments file
 clio show-diff --source production --target qa --file diff-production-qa.yaml
 ```
 
-
-## Automation scenarios
+## run-scenario
 You can combine multiple commands into one scenario and execute it with 
 ```
 clio run-scenario --file-name scenario.yaml
