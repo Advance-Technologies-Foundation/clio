@@ -14,9 +14,9 @@
 		public PackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
 				IApplicationClientFactory applicationClientFactory, IApplication application,
 				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger)
+				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager)
 			: base(applicationLogProvider, environmentSettings, applicationClientFactory,  application,
-				 packageArchiver,  scriptExecutor, serviceUrlBuilder,  fileSystem,  logger) {
+				 packageArchiver,  scriptExecutor, serviceUrlBuilder,  fileSystem,  logger, packageLockManager) {
 		}
 
 		#endregion

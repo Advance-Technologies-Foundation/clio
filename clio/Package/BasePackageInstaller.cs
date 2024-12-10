@@ -9,6 +9,7 @@
 	using System.Threading.Tasks;
 	using System.Threading;
 	using System;
+	using System.Linq;
 
 	public abstract class BasePackageInstaller {
 
@@ -28,6 +29,7 @@
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly ISqlScriptExecutor _scriptExecutor;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
+		private readonly IPackageLockManager _packageLockManager;
 		protected readonly ILogger _logger;
 		private readonly IApplication _application;
 		private string _reportPath;
@@ -45,7 +47,7 @@
 		public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
 			IApplicationClientFactory applicationClientFactory, IApplication application,
 			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger) {
+			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			application.CheckArgumentNull(nameof(application));
@@ -63,6 +65,7 @@
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_fileSystem = fileSystem;
 			_logger = logger;
+			_packageLockManager = packageLockManager;
 		}
 
 		#endregion
@@ -93,8 +96,7 @@
 			_applicationClientFactory.CreateClient(environmentSettings);
 
 		private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings) {
-			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			applicationClient.CallConfigurationService("CreatioApiGateway", "UnlockPackages", "{}");
+			_packageLockManager.Unlock(Enumerable.Empty<string>());
 		}
 
 		private void SaveLogFile(string logText, string reportPath) {
