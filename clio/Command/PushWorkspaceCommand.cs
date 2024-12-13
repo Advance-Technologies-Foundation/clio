@@ -66,7 +66,7 @@ namespace Clio.Command
 					var applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
 					var runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
 					ProcessStartArgs runProcessArgs = new() {
-						SchemaName = "AtfProcess_ShowMessage",
+						SchemaName = options.CallbackProcess,
 						Values = [
 							new ProcessStartArgs.ParameterValues {
 								Name = "Message",
