@@ -68,13 +68,13 @@ namespace Clio.Package
 			try {
 				string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
 				return ParsePackageInfoResponse(responseFormServer);
-			} catch (Exception e) {
+			} catch {
 				return Array.Empty<PackageInfo>(); 
 			}
 		}
 
 		internal IEnumerable<PackageInfo> ParsePackageInfoResponse(string responseData) {
-			string json = _jsonConverter.CorrectJson(responseData);
+			string json = _jsonConverter.SanitizeJsonString(responseData);
 			List<Dictionary<string, string>> packages = _jsonConverter.DeserializeObject<List<Dictionary<string, string>>>(json);
 			return packages.Select(CreatePackageInfo);
 		}

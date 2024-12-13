@@ -106,7 +106,7 @@ namespace Clio
 			string packagePath = GetPackageContentFolderPath(packageName);
 			string packageDescriptorPath = PackageUtilities.BuildPackageDescriptorPath(packagePath);
 			var packageDescriptor = _jsonConverter
-				.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath)
+				.DeserializeJsonFromFile<PackageDescriptorDto>(packageDescriptorPath)
 				.Descriptor;
 			return packageDescriptor;
 		}

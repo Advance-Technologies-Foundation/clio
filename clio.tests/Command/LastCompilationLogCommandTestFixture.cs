@@ -30,8 +30,8 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	public void OneTimeSetUp(){
 		ConsoleLogger.Instance.Start();
 		_applicationClientMock = Substitute.For<IApplicationClient>();
-		_sb = new();
-		_textWriter = new(_sb);
+		_sb = new StringBuilder();
+		_textWriter = new StringWriter(_sb);
 		_originalTextWriter = Console.Out;
 		Console.SetOut(_textWriter);
 	}

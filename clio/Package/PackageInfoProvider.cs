@@ -43,7 +43,7 @@ namespace Clio
 			}
 			try {
 				PackageDescriptorDto packageDescriptorDto = 
-					_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
+					_jsonConverter.DeserializeJsonFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				IEnumerable<string> filePaths = _fileSystem.Directory
 					.EnumerateFiles(packagePath, "*.*", SearchOption.AllDirectories);
 				return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths);

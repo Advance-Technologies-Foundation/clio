@@ -269,13 +269,14 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
 		
-		var sysSetting = GetSysSettingByCode(code); 
+		SysSettings sysSetting = GetSysSettingByCode(code); 
 		if(sysSetting is null) {
-			var result = InsertSysSetting(optsCode, code, optsType);
+			InsertSysSettingResponse result = InsertSysSetting(optsCode, code, optsType);
 			string text = result switch {
 				{Success: true, Id: var id} when id != Guid.Empty => $"SysSettings with code: {code} created.",
 				{Success: false, Id: var id} when id == Guid.Empty =>
-					$"SysSettings with code: {code} already exists."
+					$"SysSettings with code: {code} already exists.",
+				var _ => throw new ArgumentOutOfRangeException($"{result.Success} {result.Id}")
 			};
 			_logger.WriteInfo(text);
 		}

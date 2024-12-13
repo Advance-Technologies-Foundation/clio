@@ -47,10 +47,10 @@
     <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CreatioSDK" Version="8.0.3.1759" />
-    <PackageReference Include="ATF.Repository" Version="2.0.1.7" />
+    <PackageReference Include="CreatioSDK" Version="8.1.0.6716" />
+    <PackageReference Include="ATF.Repository" Version="2.0.2.5" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Npgsql" Version="7.0.6" />
     <PackageReference Include="System.CodeDom" Version="5.0.0.0" />
   </ItemGroup>

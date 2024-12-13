@@ -18,7 +18,7 @@ namespace Clio.Common.ScenarioHandlers {
     internal class ConfigureConnectionStringRequestHandler : IRequestHandler<ConfigureConnectionStringRequest, OneOf<BaseHandlerResponse, HandlerError>> {
 
         
-        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request, CancellationToken cancellationToken) {
+        public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request, CancellationToken cancellationToken) {
 
             string folder = request.Arguments["folderPath"];
             string dbString = request.Arguments["dbString"]; 
@@ -33,10 +33,10 @@ namespace Clio.Common.ScenarioHandlers {
                 result = result+"\n"+UpdateWebConfig(webConfigPath);
             }
             
-            return new ConfigureConnectionStringResponse {
+            return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new ConfigureConnectionStringResponse {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
                 Description = result
-            };
+            });
         }
 
         

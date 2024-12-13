@@ -4,7 +4,7 @@ using System.Runtime.Serialization;
 namespace Clio.Command
 {
 	[Serializable]
-	internal class SilentException : Exception
+	public class SilentException : Exception
 	{
 		public SilentException() {
 		}
@@ -15,6 +15,7 @@ namespace Clio.Command
 		public SilentException(string message, Exception innerException) : base(message, innerException) {
 		}
 
+		[Obsolete("Obsolete")]
 		protected SilentException(SerializationInfo info, StreamingContext context) : base(info, context) {
 		}
 	}

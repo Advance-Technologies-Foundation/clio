@@ -46,7 +46,7 @@ namespace Clio.Command.PackageCommand
 		public override int Execute(SetPackageVersionOptions options) {
 			string packageDescriptorPath = Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
 			try {
-				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
+				var dto = _jsonConverter.DeserializeJsonFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				dto.Descriptor.PackageVersion = options.PackageVersion;
 				dto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
 				_jsonConverter.SerializeObjectToFile(dto, packageDescriptorPath);

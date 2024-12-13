@@ -48,7 +48,7 @@ namespace Clio.Command.PackageCommand
 			string packageDescriptorPath = Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
 			try
 			{
-				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
+				var dto = _jsonConverter.DeserializeJsonFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				_logger.WriteInfo(dto.Descriptor.PackageVersion);
 			}
 			catch (FileNotFoundException)

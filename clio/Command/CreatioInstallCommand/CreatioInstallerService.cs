@@ -273,8 +273,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
-			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
-		};
+			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
+            _ => throw new NotImplementedException()
+        };
 
 		int redisDb = FindEmptyRedisDb(csParam.RedisPort);
 
@@ -304,7 +305,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 							InstallerHelper.FrameworkType.NetFramework).ToString()
 					}
 				}
-			}
+			},
+			var _ => throw new NotImplementedException($"Database type {dbType} is not supported, supported types are: {InstallerHelper.DatabaseType.MsSql}, {InstallerHelper.DatabaseType.Postgres}")
 		};
 
 		return (await _mediator.Send(request)).Value switch {

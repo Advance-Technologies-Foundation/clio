@@ -44,7 +44,7 @@ namespace Clio.Command
                 if (errorResponse.StatusCode == HttpStatusCode.NotFound) {
                     _logger.WriteError($"Application {_environmentSettings.Uri} not found");
                 }
-                throw we;
+                throw;
             }
         }
 

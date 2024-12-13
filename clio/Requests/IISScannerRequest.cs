@@ -93,7 +93,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> FindUnregisteredCreatioSites = settingsRepository => {
 			return GetBindings().Where(site => {
 					bool isRegisteredEnvironment = false;
-					ConvertBindingToUri(site.binding).ForEach(uri => {
+					Site.ConvertBindingToUri(site.binding).ForEach(uri => {
 						string key = settingsRepository.FindEnvironmentNameByUri(uri.ToString());
 						if (!string.IsNullOrEmpty(key) && !isRegisteredEnvironment) {
 							isRegisteredEnvironment = true;
@@ -104,7 +104,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 				.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
 				.Select(site => new UnregisteredSite(
 					site,
-					ConvertBindingToUri(site.binding),
+					Site.ConvertBindingToUri(site.binding),
 					DetectSiteType(site.path)));
 		};
 
@@ -140,7 +140,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 			.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
 			.Select(site => new UnregisteredSite(
 				site,
-				ConvertBindingToUri(site.binding),
+				Site.ConvertBindingToUri(site.binding),
 				DetectSiteType(site.path)));
 	};
 
@@ -158,31 +158,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	/// </summary>
 	private static readonly Func<string, List<string>> SplitBinding = binding => binding.Contains(',') ? binding.Split(',').ToList() : [binding];
 
-	/// <summary>
-	///  Splits IIS Binding
-	/// </summary>
-	private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding => {
-		List<Uri> result = [];
-
-		//"http/*:7080:localhost,http/*:7080:kkrylovn
-		SplitBinding(binding).ForEach(item => {
-			//http/*:7080:localhost
-			//http/*:80:
-			string[] items = item.Split(':');
-			if (items.Length >= 3) {
-				string hostName = string.IsNullOrEmpty(items[2]) ? "localhost" : items[2];
-				string port = items[1];
-				string other = items[0];
-				string protocol = other.Replace("/*", "");
-				string url = $"{protocol}://{hostName}:{port}";
-
-				if (Uri.TryCreate(url, UriKind.Absolute, out Uri value)) {
-					result.Add(value);
-				}
-			}
-		});
-		return result;
-	};
+	
 
 	/// <summary>
 	///  Converts XElement to Sitebinding
@@ -264,24 +240,28 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
 	#region Methods: Public
 
-	public async Task Handle(AllSitesRequest request, CancellationToken cancellationToken){
-		IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
+	public Task Handle(AllSitesRequest request, CancellationToken cancellationToken)
+    {
+        IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
 		request.Callback(sites);
-	}
+        return Task.CompletedTask;
+    }
 
-	public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken){
-		string name = request.SiteName;
+    public Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken)    {
+        string name = request.SiteName;
 		StopSiteByName(name);
 		StopAppPoolByName(name);
-	}
+        return Task.CompletedTask;
+    }
 
-	public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
+    public Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
 		string name = request.SiteName;
 		RemoveSiteByName(name);
 		RemoveAppPoolByName(name);
+		return Task.CompletedTask;
 	}
 
-	public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken){
+	public Task Handle(IISScannerRequest request, CancellationToken cancellationToken){
 		Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 		IEnumerable<UnregisteredSite> unregSites = FindUnregisteredCreatioSites(_settingsRepository);
 
@@ -297,7 +277,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
 			int i = 1;
 
-			GetSites(_powerShellFactory)?.ToList().ForEach(async site => {
+			GetSites(_powerShellFactory)?.ToList().ForEach(site => {
 				_logger.WriteInfo($"({i++}) {site.Key} - {site.Value}");
 			});
 
@@ -324,6 +304,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 				});
 			});
 		}
+		return Task.CompletedTask;
 	}
 
 	#endregion
@@ -367,7 +348,7 @@ public record Site {
 	/// <summary>
 	///  Splits IIS Binding
 	/// </summary>
-	private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding => {
+	public static readonly Func<string, List<Uri>> ConvertBindingToUri = binding => {
 		binding = binding.Replace(" *", "/*").Replace(" ", ",");
 
 		List<Uri> result = [];

@@ -55,7 +55,7 @@ namespace Clio
 
 		public bool CheckHelp(string commandName) {
 			try {
-				return WebBrowser.Enabled && WebBrowser.CheckUrl(GetCommandHelpUrl(commandName));
+				return WebBrowser.Enabled && WebBrowser.CheckUrl(GetCommandHelpUrl(commandName)).GetAwaiter().GetResult();
 			} catch {
 				return false;
 			}

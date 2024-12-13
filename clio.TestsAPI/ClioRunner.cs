@@ -8,7 +8,7 @@ namespace clio.ApiTest;
 public interface ICLioRunner
 {
 
-	public string RunClioCommand(string commandName, string clioArgs, string workingDirectory = "", Dictionary<string,string> envVariables = null);
+	public string RunClioCommand(string commandName, string clioArgs, string workingDirectory = "", Dictionary<string, string>? envVariables = null);
 
 }
 
@@ -31,7 +31,7 @@ public class ClioRunner : ICLioRunner
 
 	#region Methods: Public
 
-	public string RunClioCommand(string commandName, string clioArgs, string workingDirectory = "", Dictionary<string,string> envVariables = null){
+	public string RunClioCommand(string commandName, string clioArgs, string workingDirectory = "", Dictionary<string, string>? envVariables = null){
 		string mainLocation = Assembly.GetExecutingAssembly().Location;
 		string mainLocationDirPath = Path.GetDirectoryName(mainLocation);
 		string clioDevPath = Path.Combine(mainLocationDirPath, "..", "..", "..", "..", "clio", "bin", "Debug", "net6.0",

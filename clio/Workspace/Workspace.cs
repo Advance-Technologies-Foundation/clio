@@ -78,10 +78,10 @@ namespace Clio.Workspaces
 		}
 
 		private WorkspaceSettings ReadWorkspaceSettings() =>
-			_jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
+			_jsonConverter.DeserializeJsonFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
 
 		private WorkspaceEnvironmentSettings ReadWorkspaceEnvironmentSettings() =>
-			_jsonConverter.DeserializeObjectFromFile<WorkspaceEnvironmentSettings>(WorkspaceEnvironmentSettingsPath);
+			_jsonConverter.DeserializeJsonFromFile<WorkspaceEnvironmentSettings>(WorkspaceEnvironmentSettingsPath);
 
 		#endregion
 

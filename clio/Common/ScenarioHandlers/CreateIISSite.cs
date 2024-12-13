@@ -90,7 +90,7 @@ namespace Clio.Common.ScenarioHandlers {
         }
 
 
-        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(CreateIISSiteRequest request, CancellationToken cancellationToken) {
+        public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(CreateIISSiteRequest request, CancellationToken cancellationToken) {
             
             string siteName = request.Arguments["siteName"].Trim();
             int sitePort = int.Parse(request.Arguments["port"].Trim());
@@ -111,10 +111,10 @@ namespace Clio.Common.ScenarioHandlers {
                 sb.Append(CreateWebApplication(siteName, Path.Join(destinationFolder, "Terrasoft.WebApp")));
             }
 
-            return new CreateIISSiteResponse {
+            return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new CreateIISSiteResponse {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
                 Description = sb.ToString()
-            };
+            });
         }
 
         private string CreateAppPool(string poolName, bool isNetFramework = true) {

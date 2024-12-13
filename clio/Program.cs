@@ -521,7 +521,7 @@ class Program
 			project.Reload();
 			return 0;
 		} catch (Exception e) {
-			Console.WriteLine(e);
+			ConsoleLogger.Instance.WriteError(e.ToString());
 			return 1;
 		}
 	}

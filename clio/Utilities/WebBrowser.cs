@@ -1,25 +1,27 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
-using System.Text;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Clio.Common;
 
 namespace Clio.Utilities
 {
-	class WebBrowser
+	internal static class WebBrowser
 	{
-		public static bool Enabled { get => OSPlatformChecker.GetIsWindowsEnvironment(); }
 
-		public static bool CheckUrl(string url) {
-			UriBuilder uriBuilder = new UriBuilder(url);
-			var request = HttpWebRequest.Create(uriBuilder.Uri);
-			var response = (HttpWebResponse)request.GetResponse();
-			return response.StatusCode == HttpStatusCode.OK && response.ResponseUri == request.RequestUri;
+		
+		public static bool Enabled => OSPlatformChecker.GetIsWindowsEnvironment();
+		
+		public static async Task<bool> CheckUrl(string url){
+			using HttpClient client = new ();
+			HttpResponseMessage response = await client.GetAsync(url);
+			return response.StatusCode == HttpStatusCode.OK;
 		}
 
 		public static void OpenUrl(string url) {
 			if (OSPlatformChecker.GetIsWindowsEnvironment()) {
-				Console.WriteLine($"Open {url}...");
+				ConsoleLogger.Instance.WriteInfo($"Open {url}...");
 				Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
 			} else {
 				throw new NotFiniteNumberException("Command not supported for current platform...");

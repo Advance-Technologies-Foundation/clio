@@ -12,8 +12,8 @@ public class PublishWorkspaceCommandStepDefinitions
 	private readonly ICLioRunner _clio;
 	private string _clioWorkingDirectory = string.Empty;
 	private PublishAppArgs _args;
-	private readonly List<string> _tempDirItems = new();
-	private readonly List<string> _workingDirItems = new();
+	private readonly List<string> _tempDirItems = [];
+	private readonly List<string> _workingDirItems = [];
 	private FileSystemWatcher _watcher;
 	private FileSystemWatcher _tempWatcher;
 

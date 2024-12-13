@@ -41,6 +41,8 @@ namespace Clio.Command
 			{
 				_workspace.Install();
 				Console.WriteLine("Done");
+				//Unlock
+				//Callback process
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);

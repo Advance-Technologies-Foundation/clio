@@ -103,16 +103,16 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 
 	#region Methods: Public
 
-	public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(RestoreBdRequest request,
+	public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(RestoreBdRequest request,
 		CancellationToken cancellationToken){
 		Arguments = request.Arguments;
 		string adminConectionString = request.Arguments["adminConectionString"];
 		CopyBackUpFile();
 		ConnectToSQl(adminConectionString);
 
-		return new RestoreBdResponse {
+		return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new RestoreBdResponse {
 			Status = BaseHandlerResponse.CompletionStatus.Success
-		};
+		});
 	}
 
 	#endregion
