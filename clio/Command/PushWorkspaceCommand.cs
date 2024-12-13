@@ -65,7 +65,7 @@ namespace Clio.Command
 					_unlockPackageCommand.Execute(unlockPackageCommandOptions);
 				}
 				Console.WriteLine("Done");
-				CallbackInfo(options.CallbackProcess, "Workspace was suvvesfully restored");
+				CallbackInfo(options.CallbackProcess, "Workspace was successfully restored");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
