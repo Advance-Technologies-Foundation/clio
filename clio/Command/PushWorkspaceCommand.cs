@@ -54,40 +54,47 @@ namespace Clio.Command
 		public override int Execute(PushWorkspaceCommandOptions options) {
 			try {
 				Console.WriteLine("Push workspace...");
+				CallbackInfo(options.CallbackProcess, "Push workspace...");
 				_workspace.Install();
 				if (options.NeedUnlockPackage) {
 					var unlockPackageCommandOptions = new UnlockPackageOptions();
 					unlockPackageCommandOptions.CopyFromEnvironmentSettings(options);
 					unlockPackageCommandOptions.Name = string.Join(',', _workspace.WorkspaceSettings.Packages);
 					Console.WriteLine("Unlock packages...");
+					CallbackInfo(options.CallbackProcess, "Unlock packages...");
 					_unlockPackageCommand.Execute(unlockPackageCommandOptions);
 				}
-				if (!string.IsNullOrEmpty(options.CallbackProcess)) {
-					var applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
-					var runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
-					ProcessStartArgs runProcessArgs = new() {
-						SchemaName = options.CallbackProcess,
-						Values = [
-							new ProcessStartArgs.ParameterValues {
-								Name = "Message",
-								Value = "Workspace was succesfully restored"
-							},
-							new ProcessStartArgs.ParameterValues {
-								Name = "Title",
-								Value = "CLIO"
-							}
-	]
-					};
-					Console.WriteLine($"Run callback process {options.CallbackProcess}");
-					var processRunResponseJson = applicationClient.ExecutePostRequest(runProcessUri, JsonSerializer.Serialize(runProcessArgs));
-					var response = JsonSerializer.Deserialize<ProcessStartResponse>(processRunResponseJson);
-					Console.WriteLine($"Run process id {response.ProcessId}");
-				}
 				Console.WriteLine("Done");
+				CallbackInfo(options.CallbackProcess, "Workspace was suvvesfully restored");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
+				CallbackInfo(options.CallbackProcess, e.Message);
 				return 1;
+			}
+		}
+
+		private void CallbackInfo(string callbackProcess, string message) {
+			if (!string.IsNullOrEmpty(callbackProcess)) {
+				var applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
+				var runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+				ProcessStartArgs runProcessArgs = new() {
+					SchemaName = callbackProcess,
+					Values = [
+						new ProcessStartArgs.ParameterValues {
+							Name = "Message",
+							Value = message
+						},
+						new ProcessStartArgs.ParameterValues {
+							Name = "Title",
+							Value = "CLIO"
+						}
+]
+				};
+				Console.WriteLine($"Run callback process {callbackProcess}");
+				var processRunResponseJson = applicationClient.ExecutePostRequest(runProcessUri, JsonSerializer.Serialize(runProcessArgs));
+				var response = JsonSerializer.Deserialize<ProcessStartResponse>(processRunResponseJson);
+				Console.WriteLine($"Run process id {response.ProcessId}");
 			}
 		}
 
