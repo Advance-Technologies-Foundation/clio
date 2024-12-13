@@ -36,7 +36,10 @@
 				}
 				throw new LicenseInstallationException("License not installed: Unknown error details");
 			}
-			base.ProceedResponse(response, options);
+			if (response.ToLower().Contains("authentication failed")) {
+				throw new LicenseInstallationException("License not installed: Authentication failed.");
+			}
+				base.ProceedResponse(response, options);
 		}
 	}
 

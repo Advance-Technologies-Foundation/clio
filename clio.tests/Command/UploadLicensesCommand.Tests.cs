@@ -56,6 +56,15 @@
 			var options = new UploadLicensesOptions();
 			Assert.DoesNotThrow(() => _command.TestProceedResponse(response, options));
 		}
+
+		[Test]
+		public void TestProceedResponse_AuthenticationFailed_ThrowsLicenseInstallationException() {
+			var response = "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.InvalidOperationException\"}";
+			var options = new UploadLicensesOptions();
+			var ex = Assert.Throws<LicenseInstallationException>(() =>
+				_command.TestProceedResponse(response, options));
+			Assert.That(ex.Message, Is.EqualTo("License not installed: Authentication failed."));
+		}
 	}
 
 	public class UploadLicensesCommandTestable : UploadLicensesCommand
