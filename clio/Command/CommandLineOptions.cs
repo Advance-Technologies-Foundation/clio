@@ -123,6 +123,11 @@ namespace Clio
 			[Option("force", Required = false, HelpText = "Force restore")]
 			public bool Force { get; set; }
 
+			[Option("callback-process", Required = false, HelpText = "Callback process name")]
+			public string CallbackProcess {
+				get; set;
+			}
+
 			internal virtual bool RequiredEnvironment => true;
 
 			public void CopyFromEnvironmentSettings(EnvironmentOptions source)
@@ -156,6 +161,7 @@ namespace Clio
                 this.DbWorknigFolder = source.DbWorknigFolder;
                 this.DbName = source.DbName;
                 this.Force = source.Force;
+				this.CallbackProcess = source.CallbackProcess;
             }
 
         internal bool IsEmpty() {
