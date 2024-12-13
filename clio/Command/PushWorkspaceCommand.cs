@@ -1,7 +1,8 @@
 namespace Clio.Command
 {
 	using System;
-	using System.Linq;
+	using System.Text.Json;
+	using Clio.Command.StartProcess;
 	using Clio.Common;
 	using Clio.Workspaces;
 	using CommandLine;
@@ -26,24 +27,32 @@ namespace Clio.Command
 
 		private readonly IWorkspace _workspace;
 		private UnlockPackageCommand _unlockPackageCommand;
+		public IApplicationClientFactory _applicationClientFactory;
+		private readonly EnvironmentSettings _environmentSettings;
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand) {
+		public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand,
+			IApplicationClientFactory applicationClientFactory, EnvironmentSettings environmentSettings,
+			IServiceUrlBuilder serviceUrlBuilder) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
 			_unlockPackageCommand = unlockPackageCommand;
+			_applicationClientFactory = applicationClientFactory;
+			_environmentSettings = environmentSettings;
+			_serviceUrlBuilder = serviceUrlBuilder;
 		}
+
 
 		#endregion
 
 		#region Methods: Public
 
 		public override int Execute(PushWorkspaceCommandOptions options) {
-			try
-			{
+			try {
 				Console.WriteLine("Push workspace...");
 				_workspace.Install();
 				if (options.NeedUnlockPackage) {
@@ -52,6 +61,27 @@ namespace Clio.Command
 					unlockPackageCommandOptions.Name = string.Join(',', _workspace.WorkspaceSettings.Packages);
 					Console.WriteLine("Unlock packages...");
 					_unlockPackageCommand.Execute(unlockPackageCommandOptions);
+				}
+				if (!string.IsNullOrEmpty(options.CallbackProcess)) {
+					var applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
+					var runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+					ProcessStartArgs runProcessArgs = new() {
+						SchemaName = "AtfProcess_ShowMessage",
+						Values = [
+							new ProcessStartArgs.ParameterValues {
+								Name = "Message",
+								Value = "Workspace was succesfully restored"
+							},
+							new ProcessStartArgs.ParameterValues {
+								Name = "Title",
+								Value = "CLIO"
+							}
+	]
+					};
+					Console.WriteLine($"Run callback process {options.CallbackProcess}");
+					var processRunResponseJson = applicationClient.ExecutePostRequest(runProcessUri, JsonSerializer.Serialize(runProcessArgs));
+					var response = JsonSerializer.Deserialize<ProcessStartResponse>(processRunResponseJson);
+					Console.WriteLine($"Run process id {response.ProcessId}");
 				}
 				Console.WriteLine("Done");
 				return 0;
