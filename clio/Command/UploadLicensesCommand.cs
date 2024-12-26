@@ -1,6 +1,8 @@
 ﻿namespace Clio.Command.PackageCommand
 {
+	using System;
 	using System.IO;
+	using System.Text.Json;
 	using Clio.Common;
 
 	public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>
@@ -18,5 +20,32 @@
 			return "{\"licData\":\"" + fileBody + "\"}";
 		}
 
+		protected override void ProceedResponse(string response, UploadLicensesOptions options) {
+			var json = JsonDocument.Parse(response);
+			if (json.RootElement.TryGetProperty("success", out var successProperty) &&
+				successProperty.GetBoolean() == false) {
+				if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo)) {
+					var errorMessage = errorInfo.TryGetProperty("message", out var messageProperty)
+						? messageProperty.GetString()
+						: "Unknown error message";
+					var errorCode = errorInfo.TryGetProperty("errorCode", out var codeProperty)
+						? codeProperty.GetString()
+						: "UNKNOWN_CODE";
+					throw new LicenseInstallationException(
+						$"License not installed. ErrorCode: {errorCode}, Message: {errorMessage}");
+				}
+				throw new LicenseInstallationException("License not installed: Unknown error details");
+			}
+			if (response.ToLower().Contains("authentication failed")) {
+				throw new LicenseInstallationException("License not installed: Authentication failed.");
+			}
+				base.ProceedResponse(response, options);
+		}
 	}
+
+	public class LicenseInstallationException : Exception
+	{
+		public LicenseInstallationException(string message) : base(message) { }
+	}
+
 }
