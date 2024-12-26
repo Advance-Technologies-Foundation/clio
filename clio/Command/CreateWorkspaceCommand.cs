@@ -58,7 +58,7 @@ namespace Clio.Command
 
 		public override int Execute(CreateWorkspaceCommandOptions options) {
 			try {
-				if (options.Environment == null) {
+				if (options.Environment == null && string.IsNullOrEmpty(options.Uri)) {
 					_workspace.Create(options.Environment);
 				} else {
 					var appCodeNotExists = options.AppCode != null ? false : true;
