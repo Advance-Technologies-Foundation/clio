@@ -332,7 +332,7 @@ class Program
 	internal static T Resolve<T>(object options = null, bool logAndSettings = false) {
 		EnvironmentSettings settings = null;
 		if (options is EnvironmentOptions environmentOptions) {
-			if (environmentOptions.RequiredEnvironment) {
+			if (environmentOptions.RequiredEnvironment || !string.IsNullOrEmpty(environmentOptions.Uri)) {
 				settings = GetEnvironmentSettings(environmentOptions as EnvironmentOptions);
 			} else {
 				settings = FindEnvironmentSettings(environmentOptions as EnvironmentOptions)
