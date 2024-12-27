@@ -148,6 +148,10 @@ namespace Clio.Workspaces
 		public static string GetSanitizeFileNameFromString(string fileName) {
 			return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
 		}
+
+		public string GetWorkspaceApplicationCode() {
+			return _composableApplicationManager.GetCode(_workspacePathBuilder.PackagesFolderPath);
+		}
 	}
 
 	#endregion

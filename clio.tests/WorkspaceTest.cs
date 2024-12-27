@@ -11,6 +11,9 @@ namespace Clio.Tests;
 [TestFixture]
 internal class WorkspaceTest
 {
+	private BindingsModule _bindingModule;
+	private IContainer _diContainer;
+
 	private EnvironmentSettings GetTestEnvironmentSettings() {
 		var envSettingsJson = @"{
 				  ""Uri"": ""https://forrester-lcap-demo-dev.creatio.com/"",
@@ -30,9 +33,9 @@ internal class WorkspaceTest
 	}
 
 	private IWorkspace GetTestWorkspace(EnvironmentSettings envSettings) {
-		var bindingModule = new BindingsModule();
-		var diContainer = bindingModule.Register(envSettings);
-		var workspace = diContainer.Resolve<IWorkspace>();
+		_bindingModule = new BindingsModule();
+		_diContainer = _bindingModule.Register(envSettings);
+		var workspace = _diContainer.Resolve<IWorkspace>();
 		return workspace;
 	}
 
