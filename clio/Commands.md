@@ -3,11 +3,12 @@ Clio Command Reference
 ## In this article
 
 - [Arguments](#command-arguments)
-- [Help and examples](#help-and-examples)
+- [Help and Examples](#help-and-examples)
 - [Package Management](#package-management)
 - [NuGet Packages](#nuget-packages)
 - [Application Management](#application)
-- [Environment settings](#environment-settings)
+- [Environment Settings](#environment-settings)
+- [Workspaces](#workspaces)
 - [Development](#development)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [GitOps](#gitops)
@@ -335,18 +336,6 @@ clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME>
 
 ```
 
-## Marketplace Catalog
-
-List marketplace applications
-```
-clio catalog
-```
-
-List marketplace applications and highlight search words
-```
-clio catalog -n Data
-```
-
 # NuGet Packages
   - [Pack NuGet package](#pack-nuget-pkg)
   - [Push NuGet package](#push-nuget-pkg)
@@ -615,18 +604,19 @@ clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
 
 
 # Environment settings
-  - [Create/Update an environment](#createupdate-an-environment)
-  - [Delete the existing environment](#delete-the-existing-environment)
-  - [Check environment](#check-environment)
-  - [View application options](#view-application-options)
-  - [Open application](#open-application)
-  - [Ping application](#ping-application)
-  - [Clone environment](#clone-environment)
+  - [Create/Update an environment](#reg-web-app)
+  - [Delete the existing environment](#unreg-web-app)
+  - [Ping environment](#ping)
+  - [View application list](#show-web-app-list)
+  - [View application options](#show-web-app)
+  - [Open application](#open)
+  - [Clone environment](#clone-env)
   - [Healthcheck](#healthcheck)
+  - [Get Creatio Info](#get-info)
 
 Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
 
-## Create/Update an environment
+## reg-web-app
 
 Register new application settings
 
@@ -634,24 +624,24 @@ Register new application settings
 clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password
 ```
 
-or update existing settings
+### Update existing settings
 
 ```bash
 clio reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
 ```
 
-## Set the active environment
+### Set the active environment
 ```
 clio reg-web-app -a <ENVIRONMENT_NAME>
 ```
 
-## Delete the existing environment
+## unreg-web-app
 
 ```bash
 clio unreg-web-app <ENVIRONMENT_NAME>
 ```
 
-## Check environment
+## ping
 
 For validation existing environment setting you can use ping command
 
@@ -659,7 +649,7 @@ For validation existing environment setting you can use ping command
 clio ping <ENVIRONMENT_NAME>
 ```
 
-## View application options
+## show-web-app-list
 
 For view list of all applications
 
@@ -667,13 +657,14 @@ For view list of all applications
 clio show-web-app-list
 ```
 
-or for concrete application
+## show-web-app
+View application settings
 
 ```bash
 clio show-web-app <ENVIRONMENT_NAME>
 ```
 
-## Open application
+## open
 
 For open selected environment in default browser use (Windows only command)
 
@@ -681,15 +672,7 @@ For open selected environment in default browser use (Windows only command)
 clio open <ENVIRONMENT NAME>
 ```
 
-## Ping application
-
-For check options fort selected environment use next command
-
-```bash
-clio ping <ENVIRONMENT NAME>
-```
-
-## Clone environment
+## clone-env
 
 For clone environment use next command. 
 
@@ -700,7 +683,7 @@ clio clone-env --source Dev --target QA --working-directory [OPTIONAL PATH TO ST
 The command creates a manifest from the source and target, calculates the difference between them, downloads the changed package from the source environment to the working directory (optional parameter), and installs it in the source environment.
 
 
-## Healthcheck
+## healthcheck
 
 Check application health
 
@@ -717,7 +700,7 @@ clio healthcheck <ENVIRONMENT NAME> -a true -h true
 clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 ```
 
-## Get Creatio Platform Info
+## get-info
 
 This command is designed to retrieve information about the Creatio instance, version, 
 underlying runtime and database type and product name.
@@ -730,30 +713,24 @@ clio get-info -e <ENVIRONMENT_NAME>
 clio get-info <ENVIRONMENT_NAME>
 ````
 
-# Development
+# Workspaces
   - [Create workspace](#create-workspace)
-  - [Restore workspace](restore-workspace)
-  - [Convert package](#convert)
-  - [Execute assembly](#execute-assembly-code)
-  - [References](#ref-to)
-  - [Execute custom SQL script](#execute-custom-sql-script)
-  - [Execute dataservice request](#dataservice)
-  - [Add item](#add-item)
-  - [Add schema](#add-schema)
-  - [Link Workspace to File Design Mode](#link-workspace-to-file-design-mode)
-  - [Mock data for Unit Tests](#mock-data-for-unit-tests)
+  - [Restore workspace](#restore-workspace)
+  - [Push code to an environment](#push-workspace)
+  - [Build workspace](#build-workspace)
+
 ## Workspaces
 
-For connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.**
-
-https://user-images.githubusercontent.com/26967647/166842902-566af234-f9ad-48fb-82c1-0a0302bc5b3c.mp4
+To connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.** 
+Workspace associates local folder with source code and local or remote Creatio environment (application).
+See [Environment options](#environment-options) for list of all options.
 
 ## create-workspace
 
 Create workspace in local directory, execute create-workspace command 
 
 ```bash
-C:\Demo> clio create-workspace
+clio create-workspace
 ```
 
 In directory **.clio** specify you packages
@@ -761,14 +738,14 @@ In directory **.clio** specify you packages
 Create workspace in local directory with all editable packages from environment, execute create-workspace command with argument -e <Environment name>
 
 ```bash
-C:\Demo> clio create-workspace -e demo
+clio create-workspace -e demo
 ```
 
 Create workspace in local directory with packages in app, execute create-workspace command
 To get list of app codes execute `clio lia -e <ENVIRONMENT>`
 
 ```bash
-C:\Demo> clio create-workspace --AppCode <APP_CODE>
+clio create-workspace --AppCode <APP_CODE>
 ```
 
 ## restore-workspace
@@ -797,15 +774,50 @@ clio push-workspace -e demo
 **IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install additional system package **cliogate** to you environment.
 
 ```bash
-C:\Demo> clio install-gate -e demo
+clio install-gate -e demo
 ```
+
+## build-workspace
+```bash
+clio build-workspace
+```
+
+# Development
+  - [Convert package](#convert)
+  - [Execute assembly](#execute-assembly-code)
+  - [Set references](#ref-to)
+  - [Execute custom SQL script](#execute-sql-script)
+  - [Execute dataservice request](#dataservice)
+  - [Add item](#add-item)
+  - [Add schema](#add-schema)
+  - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
+  - [Link Workspace to File Design Mode](#link-from-repository)
+  - [Mock data for Unit Tests](#mock-data)
 
 ## convert
+Convert package to project.
 
 ```bash
-clio convert <PACKAGE_NAME>
+clio convert <PACKAGE_NAMES>
 ```
+Arguments:
 
+<PACKAGE_NAMES> (string): Name of the convert instance (or comma separated names).
+
+Options:
+
+`-p, --Path` (string): Path to package directory. Default is null.
+
+`-c, --ConvertSourceCode` (bool): Convert source code schema to files. Default is `false`.
+
+Convert existing packages:
+```
+clio convert -p "C:\\Pkg\\" MyApp,MyIntegration
+```
+Convert all packages in folder:
+```
+clio convert -p "C:\\Pkg\\"
+```
 ## execute-assembly-code
 
 Execute code from assembly
@@ -828,7 +840,7 @@ Set references for project on application distributive binary files
 clio ref-to bin
 ```
 
-## Execute custom SQL script
+## execute-sql-script 
 
 Execute custom SQL script on a web application
 
@@ -880,7 +892,7 @@ Execute dataservice request with variable substitution.
 clio ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v rootSchemaName=Contact;IdVar=Id
 ```
 
-## Add item
+## add-item
 Create item in project
 ```
 clio <ITEM-TYPE> <ITEM-NAME> <OPTIONS>
@@ -903,12 +915,12 @@ clio add-item model Contact -f Name,Email -n MyNameSpace -d .
 
 Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set `ATF.Repository.Models` namespace and save them to `C:\MyModels`
 ```bash
-add-item model -n "<YOUR_NAMESPACE>" -d <TARGET_PATH>
+clio add-item model -n "<YOUR_NAMESPACE>" -d <TARGET_PATH>
 ```
 
 To generate all models in current directory
 ```bash
-add-item model -n "<YOUR_NAMESPACE>" 
+clio add-item model -n "<YOUR_NAMESPACE>" 
 ```
 
 OPTIONS
@@ -921,14 +933,14 @@ OPTIONS
 | a            | All             | Create ATF models for all Entities             |
 | x            | Culture         | Description culture                            |
 
-## Add Schema
+## add-schema
 Adds cs schema to a project
 
 ```bash
 clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
-````
+```
 
-## Switch Nuget To Dll Reference
+## switch-nuget-to-dll-reference
 
 The `switch-nuget-to-dll-reference` command is a vital tool for managing NuGet package references, 
 especially in scenarios where internet access is limited or unavailable. 
@@ -955,7 +967,7 @@ clio switch-nuget-to-dll-reference <PACKAGE_NAME>
 clio nuget2dll <PACKAGE_NAME>
 ```
 
-## Link Workspace to File Design Mode
+## link-from-repository
 
 To connect your package from workspace to local system in file design mode use command
 ```
@@ -970,19 +982,18 @@ clio l4r -e ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)
 
 </details>
 
-
+## link-to-repository
 
 To connect your local system in file design mode use command to workspace
-```
+```bash
 clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
 
-## Mock data for unit tests
+## mock-data
 
 To mock data for unit tests with using [ATF].[Repository] use the following command
 
-```
-
+```bash
 clio mock-data --models D:\Projects\MyProject --data D:\Projects\MyProject\Tests\TestsData  -e MyDevCreatio
 
 ```

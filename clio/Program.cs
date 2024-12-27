@@ -546,8 +546,6 @@ class Program
 		typeof(UnregAppOptions),
 		typeof(AppListOptions),
 		typeof(ExecuteAssemblyOptions),
-		typeof(RestartOptions),
-		typeof(ClearRedisOptions),
 		// Package management
 		typeof(GeneratePkgZipOptions),
 		typeof(UnzipPkgOptions),
@@ -557,8 +555,6 @@ class Program
 		typeof(NewPkgOptions),
 		typeof(ReferenceOptions),
 		typeof(ConvertOptions),
-		typeof(RegisterOptions),
-		typeof(UnregisterOptions),
 		typeof(ExecuteSqlScriptOptions),
 		typeof(InstallGateOptions),
 		typeof(ItemOptions),
@@ -567,6 +563,7 @@ class Program
 		typeof(FeatureOptions),
 		typeof(PingAppOptions),
 		typeof(OpenAppOptions),
+		// Package development
 		typeof(PkgListOptions),
 		typeof(CompileOptions),
 		typeof(PushNuGetPkgsOptions),
@@ -576,8 +573,9 @@ class Program
 		typeof(SetPackageVersionOptions),
 		typeof(GetPackageVersionOptions),
 		typeof(CheckNugetUpdateOptions),
-		typeof(RestoreWorkspaceOptions),
+		// Workspace management
 		typeof(CreateWorkspaceCommandOptions),
+		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
 		typeof(LoadPackagesToFileSystemOptions),
 		typeof(UploadLicensesOptions),
@@ -637,8 +635,13 @@ class Program
 		typeof(AddSchemaOptions),
 		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
+		// Creatio instance management
+		typeof(RestartOptions),
+		typeof(ClearRedisOptions),
 		typeof(LastCompilationLogOptions),
 		// General operations
+		typeof(RegisterOptions),
+		typeof(UnregisterOptions),
 		typeof(InstallTideCommandOptions),
 		//typeof(CreateEntityCommandOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions)
