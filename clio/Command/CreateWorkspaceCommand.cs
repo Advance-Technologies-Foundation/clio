@@ -61,7 +61,7 @@ namespace Clio.Command
 				if (options.Environment == null && string.IsNullOrEmpty(options.Uri)) {
 					_workspace.Create(options.Environment);
 				} else {
-					var appCodeNotExists = options.AppCode != null ? false : true;
+					var appCodeNotExists = options.AppCode == null;
 						_workspace.Create(options.Environment, appCodeNotExists);
 					if (!appCodeNotExists) {
 						IInstalledApplication installedApplication = Program.Resolve<IInstalledApplication>(options);

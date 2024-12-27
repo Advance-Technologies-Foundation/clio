@@ -28,6 +28,7 @@ using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 using Autofac.Builder;
+using Clio.Command.TIDE;
 
 namespace Clio
 {
@@ -180,11 +181,14 @@ namespace Clio
 			containerBuilder.RegisterType<MockDataCommand>();
 			containerBuilder.RegisterType<ConsoleProgressbar>();
 			containerBuilder.RegisterType<ApplicationLogProvider>();
-            containerBuilder.RegisterType<LastCompilationLogCommand>();
-            var configuration = MediatRConfigurationBuilder
-				.Create(typeof(BindingsModule).Assembly)
-				.WithAllOpenGenericHandlerTypesRegistered()
-				.Build();
+			containerBuilder.RegisterType<LastCompilationLogCommand>();
+			//containerBuilder.RegisterType<CreateEntityCommand>();
+			containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
+			
+			MediatRConfiguration configuration = MediatRConfigurationBuilder
+												.Create(typeof(BindingsModule).Assembly)
+												.WithAllOpenGenericHandlerTypesRegistered()
+												.Build();
 			containerBuilder.RegisterMediatR(configuration);
 
 			containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));

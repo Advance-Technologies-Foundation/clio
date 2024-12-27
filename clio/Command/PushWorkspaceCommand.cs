@@ -1,3 +1,5 @@
+using Clio.Command.TIDE;
+
 namespace Clio.Command
 {
 	using System;
@@ -14,6 +16,9 @@ namespace Clio.Command
 	{
 		[Option("unlock", Required = false, HelpText = "Unlock workspace package after install workspace to the environment")]
 		public bool NeedUnlockPackage { get; set; }
+		
+		[Option("TideRepositoryId", Required = false, HelpText = "Update TIde repository by id", Hidden = true)]
+		public string TideRepositoryId { get; set; }
 	}
 
 	#endregion
@@ -30,6 +35,7 @@ namespace Clio.Command
 		public IApplicationClientFactory _applicationClientFactory;
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
+		private readonly LinkWorkspaceWithTideRepositoryCommand _linkWorkspaceWithTideRepositoryCommand;
 
 		#endregion
 
@@ -37,13 +43,14 @@ namespace Clio.Command
 
 		public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand,
 			IApplicationClientFactory applicationClientFactory, EnvironmentSettings environmentSettings,
-			IServiceUrlBuilder serviceUrlBuilder) {
+			IServiceUrlBuilder serviceUrlBuilder, LinkWorkspaceWithTideRepositoryCommand linkWorkspaceWithTideRepositoryCommand) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
 			_unlockPackageCommand = unlockPackageCommand;
 			_applicationClientFactory = applicationClientFactory;
 			_environmentSettings = environmentSettings;
 			_serviceUrlBuilder = serviceUrlBuilder;
+			_linkWorkspaceWithTideRepositoryCommand = linkWorkspaceWithTideRepositoryCommand;
 		}
 
 
@@ -56,6 +63,21 @@ namespace Clio.Command
 				Console.WriteLine("Push workspace...");
 				CallbackInfo(options.CallbackProcess, "Push workspace...");
 				_workspace.Install();
+				
+				if (!string.IsNullOrEmpty(options.TideRepositoryId)) {
+
+					try {
+						LinkWorkspaceWithTideRepositoryOptions opt = new () {
+							TideRepositoryId = options.TideRepositoryId
+						};
+						opt.CopyFromEnvironmentSettings(options);
+						_linkWorkspaceWithTideRepositoryCommand.Execute(opt);
+						CallbackInfo(options.CallbackProcess, "Application linked with repository");
+					} catch {
+					}
+					
+				}
+				
 				if (options.NeedUnlockPackage) {
 					var unlockPackageCommandOptions = new UnlockPackageOptions();
 					unlockPackageCommandOptions.CopyFromEnvironmentSettings(options);
@@ -64,8 +86,8 @@ namespace Clio.Command
 					CallbackInfo(options.CallbackProcess, "Unlock packages...");
 					_unlockPackageCommand.Execute(unlockPackageCommandOptions);
 				}
-				Console.WriteLine("Done");
 				CallbackInfo(options.CallbackProcess, "Workspace was successfully restored");
+				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);

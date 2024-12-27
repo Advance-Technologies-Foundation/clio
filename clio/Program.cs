@@ -9,6 +9,7 @@ using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.TIDE;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project;
@@ -638,9 +639,10 @@ class Program
 		typeof(SetApplicationIconOption),
 		typeof(LastCompilationLogOptions),
 		// General operations
-		typeof(InstallTideCommandOptions)
-
-    };
+		typeof(InstallTideCommandOptions),
+		//typeof(CreateEntityCommandOptions),
+		typeof(LinkWorkspaceWithTideRepositoryOptions)
+	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
@@ -743,9 +745,11 @@ class Program
 			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 			AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
-            LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
+			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 			InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
-			_ => 1,
+			//CreateEntityCommandOptions opts => Resolve<CreateEntityCommand>(opts).Execute(opts),
+			LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts).Execute(opts),
+			var _ => 1,
 		};
 	};
 
