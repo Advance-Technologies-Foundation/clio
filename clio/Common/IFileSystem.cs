@@ -172,6 +172,8 @@ namespace Clio.Common
 
 		string[] GetDirectories(string directoryPath);
 
+		string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption);
+
 		void OverwriteExistsDirectory(string directoryPath);
 
 		void SafeDeleteDirectory(string directoryPath);

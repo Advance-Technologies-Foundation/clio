@@ -289,6 +289,11 @@ public class FileSystem : IFileSystem
 		return _msFileSystem.Directory.GetDirectories(directoryPath);
 	}
 
+	public string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption) {
+		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+		return _msFileSystem.Directory.GetDirectories(directoryPath, patternt, searchOption);
+	}
+
 	public void OverwriteExistsDirectory(string directoryPath) {
 		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
 		if (!_msFileSystem.Directory.Exists(directoryPath)) {

@@ -641,7 +641,8 @@ class Program
 		// General operations
 		typeof(InstallTideCommandOptions),
 		//typeof(CreateEntityCommandOptions),
-		typeof(LinkWorkspaceWithTideRepositoryOptions)
+		typeof(LinkWorkspaceWithTideRepositoryOptions),
+		typeof(CheckWebFarmNodeConfigurationsOptions)
 	};
 	public static Func<object, int> ExecuteCommandWithOption = (instance) => {
 		return instance switch {
@@ -749,6 +750,7 @@ class Program
 			InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
 			//CreateEntityCommandOptions opts => Resolve<CreateEntityCommand>(opts).Execute(opts),
 			LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts).Execute(opts),
+			CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts).Execute(opts),
 			var _ => 1,
 		};
 	};
