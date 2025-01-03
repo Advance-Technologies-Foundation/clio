@@ -105,7 +105,7 @@ namespace Clio.Command
 			Parallel.ForEach(commonFiles, file => {
 				var file1 = Path.Combine(path1, file);
 				var file2 = Path.Combine(path2, file);
-				if (!_fileSystem.CompareFiles(Path.Combine(path1,file1),Path.Combine(path2, file2))) {
+				if (CompareFiles(Path.Combine(path1,file1),Path.Combine(path2, file2))) {
 					differenceInCommonFiles.Add(file);
 					Interlocked.Increment(ref processedFiles);
 					int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
@@ -144,6 +144,12 @@ namespace Clio.Command
 				.Concat(missingFilesInPath2)
 				.Concat(missingFilesInPath1).ToList();
 			return allDifferences;
+		}
+
+		private bool CompareFiles(string v1, string v2) {
+			var file1Info = _fileSystem.GetFilesInfos(v1);
+			var file2Info = _fileSystem.GetFilesInfos(v2);
+			return file1Info.Length == file2Info.Length && file1Info.LastWriteTimeUtc == file2Info.LastWriteTimeUtc;
 		}
 
 		private void ProcessPath(string rootPath, ConcurrentBag<string> dirs, ConcurrentBag<string> files) {

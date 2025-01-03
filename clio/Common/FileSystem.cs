@@ -368,6 +368,10 @@ public class FileSystem : IFileSystem
 		_msFileSystem.File.WriteAllText(filePath, contents, encoding);
 	}
 
+	public FileInfo GetFilesInfos(string v2) {
+		return new FileInfo(v2);
+	}
+
 	#endregion
 
 }
