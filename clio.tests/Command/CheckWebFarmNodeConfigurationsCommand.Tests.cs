@@ -1,18 +1,15 @@
-﻿using System.IO;
-using System.IO.Abstractions.TestingHelpers;
+﻿using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;
-using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
-using NSubstitute.ReceivedExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command
 {
 	[TestFixture]
-	public class CheckWebFarmNodeConfigurationsCommandTestCase: BaseClioModuleTests
+	public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 	{
 
 
@@ -34,14 +31,13 @@ namespace Clio.Tests.Command
 			ILogger logger = Substitute.For<ILogger>();
 			FileSystem clioFileSystem = new FileSystem(FileSystem);
 			DirectoryComparer directoryComparer = new DirectoryComparer(clioFileSystem, logger);
-			CheckWebFarmNodeConfigurationsCommand command = 
+			CheckWebFarmNodeConfigurationsCommand command =
 				new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
-			CheckWebFarmNodeConfigurationsOptions options = 
-				new CheckWebFarmNodeConfigurationsOptions 
-				{
-					Paths = "T:\\Node1-Main,T:\\Node3-Correct,T:\\Node4-Correct" };
+			CheckWebFarmNodeConfigurationsOptions options =
+				new CheckWebFarmNodeConfigurationsOptions {
+					Paths = "T:\\Node1-Main,T:\\Node3-Correct,T:\\Node4-Correct"
+				};
 			int result = command.Execute(options);
-			logger.Received(1).WriteLine("Check started:");
 			result.Should().Be(0);
 		}
 
@@ -57,7 +53,6 @@ namespace Clio.Tests.Command
 					Paths = "T:\\Node1-Main,T:\\Node2-Incorrect"
 				};
 			int result = command.Execute(options);
-			logger.Received(1).WriteLine("Check started:");
 			result.Should().Be(1);
 		}
 

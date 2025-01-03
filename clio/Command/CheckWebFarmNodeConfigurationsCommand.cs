@@ -10,7 +10,7 @@ using System.Threading;
 
 namespace Clio.Command
 {
-	[Verb("check-web-farm-node", Aliases = new string[] { }, HelpText = "Check web farm node configurations")]
+	[Verb("compare-web-farm-node", Aliases = new string[] { "check-web-farm-node", "check-farm", "farm-check", "cwf" }, HelpText = "Compare web farm node content")]
 	public class CheckWebFarmNodeConfigurationsOptions
 	{
 		[Value(0, MetaName = "Paths", Required = true, HelpText = "Folder Paths")]
@@ -38,35 +38,35 @@ namespace Clio.Command
 		}
 
 		public override int Execute(CheckWebFarmNodeConfigurationsOptions options) {
-			_logger.WriteLine("Check started:");
+			_logger.WriteLine("Starting web farm node content check...");
 			var paths = options.Paths.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-			.Select(p => p.Trim())
-			.ToList();
+				.Select(p => p.Trim())
+				.ToList();
 			if (paths.Count < 2) {
-				_logger.WriteLine("At least two paths must be specified for comparison.");
+				_logger.WriteLine("Error: At least two paths must be specified for comparison.");
 				return 1;
 			}
 			var basePath = paths[0];
 			if (!_fileSystem.ExistsDirectory(basePath)) {
-				_logger.WriteLine($"Base path does not exist: {basePath}");
+				_logger.WriteLine($"Error: Base path does not exist: {basePath}");
 				return 1;
 			}
 			for (int i = 1; i < paths.Count; i++) {
 				var comparePath = paths[i];
 
 				if (!_fileSystem.ExistsDirectory(comparePath)) {
-					_logger.WriteLine($"Comparison path does not exist: {comparePath}");
+					_logger.WriteLine($"Warning: Comparison path does not exist: {comparePath}");
 					continue;
 				}
-				_logger.WriteLine($"\nComparing {basePath} and {comparePath}:");
+				_logger.WriteLine($"\nComparing directories: {basePath} and {comparePath}");
 				var differences = _directoryComparer.CompareDirectories(basePath, comparePath);
 
 				if (differences.Count == 0) {
-					_logger.WriteLine("The folders are the same.");
+					_logger.WriteLine("Result: The directories are identical.");
 				} else {
-					_logger.WriteError("The folders are not the same:");
+					_logger.WriteError("Result: The directories are not identical.");
 					if (!options.detailMode) {
-						_logger.WriteError($"Count: {differences.Count}");
+						_logger.WriteError($"Difference count: {differences.Count}");
 					} else {
 						foreach (var difference in differences) {
 							_logger.WriteWarning(difference);
@@ -75,6 +75,7 @@ namespace Clio.Command
 					return 1;
 				}
 			}
+			_logger.WriteLine("Web farm node configuration check completed successfully.");
 			return 0;
 		}
 	}
