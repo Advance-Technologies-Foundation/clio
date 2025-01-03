@@ -5,10 +5,8 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
-using System.Management;
 using System.Threading.Tasks;
 using System.Threading;
-using NetTopologySuite.Noding;
 
 namespace Clio.Command
 {
@@ -66,12 +64,12 @@ namespace Clio.Command
 				if (differences.Count == 0) {
 					_logger.WriteLine("The folders are the same.");
 				} else {
-					_logger.WriteLine("The folders are not the same:");
+					_logger.WriteError("The folders are not the same:");
 					if (!options.detailMode) {
-						_logger.WriteLine($"Count: {differences.Count}");
+						_logger.WriteError($"Count: {differences.Count}");
 					} else {
 						foreach (var difference in differences) {
-							_logger.WriteLine(difference);
+							_logger.WriteWarning(difference);
 						}
 					}
 					return 1;
@@ -86,6 +84,7 @@ namespace Clio.Command
 		private readonly IFileSystem _fileSystem;
 		private readonly ILogger _logger;
 		private int processedFolders;
+		private int trackedFolderCount;
 
 		public DirectoryComparer(IFileSystem fileSystem, ILogger logger) {
 			_fileSystem = fileSystem;
@@ -111,19 +110,19 @@ namespace Clio.Command
 			ConcurrentBag<string> differenceInCommonFiles = new();
 			_logger.WriteLine($"Found {commonFiles.Count} common files.");
 			_logger.WriteLine($"Processing common files:");
-			int traketPersentage = 0;
+			int trackedFilesPercentage = 0;
 			Parallel.ForEach(commonFiles, file => {
 				var file1 = Path.Combine(path1, file);
 				var file2 = Path.Combine(path2, file);
 				Interlocked.Increment(ref processedFiles);
 				int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
-				if (percentage % 10 == 0 && percentage > 1 && traketPersentage != percentage) {
-					traketPersentage = percentage;
+				if (percentage % 10 == 0 && percentage > 1 && trackedFilesPercentage != percentage) {
+					trackedFilesPercentage = percentage;
 					_logger.WriteLine($"Processing common files {percentage}% completed");
 				}
 				if (!CompareFiles(file1, file2)) {
 					differenceInCommonFiles.Add($"File {file1} is not equal {file2} ");
-					_logger.WriteLine($"File content differs: {file}");
+					_logger.WriteWarning($"File content differs: {file}");
 				}
 			});
 			var missingDirsInPath2 = dirs1.Except(dirs2).Select(d => $"Folder missing in {path2}: {d}");
@@ -170,12 +169,14 @@ namespace Clio.Command
 				files.Add(file);
 				fileCount++;
 			}
+			trackedFolderCount = 0;
 			Interlocked.Increment(ref processedFolders);
 			Parallel.ForEach(topDirs, subDir => {
 				ProcessPath(subDir, dirs, files);
 			});
-			if (processedFolders % 50 == 0) {
+			if (processedFolders % 50 == 0 && processedFolders != trackedFolderCount) {
 				_logger.WriteLine($"Processed {processedFolders} folders");
+				trackedFolderCount = processedFolders;
 			}
 		}
 
