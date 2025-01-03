@@ -8,6 +8,7 @@ using System.Linq;
 using System.Management;
 using System.Threading.Tasks;
 using System.Threading;
+using NetTopologySuite.Noding;
 
 namespace Clio.Command
 {
@@ -29,10 +30,13 @@ namespace Clio.Command
 
 		private readonly ILogger _logger;
 		private readonly IFileSystem _fileSystem;
+		private readonly IDirectoryComparer _directoryComparer;
 
-		public CheckWebFarmNodeConfigurationsCommand(ILogger logger, IFileSystem fileSystem) {
+		public CheckWebFarmNodeConfigurationsCommand(ILogger logger, IFileSystem fileSystem,
+				IDirectoryComparer directoryComparer) {
 			_logger = logger;
 			_fileSystem = fileSystem;
+			_directoryComparer = directoryComparer;
 		}
 
 		public override int Execute(CheckWebFarmNodeConfigurationsOptions options) {
@@ -57,7 +61,7 @@ namespace Clio.Command
 					continue;
 				}
 				_logger.WriteLine($"\nComparing {basePath} and {comparePath}:");
-				var differences = new DirectoryComparer(_fileSystem).CompareDirectories(basePath, comparePath);
+				var differences = _directoryComparer.CompareDirectories(basePath, comparePath);
 
 				if (differences.Count == 0) {
 					_logger.WriteLine("The folders are the same.");
@@ -77,12 +81,15 @@ namespace Clio.Command
 		}
 	}
 
-	public class DirectoryComparer
+	public class DirectoryComparer : IDirectoryComparer
 	{
 		private readonly IFileSystem _fileSystem;
+		private readonly ILogger _logger;
+		private int processedFolders;
 
-		public DirectoryComparer(IFileSystem fileSystem) {
+		public DirectoryComparer(IFileSystem fileSystem, ILogger logger) {
 			_fileSystem = fileSystem;
+			_logger = logger;
 		}
 		public List<string> CompareDirectories(string path1, string path2) {
 			var dirs1 = new ConcurrentBag<string>();
@@ -93,56 +100,45 @@ namespace Clio.Command
 				throw new ArgumentException("One or both paths do not exist.");
 			}
 			Parallel.Invoke(
-				() => ProcessPath(path1, dirs1, files1),
-				() => ProcessPath(path2, dirs2, files2)
+			() => ProcessPath(path1, dirs1, files1),
+			() => ProcessPath(path2, dirs2, files2)
 			);
 			files1 = new ConcurrentBag<string>(files1.Select(f => f.Substring(path1.Length).TrimStart(Path.DirectorySeparatorChar)));
 			files2 = new ConcurrentBag<string>(files2.Select(f => f.Substring(path2.Length).TrimStart(Path.DirectorySeparatorChar)));
 			int totalFiles1 = files1.Count, totalFiles2 = files2.Count;
 			int processedFiles = 0;
-			ConcurrentBag<string> commonFiles = new (files1.Intersect(files2));
+			ConcurrentBag<string> commonFiles = new(files1.Intersect(files2));
 			ConcurrentBag<string> differenceInCommonFiles = new();
+			_logger.WriteLine($"Found {commonFiles.Count} common files.");
+			_logger.WriteLine($"Processing common files:");
+			int traketPersentage = 0;
 			Parallel.ForEach(commonFiles, file => {
 				var file1 = Path.Combine(path1, file);
 				var file2 = Path.Combine(path2, file);
-				if (!CompareFiles(file1 ,file2)) {
-					differenceInCommonFiles.Add(file);
-					Interlocked.Increment(ref processedFiles);
-					int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
-					Console.WriteLine($"Progress: {processedFiles}/{commonFiles.Count} files processed ({percentage}%)");
-					Console.WriteLine($"File content differs: {file}");
+				Interlocked.Increment(ref processedFiles);
+				int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
+				if (percentage % 10 == 0 && percentage > 1 && traketPersentage != percentage) {
+					traketPersentage = percentage;
+					_logger.WriteLine($"Processing common files {percentage}% completed");
+				}
+				if (!CompareFiles(file1, file2)) {
+					differenceInCommonFiles.Add($"File {file1} is not equal {file2} ");
+					_logger.WriteLine($"File content differs: {file}");
 				}
 			});
 			var missingDirsInPath2 = dirs1.Except(dirs2).Select(d => $"Folder missing in {path2}: {d}");
 			var missingDirsInPath1 = dirs2.Except(dirs1).Select(d => $"Folder missing in {path1}: {d}");
 			var missingFilesInPath2 = files1.Except(files2)
-				.Select(f => {
-					Interlocked.Increment(ref processedFiles);
-					int percentage = (int)((double)processedFiles / totalFiles1 * 100);
-					Console.WriteLine($"Progress: {processedFiles}/{totalFiles1} files processed ({percentage}%)");
-					return $"File missing in {path2}: {f}";
-				});
+			.Select(f => {
+				return $"File missing in {path2}: {f}";
+			});
 			var missingFilesInPath1 = files2.Except(files1)
-				.Select(f => {
-					Interlocked.Increment(ref processedFiles);
-					int percentage = (int)((double)processedFiles / totalFiles2 * 100);
-					Console.WriteLine($"Progress: {processedFiles}/{totalFiles2} files processed ({percentage}%)");
-					return $"File missing in {path1}: {f}";
-				});
-			foreach (var msg in missingDirsInPath2)
-				Console.WriteLine(msg);
-			foreach (var msg in missingDirsInPath1)
-				Console.WriteLine(msg);
-			foreach (var msg in missingFilesInPath2)
-				Console.WriteLine(msg);
-			foreach (var msg in missingFilesInPath1)
-				Console.WriteLine(msg);
-			Console.WriteLine("Files with different content:");
-			foreach (var msg in differenceInCommonFiles)
-				Console.WriteLine(msg);
+			.Select(f => {
+				return $"File missing in {path1}: {f}";
+			});
 			var allDifferences = missingDirsInPath2.Concat(missingDirsInPath1)
-				.Concat(missingFilesInPath2).Concat(differenceInCommonFiles)
-				.Concat(missingFilesInPath1).ToList();
+			.Concat(missingFilesInPath2).Concat(differenceInCommonFiles)
+			.Concat(missingFilesInPath1).ToList();
 			return allDifferences;
 		}
 
@@ -160,6 +156,9 @@ namespace Clio.Command
 		}
 
 		private void ProcessPath(string rootPath, ConcurrentBag<string> dirs, ConcurrentBag<string> files) {
+			if (rootPath.ToLower().EndsWith("\\autogenerated") || rootPath.ToLower().EndsWith("\\obj")) {
+				return;
+			}
 			int dirCount = 0, fileCount = 0;
 			var topDirs = _fileSystem.GetDirectories(rootPath, "*", SearchOption.TopDirectoryOnly);
 			foreach (var dir in topDirs) {
@@ -171,12 +170,19 @@ namespace Clio.Command
 				files.Add(file);
 				fileCount++;
 			}
-			Console.WriteLine($"[{rootPath}] Found: {dirCount} directories, {fileCount} files");
+			Interlocked.Increment(ref processedFolders);
 			Parallel.ForEach(topDirs, subDir => {
 				ProcessPath(subDir, dirs, files);
 			});
+			if (processedFolders % 50 == 0) {
+				_logger.WriteLine($"Processed {processedFolders} folders");
+			}
 		}
 
 	}
 
+	public interface IDirectoryComparer
+	{
+		List<string> CompareDirectories(string path1, string path2);
+	}
 }
