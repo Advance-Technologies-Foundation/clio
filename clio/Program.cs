@@ -639,11 +639,11 @@ class Program
 		typeof(RestartOptions),
 		typeof(ClearRedisOptions),
 		typeof(LastCompilationLogOptions),
+		typeof(UploadLicenseCommandOptions),
 		// General operations
 		typeof(RegisterOptions),
 		typeof(UnregisterOptions),
 		typeof(InstallTideCommandOptions),
-		//typeof(CreateEntityCommandOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions)
 	};
@@ -652,9 +652,8 @@ class Program
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 			RestartOptions opts => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 			ClearRedisOptions opts => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
+			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),           
-			//RegAppOptions opts => CreateCommand<RegAppCommand>(
-			//	new SettingsRepository(), new ApplicationClientFactory(), new PowerShellFactory()).Execute(opts),
 			AppListOptions opts => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
 			UnregAppOptions opts => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
@@ -673,7 +672,6 @@ class Program
 				.Execute(CreateClioGatePkgOptions(opts)),
 			ItemOptions opts => AddItem(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
-			//SysSettingsOptions opts => CreateRemoteCommand<SysSettingsCommand>(opts).Execute(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
 			FeatureOptions opts => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
@@ -691,7 +689,6 @@ class Program
 			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 			PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
-			//(UploadLicenseCommandOptions opts) => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			LoadPackagesToFileSystemOptions opts => Resolve<LoadPackagesToFileSystemCommand>(opts)
 				.Execute(opts),
 			LoadPackagesToDbOptions opts => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
@@ -751,7 +748,6 @@ class Program
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 			InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
-			//CreateEntityCommandOptions opts => Resolve<CreateEntityCommand>(opts).Execute(opts),
 			LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts).Execute(opts),
 			CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts).Execute(opts),
 			var _ => 1,
