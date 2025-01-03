@@ -157,6 +157,7 @@ namespace Clio.Command
 			} else {
 				return true;
 			}
+		}
 
 		private void ProcessPath(string rootPath, ConcurrentBag<string> dirs, ConcurrentBag<string> files) {
 			int dirCount = 0, fileCount = 0;
