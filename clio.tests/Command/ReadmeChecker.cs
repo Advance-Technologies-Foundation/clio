@@ -77,6 +77,9 @@ public class ReadmeChecker
 			if (commandName[0] == commandVerbName) {
 				string[] possibleSectionNames = commandName[1].Split(',');
 				foreach (string possibleSectionName in possibleSectionNames) {
+					if (!_namesToCheck.Contains(possibleSectionName)) {
+						_namesToCheck.Add(possibleSectionName);
+					}
 					string mayBeSectionNae = _convertCommandNameToSection(possibleSectionName);
 					if (!_namesToCheck.Contains(mayBeSectionNae)) {
 						_namesToCheck.Add(mayBeSectionNae);

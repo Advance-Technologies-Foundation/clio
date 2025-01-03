@@ -11,6 +11,7 @@ Clio Command Reference
 - [Workspaces](#workspaces)
 - [Development](#development)
 - [Using for CI/CD systems](#using-for-cicd-systems)
+- [Web farm deployments](#web-farm-deployments)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
 
@@ -110,8 +111,8 @@ clio ver --runtime
   - [Restore configuration](#restore-configuration)
   - [Get package list](#get-pkg-list)
   - [Set package version](#set-pkg-version)
-  - [Set application version](#set-app-version)
-  - [Set application icon](#set-app-icon)
+  - [Set application version](#set-application-version)
+  - [Set application icon](#set-application-icon)
 
 ## new-pkg
 
@@ -284,7 +285,7 @@ Set a specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
-## set-app-version
+## set-application-version
 
 Set a specified composable application version into application-descriptor.json by specified workspace or package path.
 
@@ -1004,6 +1005,14 @@ In CI/CD systems, you can specify configuration options when calling commands:
 
 ```
 clio restart -u https://mysite.creatio.com -l administrator -p password
+```
+
+# Web farm deployments
+
+To ensure proper functioning of Creatio in Web Farm mode, it is crucial that all nodes are identical. Clio provides the following command to verify this:
+
+```bash
+clio check-web-farm-node "\\Node1\Creatio,\\Node2\Creatio" -d
 ```
 
 # GitOps
