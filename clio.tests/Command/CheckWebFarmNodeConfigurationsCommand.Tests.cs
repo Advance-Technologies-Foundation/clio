@@ -33,8 +33,9 @@ namespace Clio.Tests.Command
 		public void Execute_CheckTwoNodes_IfNotChanges() {
 			ILogger logger = Substitute.For<ILogger>();
 			FileSystem clioFileSystem = new FileSystem(FileSystem);
+			DirectoryComparer directoryComparer = new DirectoryComparer(clioFileSystem, logger);
 			CheckWebFarmNodeConfigurationsCommand command = 
-				new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem);
+				new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
 			CheckWebFarmNodeConfigurationsOptions options = 
 				new CheckWebFarmNodeConfigurationsOptions 
 				{
@@ -48,8 +49,9 @@ namespace Clio.Tests.Command
 		public void Execute_CheckTwoNodes_IfNodesChanged() {
 			ILogger logger = Substitute.For<ILogger>();
 			FileSystem clioFileSystem = new FileSystem(FileSystem);
+			DirectoryComparer directoryComparer = new DirectoryComparer(clioFileSystem, logger);
 			CheckWebFarmNodeConfigurationsCommand command =
-				new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem);
+				new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
 			CheckWebFarmNodeConfigurationsOptions options =
 				new CheckWebFarmNodeConfigurationsOptions {
 					Paths = "T:\\Node1-Main,T:\\Node2-Incorrect"
@@ -63,7 +65,7 @@ namespace Clio.Tests.Command
 		public void CompareDirectories_CorrectReturn_IfNotChanges() {
 			ILogger logger = Substitute.For<ILogger>();
 			FileSystem clioFileSystem = new FileSystem(FileSystem);
-			var directoryComparer = new DirectoryComparer(clioFileSystem);
+			var directoryComparer = new DirectoryComparer(clioFileSystem, logger);
 			directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node3-Correct").Should().BeEmpty();
 		}
 
@@ -71,7 +73,7 @@ namespace Clio.Tests.Command
 		public void CompareDirectories_CorrectReturn_IfNodesChanged() {
 			ILogger logger = Substitute.For<ILogger>();
 			FileSystem clioFileSystem = new FileSystem(FileSystem);
-			var directoryComparer = new DirectoryComparer(clioFileSystem);
+			var directoryComparer = new DirectoryComparer(clioFileSystem, logger);
 			directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node2-Incorrect").Should().HaveCount(5);
 		}
 
