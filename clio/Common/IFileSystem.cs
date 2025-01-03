@@ -209,7 +209,7 @@ namespace Clio.Common
 		/// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default</remarks>
 		/// <exception cref="FileNotFoundException">when either of the files is not found</exception>
 		bool CompareFiles(string fileName1, string fileName2);
-		FileInfo GetFilesInfos(string v2);
+		IFileInfo GetFilesInfos(string fileName);
 
 		#endregion
 

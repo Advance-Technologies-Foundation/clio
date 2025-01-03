@@ -105,7 +105,7 @@ namespace Clio.Command
 			Parallel.ForEach(commonFiles, file => {
 				var file1 = Path.Combine(path1, file);
 				var file2 = Path.Combine(path2, file);
-				if (CompareFiles(Path.Combine(path1,file1),Path.Combine(path2, file2))) {
+				if (!CompareFiles(Path.Combine(path1,file1),Path.Combine(path2, file2))) {
 					differenceInCommonFiles.Add(file);
 					Interlocked.Increment(ref processedFiles);
 					int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
@@ -141,7 +141,7 @@ namespace Clio.Command
 			foreach (var msg in differenceInCommonFiles)
 				Console.WriteLine(msg);
 			var allDifferences = missingDirsInPath2.Concat(missingDirsInPath1)
-				.Concat(missingFilesInPath2)
+				.Concat(missingFilesInPath2).Concat(differenceInCommonFiles)
 				.Concat(missingFilesInPath1).ToList();
 			return allDifferences;
 		}

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -368,8 +369,10 @@ public class FileSystem : IFileSystem
 		_msFileSystem.File.WriteAllText(filePath, contents, encoding);
 	}
 
-	public FileInfo GetFilesInfos(string v2) {
-		return new FileInfo(v2);
+	public IFileInfo GetFilesInfos(string filePath) {
+		Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+		Ms.IFileInfo fileInfo = fileInfoFactory.New(filePath);
+		return fileInfo;
 	}
 
 	#endregion
