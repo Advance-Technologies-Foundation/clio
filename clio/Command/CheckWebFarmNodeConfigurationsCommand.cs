@@ -100,6 +100,17 @@ namespace Clio.Command
 			files2 = new ConcurrentBag<string>(files2.Select(f => f.Substring(path2.Length).TrimStart(Path.DirectorySeparatorChar)));
 			int totalFiles1 = files1.Count, totalFiles2 = files2.Count;
 			int processedFiles = 0;
+			ConcurrentBag<string> commonFiles = new (files1.Intersect(files2));
+			Parallel.ForEach(commonFiles, file => {
+				var file1 = Path.Combine(path1, file);
+				var file2 = Path.Combine(path2, file);
+				if (!_fileSystem.CompareFiles(Path.Combine(path1,file1),Path.Combine(path2, file2))) {
+					Interlocked.Increment(ref processedFiles);
+					int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
+					Console.WriteLine($"Progress: {processedFiles}/{commonFiles.Count} files processed ({percentage}%)");
+					Console.WriteLine($"File content differs: {file}");
+				}
+			});
 			var missingDirsInPath2 = dirs1.Except(dirs2).Select(d => $"Folder missing in {path2}: {d}");
 			var missingDirsInPath1 = dirs2.Except(dirs1).Select(d => $"Folder missing in {path1}: {d}");
 			var missingFilesInPath2 = files1.Except(files2)
@@ -148,11 +159,6 @@ namespace Clio.Command
 			});
 		}
 
-		private bool FilesAreEqual(string filePath1, string filePath2) {
-			var file1Bytes = _fileSystem.ReadAllBytes(filePath1);
-			var file2Bytes = _fileSystem.ReadAllBytes(filePath2);
-			return file1Bytes.SequenceEqual(file2Bytes);
-		}
 	}
 
 }
