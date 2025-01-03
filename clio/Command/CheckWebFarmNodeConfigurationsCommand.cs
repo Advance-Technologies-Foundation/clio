@@ -152,10 +152,10 @@ namespace Clio.Command
 			if (file1Info.Length != file2Info.Length) {
 				return false;
 			}
-			if (file1Info.Length == file2Info.Length && file1Info.LastWriteTimeUtc != file1Info.LastWriteTimeUtc) {
-				return _fileSystem.CompareFiles(v1, v2);
-			} else {
+			if (file1Info.Length == file2Info.Length && file1Info.LastWriteTimeUtc == file1Info.LastWriteTimeUtc) {
 				return true;
+			} else {
+				return _fileSystem.CompareFiles(v1, v2); ;
 			}
 		}
 
