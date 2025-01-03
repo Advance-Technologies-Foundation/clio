@@ -101,10 +101,12 @@ namespace Clio.Command
 			int totalFiles1 = files1.Count, totalFiles2 = files2.Count;
 			int processedFiles = 0;
 			ConcurrentBag<string> commonFiles = new (files1.Intersect(files2));
+			ConcurrentBag<string> differenceInCommonFiles = new();
 			Parallel.ForEach(commonFiles, file => {
 				var file1 = Path.Combine(path1, file);
 				var file2 = Path.Combine(path2, file);
 				if (!_fileSystem.CompareFiles(Path.Combine(path1,file1),Path.Combine(path2, file2))) {
+					differenceInCommonFiles.Add(file);
 					Interlocked.Increment(ref processedFiles);
 					int percentage = (int)((double)processedFiles / commonFiles.Count * 100);
 					Console.WriteLine($"Progress: {processedFiles}/{commonFiles.Count} files processed ({percentage}%)");
@@ -134,6 +136,9 @@ namespace Clio.Command
 			foreach (var msg in missingFilesInPath2)
 				Console.WriteLine(msg);
 			foreach (var msg in missingFilesInPath1)
+				Console.WriteLine(msg);
+			Console.WriteLine("Files with different content:");
+			foreach (var msg in differenceInCommonFiles)
 				Console.WriteLine(msg);
 			var allDifferences = missingDirsInPath2.Concat(missingDirsInPath1)
 				.Concat(missingFilesInPath2)
