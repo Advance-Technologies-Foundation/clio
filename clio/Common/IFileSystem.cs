@@ -172,6 +172,8 @@ namespace Clio.Common
 
 		string[] GetDirectories(string directoryPath);
 
+		string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption);
+
 		void OverwriteExistsDirectory(string directoryPath);
 
 		void SafeDeleteDirectory(string directoryPath);
@@ -207,6 +209,7 @@ namespace Clio.Common
 		/// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default</remarks>
 		/// <exception cref="FileNotFoundException">when either of the files is not found</exception>
 		bool CompareFiles(string fileName1, string fileName2);
+		IFileInfo GetFilesInfos(string fileName);
 
 		#endregion
 
