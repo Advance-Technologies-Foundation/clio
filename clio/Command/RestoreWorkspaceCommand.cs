@@ -1,6 +1,7 @@
 namespace Clio.Command
 {
 	using System;
+	using System.IO;
 	using Clio.Common;
 	using Clio.Workspaces;
 	using CommandLine;
@@ -22,6 +23,9 @@ namespace Clio.Command
 		[Option("IsCreateSolution", Required = false, HelpText = "True if you need to create the Solution", Default = true)]
 		public bool? IsCreateSolution { get; set; }
 
+		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
+		public string AppCode { get; set; }
+
 	}
 
 	[Verb("restore-workspace", Aliases = new string[] { "restorew", "pullw", "pull-workspace" },
@@ -42,15 +46,17 @@ namespace Clio.Command
 
 		private readonly IWorkspace _workspace;
 		private readonly ILogger _logger;
+		private readonly CreateWorkspaceCommand _createWorkspaceCommand;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger) {
+		public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger, CreateWorkspaceCommand createWorkspaceCommand) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
 			_logger = logger;
+			_createWorkspaceCommand = createWorkspaceCommand;
 		}
 
 		#endregion
@@ -62,10 +68,43 @@ namespace Clio.Command
 				_workspace.Restore(options);
 				_logger.WriteInfo("Done");
 				return 0;
+			} catch (FileNotFoundException ex) {
+				return _createWorkspaceCommand.Execute(CloneFromRestoreOptions(options));
 			} catch (Exception e) {
 				_logger.WriteError(e.Message);
 				return 1;
 			}
+		}
+
+		private CreateWorkspaceCommandOptions CloneFromRestoreOptions(RestoreWorkspaceOptions options) {
+			return new CreateWorkspaceCommandOptions {
+				IsNugetRestore = options.IsNugetRestore,
+				IsCreateSolution = options.IsCreateSolution,
+				AppCode = options.AppCode,
+				Uri = options.Uri,
+				Password = options.Password,
+				Login = options.Login,
+				IsNetCore = options.IsNetCore,
+				Environment = options.Environment,
+				Maintainer = options.Maintainer,
+				DevMode = options.DevMode,
+				WorkspacePathes = options.WorkspacePathes,
+				DeveloperModeEnabled = options.DeveloperModeEnabled,
+				Safe = options.Safe,
+				ClientId = options.ClientId,
+				ClientSecret = options.ClientSecret,
+				AuthAppUri = options.AuthAppUri,
+				IsSilent = options.IsSilent,
+				RestartEnvironment = options.RestartEnvironment,
+				DbServerUri = options.DbServerUri,
+				DbUser = options.DbUser,
+				DbPassword = options.DbPassword,
+				BackUpFilePath = options.BackUpFilePath,
+				DbWorknigFolder = options.DbWorknigFolder,
+				DbName = options.DbName,
+				Force = options.Force,
+				CallbackProcess = options.CallbackProcess
+			};
 		}
 
 		#endregion

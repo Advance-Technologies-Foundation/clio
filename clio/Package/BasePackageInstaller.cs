@@ -209,6 +209,7 @@
 			PackageInstallOptions packageInstallOptions) {
 			string packageName = UploadPackage(filePath, environmentSettings);
 			string packageCode = packageName.Split('.')[0];
+			_logger.WriteInfo($"{environmentSettings.Uri}");
 			if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
 				return (false, "Dont created backup.");
 			}

@@ -16,8 +16,6 @@ namespace Clio.Command
 
 		#region Properties: Public
 
-		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
-		public string AppCode { get; set; }
 
 		internal override bool RequiredEnvironment => false;
 
