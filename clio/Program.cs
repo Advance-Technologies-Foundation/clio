@@ -673,7 +673,7 @@ class Program
 			ItemOptions opts => AddItem(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
-			FeatureOptions opts => CreateRemoteCommand<FeatureCommand>(opts).Execute(opts),
+			FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 			OpenAppOptions opts => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),

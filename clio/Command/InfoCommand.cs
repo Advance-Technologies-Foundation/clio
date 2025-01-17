@@ -74,8 +74,8 @@ namespace Clio.Command
 			{
 				_logger.WriteLine($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
 				_logger.WriteInfo($"gate:   {_gateVersion}");
-				_logger.WriteLine($"clio:   {Environment.Version.ToString()}");
-				_logger.WriteInfo($"dotnet: {SettingsRepository.AppSettingsFile}");
+				_logger.WriteLine($"dotnet:   {Environment.Version.ToString()}");
+				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;
 			}
 			return 1;
