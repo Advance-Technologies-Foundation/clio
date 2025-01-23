@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Text;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -9,8 +10,7 @@ using CreatioModel;
 namespace Clio.Command;
 
 [Verb("set-feature", Aliases = new[] {"feature"}, HelpText = "Set feature state")]
-public class FeatureOptions : RemoteCommandOptions
-{
+public class FeatureOptions : RemoteCommandOptions {
 
 	#region Properties: Public
 
@@ -26,19 +26,20 @@ public class FeatureOptions : RemoteCommandOptions
 	[Option("SysAdminUnitName", Required = false, HelpText = "Name of the user for whom to set feature state for")]
 	public string SysAdminUnitName { get; set; }
 
-	[Option("UseFeatureWebService", Required = false, HelpText = "Use obsolete method to set feature state via feature webservice")]
+	[Option("UseFeatureWebService", Required = false,
+		HelpText = "Use obsolete method to set feature state via feature webservice")]
 	public bool UseFeatureWebService { get; set; }
 
 	#endregion
 
 }
 
-public class FeatureCommand : RemoteCommand<FeatureOptions>
-{
+public class FeatureCommand : RemoteCommand<FeatureOptions> {
 
 	#region Fields: Private
 
 	private readonly IDataProvider _dataProvider;
+	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 
 	#endregion
@@ -46,9 +47,10 @@ public class FeatureCommand : RemoteCommand<FeatureOptions>
 	#region Constructors: Public
 
 	public FeatureCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IDataProvider dataProvider)
+		IDataProvider dataProvider, IServiceUrlBuilder serviceUrlBuilder)
 		: base(applicationClient, settings){
 		_dataProvider = dataProvider;
+		_serviceUrlBuilder = serviceUrlBuilder;
 	}
 
 	#endregion
@@ -69,16 +71,28 @@ public class FeatureCommand : RemoteCommand<FeatureOptions>
 
 	#endregion
 
+	#region Methods: Internal
+
+	internal void ClearCache(string featureName){
+		string base64FeatureName = Convert.ToBase64String(Encoding.UTF8.GetBytes(featureName));
+		string url
+			= $"{_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ClearFeaturesCacheForAllUsers)}/{base64FeatureName}";
+		string response = ApplicationClient.ExecuteGetRequest(url);
+		Logger.WriteInfo($"{response}");
+	}
+
+	#endregion
+
 	#region Methods: Public
 
 	public override int Execute(FeatureOptions options){
-		if(options.UseFeatureWebService) {
+		if (options.UseFeatureWebService) {
 			Logger.WriteWarning("Use of UseFeatureWebService flag is not recommended");
 			return base.Execute(options);
-		}else {
-			SetFeatureStateDefValue(options);
-			return 0;
 		}
+		SetFeatureStateDefValue(options);
+		ClearCache(options.Code);
+		return 0;
 	}
 
 	public AppFeature GetFeature(string featureCode){
@@ -98,7 +112,7 @@ public class FeatureCommand : RemoteCommand<FeatureOptions>
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 
 		Guid? featureStateId = ctx.Models<AdminUnitFeatureState>()
-			.FirstOrDefault(f => f.FeatureId == feature.Id && f.AdminUnitId == sysAdminUnitId)?.Id;
+								.FirstOrDefault(f => f.FeatureId == feature.Id && f.AdminUnitId == sysAdminUnitId)?.Id;
 
 		if (featureStateId is null) {
 			AppFeatureState featureState = ctx.CreateModel<AppFeatureState>();

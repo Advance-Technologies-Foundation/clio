@@ -55,7 +55,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		RebuildPackage = 11,
 		Compile = 12,
 		CompileAll = 13,
-		DownloadPackageDllFile = 14
+		DownloadPackageDllFile = 14,
+		ClearFeaturesCacheForAllUsers = 15
 
 	}
 
@@ -84,6 +85,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.Compile, "ServiceModel/WorkspaceExplorerService.svc/Build"},
 		{KnownRoute.CompileAll, "ServiceModel/WorkspaceExplorerService.svc/Rebuild"},
 		{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
+		{KnownRoute.ClearFeaturesCacheForAllUsers, "/rest/FeatureService/ClearFeaturesCacheForAllUsers"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
