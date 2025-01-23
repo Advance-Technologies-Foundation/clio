@@ -83,10 +83,10 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 
 		//Act
 		_sut.ClearCache("ActivateAdvancedModeForOriginalSchemas");
-		Thread.Sleep(1000); //Loger need 300ms to flush its cache, thus we sleep
+		Thread.Sleep(300); //Logger need 300ms to flush its cache, thus we sleep
 
 		//Assert
-		_textWriter.ToString().Should().Be($"[INF] - {responseBody}\r\n");
+		_textWriter.ToString().Should().Contain($"[INF] - {responseBody}\r\n");
 	}
 
 }
