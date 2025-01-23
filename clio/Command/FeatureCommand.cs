@@ -90,7 +90,11 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 			Logger.WriteWarning("Use of UseFeatureWebService flag is not recommended");
 			return base.Execute(options);
 		}
-		SetFeatureStateDefValue(options);
+		if (options.SysAdminUnitName is null) {
+			SetFeatureStateDefValue(options);
+		} else {
+			SetFeatureStateForUser(options);
+		}
 		ClearCache(options.Code);
 		return 0;
 	}
