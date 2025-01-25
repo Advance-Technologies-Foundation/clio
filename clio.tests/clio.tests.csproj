@@ -1,252 +1,31 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>Latest</LangVersion>
     <IsPackable>false</IsPackable>
-
     <RootNamespace>Clio.Tests</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="samplefiles\AssemblyInfo.cs" />
-	<Compile Remove="Examples\WebFarm\**" />
-  </ItemGroup>
-
-	
-  <ItemGroup>
-    <None Remove="Examples\deployments-manifest\creatio-config-empty-package.yaml" />
-    <None Remove="Examples\deployments-manifest\creatio-config-package.yaml" />
-    <None Remove="Examples\deployments-manifest\full-creatio-config.yaml" />
-    <None Remove="Examples\diff-manifest\clone-diff-manifest.yaml" />
-    <None Remove="Examples\diff-manifest\packages-diff.yaml" />
-    <None Remove="Examples\diff-manifest\packages-source-env-manifest.yaml" />
-    <None Remove="Examples\diff-manifest\packages-target-env-manifest.yaml" />
-    <None Remove="Examples\diff-manifest\syssettings-diff.yaml" />
-    <None Remove="Examples\diff-manifest\syssettings-source-env-manifest.yaml" />
-    <None Remove="Examples\diff-manifest\syssettings-target-env-manifest.yaml" />
-    <None Remove="Examples\MockDataProjects\Expected\Account.json" />
-    <None Remove="Examples\MockDataProjects\Expected\Contact.json" />
-    <None Remove="Examples\MockDataProjects\Expected\Order.json" />
-    <None Remove="Examples\MockDataProjects\Models\BL.txt" />
-    <None Remove="Examples\MockDataProjects\Models\ExampleModels.txt" />
-    <None Remove="Examples\MockDataProjects\Models\ExampleOrderModels.txt" />
-    <None Remove="Examples\MockDataProjects\Tests\MockData\placeholder.txt" />
-    <None Remove="Examples\odata_data_examples\syssettings-odata.json" />
-    <None Remove="Examples\odata_data_examples\syssettingsvalue-odata.json" />
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloApp\Data\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloApp\Files\app-descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloApp\Resources\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloApp\Assemblies\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloApp\SqlScripts\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloApp\descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloInC360\Data\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloInC360\Assemblies\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloInC360\SqlScripts\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\ApolloAppWorkspace\1\packages\MrktApolloInC360\descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloApp\Files\app-descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloApp\Resources\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloApp\Assemblies\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloApp\SqlScripts\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloApp\descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\Data\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\Assemblies\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\SqlScripts\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\CompilationLog\Pair1\pair1-creatio-compilation-log.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\CompilationLog\Pair1\pair1-desired-output.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\CompilationLog\Pair2\pair2-creatio-compilation-log.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\CompilationLog\Pair2\pair2-desired-output.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="Examples\diff-manifest\clone-diff-manifest.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\diff-manifest\packages-diff.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-
-    <Content Include="Examples\deployments-manifest\creatio-config-empty-package.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\deployments-manifest\creatio-config-package.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\deployments-manifest\full-creatio-config.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\diff-manifest\syssettings-diff.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\diff-manifest\syssettings-target-env-manifest.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\diff-manifest\syssettings-source-env-manifest.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\diff-manifest\packages-target-env-manifest.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\diff-manifest\packages-source-env-manifest.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Expected\Account.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Expected\Order.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Expected\Contact.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Models\BL.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Models\ExampleOrderModels.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Tests\MockData\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\odata_data_examples\syssettingsvalue-odata.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\odata_data_examples\syssettings-odata.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="Examples\diff-manifest\packages-diff.yaml" />
-    <Content Include="Examples\diff-manifest\packages-diff.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-
-    <None Include="samplefiles\AssemblyInfo.cs">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="samplefiles\Proj.csproj">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\reg_web_app_example.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    
-    <None Update="YAML\Script\three_sections.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\additional_secrets_sections.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\additional_settings_sections.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\three_sections_with_step_vlaues.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\additional_steps_sections.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\steps_only_with_values.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\three_sections_settings_macro.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="YAML\Script\emptyFile.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="samplefiles\sample.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\deployments-manifest\feature-creatio-config_2.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\deployments-manifest\setting-creatio-config-broken.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Examples\deployments-manifest\integration-test-manifest.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    
-  </ItemGroup>
-
-  <ItemGroup>
+  <ItemGroup Label="References">
+    <ProjectReference Include="..\clio\clio.csproj" />
     <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.11" />
     <PackageReference Include="coverlet.collector" Version="6.0.4">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-<!--    <PackageReference Include="coverlet.msbuild" Version="6.0.2">-->
-<!--      <PrivateAssets>all</PrivateAssets>-->
-<!--      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>-->
-<!--    </PackageReference>-->
     <PackageReference Include="FluentAssertions" Version="[7.0.0]" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="nunit" Version="4.3.2" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.2.1" />
-	<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-	<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.1" />
-    
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.1" />
   </ItemGroup>
-	<PropertyGroup>
-		<!-- Exclude the project from analysis -->
-		<SonarQubeExclude>true</SonarQubeExclude>
-		<SonarQubeTestProject>true</SonarQubeTestProject>
-	</PropertyGroup>
-	<ItemGroup>
-		
-	</ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\clio\clio.csproj" />
+  <PropertyGroup Label="SonarCube">
+      <!-- Exclude the project from analysis -->
+      <SonarQubeExclude>true</SonarQubeExclude>
+      <SonarQubeTestProject>true</SonarQubeTestProject>
+  </PropertyGroup>
+  <ItemGroup Label="OldFileContent Needs refactoring">
     <None Update="BinNet472ReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -274,12 +53,6 @@
     <None Update="InnerCoreSrcReferenceHint.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="samplefiles\descriptor.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="samplefiles\packages.config">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Update="ExpectPkgProj.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -293,29 +66,19 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Examples\WebFarm\Node3-Correct\" />
-    <Folder Include="Examples\WebFarm\Node1-Main\" />
-    <Folder Include="Examples\WebFarm\Node2-Incorrect\" />
-    <Folder Include="Examples\workspaces\MyAppV2\packages\MrktApolloApp\Autogenerated\" />
-    <Folder Include="Examples\workspaces\MyAppV2\packages\MrktApolloApp\Schemas\" />
-    <Folder Include="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\Files\" />
-    <Folder Include="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\Resources\" />
-    <Folder Include="Examples\workspaces\MyAppV2\packages\MrktApolloInC360\Schemas\" />
-    <Folder Include="Examples\workspaces\MyAppV2\tasks\" />
-    <Folder Include="TestResults\" />
-    
-    <Folder Include="Examples\CsProjFiles\" />
-    <Content Include="Examples\CsProjFiles\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Examples\MockDataProjects\Models\ExampleModels.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Update="Examples\CsProjFiles\**">
+  <ItemGroup Label="File Content">
+    <None Include="Examples\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="samplefiles\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="YAML\Script\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <Compile Remove="Examples\WebFarm\**" />
+    <Compile Remove="Examples\WebFarm\Node1-Main\**" />
+    <Compile Remove="Examples\WebFarm\Node1-Main\ErrorPage.aspx" />
+    <Compile Remove="samplefiles\AssemblyInfo.cs" />
   </ItemGroup>
-
 </Project>

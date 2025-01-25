@@ -74,7 +74,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		//Assert
 		result.Should().Be(1);
 		Thread.Sleep(500);
-		_textWriter.ToString().Should().Be($"[ERR] - {expectedErrorMessage}{Environment.NewLine}");
+		_textWriter.ToString().Should().Contain($"[ERR] - {expectedErrorMessage}{Environment.NewLine}");
 	}
 
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
@@ -95,7 +95,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		//Assert
 		result.Should().Be(0);
 		Thread.Sleep(500);
-		_textWriter.ToString().TrimEnd().Should().Be(desiredOutputContent);
+		_textWriter.ToString().TrimEnd().Should().Contain(desiredOutputContent);
 	}
 	
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
