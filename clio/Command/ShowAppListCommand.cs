@@ -9,6 +9,11 @@ namespace Clio.Command
 	{
 		[Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
 		public string Name { get; set; }
+		
+		
+		[Option('s', "short", Required = false, HelpText = "Show short list")]
+		public bool ShowShort { get; set; }
+		
 	}
 
 	public class ShowAppListCommand : Command<AppListOptions>
@@ -23,7 +28,7 @@ namespace Clio.Command
 		public override int Execute(AppListOptions options) {
 			try {
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
-				_settingsRepository.ShowSettingsTo(Console.Out, options.Name);
+				_settingsRepository.ShowSettingsTo(Console.Out, options.Name, options.ShowShort);
 				return 0;
 			} catch (Exception e) {
 				Console.WriteLine(e.Message);
