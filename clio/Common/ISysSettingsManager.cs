@@ -183,9 +183,8 @@ public class SysSettingsManager : ISysSettingsManager
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		const string endpoint = "rest/CreatioApiGateway/GetSysSettingValueByCode";
 		string json = JsonSerializer.Serialize(new GetSettingRequestData(code), _jsonSerializerOptions);
-		string url = _serviceUrlBuilder.Build(endpoint);
+		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSysSettingValueByCode);
 		string result = _creatioClient.ExecutePostRequest(url, json);
 		return result;
 	}

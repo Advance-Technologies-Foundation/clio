@@ -21,14 +21,15 @@ namespace Clio.Command
 
 	}
 
-	public class SysSettingsCommand : Command<SysSettingsOptions>
-	{
+	public class SysSettingsCommand : Command<SysSettingsOptions> {
 		private readonly ISysSettingsManager _sysSettingsManager;
 		private readonly ILogger _logger;
+		private readonly IClioGateway _clioGateway;
 
-		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger){
+		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IClioGateway clioGateway){
 			_sysSettingsManager = sysSettingsManager;
 			_logger = logger;
+			_clioGateway = clioGateway;
 		}
 		
 		private void CreateSysSettingIfNotExists(SysSettingsOptions opts) {
@@ -65,7 +66,17 @@ namespace Clio.Command
 		public override int Execute(SysSettingsOptions opts) {
 			
 			if(opts.IsGet) {
-				var value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
+				const string minClioGateVersion = "2.0.0.0";
+				
+				if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
+					_logger.WriteError($"To view SysSetting value by code requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
+
+					_logger.WriteInfo(string.IsNullOrWhiteSpace(opts.Environment)
+						?  "To install cliogate use the following command: clio install-gate"
+						: $"To install cliogate use the following command: clio install-gate -e {opts.Environment}");
+					return 0;
+				}
+				string value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
 				_logger.WriteInfo($"SysSettings {opts.Code} : {value}");
 				return 0;
 			}
