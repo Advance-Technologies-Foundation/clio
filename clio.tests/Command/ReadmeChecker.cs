@@ -12,8 +12,8 @@ public class ReadmeChecker
 
 	private readonly string _readmeContent = File.ReadAllText(ReadmeFilePath);
 	private readonly IEnumerable<string> _wikiAnchorsContent = File.ReadAllLines(WikiAnchorsFilePath);
-	private const string ReadmeFilePath = @"..\..\..\..\clio\Commands.md";
-	private const string WikiAnchorsFilePath = @"..\..\..\..\clio\Wiki\WikiAnchors.txt";
+	private const string ReadmeFilePath = @"../../../../clio/Commands.md";
+	private const string WikiAnchorsFilePath = @"../../../../clio/Wiki/WikiAnchors.txt";
 
 	private readonly Func<string, string> _convertCommandNameToSection = (commandName) => {
 		List<string> commandWords = commandName
