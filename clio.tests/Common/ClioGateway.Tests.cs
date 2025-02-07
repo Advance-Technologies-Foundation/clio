@@ -194,5 +194,27 @@ public class ClioGatewayTests : BaseClioModuleTests
 		// Assert
 		actualPackageInfo.Should().Be(expectedResult);
 	}
+	
+	[TestCase("1.0.0", "2.0.0", false, "To use this command, you need to install the cliogate package version 2.0.0 or higher.")]
+	[TestCase("2.0.0", "1.0.0", true, null)]
+	[TestCase("2.0.0", "2.0.0", true, null)]
+	public void CheckCompatibleVersion_Should_BehaveAsExpected(string installedVersion, string requiredVersion, bool shouldNotThrow, string expectedMessage){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(installedVersion), NetFrameworkClioPkgName)
+		]);
+		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+	
+		// Act
+		Action act = () => clioGateway.CheckCompatibleVersion(requiredVersion);
+	
+		// Assert
+		if (shouldNotThrow) {
+			act.Should().NotThrow();
+		} else {
+			act.Should().Throw<NotSupportedException>()
+				.WithMessage(expectedMessage);
+		}
+	}
 
 }

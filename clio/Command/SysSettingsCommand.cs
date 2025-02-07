@@ -47,15 +47,14 @@ namespace Clio.Command
 		}
 		
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
-			
 			bool isUpdated = _sysSettingsManager.UpdateSysSetting(opts.Code, opts.Value);
 			if(isUpdated) {
 				_logger.WriteInfo($"SysSettings with code: {opts.Code} updated.");
-				
 			} else {
 				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
 			}
 		}
+		
 		public void TryUpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			try {
 				UpdateSysSetting(opts, settings);
