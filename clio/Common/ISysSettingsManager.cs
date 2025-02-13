@@ -163,18 +163,11 @@ public class SysSettingsManager : ISysSettingsManager
 	
 
 	private SysSettings GetSysSettingByCode(string code){
-		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<SysSettings>()
-			.ToList();
 
-		var sysSettingsValue = AppDataContextFactory.GetAppDataContext(_dataProvider)
-		.Models<SysSettingsValue>()
-		.ToList();
-
-		var sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<SysSettings>()
-			.Where(i => i.Code == code)
-			.ToList().FirstOrDefault();
+		SysSettings sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
+													.Models<SysSettings>()
+													.Where(i => i.Code == code)
+													.ToList().FirstOrDefault();
 		return sysSetting;
 	}
 

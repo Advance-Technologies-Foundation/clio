@@ -55,9 +55,9 @@ namespace Clio
 				containerBuilder.Register<IDataProvider>(provider => {
 					var creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
 					containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
-					IDataProvider dataProvider = string.IsNullOrEmpty(settings.Login) switch {
-						true => new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore),
-						false => new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore)
+					IDataProvider dataProvider = string.IsNullOrEmpty(settings.ClientId) switch {
+						false => new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore),
+						true => new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore)
 					};
 					return dataProvider;
 				});
