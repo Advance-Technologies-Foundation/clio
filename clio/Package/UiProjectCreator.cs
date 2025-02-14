@@ -1,4 +1,7 @@
-﻿namespace Clio.Package
+﻿using System.Globalization;
+using System.Text;
+
+namespace Clio.Package
 {
 	using System;
 	using System.Collections.Generic;
@@ -108,15 +111,14 @@
 				.GetFiles(projectPath, "*.*", SearchOption.AllDirectories)
 				.Where(f => _templateExtensions.Any(e => f.ToLower().EndsWith(e)));
 			foreach (string filePath in filesPaths) {
-				string tplContent = _fileSystem.ReadAllText(filePath);
-				tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix);
-				tplContent = tplContent.Replace("<%projectName%>", projectName);
+				string tplContent = _fileSystem.ReadAllText(filePath );
+				tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix, true, CultureInfo.InvariantCulture);
+				tplContent = tplContent.Replace("<%projectName%>", projectName,true, CultureInfo.InvariantCulture);
 				tplContent = tplContent.Replace("<%distPath%>",
-					$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/", "js/", projectName)}");
+					$"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/", "js/", projectName)}", true, CultureInfo.InvariantCulture);
 				_fileSystem.WriteAllTextToFile(filePath, tplContent);
 			}
 		}
-
 		private void CreatePackage(string packageName) {
 			_packageCreator.Create(PackagesPath, packageName);
 		}

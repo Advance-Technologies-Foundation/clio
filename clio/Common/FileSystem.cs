@@ -14,6 +14,8 @@ namespace Clio.Common;
 
 public class FileSystem : IFileSystem
 {
+	
+	internal static Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 	private readonly Ms.IFileSystem _msFileSystem;
 	public FileSystem(Ms.IFileSystem msFileSystem){
@@ -177,10 +179,11 @@ public class FileSystem : IFileSystem
 	}
 
 	public string ReadAllText(string filePath) => 
-		_msFileSystem.File.ReadAllText(filePath, Encoding.UTF8);
+		_msFileSystem.File.ReadAllText(filePath, Utf8NoBom);
 
+	
 	public void WriteAllTextToFile(string filePath, string contents) =>
-		WriteAllTextToFile(filePath, contents, Encoding.UTF8);
+		WriteAllTextToFile(filePath, contents, Utf8NoBom);
 
 	public void ClearOrCreateDirectory(string directoryPath) {
 		if (_msFileSystem.Directory.Exists(directoryPath)) {

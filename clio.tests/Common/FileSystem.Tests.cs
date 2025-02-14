@@ -501,7 +501,7 @@ public class FileSystemTests
 			.ReadAllText(fileName);
 			
 		//Assert
-		fs.File.Received(1).ReadAllText(fileName, Encoding.UTF8);
+		fs.File.Received(1).ReadAllText(fileName, FileSystem.Utf8NoBom);
 		
 	}
 
@@ -521,7 +521,7 @@ public class FileSystemTests
 			.WriteAllTextToFile(fileName, content);
 			
 		//Assert
-		fs.File.Received(1).WriteAllText(fileName, content, Encoding.UTF8);
+		fs.File.Received(1).WriteAllText(fileName, content, FileSystem.Utf8NoBom);
 	}
 
 	#endregion

@@ -127,6 +127,7 @@ namespace Clio.Common
 		string ReadAllText(string filePath);
 
 		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string)"/>
+		/// <remarks>Enforces UTF No BOM encoding</remarks>
 		void WriteAllTextToFile(string filePath, string contents);
 
 		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
