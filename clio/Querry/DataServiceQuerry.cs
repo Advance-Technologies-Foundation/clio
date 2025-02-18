@@ -2,6 +2,7 @@
 using Clio.Common;
 using CommandLine;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -17,7 +18,7 @@ namespace Clio.Querry
 		[Option('f', "input", Required = true, HelpText = "Request file", Separator = ' ')]
 		public string ReqeustFileName { get; set; }
 		
-		[Option('d', "destination", Required = true, HelpText = "Result file", Separator = ' ')]
+		[Option('d', "destination", Required = false, HelpText = "Result file", Separator = ' ')]
 		public string ResultFileName { get; set; }
 		
 		[Option('v', "variables", Required = false, HelpText = "Result file", Separator = ';')]
@@ -26,25 +27,28 @@ namespace Clio.Querry
 
 	public class DataServiceQuerry : RemoteCommand<DataServiceQuerryOptions>
 	{
-		public DataServiceQuerry(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings){}
 
-		const string _selectServicePath = @"/DataService/json/SyncReply/SelectQuery";
-		const string _updateServicePath = @"/DataService/json/SyncReply/UpdateQuery";
-		const string _insertServicePath = @"/DataService/json/SyncReply/InsertQuery";
-		const string _deleteServicePath = @"/DataService/json/SyncReply/DeleteQuery";
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
+
+		public DataServiceQuerry(IApplicationClient applicationClient, EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder)
+			: base(applicationClient, settings){
+			_serviceUrlBuilder = serviceUrlBuilder;
+		}
 		
-		public override int Execute(DataServiceQuerryOptions options)
-		{
+		public override int Execute(DataServiceQuerryOptions options){
 			string requestData = GetRequestData(options);
-			if (options.Variables is object && options.Variables.Any()){
+			if (options.Variables != null && options.Variables.Any()){
 				requestData = ReplaceVarInJson(requestData, options.Variables);
 			}
-
-			SetServicePath(options.OperationType);
-			string jsonResult = ApplicationClient.ExecutePostRequest(ServiceUri, requestData);
-			string outputFileName = SetOutputFileName(options.ResultFileName);
-			File.WriteAllText(outputFileName, jsonResult);
+			
+			string jsonResult = ApplicationClient.ExecutePostRequest(BuildUrl(options.OperationType), requestData);
+			
+			if(string.IsNullOrWhiteSpace(options.ResultFileName)) {
+				Logger.WriteInfo(jsonResult);
+			}else {
+				string outputFileName = SetOutputFileName(options.ResultFileName);
+				File.WriteAllText(outputFileName, jsonResult);
+			}
 			return 0;
 		}
 
@@ -56,32 +60,24 @@ namespace Clio.Querry
 			}
 			return File.ReadAllText(options.ReqeustFileName);
 		}
+		
+		private string BuildUrl(string operationType) => operationType.ToUpperInvariant() switch {
+															"SELECT" => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+															"INSERT" => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert),
+															"UPDATE" => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update),
+															"DELETE" => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete),
+															var _ => throw new System.Exception("Unknown operation type"),
+														};
 
-		private void SetServicePath(string operationType)
-		{
-			ServicePath = operationType.ToLower() switch
-			{
-				"select" => _selectServicePath,
-				"insert" => _insertServicePath,
-				"update" => _updateServicePath,
-				"delete" => _deleteServicePath,
-				_ => _selectServicePath,
-			};
-		}
-
-		private string SetOutputFileName(string resultFileName)
-		{
+		private string SetOutputFileName(string resultFileName){
 			FileInfo fi = new FileInfo(resultFileName);
 			string fileName = Path.GetFileNameWithoutExtension(resultFileName);
 			int count = fi.Directory.GetFiles($"{fileName}*{fi.Extension}").Count();
 			if(count > 0){
-
 				return Path.Combine(fi.Directory.ToString(), $"{fileName}-({count + 1}){fi.Extension}");
 			}
 			return Path.Combine(fi.Directory.ToString(), $"{fileName}{fi.Extension}");
 		}
-
-
 		private string ReplaceVarInJson(string json, IEnumerable<string> variables)
 		{
 			foreach(var variable in variables)

@@ -185,6 +185,7 @@ namespace Clio
 			//containerBuilder.RegisterType<CreateEntityCommand>();
 			containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
 			containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
+			containerBuilder.RegisterType<DataServiceQuerry>();
 			
 			MediatRConfiguration configuration = MediatRConfigurationBuilder
 												.Create(typeof(BindingsModule).Assembly)
