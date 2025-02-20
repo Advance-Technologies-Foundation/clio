@@ -49,8 +49,10 @@ clio unregister
 
 ## MacOS / Linux
 
-1. Download [.net core](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) for mac
+1. Download [.net 8](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) for Mac/Linux
+
 2. Register clio as the global tool, with the command:
+
 ```
 dotnet tool install clio
 ```
