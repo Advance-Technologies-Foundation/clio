@@ -47,7 +47,7 @@ https://user-images.githubusercontent.com/26967647/169416137-351674ca-0bd2-44f1-
 clio unregister
 ```
 
-## MacOS
+## MacOS / Linux
 
 1. Download [.net core](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) for mac
 2. Register clio as the global tool, with the command:
