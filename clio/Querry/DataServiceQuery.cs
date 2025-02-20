@@ -25,12 +25,12 @@ namespace Clio.Querry
 		public IEnumerable<string> Variables { get; set; }
 	}
 
-	public class DataServiceQuerry : RemoteCommand<DataServiceQuerryOptions>
+	public class DataServiceQuery : RemoteCommand<DataServiceQuerryOptions>
 	{
 
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
-		public DataServiceQuerry(IApplicationClient applicationClient, EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder)
+		public DataServiceQuery(IApplicationClient applicationClient, EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder)
 			: base(applicationClient, settings){
 			_serviceUrlBuilder = serviceUrlBuilder;
 		}

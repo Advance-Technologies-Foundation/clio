@@ -697,7 +697,7 @@ class Program
 			AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
 			UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 			LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
-			DataServiceQuerryOptions opts => Resolve<DataServiceQuerry>(opts).Execute(opts),
+			DataServiceQuerryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),
 			RestoreFromPackageBackupOptions opts => Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
 			CreateUiProjectOptions opts => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
 			DownloadConfigurationCommandOptions opts => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),
