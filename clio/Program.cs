@@ -588,6 +588,7 @@ class Program
         typeof(CompilePackageOptions),
 		// Development
 		typeof(DataServiceQuerryOptions),
+		typeof(CallServiceCommandOptions),
 		typeof(RestoreFromPackageBackupOptions),
 		typeof(CreateUiProjectOptions),
 		typeof(DownloadConfigurationCommandOptions),
@@ -698,6 +699,7 @@ class Program
 			UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 			LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
 			DataServiceQuerryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),
+			CallServiceCommandOptions opts => Resolve<CallServiceCommand>(opts).Execute(opts),
 			RestoreFromPackageBackupOptions opts => Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
 			CreateUiProjectOptions opts => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
 			DownloadConfigurationCommandOptions opts => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),

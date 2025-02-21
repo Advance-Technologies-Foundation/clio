@@ -134,7 +134,8 @@ namespace Clio
 			containerBuilder.RegisterType<AddPackageCommand>();
 			containerBuilder.RegisterType<UnlockPackageCommand>();
 			containerBuilder.RegisterType<LockPackageCommand>();
-			containerBuilder.RegisterType<DataServiceQuerry>();
+			containerBuilder.RegisterType<DataServiceQuery>();
+			containerBuilder.RegisterType<CallServiceCommand>();
 			containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
 			containerBuilder.RegisterType<Marketplace>();
 			containerBuilder.RegisterType<CreateUiProjectCommand>();
