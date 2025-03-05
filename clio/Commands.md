@@ -788,6 +788,7 @@ clio build-workspace
   - [Execute assembly](#execute-assembly-code)
   - [Set references](#ref-to)
   - [Execute custom SQL script](#execute-sql-script)
+  - [Execute service request](#callservice)
   - [Execute dataservice request](#dataservice)
   - [Add item](#add-item)
   - [Add schema](#add-schema)
@@ -854,6 +855,22 @@ Executes custom SQL script from specified file
 ```bash
 execute-sql-script -f c:\Path to file\file.sql
 ```
+
+## call-Service
+
+Makes HTTP call to specified service endpoint.
+
+```bash
+clio call-service --service-path <path> -e <environment> --destination <file>
+```
+
+Example:
+
+```bash
+clio call-service --service-path ServiceModel/ApplicationInfoService.svc/GetApplicationInfo -e myEnv --destination C:\json.json
+```
+
+
 
 ## DataService
 
