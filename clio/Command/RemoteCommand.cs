@@ -56,6 +56,10 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 	internal IApplicationClient ApplicationClient { get; set; }
 
 	internal EnvironmentSettings EnvironmentSettings { get; set; }
+	
+	
+	protected virtual string ClioGateMinVersion {get;} = "0.0.0.0";
+	protected IClioGateway ClioGateWay {get; set;}
 
 	protected string RootPath =>
 		EnvironmentSettings.IsNetCore
@@ -114,6 +118,11 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 	#region Methods: Public
 
 	public override int Execute(TEnvironmentOptions options){
+		
+		if(!string.IsNullOrWhiteSpace(ClioGateMinVersion) && ClioGateWay != null) {
+			ClioGateWay.CheckCompatibleVersion(ClioGateMinVersion);
+		}
+		
 		try {
 			RequestTimeout = options.TimeOut;
 			RetryCount = options.RetryCount;

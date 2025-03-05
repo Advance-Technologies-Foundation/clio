@@ -23,14 +23,19 @@ public class GetCreatioInfoCommand : RemoteCommand<GetCreatioInfoCommandOptions>
 
 	#region Constructors: Public
 
-	public GetCreatioInfoCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings)
-		: base(applicationClient, environmentSettings){ }
+	public GetCreatioInfoCommand(IApplicationClient applicationClient, 
+		EnvironmentSettings environmentSettings, IClioGateway clioGateway)
+		: base(applicationClient, environmentSettings){
+		ClioGateWay = clioGateway;
+	}
 
 	#endregion
 
 	#region Properties: Protected
 
 	protected override string ServicePath => "/rest/CreatioApiGateway/GetSysInfo";
+
+	protected override string ClioGateMinVersion { get; } = "2.0.0.32";
 
 	#endregion
 

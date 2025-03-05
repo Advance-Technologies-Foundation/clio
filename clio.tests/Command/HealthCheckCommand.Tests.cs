@@ -4,7 +4,7 @@
 	using Autofac;
 	using Clio.Command;
 	using Clio.Common;
-	using Clio.Querry;
+	using Clio.Query;
 	using NSubstitute;
 	using NUnit.Framework;
 

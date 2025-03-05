@@ -1,19 +1,27 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using cliogate.Files.cs.Dto;
+using Common.Logging;
 
 namespace cliogate.Files.cs
 {
-	public class ProductManager
-	{
+	public class ProductManager {
 
+		private static readonly Lazy<ILog> _log = new Lazy<ILog>(()=>LogManager.GetLogger(typeof(CreatioApiGateway)));
+		
 		#region Methods: Private
 
-		private static IEnumerable<string> SplitRawData(){
-			string rawDatafilePath = Path.Combine(CreatioPathBuilder.GetPackageFilePath("cliogate"), "data",
-				"product_info.txt");
+		private static IEnumerable<string> SplitRawData(bool isNetCore){
+			string packageName = isNetCore ? "cliogate_netcore" : "cliogate";
+			string pkgDir = CreatioPathBuilder.GetPackageFilePath(packageName);
+			if(!Directory.Exists(pkgDir)) {
+				_log.Value.ErrorFormat(CultureInfo.InvariantCulture, "Could not find directory: {0}", pkgDir);
+				return Array.Empty<string>();
+			}
+			string 	rawDatafilePath = Path.Combine(pkgDir, "data", "product_info.txt");
 			return File.ReadAllLines(rawDatafilePath);
 		}
 
@@ -21,8 +29,8 @@ namespace cliogate.Files.cs
 
 		#region Methods: Public
 
-		public string FindProductNameByPackages(IEnumerable<string> packages, Version coreVersion){
-			IOrderedEnumerable<ProductInfo> products = GetProductInfoByVersion(coreVersion)
+		public string FindProductNameByPackages(IEnumerable<string> packages, Version coreVersion, bool isNetCore){
+			IOrderedEnumerable<ProductInfo> products = GetProductInfoByVersion(coreVersion, isNetCore)
 				.OrderByDescending(p => p.Packages.Length)
 				.ThenByDescending(p => p.Name.Length);
 
@@ -31,6 +39,8 @@ namespace cliogate.Files.cs
 				if (product.Packages.Intersect(enumerable).Count() == product.Packages.Length) {
 					return product.Name
 						.Replace("linux", "")
+						.Replace("net6", "")
+						.Replace("net8", "")
 						.Replace("& customer360", "")
 						.Replace("customerCenter", "customer center")
 						.Replace("compatibility edition", "")
@@ -40,9 +50,11 @@ namespace cliogate.Files.cs
 			return "UNKNOWN PRODUCT";
 		}
 
-		public List<ProductInfo> GetProductInfoByVersion(Version coreVersion){
+		public List<ProductInfo> GetProductInfoByVersion(Version coreVersion, bool isNetCore){
 			List<ProductInfo> productInfos = new List<ProductInfo>();
-			foreach (string line in SplitRawData()) {
+			
+			
+			foreach (string line in SplitRawData(isNetCore)) {
 				string[] lineItems = line.Split(new[] {'\t'}, StringSplitOptions.RemoveEmptyEntries);
 
 				if (lineItems.Length == 3 
@@ -53,7 +65,7 @@ namespace cliogate.Files.cs
 					ProductInfo product = new ProductInfo {
 						Name = lineItems[0],
 						Version = productVersion,
-						Packages = lineItems[2].Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries)
+						Packages = lineItems[2].Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries),
 					};
 					productInfos.Add(product);
 				}

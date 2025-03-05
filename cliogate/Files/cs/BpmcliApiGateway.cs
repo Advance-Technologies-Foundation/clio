@@ -601,14 +601,17 @@ namespace cliogate.Files.cs
 				packageNames.Add(name);
 			}
 		
+			bool isNetCore = !(Environment.Version.Major == 4); 
+			
 			var ver = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version;
 			ProductManager pm  = new ProductManager();
 			SysInfoResponse sysInfoResponse = new SysInfoResponse {
-				SysInfo = new CreatioPlatformInfo(){
+				SysInfo = new CreatioPlatformInfo{
 					Runtime = RuntimeInformation.FrameworkDescription,
 					CoreVersion = ver.ToString(),
 					DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
-					ProductName = pm.FindProductNameByPackages(packageNames, ver)
+					ProductName = pm.FindProductNameByPackages(packageNames, ver, isNetCore),
+					IsNetCore = isNetCore,
 				}
 			};
 
