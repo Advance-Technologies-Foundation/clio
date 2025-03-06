@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("generate-pkg-zip", Aliases = new string[] { "compress" }, HelpText = "Prepare an archive of creatio package")]
+	[Verb("generate-pkg-zip", Aliases = ["compress"], HelpText = "Prepare an archive of creatio package")]
 	public class GeneratePkgZipOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
@@ -30,22 +31,17 @@ namespace Clio.Command
 			_logger = logger;
 		}
 		public override int Execute(GeneratePkgZipOptions options) {
-			try {
-				if (options.Packages == null) {
-					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
-					_packageArchiver.Pack(options.Name, destinationPath, options.SkipPdb, true);
-				} else {
-					var packages = StringParser.ParseArray(options.Packages);
-					string zipFileName = $"packages_{DateTime.Now.ToString("yy.MM.dd_hh.mm.ss")}.zip";
-					var destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
-					_packageArchiver.Pack(options.Name, destinationPath, packages, options.SkipPdb, true);
-				}
-				_logger.WriteInfo("Done");
-				return 0;
-			} catch (Exception e) {
-				_logger.WriteError(e.Message);
-				return 1;
+			if (options.Packages == null) {
+				string destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? $"{options.Name}.gz" : options.DestinationPath;
+				_packageArchiver.Pack(options.Name, destinationPath, options.SkipPdb, true);
+			} else {
+				IEnumerable<string> packages = StringParser.ParseArray(options.Packages);
+				string zipFileName = $"packages_{DateTime.Now:yy.MM.dd_hh.mm.ss}.zip";
+				string destinationPath = string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
+				_packageArchiver.Pack(options.Name, destinationPath, packages, options.SkipPdb, true);
 			}
+			_logger.WriteInfo("Done");
+			return 0;
 		}
 	}
 }

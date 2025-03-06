@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using MicrosoftIO = System.IO.Abstractions;
 using System.IO.Compression;
@@ -66,49 +67,58 @@ namespace Clio
 		}
 
 		private IEnumerable<string> GetAllFiles(string tempPath, bool skipPdb, string packagePath) {
-			var files = _msFileSystem.Directory
-				.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
-				.Where(name => !name.EndsWith(".pdb") || !skipPdb);
+			IEnumerable<string> files = _msFileSystem.Directory
+													.GetFiles(tempPath, "*.*", SearchOption.AllDirectories)
+													.Where(name => !name.EndsWith(".pdb", true, CultureInfo.InvariantCulture) || !skipPdb);
 			return ApplyClioIgnore(files, packagePath);
 
 		}
 
-		private IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath)
-		{
-			var wsIgnoreFile = _msFileSystem.DirectoryInfo.New(packagePath)?.Parent?.Parent?
-			.GetDirectories(".clio")?.FirstOrDefault()?.GetFiles(CreatioPackage.IgnoreFileName)?.FirstOrDefault();
+		private IEnumerable<string> ApplyClioIgnore(IEnumerable<string> files, string packagePath){
+			
+			MicrosoftIO.IFileInfo wsIgnoreFile = _msFileSystem.DirectoryInfo.New(packagePath)
+															.Parent?.Parent?
+															.GetDirectories(".clio")?
+															.FirstOrDefault()?
+															.GetFiles(CreatioPackage.IgnoreFileName)?
+															.FirstOrDefault();
 
-			bool wsIgnoreFileMissing = (wsIgnoreFile == null || !wsIgnoreFile.Exists);
-			bool childIgnoreMissing = !files.Any(f => f.EndsWith(CreatioPackage.IgnoreFileName));
-			if (wsIgnoreFileMissing && childIgnoreMissing) return files;
-			List<string> filteredFiles = new List<string>();
-			var ignore = new Ignore.Ignore();
+			bool wsIgnoreFileMissing = wsIgnoreFile is not {Exists: true};
+			IEnumerable<string> filesArray = files as string[] ?? files.ToArray();
+			bool childIgnoreMissing = !filesArray.Any(f => f.EndsWith(CreatioPackage.IgnoreFileName,StringComparison.InvariantCulture));
+			
+			if (wsIgnoreFileMissing && childIgnoreMissing) {
+				return filesArray;
+			}
+			
+			List<string> filteredFiles = [];
+			Ignore.Ignore ignore = new ();
 			ignore.OriginalRules.Clear();
-			ignore.Add(_msFileSystem.File.ReadAllLines(wsIgnoreFile.FullName));
-			foreach (var item in files) {
-				Uri fUri = new Uri(item);
+			ignore.Add(_msFileSystem.File.ReadAllLines(wsIgnoreFile!.FullName));
+			foreach (string item in filesArray) {
+				Uri fUri = new (item);
 				if (!ignore.IsIgnored(fUri.ToString())) {
 					filteredFiles.Add(item);
 				}
 			}
 
 
-			var ignoreFiles = files.Where(f => f.EndsWith(CreatioPackage.IgnoreFileName)).ToList();
-			foreach (var ignoreFile in ignoreFiles)
-			{
-				var ignoreFi = _msFileSystem.FileInfo.New(ignoreFile);
-				var ignoreDir = ignoreFi.Directory.FullName;
-				var filesToCheck = files.Where(f => f.StartsWith(ignoreDir)).ToList();
+			var ignoreFiles = filesArray
+							.Where(f => f.EndsWith(CreatioPackage.IgnoreFileName, StringComparison.InvariantCulture))
+							.ToList();
+			
+			foreach (string ignoreFile in ignoreFiles) {
+				MicrosoftIO.IFileInfo ignoreFi = _msFileSystem.FileInfo.New(ignoreFile);
+				string ignoreDir = ignoreFi.Directory.FullName;
+				List<string> filesToCheck = filesArray.Where(f => f.StartsWith(ignoreDir)).ToList();
 
 				ignore.OriginalRules.Clear();
 				var ignoreContent = _msFileSystem.File.ReadAllLines(ignoreFiles.FirstOrDefault());
 				ignore.Add(ignoreContent);
 
-				foreach (var item in filesToCheck)
-				{
+				foreach (string item in filesToCheck) {
 					Uri fUri = new Uri(item);
-					if (!ignore.IsIgnored(fUri.ToString()))
-					{
+					if (!ignore.IsIgnored(fUri.ToString())) {
 						filteredFiles.Add(item);
 					}
 				}

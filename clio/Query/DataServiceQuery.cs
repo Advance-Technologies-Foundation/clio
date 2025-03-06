@@ -188,7 +188,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			if (options.Variables != null && options.Variables.Any()) {
 				requestData = ReplaceVariablesInJson(requestData, options.Variables);
 			}
-			ExecuteServiceRequest(BuildUrl(options), requestData, options.ResultFileName);
+			ExecuteServiceRequest(BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName);
 		}
 		return 0;
 	}
