@@ -1,4 +1,4 @@
-$cliogate_Version="2.0.0.32"
+$cliogate_Version="2.0.0.33"
 $clioPath=".\clio\bin\Release\net8.0\clio.dll"
 
 dotnet build .\clio\clio.csproj -c Release --no-incremental
