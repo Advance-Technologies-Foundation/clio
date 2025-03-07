@@ -209,3 +209,4 @@ FakesAssemblies/
 .ntvs_analysis.dat
 
 clio/Properties/launchSettings.json
+/cliogate/cliogate.csproj.DotSettings
