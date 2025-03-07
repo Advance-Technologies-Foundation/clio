@@ -198,6 +198,10 @@ public class BindingsModule {
 		//containerBuilder.RegisterType<CreateEntityCommand>();
 		containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
 		containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
+		
+		containerBuilder.RegisterType<Link4RepoCommand>();
+		
+		
 
 		MediatRConfiguration configuration = MediatRConfigurationBuilder
 											.Create(typeof(BindingsModule).Assembly)

@@ -28,11 +28,20 @@ public class IISScannerRequest : IExternalLink {
 
 }
 
-internal class AllSitesRequest : IRequest {
+internal class AllUnregisteredSitesRequest : IRequest {
 
 	#region Fields: Public
 
 	public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
+
+	#endregion
+
+}
+internal class AllRegisteredSitesRequest : IRequest {
+
+	#region Fields: Public
+
+	public Action<IEnumerable<IISScannerHandler.RegisteredSite>> Callback;
 
 	#endregion
 
@@ -70,8 +79,8 @@ internal class DeleteInstanceByNameRequest : IRequest {
 /// <example>
 /// </example>
 internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
-	IRequestHandler<AllSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
-	IRequestHandler<StopInstanceByNameRequest> {
+	IRequestHandler<AllUnregisteredSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
+	IRequestHandler<StopInstanceByNameRequest>,IRequestHandler<AllRegisteredSitesRequest> {
 
 	#region Enum: Internal
 
@@ -142,6 +151,18 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 				site,
 				ConvertBindingToUri(site.binding),
 				DetectSiteType(site.path)));
+	};
+	
+	/// <summary>
+	///  Finds Creatio Sites in IIS that are not registered with clio
+	/// </summary>
+	internal static readonly Func<IEnumerable<RegisteredSite>> FindAllRegisteredCreatioSites = () => {
+		return GetBindings()
+				.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
+				.Select(site => new RegisteredSite(
+					site,
+					ConvertBindingToUri(site.binding),
+					DetectSiteType(site.path)));
 	};
 
 	/// <summary>
@@ -264,8 +285,13 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
 	#region Methods: Public
 
-	public async Task Handle(AllSitesRequest request, CancellationToken cancellationToken){
+	public async Task Handle(AllUnregisteredSitesRequest request, CancellationToken cancellationToken){
 		IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
+		request.Callback(sites);
+	}
+
+	public async Task Handle(AllRegisteredSitesRequest request, CancellationToken cancellationToken){
+		IEnumerable<RegisteredSite> sites = FindAllRegisteredCreatioSites();
 		request.Callback(sites);
 	}
 
@@ -343,6 +369,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	internal sealed record SiteBinding(string name, string state, string binding, string path) { }
 
 	internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
+	internal sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
 
 }
 
