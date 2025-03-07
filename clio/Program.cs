@@ -29,6 +29,8 @@ internal class Program {
 
 	private static bool? autoUpdate;
 
+	private static bool useCreatioLogStreamer;
+
 	// Note: order of types in this array affets how the commands are listed in the 'clio help' output.
 	// Group commands by their purpose.
 	private static readonly Type[] CommandOption = new[] {
@@ -572,19 +574,24 @@ internal class Program {
 	//clio com log filepathValue
 	private static int Main(string[] args){
 		try {
-			string logFilePath = string.Empty;
+			string logTarget = string.Empty;
 			bool isLog = args.Contains("--log");
 			if (isLog) {
 				int logIndex = Array.IndexOf(args, "--log");
-				logFilePath = args[logIndex + 1];
-				args = args.Where(x => x != "--log" && x != logFilePath).ToArray();
+				logTarget = args[logIndex + 1];
+				args = args.Where(x => x != "--log" && x != logTarget).ToArray();
 			}
 
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			OriginalArgs = args;
-			ConsoleLogger.Instance.Start(logFilePath);
+			if (logTarget.ToLower() == "creatio") {
+				useCreatioLogStreamer = true;
+				ConsoleLogger.Instance.StartWithStream();
+			} else {
+				ConsoleLogger.Instance.Start(logTarget);
+			}
 			return ExecuteCommands(clearArgs);
 		}
 		catch (Exception e) {
@@ -735,6 +742,9 @@ internal class Program {
 		}
 		if (Container == null) {
 			Container = new BindingsModule().Register(settings);
+		}
+		if (useCreatioLogStreamer) {
+			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.Resolve<ILogStreamer>());
 		}
 		TryCheckUpdateOnStartCommand();
 		return Container.Resolve<T>();

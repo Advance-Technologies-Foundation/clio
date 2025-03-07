@@ -57,7 +57,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CompileAll = 13,
 		DownloadPackageDllFile = 14,
 		ClearFeaturesCacheForAllUsers = 15,
-		GetSysSettingValueByCode = 16
+		GetSysSettingValueByCode = 16,
+		SendEventToUI = 17
 
 	}
 
@@ -71,7 +72,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 
 	#region Fields: Private
 
-	internal readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
+	public static IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
 		{KnownRoute.Select, "DataService/json/SyncReply/SelectQuery"},
 		{KnownRoute.Insert, "DataService/json/SyncReply/InsertQuery"},
 		{KnownRoute.Update, "DataService/json/SyncReply/UpdateQuery"},
@@ -88,6 +89,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
 		{KnownRoute.ClearFeaturesCacheForAllUsers, "/rest/FeatureService/ClearFeaturesCacheForAllUsers"},
 		{KnownRoute.GetSysSettingValueByCode, "/rest/CreatioApiGateway/GetSysSettingValueByCode"},
+		{KnownRoute.SendEventToUI, "/rest/CreatioApiGateway/SendEventToUI"}
 	};
 
 	private EnvironmentSettings _environmentSettings;

@@ -18,6 +18,7 @@ public class ConsoleLogger : ILogger, IDisposable
 
 	#region Fields: Private
 	private TextWriter _logFileWriter;
+	private ILogStreamer _creatioLogStreamer;
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
@@ -108,12 +109,14 @@ public class ConsoleLogger : ILogger, IDisposable
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 
 	private void WriteLineInternal(string value){
 		Console.WriteLine(value);
 		string linePrefix = GetLinePrefix();
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 
 	private void WriteWarningInternal(string value){
@@ -123,6 +126,7 @@ public class ConsoleLogger : ILogger, IDisposable
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 	
 	private string GetLinePrefix(string severity = ""){
@@ -174,6 +178,20 @@ public class ConsoleLogger : ILogger, IDisposable
 		_printThread.Start();
 		_isStarted = true;
 		LogFileName = logFileName;
+	}
+
+	public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer) {
+		_creatioLogStreamer = creatioLogStreamer;
+	}
+
+	public void StartWithStream() {
+		if (_isStarted) {
+			return;
+		}
+
+		_printThread = new(PrintInternal);
+		_printThread.Start();
+		_isStarted = true;
 	}
 
 	private Thread _printThread;

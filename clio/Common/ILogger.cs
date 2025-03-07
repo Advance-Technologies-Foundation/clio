@@ -10,8 +10,19 @@ namespace Clio.Common
 		/// Starts the logging process.
 		/// </summary>
 		/// <param name="logFilePath">The path to the log file. If not provided, a default path is used.</param>
-		public void Start(string logFilePath = "");	
-		
+		public void Start(string logFilePath = "");
+
+		/// <summary>
+		/// <see langword="public"/> method to set the <see cref="CreatioLogStreamer"/> object.
+		/// </summary>
+		/// <param name="creatioLogStreamer"></param>
+		public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer);
+
+		/// <summary>
+		/// Starts the logging process with a stream.
+		/// </summary>
+		public void StartWithStream();
+
 		/// <summary>
 		/// Stops the logging thread.
 		/// </summary>

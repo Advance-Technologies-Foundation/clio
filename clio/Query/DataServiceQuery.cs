@@ -24,6 +24,8 @@ public class CallServiceCommandOptions : RemoteCommandOptions {
 	[Option('f', "input", Required = false, HelpText = "Request file", Separator = ' ')]
 	public string RequestFileName { get; set; }
 
+	public string RequestBody { get; set; }
+
 	[Option('d', "destination", Required = false, HelpText = "Destination set")]
 	public string ResultFileName { get; set; }
 
@@ -101,6 +103,8 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	protected readonly IServiceUrlBuilder ServiceUrlBuilderInstance;
 
+	public bool IsSilent { get; private set; }
+
 	#endregion
 
 	#region Constructors: Protected
@@ -158,7 +162,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 		string beautifiedJson = BeautifyJsonIfPossible(jsonResult);
 		if (string.IsNullOrWhiteSpace(resultFileName)) {
-			Logger.WriteLine(beautifiedJson);
+			if (!IsSilent) { Logger.WriteLine(beautifiedJson); }
 		}
 		else {
 			_fileSystem.WriteAllTextToFile(resultFileName, beautifiedJson);
@@ -180,11 +184,12 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	#region Methods: Public
 
 	public override int Execute(T options){
-		if (string.IsNullOrWhiteSpace(options.RequestFileName)) {
+		IsSilent = options.IsSilent;
+		if (string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody)) {
 			ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName);
 		}
 		else {
-			string requestData = GetRequestData(options.RequestFileName);
+			string requestData = string.IsNullOrWhiteSpace(options.RequestBody) ? GetRequestData(options.RequestFileName) : options.RequestBody;
 			if (options.Variables != null && options.Variables.Any()) {
 				requestData = ReplaceVariablesInJson(requestData, options.Variables);
 			}
