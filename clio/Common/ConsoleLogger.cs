@@ -213,7 +213,6 @@ public class ConsoleLogger : ILogger, IDisposable
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		//Console.Write(value);
 		_logQueue.Enqueue(new UndecoratedMessage(value));
 	}
 
