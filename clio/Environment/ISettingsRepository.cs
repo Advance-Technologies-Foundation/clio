@@ -15,6 +15,9 @@ namespace Clio.UserEnvironment
 		string FindEnvironmentNameByUri(string uri);
 		EnvironmentSettings GetEnvironment(string name = null);
 		EnvironmentSettings GetEnvironment(EnvironmentOptions options);
+		
+		EnvironmentSettings? FindEnvironment(string name = null);
+			
 		void SetActiveEnvironment(string name);
 		void ConfigureEnvironment(string name, EnvironmentSettings environment);
 		void RemoveEnvironment(string name);

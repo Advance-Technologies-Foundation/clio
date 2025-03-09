@@ -66,6 +66,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  
   <ItemGroup Label="File Content">
     <None Include="Examples\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -80,5 +81,11 @@
     <Compile Remove="Examples\WebFarm\Node1-Main\**" />
     <Compile Remove="Examples\WebFarm\Node1-Main\ErrorPage.aspx" />
     <Compile Remove="samplefiles\AssemblyInfo.cs" />
+
+    <None Include="Examples\Sites\N8_Site\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    
   </ItemGroup>
+  
 </Project>

@@ -139,7 +139,8 @@ internal class Program {
 		typeof(UnregisterOptions),
 		typeof(InstallTideCommandOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
-		typeof(CheckWebFarmNodeConfigurationsOptions)
+		typeof(CheckWebFarmNodeConfigurationsOptions),
+		typeof(CustomizeDataProtectionCommandOptions)
 	};
 
 	internal static bool IsCfgOpenCommand;
@@ -253,6 +254,7 @@ internal class Program {
 					SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 					LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 					InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
+					CustomizeDataProtectionCommandOptions opts => Resolve<CustomizeDataProtectionCommand>(opts).Execute(opts),
 					LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts)
 						.Execute(opts),
 					CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts)

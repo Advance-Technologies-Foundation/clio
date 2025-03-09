@@ -614,6 +614,7 @@ clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
   - [Clone environment](#clone-env)
   - [Healthcheck](#healthcheck)
   - [Get Creatio Info](#get-info)
+  - [CustomizeDataProtection](#CustomizeDataProtection)
 
 Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
 
@@ -713,6 +714,18 @@ clio get-info -e <ENVIRONMENT_NAME>
 
 clio get-info <ENVIRONMENT_NAME>
 ````
+
+## CustomizeDataProtection
+Adjusts `CustomizeDataProtection` in appsettings. Useful for development on Net8
+```bash
+
+clio cdp true -e <ENVIRONMENT_NAME>
+
+#or
+
+clio cdp false -e <ENVIRONMENT_NAME>
+```
+
 
 # Workspaces
   - [Create workspace](#create-workspace)
