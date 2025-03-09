@@ -223,8 +223,21 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName){
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
 		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
-		_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
-
+		
+		if(src is not {Exists: true}) {
+			throw new FileNotFoundException("Backup file not found in the specified directory.");
+		}
+		
+		bool useFs = false;
+		string dest = Path.Join("\\\\wsl.localhost","rancher-desktop","mnt","clio-infrastructure","mssql","data", $"{siteName}.bak");
+		if(src.Length < int.MaxValue) {
+			_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
+		}else {
+			//This is a hack, we have to fix Cp class to allow large files
+			useFs = true;
+			_logger.WriteWarning($"Copying large file to local directory {dest}" );
+			_fileSystem.CopyFile(src.FullName, dest, true);
+		}
 		k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
 		Mssql mssql = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
@@ -232,7 +245,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		if (!exists) {
 			mssql.CreateDb(siteName, $"{siteName}.bak");
 		}
-		_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
+		if(useFs) {
+			_fileSystem.DeleteFile(dest);
+		}else {
+			_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
+		}
 		return 0;
 	}
 

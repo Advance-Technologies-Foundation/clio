@@ -59,8 +59,9 @@ public class Mssql : IMssql
 		
 		try
 		{
-			using SqlConnection connection = new SqlConnection(_builder.ConnectionString);
+			using SqlConnection connection = new (_builder.ConnectionString);
 			connection.Open();
+			
 			string ldf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HHmmss}.ldf";
 			string mdf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HHmmss}.mdf";
 			
@@ -78,8 +79,10 @@ public class Mssql : IMssql
 			NOUNLOAD,  STATS = 5
 			";
 			
-			var cmd = new SqlCommand(sqlText, connection);
-			var result = cmd.ExecuteNonQuery();
+			SqlCommand cmd = new (sqlText, connection) {
+				CommandTimeout = 600
+			};
+			int result = cmd.ExecuteNonQuery();
 			connection.Close();
 			return true;
 		}
