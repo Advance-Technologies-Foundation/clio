@@ -74,7 +74,7 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 	#region Methods: Internal
 
 	internal void ClearCache(string featureName){
-		string base64FeatureName = Convert.ToBase64String(Encoding.UTF8.GetBytes(featureName));
+		string base64FeatureName = Convert.ToBase64String(FileSystem.Utf8NoBom.GetBytes(featureName));
 		string url
 			= $"{_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ClearFeaturesCacheForAllUsers)}/{base64FeatureName}";
 		string response = ApplicationClient.ExecuteGetRequest(url);
@@ -125,7 +125,9 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 			featureState.AdminUnitId = sysAdminUnitId;
 			ctx.Save();
 		} else {
-			AppFeatureState featureState = ctx.Models<AppFeatureState>().FirstOrDefault(f => f.Id == featureStateId);
+			AppFeatureState featureState = ctx
+											.Models<AppFeatureState>()
+											.FirstOrDefault(f => f.Id == featureStateId);
 			featureState.FeatureState = state;
 			ctx.Save();
 		}
@@ -150,7 +152,9 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 			return;
 		}
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-		SysAdminUnit user = ctx.Models<SysAdminUnit>().FirstOrDefault(s => s.Name == options.SysAdminUnitName);
+		SysAdminUnit user = ctx
+							.Models<SysAdminUnit>()
+							.FirstOrDefault(s => s.Name == options.SysAdminUnitName);
 		if (user is null) {
 			Logger.WriteWarning($"User with name {options.SysAdminUnitName} was not found");
 			return;

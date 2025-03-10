@@ -7,29 +7,51 @@ using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using CommandLine;
+using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 
 namespace Clio.Command;
 
-[Verb("link-from-repository", Aliases = new[] {"l4r", "link4repo"},
-	HelpText = "Link repository package(s) to environment.")]
-public class Link4RepoOptions {
+[Verb("link-from-repository", Aliases = ["l4r", "link4repo"], HelpText = "Link repository package(s) to environment.")]
+public class Link4RepoOptions : EnvironmentOptions {
 
 	#region Properties: Public
 
-	[Option('e', "envPkgPath", Required = true,
+	[Option("envPkgPath", Required = false,
 		HelpText
 			= @"Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\Terrasoft.Configuration\Pkg)",
 		Default = null)]
 	public string EnvPkgPath { get; set; }
 
-	[Option('p', "packages", Required = false,
-		HelpText = "Package(s)", Default = null)]
+	[Option("packages", Required = false, HelpText = "Package(s)", Default = null)]
 	public string Packages { get; set; }
 
-	[Option('r', "repoPath", Required = true,
+	[Option("repoPath", Required = true,
 		HelpText = "Path to package repository folder", Default = null)]
 	public string RepoPath { get; set; }
+
+	#endregion
+
+}
+
+public class Link4RepoOptionsValidator : AbstractValidator<Link4RepoOptions> {
+
+	#region Constructors: Public
+	
+	public Link4RepoOptionsValidator(){
+		RuleFor(o => string.IsNullOrWhiteSpace(o.EnvPkgPath) && string.IsNullOrWhiteSpace(o.Environment))
+			.Cascade(CascadeMode.Stop)
+			.Custom((value, context) => {
+				if (value) {
+					context.AddFailure(new ValidationFailure {
+						ErrorCode = "ArgumentParse.Error",
+						ErrorMessage = "Either path to creatio directory or environment name must be provided",
+						Severity = Severity.Error
+					});
+				}
+			});
+	}
 
 	#endregion
 
@@ -43,17 +65,19 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	private readonly IMediator _mediator;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IFileSystem _fileSystem;
+	private readonly IValidator<Link4RepoOptions> _validator;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem){
+		IFileSystem fileSystem, IValidator<Link4RepoOptions> validator){
 		_logger = logger;
 		_mediator = mediator;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;
+		_validator = validator;
 	}
 
 	#endregion
@@ -102,6 +126,24 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			.GetResult();
 	}
 
+	private int HandleEnvironmentOption(Link4RepoOptions options){
+		_ = Uri.TryCreate(options.Environment, UriKind.Absolute, out Uri pathUri);
+		return pathUri switch {
+					not null when pathUri.IsFile => HandleLinkWithDirPath(options.EnvPkgPath, options.RepoPath,
+						options.Packages),
+					var _ => HandleLinkingByEnvName(options.EnvPkgPath, options.RepoPath, options.Packages)
+				};
+	}
+
+	private int HandleEnvPkgPathOptions(Link4RepoOptions options){
+		_ = Uri.TryCreate(options.EnvPkgPath, UriKind.Absolute, out Uri pathUri);
+		return pathUri switch {
+					not null when pathUri.IsFile => HandleLinkWithDirPath(options.EnvPkgPath, options.RepoPath,
+						options.Packages),
+					var _ => HandleLinkingByEnvName(options.EnvPkgPath, options.RepoPath, options.Packages)
+				};
+	}
+
 	/// <summary>
 	///  Handles the linking of repository packages to the environment by environment name.
 	/// </summary>
@@ -116,9 +158,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// </returns>
 	private int HandleLinkingByEnvName(string envName, string repoPath, string packages){
 		ExecuteMediatorRequest(OnAllSitesRequestCompleted); //This fills AllSites property with all registered sites.
-
-		Settings settings = new();
-		if (!settings.Environments.Keys.Contains(envName)) {
+		if (!_settingsRepository.IsEnvironmentExists(envName)) {
 			_logger.WriteError(
 				$"Environment {envName} is not a registered environment. Please correct environment name an try again.");
 			return 1;
@@ -172,6 +212,11 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		return 0;
 	}
 
+	private int PrintErrorsAndExit(IEnumerable<ValidationFailure> errors){
+		_logger.PrintValidationFailureErrors(errors);
+		return 1;
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -202,12 +247,16 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			_logger.WriteError("Clio mklink command is only supported on: 'windows'.");
 			return 1;
 		}
-		bool isUri = Uri.TryCreate(options.EnvPkgPath, UriKind.Absolute, out Uri pathUri);
 
-		return pathUri switch {
-					not null when isUri && pathUri.IsFile => HandleLinkWithDirPath(options.EnvPkgPath, options.RepoPath,
-						options.Packages),
-					var _ => HandleLinkingByEnvName(options.EnvPkgPath, options.RepoPath, options.Packages)
+		ValidationResult validationResult = _validator.Validate(options);
+		if (!validationResult.IsValid) {
+			return PrintErrorsAndExit(validationResult.Errors);
+		}
+
+		return options switch {
+					not null when !string.IsNullOrWhiteSpace(options.Environment) => HandleEnvironmentOption(options),
+					not null when !string.IsNullOrWhiteSpace(options.EnvPkgPath) => HandleEnvPkgPathOptions(options),
+					var _ => 1
 				};
 	}
 

@@ -215,6 +215,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 		containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
 		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
+		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
 
 		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
 		containerBuilder.RegisterType<UnzipRequestValidator>();
