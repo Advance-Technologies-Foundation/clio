@@ -5,8 +5,10 @@ namespace Clio.Tests.Command;
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.PackageCommand;
+using Clio.Common;
 using Clio.YAML;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 using YamlDotNet.Serialization;
 
@@ -27,7 +29,8 @@ public class ScenarioRunnerCommandTests
 
 	public ScenarioRunnerCommandTests() {
 		IScenario script = new Scenario(_deserializer);
-		_sut = new ScenarioRunnerCommand(script);
+		ILogger logger = Substitute.For<ILogger>();
+		_sut = new ScenarioRunnerCommand(script, logger);
 		_mockFs = new MockFileSystem();
 		_sut.FileSystem = _mockFs;
 		

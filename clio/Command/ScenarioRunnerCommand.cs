@@ -23,40 +23,36 @@ namespace Clio.Command {
 	
 	public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 		
-		
 		internal IFileSystem FileSystem {get;set;}
 		
 		private readonly IScenario _scenario;
-		public ScenarioRunnerCommand(IScenario scenario) {
+		private readonly Common.ILogger _logger;
+
+		public ScenarioRunnerCommand(IScenario scenario, Common.ILogger logger) {
 			_scenario = scenario;
+			_logger = logger;
 		}
 		public override int Execute(ScenarioRunnerOptions options) {
 			int result = 0;
-			Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Scenario started");
+			_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario started");
 			_scenario
 				.InitScript(options.FileName)
 				.GetSteps( GetType().Assembly.GetTypes())
 				.ToList().ForEach(step=> {
-					Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Starting step: {step.Item2}");
-					
-					// Create new DI container for each step
-					// because we don't know that the scenario steps are all executed
-					// on the same env. Further more if the environment is set in the yaml file
-					// then we would execute all command on default environment
+					_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Starting step: {step.Item2}");
 					if(step.CommandOption is EnvironmentOptions stepOptions && step.CommandOption is not RegAppOptions) {
 						if(!string.IsNullOrWhiteSpace(stepOptions.Environment)){
-							SettingsRepository settingsRepository = new (FileSystem); //FileSystem is for tests
+							SettingsRepository settingsRepository = new (FileSystem);
 							EnvironmentSettings settings = settingsRepository.FindEnvironment(stepOptions.Environment);
 							IContainer container = new BindingsModule().Register(settings);
 							Program.Container = container;
 						}
 					}
-					
 					result += Program.ExecuteCommandWithOption(step.CommandOption);
-					Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Finished step: {step.StepDescription}");
-					Console.WriteLine();
+					_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Finished step: {step.StepDescription}");
+					_logger.WriteLine();
 				});
-			Console.WriteLine($"[{DateTime.Now:hh:mm:ss}] Scenario finished");
+			_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario finished");
 			return result >=1 ? 1: 0;
 		}
 	}

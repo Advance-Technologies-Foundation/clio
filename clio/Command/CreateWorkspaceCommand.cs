@@ -16,8 +16,6 @@ namespace Clio.Command
 
 		#region Properties: Public
 
-		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
-		public string AppCode { get; set; }
 
 		internal override bool RequiredEnvironment => false;
 
@@ -35,14 +33,16 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IWorkspace _workspace;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public CreateWorkspaceCommand(IWorkspace workspace) {
+		public CreateWorkspaceCommand(IWorkspace workspace, ILogger logger) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
+			_logger = logger;
 		}
 
 		#endregion
@@ -56,10 +56,10 @@ namespace Clio.Command
 
 		public override int Execute(CreateWorkspaceCommandOptions options) {
 			try {
-				if (options.Environment == null) {
+				if (options.Environment == null && string.IsNullOrEmpty(options.Uri)) {
 					_workspace.Create(options.Environment);
 				} else {
-					var appCodeNotExists = options.AppCode != null ? false : true;
+					var appCodeNotExists = options.AppCode == null;
 						_workspace.Create(options.Environment, appCodeNotExists);
 					if (!appCodeNotExists) {
 						IInstalledApplication installedApplication = Program.Resolve<IInstalledApplication>(options);
@@ -73,10 +73,10 @@ namespace Clio.Command
 					}
 					_workspace.Restore(options);
 				}
-				Console.WriteLine("Done");
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

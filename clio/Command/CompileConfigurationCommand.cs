@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Clio.Common;
 using CommandLine;
 
@@ -15,6 +16,16 @@ namespace Clio.Command
 		public bool All {
 			get; set;
 		}
+		protected override int DefaultTimeout => Timeout.Infinite;
+		
+	}
+
+	#endregion
+
+	#region Interface: CompileConfigurationCommand
+
+	public interface ICompileConfigurationCommand {
+		int Execute(CompileConfigurationOptions options);
 
 	}
 
@@ -22,7 +33,7 @@ namespace Clio.Command
 
 	#region Class: CompileConfigurationCommand
 	
-	public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions> {
+	public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions>, ICompileConfigurationCommand {
 		
 		#region Constants: Private
 

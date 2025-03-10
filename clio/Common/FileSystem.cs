@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -13,6 +14,8 @@ namespace Clio.Common;
 
 public class FileSystem : IFileSystem
 {
+	
+	internal static Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 	private readonly Ms.IFileSystem _msFileSystem;
 	public FileSystem(Ms.IFileSystem msFileSystem){
@@ -176,10 +179,11 @@ public class FileSystem : IFileSystem
 	}
 
 	public string ReadAllText(string filePath) => 
-		_msFileSystem.File.ReadAllText(filePath, Encoding.UTF8);
+		_msFileSystem.File.ReadAllText(filePath, Utf8NoBom);
 
+	
 	public void WriteAllTextToFile(string filePath, string contents) =>
-		WriteAllTextToFile(filePath, contents, Encoding.UTF8);
+		WriteAllTextToFile(filePath, contents, Utf8NoBom);
 
 	public void ClearOrCreateDirectory(string directoryPath) {
 		if (_msFileSystem.Directory.Exists(directoryPath)) {
@@ -289,6 +293,11 @@ public class FileSystem : IFileSystem
 		return _msFileSystem.Directory.GetDirectories(directoryPath);
 	}
 
+	public string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption) {
+		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+		return _msFileSystem.Directory.GetDirectories(directoryPath, patternt, searchOption);
+	}
+
 	public void OverwriteExistsDirectory(string directoryPath) {
 		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
 		if (!_msFileSystem.Directory.Exists(directoryPath)) {
@@ -361,6 +370,12 @@ public class FileSystem : IFileSystem
 
 	public void WriteAllTextToFile(string filePath, string contents, Encoding encoding) {
 		_msFileSystem.File.WriteAllText(filePath, contents, encoding);
+	}
+
+	public IFileInfo GetFilesInfos(string filePath) {
+		Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+		Ms.IFileInfo fileInfo = fileInfoFactory.New(filePath);
+		return fileInfo;
 	}
 
 	#endregion

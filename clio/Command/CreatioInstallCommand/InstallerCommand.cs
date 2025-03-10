@@ -4,7 +4,7 @@ using CommandLine;
 
 namespace Clio.Command.CreatioInstallCommand;
 
-[Verb("deploy-creatio", Aliases = new[] {"dc", "ic", "install-creation"}, HelpText = "Deploy Creatio from zip file")]
+[Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creation"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
 

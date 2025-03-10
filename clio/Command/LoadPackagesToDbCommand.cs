@@ -23,14 +23,16 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IFileDesignModePackages _fileDesignModePackages;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public LoadPackagesToDbCommand(IFileDesignModePackages fileDesignModePackages) {
+		public LoadPackagesToDbCommand(IFileDesignModePackages fileDesignModePackages, ILogger logger) {
 			fileDesignModePackages.CheckArgumentNull(nameof(fileDesignModePackages));
 			_fileDesignModePackages = fileDesignModePackages;
+			_logger = logger;
 		}
 
 		#endregion
@@ -40,10 +42,10 @@ namespace Clio.Command
 		public override int Execute(EnvironmentOptions options) {
 			try {
 				_fileDesignModePackages.LoadPackagesToDb();
-				Console.WriteLine();
+				_logger.WriteLine();
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.ToString());
 				return 1;
 			}
 		}

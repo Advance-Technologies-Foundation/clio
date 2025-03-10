@@ -2,20 +2,18 @@
 using Clio.Workspaces;
 using NUnit.Framework;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
+using System.Text.Json;
 using FluentAssertions;
-using Terrasoft.Common.Json;
 
 namespace Clio.Tests;
 
 [TestFixture]
 internal class WorkspaceTest
 {
+	private BindingsModule _bindingModule;
+	private IContainer _diContainer;
+
 	private EnvironmentSettings GetTestEnvironmentSettings() {
 		var envSettingsJson = @"{
 				  ""Uri"": ""https://forrester-lcap-demo-dev.creatio.com/"",
@@ -31,13 +29,13 @@ internal class WorkspaceTest
 				  ""Safe"": false,
 				  ""DeveloperModeEnabled"": false
 			}";
-		return Json.Deserialize<EnvironmentSettings>(envSettingsJson);
+		return JsonSerializer.Deserialize<EnvironmentSettings>(envSettingsJson);
 	}
 
 	private IWorkspace GetTestWorkspace(EnvironmentSettings envSettings) {
-		var bindingModule = new BindingsModule();
-		var diContainer = bindingModule.Register(envSettings);
-		var workspace = diContainer.Resolve<IWorkspace>();
+		_bindingModule = new BindingsModule();
+		_diContainer = _bindingModule.Register(envSettings);
+		var workspace = _diContainer.Resolve<IWorkspace>();
 		return workspace;
 	}
 

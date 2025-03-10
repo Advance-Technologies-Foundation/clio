@@ -44,10 +44,10 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> MockMediator =>
 		allSitesMock => {
 			_mediatorMock.When(i =>
-					i.Send(Arg.Any<AllSitesRequest>()))
+					i.Send(Arg.Any<AllUnregisteredSitesRequest>()))
 				.Do(i => {
-						AllSitesRequest allSitesRequest = i[0] as AllSitesRequest;
-						allSitesRequest?.Callback.Invoke(allSitesMock);
+						AllUnregisteredSitesRequest allUnregisteredSitesRequest = i[0] as AllUnregisteredSitesRequest;
+						allUnregisteredSitesRequest?.Callback.Invoke(allSitesMock);
 					}
 				);
 		};

@@ -185,7 +185,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 	#region Methods: Public
 
 	public void UninstallByEnvironmentName(string environmentName){
-		AllSitesRequest request = new() {
+		AllUnregisteredSitesRequest request = new() {
 			Callback = OnAllSitesRequestCompleted
 		};
 		_mediator.Send(request);
@@ -212,7 +212,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	private void StopIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
-			AllSitesRequest request = new() {
+			AllUnregisteredSitesRequest request = new() {
 				Callback = OnAllSitesRequestCompleted
 			};
 			_mediator.Send(request);
@@ -229,7 +229,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 	
 	private void DeleteIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
-			AllSitesRequest request = new() {
+			AllUnregisteredSitesRequest request = new() {
 				Callback = OnAllSitesRequestCompleted
 			};
 			_mediator.Send(request);

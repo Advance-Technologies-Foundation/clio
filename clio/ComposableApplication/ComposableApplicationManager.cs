@@ -202,6 +202,25 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		}
 	}
 
+	public string GetCode(string workspacePath) {
+		string[] appDescriptorPaths = _fileSystem.Directory.GetFiles(workspacePath, "app-descriptor.json",
+			SearchOption.AllDirectories);
+		if (appDescriptorPaths.Length == 1) {
+		  string code = JsonValue.Parse(_fileSystem.File.ReadAllText(appDescriptorPaths[0]))["Code"].ToString();
+			return code.Trim('"');
+		} else if (appDescriptorPaths.Length == 0) {
+			throw new FileNotFoundException($"No app-descriptor.json file found in the specified workspace path. {workspacePath}");
+		} else {
+			StringBuilder exceptionMessage = new();
+			exceptionMessage.AppendLine("Find more than one applications: ");
+			foreach (string path in appDescriptorPaths) {
+				exceptionMessage.AppendLine(path);
+			}
+			throw new Exception(exceptionMessage.ToString());
+		}
+		throw new NotImplementedException();
+	}
+
 	#endregion
 
 }
@@ -222,6 +241,8 @@ public interface IComposableApplicationManager
 	public void SetVersion(string appPackagesFolderPath, string version, string packageName = null);
 
 	public bool TrySetVersion(string workspacePath, string appVersion);
+
+	public string GetCode(string workspacePath);
 
 	#endregion
 

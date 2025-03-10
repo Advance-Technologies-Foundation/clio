@@ -18,7 +18,7 @@ public abstract class BaseClioModuleTests
 		FileSystem = CreateFs();
 		
 		BindingsModule bindingModule = new(FileSystem);
-		Container = bindingModule.Register(EnvironmentSettings, true, AdditionalRegistrations);
+		Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
 	}
 
 	#endregion

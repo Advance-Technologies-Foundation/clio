@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection.Emit;
 using Autofac;
 using Clio.Common;
 using Clio.ComposableApplication;
@@ -83,6 +84,37 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
 		appDescriptor.Icon.Should().Be(PartnerSvgBase64);
 	}
+
+	[Test]
+	public void GetAppCode() {
+		// Arrange
+		const string appName = "ApolloAppWorkspace";
+		const string appCode = "MrktApolloApp";
+		string workspacePath = Path.Combine(workspacesFolderPath, appName);
+		// Act
+		string actualAppCode = _sut.GetCode(workspacePath);
+
+		// Assert
+
+		actualAppCode.Should().NotBeNullOrEmpty();
+		actualAppCode.Should().Be(appCode);
+	}
+
+	[Test]
+	public void GetAppCode_ThrowException_IfAppDescriptorNotFound() {
+		// Arrange
+		const string appName = "iframe-sample";
+		string workspacePath = Path.Combine(workspacesFolderPath, appName);
+
+		// Act
+		Action act = () => _sut.GetCode(workspacePath);
+
+		// Assert
+		act.Should().Throw<FileNotFoundException>()
+			.WithMessage($"No app-descriptor.json file found in the specified workspace path. {workspacePath}");
+	}
+
+	
 
 	[Test]
 	public void SetIcon_ShouldSetCorrectIcon_WhenUsingZipArchive(){

@@ -5,16 +5,27 @@ using System.IO.Compression;
 using System.Json;
 using System.Linq;
 using System.Reflection;
+using Clio.Common;
 using Newtonsoft.Json;
 using File = System.IO.File;
 
 namespace Clio
 {
-	internal class PackageConverter
-	{
-		private static readonly string prefix = string.Empty;
+	internal interface IPackageConverter {
+		int Convert(ConvertOptions options);
+	}
 
-		internal static int Convert(ConvertOptions options) {
+	internal class PackageConverter: IPackageConverter
+	{
+		private readonly string prefix = string.Empty;
+		private readonly ILogger _logger;
+
+		public PackageConverter(ILogger logger)
+        {
+			_logger = logger;
+		}
+
+        public int Convert(ConvertOptions options) {
 			try {
 				var packagePathes = new List<string>();
 				if (options.Path == null) {
@@ -44,12 +55,12 @@ namespace Clio
 				}
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
 
-		private static int ConvertPackage(ConvertOptions options) {
+		private int ConvertPackage(ConvertOptions options) {
 			try {
 				string packageFolderPath = options.Path;
 				var packageDirectory = new DirectoryInfo(packageFolderPath);
@@ -58,34 +69,33 @@ namespace Clio
 				if (existingProjects.Length > 0) {
 					throw new Exception($"Package {packageName} contains existing .proj file. Remove existing project from package folder and try again.");
 				}
-				Console.WriteLine("Start converting package '{0}'.", packageName);
+				_logger.WriteInfo($"Start converting package '{packageName}'.");
 				string packagePath = Path.Combine(options.Path, prefix);
 				var backupPath = packageName + ".zip";
 				if (File.Exists(backupPath)) {
 					File.Delete(backupPath);
 				}
 				ZipFile.CreateFromDirectory(packagePath, backupPath);
-				Console.WriteLine("Created backup package '{0}'.", packageName);
-
+				_logger.WriteInfo($"Created backup package '{packageName}'.");
 				var fileNames = options.ConvertSourceCode ? MoveCsFiles(packagePath) : new List<string>();
 				CorrectingFiles(packagePath);
 				CreateProjectInfo(packagePath, packageName, fileNames);
-				Console.WriteLine("Package '{0}' converted.", packageName);
+				_logger.WriteInfo($"Package '{packageName}' was converted.");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
 
-		private static List<string> MoveCsFiles(string path) {
+		private List<string> MoveCsFiles(string path) {
 			var schemasPath = Path.Combine(path, "Schemas");
 			var csFilesPath = Path.Combine(path, "Files", "cs");
 			Directory.CreateDirectory(csFilesPath);
 			return MoveFiles(schemasPath, csFilesPath, "*.cs");
 		}
 
-		private static void CorrectingFiles(string path) {
+		private void CorrectingFiles(string path) {
 			var csFilesPath = Path.Combine(path, "Files", "cs");
 			var resourcePath = Path.Combine(path, "Resources");
 			var schemasPath = Path.Combine(path, "Schemas");
@@ -115,7 +125,7 @@ namespace Clio
 			}
 		}
 
-		private static void CreateProjectInfo(string path, string name, List<string> fileNames) {
+		private void CreateProjectInfo(string path, string name, List<string> fileNames) {
 			var filePath = Path.Combine(path, name + "." + "csproj");
 			var csFilesPath = Path.Combine(path, "Files", "cs");
 			List<string> refs = GetRefs(csFilesPath, fileNames);
@@ -137,7 +147,7 @@ namespace Clio
 			CreateFromTpl(GetTplPath(CreatioPackage.PackageConfigTpl), packagesConfigFilePath, name, new List<string>(), maintainer, refs, depends);
 		}
 
-		private static List<string> GetRefs(string path, List<string> files) {
+		private List<string> GetRefs(string path, List<string> files) {
 			List<string> result = new List<string>();
 			foreach (var fileName in files) {
 				List<string> refs = GetRefFromFile(Path.Combine(path, fileName));

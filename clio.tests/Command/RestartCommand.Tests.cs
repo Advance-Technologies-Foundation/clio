@@ -20,7 +20,7 @@
 				Uri = "http://test.domain.com"
 			};
 			RestartCommand restartCommand = new RestartCommand(applicationClient, environmentSettings);
-			var options = Substitute.For<RestartOptions>();
+			RestartOptions options = new();
 
 			//Act
 			restartCommand.Execute(options);
@@ -29,6 +29,7 @@
 			applicationClient.Received(1).ExecutePostRequest(
 				environmentSettings.Uri + "/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain",
 				"{}", 100_000,3,1);
+
 		}
 
 		[Test, Category("Unit")]
@@ -43,7 +44,7 @@
 				Uri = "http://test.domain.com"
 			};
 			RestartCommand restartCommand = new RestartCommand(applicationClient, environmentSettings);
-			var options = Substitute.For<RestartOptions>();
+			RestartOptions options = new();
 
 			//Act
 			restartCommand.Execute(options);

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
 using CommandLine.Text;
@@ -31,10 +32,12 @@ namespace Clio.Command
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly Command<ReferenceOptions> _referenceCommand;
+		private readonly ILogger _logger;
 
-		public NewPkgCommand(ISettingsRepository settingsRepository, Command<ReferenceOptions> referenceCommand) {
+		public NewPkgCommand(ISettingsRepository settingsRepository, Command<ReferenceOptions> referenceCommand, ILogger logger) {
 			_settingsRepository = settingsRepository;
 			_referenceCommand = referenceCommand;
+			_logger = logger;
 		}
 
 		public override int Execute(NewPkgOptions options) {
@@ -49,10 +52,10 @@ namespace Clio.Command
 					});
 					package.RemovePackageConfig();
 				}
-				Console.WriteLine("Done");
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.ToString());
 				return 1;
 			}
 		}

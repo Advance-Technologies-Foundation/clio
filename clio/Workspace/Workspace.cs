@@ -124,7 +124,7 @@ namespace Clio.Workspaces
 			_workspaceInstaller.Publish(WorkspaceSettings.Packages, zipFileName, destionationFolderPath, overrideFile);
 		}
 
-	
+
 
 		public string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion, string branch = null) {
 			var hasBranch = !string.IsNullOrEmpty(branch);
@@ -147,6 +147,10 @@ namespace Clio.Workspaces
 
 		public static string GetSanitizeFileNameFromString(string fileName) {
 			return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
+		}
+
+		public string GetWorkspaceApplicationCode() {
+			return _composableApplicationManager.GetCode(_workspacePathBuilder.PackagesFolderPath);
 		}
 	}
 

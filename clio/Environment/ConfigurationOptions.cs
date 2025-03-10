@@ -4,12 +4,15 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Abstractions;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
+using Clio.Common;
+using ConsoleTables;
 using YamlDotNet.Serialization;
+using FileSystem = System.IO.Abstractions.FileSystem;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio
 {
@@ -399,12 +402,29 @@ namespace Clio
 
 		}
 
-		public void ShowSettingsTo(TextWriter streamWriter, string environment = null) {
+		public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false) {
 			JsonSerializer serializer = new JsonSerializer() {
 				Formatting = Formatting.Indented,
 				NullValueHandling = NullValueHandling.Ignore
 			};
-			if (String.IsNullOrEmpty(environment)) {
+			
+			if (String.IsNullOrEmpty(environment) && showShort) {
+				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
+				
+				ConsoleTable t = new () {
+					Columns = { "Name", "Url" },
+				};
+				
+				_settings.Environments.Select(e=> new {
+					name = e.Key,
+					url = e.Value.Uri,
+				}).ToList().ForEach(e => {
+					t.Rows.Add([e.name, e.url]);
+				});
+				ConsoleLogger.Instance.PrintTable(t);
+			}
+			
+			if (String.IsNullOrEmpty(environment) && !showShort) {
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				serializer.Serialize(streamWriter, _settings);
 			} else {

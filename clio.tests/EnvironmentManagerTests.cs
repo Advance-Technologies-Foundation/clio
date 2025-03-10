@@ -295,7 +295,6 @@ namespace Clio.Tests
 			var environmentManager = Container.Resolve<IEnvironmentManager>();
 			var expectedManifestFileName = $"C:\\creatio-config-package.yaml";
 			var actualManifestFileName = $"C:\\actual-creatio-config-package.yaml";
-			var expectedPackagesCount = 2;
 			List<CreatioManifestPackage> environmnetPackages = [
 				new CreatioManifestPackage {
 					Name = "Base",
@@ -325,7 +324,6 @@ namespace Clio.Tests
 			var environmentManager = Container.Resolve<IEnvironmentManager>();
 			var expectedManifestFileName = $"C:\\creatio-config-package.yaml";
 			var actualManifestFileName = $"C:\\actual-creatio-config-package.yaml";
-			var expectedPackagesCount = 2;
 			List<CreatioManifestPackage> environmnetPackages = [
 				new CreatioManifestPackage {
 					Name = "UI",

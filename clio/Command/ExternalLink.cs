@@ -1,4 +1,5 @@
 namespace Clio.Command {
+	using Clio.Common;
 	using Clio.Requests;
 	using CommandLine;
 	using FluentValidation;
@@ -46,13 +47,15 @@ namespace Clio.Command {
 		#region Fields: Private
 		private readonly IMediator _mediator;
 		private readonly IValidator<ExternalLinkOptions> _validator;
+		private readonly ILogger _logger;
 		#endregion
 
 		#region Constructors: Public
 
-		public ExternalLinkCommand(IMediator mediator, IValidator<ExternalLinkOptions> validator) {
+		public ExternalLinkCommand(IMediator mediator, IValidator<ExternalLinkOptions> validator, ILogger logger) {
 			_mediator = mediator;
 			_validator = validator;
+			_logger = logger;
 		}
 
 		#endregion
@@ -96,7 +99,7 @@ namespace Clio.Command {
 				}
 				catch (Exception ex)
 				{
-					Console.WriteLine(ex.Message);
+					_logger.WriteError(ex.Message);
 				}
 
 			}).Wait();
@@ -108,7 +111,7 @@ namespace Clio.Command {
 			errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
 			.ToList().ForEach(e =>
 			{
-				Console.WriteLine($"{e.Severity.ToString().ToUpper()} ({e.ErrorCode}) - {e.ErrorMessage}");
+				_logger.WriteError($"{e.Severity.ToString().ToUpper()} ({e.ErrorCode}) - {e.ErrorMessage}");
 			});
 
 		}

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Clio.Common;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Project.NuGet
 {
@@ -24,17 +25,6 @@ namespace Clio.Project.NuGet
 		#endregion
 
 		#region Methods: Private
-
-		private async Task<string> GetAllVersionsNugetPackagesXml(string nugetSourceUrl, string packageName) {
-			var findPackagesByIdUrl = $"{nugetSourceUrl.TrimEnd('/')}/FindPackagesById()?id='{packageName}'";
-			using var httpClient = new HttpClient();
-			var response = await httpClient.GetAsync(findPackagesByIdUrl);
-			var allVersionsNugetPackagesXml = await response.Content.ReadAsStringAsync();
-			if (!response.IsSuccessStatusCode) {
-				throw new ArgumentException($"Wrong NuGet server URL: '{nugetSourceUrl}'");
-			}
-			return allVersionsNugetPackagesXml;
-		}
 
 		private static NugetPackage ConvertToNugetPackage(string xmlBase, string nugetPackageDescription) {
 			string nugetPackageInfo = nugetPackageDescription.Replace($"{xmlBase}/Packages", String.Empty);
@@ -67,11 +57,44 @@ namespace Clio.Project.NuGet
 
 		private async Task<AllVersionsNugetPackages> FindAllVersionsNugetPackages(string packageName, 
 			string nugetSourceUrl) {
-			string allVersionsNugetPackagesXml = await GetAllVersionsNugetPackagesXml(nugetSourceUrl, packageName);
-			IEnumerable<NugetPackage> packages = DeserializeNugetPackagesXml(allVersionsNugetPackagesXml);
+			var allVersionsNugetPackage = await GetPackageVersionsAsync(packageName, nugetSourceUrl);
+			IEnumerable<NugetPackage> packages = allVersionsNugetPackage
+				.Select(version => new NugetPackage(packageName, PackageVersion.ParseVersion(version)));
 			return packages.Count() != 0
 				? new AllVersionsNugetPackages(packageName, packages)
 				: null;
+		}
+
+		public static async Task<List<string>> GetPackageVersionsAsync(string packageName, string nugetServer ) {
+			nugetServer = String.IsNullOrEmpty(nugetServer) ? "https://api.nuget.org" : nugetServer;
+			string nugetApiUrl = $"{nugetServer}/v3-flatcontainer/{packageName.ToLower()}/index.json";
+			List<string> versions = new List<string>();
+
+			using (HttpClient client = new HttpClient()) {
+				try {
+					// Send GET request to NuGet API
+					HttpResponseMessage response = await client.GetAsync(nugetApiUrl);
+					response.EnsureSuccessStatusCode();
+
+					// Parse the response
+					string jsonResponse = await response.Content.ReadAsStringAsync();
+					JObject packageData = JObject.Parse(jsonResponse);
+
+					// Extract versions
+					var versionArray = packageData["versions"];
+					if (versionArray != null) {
+						foreach (var version in versionArray) {
+							versions.Add(version.ToString());
+						}
+					} else {
+						Console.WriteLine($"No versions found for package: {packageName}");
+					}
+				} catch (Exception ex) {
+					Console.WriteLine($"Error fetching package versions: {ex.Message}");
+				}
+			}
+
+			return versions;
 		}
 
 		#endregion
@@ -80,7 +103,6 @@ namespace Clio.Project.NuGet
 
 		public IEnumerable<LastVersionNugetPackages> GetLastVersionPackages(IEnumerable<string> packagesNames, 
 				string nugetSourceUrl) {
-			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
 			packagesNames.CheckArgumentNull(nameof(packagesNames));
 			Task<AllVersionsNugetPackages>[] tasks = packagesNames
 				.Select(pkgName => FindAllVersionsNugetPackages(pkgName, nugetSourceUrl))
@@ -93,7 +115,6 @@ namespace Clio.Project.NuGet
 
 		public LastVersionNugetPackages GetLastVersionPackages(string packageName, string nugetSourceUrl) {
 			packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-			nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
 			return GetLastVersionPackages(new string[] { packageName }, nugetSourceUrl)
 				.FirstOrDefault();
 		}

@@ -21,12 +21,12 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-            $ErrorActionPreference = 'Stop'
-            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
-            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
-            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
-
-
+            $ErrorActionPreference = 'Stop';
+            dotnet build-server shutdown;
+            dotnet test .\clio.tests\clio.tests.csproj --collect:"XPlat Code Coverage";
+            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.cobertura.xml;
+            Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
+          
       - name: Publish UnitTest Results
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
@@ -48,9 +48,11 @@ jobs:
           SONAR_URL: ${{ secrets.SONAR_URL }}
         shell: powershell
         run: |
-          dotnet sonarscanner begin /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
+          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml";
+          dotnet sonarscanner begin /k:"clio" `
+          /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
           /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
-          /d:sonar.cs.opencover.reportsPaths="TestResults\coverage.opencover.xml";
+          /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml;
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
-          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
           dotnet build-server shutdown;

@@ -36,6 +36,10 @@ namespace cliogate.Files.cs.Dto
 
 		[DataMember(Name = nameof(LicenseInfo), Order = 50)]
 		public LicenseInfo LicenseInfo { get; set; }
+		
+		[DataMember(Name = nameof(IsNetCore), Order = 60)]
+		public bool IsNetCore { get; set; }
+		
 
 	}
 	

@@ -6,13 +6,23 @@ namespace Clio.Common
 {
 	public interface ILogger
 	{
-		
 		/// <summary>
-		/// Starts the logging thread.
+		/// Starts the logging process.
 		/// </summary>
-		/// <remarks>See <see cref="ConsoleLogger"/>> for details</remarks>
-		public void Start();
-		
+		/// <param name="logFilePath">The path to the log file. If not provided, a default path is used.</param>
+		public void Start(string logFilePath = "");
+
+		/// <summary>
+		/// <see langword="public"/> method to set the <see cref="CreatioLogStreamer"/> object.
+		/// </summary>
+		/// <param name="creatioLogStreamer"></param>
+		public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer);
+
+		/// <summary>
+		/// Starts the logging process with a stream.
+		/// </summary>
+		public void StartWithStream();
+
 		/// <summary>
 		/// Stops the logging thread.
 		/// </summary>
@@ -22,6 +32,11 @@ namespace Clio.Common
 		
 		void Write(string value);
 		
+		/// <summary>
+		/// Write a empty line to the log.
+		/// </summary>
+		void WriteLine();
+
 		/// <summary>
 		/// Writes an undecorated line to the log.
 		/// </summary>

@@ -1,0 +1,22 @@
+﻿{
+  "errors":[
+    {
+      "line":1,
+      "column":10,
+      "errorNumber":"CS1002",
+      "errorText":"; expected",
+      "warning":false,
+      "fileName":"DELETE_ME.cs"
+    },
+    {
+      "line":1,
+      "column":10,
+      "errorNumber":"CS1733",
+      "errorText":"Expected expression",
+      "warning":false,
+      "fileName":"DELETE_ME.cs"
+    }
+  ],
+  "buildResult":1,
+  "success":false
+}

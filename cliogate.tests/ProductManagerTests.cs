@@ -21,7 +21,7 @@ namespace cliogate.tests
 			ProductManager sut = new ProductManager();
 
 			//Act
-			List<ProductInfo> items = sut.GetProductInfoByVersion(new Version("9.0.0"));
+			List<ProductInfo> items = sut.GetProductInfoByVersion(new Version("9.0.0"), false);
 
 			//Assert
 			items.Should().HaveCount(0);
@@ -36,7 +36,7 @@ namespace cliogate.tests
 			ProductManager sut = new ProductManager();
 
 			//Act
-			var actual = sut.FindProductNameByPackages(new []{"CrtBase"},new Version("8.1.2"));
+			var actual = sut.FindProductNameByPackages(new []{"CrtBase"},new Version("8.1.2"), false);
 
 			//Assert
 			const string expected = "product base";
@@ -52,7 +52,7 @@ namespace cliogate.tests
 			ProductManager sut = new ProductManager();
 
 			//Act
-			string actual = sut.FindProductNameByPackages(new []{"Unknown_package"},new Version("8.1.2"));
+			string actual = sut.FindProductNameByPackages(new []{"Unknown_package"},new Version("8.1.2"), false);
 
 			//Assert
 			const string expected = "UNKNOWN PRODUCT";
@@ -72,7 +72,7 @@ namespace cliogate.tests
 			foreach (var expectedProductInfo in expectedProductInfos) {
 			
 				//Act
-				var actual = sut.FindProductNameByPackages(expectedProductInfo.Packages,expectedProductInfo.Version);
+				var actual = sut.FindProductNameByPackages(expectedProductInfo.Packages,expectedProductInfo.Version, false);
 			
 				//Assert
 				actual.Should().Be(expectedProductInfo.Name);

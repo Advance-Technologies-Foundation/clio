@@ -47,7 +47,7 @@ public static class InstallerHelper
 			FQDN = Dns.GetHostEntry(Dns.GetHostName()).HostName;
 			return FQDN;
 		}
-		catch (Exception e)
+		catch (Exception)
 		{
 			Console.WriteLine("Defaulting to localhost");
 			return FQDN;

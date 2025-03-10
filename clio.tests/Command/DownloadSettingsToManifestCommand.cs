@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing.Drawing2D;
-using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Reflection;
-using ATF.Repository;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using ATF.Repository.Attributes;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
@@ -15,16 +14,10 @@ using Clio.Common;
 using Clio.Tests.Extensions;
 using Clio.Tests.Infrastructure;
 using CreatioModel;
-using DocumentFormat.OpenXml.Drawing;
 using FluentAssertions;
-using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NSubstitute;
 using NUnit.Framework;
-using Terrasoft.Common.Json;
-using Terrasoft.Core;
-using Terrasoft.Core.Entities;
 using YamlDotNet.Serialization;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
 
@@ -106,7 +99,6 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		List<CreatioManifestWebService> webServices = [];
 
 		DataProviderMock providerMock = new();
-		
 
 		IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
 		webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
@@ -123,8 +115,6 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 		//Assert
 		fileSystem.ExistsFile(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
-		string expectedContent
-			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
 
 		var envManager = container.Resolve<IEnvironmentManager>();
 		var actualSettings = envManager.GetSettingsFromManifest(saveSettingsToManifestOptions.ManifestFileName);
@@ -144,7 +134,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		List<CreatioManifestWebService> webServices = [];
 
 		DataProviderMock providerMock = new();
-
+		MockSysPackage(providerMock, true, false);
 
 		IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
 		webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
@@ -260,7 +250,8 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
-		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
+		string actualContent = FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim();
+		actualContent.Should()
 			.Be(expectedContent.Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
@@ -402,7 +393,7 @@ internal class MockDataContainer {
 
 
 	private ODataResponse ParseOdataResponse(string content) {
-		return Json.Deserialize<ODataResponse>(content);
+		return Terrasoft.Common.Json.Json.Deserialize<ODataResponse>(content);
 	}
 
 	public static IContainer GetContainer(MockFileSystem fileSystem) {
@@ -421,7 +412,6 @@ internal class MockDataContainer {
 		};
 		IContainer container = bm.Register(
 		settings: environmentSettings,
-		registerNullSettingsForTest: false,
 		additionalRegistrations: builder => {
 			builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
 		});
@@ -580,3 +570,25 @@ internal class MockDataContainer {
 		mock.Returns(resultRecords);
 	}
 } 
+
+public class JsonDateTimeConverter : JsonConverter<DateTime>
+{
+	
+	public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType == JsonTokenType.String)
+		{
+			var dateTimeString = reader.GetString();
+			if (DateTime.TryParse(dateTimeString, out var dateTime))
+			{
+				return dateTime;
+			}
+		}
+		throw new JsonException("Invalid date format");
+	}
+
+	public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+	{
+		writer.WriteStringValue(value.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+	}
+}

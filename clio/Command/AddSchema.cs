@@ -1,5 +1,6 @@
 ﻿using Clio.Common;
 using CommandLine;
+using System.Net.Security;
 
 namespace Clio.Command;
 
@@ -50,5 +51,6 @@ public class AddSchemaCommand : Command<AddSchemaOptions>
 	}
 
 	#endregion
-
+	
+	
 }

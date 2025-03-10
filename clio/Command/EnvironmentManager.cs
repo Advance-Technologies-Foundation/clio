@@ -233,15 +233,25 @@ namespace Clio.Command
 
 	public class CreatioManifestPackage
 	{
-		[YamlMember(Alias = "name")]
+		[YamlMember(Alias = "name", Order = 1)]
 		public string Name { get; set; }
 
-
-		[YamlMember(Alias = "hash")]
+		[YamlMember(Alias = "hash", Order = 2)]
 		public string Hash { get; set; }
 
-		[YamlMember(Alias = "maintainer")]
+		[YamlMember(Alias = "maintainer", Order = 3)]
 		public string Maintainer { get; set; }
+
+		[YamlMember(Alias = "schemas", Order = 4)]
+		public List<CreatioManifestPackageSchema> Schemas { get; set; } = new List<CreatioManifestPackageSchema>();
 	}
 
+	public class CreatioManifestPackageSchema
+	{
+		[YamlMember(Alias = "name", Order = 1)]
+		public string Name { get; set; }
+
+		[YamlMember(Alias = "hash", Order = 2)]
+		public string Hash { get; set; }
+	}
 }

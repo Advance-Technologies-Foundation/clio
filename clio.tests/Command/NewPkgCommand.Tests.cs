@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using Clio.Command;
+using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
@@ -18,7 +19,8 @@ namespace Clio.Tests.Command
 				Maintainer = "TestMaintainer"
 			});
 			Command<ReferenceOptions> referenceCommand = Substitute.For<Command<ReferenceOptions>>();
-			NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand);
+			ILogger logger = Substitute.For<ILogger>();
+			NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand, logger);
 			NewPkgOptions options = new NewPkgOptions { Name = "Test" };
 			command.Execute(options);
 			Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), options.Name)).Should().BeTrue();
@@ -31,7 +33,8 @@ namespace Clio.Tests.Command
 				Maintainer = "TestMaintainer"
 			});
 			Command<ReferenceOptions> referenceCommand = Substitute.For<Command<ReferenceOptions>>();
-			NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand);
+			ILogger logger = Substitute.For<ILogger>();
+			NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand, logger);
 			NewPkgOptions options = new NewPkgOptions { Name = "Test", Rebase = "src" };
 			command.Execute(options);
 			referenceCommand.Received(1).Execute(Arg.Is<ReferenceOptions>(e => e.ReferenceType == options.Rebase));

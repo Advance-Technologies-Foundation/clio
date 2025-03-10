@@ -1,0 +1,3 @@
+﻿DELETE_ME.cs(1,10): Error CS1002 : ; expected
+DELETE_ME.cs(1,10): Error CS1733 : Expected expression
+------- Finished building project: Succeeded: False. Errors: 2.

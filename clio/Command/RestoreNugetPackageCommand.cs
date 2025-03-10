@@ -15,7 +15,7 @@ namespace Clio.Command
 		public string DestinationDirectory { get; set; }
 
 		[Option('s', "Source", Required = false, HelpText = "Specifies the server URL", 
-			Default = "https://www.nuget.org/api/v2")]
+			Default = "")]
 		public string SourceUrl { get; set; }
 
 	}
@@ -23,20 +23,22 @@ namespace Clio.Command
 	public class RestoreNugetPackageCommand : Command<RestoreNugetPkgOptions>
 	{
 		private INuGetManager _nugetManager;
+		private readonly ILogger _logger;
 
-		public RestoreNugetPackageCommand(INuGetManager nugetManager) {
+		public RestoreNugetPackageCommand(INuGetManager nugetManager, ILogger logger) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			_nugetManager = nugetManager;
+			_logger = logger;
 		}
 
 		public override int Execute(RestoreNugetPkgOptions options) {
 			try {
 				_nugetManager.RestoreToPackageStorage(new NugetPackageFullName(options.Name), options.SourceUrl, 
 					options.DestinationDirectory, true);
-				Console.WriteLine("Done");
+				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

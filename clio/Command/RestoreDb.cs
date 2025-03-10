@@ -87,8 +87,6 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 	private int RestorePg(Uri uri, RestoreDbCommandOptions options){
 		throw new NotImplementedException("Not implemented yet;");
-		// var credentials  = GetCredentials(uri, options);
-		return 0;
 	}
 
 	

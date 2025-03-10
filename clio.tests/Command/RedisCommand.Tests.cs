@@ -18,7 +18,7 @@
 				IsNetCore = false
 			};
 			RedisCommand redisCommand = new RedisCommand(applicationClient, settings);
-			var clearRedisOptions = Substitute.For<ClearRedisOptions>();
+			ClearRedisOptions clearRedisOptions = new();
 
 			//Act
 			redisCommand.Execute(clearRedisOptions);
@@ -39,7 +39,7 @@
 				IsNetCore = true
 			};
 			RedisCommand redisCommand = new RedisCommand(applicationClient, settings);
-			var clearRedisOptions = Substitute.For<ClearRedisOptions>();
+			ClearRedisOptions clearRedisOptions = new();
 
 			//Act
 			redisCommand.Execute(clearRedisOptions);

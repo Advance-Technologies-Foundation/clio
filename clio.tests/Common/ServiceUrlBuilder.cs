@@ -259,7 +259,7 @@ internal class ServiceUrlBuilderCommandTests
 	public void AllEnumsHaveRoutes(){
 		ServiceUrlBuilder sut = new (new EnvironmentSettings());
 		foreach(ServiceUrlBuilder.KnownRoute route in Enum.GetValues<ServiceUrlBuilder.KnownRoute>()) {
-			sut.KnownRoutes[route].Should().NotBeNullOrWhiteSpace();
+			ServiceUrlBuilder.KnownRoutes[route].Should().NotBeNullOrWhiteSpace();
 		}
 	}
 	

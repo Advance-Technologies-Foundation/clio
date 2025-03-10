@@ -163,18 +163,11 @@ public class SysSettingsManager : ISysSettingsManager
 	
 
 	private SysSettings GetSysSettingByCode(string code){
-		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<SysSettings>()
-			.ToList();
 
-		var sysSettingsValue = AppDataContextFactory.GetAppDataContext(_dataProvider)
-		.Models<SysSettingsValue>()
-		.ToList();
-
-		var sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<SysSettings>()
-			.Where(i => i.Code == code)
-			.ToList().FirstOrDefault();
+		SysSettings sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
+													.Models<SysSettings>()
+													.Where(i => i.Code == code)
+													.ToList().FirstOrDefault();
 		return sysSetting;
 	}
 
@@ -183,9 +176,8 @@ public class SysSettingsManager : ISysSettingsManager
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		const string endpoint = "rest/CreatioApiGateway/GetSysSettingValueByCode";
 		string json = JsonSerializer.Serialize(new GetSettingRequestData(code), _jsonSerializerOptions);
-		string url = _serviceUrlBuilder.Build(endpoint);
+		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSysSettingValueByCode);
 		string result = _creatioClient.ExecutePostRequest(url, json);
 		return result;
 	}

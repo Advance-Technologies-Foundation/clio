@@ -7,6 +7,7 @@ using System.Linq;
 using System.Management.Automation;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
@@ -57,6 +58,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly IMediator _mediator;
 	private readonly RegAppCommand _registerCommand;
 	private readonly IFileSystem _fileSystem;
+	private readonly ILogger _logger;
 
 	#endregion
 
@@ -71,7 +73,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem){
+		IFileSystem fileSystem, ILogger logger) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -80,25 +82,28 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_iisRootFolder = settingsRepository.GetIISClioRootPath();
 		ProductFolder = settingsRepository.GetCreatioProductsFolder();
 		RemoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
+		_logger = logger;
 	}
 
-	public CreatioInstallerService(){ }
+	public CreatioInstallerService() {
+
+	}
 
 	#endregion
 
 	#region Methods: Private
 
-	private static int ExitWithErrorMessage(string message){
-		Console.WriteLine(message);
+	private int ExitWithErrorMessage(string message){
+		_logger.WriteError(message);
 		return 1;
 	}
 
-	private static int ExitWithOkMessage(string message){
-		Console.WriteLine(message);
+	private int ExitWithOkMessage(string message){
+		_logger.WriteInfo(message);
 		return 0;
 	}
 
-	private static int FindEmptyRedisDb(int port){
+	private int FindEmptyRedisDb(int port){
 		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
 		IServer server = redis.GetServer("localhost", port);
 		int count = server.DatabaseCount;
@@ -155,7 +160,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return dest;
 		}
 
-		Console.WriteLine($"Detected network drive as source, copying to local folder {ProductFolder}");
+		_logger.WriteLine($"Detected network drive as source, copying to local folder {ProductFolder}");
 		Console.Write("Copy Progress:    ");
 		Progress<double> progressReporter = new(progress => {
 			string result = progress switch {
@@ -172,7 +177,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private async Task<int> CreateIISSite(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
-		Console.WriteLine("[Create IIS Site] - Started");
+		_logger.WriteInfo("[Create IIS Site] - Started");
 		CreateIISSiteRequest request = new() {
 			Arguments = new Dictionary<string, string> {
 				{"siteName", options.SiteName},
@@ -204,7 +209,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return;
 		}
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
-		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
 
@@ -212,14 +217,27 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_k8.RestorePgDatabase(src.Name, tmpDbName);
 		postgres.SetDatabaseAsTemplate(tmpDbName);
 		_k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
-		Console.WriteLine($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
+		_logger.WriteInfo($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
 	}
 
 	private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName){
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
-		Console.WriteLine($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
-		_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
-
+		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+		
+		if(src is not {Exists: true}) {
+			throw new FileNotFoundException("Backup file not found in the specified directory.");
+		}
+		
+		bool useFs = false;
+		string dest = Path.Join("\\\\wsl.localhost","rancher-desktop","mnt","clio-infrastructure","mssql","data", $"{siteName}.bak");
+		if(src.Length < int.MaxValue) {
+			_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
+		}else {
+			//This is a hack, we have to fix Cp class to allow large files
+			useFs = true;
+			_logger.WriteWarning($"Copying large file to local directory {dest}" );
+			_fileSystem.CopyFile(src.FullName, dest, true);
+		}
 		k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
 		Mssql mssql = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
@@ -227,7 +245,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		if (!exists) {
 			mssql.CreateDb(siteName, $"{siteName}.bak");
 		}
-		_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
+		if(useFs) {
+			_fileSystem.DeleteFile(dest);
+		}else {
+			_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
+		}
 		return 0;
 	}
 
@@ -238,7 +260,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		CreatePgTemplate(unzippedDirectory, tmpDbName);
 		postgres.CreateDbFromTemplate(tmpDbName, destDbName);
-		Console.WriteLine($"[Database created] - {destDbName}");
+		_logger.WriteInfo($"[Database created] - {destDbName}");
 		return 0;
 	}
 
@@ -264,7 +286,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
-		Console.WriteLine("[CheckUpdate connection string] - Started");
+		_logger.WriteInfo("[CheckUpdate connection string] - Started");
 		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
@@ -369,7 +391,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			options.ZipFile = GetBuildFilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
 		}
 		if (!File.Exists(options.ZipFile)) {
-			Console.WriteLine($"Could not find zip file: {options.ZipFile}");
+			_logger.WriteInfo($"Could not find zip file: {options.ZipFile}");
 			return 1;
 		}
 		if (!Directory.Exists(_iisRootFolder)) {
@@ -397,9 +419,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
-		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
+		_logger.WriteInfo($"[Staring unzipping] - {options.ZipFile}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
-		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
+		_logger.WriteInfo($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
 
 		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {

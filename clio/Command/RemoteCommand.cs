@@ -4,12 +4,23 @@ using System.Net.Http;
 using System.Reflection;
 using Clio.Common;
 using CommandLine;
+using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace Clio.Command;
 
 public class RemoteCommandOptions : EnvironmentOptions
 {
-	public int TimeOut { get; internal set; } = 100_000;
+
+	private int? _timeOut;
+	protected virtual int DefaultTimeout { get; set; } = 100_000;
+	
+
+	[Option("timeout", Required = false, HelpText = "Request timeout in milliseconds", Default = 100_000)]
+	public int TimeOut {
+		get => _timeOut ?? DefaultTimeout;
+		internal set => _timeOut = value;
+	}
+
 	public int RetryCount { get; internal set; } = 3;
 	public int RetryDelay { get; internal set; } = 1;
 
@@ -45,6 +56,10 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 	internal IApplicationClient ApplicationClient { get; set; }
 
 	internal EnvironmentSettings EnvironmentSettings { get; set; }
+	
+	
+	protected virtual string ClioGateMinVersion {get;} = "0.0.0.0";
+	protected IClioGateway ClioGateWay {get; set;}
 
 	protected string RootPath =>
 		EnvironmentSettings.IsNetCore
@@ -103,6 +118,11 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 	#region Methods: Public
 
 	public override int Execute(TEnvironmentOptions options){
+		
+		if(!string.IsNullOrWhiteSpace(ClioGateMinVersion) && ClioGateWay != null) {
+			ClioGateWay.CheckCompatibleVersion(ClioGateMinVersion);
+		}
+		
 		try {
 			RequestTimeout = options.TimeOut;
 			RetryCount = options.RetryCount;
@@ -111,7 +131,7 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
 			string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;
 			Logger.WriteInfo($"Done {commandName}");
 			return 0;
-		} catch (SilentException ex) {
+		} catch (SilentException) {
 			return 1;
 		} catch (Exception e) {
 			Logger.WriteError(e.Message);
