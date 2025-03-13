@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace clioAgent;
 
-[JsonSerializable(typeof(Server))]
+[JsonSerializable(typeof(DbServer))]
 [JsonSerializable(typeof(Db))]
 [JsonSerializable(typeof(CreatioProducts))]
 [JsonSerializable(typeof(Logging))]

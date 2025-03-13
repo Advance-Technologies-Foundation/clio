@@ -5,7 +5,10 @@ public record Settings(
     CreatioProducts[]? CreatioProducts,
     Db[]? Db,
     string WorkingDirectoryPath,
-    TraceServer? TraceServer
+    TraceServer? TraceServer,
+    string ServiceName,
+    int WaitBeforeShutDown
+    
 );
 
 public record Logging(
@@ -19,10 +22,10 @@ public record CreatioProducts(
 public record Db(
     string Type,
     //IEnumerable<Server> Servers
-    Server[]? Servers
+    DbServer[]? Servers
 );
 
-public record Server(
+public record DbServer(
     string? Name,
     string? ConnectionString,
     string? BinFolderPath

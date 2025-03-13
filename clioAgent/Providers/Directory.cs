@@ -3,7 +3,6 @@
 public class WorkingDirectoryProvider {
 
 	public const string MsSqlBackupExtension = ".bak";
-	public  const string PgBackupExtension = ".backup";
-	
+	public const string PgBackupExtension = ".backup";
 
 }

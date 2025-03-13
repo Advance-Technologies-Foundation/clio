@@ -25,8 +25,8 @@ Content-Type: application/json
 X-API-KEY: my-secure-api-key-admin
 
 {
-  "Name": "semse_net472",
-  "CreatioBuildZipPath" : "C:\\CreatioProductBuild\\8.2.0.4157_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_PostgreSQL_ENU.zip"
+  "Name": "zoom_n8",
+  "CreatioBuildZipPath" : "C:\\CreatioProductBuild\\8.2.2.1867_SEMSE_N8.zip"
 }
 
 > {%
