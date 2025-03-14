@@ -129,9 +129,9 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	private int HandleEnvironmentOption(Link4RepoOptions options){
 		_ = Uri.TryCreate(options.Environment, UriKind.Absolute, out Uri pathUri);
 		return pathUri switch {
-					not null when pathUri.IsFile => HandleLinkWithDirPath(options.EnvPkgPath, options.RepoPath,
+					not null when pathUri.IsFile => HandleLinkWithDirPath(options.Environment, options.RepoPath,
 						options.Packages),
-					var _ => HandleLinkingByEnvName(options.EnvPkgPath, options.RepoPath, options.Packages)
+					var _ => HandleLinkingByEnvName(options.Environment, options.RepoPath, options.Packages)
 				};
 	}
 
