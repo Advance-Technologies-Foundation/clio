@@ -1026,7 +1026,7 @@
     </Otherwise>
   </Choose> -->
   <ItemGroup>
-    <PackageReference Include="creatio.client" Version="1.0.24" />
+    <PackageReference Include="creatio.client" Version="1.0.25" />
     <PackageReference Include="ATF.Repository" Version="2.0.2.10" />
     <PackageReference Include="Autofac" Version="8.2.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
