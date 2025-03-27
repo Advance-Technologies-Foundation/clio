@@ -1,4 +1,4 @@
-﻿using Clio.Common;
+using Clio.Common;
 using CommandLine;
 using System;
 using System.Reflection;
@@ -41,7 +41,7 @@ namespace Clio.Command
 
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.29";
+		private const string _gateVersion = "2.0.0.33";
 		private readonly ILogger _logger;
 
 		public InfoCommand(ILogger logger)
@@ -72,9 +72,9 @@ namespace Clio.Command
 			}
 			else if (options is object && options.All || (!options.Runtime && !options.Gate && !options.Clio && !options.ShowSettingsFilePath))
 			{
-				_logger.WriteLine($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
+				_logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
 				_logger.WriteInfo($"gate:   {_gateVersion}");
-				_logger.WriteLine($"dotnet:   {Environment.Version.ToString()}");
+				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;
 			}

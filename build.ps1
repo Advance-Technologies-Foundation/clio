@@ -1,6 +1,13 @@
 $cliogate_Version="2.0.0.33"
 $clioPath=".\clio\bin\Release\net8.0\clio.dll"
 
+# Update _gateVersion in InfoCommand.cs
+$infoCommandPath = ".\clio\Command\InfoCommand.cs"
+$infoCommandContent = Get-Content $infoCommandPath -Raw
+$updatedContent = $infoCommandContent -replace 'private const string _gateVersion = "[\d\.]+";', "private const string _gateVersion = `"$cliogate_Version`";"
+Set-Content -Path $infoCommandPath -Value $updatedContent -NoNewline
+
+
 dotnet build .\clio\clio.csproj -c Release --no-incremental
 
 New-Item ".\cliogate\.temp" -ItemType Directory -Force
