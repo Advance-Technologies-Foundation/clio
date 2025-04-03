@@ -18,17 +18,17 @@ namespace cliogate.Files.cs {
 	public class LiveLogger : ILiveLogger {
 		private readonly IWebSocket _webSocket;
 
-		internal LiveLogger(IWebSocket webSocket) {
+		public LiveLogger(IWebSocket webSocket) {
 			_webSocket = webSocket;
 		}
 
 		public void Log(string message) {
 			if (message.StartsWith("[INF]")) {
-				LogInfo(message.Substring(5)); // Remove the log type from the message
+				LogInfo(message.Substring(5).TrimStart('-', ' ')); // Remove the log type and any leading dash or space
 			} else if (message.StartsWith("[ERR]")) {
-				LogError(message.Substring(5)); // Remove the log type from the message
+				LogError(message.Substring(5).TrimStart('-', ' ')); // Remove the log type and any leading dash or space
 			} else if (message.StartsWith("[WAR]")) {
-				LogWarn(message.Substring(5)); // Remove the log type from the message
+				LogWarn(message.Substring(5).TrimStart('-', ' ')); // Remove the log type and any leading dash or space
 			} else {
 				_webSocket.PostMessageToAll("Clio", "Show logs", message);
 			}

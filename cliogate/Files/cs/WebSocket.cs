@@ -5,7 +5,7 @@ using Terrasoft.Messaging.Common;
 
 namespace Cliogate.Services
 {
-	internal interface IWebSocket
+	public interface IWebSocket
 	{
 
 		#region Methods: Public
