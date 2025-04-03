@@ -41,7 +41,7 @@ namespace Clio.Command
 
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.33";
+		private const string _gateVersion = "2.0.0.34";
 		private readonly ILogger _logger;
 
 		public InfoCommand(ILogger logger)

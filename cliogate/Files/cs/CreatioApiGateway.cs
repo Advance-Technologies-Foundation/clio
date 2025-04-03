@@ -29,6 +29,7 @@ using Terrasoft.Core.ServiceModelContract;
 using Terrasoft.Core.Store;
 using Terrasoft.Web.Common;
 using Terrasoft.Web.Http.Abstractions;
+using cliogate.Files.cs; // Add this line to include the LiveLogger namespace
 using Exception = System.Exception;
 #if NETSTANDARD2_0
 using System.Globalization;
@@ -561,9 +562,8 @@ namespace cliogate.Files.cs
 		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
 		public void SendEventToUI(EventModel eventModel) {
 			CheckCanManageSolution();
-			var webSocket = new WebSocket();
-			webSocket
-				.PostMessageToAll(eventModel.Sender, eventModel.CommandName,eventModel.Content);
+			var liveLogger = new LiveLogger(new WebSocket()); // Instantiate LiveLogger with WebSocket
+			liveLogger.Log(eventModel.Content); // Use LiveLogger to log the event content
 		}
 		
 		
