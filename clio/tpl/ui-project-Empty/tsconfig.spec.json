@@ -2,9 +2,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "esModuleInterop": true,
     "outDir": "./out-tsc/spec",
     "types": [
-      "jasmine"
+      "node",
+      "jest"
     ]
   },
   "include": [
