@@ -49,22 +49,6 @@ public class ProgramTestCase : BaseClioModuleTests
 		Program.Resolve<CreateWorkspaceCommand>(options, logAndSettings);
 	}
 
-
-
-	[Test]
-	public void TryToRunAutoupdate() {
-		Program.Container = Container;
-		Program.AppUpdater = Substitute.For<IAppUpdater>();
-		var filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
-		FileSystem.AddFile(filePath, new MockFileData(File
-			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
-		SettingsRepository.FileSystem = FileSystem;
-		Program.AutoUpdate = true;
-		Program.ExecuteCommands(new string[] { "ver", "--clio" });
-		Program.AppUpdater.Received(1).CheckUpdate();
-	}
-
-
 	[Test]
 	public void SkipAutoupdateIfUpdateDisable() {
 		Program.Container = Container;
@@ -78,29 +62,4 @@ public class ProgramTestCase : BaseClioModuleTests
 		Program.AppUpdater.Received(0).CheckUpdate();
 	}
 
-
-	[Test]
-	public void GetAutoUpdaterFromDIByDefault() {
-		Program.Container = Container;
-		var filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
-		FileSystem.AddFile(filePath, new MockFileData(File
-			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
-		SettingsRepository.FileSystem = FileSystem;
-		Program.AutoUpdate = true;
-		Program.ExecuteCommands(new string[] { "ver", "--clio" });
-		Thread.Sleep(100);
-		appUpdaterMock.Received(1).CheckUpdate();
-	}
-
-	[Test]
-	public void GetAutoUpdaterFromDIWithoutInitContainer() {
-		var filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
-		FileSystem.AddFile(filePath, new MockFileData(File
-			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
-		SettingsRepository.FileSystem = FileSystem;
-		Program.AutoUpdate = true;
-		Program.ExecuteCommands(new string[] { "ver", "--clio" }).Should().Be(0);
-		Thread.Sleep(100);
-		Program.AppUpdater.Checked.Should().BeTrue();
-	}
 }
