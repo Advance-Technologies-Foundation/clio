@@ -349,6 +349,11 @@ internal class Program {
 
 	#region Methods: Private
 
+	/// <summary>
+	/// Processes the given item options based on the item type.
+	/// </summary>
+	/// <param name="options">Options for creating the item</param>
+	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
 	private static int AddItem(ItemOptions options){
 		if (options.ItemType.ToLower() == "model") {
 			return AddModels(options);
@@ -356,7 +361,11 @@ internal class Program {
 		return AddItemFromTemplate(options);
 	}
 
-	// clio add-item csschema "MySchema" -p "MyPkg" -n "MyNamespace"
+	/// <summary>
+	/// Creates a file from a template for the specified item.
+	/// </summary>
+	/// <param name="options">Options containing the item name, type, and destination</param>
+	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
 	private static int AddItemFromTemplate(ItemOptions options){
 		try {
 			VSProject project = new(options.DestinationPath, options.Namespace);
@@ -379,6 +388,11 @@ internal class Program {
 		}
 	}
 
+	/// <summary>
+	/// Generates model classes for the specified entity schema.
+	/// </summary>
+	/// <param name="opts">Options containing entity schema name and field information</param>
+	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
 	private static int AddModels(ItemOptions opts){
 		if (opts.CreateAll) {
 			Console.WriteLine("Generating models...");
@@ -407,6 +421,12 @@ internal class Program {
 		}
 	}
 
+	/// <summary>
+	/// Configures the environment with the specified options.
+	/// </summary>
+	/// <param name="options">Environment configuration options</param>
+	/// <param name="checkEnvExist">If true, verifies that the environment exists before proceeding</param>
+	/// <exception cref="ArgumentException">Thrown when the environment doesn't exist and checkEnvExist is true</exception>
 	private static void Configure(EnvironmentOptions options, bool checkEnvExist = false){
 		SettingsRepository settingsRepository = new();
 		CreatioEnvironment.EnvironmentName = options.Environment;
@@ -421,10 +441,20 @@ internal class Program {
 		ICreatioEnvironment creatioEnvironment = Resolve<ICreatioEnvironment>();
 	}
 
+	/// <summary>
+	/// Converts a package using the specified options.
+	/// </summary>
+	/// <param name="opts">Package conversion options</param>
+	/// <returns>Result code from the conversion operation</returns>
 	private static int ConvertPackage(ConvertOptions opts){
 		return Resolve<IPackageConverter>().Convert(opts);
 	}
 
+	/// <summary>
+	/// Corrects JSON formatting issues in the provided string, handling escape sequences and special characters.
+	/// </summary>
+	/// <param name="body">JSON string to correct</param>
+	/// <returns>Corrected JSON string</returns>
 	private static string CorrectJson(string body){
 		body = body.Replace("\\\\r\\\\n", Environment.NewLine);
 		body = body.Replace("\\r\\n", Environment.NewLine);
@@ -437,6 +467,11 @@ internal class Program {
 		return body;
 	}
 
+	/// <summary>
+	/// Creates package options specifically for Clio Gate installation.
+	/// </summary>
+	/// <param name="opts">Gate installation options</param>
+	/// <returns>Configured package options</returns>
 	private static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts){
 		PushPkgOptions pushPackageOptions = CreatePushPkgOptions(opts);
 		pushPackageOptions.DeveloperModeEnabled = false;
@@ -444,11 +479,21 @@ internal class Program {
 		return pushPackageOptions;
 	}
 
-	//ToDo: move to factory
+	/// <summary>
+	/// Creates a command of the specified type with the provided constructor arguments.
+	/// </summary>
+	/// <typeparam name="TCommand">Type of command to create</typeparam>
+	/// <param name="additionalConstructorArgs">Additional arguments to pass to the constructor</param>
+	/// <returns>Instantiated command</returns>
 	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs){
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 	}
 
+	/// <summary>
+	/// Creates package options based on installation options.
+	/// </summary>
+	/// <param name="options">Gate installation options</param>
+	/// <returns>Configured package options</returns>
 	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options){
 		SettingsRepository settingsRepository = new();
 		EnvironmentSettings settings = settingsRepository.GetEnvironment(options);
@@ -470,6 +515,13 @@ internal class Program {
 		};
 	}
 
+	/// <summary>
+	/// Creates a remote command with a client connection to the Creatio environment.
+	/// </summary>
+	/// <typeparam name="TCommand">Type of command to create</typeparam>
+	/// <param name="options">Environment options</param>
+	/// <param name="additionalConstructorArgs">Additional arguments to pass to the constructor</param>
+	/// <returns>Instantiated command with connection to remote environment</returns>
 	private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
 		params object[] additionalConstructorArgs){
 		EnvironmentSettings settings = GetEnvironmentSettings(options);
@@ -482,6 +534,13 @@ internal class Program {
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 	}
 
+	/// <summary>
+	/// Creates a remote command without a client connection to the Creatio environment.
+	/// </summary>
+	/// <typeparam name="TCommand">Type of command to create</typeparam>
+	/// <param name="options">Environment options</param>
+	/// <param name="additionalConstructorArgs">Additional arguments to pass to the constructor</param>
+	/// <returns>Instantiated command without connection to remote environment</returns>
 	private static TCommand CreateRemoteCommandWithoutClient<TCommand>(EnvironmentOptions options,
 		params object[] additionalConstructorArgs){
 		EnvironmentSettings settings = GetEnvironmentSettings(options);
@@ -489,6 +548,12 @@ internal class Program {
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
 	}
 
+	/// <summary>
+	/// Downloads packages from the Creatio environment to the specified destination.
+	/// </summary>
+	/// <param name="packageName">Name of the package to download</param>
+	/// <param name="destinationPath">Path where the downloaded package will be saved</param>
+	/// <param name="_async">If true, performs the download asynchronously</param>
 	private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async){
 		try {
 			Console.WriteLine("Start download packages ({0}).", packageName);
@@ -526,11 +591,20 @@ internal class Program {
 		}
 	}
 
+	/// <summary>
+	/// Finds environment settings based on the environment name in the options.
+	/// </summary>
+	/// <param name="options">Environment options containing the environment name</param>
+	/// <returns>Environment settings if found, null otherwise</returns>
 	private static EnvironmentSettings FindEnvironmentSettings(EnvironmentOptions options){
 		SettingsRepository settingsRepository = new();
 		return settingsRepository.FindEnvironment(options.Environment);
 	}
 
+	/// <summary>
+	/// Gets the API version from the configured Creatio environment.
+	/// </summary>
+	/// <returns>API version, or 0.0.0.0 if the version cannot be determined</returns>
 	private static Version GetAppApiVersion(){
 		Version apiVersion = new("0.0.0.0");
 		try {
@@ -541,6 +615,12 @@ internal class Program {
 		return apiVersion;
 	}
 
+	/// <summary>
+	/// Retrieves class models for the specified entity schema.
+	/// </summary>
+	/// <param name="entitySchemaName">Name of the entity schema</param>
+	/// <param name="fields">Comma-separated list of fields to include</param>
+	/// <returns>Dictionary of model class names and their content</returns>
 	private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields){
 		string url = string.Format(GetEntityModelsUrl, entitySchemaName, fields);
 		string responseFormServer = _creatioClientInstance.ExecuteGetRequest(url);
@@ -548,11 +628,21 @@ internal class Program {
 		return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 	}
 
+	/// <summary>
+	/// Gets environment settings based on the provided options.
+	/// </summary>
+	/// <param name="options">Environment options</param>
+	/// <returns>Environment settings</returns>
 	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options){
 		SettingsRepository settingsRepository = new();
 		return settingsRepository.GetEnvironment(options);
 	}
 
+	/// <summary>
+	/// Handles errors that occur during command-line parsing.
+	/// </summary>
+	/// <param name="errs">Collection of parsing errors</param>
+	/// <returns>Exit code based on the type of errors encountered</returns>
 	private static int HandleParseError(IEnumerable<Error> errs){
 		int exitCode = 1;
 
@@ -573,7 +663,11 @@ internal class Program {
 		return exitCode;
 	}
 
-	//clio com log filepathValue
+	/// <summary>
+	/// Main entry point for the application.
+	/// </summary>
+	/// <param name="args">Command line arguments</param>
+	/// <returns>Exit code indicating success (0) or failure (non-zero)</returns>
 	private static int Main(string[] args){
 		try {
 			string logTarget = string.Empty;
@@ -588,6 +682,10 @@ internal class Program {
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			OriginalArgs = args;
+			
+			// Set IsCfgOpenCommand based on input arguments
+			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
+			
 			if (logTarget.ToLower() == "creatio") {
 				useCreatioLogStreamer = true;
 				ConsoleLogger.Instance.StartWithStream();
@@ -605,6 +703,11 @@ internal class Program {
 		}
 	}
 
+	/// <summary>
+	/// Displays a colored message to the console.
+	/// </summary>
+	/// <param name="text">Text to display</param>
+	/// <param name="color">Color to use for the text</param>
 	private static void MessageToConsole(string text, ConsoleColor color){
 		ConsoleColor currentColor = Console.ForegroundColor;
 		Console.ForegroundColor = color;
@@ -612,12 +715,23 @@ internal class Program {
 		Console.ForegroundColor = currentColor;
 	}
 
+	/// <summary>
+	/// Resolves environment settings from a manifest file and creates an instance of the specified type.
+	/// </summary>
+	/// <typeparam name="T">Type to resolve</typeparam>
+	/// <param name="options">Options containing the manifest file path</param>
+	/// <returns>Resolved instance</returns>
 	private static T ResolveEnvSettings<T>(ApplyEnvironmentManifestOptions options = null){
 		EnvironmentOptions optionFromFile = ReadEnvironmentOptionsFromManifestFile(options.ManifestFilePath);
 		EnvironmentOptions combinedOption = CombinedOption(optionFromFile, options);
 		return Resolve<T>(combinedOption, true);
 	}
 
+	/// <summary>
+	/// Enables developer mode for the specified environment.
+	/// </summary>
+	/// <param name="opts">Developer mode options</param>
+	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
 	private static int SetDeveloperMode(DeveloperModeOptions opts){
 		try {
 			SetupAppConnection(opts, true);
@@ -642,37 +756,29 @@ internal class Program {
 		}
 	}
 
-	private static void TryCheckForUpdate(){
-		try {
-			new Thread(AppUpdater.CheckUpdate).Start();
-		}
-		catch (Exception) { }
-	}
-
-	private static void TryCheckUpdateOnStartCommand(){
-		IsCfgOpenCommand = OriginalArgs?.Length switch {
-								2 when OriginalArgs[0] == "cfg" && OriginalArgs[1] == "open" => true,
-								var _ => IsCfgOpenCommand
-							};
-
-		if (!IsCfgOpenCommand) {
-			bool needCheck = AutoUpdate;
-			if (needCheck) {
-				TryCheckForUpdate();
-			}
-		}
-	}
-
+	/// <summary>
+	/// Unlocks the maintainer package in the specified environment.
+	/// </summary>
+	/// <param name="environmentOptions">Environment options</param>
 	private static void UnlockMaintainerPackageInternal(EnvironmentOptions environmentOptions){
 		IPackageLockManager packageLockManager = Resolve<IPackageLockManager>(environmentOptions);
 		packageLockManager.Unlock();
 	}
 
+	/// <summary>
+	/// Unzips a package file to the default location.
+	/// </summary>
+	/// <param name="zipFilePath">Path to the zip file</param>
 	private static void UnZip(string zipFilePath){
 		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 		packageArchiver.UnZip(zipFilePath, true);
 	}
 
+	/// <summary>
+	/// Extracts packages from a zip file to the specified destination.
+	/// </summary>
+	/// <param name="zipFilePath">Path to the zip file containing packages</param>
+	/// <param name="destinationPath">Destination directory for extracted packages</param>
 	private static void UnZipPackages(string zipFilePath, string destinationPath){
 		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
 		packageArchiver.ExtractPackages(zipFilePath, true, true, true, false, destinationPath);
@@ -682,6 +788,11 @@ internal class Program {
 
 	#region Methods: Internal
 
+	/// <summary>
+	/// Downloads and optionally extracts packages from the Creatio environment.
+	/// </summary>
+	/// <param name="options">Options specifying which packages to download and how to process them</param>
+	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
 	internal static int DownloadZipPackages(PullPkgOptions options){
 		try {
 			SetupAppConnection(options);
@@ -711,6 +822,12 @@ internal class Program {
 		}
 	}
 
+	/// <summary>
+	/// Executes commands based on the provided command line arguments.
+	/// Sets up the command-line parser with appropriate settings and processes the arguments.
+	/// </summary>
+	/// <param name="args">Command line arguments to process</param>
+	/// <returns>Exit code from the executed command, or a parse error code</returns>
 	internal static int ExecuteCommands(string[] args){
 		CreatioEnvironment creatioEnv = new();
 		string helpFolderName = "help";
@@ -726,9 +843,17 @@ internal class Program {
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
 	}
 
+	/// <summary>
+	/// Resolves an instance of the specified type from the dependency injection container.
+	/// If needed, configures the environment settings based on the provided options.
+	/// </summary>
+	/// <typeparam name="T">Type to resolve from the container</typeparam>
+	/// <param name="options">Options used to configure the environment settings</param>
+	/// <param name="logAndSettings">If true, logs the environment URI</param>
+	/// <returns>Resolved instance of the specified type</returns>
 	internal static T Resolve<T>(object options = null, bool logAndSettings = false){
 		EnvironmentSettings settings = null;
-		if (options is EnvironmentOptions environmentOptions) {
+		if (options is EnvironmentOptions environmentOptions && !IsCfgOpenCommand) {
 			if (environmentOptions.RequiredEnvironment || !string.IsNullOrEmpty(environmentOptions.Uri)) {
 				settings = GetEnvironmentSettings(environmentOptions);
 			}
@@ -748,7 +873,6 @@ internal class Program {
 		if (useCreatioLogStreamer) {
 			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.Resolve<ILogStreamer>());
 		}
-		TryCheckUpdateOnStartCommand();
 		return Container.Resolve<T>();
 	}
 
@@ -756,6 +880,10 @@ internal class Program {
 
 	#region Methods: Public
 
+	/// <summary>
+	/// Checks the API version of the connected Creatio environment against the local API version.
+	/// Displays warning messages if the API is missing or outdated.
+	/// </summary>
 	public static void CheckApiVersion(){
 		string dir = AppDomain.CurrentDomain.BaseDirectory;
 		string versionFilePath = Path.Combine(dir, "cliogate", "version.txt");
@@ -774,6 +902,13 @@ internal class Program {
 		}
 	}
 
+	/// <summary>
+	/// Combines environment options from a file and from command line arguments,
+	/// giving priority to command line values when both are specified.
+	/// </summary>
+	/// <param name="optionFromFile">Environment options from a file</param>
+	/// <param name="optionsFromCommandLine">Environment options from the command line</param>
+	/// <returns>Combined environment options</returns>
 	public static EnvironmentOptions CombinedOption(EnvironmentOptions optionFromFile,
 		EnvironmentOptions optionsFromCommandLine){
 		if (optionFromFile == null && optionsFromCommandLine == null) {
@@ -797,6 +932,12 @@ internal class Program {
 		return optionsFromCommandLine;
 	}
 
+	/// <summary>
+	/// Reads environment options from a manifest file.
+	/// </summary>
+	/// <param name="manifestFilePath">Path to the manifest file</param>
+	/// <param name="fileSystem">Optional file system for reading the manifest file</param>
+	/// <returns>Environment options extracted from the manifest file</returns>
 	public static EnvironmentOptions ReadEnvironmentOptionsFromManifestFile(string manifestFilePath,
 		IFileSystem fileSystem = null){
 		IDeserializer deserializer = new DeserializerBuilder()
@@ -822,6 +963,11 @@ internal class Program {
 		return environmnetOptions;
 	}
 
+	/// <summary>
+	/// Sets up the connection to the Creatio application with the specified options.
+	/// </summary>
+	/// <param name="options">Environment options for connecting to the application</param>
+	/// <param name="checkEnvExist">If true, verifies that the environment exists before proceeding</param>
 	public static void SetupAppConnection(EnvironmentOptions options, bool checkEnvExist = false){
 		Configure(options, checkEnvExist);
 		CheckApiVersion();
