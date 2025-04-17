@@ -6,6 +6,7 @@ using Clio.Tests.Extensions;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
@@ -116,7 +117,7 @@ namespace Clio.Tests
 			FileSystem.MockExamplesFolder("deployments-manifest");
 			var manifestFileName = "full-creatio-config.yaml";
 			var environmentManager = Container.Resolve<IEnvironmentManager>();
-			var manifestFilePath = $"C:\\{manifestFileName}";
+			var manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
 			EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 			var commonFileSystem = new Clio.Common.FileSystem(FileSystem);
 			var environmentOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
@@ -130,11 +131,81 @@ namespace Clio.Tests
             FileSystem.MockExamplesFolder("deployments-manifest");
             var manifestFileName = "only-settings.yaml";
             var environmentManager = Container.Resolve<IEnvironmentManager>();
-            var manifestFilePath = $"C:\\{manifestFileName}";
+            var manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
             EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
             var commonFileSystem = new Clio.Common.FileSystem(FileSystem);
             var environmnetOptionsFromFile = Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
 			environmnetOptionsFromFile.Should().BeNull();
         }
+
+		[Test]
+		public void IsCfgOpenCommand_WithCfgOpenArguments_ShouldBeTrue()
+		{
+			// Arrange
+			string[] args = new[] { "cfg", "open" };
+			Program.IsCfgOpenCommand = false; // Reset the value before the test
+			
+			// Act
+			Program.Main(args);
+			
+			// Assert
+			Program.IsCfgOpenCommand.Should().BeTrue("because 'cfg' and 'open' arguments were provided");
+		}
+
+		[Test]
+		public void IsCfgOpenCommand_WithEmptyArguments_ShouldBeFalse()
+		{
+			// Arrange
+			string[] args = new string[0];
+			Program.IsCfgOpenCommand = false; // Reset the value before the test
+			
+			// Act
+			Program.Main(args);
+			
+			// Assert
+			Program.IsCfgOpenCommand.Should().BeFalse("because no arguments were provided");
+		}
+
+		[Test]
+		public void IsCfgOpenCommand_WithOnlyCfgArgument_ShouldBeFalse()
+		{
+			// Arrange
+			string[] args = new[] { "cfg" };
+			Program.IsCfgOpenCommand = false; // Reset the value before the test
+			
+			// Act
+			Program.Main(args);
+			
+			// Assert
+			Program.IsCfgOpenCommand.Should().BeFalse("because only 'cfg' argument was provided without 'open'");
+		}
+
+		[Test]
+		public void IsCfgOpenCommand_WithDifferentArguments_ShouldBeFalse()
+		{
+			// Arrange
+			string[] args = new[] { "other", "command" };
+			Program.IsCfgOpenCommand = false; // Reset the value before the test
+			
+			// Act
+			Program.Main(args);
+			
+			// Assert
+			Program.IsCfgOpenCommand.Should().BeFalse("because different arguments were provided instead of 'cfg' and 'open'");
+		}
+
+		[Test]
+		public void IsCfgOpenCommand_WithCfgAndDifferentSubcommand_ShouldBeFalse()
+		{
+			// Arrange
+			string[] args = new[] { "cfg", "other" };
+			Program.IsCfgOpenCommand = false; // Reset the value before the test
+			
+			// Act
+			Program.Main(args);
+			
+			// Assert
+			Program.IsCfgOpenCommand.Should().BeFalse("because 'cfg' was provided with a subcommand different from 'open'");
+		}
     }
 }

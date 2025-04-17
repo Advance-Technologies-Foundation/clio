@@ -668,7 +668,7 @@ internal class Program {
 	/// </summary>
 	/// <param name="args">Command line arguments</param>
 	/// <returns>Exit code indicating success (0) or failure (non-zero)</returns>
-	private static int Main(string[] args){
+	public static int Main(string[] args){
 		try {
 			string logTarget = string.Empty;
 			bool isLog = args.Contains("--log");
