@@ -2,14 +2,12 @@
 using Clio.Tests.Command;
 using NUnit.Framework;
 
-namespace Clio.Tests
+namespace Clio.Tests;
+
+[TestFixture]
+internal class DownloadAppCommandTests : BaseCommandTests<DownloadAppOptions>
 {
-	[TestFixture]
-	internal class DownloadAppCommandTests : BaseCommandTests<DownloadAppOptions>
-	{
 
 		
 
-	}
-	
 }

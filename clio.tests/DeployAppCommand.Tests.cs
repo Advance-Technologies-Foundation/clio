@@ -2,15 +2,13 @@
 using Clio.Tests.Command;
 using NUnit.Framework;
 
-namespace Clio.Tests
+namespace Clio.Tests;
+
+[TestFixture]
+internal class DeployAppCommandTests : BaseCommandTests<DeployAppOptions>
 {
-	[TestFixture]
-	internal class DeployAppCommandTests : BaseCommandTests<DeployAppOptions>
-	{
 
 
 
-
-	}
 
 }

@@ -7,108 +7,107 @@ using NSubstitute;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
 
-namespace Clio.Tests.Common
+namespace Clio.Tests.Common;
+
+[TestFixture]
+internal class ConsoleLoggerTests
 {
-	[TestFixture]
-	internal class ConsoleLoggerTests
-	{
 
-		[TestCase("inf")]
-		[TestCase("warn")]
-		[TestCase("error")]
-		public void WriteError_ShouldAddTimestamp(string type) {
+	[TestCase("inf")]
+	[TestCase("warn")]
+	[TestCase("error")]
+	public void WriteError_ShouldAddTimestamp(string type) {
 
-			// Arrange
-			Program.AddTimeStampToOutput = true;
-			var stringBuilder = new StringBuilder();
-			var textWriter = new System.IO.StringWriter(stringBuilder);
-			Console.SetOut(textWriter);
+		// Arrange
+		Program.AddTimeStampToOutput = true;
+		var stringBuilder = new StringBuilder();
+		var textWriter = new System.IO.StringWriter(stringBuilder);
+		Console.SetOut(textWriter);
 
-			var logger = ConsoleLogger.Instance;
+		var logger = ConsoleLogger.Instance;
 
-			// Act
-			var timeStamp = DateTime.Now;
-			logger.Start();
-			switch (type) {
-				case "inf":
-					logger.WriteInfo("Test info");
-					break;
-				case "warn":
-					logger.WriteWarning("Test warning");
-					break;
-				case "error":
-					logger.WriteError("Test error");
-					break;
-			}
-			Thread.Sleep(300);
-
-			// Assert
-			var consoleText = stringBuilder.ToString();
-			AssertTimeStamp(timeStamp, consoleText);
+		// Act
+		var timeStamp = DateTime.Now;
+		logger.Start();
+		switch (type) {
+			case "inf":
+				logger.WriteInfo("Test info");
+				break;
+			case "warn":
+				logger.WriteWarning("Test warning");
+				break;
+			case "error":
+				logger.WriteError("Test error");
+				break;
 		}
+		Thread.Sleep(300);
 
-		public void AssertTimeStamp(DateTime timeStamp, string consoleText) {
-			var consoleTimeStamp = DateTime.Parse(consoleText.Substring(0,8));
-			(consoleTimeStamp - timeStamp).Should().BeLessThan(TimeSpan.FromSeconds(1));
-		}
-
-		[TestCase("inf")]
-		[TestCase("warn")]
-		[TestCase("error")]
-		public void WriteError_ShouldNotAddTimestamp(string type) {
-
-			// Arrange
-			Program.AddTimeStampToOutput = false;
-			var stringBuilder = new StringBuilder();
-			var textWriter = new System.IO.StringWriter(stringBuilder);
-			Console.SetOut(textWriter);
-
-			var logger = ConsoleLogger.Instance;
-
-			// Act
-			logger.Start();
-			switch (type) {
-				case "inf":
-					logger.WriteInfo("Test info");
-					break;
-				case "warn":
-					logger.WriteWarning("Test warning");
-					break;
-				case "error":
-					logger.WriteError("Test error");
-					break;
-			}
-			Thread.Sleep(300);
-
-			// Assert
-			var consoleText = stringBuilder.ToString();
-			consoleText.Should().StartWith("[");
-		}
-
-		[Test]
-		public void Dispose_test() {
-			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
-			var mockLogFileWtiter = Substitute.For<System.IO.TextWriter>();
-			logger.LogFileWriter = mockLogFileWtiter;
-			logger.Dispose();
-			mockLogFileWtiter.Received().Dispose();
-		}
-
-		[Test]
-		public void Dispose_WhenLogFileWriterIsNull() {
-			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
-			logger.LogFileWriter = null;
-			Assert.DoesNotThrow(() => logger.Dispose());
-		}
-
-		[Test]
-		public void Dispose_Twice_WhenLogFileWriterIsNull() {
-			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
-			logger.LogFileWriter = Substitute.For<System.IO.TextWriter>();
-			logger.Dispose();
-			Assert.That(logger.LogFileWriter, Is.Null);
-			Assert.DoesNotThrow(() => logger.Dispose());
-		}
-
+		// Assert
+		var consoleText = stringBuilder.ToString();
+		AssertTimeStamp(timeStamp, consoleText);
 	}
+
+	public void AssertTimeStamp(DateTime timeStamp, string consoleText) {
+		var consoleTimeStamp = DateTime.Parse(consoleText.Substring(0,8));
+		(consoleTimeStamp - timeStamp).Should().BeLessThan(TimeSpan.FromSeconds(1));
+	}
+
+	[TestCase("inf")]
+	[TestCase("warn")]
+	[TestCase("error")]
+	public void WriteError_ShouldNotAddTimestamp(string type) {
+
+		// Arrange
+		Program.AddTimeStampToOutput = false;
+		var stringBuilder = new StringBuilder();
+		var textWriter = new System.IO.StringWriter(stringBuilder);
+		Console.SetOut(textWriter);
+
+		var logger = ConsoleLogger.Instance;
+
+		// Act
+		logger.Start();
+		switch (type) {
+			case "inf":
+				logger.WriteInfo("Test info");
+				break;
+			case "warn":
+				logger.WriteWarning("Test warning");
+				break;
+			case "error":
+				logger.WriteError("Test error");
+				break;
+		}
+		Thread.Sleep(300);
+
+		// Assert
+		var consoleText = stringBuilder.ToString();
+		consoleText.Should().StartWith("[");
+	}
+
+	[Test]
+	public void Dispose_test() {
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		var mockLogFileWtiter = Substitute.For<System.IO.TextWriter>();
+		logger.LogFileWriter = mockLogFileWtiter;
+		logger.Dispose();
+		mockLogFileWtiter.Received().Dispose();
+	}
+
+	[Test]
+	public void Dispose_WhenLogFileWriterIsNull() {
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		logger.LogFileWriter = null;
+		Assert.DoesNotThrow(() => logger.Dispose());
+	}
+
+	[Test]
+	public void Dispose_Twice_WhenLogFileWriterIsNull() {
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		logger.LogFileWriter = Substitute.For<System.IO.TextWriter>();
+		logger.Dispose();
+		Assert.That(logger.LogFileWriter, Is.Null);
+		Assert.DoesNotThrow(() => logger.Dispose());
+	}
+
 }

@@ -6,12 +6,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Clio.Tests
+namespace Clio.Tests;
+
+[TestFixture]
+internal class InstallWindowsFeatureTests: BaseCommandTests<ManageWindowsFeaturesOptions>
 {
-	[TestFixture]
-	internal class InstallWindowsFeatureTests: BaseCommandTests<ManageWindowsFeaturesOptions>
-	{
-	}
-
-
 }
