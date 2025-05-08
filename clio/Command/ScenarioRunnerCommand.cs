@@ -1,17 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.IO.Abstractions;
-using System.Linq;
-using System.Reflection;
-
+﻿using System;
 using Autofac;
+using Clio.Common;
 using CommandLine;
-using OneOf;
-using OneOf.Types;
-using YAML;
-using YamlDotNet.Serialization;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
+
 [Verb("run", Aliases = new[] { "run-scenario" }, HelpText = "Run scenario")]
 public class ScenarioRunnerOptions : EnvironmentOptions
 {
@@ -19,12 +13,12 @@ public class ScenarioRunnerOptions : EnvironmentOptions
     public string FileName { get; set; }
 }
 
-public class ScenarioRunnerCommand(IScenario scenario, Common.ILogger logger): Command<ScenarioRunnerOptions>
+public class ScenarioRunnerCommand(IScenario scenario, ILogger logger) : Command<ScenarioRunnerOptions>
 {
-    internal IFileSystem FileSystem { get; set; }
+    private readonly ILogger _logger = logger;
 
     private readonly IScenario _scenario = scenario;
-    private readonly Common.ILogger _logger = logger;
+    internal IFileSystem FileSystem { get; set; }
 
     public override int Execute(ScenarioRunnerOptions options)
     {
@@ -40,7 +34,7 @@ public class ScenarioRunnerCommand(IScenario scenario, Common.ILogger logger): C
                 {
                     if (!string.IsNullOrWhiteSpace(stepOptions.Environment))
                     {
-                        SettingsRepository settingsRepository = new (FileSystem);
+                        SettingsRepository settingsRepository = new(FileSystem);
                         EnvironmentSettings settings = settingsRepository.FindEnvironment(stepOptions.Environment);
                         IContainer container = new BindingsModule().Register(settings);
                         Program.Container = container;

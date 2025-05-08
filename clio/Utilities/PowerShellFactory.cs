@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Security;
@@ -16,17 +16,17 @@ public interface IPowerShellFactory : IDisposable
 
 public class PowerShellFactory : IPowerShellFactory
 {
-    private bool _disposed = false;
-    private string _userName;
+    private bool _disposed;
     private string _password;
-
-    public string ComputerName { get; private set; }
+    private string _userName;
 
     private Runspace Runspace { get; set; }
 
     private SecureString SecureString { get; set; }
 
     private WSManConnectionInfo ConnectionInfo { get; set; }
+
+    public string ComputerName { get; private set; }
 
     public void Initialize(string userName, string password, string computerName)
     {
@@ -35,46 +35,6 @@ public class PowerShellFactory : IPowerShellFactory
         ComputerName = computerName ?? "localhost";
         CreateConnectionInfo();
         CreateRunspace();
-    }
-
-    private void CreateConnectionInfo()
-    {
-        AuthenticationMechanism _authenticationMechanism = ComputerName == "localhost"
-            ? AuthenticationMechanism.Default
-            : AuthenticationMechanism.Kerberos;
-        if (string.IsNullOrEmpty(_userName) && string.IsNullOrEmpty(_password))
-        {
-            ConnectionInfo = new WSManConnectionInfo
-            {
-                ComputerName = ComputerName,
-                AuthenticationMechanism = AuthenticationMechanism.Default
-            };
-        }
-        else
-        {
-            SecureString = new SecureString();
-            foreach (char c in _password)
-            {
-                SecureString.AppendChar(c);
-            }
-
-            PSCredential creds = new (_userName, SecureString);
-            ConnectionInfo = new WSManConnectionInfo
-            {
-                Credential = creds,
-                ComputerName = ComputerName,
-                AuthenticationMechanism = _authenticationMechanism
-            };
-        }
-    }
-
-    private void CreateRunspace()
-    {
-        Runspace = RunspaceFactory.CreateRunspace(ConnectionInfo);
-        Runspace.Open();
-        while (Runspace.RunspaceStateInfo.State != RunspaceState.Opened)
-        {
-        }
     }
 
     public PowerShell GetInstance()
@@ -93,6 +53,43 @@ public class PowerShellFactory : IPowerShellFactory
     {
         Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    private void CreateConnectionInfo()
+    {
+        AuthenticationMechanism _authenticationMechanism = ComputerName == "localhost"
+            ? AuthenticationMechanism.Default
+            : AuthenticationMechanism.Kerberos;
+        if (string.IsNullOrEmpty(_userName) && string.IsNullOrEmpty(_password))
+        {
+            ConnectionInfo = new WSManConnectionInfo
+            {
+                ComputerName = ComputerName, AuthenticationMechanism = AuthenticationMechanism.Default
+            };
+        }
+        else
+        {
+            SecureString = new SecureString();
+            foreach (char c in _password)
+            {
+                SecureString.AppendChar(c);
+            }
+
+            PSCredential creds = new(_userName, SecureString);
+            ConnectionInfo = new WSManConnectionInfo
+            {
+                Credential = creds, ComputerName = ComputerName, AuthenticationMechanism = _authenticationMechanism
+            };
+        }
+    }
+
+    private void CreateRunspace()
+    {
+        Runspace = RunspaceFactory.CreateRunspace(ConnectionInfo);
+        Runspace.Open();
+        while (Runspace.RunspaceStateInfo.State != RunspaceState.Opened)
+        {
+        }
     }
 
     protected virtual void Dispose(bool disposing)

@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
-
 using Clio.Project.NuGet;
 using Clio.Workspaces;
 
@@ -15,23 +14,45 @@ public interface INugetMaterializer
     public int Materialize(string packageName);
 }
 
-public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem,
-    ILogger logger, IProcessExecutor processExecutor, IPropsBuilder propsBuilder): INugetMaterializer
+public class NugetMaterializer(
+    IWorkspacePathBuilder workspacePathBuilder,
+    IFileSystem fileSystem,
+    ILogger logger,
+    IProcessExecutor processExecutor,
+    IPropsBuilder propsBuilder) : INugetMaterializer
 {
     private const string Tag = "PackageReference";
-    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
     private readonly IFileSystem _fileSystem = fileSystem;
     private readonly ILogger _logger = logger;
     private readonly IProcessExecutor _processExecutor = processExecutor;
     private readonly IPropsBuilder _propsBuilder = propsBuilder;
-    private string _csprojPath;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
     private XDocument _csproj;
+    private string _csprojPath;
 
+    public int Materialize(string packageName)
+    {
+        _csprojPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
+        string xmlContent = GetXmlContent(_csprojPath);
+        IEnumerable<XElement> elements = FindNugetReferences(xmlContent);
+        IEnumerable<XElement> xElements = elements as XElement[] ?? elements.ToArray();
+        if (!xElements.Any())
+        {
+            _logger.WriteWarning($"Could not find any {Tag} references in the {_csprojPath} file");
+            return 1;
+        }
 
+        CreateNugetProjectIfNotExists(packageName);
+        AddNugetReferences(packageName, xElements);
+        BuildNugetProject(packageName);
+        _propsBuilder.Build(packageName);
+        UpdateCsProjFile(packageName, xElements);
+        return 0;
+    }
 
 
     /// <summary>
-    /// Adds PackageReference to the Nuget project.
+    ///     Adds PackageReference to the Nuget project.
     /// </summary>
     /// <param name="packageName">Package to add to.</param>
     /// <param name="xElements">Collection of NugetPackages to add.</param>
@@ -49,13 +70,13 @@ public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFile
     }
 
     /// <summary>
-    /// Produces the following structure: <br/>
-    /// ┗ 📂pkg1 <br/>
-    /// ┃ ┣ 📂bin <br/>
-    /// ┃ ┃ ┣ 📂net472 <br/>
-    /// ┃ ┃ ┗ 📂netstandard <br/>
-    /// ┃ ┣ 📂obj <br/>
-    /// ┃ ┃ ┣ 📂Release. <br/>
+    ///     Produces the following structure: <br />
+    ///     ┗ 📂pkg1 <br />
+    ///     ┃ ┣ 📂bin <br />
+    ///     ┃ ┃ ┣ 📂net472 <br />
+    ///     ┃ ┃ ┗ 📂netstandard <br />
+    ///     ┃ ┣ 📂obj <br />
+    ///     ┃ ┃ ┣ 📂Release. <br />
     /// </summary>
     /// <param name="packageName">Name of the package to build.</param>
     private void BuildNugetProject(string packageName) =>
@@ -113,8 +134,8 @@ public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFile
                 continue;
             }
 
-            PackageVersion packageVersion = new (parsedVersion, string.Empty);
-            NugetPackage item = new (name, packageVersion);
+            PackageVersion packageVersion = new(parsedVersion, string.Empty);
+            NugetPackage item = new(name, packageVersion);
             list.Add(item);
         }
 
@@ -140,7 +161,7 @@ public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFile
         foreach (XElement element in xElements)
         {
             needsBackUp = true;
-            XComment comment = new (element.ToString());
+            XComment comment = new(element.ToString());
             element.ReplaceWith(comment);
         }
 
@@ -153,7 +174,7 @@ public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFile
 
         if (!importElementsNet472.Any())
         {
-            XElement importElementNet472 = new ("Import");
+            XElement importElementNet472 = new("Import");
             importElementNet472.SetAttributeValue("Condition", "'$(TargetFramework)' == 'net472'");
             importElementNet472.SetAttributeValue("Project", $"{packageName}-net472.nuget.props");
 
@@ -176,7 +197,7 @@ public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFile
 
         if (!importElementsNetStandard.Any())
         {
-            XElement importElementNetStandard = new ("Import");
+            XElement importElementNetStandard = new("Import");
             importElementNetStandard.SetAttributeValue("Condition", "'$(TargetFramework)' == 'netstandard2.0'");
             importElementNetStandard.SetAttributeValue("Project", $"{packageName}-netstandard.nuget.props");
 
@@ -198,25 +219,5 @@ public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFile
         _logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
         _fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
         _csproj.Save(_csprojPath);
-    }
-
-    public int Materialize(string packageName)
-    {
-        _csprojPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
-        string xmlContent = GetXmlContent(_csprojPath);
-        IEnumerable<XElement> elements = FindNugetReferences(xmlContent);
-        IEnumerable<XElement> xElements = elements as XElement[] ?? elements.ToArray();
-        if (!xElements.Any())
-        {
-            _logger.WriteWarning($"Could not find any {Tag} references in the {_csprojPath} file");
-            return 1;
-        }
-
-        CreateNugetProjectIfNotExists(packageName);
-        AddNugetReferences(packageName, xElements);
-        BuildNugetProject(packageName);
-        _propsBuilder.Build(packageName);
-        UpdateCsProjFile(packageName, xElements);
-        return 0;
     }
 }

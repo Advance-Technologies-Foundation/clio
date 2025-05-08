@@ -1,23 +1,19 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
 using Newtonsoft.Json.Linq;
 
-using static CreatioModel.SysSettings;
-
 namespace Clio.Common;
 
 public interface ISysSettingsManager
 {
-
     /// <summary>
     ///     Retrieves the value of a system setting by its code.
     /// </summary>
@@ -58,18 +54,17 @@ public interface ISysSettingsManager
 public class SysSettingsManager : ISysSettingsManager
 {
     private readonly IApplicationClient _creatioClient;
-    private readonly IServiceUrlBuilder _serviceUrlBuilder;
     private readonly IDataProvider _dataProvider;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _filesystem;
-    private readonly ILogger _logger;
 
-    private readonly JsonSerializerOptions _jsonSerializerOptions = new ()
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
-        WriteIndented = false,
-        AllowTrailingCommas = false,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        WriteIndented = false, AllowTrailingCommas = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    private readonly ILogger _logger;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public SysSettingsManager(
         IApplicationClient creatioClient,
@@ -85,92 +80,6 @@ public class SysSettingsManager : ISysSettingsManager
     }
 
     public SysSettingsManager(IDataProvider providerMock) => _dataProvider = providerMock;
-
-    private static object ConvertToBool(string value)
-    {
-        bool isBool = bool.TryParse(value, out bool boolValue);
-        return isBool
-            ? (object)boolValue
-            : throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
-    }
-
-    private static object ConvertToDateTime(string value)
-    {
-        bool isDateTime = DateTime.TryParse(value, out DateTime dtValue);
-        return isDateTime
-            ? (object)dtValue
-            : throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
-    }
-
-    private static object ConvertToDate(string value)
-    {
-        bool isDateTime = DateTime.TryParse(value, out DateTime dateValue);
-        return isDateTime
-            ? (object)dateValue.Date
-            : throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
-    }
-
-    private static object ConvertToDecimal(string value)
-    {
-        bool isDecimal = decimal.TryParse(value, out decimal decValue);
-        return isDecimal
-            ? (object)decValue
-            : throw new InvalidCastException($"Could not convert {value} to {nameof(Decimal)}");
-    }
-
-    private static object ConvertToGuid(string value)
-    {
-        bool isGuid = Guid.TryParse(value, out Guid decValue);
-        return isGuid
-            ? (object)decValue
-            : throw new InvalidCastException($"Could not convert {value} to {nameof(Guid)}");
-    }
-
-    private static object ConvertToInt(string value)
-    {
-        const NumberStyles style = NumberStyles.Integer | NumberStyles.AllowThousands;
-        CultureInfo provider = new ("en-US"); // Should probably get culture from creatio
-        bool isInt = int.TryParse(value, style, provider, out int intValue);
-        return isInt
-            ? (object)intValue
-            : throw new InvalidCastException($"Could not convert {value} to to {nameof(Int32)}");
-    }
-
-    private Guid GetEntityIdByDisplayValue(string entityName, string optsValue)
-    {
-        string jsonFilePath = Path.Join(
-            _workingDirectoriesProvider.TemplateDirectory, "dataservice-requests", "selectIdByDisplayValue.json");
-
-        string jsonContent = _filesystem.ReadAllText(jsonFilePath);
-        jsonContent = jsonContent.Replace("{{rootSchemaName}}", entityName);
-        jsonContent = jsonContent.Replace("{{diplayvalue}}", optsValue);
-
-        string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-        string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, jsonContent);
-        JObject json = JObject.Parse(responseJson);
-        string jsonPath = "$.rows[0].Id";
-        string id = (string)json.SelectToken(jsonPath);
-        bool isGuid = Guid.TryParse(id, out Guid value);
-        return isGuid ? value : Guid.Empty;
-    }
-
-    private string GetSysSchemaNameByUid(Guid uid)
-    {
-        SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
-            .Models<SysSchema>()
-            .Where(i => i.UId == uid)
-            .ToList().FirstOrDefault();
-        return sysSchema.Name;
-    }
-
-    private SysSettings GetSysSettingByCode(string code)
-    {
-        SysSettings sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
-            .Models<SysSettings>()
-            .Where(i => i.Code == code)
-            .ToList().FirstOrDefault();
-        return sysSetting;
-    }
 
     public string GetSysSettingValueByCode(string code)
     {
@@ -294,14 +203,14 @@ public class SysSettingsManager : ISysSettingsManager
         List<SysSettings> sysSettings =
         [
             .. AppDataContextFactory.GetAppDataContext(_dataProvider)
-                        .Models<SysSettings>()
-                        .Where(s => s.ValueTypeName != "Binary"),
+                .Models<SysSettings>()
+                .Where(s => s.ValueTypeName != "Binary")
         ];
 
         List<SysSettingsValue> sysSettingsValues =
         [
             .. AppDataContextFactory.GetAppDataContext(_dataProvider)
-                        .Models<SysSettingsValue>(),
+                .Models<SysSettingsValue>()
         ];
         foreach (SysSettings sysSetting in sysSettings)
         {
@@ -312,6 +221,92 @@ public class SysSettingsManager : ISysSettingsManager
         }
 
         return sysSettings;
+    }
+
+    private static object ConvertToBool(string value)
+    {
+        bool isBool = bool.TryParse(value, out bool boolValue);
+        return isBool
+            ? (object)boolValue
+            : throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
+    }
+
+    private static object ConvertToDateTime(string value)
+    {
+        bool isDateTime = DateTime.TryParse(value, out DateTime dtValue);
+        return isDateTime
+            ? (object)dtValue
+            : throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
+    }
+
+    private static object ConvertToDate(string value)
+    {
+        bool isDateTime = DateTime.TryParse(value, out DateTime dateValue);
+        return isDateTime
+            ? (object)dateValue.Date
+            : throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
+    }
+
+    private static object ConvertToDecimal(string value)
+    {
+        bool isDecimal = decimal.TryParse(value, out decimal decValue);
+        return isDecimal
+            ? (object)decValue
+            : throw new InvalidCastException($"Could not convert {value} to {nameof(Decimal)}");
+    }
+
+    private static object ConvertToGuid(string value)
+    {
+        bool isGuid = Guid.TryParse(value, out Guid decValue);
+        return isGuid
+            ? (object)decValue
+            : throw new InvalidCastException($"Could not convert {value} to {nameof(Guid)}");
+    }
+
+    private static object ConvertToInt(string value)
+    {
+        const NumberStyles style = NumberStyles.Integer | NumberStyles.AllowThousands;
+        CultureInfo provider = new("en-US"); // Should probably get culture from creatio
+        bool isInt = int.TryParse(value, style, provider, out int intValue);
+        return isInt
+            ? (object)intValue
+            : throw new InvalidCastException($"Could not convert {value} to to {nameof(Int32)}");
+    }
+
+    private Guid GetEntityIdByDisplayValue(string entityName, string optsValue)
+    {
+        string jsonFilePath = Path.Join(
+            _workingDirectoriesProvider.TemplateDirectory, "dataservice-requests", "selectIdByDisplayValue.json");
+
+        string jsonContent = _filesystem.ReadAllText(jsonFilePath);
+        jsonContent = jsonContent.Replace("{{rootSchemaName}}", entityName);
+        jsonContent = jsonContent.Replace("{{diplayvalue}}", optsValue);
+
+        string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
+        string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, jsonContent);
+        JObject json = JObject.Parse(responseJson);
+        string jsonPath = "$.rows[0].Id";
+        string id = (string)json.SelectToken(jsonPath);
+        bool isGuid = Guid.TryParse(id, out Guid value);
+        return isGuid ? value : Guid.Empty;
+    }
+
+    private string GetSysSchemaNameByUid(Guid uid)
+    {
+        SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
+            .Models<SysSchema>()
+            .Where(i => i.UId == uid)
+            .ToList().FirstOrDefault();
+        return sysSchema.Name;
+    }
+
+    private SysSettings GetSysSettingByCode(string code)
+    {
+        SysSettings sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
+            .Models<SysSettings>()
+            .Where(i => i.Code == code)
+            .ToList().FirstOrDefault();
+        return sysSetting;
     }
 
     internal record GetSettingRequestData(string code);
@@ -549,36 +544,13 @@ public sealed class Lookup : CreatioSysSetting
 
 public abstract class CreatioSysSetting
 {
-    private static readonly JsonSerializerOptions JsonSerializerOptions = new ()
+    private static readonly JsonSerializerOptions JsonSerializerOptions = new()
     {
         WriteIndented = false,
         AllowTrailingCommas = false,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-
-    [JsonPropertyName("valueTypeName")]
-    public abstract string ValueTypeName { get; }
-
-    [JsonPropertyName("code")]
-    public string Code { get; set; }
-
-    [JsonPropertyName("description")]
-    public string Description { get; set; }
-
-    [JsonPropertyName("isCacheable")]
-    public bool IsCacheable { get; set; }
-
-    [JsonPropertyName("isPersonal")]
-    public bool IsPersonal { get; set; }
-
-    [JsonPropertyName("name")]
-    public string Name { get; set; }
-
-    [JsonPropertyName("value")]
-    public string Value { get; set; }
-
-    public override string ToString() => JsonSerializer.Serialize(this, JsonSerializerOptions);
 
     private protected CreatioSysSetting(string name, string code, string value, bool isCacheable, string description,
         bool isPersonal)
@@ -601,4 +573,20 @@ public abstract class CreatioSysSetting
         Description = description;
         IsPersonal = isPersonal;
     }
+
+    [JsonPropertyName("valueTypeName")] public abstract string ValueTypeName { get; }
+
+    [JsonPropertyName("code")] public string Code { get; set; }
+
+    [JsonPropertyName("description")] public string Description { get; set; }
+
+    [JsonPropertyName("isCacheable")] public bool IsCacheable { get; set; }
+
+    [JsonPropertyName("isPersonal")] public bool IsPersonal { get; set; }
+
+    [JsonPropertyName("name")] public string Name { get; set; }
+
+    [JsonPropertyName("value")] public string Value { get; set; }
+
+    public override string ToString() => JsonSerializer.Serialize(this, JsonSerializerOptions);
 }

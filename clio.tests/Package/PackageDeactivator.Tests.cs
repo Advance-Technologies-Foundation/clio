@@ -1,5 +1,4 @@
 using System;
-
 using Clio.Common.Responses;
 using Clio.Package;
 using NSubstitute;
@@ -32,7 +31,7 @@ public class PackageDeactivatorTestCase : BasePackageOperationTestCase
         const string fullUrl = "TestUrl";
         SetupBuildUrl("/ServiceModel/PackageService.svc/DeactivatePackage", fullUrl);
         applicationClient.ExecutePostRequest<BaseResponse>(
-            fullUrl,
+                fullUrl,
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = true });
         Assert.DoesNotThrow(() => _packageDeactivator.Deactivate(packageName));
@@ -54,7 +53,7 @@ public class PackageDeactivatorTestCase : BasePackageOperationTestCase
         const string errorMessage = "Some error";
         SetupGetPackagesResponse(CreatePackageInfo(packageName, packageUId));
         applicationClient.ExecutePostRequest<BaseResponse>(
-            Arg.Any<string>(),
+                Arg.Any<string>(),
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage } });
 

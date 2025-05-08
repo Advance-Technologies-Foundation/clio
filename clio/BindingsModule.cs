@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Reflection;
-
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
@@ -27,7 +26,6 @@ using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
-
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -41,7 +39,7 @@ public class BindingsModule(IFileSystem fileSystem = null)
         EnvironmentSettings settings = null,
         Action<ContainerBuilder> additionalRegistrations = null)
     {
-        ContainerBuilder containerBuilder = new ();
+        ContainerBuilder containerBuilder = new();
 
         containerBuilder
             .RegisterAssemblyTypes(Assembly.GetExecutingAssembly())

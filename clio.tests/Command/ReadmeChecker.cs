@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-
 using Castle.Core.Internal;
 using CommandLine;
 
@@ -10,40 +9,43 @@ namespace Clio.Tests.Command;
 
 public class ReadmeChecker
 {
-    private readonly string _readmeContent = File.ReadAllText(ReadmeFilePath);
-    private readonly IEnumerable<string> _wikiAnchorsContent = File.ReadAllLines(WikiAnchorsFilePath);
     private const string ReadmeFilePath = @"..\..\..\..\clio\Commands.md";
     private const string WikiAnchorsFilePath = @"..\..\..\..\clio\Wiki\WikiAnchors.txt";
 
-    private readonly Func<string, string> _convertCommandNameToSection = (commandName) =>
+    private readonly Func<string, string> _convertCommandNameToSection = commandName =>
     {
         List<string> commandWords =
         [
             .. commandName
-                        .Replace("-", " ")
-                        .Split(' '),
+                .Replace("-", " ")
+                .Split(' ')
         ];
         string expectedSectionName = "## " + string.Join(' ', commandWords);
         return expectedSectionName;
     };
 
     private readonly IList<string> _namesToCheck = new List<string>();
+    private readonly string _readmeContent = File.ReadAllText(ReadmeFilePath);
+    private readonly IEnumerable<string> _wikiAnchorsContent = File.ReadAllLines(WikiAnchorsFilePath);
 
     /// <summary>
-    /// Determines whether the specified command option type is represented in the README file.
+    ///     Determines whether the specified command option type is represented in the README file.
     /// </summary>
     /// <remarks>
-    /// This method first checks if the command opt ion typeis marked as hidden by the VerbAttribute.
-    /// If it is not hidden, the method then checks if any of the associated names (derived from the command option type)
-    /// are present in the README content, using a case-insensitive comparison.
+    ///     This method first checks if the command opt ion typeis marked as hidden by the VerbAttribute.
+    ///     If it is not hidden, the method then checks if any of the associated names (derived from the command option type)
+    ///     are present in the README content, using a case-insensitive comparison.
     /// </remarks>
-    /// <param name="commandOptionType">The Type of the command option to check. This should be a class type where VerbAttribute might be applied.</param>
+    /// <param name="commandOptionType">
+    ///     The Type of the command option to check. This should be a class type where
+    ///     VerbAttribute might be applied.
+    /// </param>
     /// <returns>
-    /// True if the command option type is either marked as hidden by VerbAttribute,
-    /// or if any associated names are found in the README content; otherwise, false.
+    ///     True if the command option type is either marked as hidden by VerbAttribute,
+    ///     or if any associated names are found in the README content; otherwise, false.
     /// </returns>
     /// <example>
-    /// <code>
+    ///     <code>
     /// Type commandType = typeof(MyCommandOption);
     /// bool isInReadme = IsInReadme(commandType);
     /// </code>
@@ -71,7 +73,7 @@ public class ReadmeChecker
     private void PopulateListToCheck(Type t)
     {
         string commandVerbName = t.GetAttribute<VerbAttribute>().Name;
-        List<string> aliases = t.GetAttribute<VerbAttribute>().Aliases?.ToList() ??[];
+        List<string> aliases = t.GetAttribute<VerbAttribute>().Aliases?.ToList() ?? [];
         aliases.Add(commandVerbName);
 
         // Add Verb

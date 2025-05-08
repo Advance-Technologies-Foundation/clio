@@ -1,9 +1,10 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Common;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
+
 [TestFixture]
 public class RestartCommandTestCase
 {
@@ -14,7 +15,7 @@ public class RestartCommandTestCase
     {
         // Arrange
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-        EnvironmentSettings environmentSettings = new ()
+        EnvironmentSettings environmentSettings = new()
         {
             Login = "Test",
             Password = "Test",
@@ -22,8 +23,8 @@ public class RestartCommandTestCase
             Maintainer = "Test",
             Uri = "http://test.domain.com"
         };
-        RestartCommand restartCommand = new (applicationClient, environmentSettings);
-        RestartOptions options = new ();
+        RestartCommand restartCommand = new(applicationClient, environmentSettings);
+        RestartOptions options = new();
 
         // Act
         restartCommand.Execute(options);
@@ -31,7 +32,7 @@ public class RestartCommandTestCase
         // Assert
         applicationClient.Received(1).ExecutePostRequest(
             environmentSettings.Uri + "/0/ServiceModel/AppInstallerService.svc/UnloadAppDomain",
-            "{}", 100_000, 3, 1);
+            "{}", 100_000, 3);
     }
 
     [Test]
@@ -41,7 +42,7 @@ public class RestartCommandTestCase
     {
         // Arrange
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-        EnvironmentSettings environmentSettings = new ()
+        EnvironmentSettings environmentSettings = new()
         {
             Login = "Test",
             Password = "Test",
@@ -49,8 +50,8 @@ public class RestartCommandTestCase
             Maintainer = "Test",
             Uri = "http://test.domain.com"
         };
-        RestartCommand restartCommand = new (applicationClient, environmentSettings);
-        RestartOptions options = new ();
+        RestartCommand restartCommand = new(applicationClient, environmentSettings);
+        RestartOptions options = new();
 
         // Act
         restartCommand.Execute(options);
@@ -58,6 +59,6 @@ public class RestartCommandTestCase
         // Assert
         applicationClient.Received(1).ExecutePostRequest(
             environmentSettings.Uri + "/ServiceModel/AppInstallerService.svc/RestartApp",
-            "{}", 100_000, 3, 1);
+            "{}", 100_000, 3);
     }
 }

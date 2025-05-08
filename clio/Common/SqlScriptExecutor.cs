@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Newtonsoft.Json;
 
 namespace Clio.Common;
@@ -7,19 +6,6 @@ namespace Clio.Common;
 public class SqlScriptExecutor : ISqlScriptExecutor
 {
     private static string ExecuteSqlScriptUrl => @"/rest/CreatioApiGateway/ExecuteSqlScript";
-
-    private string CorrectJson(string body)
-    {
-        body = body.Replace("\\\\r\\\\n", Environment.NewLine);
-        body = body.Replace("\\\\n", Environment.NewLine);
-        body = body.Replace("\\r\\n", Environment.NewLine);
-        body = body.Replace("\\n", Environment.NewLine);
-        body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
-        body = body.Replace("\\\"", "\"");
-        body = body.Replace("\\\\", "\\");
-        body = body.Trim(['\"']);
-        return body;
-    }
 
     public string Execute(string sql, IApplicationClient applicationClient, EnvironmentSettings settings)
     {
@@ -32,5 +18,18 @@ public class SqlScriptExecutor : ISqlScriptExecutor
             endpointUri,
             serializedRequestPayload);
         return CorrectJson(responseFormServer);
+    }
+
+    private string CorrectJson(string body)
+    {
+        body = body.Replace("\\\\r\\\\n", Environment.NewLine);
+        body = body.Replace("\\\\n", Environment.NewLine);
+        body = body.Replace("\\r\\n", Environment.NewLine);
+        body = body.Replace("\\n", Environment.NewLine);
+        body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
+        body = body.Replace("\\\"", "\"");
+        body = body.Replace("\\\\", "\\");
+        body = body.Trim(['\"']);
+        return body;
     }
 }

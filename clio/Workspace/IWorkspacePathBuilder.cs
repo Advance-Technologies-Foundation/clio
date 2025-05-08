@@ -39,7 +39,7 @@ public interface IWorkspacePathBuilder
     string BuildPackagePath(string packageName);
 
     /// <summary>
-    /// Path to csproj file of package.
+    ///     Path to csproj file of package.
     /// </summary>
     /// <param name="packageName"></param>
     /// <returns></returns>

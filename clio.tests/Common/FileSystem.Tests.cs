@@ -1,16 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
-using System.Text;
-
 using Clio.Common;
 using FluentAssertions;
 using FluentAssertions.Specialized;
 using NSubstitute;
 using NUnit.Framework;
-
 using Ms = System.IO.Abstractions;
 
 namespace Clio.Tests.Common;
@@ -22,7 +19,7 @@ public class FileSystemTests
     private readonly Ms.IFileSystem _msFileSystem;
     private readonly Ms.IFileSystem _mockFileSystem;
 
-    private readonly Dictionary<string, MockFileData> _mockFileData = new ()
+    private readonly Dictionary<string, MockFileData> _mockFileData = new()
     {
         { "first.cs", "some cs content" },
         { "second.cs", "other content" },
@@ -174,7 +171,7 @@ public class FileSystemTests
         // Arrange
         const string path = "path2/to/nonexistent/link";
         const string targetPath = "path2/to/target";
-        Dictionary<string, MockFileData> mfd =[];
+        Dictionary<string, MockFileData> mfd = [];
         Ms.IFileSystem fs = new MockFileSystem(mfd);
         fs.Directory.CreateDirectory(path);
         fs.Directory.CreateDirectory(targetPath);
@@ -183,7 +180,7 @@ public class FileSystemTests
         Action act = () => new FileSystem(fs).CreateDirectorySymLink(path, targetPath);
         act.Invoking(a => a()).Should()
             .Throw<IOException>()
-            .WithMessage($"The file 'path' already exists.");
+            .WithMessage("The file 'path' already exists.");
     }
 
     [Test]
@@ -192,7 +189,7 @@ public class FileSystemTests
         // Arrange
         const string fileName = "file.cs";
         const string expected = "file";
-        MockFileSystem mockFs = new ();
+        MockFileSystem mockFs = new();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", fileName));
 
@@ -210,7 +207,7 @@ public class FileSystemTests
         // Arrange
         const string fileName = "file.cs";
         const string expected = ".cs";
-        MockFileSystem mockFs = new ();
+        MockFileSystem mockFs = new();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", fileName));
 
@@ -226,7 +223,7 @@ public class FileSystemTests
     public void GetFiles_ReturnsFiles_WhenDirectoryIsValid()
     {
         // Arrange
-        MockFileSystem mockFs = new ();
+        MockFileSystem mockFs = new();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", "first.cs"));
         mockFs.File.Create(Path.Join("path", "to", "second.cs"));
@@ -241,18 +238,15 @@ public class FileSystemTests
         Ms.IDriveInfo drive = mockFs.DriveInfo.GetDrives().FirstOrDefault();
 
         // Assert
-        actual.Should().BeEquivalentTo(new[]
-        {
-            Path.Join(drive!.Name, "path", "to", "first.cs"), Path.Join(drive.Name, "path", "to", "second.cs"),
-            Path.Join(drive.Name, "path", "to", "third.cs")
-        });
+        actual.Should().BeEquivalentTo(Path.Join(drive!.Name, "path", "to", "first.cs"),
+            Path.Join(drive.Name, "path", "to", "second.cs"), Path.Join(drive.Name, "path", "to", "third.cs"));
     }
 
     [Test]
     public void GetFiles_WithPattern_ReturnsFiles_WhenDirectoryIsValid()
     {
         // Arrange
-        MockFileSystem mockFs = new ();
+        MockFileSystem mockFs = new();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", "first.cs"));
         mockFs.File.Create(Path.Join("path", "to", "second.cs"));
@@ -272,7 +266,7 @@ public class FileSystemTests
     public void GetFiles_WithPattern2_ReturnsFiles_WhenDirectoryIsValid()
     {
         // Arrange
-        MockFileSystem mockFs = new ();
+        MockFileSystem mockFs = new();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", "first.cs"));
         mockFs.File.Create(Path.Join("path", "to", "second.cs"));
@@ -287,11 +281,8 @@ public class FileSystemTests
         Ms.IDriveInfo drive = mockFs.DriveInfo.GetDrives().FirstOrDefault();
 
         // Assert
-        actual.Should().BeEquivalentTo(new[]
-        {
-            Path.Join(drive!.Name, "path", "to", "first.cs"), Path.Join(drive.Name, "path", "to", "second.cs"),
-            Path.Join(drive.Name, "path", "to", "third.cs")
-        });
+        actual.Should().BeEquivalentTo(Path.Join(drive!.Name, "path", "to", "first.cs"),
+            Path.Join(drive.Name, "path", "to", "second.cs"), Path.Join(drive.Name, "path", "to", "third.cs"));
     }
 
     [Test]
@@ -363,7 +354,7 @@ public class FileSystemTests
     public void CopyFiles_Throws_When_DestinationDirectoryEmpty()
     {
         // Arrange
-        List<string> filesPaths =["file1.txt", "file2.txt", "file3.txt"];
+        List<string> filesPaths = ["file1.txt", "file2.txt", "file3.txt"];
         const string destinationDirectory = null;
         const bool overwrite = true;
         Ms.IFileSystem mockFs = Substitute.For<Ms.IFileSystem>();
@@ -393,7 +384,7 @@ public class FileSystemTests
 
         foreach (string filesPath in mockFileDataAccessor.AllFiles)
         {
-            MockFileInfo mfi = new (mockFileDataAccessor, filesPath);
+            MockFileInfo mfi = new(mockFileDataAccessor, filesPath);
             mockFileInfoFactory.New(filesPath).Returns(mfi);
         }
 
@@ -525,7 +516,7 @@ public class FileSystemTests
     {
         // Arrange
         const string directoryPath = "path_to";
-        Dictionary<string, MockFileData> mockFileData = new ()
+        Dictionary<string, MockFileData> mockFileData = new()
         {
             { "first.cs", "some cs content" }, { "second.cs", "other content" }, { "readonly.cs", "some content" }
         };
@@ -549,7 +540,7 @@ public class FileSystemTests
         // Arrange
         const string directoryName = "dir";
         const string subDirectoryName = "subDir";
-        Dictionary<string, MockFileData> mockFileData = new ()
+        Dictionary<string, MockFileData> mockFileData = new()
         {
             { "first.cs", "some cs content" }, { "second.cs", "other content" }, { "readonly.cs", "some content" }
         };
@@ -561,7 +552,7 @@ public class FileSystemTests
         // Act
         subDir.GetFiles().Should().NotBeEmpty();
 
-        FileSystem sut = new (fs);
+        FileSystem sut = new(fs);
         sut.ClearDirectory(subDir.FullName);
 
         // Assert
@@ -579,7 +570,7 @@ public class FileSystemTests
         // Arrange
         const string directoryName = "dir";
         const string subDirectoryName = "subDir";
-        Dictionary<string, MockFileData> mockFileData =[];
+        Dictionary<string, MockFileData> mockFileData = [];
         Ms.IFileSystem fs = new MockFileSystem(mockFileData);
 
         Ms.IDirectoryInfo targetDir = fs.Directory.CreateDirectory(directoryName);
@@ -587,7 +578,7 @@ public class FileSystemTests
 
         fs.File.Create(Path.Join(targetDir.FullName, "file.txt"));
         fs.File.Create(Path.Join(subDir.FullName, "file.txt"));
-        FileSystem sut = new (fs);
+        FileSystem sut = new(fs);
         Ms.IDriveInfo cDrive = fs.DriveInfo.GetDrives().First();
 
         // Act
@@ -606,7 +597,7 @@ public class FileSystemTests
     public void CreateDirectory_Calls_CreateDirectory()
     {
         // Arrange
-        MockFileSystem fs = new ();
+        MockFileSystem fs = new();
         Ms.IDriveInfo cDrive = fs.DriveInfo.GetDrives().First();
 
         // Act
@@ -683,7 +674,7 @@ public class FileSystemTests
     {
         const string fileName = "mockFile.cs";
         _mockFileData.Add(fileName, new MockFileData("some content"));
-        MockFileSystem fs = new (_mockFileData);
+        MockFileSystem fs = new(_mockFileData);
         new FileSystem(fs).DeleteFileIfExists(fileName);
         _mockFileSystem.File.Exists(fileName).Should().BeFalse();
     }

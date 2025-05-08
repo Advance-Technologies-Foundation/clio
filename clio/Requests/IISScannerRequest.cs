@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -10,7 +10,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -45,32 +44,26 @@ internal class DeleteInstanceByNameRequest : IRequest
 }
 
 /// <summary>
-///  Finds path to appSetting.json.
+///     Finds path to appSetting.json.
 /// </summary>
 /// <remarks>
-///  Handles extenral link requests.
-///  <example>
-///   <code>clio externalLink clio://IISScannerRequest</code>
-///  </example>
+///     Handles extenral link requests.
+///     <example>
+///         <code>clio externalLink clio://IISScannerRequest</code>
+///     </example>
 /// </remarks>
 /// <example>
 /// </example>
-internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
-    PowerShellFactory powerShellFactory, ILogger logger): BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
+internal class IISScannerHandler(
+    ISettingsRepository settingsRepository,
+    RegAppCommand regCommand,
+    PowerShellFactory powerShellFactory,
+    ILogger logger) : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
     IRequestHandler<AllUnregisteredSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
     IRequestHandler<StopInstanceByNameRequest>, IRequestHandler<AllRegisteredSitesRequest>
 {
-    internal enum SiteType
-    {
-        NetFramework,
-        Core,
-        NotCreatioSite
-    }
-
-
-
     /// <summary>
-    ///  Finds Creatio Sites in IIS that are not registered with clio.
+    ///     Finds Creatio Sites in IIS that are not registered with clio.
     /// </summary>
     private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> FindUnregisteredCreatioSites =
         settingsRepository =>
@@ -96,7 +89,7 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
         };
 
     /// <summary>
-    ///  Executes appcmd.exe with arguments and captures output.
+    ///     Executes appcmd.exe with arguments and captures output.
     /// </summary>
     private static readonly Func<string, string> _appcmd = args =>
     {
@@ -127,7 +120,7 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
     };
 
     /// <summary>
-    ///  Finds Creatio Sites in IIS that are not registered with clio.
+    ///     Finds Creatio Sites in IIS that are not registered with clio.
     /// </summary>
     internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () =>
     {
@@ -140,7 +133,7 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
     };
 
     /// <summary>
-    ///  Finds Creatio Sites in IIS that are not registered with clio.
+    ///     Finds Creatio Sites in IIS that are not registered with clio.
     /// </summary>
     internal static readonly Func<IEnumerable<RegisteredSite>> FindAllRegisteredCreatioSites = () =>
     {
@@ -153,7 +146,7 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
     };
 
     /// <summary>
-    ///  Gets data from appcmd.exe.
+    ///     Gets data from appcmd.exe.
     /// </summary>
     private static readonly Func<IEnumerable<SiteBinding>> GetBindings = () =>
     {
@@ -163,13 +156,13 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
     };
 
     /// <summary>
-    ///  Splits IIS Binding into list.
+    ///     Splits IIS Binding into list.
     /// </summary>
     private static readonly Func<string, List<string>> SplitBinding = binding =>
         binding.Contains(',') ? binding.Split(',').ToList() : [binding];
 
     /// <summary>
-    ///  Splits IIS Binding.
+    ///     Splits IIS Binding.
     /// </summary>
     private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding =>
     {
@@ -199,7 +192,7 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
     };
 
     /// <summary>
-    ///  Converts XElement to Sitebinding.
+    ///     Converts XElement to Sitebinding.
     /// </summary>
     private static readonly Func<XElement, SiteBinding> GetSiteBindingFromXmlElement = xmlElement => new SiteBinding(
         xmlElement.Attribute("SITE.NAME")?.Value,
@@ -208,7 +201,7 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
         _appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim());
 
     /// <summary>
-    ///  Detect Site Type.
+    ///     Detect Site Type.
     /// </summary>
     private static readonly Func<string, SiteType> DetectSiteType = path =>
     {
@@ -228,15 +221,9 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
         return SiteType.NotCreatioSite;
     };
 
-    private readonly ISettingsRepository _settingsRepository = settingsRepository;
-    private readonly RegAppCommand _regCommand = regCommand;
-    private readonly PowerShellFactory _powerShellFactory = powerShellFactory;
-    private readonly ILogger _logger = logger;
-
-
 
     /// <summary>
-    ///  Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host.
+    ///     Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host.
     /// </summary>
     public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> GetSites = psf =>
     {
@@ -266,11 +253,11 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
         return result;
     };
 
-    public async Task Handle(AllUnregisteredSitesRequest request, CancellationToken cancellationToken)
-    {
-        IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
-        request.Callback(sites);
-    }
+    private readonly ILogger _logger = logger;
+    private readonly PowerShellFactory _powerShellFactory = powerShellFactory;
+    private readonly RegAppCommand _regCommand = regCommand;
+
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public async Task Handle(AllRegisteredSitesRequest request, CancellationToken cancellationToken)
     {
@@ -278,11 +265,10 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
         request.Callback(sites);
     }
 
-    public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken)
+    public async Task Handle(AllUnregisteredSitesRequest request, CancellationToken cancellationToken)
     {
-        string name = request.SiteName;
-        StopSiteByName(name);
-        StopAppPoolByName(name);
+        IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
+        request.Callback(sites);
     }
 
     public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken)
@@ -348,16 +334,30 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
         }
     }
 
+    public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken)
+    {
+        string name = request.SiteName;
+        StopSiteByName(name);
+        StopAppPoolByName(name);
+    }
+
+    internal enum SiteType
+    {
+        NetFramework,
+        Core,
+        NotCreatioSite
+    }
+
 
     /// <summary>
     /// </summary>
     /// <param name="name">Site name in IIS</param>
     /// <param name="state">
-    ///  State of IIS site
-    ///  <list type="bullet">
-    ///   <item>Started: when IIS site Started</item>
-    ///   <item>Stopped: when IIS site Started</item>
-    ///  </list>
+    ///     State of IIS site
+    ///     <list type="bullet">
+    ///         <item>Started: when IIS site Started</item>
+    ///         <item>Stopped: when IIS site Started</item>
+    ///     </list>
     /// </param>
     /// <param name="binding"></param>
     /// <param name="path">Site directory path</param>
@@ -376,9 +376,8 @@ internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppC
 
 public record Site
 {
-
     /// <summary>
-    ///  Converts PSObject to Site.
+    ///     Converts PSObject to Site.
     /// </summary>
     private static readonly Func<PSObject, Site> _asSite = psObject =>
     {
@@ -394,7 +393,7 @@ public record Site
     };
 
     /// <summary>
-    ///  Splits IIS Binding.
+    ///     Splits IIS Binding.
     /// </summary>
     private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding =>
     {
@@ -426,7 +425,7 @@ public record Site
     };
 
     /// <summary>
-    ///  Splits IIS Binding into list.
+    ///     Splits IIS Binding into list.
     /// </summary>
     private static readonly Func<string, List<string>> SplitBinding = binding =>
         binding.Contains(',') ? binding.Split(',').ToList() : [binding];
@@ -434,22 +433,22 @@ public record Site
     public string Binding { get; private set; }
 
     /// <summary>
-    ///  Gets or sets iIS EnabledProtocols.
+    ///     Gets or sets iIS EnabledProtocols.
     /// </summary>
     public string EnabledProtocols { get; set; }
 
     /// <summary>
-    ///  Gets iIS Site Id.
+    ///     Gets iIS Site Id.
     /// </summary>
     public long Id { get; private set; }
 
     /// <summary>
-    ///  Gets iIS Site name.
+    ///     Gets iIS Site name.
     /// </summary>
     public string Name { get; private set; }
 
     /// <summary>
-    ///  Gets iIS physical path.
+    ///     Gets iIS physical path.
     /// </summary>
     public string PhysicalPath { get; private set; }
 
@@ -461,6 +460,7 @@ public record Site
 public partial record WebApp
 {
     private const string Regex = "(@name=')(.*?)'\\sand\\s@id='(\\d*?)'";
+
     private static readonly Func<PSObject, WebApp> AsWebApp = psObject =>
     {
         string itemXPath = psObject.Properties["ItemXPath"]?.Value as string ?? string.Empty;

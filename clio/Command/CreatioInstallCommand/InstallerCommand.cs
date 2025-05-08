@@ -1,14 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using CommandLine;
 
 namespace Clio.Command.CreatioInstallCommand;
 
-[Verb("deploy-creatio", Aliases =["dc", "ic", "install-creation"], HelpText = "Deploy Creatio from zip file")]
+[Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creation"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
-    private readonly Dictionary<string, string> _productList = new ()
+    private readonly Dictionary<string, string> _productList = new()
     {
         { "s", "Studio" },
         { "semse", "SalesEnterprise_Marketing_ServiceEnterprise" },
@@ -89,7 +88,7 @@ public class PfInstallerOptions : EnvironmentNameOptions
     public string ZipFile { get; set; }
 }
 
-public class InstallerCommand(ICreatioInstallerService creatioInstallerService): Command<PfInstallerOptions>
+public class InstallerCommand(ICreatioInstallerService creatioInstallerService) : Command<PfInstallerOptions>
 {
     private readonly ICreatioInstallerService _creatioInstallerService = creatioInstallerService;
 

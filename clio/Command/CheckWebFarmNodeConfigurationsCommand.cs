@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -6,15 +6,13 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using CommandLine;
-
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command;
 
-[Verb("compare-web-farm-node", Aliases = new string[] { "check-web-farm-node", "check-farm", "farm-check", "cwf" },
+[Verb("compare-web-farm-node", Aliases = new[] { "check-web-farm-node", "check-farm", "farm-check", "cwf" },
     HelpText = "Compare web farm node content")]
 public class CheckWebFarmNodeConfigurationsOptions
 {
@@ -25,12 +23,14 @@ public class CheckWebFarmNodeConfigurationsOptions
     public bool DetailMode { get; set; }
 }
 
-public class CheckWebFarmNodeConfigurationsCommand(ILogger logger, IFileSystem fileSystem,
-    IDirectoryComparer directoryComparer): Command<CheckWebFarmNodeConfigurationsOptions>
+public class CheckWebFarmNodeConfigurationsCommand(
+    ILogger logger,
+    IFileSystem fileSystem,
+    IDirectoryComparer directoryComparer) : Command<CheckWebFarmNodeConfigurationsOptions>
 {
-    private readonly ILogger _logger = logger;
-    private readonly IFileSystem _fileSystem = fileSystem;
     private readonly IDirectoryComparer _directoryComparer = directoryComparer;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(CheckWebFarmNodeConfigurationsOptions options)
     {
@@ -92,7 +92,7 @@ public class CheckWebFarmNodeConfigurationsCommand(ILogger logger, IFileSystem f
     }
 }
 
-public class DirectoryComparer(IFileSystem fileSystem, ILogger logger): IDirectoryComparer
+public class DirectoryComparer(IFileSystem fileSystem, ILogger logger) : IDirectoryComparer
 {
     private readonly IFileSystem _fileSystem = fileSystem;
     private readonly ILogger _logger = logger;
@@ -119,10 +119,10 @@ public class DirectoryComparer(IFileSystem fileSystem, ILogger logger): IDirecto
             f.Substring(path2.Length).TrimStart(Path.DirectorySeparatorChar)));
         int totalFiles1 = files1.Count, totalFiles2 = files2.Count;
         int processedFiles = 0;
-        ConcurrentBag<string> commonFiles = new (files1.Intersect(files2));
+        ConcurrentBag<string> commonFiles = new(files1.Intersect(files2));
         ConcurrentBag<string> differenceInCommonFiles = [];
         _logger.WriteLine($"Found {commonFiles.Count} common files.");
-        _logger.WriteLine($"Processing common files:");
+        _logger.WriteLine("Processing common files:");
         int trackedFilesPercentage = 0;
         Parallel.ForEach(commonFiles, file =>
         {
@@ -167,10 +167,8 @@ public class DirectoryComparer(IFileSystem fileSystem, ILogger logger): IDirecto
         {
             return true;
         }
-        else
-        {
-            return _fileSystem.CompareFiles(v1, v2);
-        }
+
+        return _fileSystem.CompareFiles(v1, v2);
     }
 
     private void ProcessPath(string rootPath, ConcurrentBag<string> dirs, ConcurrentBag<string> files)

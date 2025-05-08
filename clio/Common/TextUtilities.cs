@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
@@ -21,7 +21,7 @@ public class TextUtilities
             columnMaxValueLength[i] = table.Max(p => p[i].Length);
         }
 
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         foreach (string[] selectedPackage in table)
         {
             sb.Append(beginPadding);

@@ -1,16 +1,15 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Clio.Common;
 
 namespace Clio.Package;
 
 public class ApplicationPackageListProvider : IApplicationPackageListProvider
 {
+    private readonly IApplicationClient _applicationClient;
     private readonly IJsonConverter _jsonConverter;
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
-    private readonly IApplicationClient _applicationClient;
 
     public ApplicationPackageListProvider(IApplicationClient applicationClient, IJsonConverter jsonConverter,
         IServiceUrlBuilder serviceUrlBuilder)
@@ -31,18 +30,6 @@ public class ApplicationPackageListProvider : IApplicationPackageListProvider
 
     private string PackagesListServiceUrl => _serviceUrlBuilder.Build("/rest/CreatioApiGateway/GetPackages");
 
-    private PackageInfo CreatePackageInfo(Dictionary<string, string> package)
-    {
-        PackageDescriptor descriptor = new ()
-        {
-            Name = package["Name"],
-            UId = Guid.Parse(package["UId"]),
-            Maintainer = package.ContainsKey("Maintainer") ? package["Maintainer"] : string.Empty,
-            PackageVersion = package.ContainsKey("Version") ? package["Version"] : string.Empty
-        };
-        return new PackageInfo(descriptor, string.Empty, Enumerable.Empty<string>());
-    }
-
     public IEnumerable<PackageInfo> GetPackages() => GetPackages("{}");
 
     public IEnumerable<PackageInfo> GetPackages(string scriptData)
@@ -56,6 +43,18 @@ public class ApplicationPackageListProvider : IApplicationPackageListProvider
         {
             return Array.Empty<PackageInfo>();
         }
+    }
+
+    private PackageInfo CreatePackageInfo(Dictionary<string, string> package)
+    {
+        PackageDescriptor descriptor = new()
+        {
+            Name = package["Name"],
+            UId = Guid.Parse(package["UId"]),
+            Maintainer = package.ContainsKey("Maintainer") ? package["Maintainer"] : string.Empty,
+            PackageVersion = package.ContainsKey("Version") ? package["Version"] : string.Empty
+        };
+        return new PackageInfo(descriptor, string.Empty, Enumerable.Empty<string>());
     }
 
     internal IEnumerable<PackageInfo> ParsePackageInfoResponse(string responseData)

@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Command;
 using Clio.UserEnvironment;
 using NSubstitute;
@@ -15,8 +14,8 @@ public class ShowAppListCommandTestCase
     public void Execute_CallsSettingsRepository()
     {
         ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-        ShowAppListCommand command = new (settingsRepository);
-        AppListOptions options = new () { Name = "TestEnvironment" };
+        ShowAppListCommand command = new(settingsRepository);
+        AppListOptions options = new() { Name = "TestEnvironment" };
         command.Execute(options);
         settingsRepository.Received(1).ShowSettingsTo(Console.Out, options.Name);
     }

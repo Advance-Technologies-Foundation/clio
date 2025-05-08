@@ -1,4 +1,4 @@
-using Clio.Common;
+﻿using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
@@ -11,7 +11,8 @@ public class CompileOptions : RemoteCommandOptions
     public bool ModifiedItems { get; set; }
 }
 
-public class CompileWorkspaceCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<CompileOptions>(applicationClient, settings)
+public class CompileWorkspaceCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+    : RemoteCommand<CompileOptions>(applicationClient, settings)
 {
     protected override string ServicePath => @"/rest/CreatioApiGateway/CompileWorkspace";
 

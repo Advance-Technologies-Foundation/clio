@@ -1,6 +1,4 @@
-using System.Threading.Tasks;
-
-using Autofac;
+﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -27,7 +25,7 @@ internal class AddSchemaCommandTests : BaseCommandTests<AddSchemaOptions>
     {
         // Arrange
         AddSchemaCommand command = container.Resolve<AddSchemaCommand>();
-        AddSchemaOptions options = new ();
+        AddSchemaOptions options = new();
 
         // Act
         int result = command.Execute(options);
@@ -41,7 +39,7 @@ internal class AddSchemaCommandTests : BaseCommandTests<AddSchemaOptions>
     {
         // Arrange
         AddSchemaCommand command = container.Resolve<AddSchemaCommand>();
-        AddSchemaOptions options = new () { Package = "Pkg1", SchemaName = "MyService", SchemaType = "WebService" };
+        AddSchemaOptions options = new() { Package = "Pkg1", SchemaName = "MyService", SchemaType = "WebService" };
 
         // Act
         int result = command.Execute(options);

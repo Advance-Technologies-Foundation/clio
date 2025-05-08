@@ -1,9 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
 
-using Common;
-using Package;
-
 namespace Clio.Workspaces;
 
 public interface IWorkspaceSolutionCreator
@@ -13,9 +10,9 @@ public interface IWorkspaceSolutionCreator
 
 public class WorkspaceSolutionCreator : IWorkspaceSolutionCreator
 {
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
     private readonly ISolutionCreator _solutionCreator;
     private readonly IStandalonePackageFileManager _standalonePackageFileManager;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder;
 
     public WorkspaceSolutionCreator(IWorkspacePathBuilder workspacePathBuilder, ISolutionCreator solutionCreator,
         IStandalonePackageFileManager standalonePackageFileManager)
@@ -28,6 +25,12 @@ public class WorkspaceSolutionCreator : IWorkspaceSolutionCreator
         _standalonePackageFileManager = standalonePackageFileManager;
     }
 
+    public void Create()
+    {
+        IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects();
+        _solutionCreator.Create(_workspacePathBuilder.SolutionPath, solutionProjects);
+    }
+
     private IEnumerable<SolutionProject> FindSolutionProjects()
     {
         IList<SolutionProject> solutionProjects = new List<SolutionProject>();
@@ -38,16 +41,10 @@ public class WorkspaceSolutionCreator : IWorkspaceSolutionCreator
         {
             string relativeStandaloneProjectPath =
                 Path.GetRelativePath(solutionFolderPath, standalonePackageProject.Path);
-            SolutionProject solutionProject = new (standalonePackageProject.PackageName, relativeStandaloneProjectPath);
+            SolutionProject solutionProject = new(standalonePackageProject.PackageName, relativeStandaloneProjectPath);
             solutionProjects.Add(solutionProject);
         }
 
         return solutionProjects;
-    }
-
-    public void Create()
-    {
-        IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects();
-        _solutionCreator.Create(_workspacePathBuilder.SolutionPath, solutionProjects);
     }
 }

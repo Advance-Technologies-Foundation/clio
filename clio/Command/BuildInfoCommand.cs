@@ -1,7 +1,4 @@
-using System;
-
-using Clio.Command;
-using Clio.Command.CreatioInstallCommand;
+﻿using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -13,7 +10,9 @@ public class BuildInfoOptions : PfInstallerOptions
 {
 }
 
-public class BuildInfoCommand(ISettingsRepository settingsRepository, ICreatioInstallerService creatioInstallerService,
+public class BuildInfoCommand(
+    ISettingsRepository settingsRepository,
+    ICreatioInstallerService creatioInstallerService,
     ILogger logger)
 {
     private readonly ICreatioInstallerService _creatioInstallerService = creatioInstallerService;

@@ -1,22 +1,15 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-
-using Command;
-using Common;
-using Package;
-using Project.NuGet;
 
 namespace Clio.Workspaces;
 
 public class WorkspaceRestorer : IWorkspaceRestorer
 {
-    private readonly INuGetManager _nugetManager;
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IEnvironmentScriptCreator _environmentScriptCreator;
-    private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
-    private readonly IPackageDownloader _packageDownloader;
     private readonly ICreatioSdk _creatioSdk;
+    private readonly IEnvironmentScriptCreator _environmentScriptCreator;
+    private readonly INuGetManager _nugetManager;
+    private readonly IPackageDownloader _packageDownloader;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder;
+    private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
 
     public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
         IEnvironmentScriptCreator environmentScriptCreator, IWorkspaceSolutionCreator workspaceSolutionCreator,
@@ -36,24 +29,6 @@ public class WorkspaceRestorer : IWorkspaceRestorer
         _creatioSdk = creatioSdk;
     }
 
-    private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion)
-    {
-        const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
-        const string packageName = "CreatioSDK";
-        NugetPackageFullName nugetPackageFullName = new ()
-        {
-            Name = packageName,
-            Version = nugetCreatioSdkVersion.ToString()
-        };
-        _nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl,
-            _workspacePathBuilder.NugetFolderPath);
-    }
-
-    private void CreateSolution() => _workspaceSolutionCreator.Create();
-
-    private void CreateEnvironmentScript(Version nugetCreatioSdkVersion) =>
-        _environmentScriptCreator.Create(nugetCreatioSdkVersion);
-
     public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
         WorkspaceOptions restoreWorkspaceOptions)
     {
@@ -71,4 +46,21 @@ public class WorkspaceRestorer : IWorkspaceRestorer
             CreateSolution();
         }
     }
+
+    private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion)
+    {
+        const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
+        const string packageName = "CreatioSDK";
+        NugetPackageFullName nugetPackageFullName = new()
+        {
+            Name = packageName, Version = nugetCreatioSdkVersion.ToString()
+        };
+        _nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl,
+            _workspacePathBuilder.NugetFolderPath);
+    }
+
+    private void CreateSolution() => _workspaceSolutionCreator.Create();
+
+    private void CreateEnvironmentScript(Version nugetCreatioSdkVersion) =>
+        _environmentScriptCreator.Create(nugetCreatioSdkVersion);
 }

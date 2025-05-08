@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Threading;
-
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Common;
@@ -24,15 +23,6 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>, ID
         _textWriter.Flush();
         _sut = new FeatureCommand(_applicationClientMock, _envSettingsMock, _dataProviderMock, _serviceUrlBuilderMock);
     }
-
-    private FeatureCommand _sut;
-    private EnvironmentSettings _envSettingsMock;
-    private IDataProvider _dataProviderMock;
-    private IServiceUrlBuilder _serviceUrlBuilderMock;
-    private IApplicationClient _applicationClientMock;
-    private StringWriter _textWriter;
-    private StringBuilder _sb;
-    private TextWriter _originalTextWriter;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -60,6 +50,15 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>, ID
         _textWriter.Dispose();
     }
 
+    private FeatureCommand _sut;
+    private EnvironmentSettings _envSettingsMock;
+    private IDataProvider _dataProviderMock;
+    private IServiceUrlBuilder _serviceUrlBuilderMock;
+    private IApplicationClient _applicationClientMock;
+    private StringWriter _textWriter;
+    private StringBuilder _sb;
+    private TextWriter _originalTextWriter;
+
     [Description("Should clear cache for the given feature name and log the result")]
     [TestCase("ActivateAdvancedModeForOriginalSchemas")]
     public void Execute_ShouldClearCacheAndLogResult(string featureName)
@@ -82,8 +81,5 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>, ID
         _textWriter.ToString().Should().Contain($"[INF] - {responseBody}\r\n");
     }
 
-    public void Dispose()
-    {
-        throw new NotImplementedException();
-    }
+    public void Dispose() => throw new NotImplementedException();
 }

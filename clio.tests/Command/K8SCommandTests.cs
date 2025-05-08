@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Autofac;
 using Clio.Common.K8;
 using FluentAssertions;

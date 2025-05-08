@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -9,7 +8,6 @@ using Clio.Common;
 using CommandLine;
 using CreatioModel;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Clio;
 
@@ -49,7 +47,7 @@ public class SetWebServiceUrlCommand : RemoteCommand<SetWebServiceUrlOptions>
     protected override string GetRequestData(SetWebServiceUrlOptions options)
     {
         const string managerName = "ServiceSchemaManager";
-        SetWebServiceUrlPayload payload = new ()
+        SetWebServiceUrlPayload payload = new()
         {
             ContractName = "SetUserPropertyRequest",
             SchemaId = GetSchemaIdBySchemaName(options.WebServiceName, managerName),
@@ -69,10 +67,11 @@ public class GetWebServiceUrlOptions : EnvironmentOptions
     public string WebServiceName { get; set; }
 }
 
-public class GetWebServiceUrlCommand(IWebServiceManager webServiceManager, ILogger logger): Command<GetWebServiceUrlOptions>
+public class GetWebServiceUrlCommand(IWebServiceManager webServiceManager, ILogger logger)
+    : Command<GetWebServiceUrlOptions>
 {
-    private readonly IWebServiceManager _webServiceManager = webServiceManager;
     private readonly ILogger _logger = logger;
+    private readonly IWebServiceManager _webServiceManager = webServiceManager;
 
     public override int Execute(GetWebServiceUrlOptions options)
     {

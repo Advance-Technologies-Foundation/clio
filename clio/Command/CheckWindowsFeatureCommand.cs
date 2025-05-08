@@ -1,24 +1,21 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Management;
-
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("check-windows-features", Aliases = new string[] { "checkw", "checks", "checkf", "cf", "check-windows-features" },
+[Verb("check-windows-features", Aliases = new[] { "checkw", "checks", "checkf", "cf", "check-windows-features" },
     HelpText = "Check current windows for requirment components")]
 public class CheckWindowsFeaturesOptions
 {
 }
 
-public class CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger): Command<CheckWindowsFeaturesOptions>
+public class CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger)
+    : Command<CheckWindowsFeaturesOptions>
 {
-    private readonly IWindowsFeatureManager _windowsFeatureManager = windowsFeatureManager;
     private readonly ILogger _logger = logger;
+    private readonly IWindowsFeatureManager _windowsFeatureManager = windowsFeatureManager;
 
     public override int Execute(CheckWindowsFeaturesOptions options)
     {
@@ -43,10 +40,8 @@ public class CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureMa
 
             return 1;
         }
-        else
-        {
-            _logger.WriteError("All requirment components installed");
-            return 0;
-        }
+
+        _logger.WriteError("All requirment components installed");
+        return 0;
     }
 }

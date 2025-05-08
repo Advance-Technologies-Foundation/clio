@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
-
 using Autofac;
 using Clio.Common;
 using Clio.Package;
@@ -13,8 +12,6 @@ using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Package;
 
@@ -27,17 +24,17 @@ internal class PackageCreatorTest : BaseClioModuleTests
     private const string PackageNameThree = "TestPackageThree";
 
     private PackageCreator InitCreator() =>
-        new (container.Resolve<EnvironmentSettings>(), container.Resolve<IWorkspace>(),
+        new(container.Resolve<EnvironmentSettings>(), container.Resolve<IWorkspace>(),
             container.Resolve<IWorkspaceSolutionCreator>(),
             container.Resolve<ITemplateProvider>(), container.Resolve<IWorkspacePathBuilder>(),
             container.Resolve<IStandalonePackageFileManager>(), container.Resolve<IJsonConverter>(),
-            container.Resolve<IWorkingDirectoriesProvider>(), container.Resolve<Clio.Common.IFileSystem>());
+            container.Resolve<IWorkingDirectoriesProvider>(), container.Resolve<IFileSystem>());
 
     protected override MockFileSystem CreateFs()
     {
         MockFileSystem x = (MockFileSystem)base.CreateFs();
         ILogger logger = Substitute.For<ILogger>();
-        WorkingDirectoriesProvider wdp = new (logger, x);
+        WorkingDirectoriesProvider wdp = new(logger, x);
         x.MockFolderWithDir(wdp.TemplateDirectory);
         return x;
     }

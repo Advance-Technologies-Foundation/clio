@@ -3,12 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-
 using Clio.Common;
 using Clio.Workspaces;
-using Terrasoft.Core.Packages;
-
-using JsonConverter = System.Text.Json.Serialization.JsonConverter;
 
 namespace Clio.Package;
 
@@ -22,14 +18,14 @@ public interface IPackageCreator
 public class PackageCreator : IPackageCreator
 {
     private readonly EnvironmentSettings _environmentSettings;
-    private readonly IWorkspace _workspace;
-    private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
-    private readonly ITemplateProvider _templateProvider;
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IStandalonePackageFileManager _standalonePackageFileManager;
-    private readonly IJsonConverter _jsonConverter;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
+    private readonly IJsonConverter _jsonConverter;
+    private readonly IStandalonePackageFileManager _standalonePackageFileManager;
+    private readonly ITemplateProvider _templateProvider;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly IWorkspace _workspace;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder;
+    private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
 
     public PackageCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
         IWorkspaceSolutionCreator workspaceSolutionCreator, ITemplateProvider templateProvider,
@@ -61,8 +57,16 @@ public class PackageCreator : IPackageCreator
 
     private string Maintainer => _environmentSettings.Maintainer ?? "Customer";
 
+    public void Create(string packageName, bool? asApp)
+    {
+        string packagesPath = GetPackagesPath();
+        Create(packagesPath, packageName, asApp);
+    }
+
+    public void Create(string packagesPath, string packageName) => Create(packagesPath, packageName, null);
+
     private PackageDescriptorDto CreatePackageDescriptor(string packageName, bool isStandalonePackage = true) =>
-        new ()
+        new()
         {
             Descriptor = new PackageDescriptor
             {
@@ -145,14 +149,6 @@ public class PackageCreator : IPackageCreator
         _workspaceSolutionCreator.Create();
     }
 
-    public void Create(string packageName, bool? asApp)
-    {
-        string packagesPath = GetPackagesPath();
-        Create(packagesPath, packageName, asApp);
-    }
-
-    public void Create(string packagesPath, string packageName) => Create(packagesPath, packageName, null);
-
     public void Create(string packagesPath, string packageName, bool? asApp)
     {
         CreatePackageIfNotExists(packagesPath, packageName);
@@ -192,7 +188,7 @@ public class PackageCreator : IPackageCreator
 
     internal void SaveAppDescriptorToFile(AppDescriptorJson appDescriptor, string fileName)
     {
-        JsonSerializerOptions options = new () { WriteIndented = true };
+        JsonSerializerOptions options = new() { WriteIndented = true };
         string appDescriptorContent = JsonSerializer.Serialize(appDescriptor, options);
         _fileSystem.WriteAllTextToFile(fileName, appDescriptorContent);
     }
@@ -203,15 +199,14 @@ public class PackageCreator : IPackageCreator
         PackageDescriptorDto? packageDescriptor = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
         return new Package
         {
-            UId = packageDescriptor.Descriptor.UId.ToString(),
-            Name = packageDescriptor.Descriptor.Name
+            UId = packageDescriptor.Descriptor.UId.ToString(), Name = packageDescriptor.Descriptor.Name
         };
     }
 
     private void AddAppDescriptor(string packagesPath, string packageName)
     {
         Package package = GetPackageFromDescriptor(packagesPath, packageName);
-        AppDescriptorJson addDescriptorDto = new ()
+        AppDescriptorJson addDescriptorDto = new()
         {
             Name = packageName,
             Maintainer = Maintainer,

@@ -1,31 +1,33 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Management.Automation;
 using System.Text.Json;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
 using CreatioModel;
-using DocumentFormat.OpenXml.Spreadsheet;
-using Terrasoft.Core;
 
 namespace Clio.Command;
 
-public class ApplicationManager(IWorkingDirectoriesProvider workingDirectoriesProvider, IDataProvider dataProvider,
-    ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory,
+public class ApplicationManager(
+    IWorkingDirectoriesProvider workingDirectoriesProvider,
+    IDataProvider dataProvider,
+    ISettingsRepository settingsRepository,
+    IApplicationClientFactory applicationClientFactory,
     IApplicationInstaller applicationInstallerserviceUrlBuilder)
 {
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
-    private readonly IDataProvider _dataProvider = dataProvider;
     private readonly IApplicationClientFactory _applicationClientFactory = applicationClientFactory;
-    private readonly ISettingsRepository _settingsRepository = settingsRepository;
-    private readonly IApplicationInstaller _applicationInstallerserviceUrlBuilder = applicationInstallerserviceUrlBuilder;
+
+    private readonly IApplicationInstaller _applicationInstallerserviceUrlBuilder =
+        applicationInstallerserviceUrlBuilder;
+
+    private readonly IDataProvider _dataProvider = dataProvider;
     private readonly string _serviceApplicationExportPath = @"/ServiceModel/AppInstallerService.svc/ExportApp";
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
 
     public List<SysInstalledApp> GetApplicationList() =>
         AppDataContextFactory.GetAppDataContext(_dataProvider)

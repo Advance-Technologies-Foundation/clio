@@ -1,11 +1,10 @@
-using System;
-
+﻿using System;
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("last-compilation-log", Aliases =["lcl"], HelpText = "Get last compilation log")]
+[Verb("last-compilation-log", Aliases = ["lcl"], HelpText = "Get last compilation log")]
 public class LastCompilationLogOptions : RemoteCommandOptions
 {
     [Option("raw", Required = false, HelpText = "Display raw output (json)", Default = false)]
@@ -25,9 +24,8 @@ public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions
     }
 
 
-
     /// <summary>
-    /// Executes the command to get the last compilation log.
+    ///     Executes the command to get the last compilation log.
     /// </summary>
     /// <param name="opts">Options for the command execution.</param>
     /// <returns>Returns 0 if successful, otherwise returns 1.</returns>

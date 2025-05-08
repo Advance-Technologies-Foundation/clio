@@ -1,10 +1,7 @@
-using System;
-using System.IO;
-using System.Net;
+﻿using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-
 using Clio.Command;
 using FluentValidation;
 using MediatR;
@@ -69,7 +66,7 @@ public class CreateIISSiteRequestValidator : AbstractValidator<CreateIISSiteRequ
                 string siteName = options["siteName"];
                 if (string.IsNullOrWhiteSpace(siteName))
                 {
-                    context.AddFailure($"siteName cannot be empty");
+                    context.AddFailure("siteName cannot be empty");
                 }
             })
             .Custom((options, context) =>
@@ -84,7 +81,7 @@ public class CreateIISSiteRequestValidator : AbstractValidator<CreateIISSiteRequ
                 string port = options["port"];
                 if (string.IsNullOrWhiteSpace(port))
                 {
-                    context.AddFailure($"port cannot be empty");
+                    context.AddFailure("port cannot be empty");
                 }
 
                 if (!int.TryParse(port, out int portNumber))
@@ -97,7 +94,7 @@ public class CreateIISSiteRequestValidator : AbstractValidator<CreateIISSiteRequ
                 string isNetFramework = options["isNetFramework"];
                 if (string.IsNullOrWhiteSpace(isNetFramework))
                 {
-                    context.AddFailure($"isNetFramework cannot be empty");
+                    context.AddFailure("isNetFramework cannot be empty");
                 }
 
                 if (!bool.TryParse(isNetFramework, out bool _isNetFramework))
@@ -109,7 +106,8 @@ public class CreateIISSiteRequestValidator : AbstractValidator<CreateIISSiteRequ
 }
 
 internal class
-    CreateIISSiteRequestHandler(IProcessExecutor processExecutor): IRequestHandler<CreateIISSiteRequest, OneOf<BaseHandlerResponse, HandlerError>>
+    CreateIISSiteRequestHandler(IProcessExecutor processExecutor)
+    : IRequestHandler<CreateIISSiteRequest, OneOf<BaseHandlerResponse, HandlerError>>
 {
     private readonly IProcessExecutor _processExecutor = processExecutor;
 
@@ -123,10 +121,10 @@ internal class
         string destinationFolder = Path.Join(request.Arguments["destinationDirectory"].Trim(), siteName);
         bool isNetFramework = bool.Parse(request.Arguments["isNetFramework"]);
 
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
 
         CopyFiles(sourceDirectory, destinationFolder);
-        sb.AppendLine($"Copied directory");
+        sb.AppendLine("Copied directory");
         sb.Append("\tfrom: ").AppendLine(sourceDirectory)
             .Append("\tto: ").AppendLine(destinationFolder);
 
@@ -139,8 +137,7 @@ internal class
 
         return new CreateIISSiteResponse
         {
-            Status = BaseHandlerResponse.CompletionStatus.Success,
-            Description = sb.ToString()
+            Status = BaseHandlerResponse.CompletionStatus.Success, Description = sb.ToString()
         };
     }
 
@@ -181,8 +178,8 @@ internal class
 
     private static void CopyFiles(string sourceDirectory, string destinationDirectory)
     {
-        DirectoryInfo diSource = new (sourceDirectory);
-        DirectoryInfo diTarget = new (destinationDirectory);
+        DirectoryInfo diSource = new(sourceDirectory);
+        DirectoryInfo diTarget = new(destinationDirectory);
         CopyAll(diSource, diTarget);
     }
 

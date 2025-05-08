@@ -1,16 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-
 using CommandLine;
-using Common;
-using Package;
-using WebApplication;
 
 namespace Clio.Command;
 
-[Verb("push-pkg", Aliases = new string[] { "install", "push" }, HelpText = "Install package on a web application")]
+[Verb("push-pkg", Aliases = new[] { "install", "push" }, HelpText = "Install package on a web application")]
 public class PushPkgOptions : InstallOptions
 {
     [Option("InstallSqlScript", Required = false, HelpText = "Install sql script")]
@@ -43,11 +39,11 @@ public class PushPkgOptions : InstallOptions
 
 public class PushPackageCommand : Command<PushPkgOptions>
 {
-    private readonly EnvironmentSettings _environmentSettings;
-    private readonly IPackageInstaller _packageInstaller;
-    private readonly IMarketplace _marketplace;
     private readonly ICompileConfigurationCommand _compileConfigurationCommand;
-    private readonly PackageInstallOptions _packageInstallOptionsDefault = new ();
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly IMarketplace _marketplace;
+    private readonly IPackageInstaller _packageInstaller;
+    private readonly PackageInstallOptions _packageInstallOptionsDefault = new();
 
     public PushPackageCommand()
     {
@@ -67,7 +63,7 @@ public class PushPackageCommand : Command<PushPkgOptions>
 
     private PackageInstallOptions ExtractPackageInstallOptions(PushPkgOptions options)
     {
-        PackageInstallOptions packageInstallOptions = new ()
+        PackageInstallOptions packageInstallOptions = new()
         {
             InstallSqlScript = options.InstallSqlScript ?? true,
             InstallPackageData = options.InstallPackageData ?? true,
@@ -83,15 +79,14 @@ public class PushPackageCommand : Command<PushPkgOptions>
     }
 
 
-
     /// <summary>
-    /// Executes the push package command with the specified options.
+    ///     Executes the push package command with the specified options.
     /// </summary>
     /// <param name="options">The options for the push package command.</param>
     /// <returns>Returns 0 if the command executed successfully, otherwise returns 1.</returns>
     /// <remarks>
-    /// This method installs a package on a web application. If `MarketplaceIds` are provided, it installs the package
-    /// for each ID. If `ForceCompilation` is true and the installation is successful, it compiles the configuration.
+    ///     This method installs a package on a web application. If `MarketplaceIds` are provided, it installs the package
+    ///     for each ID. If `ForceCompilation` is true and the installation is successful, it compiles the configuration.
     /// </remarks>
     public override int Execute(PushPkgOptions options)
     {
@@ -138,7 +133,7 @@ public class PushPackageCommand : Command<PushPkgOptions>
     }
 
     private CompileConfigurationOptions CreateFromPushPkgOptions(EnvironmentOptions options) =>
-        new ()
+        new()
         {
             Environment = options.Environment,
             Login = options.Login,
@@ -148,9 +143,14 @@ public class PushPackageCommand : Command<PushPkgOptions>
         };
 }
 
-public class InstallGatePkgCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
-    IMarketplace marketplace, ICompileConfigurationCommand compileConfigurationCommand, IApplication applicatom,
-    ILogger logger): PushPackageCommand(environmentSettings, packageInstaller, marketplace, compileConfigurationCommand)
+public class InstallGatePkgCommand(
+    EnvironmentSettings environmentSettings,
+    IPackageInstaller packageInstaller,
+    IMarketplace marketplace,
+    ICompileConfigurationCommand compileConfigurationCommand,
+    IApplication applicatom,
+    ILogger logger)
+    : PushPackageCommand(environmentSettings, packageInstaller, marketplace, compileConfigurationCommand)
 {
     private readonly IApplication _application = applicatom;
     private readonly ILogger _logger = logger;

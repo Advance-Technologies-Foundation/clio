@@ -1,19 +1,10 @@
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.IO;
-using System.IO.Abstractions.TestingHelpers;
-using System.IO.Compression;
-
 using ATF.Repository.Providers;
-using Autofac;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Common;
-using Clio.Tests.Extensions;
-using Common.Logging.Configuration;
-using FluentAssertions;
 using NSubstitute;
-using NSubstitute.ReceivedExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -41,13 +32,16 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         workingDirectoriesProvider.CreateTempDirectory().Returns(tempPath);
         environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest
         {
-            Packages =[new () { Name = "Package1" }, new () { Name = "Package2" }]
+            Packages =
+            [
+                new CreatioManifestPackage { Name = "Package1" }, new CreatioManifestPackage { Name = "Package2" }
+            ]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new () { Source = "sourceEnv", Target = "targetEnv" };
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new() { Source = "sourceEnv", Target = "targetEnv" };
 
         // Act
         cloneEnvironmentCommand.Execute(cloneEnvironmentCommandOptions);
@@ -126,20 +120,18 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         {
             Packages =
             [
-                new () { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
-                new () { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
-                new () { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
+                new CreatioManifestPackage { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
+                new CreatioManifestPackage { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
+                new CreatioManifestPackage { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
             ]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
         {
-            Source = "sourceEnv",
-            Target = "targetEnv",
-            Maintainer = selectedMaintainer
+            Source = "sourceEnv", Target = "targetEnv", Maintainer = selectedMaintainer
         };
 
         // Act
@@ -221,20 +213,18 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         {
             Packages =
             [
-                new () { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
-                new () { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
-                new () { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
+                new CreatioManifestPackage { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
+                new CreatioManifestPackage { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
+                new CreatioManifestPackage { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
             ]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
         {
-            Source = "sourceEnv",
-            Target = "targetEnv",
-            ExcludeMaintainer = excludeMaintainer
+            Source = "sourceEnv", Target = "targetEnv", ExcludeMaintainer = excludeMaintainer
         };
 
         // Act
@@ -302,10 +292,10 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         IFileSystem fileSystem = Substitute.For<IFileSystem>();
         string tempPath = "TempPath";
         workingDirectoriesProvider.CreateTempDirectory().Returns(tempPath);
-        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
         {
             Source = "sourceEnv",
             Target = "targetEnv",
@@ -336,16 +326,17 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         workingDirectoriesProvider.CreateTempDirectory().Returns(workingDirectory);
         environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest
         {
-            Packages =[new () { Name = "Package1" }, new () { Name = "Package2" }]
+            Packages =
+            [
+                new CreatioManifestPackage { Name = "Package1" }, new CreatioManifestPackage { Name = "Package2" }
+            ]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
         {
-            Source = "sourceEnv",
-            Target = "targetEnv",
-            WorkingDirectory = workingDirectory
+            Source = "sourceEnv", Target = "targetEnv", WorkingDirectory = workingDirectory
         };
 
         // Act

@@ -1,8 +1,7 @@
-#pragma warning disable CS8618, // Non-nullable field is uninitialized.
+﻿#pragma warning disable CS8618, // Non-nullable field is uninitialized.
 
 using System;
 using System.Diagnostics.CodeAnalysis;
-
 using ATF.Repository;
 using ATF.Repository.Attributes;
 
@@ -12,29 +11,21 @@ namespace CreatioModel;
 [Schema("SysWorkspace")]
 public class SysWorkspace : BaseModel
 {
-    [SchemaProperty("Name")]
-    public string Name { get; set; }
+    [SchemaProperty("Name")] public string Name { get; set; }
 
-    [SchemaProperty("Description")]
-    public string Description { get; set; }
+    [SchemaProperty("Description")] public string Description { get; set; }
 
-    [SchemaProperty("ProcessListeners")]
-    public int ProcessListeners { get; set; }
+    [SchemaProperty("ProcessListeners")] public int ProcessListeners { get; set; }
 
-    [SchemaProperty("IsDefault")]
-    public bool IsDefault { get; set; }
+    [SchemaProperty("IsDefault")] public bool IsDefault { get; set; }
 
-    [SchemaProperty("Number")]
-    public int Number { get; set; }
+    [SchemaProperty("Number")] public int Number { get; set; }
 
-    [SchemaProperty("Version")]
-    public int Version { get; set; }
+    [SchemaProperty("Version")] public int Version { get; set; }
 
-    [SchemaProperty("RepositoryUri")]
-    public string RepositoryUri { get; set; }
+    [SchemaProperty("RepositoryUri")] public string RepositoryUri { get; set; }
 
-    [SchemaProperty("WorkingCopyPath")]
-    public string WorkingCopyPath { get; set; }
+    [SchemaProperty("WorkingCopyPath")] public string WorkingCopyPath { get; set; }
 
     [SchemaProperty("RepositoryRevisionNumber")]
     public int RepositoryRevisionNumber { get; set; }

@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-
 using Clio.Command;
 using MediatR;
 
@@ -13,9 +12,12 @@ public class RegisterOAuthCredentials : IExternalLink
 }
 
 /// <summary>
-/// Handles clio links externalLink clio://RegisterOAuthCredentials?protocol=https:&host=129117-crm-bundle.creatio.com&name=vscode&clientId=83B03D807E3DEEAEF6A55D8CB587E191&clientSecret=C6EA75A49446A63F239BEB4C89892A610E638063AC298EEAF6786E309E06970C.
+///     Handles clio links externalLink clio://RegisterOAuthCredentials?protocol=https:&host=129117-crm-bundle.creatio.com
+///     &name=vscode&clientId=83B03D807E3DEEAEF6A55D8CB587E191&clientSecret
+///     =C6EA75A49446A63F239BEB4C89892A610E638063AC298EEAF6786E309E06970C.
 /// </summary>
-internal class RegisterOAuthCredentialsHandler(RegAppCommand regCommand): BaseExternalLinkHandler, IRequestHandler<RegisterOAuthCredentials>
+internal class RegisterOAuthCredentialsHandler(RegAppCommand regCommand)
+    : BaseExternalLinkHandler, IRequestHandler<RegisterOAuthCredentials>
 {
     private readonly RegAppCommand _regCommand = regCommand;
 
@@ -30,7 +32,7 @@ internal class RegisterOAuthCredentialsHandler(RegAppCommand regCommand): BaseEx
         string authUrl =
             $"{ClioParams["protocol"]}//{ClioParams["host"].Replace(".creatio.com", "-is.creatio.com/connect/token")}";
 
-        RegAppOptions opt = new ()
+        RegAppOptions opt = new()
         {
             IsNetCore = false, // In OAuthClientAppPage check if this.window.location.pathname starts with /0
             ClientId = ClioParams["clientId"],

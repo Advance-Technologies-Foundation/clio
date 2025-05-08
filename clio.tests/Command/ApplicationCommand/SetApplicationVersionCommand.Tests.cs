@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Json;
-
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
 using FluentAssertions;
@@ -27,6 +26,8 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     private static readonly string MockWorkspaceAppDescriptorPath =
         Path.Combine(MockWorkspaceAppPackageFolderPath, "Files", "app-descriptor.json");
 
+    private MockFileSystem _fileSystem;
+
     private static MockFileSystem CreateFs(string filePath, string packagePath)
     {
         string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
@@ -42,7 +43,7 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     private static MockFileSystem CreateFs(Dictionary<string, string> appDescriptors)
     {
         string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-        MockFileSystem mockFileSystem = new ();
+        MockFileSystem mockFileSystem = new();
         foreach (KeyValuePair<string, string> appDescriptor in appDescriptors)
         {
             string appDescriptorExamplesDescriptorPath =
@@ -57,8 +58,6 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
         return mockFileSystem;
     }
 
-    private MockFileSystem _fileSystem;
-
     [TestCase("app-descriptor_v.json")]
     [TestCase("app-descriptor_wv.json")]
     [TestCase("app-descriptor_dv.json")]
@@ -66,13 +65,12 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     {
         _fileSystem = CreateFs(descriptorPath, MockWorkspaceAppPackageFolderPath);
         string expectedVersion = "8.1.1";
-        ComposableApplicationManager composableApplicationManager = new (_fileSystem, null, null, null);
-        SetApplicationVersionCommand command = new (composableApplicationManager);
+        ComposableApplicationManager composableApplicationManager = new(_fileSystem, null, null, null);
+        SetApplicationVersionCommand command = new(composableApplicationManager);
         string worspaceFolderPath = MockWorspacePath;
         command.Execute(new SetApplicationVersionOption
         {
-            Version = expectedVersion,
-            WorspaceFolderPath = worspaceFolderPath
+            Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
         });
         JsonValue? objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(MockWorkspaceAppDescriptorPath));
         string actualVersion = objectJson["Version"];
@@ -84,21 +82,19 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     [Test]
     public void SetVersion_ThrowException_WhenWorkspaceContainsMoreThanOneApplication()
     {
-        Dictionary<string, string> appDescriptions = new ()
+        Dictionary<string, string> appDescriptions = new()
         {
-            { "Package1", "app1-app-descriptor.json" },
-            { "Package2", "app2-app-descriptor.json" }
+            { "Package1", "app1-app-descriptor.json" }, { "Package2", "app2-app-descriptor.json" }
         };
         _fileSystem = CreateFs(appDescriptions);
-        ComposableApplicationManager composableApplicationManager = new (_fileSystem, null, null, null);
-        SetApplicationVersionCommand command = new (composableApplicationManager);
+        ComposableApplicationManager composableApplicationManager = new(_fileSystem, null, null, null);
+        SetApplicationVersionCommand command = new(composableApplicationManager);
         string expectedVersion = "8.1.1";
         string worspaceFolderPath = MockWorspacePath;
         Exception? exception = Assert.Throws<Exception>(() =>
             command.Execute(new SetApplicationVersionOption
             {
-                Version = expectedVersion,
-                WorspaceFolderPath = worspaceFolderPath
+                Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
             }));
         exception.Message.Contains("Package1").Should().BeTrue();
         exception.Message.Contains("Package2").Should().BeTrue();
@@ -107,21 +103,19 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     [Test]
     public void SetVersion_ThrowExceptionWhenAplicationExtendedAndPackageNotDefined()
     {
-        Dictionary<string, string> appDescriptions = new ()
+        Dictionary<string, string> appDescriptions = new()
         {
-            { "Package1", "app1-app-descriptor.json" },
-            { "Package2", "app1-ext-app-descriptor.json" }
+            { "Package1", "app1-app-descriptor.json" }, { "Package2", "app1-ext-app-descriptor.json" }
         };
         _fileSystem = CreateFs(appDescriptions);
         string expectedVersion = "8.1.1";
-        ComposableApplicationManager composableApplicationManager = new (_fileSystem, null, null, null);
-        SetApplicationVersionCommand command = new (composableApplicationManager);
+        ComposableApplicationManager composableApplicationManager = new(_fileSystem, null, null, null);
+        SetApplicationVersionCommand command = new(composableApplicationManager);
         string worspaceFolderPath = MockWorspacePath;
         Exception? exception = Assert.Throws<Exception>(() =>
             command.Execute(new SetApplicationVersionOption
             {
-                Version = expectedVersion,
-                WorspaceFolderPath = worspaceFolderPath
+                Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
             }));
         exception.Message.Contains("Package1").Should().BeTrue();
         exception.Message.Contains("Package2").Should().BeTrue();
@@ -130,20 +124,18 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     [Test]
     public void SetVersion_WhenAplicationExtendedAndPackageDefined()
     {
-        Dictionary<string, string> appDescriptions =[];
+        Dictionary<string, string> appDescriptions = [];
         string extendPackageName = "Package2";
         appDescriptions.Add("Package1", "app1-app-descriptor.json");
         appDescriptions.Add(extendPackageName, "app1-ext-app-descriptor.json");
         _fileSystem = CreateFs(appDescriptions);
         string expectedVersion = "8.1.1";
-        ComposableApplicationManager composableApplicationManager = new (_fileSystem, null, null, null);
-        SetApplicationVersionCommand command = new (composableApplicationManager);
+        ComposableApplicationManager composableApplicationManager = new(_fileSystem, null, null, null);
+        SetApplicationVersionCommand command = new(composableApplicationManager);
         string worspaceFolderPath = MockWorspacePath;
         command.Execute(new SetApplicationVersionOption
         {
-            Version = expectedVersion,
-            WorspaceFolderPath = worspaceFolderPath,
-            PackageName = extendPackageName
+            Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath, PackageName = extendPackageName
         });
     }
 
@@ -154,12 +146,11 @@ internal class SetApplicationVersionCommandTest : BaseCommandTests<SetApplicatio
     {
         _fileSystem = CreateFs(descriptorPath, MockPackageFolderPath);
         string expectedVersion = "8.1.1";
-        ComposableApplicationManager composableApplicationManager = new (_fileSystem, null, null, null);
-        SetApplicationVersionCommand command = new (composableApplicationManager);
+        ComposableApplicationManager composableApplicationManager = new(_fileSystem, null, null, null);
+        SetApplicationVersionCommand command = new(composableApplicationManager);
         command.Execute(new SetApplicationVersionOption
         {
-            Version = expectedVersion,
-            PackageFolderPath = MockPackageFolderPath
+            Version = expectedVersion, PackageFolderPath = MockPackageFolderPath
         });
         JsonValue? objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(MockPackageAppDescriptorPath));
         string actualVersion = objectJson["Version"];

@@ -1,15 +1,11 @@
-using System;
+﻿using System;
 using System.Net.Http;
-using System.Runtime.Intrinsics.Arm;
-using System.Security.Policy;
-
 using Clio.Common;
 using CommandLine;
-using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Clio.Command;
 
-[Verb("show-package-file-content", Aliases = new string[] { "show-files", "files" },
+[Verb("show-package-file-content", Aliases = new[] { "show-files", "files" },
     HelpText = "Show package file context")]
 public class ShowPackageFileContentOptions : RemoteCommandOptions
 {
@@ -20,12 +16,15 @@ public class ShowPackageFileContentOptions : RemoteCommandOptions
     public string FilePath { get; internal set; }
 }
 
-internal class ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings): RemoteCommand<ShowPackageFileContentOptions>(applicationClient, environmentSettings)
+internal class ShowPackageFileContentCommand(
+    IApplicationClient applicationClient,
+    EnvironmentSettings environmentSettings)
+    : RemoteCommand<ShowPackageFileContentOptions>(applicationClient, environmentSettings)
 {
-    public override HttpMethod HttpMethod => HttpMethod.Get;
+    private string _filePath;
 
     private object _packageName;
-    private string _filePath;
+    public override HttpMethod HttpMethod => HttpMethod.Get;
 
     protected override string ServicePath =>
         IsReadFile

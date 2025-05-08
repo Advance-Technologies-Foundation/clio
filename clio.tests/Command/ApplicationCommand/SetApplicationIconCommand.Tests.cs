@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Autofac;
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
@@ -33,9 +32,7 @@ internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicati
         SetApplicationIconCommand command = container.Resolve<SetApplicationIconCommand>();
         command.Execute(new SetApplicationIconOption
         {
-            IconPath = iconPath,
-            AppPath = MockWorkspaceAppPackageFolderPath,
-            AppName = appName
+            IconPath = iconPath, AppPath = MockWorkspaceAppPackageFolderPath, AppName = appName
         });
         _composableApplicationManager.Received(1).SetIcon(MockWorkspaceAppPackageFolderPath, iconPath, appName);
     }

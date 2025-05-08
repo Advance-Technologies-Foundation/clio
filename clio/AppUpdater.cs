@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Json;
 using System.Net.Http;
@@ -6,46 +6,17 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using Newtonsoft.Json.Linq;
 
 namespace Clio;
 
-public class AppUpdater(ILogger logger): IAppUpdater
+public class AppUpdater(ILogger logger) : IAppUpdater
 {
     private const string LastVersionUrl =
         "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
 
     public bool Checked { get; private set; }
-
-    private async Task<string> GetLatestPackageVersionAsync(string packageName)
-    {
-        string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
-
-        try
-        {
-            using HttpClient client = new ();
-            HttpResponseMessage response = await client.GetAsync(searchUrl);
-            response.EnsureSuccessStatusCode();
-
-            string responseBody = await response.Content.ReadAsStringAsync();
-            JObject data = JObject.Parse(responseBody);
-
-            // Extracting the latest version from the response
-            string latestVersion = data["versions"].Last.ToString();
-
-            return latestVersion;
-        }
-        catch (HttpRequestException e)
-        {
-            logger.WriteError($"Error fetching data: {e.Message}");
-            return null;
-        }
-    }
-
-    private void ShowNugetUpdateMessage() =>
-        logger.WriteWarning("You can update the package via the \'dotnet tool update clio -g\' command.");
 
     public void CheckUpdate()
     {
@@ -70,7 +41,7 @@ public class AppUpdater(ILogger logger): IAppUpdater
     public string GetLatestVersionFromGitHub()
     {
         Task<byte[]> body;
-        using (HttpClient client = new ())
+        using (HttpClient client = new())
         {
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
@@ -81,8 +52,8 @@ public class AppUpdater(ILogger logger): IAppUpdater
             }
         }
 
-        MemoryStream jsonStream = new (body.Result) { Position = 0 };
-        using StreamReader reader = new (jsonStream, Encoding.UTF8);
+        MemoryStream jsonStream = new(body.Result) { Position = 0 };
+        using StreamReader reader = new(jsonStream, Encoding.UTF8);
         string json = reader.ReadToEnd();
         JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
         JsonValue version = jsonDoc["tag_name"];
@@ -90,6 +61,34 @@ public class AppUpdater(ILogger logger): IAppUpdater
     }
 
     public string GetLatestVersionFromNuget() => GetLatestPackageVersionAsync("clio").GetAwaiter().GetResult();
+
+    private async Task<string> GetLatestPackageVersionAsync(string packageName)
+    {
+        string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
+
+        try
+        {
+            using HttpClient client = new();
+            HttpResponseMessage response = await client.GetAsync(searchUrl);
+            response.EnsureSuccessStatusCode();
+
+            string responseBody = await response.Content.ReadAsStringAsync();
+            JObject data = JObject.Parse(responseBody);
+
+            // Extracting the latest version from the response
+            string latestVersion = data["versions"].Last.ToString();
+
+            return latestVersion;
+        }
+        catch (HttpRequestException e)
+        {
+            logger.WriteError($"Error fetching data: {e.Message}");
+            return null;
+        }
+    }
+
+    private void ShowNugetUpdateMessage() =>
+        logger.WriteWarning("You can update the package via the \'dotnet tool update clio -g\' command.");
 }
 
 public interface IAppUpdater

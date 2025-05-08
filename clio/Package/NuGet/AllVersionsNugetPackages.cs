@@ -1,16 +1,15 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
 
 public class AllVersionsNugetPackages
 {
-    private readonly Lazy<IEnumerable<NugetPackage>> _orderingPackagesLazy;
-    private readonly Lazy<NugetPackage> _lastVersionNugetPackageLazy;
     private readonly Lazy<NugetPackage> _lastStableVersionNugetPackageLazy;
+    private readonly Lazy<NugetPackage> _lastVersionNugetPackageLazy;
+    private readonly Lazy<IEnumerable<NugetPackage>> _orderingPackagesLazy;
 
     public AllVersionsNugetPackages(string name, IEnumerable<NugetPackage> packages)
     {

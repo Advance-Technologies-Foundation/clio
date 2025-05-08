@@ -1,7 +1,5 @@
 using System.Threading;
-
 using Clio.Common.Responses;
-using Common;
 
 namespace Clio.Package;
 
@@ -18,11 +16,11 @@ public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
 
     private const int DelayBetweenRetryAttemptsSec = 1;
     private readonly IApplicationClient _applicationClient;
-    private readonly IJsonConverter _jsonConverter;
-    private readonly ILogger _logger;
-    private readonly string _loadPackagesToFileSystemUrl;
-    private readonly string _loadPackagesToDbUrl;
     private readonly string _getIsFileDesignModeUrl;
+    private readonly IJsonConverter _jsonConverter;
+    private readonly string _loadPackagesToDbUrl;
+    private readonly string _loadPackagesToFileSystemUrl;
+    private readonly ILogger _logger;
 
     public FileDesignModeFileDesignModePackages(IApplicationClient applicationClient, IJsonConverter jsonConverter,
         ILogger logger, IServiceUrlBuilder serviceUrlBuilder)
@@ -61,6 +59,10 @@ public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
         }
     }
 
+    public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
+
+    public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
+
     private static string GetErrorDetails(ErrorInfo errorInfo) =>
         $"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
 
@@ -88,8 +90,4 @@ public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
         _ = response.ErrorInfo;
         PrintErrorOperationMessage(storageName, GetErrorDetails(response.ErrorInfo));
     }
-
-    public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
-
-    public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
 }

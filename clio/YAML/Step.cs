@@ -1,20 +1,19 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
-
 using CommandLine;
 using OneOf;
 using OneOf.Types;
 using YamlDotNet.Serialization;
 
 namespace Clio.YAML;
+
 public partial class Step
 {
-
     /// <summary>
-    /// Finds Type from assembly that matches Step in YAML file.
+    ///     Finds Type from assembly that matches Step in YAML file.
     /// </summary>
     private static readonly Func<Type[], string, OneOf<Type, None>> FindOptionTypeByName =
         (allTypes, optionsOrAliasName) =>
@@ -39,7 +38,7 @@ public partial class Step
         };
 
     /// <summary>
-    /// Creates a new instance of a command option type and sets the properties based on the settings and secrets.
+    ///     Creates a new instance of a command option type and sets the properties based on the settings and secrets.
     /// </summary>
     private static readonly Func<
             OneOf<Type, None>,
@@ -63,7 +62,7 @@ public partial class Step
         };
 
     /// <summary>
-    /// Converts macro to value, a macro is any string that start is enclosed between {{ and }}.
+    ///     Converts macro to value, a macro is any string that start is enclosed between {{ and }}.
     /// </summary>
     private static readonly Func<object, Func<string, OneOf<object, None>>, Func<string, OneOf<object, None>>, object>
         ConvertMacroToValue = (maybeMacro, settingsLookup, secretsLookup) =>
@@ -101,7 +100,7 @@ public partial class Step
         };
 
     /// <summary>
-    /// Sets the property value based on the command options.
+    ///     Sets the property value based on the command options.
     /// </summary>
     private static readonly Action<PropertyInfo, object,
             IReadOnlyDictionary<object, object>, Func<string, OneOf<object, None>>, Func<string, OneOf<object, None>>>
@@ -147,19 +146,15 @@ public partial class Step
             }
         };
 
-    [YamlMember(Alias = "action")]
-    public string Action { get; init; }
+    [YamlMember(Alias = "action")] public string Action { get; init; }
 
-    [YamlMember(Alias = "description")]
-    public string Description { get; init; }
+    [YamlMember(Alias = "description")] public string Description { get; init; }
 
-    [YamlMember(Alias = "options")]
-    public IReadOnlyDictionary<object, object> Options { get; init; }
-
+    [YamlMember(Alias = "options")] public IReadOnlyDictionary<object, object> Options { get; init; }
 
 
     /// <summary>
-    /// Activates step by finding the type in the assembly and setting the properties based on the settings and secrets.
+    ///     Activates step by finding the type in the assembly and setting the properties based on the settings and secrets.
     /// </summary>
     /// <param name="allTypes">Array of types to search for command option.</param>
     /// <param name="settingsLookup">Settings lookup function.</param>

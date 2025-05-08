@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
-
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -29,7 +28,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
     private List<IISScannerHandler.RegisteredSite> MockRegisteredSites(Dictionary<string, string> envs, bool mockDir)
     {
-        List<IISScannerHandler.RegisteredSite> sites =[];
+        List<IISScannerHandler.RegisteredSite> sites = [];
         foreach (KeyValuePair<string, string> keyValuePair in envs)
         {
             string sitePath = Path.Join("T:", keyValuePair.Key);
@@ -39,9 +38,9 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
                 fileSystem.Directory.CreateDirectory(sitePath);
             }
 
-            IISScannerHandler.SiteBinding binding = new (keyValuePair.Key, string.Empty, string.Empty, sitePath);
-            List<Uri> uris =[new (keyValuePair.Value)];
-            IISScannerHandler.RegisteredSite site = new (binding, uris, IISScannerHandler.SiteType.Core);
+            IISScannerHandler.SiteBinding binding = new(keyValuePair.Key, string.Empty, string.Empty, sitePath);
+            List<Uri> uris = [new(keyValuePair.Value)];
+            IISScannerHandler.RegisteredSite site = new(binding, uris, IISScannerHandler.SiteType.Core);
             sites.Add(site);
         }
 
@@ -62,7 +61,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
         _settingsRepository.FindEnvironment(envName)
             .Returns((EnvironmentSettings)null);
 
@@ -81,9 +80,9 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-        EnvironmentSettings envSettings = new () { Uri = null };
+        EnvironmentSettings envSettings = new() { Uri = null };
 
         _settingsRepository.FindEnvironment(envName).Returns(envSettings);
 
@@ -102,9 +101,9 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-        EnvironmentSettings envSettings = new () { Uri = "some_invalid_uri" };
+        EnvironmentSettings envSettings = new() { Uri = "some_invalid_uri" };
 
         _settingsRepository.FindEnvironment(envName)
             .Returns(envSettings);
@@ -124,15 +123,15 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
         const string envUri = "http://localhost:40010";
-        EnvironmentSettings envSettings = new () { Uri = envUri, IsNetCore = true };
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
         _settingsRepository.FindEnvironment(envName)
             .Returns(envSettings);
 
-        Dictionary<string, string> envs = new () { { envName, envUri } };
+        Dictionary<string, string> envs = new() { { envName, envUri } };
 
         List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, false);
         _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
@@ -154,15 +153,15 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
         const string envUri = "http://localhost:40010";
-        EnvironmentSettings envSettings = new () { Uri = envUri, IsNetCore = true };
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
         _settingsRepository.FindEnvironment(envName)
             .Returns(envSettings);
 
-        Dictionary<string, string> envs =[];
+        Dictionary<string, string> envs = [];
 
         List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
         _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
@@ -184,15 +183,15 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
         const string envUri = "http://localhost:40010";
-        EnvironmentSettings envSettings = new () { Uri = envUri, IsNetCore = true };
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
         _settingsRepository.FindEnvironment(envName)
             .Returns(envSettings);
 
-        Dictionary<string, string> envs = new () { { envName, envUri } };
+        Dictionary<string, string> envs = new() { { envName, envUri } };
 
         List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
         _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
@@ -214,15 +213,15 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
         // Arrange
         const string envName = "test";
         _sut = container.Resolve<CustomizeDataProtectionCommand>();
-        CustomizeDataProtectionCommandOptions options = new () { EnableDataProtection = true, Environment = envName };
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
         const string envUri = "http://localhost:40010";
-        EnvironmentSettings envSettings = new () { Uri = envUri, IsNetCore = true };
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
         _settingsRepository.FindEnvironment(envName)
             .Returns(envSettings);
 
-        Dictionary<string, string> envs = new () { { envName, envUri } };
+        Dictionary<string, string> envs = new() { { envName, envUri } };
 
         List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
         _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())

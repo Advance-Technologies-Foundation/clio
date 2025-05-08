@@ -1,17 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Abstractions;
-using System.Json;
-using System.Text;
-
+﻿using System.IO;
 using Clio.ComposableApplication;
 using CommandLine;
 using Terrasoft.Common;
 
 namespace Clio.Command.ApplicationCommand;
 
-[Verb("set-app-version", Aliases = new string[] { "appversion" }, HelpText = "Set application version")]
+[Verb("set-app-version", Aliases = new[] { "appversion" }, HelpText = "Set application version")]
 internal class SetApplicationVersionOption
 {
     [Option('v', "app-version", Required = true, HelpText = "Application version")]
@@ -27,7 +21,8 @@ internal class SetApplicationVersionOption
     public string PackageFolderPath { get; internal set; }
 }
 
-internal class SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager): Command<SetApplicationVersionOption>
+internal class SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager)
+    : Command<SetApplicationVersionOption>
 {
     private readonly IComposableApplicationManager _composableApplicationManager = composableApplicationManager;
 

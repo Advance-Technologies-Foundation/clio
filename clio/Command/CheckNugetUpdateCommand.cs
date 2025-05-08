@@ -1,14 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("check-nuget-update", Aliases = new string[] { "check" },
+[Verb("check-nuget-update", Aliases = new[] { "check" },
     HelpText = "Check for Creatio packages updates in NuGet")]
 public class CheckNugetUpdateOptions : EnvironmentOptions
 {
@@ -19,8 +18,8 @@ public class CheckNugetUpdateOptions : EnvironmentOptions
 
 public class CheckNugetUpdateCommand : Command<CheckNugetUpdateOptions>
 {
-    private readonly INuGetManager _nugetManager;
     private readonly ILogger _logger;
+    private readonly INuGetManager _nugetManager;
 
     public CheckNugetUpdateCommand(INuGetManager nugetManager, ILogger logger)
     {

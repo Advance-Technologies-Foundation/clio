@@ -1,6 +1,4 @@
-using System;
-
-using Common;
+﻿using System;
 
 namespace Clio.WebApplication;
 
@@ -13,8 +11,8 @@ public interface IApplicationPing
 
 public class ApplicationPing : IApplicationPing
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClientFactory _applicationClientFactory;
+    private readonly EnvironmentSettings _environmentSettings;
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
     public ApplicationPing(
@@ -33,9 +31,6 @@ public class ApplicationPing : IApplicationPing
         ? _environmentSettings.Uri
         : _serviceUrlBuilder.Build("ping");
 
-    private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-        _applicationClientFactory.CreateClient(environmentSettings);
-
     public bool Ping(EnvironmentSettings environmentSettings)
     {
         try
@@ -51,4 +46,7 @@ public class ApplicationPing : IApplicationPing
     }
 
     public bool Ping() => Ping(_environmentSettings);
+
+    private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+        _applicationClientFactory.CreateClient(environmentSettings);
 }

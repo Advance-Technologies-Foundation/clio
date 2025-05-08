@@ -1,6 +1,4 @@
-using System.Net.Security;
-
-using Clio.Common;
+﻿using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
@@ -18,10 +16,10 @@ public class AddSchemaOptions
     public string SchemaType { get; set; }
 }
 
-public class AddSchemaCommand(ISchemaBuilder schemaBuilder, ILogger logger): Command<AddSchemaOptions>
+public class AddSchemaCommand(ISchemaBuilder schemaBuilder, ILogger logger) : Command<AddSchemaOptions>
 {
-    private readonly ISchemaBuilder _schemaBuilder = schemaBuilder;
     private readonly ILogger _logger = logger;
+    private readonly ISchemaBuilder _schemaBuilder = schemaBuilder;
 
     public override int Execute(AddSchemaOptions options)
     {

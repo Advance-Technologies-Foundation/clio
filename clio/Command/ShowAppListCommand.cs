@@ -1,11 +1,11 @@
-using System;
-
+﻿using System;
+using System.Text;
 using Clio.UserEnvironment;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("show-web-app-list", Aliases = new string[] { "envs", "show-web-app" },
+[Verb("show-web-app-list", Aliases = new[] { "envs", "show-web-app" },
     HelpText = "Show the list of web applications and their settings")]
 public class AppListOptions
 {
@@ -16,7 +16,7 @@ public class AppListOptions
     public bool ShowShort { get; set; }
 }
 
-public class ShowAppListCommand(ISettingsRepository settingsRepository): Command<AppListOptions>
+public class ShowAppListCommand(ISettingsRepository settingsRepository) : Command<AppListOptions>
 {
     private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
@@ -24,7 +24,7 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository): Command
     {
         try
         {
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.OutputEncoding = Encoding.UTF8;
             _settingsRepository.ShowSettingsTo(Console.Out, options.Name, options.ShowShort);
             return 0;
         }

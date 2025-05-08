@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-
 using Clio.Common;
 using Clio.Common.Responses;
 
@@ -8,11 +7,10 @@ namespace Clio.Package;
 
 internal abstract class BasePackageOperation
 {
-    private readonly IApplicationPackageListProvider _applicationPackageListProvider;
-    private readonly IApplicationClient _applicationClient;
-    private readonly IServiceUrlBuilder _serviceUrlBuilder;
-
     protected const string PackageServiceUrl = "PackageService.svc";
+    private readonly IApplicationClient _applicationClient;
+    private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
     protected BasePackageOperation(
         IApplicationPackageListProvider applicationPackageListProvider,
@@ -37,7 +35,8 @@ internal abstract class BasePackageOperation
     {
         PackageInfo packageInfo =
             _applicationPackageListProvider.GetPackages("{}")
-                .FirstOrDefault(package => package.Descriptor.Name == packageName) ?? throw new Exception($"Package with name {packageName} not found");
+                .FirstOrDefault(package => package.Descriptor.Name == packageName) ??
+            throw new Exception($"Package with name {packageName} not found");
         return packageInfo.Descriptor.UId;
     }
 

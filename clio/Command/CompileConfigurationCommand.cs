@@ -1,6 +1,4 @@
-using System;
 using System.Threading;
-
 using Clio.Common;
 using CommandLine;
 
@@ -21,7 +19,8 @@ public interface ICompileConfigurationCommand
     int Execute(CompileConfigurationOptions options);
 }
 
-public class CompileConfigurationCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<CompileConfigurationOptions>(applicationClient, settings), ICompileConfigurationCommand
+public class CompileConfigurationCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+    : RemoteCommand<CompileConfigurationOptions>(applicationClient, settings), ICompileConfigurationCommand
 {
     private static readonly string CompileUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Build";
     private static readonly string CompileAllUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Rebuild";

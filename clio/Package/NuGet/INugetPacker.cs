@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace Clio.Project.NuGet;
 
 public interface INugetPacker

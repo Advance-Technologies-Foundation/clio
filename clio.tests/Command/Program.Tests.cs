@@ -1,13 +1,10 @@
 using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using System.Threading;
-
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
-using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -16,8 +13,6 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class ProgramTestCase : BaseClioModuleTests
 {
-    private readonly IAppUpdater appUpdaterMock = Substitute.For<IAppUpdater>();
-
     [TearDown]
     public void TearDown()
     {
@@ -25,6 +20,8 @@ public class ProgramTestCase : BaseClioModuleTests
         Program.Container = null;
         Program.AppUpdater = null;
     }
+
+    private readonly IAppUpdater appUpdaterMock = Substitute.For<IAppUpdater>();
 
     public override void Setup()
     {
@@ -36,7 +33,7 @@ public class ProgramTestCase : BaseClioModuleTests
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
-        DataProviderMock dataProviderMock = new ();
+        DataProviderMock dataProviderMock = new();
         containerBuilder.RegisterInstance(dataProviderMock).As<IDataProvider>();
         containerBuilder.RegisterInstance(appUpdaterMock).As<IAppUpdater>();
     }
@@ -45,7 +42,7 @@ public class ProgramTestCase : BaseClioModuleTests
     [Category("Unit")]
     public void Resolve_DoesNotThrowException_WhenCommandDoesNotNeedEnvironment()
     {
-        CreateWorkspaceCommandOptions options = new ();
+        CreateWorkspaceCommandOptions options = new();
         bool logAndSettings = false;
         Program.Container = container;
         string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);

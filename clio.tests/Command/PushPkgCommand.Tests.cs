@@ -1,9 +1,6 @@
-using System;
-
 using Autofac;
 using Clio.Command;
 using Clio.Package;
-using Clio.Project;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -33,7 +30,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
     {
         _compileConfigurationCommand.ClearReceivedCalls();
         PushPackageCommand command = container.Resolve<PushPackageCommand>();
-        PushPkgOptions options = new () { ForceCompilation = true };
+        PushPkgOptions options = new() { ForceCompilation = true };
         _packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
                 Arg.Any<PackageInstallOptions>(), Arg.Any<string>())
             .Returns(true);
@@ -49,7 +46,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
     public void Execute_DoesNotRunningCompilation_WhenInstallFails()
     {
         PushPackageCommand command = container.Resolve<PushPackageCommand>();
-        PushPkgOptions options = new () { ForceCompilation = true };
+        PushPkgOptions options = new() { ForceCompilation = true };
         _packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
                 Arg.Any<PackageInstallOptions>(), Arg.Any<string>())
             .Returns(false);
@@ -63,7 +60,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
     public void Execute_DoesNotRunningCompilation_WhenCompilationOptionsFalse()
     {
         PushPackageCommand command = container.Resolve<PushPackageCommand>();
-        PushPkgOptions options = new () { ForceCompilation = false };
+        PushPkgOptions options = new() { ForceCompilation = false };
         _packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
                 Arg.Any<PackageInstallOptions>(), Arg.Any<string>())
             .Returns(true);
@@ -78,7 +75,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
     {
         _compileConfigurationCommand.ClearReceivedCalls();
         PushPackageCommand command = container.Resolve<PushPackageCommand>();
-        PushPkgOptions options = new () { ForceCompilation = true };
+        PushPkgOptions options = new() { ForceCompilation = true };
         _packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
                 Arg.Any<PackageInstallOptions>(), Arg.Any<string>())
             .Returns(true);

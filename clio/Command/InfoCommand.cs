@@ -1,12 +1,11 @@
 using System;
 using System.Reflection;
-
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("info", Aliases = new string[] { "ver", "get-version", "i" },
+[Verb("info", Aliases = new[] { "ver", "get-version", "i" },
     HelpText = "Check for Creatio packages updates in NuGet")]
 public class InfoCommandOptions
 {
@@ -26,7 +25,7 @@ public class InfoCommandOptions
     public bool Runtime { get; set; }
 }
 
-public class InfoCommand(ILogger logger): Command<InfoCommandOptions>
+public class InfoCommand(ILogger logger) : Command<InfoCommandOptions>
 {
     private const string _gateVersion = "2.0.0.34";
     private readonly ILogger _logger = logger;
@@ -38,23 +37,27 @@ public class InfoCommand(ILogger logger): Command<InfoCommandOptions>
             _logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
             return 0;
         }
-        else if (options is not null && options.Runtime)
+
+        if (options is not null && options.Runtime)
         {
             _logger.WriteInfo($"dotnet: {Environment.Version}");
             return 0;
         }
-        else if (options is not null && options.Gate)
+
+        if (options is not null && options.Gate)
         {
             _logger.WriteInfo($"gate:   {_gateVersion}");
             return 0;
         }
-        else if (options.ShowSettingsFilePath)
+
+        if (options.ShowSettingsFilePath)
         {
             _logger.WriteInfo(SettingsRepository.AppSettingsFile);
             return 0;
         }
-        else if ((options is not null && options.All) ||
-                 (!options.Runtime && !options.Gate && !options.Clio && !options.ShowSettingsFilePath))
+
+        if ((options is not null && options.All) ||
+            (!options.Runtime && !options.Gate && !options.Clio && !options.ShowSettingsFilePath))
         {
             _logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
             _logger.WriteInfo($"gate:   {_gateVersion}");

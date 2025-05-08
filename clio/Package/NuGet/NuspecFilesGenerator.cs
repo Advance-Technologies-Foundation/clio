@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
@@ -21,6 +20,18 @@ public class NuspecFilesGenerator : INuspecFilesGenerator
         _templateProvider = templateProvider;
     }
 
+    public string GetNuspecFileName(PackageInfo pkgInfo) =>
+        $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NuspecExtension}";
+
+    public void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,
+        string packedPackagePath, string nuspecFilePath)
+    {
+        CheckArguments(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
+        string filesSection = GetNuspecFilesSection(packedPackagePath);
+        string dependenciesSection = GetNuspecDependenciesSection(dependencies);
+        CreateFromTemplate(packageInfo, filesSection, dependenciesSection, nuspecFilePath);
+    }
+
     private static void CheckArguments(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,
         string packedPackagePath, string nuspecFilePath)
     {
@@ -32,7 +43,7 @@ public class NuspecFilesGenerator : INuspecFilesGenerator
 
     private string GetNuspecFilesSection(string packedPackagePath)
     {
-        FileInfo compressedPackageFileInfo = new (packedPackagePath);
+        FileInfo compressedPackageFileInfo = new(packedPackagePath);
         return FileRecordTemplate
             .Replace("$src$", packedPackagePath)
             .Replace("$target$", compressedPackageFileInfo.Name);
@@ -40,7 +51,7 @@ public class NuspecFilesGenerator : INuspecFilesGenerator
 
     private string GetNuspecDependenciesSection(IEnumerable<PackageDependency> dependencies)
     {
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         foreach (PackageDependency dependency in dependencies)
         {
             string dependencyVersion = DependencyVersionTemplate
@@ -70,17 +81,5 @@ public class NuspecFilesGenerator : INuspecFilesGenerator
         string template = _templateProvider.GetTemplate(_packageNuspecFileName);
         string nuspecFileContent = ReplaceMacro(template, packageInfo, filesSection, dependenciesSection);
         File.WriteAllText(filePath, nuspecFileContent);
-    }
-
-    public string GetNuspecFileName(PackageInfo pkgInfo) =>
-        $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NuspecExtension}";
-
-    public void Create(PackageInfo packageInfo, IEnumerable<PackageDependency> dependencies,
-        string packedPackagePath, string nuspecFilePath)
-    {
-        CheckArguments(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
-        string filesSection = GetNuspecFilesSection(packedPackagePath);
-        string dependenciesSection = GetNuspecDependenciesSection(dependencies);
-        CreateFromTemplate(packageInfo, filesSection, dependenciesSection, nuspecFilePath);
     }
 }

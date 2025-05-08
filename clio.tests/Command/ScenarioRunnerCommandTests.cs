@@ -1,6 +1,6 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Common;
@@ -11,12 +11,13 @@ using NUnit.Framework;
 using YamlDotNet.Serialization;
 
 namespace Clio.Tests.Command;
+
 [TestFixture(Author = "Kirill Krylov", Category = "YAML")]
 public class ScenarioRunnerCommandTests
 {
     private readonly ScenarioRunnerCommand _sut;
     private readonly IDeserializer _deserializer = new DeserializerBuilder().Build();
-    private readonly List<object> _receivedOptions =[];
+    private readonly List<object> _receivedOptions = [];
     private readonly MockFileSystem _mockFs;
 
     public ScenarioRunnerCommandTests()
@@ -27,8 +28,8 @@ public class ScenarioRunnerCommandTests
         _mockFs = new MockFileSystem();
         _sut.FileSystem = _mockFs;
 
-        string filePath = System.IO.Path.Combine(SettingsRepository.AppSettingsFolderPath, "appsettings.json");
-        string json = System.IO.File.ReadAllText("Examples/clio/appsettings.json");
+        string filePath = Path.Combine(SettingsRepository.AppSettingsFolderPath, "appsettings.json");
+        string json = File.ReadAllText("Examples/clio/appsettings.json");
         _mockFs.AddFile(filePath, json);
         Program.ExecuteCommandWithOption = instance =>
         {
@@ -42,7 +43,7 @@ public class ScenarioRunnerCommandTests
     {
         // Arrange
         const string fileName = @"YAML/Script/three_sections.yaml";
-        ScenarioRunnerOptions options = new () { FileName = fileName };
+        ScenarioRunnerOptions options = new() { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
@@ -77,7 +78,7 @@ public class ScenarioRunnerCommandTests
     {
         // Arrange
         const string fileName = @"YAML/Script/reg_web_app_example.yaml";
-        ScenarioRunnerOptions options = new () { FileName = fileName };
+        ScenarioRunnerOptions options = new() { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
@@ -98,7 +99,7 @@ public class ScenarioRunnerCommandTests
     {
         // Arrange
         const string fileName = @"YAML/Script/emptyFile.yaml";
-        ScenarioRunnerOptions options = new () { FileName = fileName };
+        ScenarioRunnerOptions options = new() { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
@@ -113,7 +114,7 @@ public class ScenarioRunnerCommandTests
     {
         // Arrange
         const string fileName = @"YAML/Script/non_existant.yaml";
-        ScenarioRunnerOptions options = new () { FileName = fileName };
+        ScenarioRunnerOptions options = new() { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act

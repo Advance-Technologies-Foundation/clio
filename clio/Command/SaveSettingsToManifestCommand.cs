@@ -1,11 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Security.Policy;
 using System.Text;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -30,12 +28,12 @@ internal class SaveSettingsToManifestOptions : EnvironmentNameOptions
 
 internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettingsToManifestOptions>
 {
-    private readonly string dateTimeFormat = "M/dd/yyyy hh:mm:ss tt";
-    private readonly IFileSystem _fileSystem;
-    private readonly ISerializer _yamlSerializer;
-    private readonly IWebServiceManager _webServiceManager;
     private readonly IEnvironmentManager _environmentManager;
+    private readonly IFileSystem _fileSystem;
     private readonly ISysSettingsManager _sysSettingsManager;
+    private readonly IWebServiceManager _webServiceManager;
+    private readonly ISerializer _yamlSerializer;
+    private readonly string dateTimeFormat = "M/dd/yyyy hh:mm:ss tt";
 
     public SaveSettingsToManifestCommand(IDataProvider provider, ILogger logger, IFileSystem fileSystem,
         ISerializer yamlSerializer, IWebServiceManager webServiceManager, IEnvironmentManager environmentManager,
@@ -70,12 +68,9 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
         List<CreatioManifestPackage> packages = GetPackages();
         _logger.WriteInfo("Loading sys settings");
         List<CreatioManifestSetting> settings = GetSysSettingsValue();
-        EnvironmentManifest environmentManifest = new ()
+        EnvironmentManifest environmentManifest = new()
         {
-            WebServices = services,
-            Features = features,
-            Packages = packages,
-            Settings = settings
+            WebServices = services, Features = features, Packages = packages, Settings = settings
         };
         if (options.Uri != null)
         {
@@ -101,19 +96,17 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
             List<CreatioManifestSetting> result = [];
             foreach (SysSettings setting in settings)
             {
-                CreatioManifestSetting s = new () { Code = setting.Code, Value = setting.DefValue };
+                CreatioManifestSetting s = new() { Code = setting.Code, Value = setting.DefValue };
                 if (s.HasValue())
                 {
                     result.Add(s);
                 }
             }
 
-            return[.. result.OrderBy(s => s.Code)];
+            return [.. result.OrderBy(s => s.Code)];
         }
-        else
-        {
-            return null;
-        }
+
+        return null;
     }
 
     private List<CreatioManifestPackage> GetPackages()
@@ -123,7 +116,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
         List<SysPackage> sysPackages = [.. ctx.Models<SysPackage>()];
         foreach (SysPackage sysPackage in sysPackages.OrderBy(p => p.Name))
         {
-            CreatioManifestPackage manifestPackages = new ()
+            CreatioManifestPackage manifestPackages = new()
             {
                 Name = sysPackage.Name,
                 Hash = GetSysPackageHash(sysPackage),
@@ -142,13 +135,13 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
         IOrderedEnumerable<SysSchema> orderedSchemas = sysPackage.SysSchemas.OrderBy(s => s.Name);
         foreach (SysSchema schema in orderedSchemas)
         {
-            StringBuilder sb = new ();
+            StringBuilder sb = new();
             sb.Append(schema.Checksum);
             sb.Append(schema.ModifiedOn.ToString(dateTimeFormat, CultureInfo.InvariantCulture).ToUpper());
             string hashSource = sb.ToString();
             byte[] bytes = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes(hashSource));
             string schemaHash = BitConverter.ToString(bytes).Replace("-", string.Empty);
-            CreatioManifestPackageSchema manifestSchema = new () { Name = schema.Name, Hash = schemaHash };
+            CreatioManifestPackageSchema manifestSchema = new() { Name = schema.Name, Hash = schemaHash };
             schemas.Add(manifestSchema);
         }
 
@@ -157,7 +150,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 
     private string GetSysPackageHash(SysPackage sysPackage)
     {
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         sb.Append(sysPackage.Name);
         sb.Append(sysPackage.ModifiedOn.ToString(dateTimeFormat, CultureInfo.InvariantCulture).ToUpper());
         List<SysSchema> unOrderList = [.. sysPackage.SysSchemas];
@@ -184,16 +177,12 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
         foreach (AppFeature feature in features)
         {
             count++;
-            Feature f = new ()
-            {
-                Code = feature.Code,
-                UserValues = []
-            };
+            Feature f = new() { Code = feature.Code, UserValues = [] };
 
             List<AdminUnitFeatureState> featureStateId =
             [
                 .. ctx.Models<AdminUnitFeatureState>()
-                                .Where(f => f.FeatureId == feature.Id),
+                    .Where(f => f.FeatureId == feature.Id)
             ];
 
             featureStateId.ForEach(fsi =>
@@ -201,7 +190,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
                 List<AppFeatureState> state =
                 [
                     .. ctx.Models<AppFeatureState>()
-                                        .Where(i => i.Id == fsi.Id),
+                        .Where(i => i.Id == fsi.Id)
                 ];
 
                 state.ForEach(ff =>

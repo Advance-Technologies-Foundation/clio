@@ -3,11 +3,12 @@ using System.IO;
 
 namespace Clio.Common;
 
-public class WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.IFileSystem fileSystem): IWorkingDirectoriesProvider
+public class WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.IFileSystem fileSystem)
+    : IWorkingDirectoriesProvider
 {
-    private readonly ILogger _logger = logger;
-    private readonly System.IO.Abstractions.IFileSystem _fileSystem = fileSystem;
     public static string _executingDirectory;
+    private readonly System.IO.Abstractions.IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
 
     public string BaseTempDirectory
     {
@@ -16,8 +17,8 @@ public class WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.I
             string tempDir = Environment.GetEnvironmentVariable("CLIO_WORKING_DIRECTORY");
             string path = Path.Combine(
                 string.IsNullOrEmpty(tempDir)
-                ? Path.GetTempPath()
-                : tempDir, "clio");
+                    ? Path.GetTempPath()
+                    : tempDir, "clio");
 
             return path;
         }
@@ -73,8 +74,6 @@ public class WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.I
         }
     }
 
-    public string GenerateTempDirectoryPath() => Guid.NewGuid().ToString("N");
-
     public string GetTemplateFolderPath(string templateFolderName)
     {
         templateFolderName.CheckArgumentNullOrWhiteSpace(nameof(templateFolderName));
@@ -86,4 +85,6 @@ public class WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.I
         templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
         return Path.Combine(TemplateDirectory, $"{templateName}.tpl");
     }
+
+    public string GenerateTempDirectoryPath() => Guid.NewGuid().ToString("N");
 }

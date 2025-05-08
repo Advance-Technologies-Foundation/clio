@@ -1,6 +1,4 @@
-using System.Collections.Generic;
-
-namespace Clio.Common;
+﻿namespace Clio.Common;
 
 public interface IPackageUtilities
 {

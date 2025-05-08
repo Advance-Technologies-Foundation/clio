@@ -1,12 +1,9 @@
 using System;
-
 using CommandLine;
-using Common;
-using Package;
 
 namespace Clio.Command;
 
-[Verb("pkg-to-db", Aliases = new string[] { "todb", "2db" },
+[Verb("pkg-to-db", Aliases = new[] { "todb", "2db" },
     HelpText = "Load packages to database on a web application")]
 public class LoadPackagesToDbOptions : EnvironmentOptions
 {

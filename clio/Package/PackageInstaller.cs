@@ -1,18 +1,27 @@
-using Common;
-using WebApplication;
+﻿namespace Clio.Package;
 
-namespace Clio.Package;
-
-public class PackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
-    IApplicationClientFactory applicationClientFactory, IApplication application,
-    IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-    IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger,
-    IPackageLockManager packageLockManager): BasePackageInstaller(applicationLogProvider, environmentSettings, applicationClientFactory, application,
-        packageArchiver, scriptExecutor, serviceUrlBuilder, fileSystem, logger, packageLockManager), IPackageInstaller
+public class PackageInstaller(
+    IApplicationLogProvider applicationLogProvider,
+    EnvironmentSettings environmentSettings,
+    IApplicationClientFactory applicationClientFactory,
+    IApplication application,
+    IPackageArchiver packageArchiver,
+    ISqlScriptExecutor scriptExecutor,
+    IServiceUrlBuilder serviceUrlBuilder,
+    IFileSystem fileSystem,
+    ILogger logger,
+    IPackageLockManager packageLockManager) : BasePackageInstaller(applicationLogProvider, environmentSettings,
+    applicationClientFactory, application,
+    packageArchiver, scriptExecutor, serviceUrlBuilder, fileSystem, logger, packageLockManager), IPackageInstaller
 {
     protected override string InstallUrl => @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
 
     protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreateBackup";
+
+
+    public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
+        PackageInstallOptions packageInstallOptions = null, string reportPath = null) =>
+        InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
 
     protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions) =>
         packageInstallOptions == null
@@ -27,10 +36,4 @@ public class PackageInstaller(IApplicationLogProvider applicationLogProvider, En
               $"\"executeValidateActions\": \"{packageInstallOptions.ExecuteValidateActions.ToString().ToLower()}\", " +
               $"\"isForceUpdateAllColumns\": \"{packageInstallOptions.IsForceUpdateAllColumns.ToString().ToLower()}\"  " +
               " } }";
-
-
-
-    public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-        PackageInstallOptions packageInstallOptions = null, string reportPath = null) =>
-        InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
 }

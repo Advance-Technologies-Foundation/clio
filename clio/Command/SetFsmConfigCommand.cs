@@ -1,19 +1,16 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Xml;
-
 using CommandLine;
-using Common;
 using FluentValidation;
 using FluentValidation.Results;
-using Requests;
-using UserEnvironment;
 
 namespace Clio.Command;
+
 public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOptions>
 {
     public SetFsmConfigOptionsValidator() =>
@@ -64,9 +61,9 @@ public class SetFsmConfigOptions : EnvironmentNameOptions
 
 public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 {
-    private readonly IValidator<SetFsmConfigOptions> _validator;
-    private readonly ISettingsRepository _settingsRepository;
     private readonly IList<string[]> _changedValuesTable;
+    private readonly ISettingsRepository _settingsRepository;
+    private readonly IValidator<SetFsmConfigOptions> _validator;
     private string webConfigFileName = "Web.config";
 
     public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository)
@@ -145,7 +142,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
     private int ModifyWebConfigFile(string webConfigPath, bool isFsm)
     {
         string webConfigContent = File.ReadAllText(webConfigPath);
-        XmlDocument doc = new ();
+        XmlDocument doc = new();
         doc.LoadXml(webConfigContent);
         XmlNode root = doc.DocumentElement;
         XmlNode fileDesignModeNode = root

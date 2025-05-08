@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
@@ -7,7 +7,7 @@ namespace Clio.Common;
 public interface ICompilationLogParser
 {
     /// <summary>
-    /// Parses the Creatio compilation log from a JSON input string.
+    ///     Parses the Creatio compilation log from a JSON input string.
     /// </summary>
     /// <param name="jsonInput">The JSON input string containing the compilation log.</param>
     /// <returns>A formatted string with the compilation log details.</returns>

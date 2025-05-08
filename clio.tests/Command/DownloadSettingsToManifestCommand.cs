@@ -1,11 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-
 using ATF.Repository.Attributes;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
@@ -37,20 +36,20 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
     {
         // Arrange
         SaveSettingsToManifestOptions saveSettingsToManifestOptions =
-            new () { ManifestFileName = @"web-service-manifest.yaml" };
+            new() { ManifestFileName = @"web-service-manifest.yaml" };
         List<CreatioManifestWebService> webServices =
         [
-            new () { Name = "Creatio", Url = "https://creatio.com" },
+            new() { Name = "Creatio", Url = "https://creatio.com" },
 
-            new () { Name = "Google", Url = "https://google.ca" }
+            new() { Name = "Google", Url = "https://google.ca" }
         ];
         IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
         webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
 
-        DataProviderMock providerMock = new ();
+        DataProviderMock providerMock = new();
         ILogger loggerMock = Substitute.For<ILogger>();
 
-        SaveSettingsToManifestCommand command = new (providerMock, loggerMock,
+        SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
             container.Resolve<IFileSystem>(), container.Resolve<ISerializer>(), webServiceManagerMock,
             container.Resolve<IEnvironmentManager>());
 
@@ -93,17 +92,17 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
         // Arrange
         SaveSettingsToManifestOptions saveSettingsToManifestOptions =
-            new () { ManifestFileName = @"save-syssettings-manifest.yaml" };
-        List<CreatioManifestWebService> webServices =[];
+            new() { ManifestFileName = @"save-syssettings-manifest.yaml" };
+        List<CreatioManifestWebService> webServices = [];
 
-        DataProviderMock providerMock = new ();
+        DataProviderMock providerMock = new();
 
         IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
         webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
 
         ILogger loggerMock = Substitute.For<ILogger>();
 
-        SaveSettingsToManifestCommand command = new (providerMock, loggerMock,
+        SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
             fileSystem, container.Resolve<ISerializer>(), webServiceManagerMock,
             container.Resolve<IEnvironmentManager>(),
             container.Resolve<ISysSettingsManager>());
@@ -129,18 +128,18 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
         // Arrange
         SaveSettingsToManifestOptions saveSettingsToManifestOptions =
-            new () { ManifestFileName = @"save-syssettings-manifest.yaml" };
-        List<CreatioManifestWebService> webServices =[];
+            new() { ManifestFileName = @"save-syssettings-manifest.yaml" };
+        List<CreatioManifestWebService> webServices = [];
 
-        DataProviderMock providerMock = new ();
-        MockSysPackage(providerMock, true, false);
+        DataProviderMock providerMock = new();
+        MockSysPackage(providerMock, true);
 
         IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
         webServiceManagerMock.GetCreatioManifestWebServices().Returns(webServices);
 
         ILogger loggerMock = Substitute.For<ILogger>();
 
-        SaveSettingsToManifestCommand command = new (providerMock, loggerMock,
+        SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
             fileSystem, container.Resolve<ISerializer>(), webServiceManagerMock,
             container.Resolve<IEnvironmentManager>(),
             container.Resolve<ISysSettingsManager>());
@@ -169,15 +168,15 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
     {
         // Arrange
         SaveSettingsToManifestOptions saveSettingsToManifestOptions =
-            new () { ManifestFileName = @"web-service-manifest.yaml" };
+            new() { ManifestFileName = @"web-service-manifest.yaml" };
         List<CreatioManifestWebService> webServices =
         [
-            new () { Name = "Creatio", Url = "https://creatio.com" },
+            new() { Name = "Creatio", Url = "https://creatio.com" },
 
-            new () { Name = "Google", Url = "https://google.ca" }
+            new() { Name = "Google", Url = "https://google.ca" }
         ];
 
-        DataProviderMock providerMock = new ();
+        DataProviderMock providerMock = new();
         MockSysPackage(providerMock, accending);
 
         IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
@@ -185,7 +184,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
         ILogger loggerMock = Substitute.For<ILogger>();
 
-        SaveSettingsToManifestCommand command = new (providerMock, loggerMock,
+        SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
             container.Resolve<IFileSystem>(), container.Resolve<ISerializer>(), webServiceManagerMock,
             container.Resolve<IEnvironmentManager>());
 
@@ -212,15 +211,15 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
     {
         // Arrange
         SaveSettingsToManifestOptions saveSettingsToManifestOptions =
-            new () { ManifestFileName = @"web-service-manifest.yaml" };
+            new() { ManifestFileName = @"web-service-manifest.yaml" };
         List<CreatioManifestWebService> webServices =
         [
-            new () { Name = "Creatio", Url = "https://creatio.com" },
+            new() { Name = "Creatio", Url = "https://creatio.com" },
 
-            new () { Name = "Google", Url = "https://google.ca" }
+            new() { Name = "Google", Url = "https://google.ca" }
         ];
 
-        DataProviderMock providerMock = new ();
+        DataProviderMock providerMock = new();
         MockSysPackage(providerMock, packageAccending, true, schemaAccending);
 
         IWebServiceManager webServiceManagerMock = Substitute.For<IWebServiceManager>();
@@ -228,7 +227,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
         ILogger loggerMock = Substitute.For<ILogger>();
 
-        SaveSettingsToManifestCommand command = new (providerMock, loggerMock,
+        SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
             container.Resolve<IFileSystem>(), container.Resolve<ISerializer>(), webServiceManagerMock,
             container.Resolve<IEnvironmentManager>());
 
@@ -249,7 +248,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
     [Test]
     public void TestFormatDateTime()
     {
-        DateTime dateTime = new (2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
+        DateTime dateTime = new(2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
         string expectedString = "12/10/2024 12:00:00 AM";
         expectedString.Should().Be(dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpper());
     }
@@ -262,21 +261,20 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
         Guid packageId2 = Guid.NewGuid();
         List<Dictionary<string, object>> list =
         [
-            new Dictionary<string, object>
+            new()
             {
                 { "Id", packageId1 },
                 { "Name", "CrtBase" },
                 { "ModifiedOn", new DateTime(2024, 5, 10, 0, 0, 0, DateTimeKind.Utc) },
                 { "Maintainer", "Creatio" }
             },
-            new Dictionary<string, object>
+            new()
             {
                 { "Id", packageId2 },
                 { "Name", "CrtUI" },
                 { "ModifiedOn", new DateTime(2024, 5, 10, 0, 0, 0, DateTimeKind.Utc) },
                 { "Maintainer", "ATF" }
             }
-
         ];
         if (!packageAccending)
         {
@@ -297,7 +295,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
         IItemsMock? mock = providerMock.MockItems(nameof(SysSchema));
         List<Dictionary<string, object>> list =
         [
-            new Dictionary<string, object>
+            new()
             {
                 { "Id", Guid.NewGuid() },
                 { "Name", "Contact" },
@@ -306,7 +304,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
                 { "Checksum", "ContactHash" },
                 { "UId", Guid.Parse("DE86FE03-3508-4F94-A50E-34A335B1F9F2") }
             },
-            new Dictionary<string, object>
+            new()
             {
                 { "Id", Guid.NewGuid() },
                 { "Name", "Account" },
@@ -315,7 +313,6 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
                 { "Checksum", "AccountHash" },
                 { "UId", Guid.Parse("DE86FE03-3508-4F94-A50E-34A335B1F9F3") }
             }
-
         ];
         mock.FilterHas(packageId);
         if (!schemaAccending)
@@ -384,20 +381,17 @@ internal class MockDataContainer(MockFileSystem fileSystem)
 
     public static IContainer GetContainer(MockFileSystem fileSystem)
     {
-        MockDataContainer instance = new (fileSystem);
+        MockDataContainer instance = new(fileSystem);
         return instance.InternalGetContainer();
     }
 
     private IContainer InternalGetContainer()
     {
         DataProviderMock dataProviderMock = GetMockSysSettingsData();
-        BindingsModule bm = new (_fileSystem);
-        EnvironmentSettings environmentSettings = new ()
+        BindingsModule bm = new(_fileSystem);
+        EnvironmentSettings environmentSettings = new()
         {
-            Uri = "http://localhost",
-            Login = "Supervisor",
-            Password = "Supervisor",
-            IsNetCore = false
+            Uri = "http://localhost", Login = "Supervisor", Password = "Supervisor", IsNetCore = false
         };
         IContainer container = bm.Register(
             environmentSettings,
@@ -407,7 +401,7 @@ internal class MockDataContainer(MockFileSystem fileSystem)
 
     private DataProviderMock GetMockSysSettingsData()
     {
-        DataProviderMock dataProviderMock = new ();
+        DataProviderMock dataProviderMock = new();
         List<ODataResponse> responses = GetOdataResponses("odata_data_examples");
         List<Dictionary<string, object>> mockSysSettingsRecords = responses
             .Where(r => r.SchemaName == "SysSettings")
@@ -432,7 +426,7 @@ internal class MockDataContainer(MockFileSystem fileSystem)
     private List<ODataResponse> GetOdataResponses(string folderName)
     {
         string[] files = _fileSystem.Directory.GetFiles(folderName);
-        List<ODataResponse> odataResponses =[];
+        List<ODataResponse> odataResponses = [];
         foreach (string file in files)
         {
             string content = _fileSystem.File.ReadAllText(file);
@@ -451,13 +445,13 @@ internal class MockDataContainer(MockFileSystem fileSystem)
 
         // We don't have a way to get the type of the model from the schemaName
         // I decided to use reflection to get the type of the model. There is a better way but its mych longer
-        SysSettings sysSettings = new ();
+        SysSettings sysSettings = new();
 
         // We need to convert records odata collection into collection of expected Types
-        List<Dictionary<string, object>> resultRecords =[];
+        List<Dictionary<string, object>> resultRecords = [];
         foreach (Dictionary<string, object> record in records)
         {
-            Dictionary<string, object> resultRecord =[];
+            Dictionary<string, object> resultRecord = [];
             foreach (string key in record.Keys)
             {
                 // We also need to make sure that when OData feed missing propertyValue,
@@ -531,13 +525,13 @@ internal class MockDataContainer(MockFileSystem fileSystem)
 
         // We don't have a way to get the type of the model from the schemaName
         // I decided to use reflection to get the type of the model. There is a better way but its mych longer
-        SysSettingsValue sysSettingsValue = new ();
+        SysSettingsValue sysSettingsValue = new();
 
         // We need to convert records odata collection into collection of expected Types
-        List<Dictionary<string, object>> resultRecords =[];
+        List<Dictionary<string, object>> resultRecords = [];
         foreach (Dictionary<string, object> record in records)
         {
-            Dictionary<string, object> resultRecord =[];
+            Dictionary<string, object> resultRecord = [];
             foreach (string key in record.Keys)
             {
                 // We also need to make sure that when OData feed missing propertyValue,

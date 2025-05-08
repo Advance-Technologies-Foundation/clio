@@ -1,7 +1,5 @@
-using System;
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using Clio.UserEnvironment;
 using MediatR;
@@ -14,16 +12,19 @@ public class GetAppSettingsFilePath : IExternalLink
 }
 
 /// <summary>
-/// Finds path to appSetting.json.
+///     Finds path to appSetting.json.
 /// </summary>
 /// <remarks>
-/// Handles extenral link requests.
-/// <example><code>clio --externalLink clio://GetAppSettingsFilePath</code></example>
+///     Handles extenral link requests.
+///     <example>
+///         <code>clio --externalLink clio://GetAppSettingsFilePath</code>
+///     </example>
 /// </remarks>
-internal class GetAppSettingsFilePathHandler(ISettingsRepository settingsRepository, ILogger logger): BaseExternalLinkHandler, IRequestHandler<GetAppSettingsFilePath>
+internal class GetAppSettingsFilePathHandler(ISettingsRepository settingsRepository, ILogger logger)
+    : BaseExternalLinkHandler, IRequestHandler<GetAppSettingsFilePath>
 {
-    private readonly ISettingsRepository _settingsRepository = settingsRepository;
     private readonly ILogger _logger = logger;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public Task Handle(GetAppSettingsFilePath request, CancellationToken cancellationToken)
     {

@@ -1,8 +1,6 @@
-using System;
-using System.IO;
+﻿using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
-
 using Clio.Tests.Extensions;
 
 namespace Clio.Tests.Infrastructure;
@@ -11,14 +9,14 @@ internal class TestFileSystem
 {
     internal static IFileSystem MockExamplesFolder(string exampleFolderName)
     {
-        MockFileSystem mockFileSystem = new ();
+        MockFileSystem mockFileSystem = new();
         mockFileSystem.MockExamplesFolder(exampleFolderName);
         return mockFileSystem;
     }
 
     internal static MockFileSystem MockFileSystem()
     {
-        MockFileSystem mockFileSystem = new ();
+        MockFileSystem mockFileSystem = new();
         return mockFileSystem;
     }
 

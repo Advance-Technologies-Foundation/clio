@@ -1,5 +1,4 @@
 using System;
-
 using Clio.Common.Responses;
 using Clio.Package;
 using NSubstitute;
@@ -14,7 +13,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 
     private void SetupSuccessfulPostRequest(string fullUrl, Guid packageUId) =>
         applicationClient.ExecutePostRequest<BaseResponse>(
-            fullUrl,
+                fullUrl,
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = true });
 
@@ -23,7 +22,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
 
     private void SetupUnsuccessfulPostRequest(Guid packageUId, string errorMessage) =>
         applicationClient.ExecutePostRequest<BaseResponse>(
-            Arg.Any<string>(),
+                Arg.Any<string>(),
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage } });
 

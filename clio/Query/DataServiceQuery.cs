@@ -1,16 +1,14 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text.RegularExpressions;
-
 using Clio.Command;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Query;
@@ -43,15 +41,21 @@ public class DataServiceQueryOptions : CallServiceCommandOptions
     public string OperationType { get; set; }
 }
 
-public class CallServiceCommand(IApplicationClient applicationClient,
+public class CallServiceCommand(
+    IApplicationClient applicationClient,
     EnvironmentSettings settings,
-    IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem): BaseServiceCommand<CallServiceCommandOptions>(applicationClient, settings, serviceUrlBuilder, fileSystem)
+    IServiceUrlBuilder serviceUrlBuilder,
+    IFileSystem fileSystem)
+    : BaseServiceCommand<CallServiceCommandOptions>(applicationClient, settings, serviceUrlBuilder, fileSystem)
 {
 }
 
-public class DataServiceQuery(IApplicationClient applicationClient,
+public class DataServiceQuery(
+    IApplicationClient applicationClient,
     EnvironmentSettings settings,
-    IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem): BaseServiceCommand<DataServiceQueryOptions>(applicationClient, settings, serviceUrlBuilder, fileSystem)
+    IServiceUrlBuilder serviceUrlBuilder,
+    IFileSystem fileSystem)
+    : BaseServiceCommand<DataServiceQueryOptions>(applicationClient, settings, serviceUrlBuilder, fileSystem)
 {
     protected override string BuildUrl(DataServiceQueryOptions options) =>
         options.OperationType.ToUpperInvariant() switch
@@ -70,8 +74,6 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T>
     private readonly IFileSystem _fileSystem;
     protected readonly IServiceUrlBuilder ServiceUrlBuilderInstance;
 
-    public bool IsSilent { get; private set; }
-
     protected BaseServiceCommand(
         IApplicationClient applicationClient,
         EnvironmentSettings settings,
@@ -81,6 +83,8 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T>
         ServiceUrlBuilderInstance = serviceUrlBuilderInstance;
         _fileSystem = fileSystem;
     }
+
+    public bool IsSilent { get; private set; }
 
     private static string BeautifyJsonIfPossible(string input)
     {
@@ -105,7 +109,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T>
         foreach (string variable in variables)
         {
             string pattern = "{{" + variable.Split('=')[0] + "}}";
-            Regex regex = new (pattern);
+            Regex regex = new(pattern);
             Match match = regex.Match(json);
             if (match.Success)
             {

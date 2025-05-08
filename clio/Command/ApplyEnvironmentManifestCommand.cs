@@ -1,6 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Package;
@@ -19,13 +18,13 @@ public class ApplyEnvironmentManifestOptions : EnvironmentOptions
 
 public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestOptions>
 {
-    private readonly EnvironmentManager _environmentManager;
     private readonly IApplicationInstaller _applicationInstaller;
-    private readonly FeatureCommand _featureCommand;
-    private readonly SysSettingsCommand _sysSettingCommand;
-    private readonly SetWebServiceUrlCommand _setWebServiceUrlCommand;
     private readonly IDataProvider _dataProvider;
+    private readonly EnvironmentManager _environmentManager;
     private readonly EnvironmentSettings _environmentSettings;
+    private readonly FeatureCommand _featureCommand;
+    private readonly SetWebServiceUrlCommand _setWebServiceUrlCommand;
+    private readonly SysSettingsCommand _sysSettingCommand;
 
     internal ApplyEnvironmentManifestCommand()
     {
@@ -86,7 +85,7 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 
         foreach (Feature feature in features)
         {
-            FeatureOptions featureCommandOptions = new () { Code = feature.Code, State = feature.Value ? 1 : 0 };
+            FeatureOptions featureCommandOptions = new() { Code = feature.Code, State = feature.Value ? 1 : 0 };
             featureCommandOptions.CopyFromEnvironmentSettings(options);
             _featureCommand.SetFeatureStateDefValue(featureCommandOptions);
             foreach (KeyValuePair<string, bool> userValue in feature?.UserValues)
@@ -109,7 +108,7 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 
         foreach (CreatioManifestSetting setting in settings)
         {
-            SysSettingsOptions sysSettingOption = new () { Code = setting.Code, Value = setting.Value };
+            SysSettingsOptions sysSettingOption = new() { Code = setting.Code, Value = setting.Value };
             sysSettingOption.CopyFromEnvironmentSettings(options);
             _sysSettingCommand.UpdateSysSetting(sysSettingOption);
         }
@@ -126,10 +125,9 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 
         foreach (CreatioManifestWebService webservice in webservices)
         {
-            SetWebServiceUrlOptions webserviceUrlOption = new ()
+            SetWebServiceUrlOptions webserviceUrlOption = new()
             {
-                WebServiceName = webservice.Name,
-                WebServiceUrl = webservice.Url
+                WebServiceName = webservice.Name, WebServiceUrl = webservice.Url
             };
             webserviceUrlOption.CopyFromEnvironmentSettings(options);
             _setWebServiceUrlCommand.Execute(webserviceUrlOption);
@@ -143,7 +141,7 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
         List<SysInstalledApp> remoteApplications =
         [
             .. AppDataContextFactory.GetAppDataContext(_dataProvider)
-                        .Models<SysInstalledApp>(),
+                .Models<SysInstalledApp>()
         ];
 
         ApplyApplicationFromManifest(options, remoteApplications, manifestApplications, _environmentSettings);

@@ -2,8 +2,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-using Common;
-
 namespace Clio.Package;
 
 public interface IStandalonePackageFileManager
@@ -27,14 +25,6 @@ public class StandalonePackageFileManager : IStandalonePackageFileManager
         _fileSystem = fileSystem;
     }
 
-    private static IEnumerable<string> GetPackagesNames(string packagesPath)
-    {
-        DirectoryInfo packagesDirectoryInfo = new (packagesPath);
-        return packagesDirectoryInfo
-            .GetDirectories("*.*", SearchOption.TopDirectoryOnly)
-            .Select(packageDirectoryInfo => packageDirectoryInfo.Name);
-    }
-
     public string BuildFilesPath(string packagesPath, string packageName) =>
         Path.Combine(packagesPath, packageName, "Files");
 
@@ -53,7 +43,7 @@ public class StandalonePackageFileManager : IStandalonePackageFileManager
                 continue;
             }
 
-            StandalonePackageProject standalonePackageProject = new (packageName, standaloneProjectPath);
+            StandalonePackageProject standalonePackageProject = new(packageName, standaloneProjectPath);
             projects.Add(standalonePackageProject);
         }
 
@@ -63,4 +53,12 @@ public class StandalonePackageFileManager : IStandalonePackageFileManager
     public IEnumerable<string> FindStandalonePackagesNames(string packagesPath) =>
         FindStandalonePackageProjects(packagesPath)
             .Select(pkgProj => pkgProj.PackageName);
+
+    private static IEnumerable<string> GetPackagesNames(string packagesPath)
+    {
+        DirectoryInfo packagesDirectoryInfo = new(packagesPath);
+        return packagesDirectoryInfo
+            .GetDirectories("*.*", SearchOption.TopDirectoryOnly)
+            .Select(packageDirectoryInfo => packageDirectoryInfo.Name);
+    }
 }

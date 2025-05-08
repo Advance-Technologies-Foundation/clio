@@ -1,11 +1,11 @@
-using System.IO;
+﻿using System.IO;
 
 namespace Clio.UserEnvironment;
 
 public interface ISettingsRepository
 {
     /// <summary>
-    /// Gets path to appsettings.json file.
+    ///     Gets path to appsettings.json file.
     /// </summary>
     string AppSettingsFilePath { get; }
 

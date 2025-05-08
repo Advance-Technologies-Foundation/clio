@@ -1,11 +1,10 @@
-using System;
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
-
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
+
 [Verb(
     "execute-assembly-code",
     Aliases = new[] { "exec" },
@@ -30,7 +29,8 @@ internal class ExecuteScriptRequest
     public string LibraryType { get; set; }
 }
 
-internal class AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<ExecuteAssemblyOptions>(applicationClient, settings)
+internal class AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+    : RemoteCommand<ExecuteAssemblyOptions>(applicationClient, settings)
 {
     protected override string ServicePath => @"/IDE/ExecuteScript";
 

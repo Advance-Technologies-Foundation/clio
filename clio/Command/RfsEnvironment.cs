@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-
 using Clio.Common;
+using FileSystem = System.IO.Abstractions.FileSystem;
 
 namespace Clio.Command;
 
@@ -46,10 +46,10 @@ internal class RfsEnvironment
                 Console.WriteLine($"Package '{environmentPackageName}' found in repository.");
                 environmentPackageFolder.Delete(true);
                 string repositoryPackageFolderPath = repositoryPackageFolder.FullName;
-                PackageUtilities packageUtilities = new (new FileSystem(new System.IO.Abstractions.FileSystem()));
+                PackageUtilities packageUtilities = new(new Common.FileSystem(new FileSystem()));
                 string packageContentFolderPath =
                     packageUtilities.GetPackageContentFolderPath(repositoryPackageFolderPath);
-                FileSystem.CreateLink(packageContentFolderPath, repositoryPackageFolderPath);
+                Common.FileSystem.CreateLink(packageContentFolderPath, repositoryPackageFolderPath);
             }
             else
             {
@@ -111,10 +111,10 @@ internal class RfsEnvironment
 
             DirectoryInfo? repositoryPackageFolder =
                 repositoryPackageFolders.FirstOrDefault(s => s.Name == packageName);
-            PackageUtilities packageUtilities = new (new FileSystem(new System.IO.Abstractions.FileSystem()));
+            PackageUtilities packageUtilities = new(new Common.FileSystem(new FileSystem()));
             string repositoryPackageContentFolderPath =
                 packageUtilities.GetPackageContentFolderPath(repositoryPackageFolder.FullName);
-            FileSystem.CreateLink(environmentPackageDirectoryPath, repositoryPackageContentFolderPath);
+            Common.FileSystem.CreateLink(environmentPackageDirectoryPath, repositoryPackageContentFolderPath);
         }
     }
 }

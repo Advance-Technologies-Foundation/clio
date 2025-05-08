@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
-
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
@@ -24,17 +23,21 @@ public class CreateTestProjectOptionsValidator : AbstractValidator<CreateTestPro
         RuleFor(x => x.PackageName).NotEmpty().WithMessage("Project name is required.");
 }
 
-internal class CreateTestProjectCommand(IValidator<CreateTestProjectOptions> optionsValidator, IWorkspace workspace,
-    IWorkspacePathBuilder workspacePathBuilder, IWorkingDirectoriesProvider workingDirectoriesProvider,
-    ITemplateProvider templateProvider, IFileSystem fileSystem)
+internal class CreateTestProjectCommand(
+    IValidator<CreateTestProjectOptions> optionsValidator,
+    IWorkspace workspace,
+    IWorkspacePathBuilder workspacePathBuilder,
+    IWorkingDirectoriesProvider workingDirectoriesProvider,
+    ITemplateProvider templateProvider,
+    IFileSystem fileSystem)
 {
     private const string TestsDirectoryName = "tests";
+    private readonly IFileSystem _fileSystem = fileSystem;
     private readonly IValidator<CreateTestProjectOptions> _optionsValidator = optionsValidator;
+    private readonly ITemplateProvider _templateProvider = templateProvider;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
     private readonly IWorkspace _workspace = workspace;
     private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
-    private readonly ITemplateProvider _templateProvider = templateProvider;
-    private readonly IFileSystem _fileSystem = fileSystem;
 
     private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 

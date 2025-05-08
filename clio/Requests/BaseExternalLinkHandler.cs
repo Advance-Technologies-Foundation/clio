@@ -1,17 +1,18 @@
-using System;
+﻿using System;
 using System.Collections.Specialized;
+using System.Web;
 
 namespace Clio.Requests;
 
 internal class BaseExternalLinkHandler
 {
     /// <summary>
-    /// Request Uri.
+    ///     Request Uri.
     /// </summary>
     protected Uri _clioUri;
 
     /// <summary>
-    /// Gets collection of Query parameters.
+    ///     Gets collection of Query parameters.
     /// </summary>
-    protected NameValueCollection ClioParams => System.Web.HttpUtility.ParseQueryString(_clioUri.Query);
+    protected NameValueCollection ClioParams => HttpUtility.ParseQueryString(_clioUri.Query);
 }

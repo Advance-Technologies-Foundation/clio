@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Clio.Command;
 using Clio.Common;
 using CommandLine;
@@ -21,10 +20,11 @@ internal class ManageWindowsFeaturesOptions
     public bool UnistallMode { get; set; }
 }
 
-internal class ManageWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger): Command<ManageWindowsFeaturesOptions>
+internal class ManageWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger)
+    : Command<ManageWindowsFeaturesOptions>
 {
-    private readonly IWindowsFeatureManager _windowsFeatureManager = windowsFeatureManager;
     private readonly ILogger _logger = logger;
+    private readonly IWindowsFeatureManager _windowsFeatureManager = windowsFeatureManager;
 
     public override int Execute(ManageWindowsFeaturesOptions options)
     {

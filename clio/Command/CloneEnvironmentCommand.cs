@@ -1,22 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-
-using ATF.Repository;
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command.PackageCommand;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
-using CreatioModel;
-using k8s.Models;
-using YamlDotNet.Serialization;
 
 namespace Clio.Command;
 
@@ -28,16 +19,16 @@ internal class CloneEnvironmentOptions : ShowDiffEnvironmentsOptions
 
 internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironmentOptions>
 {
-    private ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand;
+    private readonly ICompressionUtilities _compressionUtilities;
+    private readonly IFileSystem _fileSystem;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly IEnvironmentManager environmentManager;
+    private readonly ISettingsRepository settingsRepository;
     private ApplyEnvironmentManifestCommand applyEnvironmentManifestCommand;
+    private PingAppCommand pingAppCommand;
     private PullPkgCommand pullPkgCommand;
     private PushPackageCommand pushPackageCommand;
-    private PingAppCommand pingAppCommand;
-    private readonly IEnvironmentManager environmentManager;
-    private readonly ICompressionUtilities _compressionUtilities;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-    private readonly IFileSystem _fileSystem;
-    private readonly ISettingsRepository settingsRepository;
+    private ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand;
 
     public CloneEnvironmentCommand(
         ShowDiffEnvironmentsCommand showDiffEnvironmentsCommand,
@@ -85,10 +76,10 @@ internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironment
             pingAppCommand = targetBindingModule.Resolve<PingAppCommand>();
         }
 
-        string[] ? selectedMaintainers = string.IsNullOrWhiteSpace(options.Maintainer)
+        string[]? selectedMaintainers = string.IsNullOrWhiteSpace(options.Maintainer)
             ? null
             : options.Maintainer.Split(',', StringSplitOptions.TrimEntries);
-        string[] ? excludedMaintainers = string.IsNullOrWhiteSpace(options.ExcludeMaintainer)
+        string[]? excludedMaintainers = string.IsNullOrWhiteSpace(options.ExcludeMaintainer)
             ? null
             : options.ExcludeMaintainer.Split(',', StringSplitOptions.TrimEntries);
         if (selectedMaintainers != null && excludedMaintainers != null)
@@ -110,11 +101,9 @@ internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironment
                 .Where(p => excludedMaintainers == null || !excludedMaintainers.Contains(p.Maintainer));
             foreach (CreatioManifestPackage package in diffPackages)
             {
-                PullPkgOptions pullPkgOptions = new ()
+                PullPkgOptions pullPkgOptions = new()
                 {
-                    Environment = options.Source,
-                    Name = package.Name,
-                    DestPath = sourceZipPackagePath
+                    Environment = options.Source, Name = package.Name, DestPath = sourceZipPackagePath
                 };
                 string progress = $"({number++} from {packagesCount})";
                 _logger.WriteInfo($"Start pull package: {package.Name} {progress}");
@@ -134,15 +123,15 @@ internal class CloneEnvironmentCommand : BaseDataContextCommand<CloneEnvironment
             }
 
             _fileSystem.CreateDirectory(sourceGzPackages);
-            _logger.WriteInfo($"Start zip packages");
+            _logger.WriteInfo("Start zip packages");
             string commonPackagesZipPath = Path.Combine(
                 workingDirectoryPath,
                 $"from_{options.Source}_to_{options.Target}.zip");
             _compressionUtilities.Zip(sourceGzPackages, commonPackagesZipPath);
-            _logger.WriteInfo($"Done zip packages");
-            PushPkgOptions pushPackageOptions = new () { Environment = options.Target, Name = commonPackagesZipPath };
+            _logger.WriteInfo("Done zip packages");
+            PushPkgOptions pushPackageOptions = new() { Environment = options.Target, Name = commonPackagesZipPath };
             pushPackageCommand.Execute(pushPackageOptions);
-            PingAppOptions pingCommandOptions = new () { Environment = options.Target };
+            PingAppOptions pingCommandOptions = new() { Environment = options.Target };
 
             // pingAppCommand.Execute(pingCommandOptions);
             // var applyEnvironmentManifestOptions = new ApplyEnvironmentManifestOptions() {

@@ -1,5 +1,4 @@
 using System.Runtime.Serialization;
-
 using Clio.Common.Responses;
 
 namespace Clio.Package.Responses;

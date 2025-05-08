@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -48,9 +47,9 @@ public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProject
 
 internal class CreateUiProjectCommand
 {
-    private readonly IUiProjectCreator _uiProjectCreator;
-    private readonly IValidator<CreateUiProjectOptions> _optionsValidator;
     private readonly ILogger _logger;
+    private readonly IValidator<CreateUiProjectOptions> _optionsValidator;
+    private readonly IUiProjectCreator _uiProjectCreator;
 
     public CreateUiProjectCommand(
         IUiProjectCreator uiProjectCreator,
@@ -70,8 +69,7 @@ internal class CreateUiProjectCommand
         do
         {
             result = Console.ReadLine()?.Trim().ToLower();
-        }
-        while (result != "y" && result != "n");
+        } while (result != "y" && result != "n");
 
         return result == "y";
     }

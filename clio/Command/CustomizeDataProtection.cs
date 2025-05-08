@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -6,67 +6,67 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using CommandLine;
 using ErrorOr;
 using MediatR;
-
 using Error = ErrorOr.Error;
 using FileSystem = Clio.Common.FileSystem;
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command;
 
-[Verb("CustomizeDataProtection", Aliases =["cdp"], HelpText = "DESCRIBE COMMAND HERE")]
+[Verb("CustomizeDataProtection", Aliases = ["cdp"], HelpText = "DESCRIBE COMMAND HERE")]
 public class CustomizeDataProtectionCommandOptions : EnvironmentOptions
 {
     [Value(0, Required = true, HelpText = "Setting value to apply")]
     public bool EnableDataProtection { get; set; }
 }
 
-public class CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
-    IFileSystem fileSystem): Command<CustomizeDataProtectionCommandOptions>
+public class CustomizeDataProtectionCommand(
+    ILogger logger,
+    IMediator mediator,
+    ISettingsRepository settingsRepository,
+    IFileSystem fileSystem) : Command<CustomizeDataProtectionCommandOptions>
 {
+    private readonly IFileSystem _fileSystem = fileSystem;
     private readonly ILogger _logger = logger;
     private readonly IMediator _mediator = mediator;
     private readonly ISettingsRepository _settingsRepository = settingsRepository;
-    private readonly IFileSystem _fileSystem = fileSystem;
 
     private IEnumerable<IISScannerHandler.RegisteredSite> AllSites { get; set; }
 
     /// <summary>
-    ///  Gets the action to handle the completion of the request for all registered sites.
+    ///     Gets the action to handle the completion of the request for all registered sites.
     /// </summary>
     /// <remarks>
-    ///  This property performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Assigns the provided sites to the `AllSites` property.</item>
-    ///  </list>
+    ///     This property performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Assigns the provided sites to the `AllSites` property.</item>
+    ///     </list>
     /// </remarks>
     private Action<IEnumerable<IISScannerHandler.RegisteredSite>> OnAllSitesRequestCompleted =>
         sites => { AllSites = sites; };
 
 
-
     /// <summary>
-    ///  Executes a mediator request to retrieve all registered sites.
+    ///     Executes a mediator request to retrieve all registered sites.
     /// </summary>
     /// <param name="callback">The callback action to handle the retrieved sites.</param>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Creates a new `AllRegisteredSitesRequest` with the provided callback.</item>
-    ///   <item>Executes the request asynchronously using the mediator.</item>
-    ///   <item>Configures the task to not capture the current synchronization context.</item>
-    ///   <item>Waits for the task to complete and retrieves the result.</item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Creates a new `AllRegisteredSitesRequest` with the provided callback.</item>
+    ///         <item>Executes the request asynchronously using the mediator.</item>
+    ///         <item>Configures the task to not capture the current synchronization context.</item>
+    ///         <item>Waits for the task to complete and retrieves the result.</item>
+    ///     </list>
     /// </remarks>
     private void ExecuteMediatorRequest(Action<IEnumerable<IISScannerHandler.RegisteredSite>> callback)
     {
-        AllRegisteredSitesRequest request = new () { Callback = callback };
+        AllRegisteredSitesRequest request = new() { Callback = callback };
 
         Task.Run(async () => await _mediator.Send(request))
             .ConfigureAwait(false)
@@ -75,21 +75,21 @@ public class CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, 
     }
 
     /// <summary>
-    ///  Retrieves the folder path for the specified environment name.
+    ///     Retrieves the folder path for the specified environment name.
     /// </summary>
     /// <param name="envName">The name of the environment.</param>
     /// <returns>
-    ///  An <see cref="ErrorOr{T}" /> containing the directory information if found, otherwise an error.
+    ///     An <see cref="ErrorOr{T}" /> containing the directory information if found, otherwise an error.
     /// </returns>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Finds the environment settings using the provided environment name.</item>
-    ///   <item>Checks if the environment settings are found and valid.</item>
-    ///   <item>Validates the URI of the environment.</item>
-    ///   <item>Executes a mediator request to retrieve all registered sites.</item>
-    ///   <item>Retrieves the folder path for the specified environment URI.</item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Finds the environment settings using the provided environment name.</item>
+    ///         <item>Checks if the environment settings are found and valid.</item>
+    ///         <item>Validates the URI of the environment.</item>
+    ///         <item>Executes a mediator request to retrieve all registered sites.</item>
+    ///         <item>Retrieves the folder path for the specified environment URI.</item>
+    ///     </list>
     /// </remarks>
     private ErrorOr<IDirectoryInfo> GetCreatioFolderPath(string envName)
     {
@@ -115,20 +115,20 @@ public class CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, 
     }
 
     /// <summary>
-    ///  Retrieves the folder path for the specified environment name.
+    ///     Retrieves the folder path for the specified environment name.
     /// </summary>
     /// <param name="envUri">The URI of the environment.</param>
     /// <returns>
-    ///  An <see cref="ErrorOr{T}" /> containing the directory information if found, otherwise an error.
+    ///     An <see cref="ErrorOr{T}" /> containing the directory information if found, otherwise an error.
     /// </returns>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Filters the registered sites to find those matching the provided environment URI.</item>
-    ///   <item>Checks if any sites were found.</item>
-    ///   <item>Verifies if the directory for the first matching site exists.</item>
-    ///   <item>Returns the directory information if it exists, otherwise returns an error.</item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Filters the registered sites to find those matching the provided environment URI.</item>
+    ///         <item>Checks if any sites were found.</item>
+    ///         <item>Verifies if the directory for the first matching site exists.</item>
+    ///         <item>Returns the directory information if it exists, otherwise returns an error.</item>
+    ///     </list>
     /// </remarks>
     private ErrorOr<IDirectoryInfo> GetFolderPathForEnvironmentName(Uri envUri)
     {
@@ -162,21 +162,21 @@ public class CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, 
     }
 
     /// <summary>
-    ///  Updates the appsettings.json file with the new DataProtection settings.
+    ///     Updates the appsettings.json file with the new DataProtection settings.
     /// </summary>
     /// <param name="creatioFolderPath">The directory information of the Creatio folder.</param>
     /// <returns>
-    ///  An <see cref="ErrorOr{T}" /> containing success if the update was successful, otherwise an error.
+    ///     An <see cref="ErrorOr{T}" /> containing success if the update was successful, otherwise an error.
     /// </returns>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Retrieves the appsettings.json file from the specified directory.</item>
-    ///   <item>Reads the content of the appsettings.json file.</item>
-    ///   <item>Parses the JSON content to retrieve the current DataProtection settings.</item>
-    ///   <item>Replaces the CustomizeDataProtection value with its opposite.</item>
-    ///   <item>Writes the updated content back to the appsettings.json file.</item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Retrieves the appsettings.json file from the specified directory.</item>
+    ///         <item>Reads the content of the appsettings.json file.</item>
+    ///         <item>Parses the JSON content to retrieve the current DataProtection settings.</item>
+    ///         <item>Replaces the CustomizeDataProtection value with its opposite.</item>
+    ///         <item>Writes the updated content back to the appsettings.json file.</item>
+    ///     </list>
     /// </remarks>
     private ErrorOr<Success> UpdateAppSettings(IDirectoryInfo creatioFolderPath)
     {
@@ -219,26 +219,25 @@ public class CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, 
     }
 
 
-
     /// <summary>
-    ///  Executes the CustomizeDataProtection command.
+    ///     Executes the CustomizeDataProtection command.
     /// </summary>
     /// <param name="options">The options for the CustomizeDataProtection command.</param>
     /// <returns>
-    ///  An integer indicating the result of the command execution.
+    ///     An integer indicating the result of the command execution.
     /// </returns>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Retrieves the Creatio folder path for the specified environment.</item>
-    ///   <item>Checks if the folder path retrieval was successful.</item>
-    ///   <item>Logs an error and returns 1 if the folder path retrieval failed.</item>
-    ///   <item>Retrieves the appsettings.json file from the Creatio folder.</item>
-    ///   <item>Logs an error and returns 1 if the appsettings.json file is not found.</item>
-    ///   <item>Updates the appsettings.json file with the new DataProtection settings.</item>
-    ///   <item>Logs an error and returns 1 if the update fails.</item>
-    ///   <item>Logs a success message and returns 0 if the update is successful.</item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Retrieves the Creatio folder path for the specified environment.</item>
+    ///         <item>Checks if the folder path retrieval was successful.</item>
+    ///         <item>Logs an error and returns 1 if the folder path retrieval failed.</item>
+    ///         <item>Retrieves the appsettings.json file from the Creatio folder.</item>
+    ///         <item>Logs an error and returns 1 if the appsettings.json file is not found.</item>
+    ///         <item>Updates the appsettings.json file with the new DataProtection settings.</item>
+    ///         <item>Logs an error and returns 1 if the update fails.</item>
+    ///         <item>Logs a success message and returns 0 if the update is successful.</item>
+    ///     </list>
     /// </remarks>
     public override int Execute(CustomizeDataProtectionCommandOptions options)
     {

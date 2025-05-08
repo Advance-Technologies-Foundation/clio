@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Clio.Common;
@@ -40,7 +40,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
         CompleteExecuting = 7,
 
         /// <summary>
-        /// Restores configuration from backup
+        ///     Restores configuration from backup
         /// </summary>
         RestoreFromPackageBackup = 8,
         GetZipPackage = 9,
@@ -55,6 +55,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
     }
 
     private const string WebAppAlias = "0/";
+
     public static IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string>
     {
         { KnownRoute.Select, "DataService/json/SyncReply/SelectQuery" },
@@ -86,26 +87,6 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
         _environmentSettings = environmentSettings;
     }
 
-    private string CreateUrl(string route)
-    {
-        bool isBase = Uri.TryCreate(_environmentSettings.Uri, UriKind.Absolute, out Uri baseUri);
-        if (!isBase)
-        {
-            throw new ArgumentException(
-                "Misconfigured Url, check settings and try again ",
-                nameof(_environmentSettings.Uri));
-        }
-
-        return baseUri switch
-        {
-            _ when baseUri.ToString().EndsWith('/') && route.StartsWith('/') => $"{baseUri}{route[1..]}",
-            _ when (baseUri.ToString().EndsWith('/') && !route.StartsWith('/'))
-                   || (!baseUri.ToString().EndsWith('/') && route.StartsWith('/'))
-                => $"{baseUri}{route}",
-            _ => $"{baseUri}/{route}"
-        };
-    }
-
     public string Build(string serviceEndpoint) =>
         _environmentSettings.IsNetCore switch
         {
@@ -129,4 +110,24 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 
     public string Build(KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
         Build(KnownRoutes[knownRoute], environmentSettings);
+
+    private string CreateUrl(string route)
+    {
+        bool isBase = Uri.TryCreate(_environmentSettings.Uri, UriKind.Absolute, out Uri baseUri);
+        if (!isBase)
+        {
+            throw new ArgumentException(
+                "Misconfigured Url, check settings and try again ",
+                nameof(_environmentSettings.Uri));
+        }
+
+        return baseUri switch
+        {
+            _ when baseUri.ToString().EndsWith('/') && route.StartsWith('/') => $"{baseUri}{route[1..]}",
+            _ when (baseUri.ToString().EndsWith('/') && !route.StartsWith('/'))
+                   || (!baseUri.ToString().EndsWith('/') && route.StartsWith('/'))
+                => $"{baseUri}{route}",
+            _ => $"{baseUri}/{route}"
+        };
+    }
 }

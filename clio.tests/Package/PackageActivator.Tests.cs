@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-
 using Clio.Common.Responses;
 using Clio.Package;
 using Clio.Package.Responses;
@@ -30,7 +29,7 @@ public class PackageActivatorTestCase : BasePackageOperationTestCase
         const string packageName2 = "TestPackageName2";
         const string fullUrl = "TestUrl";
         SetupBuildUrl("/ServiceModel/PackageService.svc/ActivatePackage", fullUrl);
-        PackageActivationResponse activationResponse = new ()
+        PackageActivationResponse activationResponse = new()
         {
             Success = true,
             PackagesActivationResults =
@@ -43,7 +42,7 @@ public class PackageActivatorTestCase : BasePackageOperationTestCase
             ]
         };
         applicationClient.ExecutePostRequest<PackageActivationResponse>(
-            fullUrl,
+                fullUrl,
                 Arg.Is<string>(data => data.Contains(packageName)))
             .Returns(activationResponse);
         PackageActivationResultDto[] packageActivationResults = _packageActivator.Activate(packageName).ToArray();
@@ -67,12 +66,11 @@ public class PackageActivatorTestCase : BasePackageOperationTestCase
         const string packageName = "TestPackageName";
         const string errorMessage = "Some error";
         applicationClient.ExecutePostRequest<PackageActivationResponse>(
-            Arg.Any<string>(),
+                Arg.Any<string>(),
                 Arg.Is<string>(data => data.Contains(packageName)))
             .Returns(new PackageActivationResponse
             {
-                Success = false,
-                ErrorInfo = new ErrorInfo { Message = errorMessage }
+                Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage }
             });
         Action act = () => _packageActivator.Activate(packageName);
         act.Should().Throw<Exception>().WithMessage(errorMessage);

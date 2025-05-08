@@ -1,10 +1,6 @@
 import {Component, Input, OnDestroy, OnInit, ViewEncapsulation} from "@angular/core";
 import {DomSanitizer, SafeResourceUrl} from '@angular/platform-browser';
-import {
-    CrtInput,
-    CrtInterfaceDesignerItem,
-    CrtViewElement,
-} from "@creatio-devkit/common";
+import {CrtInput, CrtInterfaceDesignerItem, CrtViewElement,} from "@creatio-devkit/common";
 import {SubscriptionLike} from "rxjs";
 
 

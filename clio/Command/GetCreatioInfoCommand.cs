@@ -1,11 +1,9 @@
-using System.Net.Http;
-
+﻿using System.Net.Http;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json.Linq;
 
 namespace Clio.Command;
-
 
 // clio get-info -e work
 [Verb("get-info", Aliases = new[] { "describe", "describe-creatio", "instance-info" },

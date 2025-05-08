@@ -1,5 +1,4 @@
-using System.Linq;
-
+﻿using System.Linq;
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
@@ -14,14 +13,18 @@ public class SwitchNugetToDllOptions : EnvironmentOptions
     public string PackageName { get; set; }
 }
 
-public class SwitchNugetToDllCommand(IWorkspace workspace, IWorkspacePathBuilder workspacePathBuilder,
-    ILogger logger, IFileSystem fileSystem, INugetMaterializer nugetMaterializer): Command<SwitchNugetToDllOptions>
+public class SwitchNugetToDllCommand(
+    IWorkspace workspace,
+    IWorkspacePathBuilder workspacePathBuilder,
+    ILogger logger,
+    IFileSystem fileSystem,
+    INugetMaterializer nugetMaterializer) : Command<SwitchNugetToDllOptions>
 {
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
+    private readonly INugetMaterializer _nugetMaterializer = nugetMaterializer;
     private readonly IWorkspace _workspace = workspace;
     private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
-    private readonly ILogger _logger = logger;
-    private readonly IFileSystem _fileSystem = fileSystem;
-    private readonly INugetMaterializer _nugetMaterializer = nugetMaterializer;
 
     public override int Execute(SwitchNugetToDllOptions toDllOptions)
     {

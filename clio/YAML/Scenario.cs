@@ -1,18 +1,17 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-
 using OneOf;
 using OneOf.Types;
 using YamlDotNet.Serialization;
 
 namespace Clio.YAML;
+
 public interface IScenario
 {
-
     /// <summary>
-    /// Initializes scenario from YAML file.
+    ///     Initializes scenario from YAML file.
     /// </summary>
     /// <param name="filename"></param>
     IExecutableScenario InitScript(string filename);
@@ -20,9 +19,8 @@ public interface IScenario
 
 public interface IExecutableScenario
 {
-    IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types);
-
     internal List<Step> Steps { get; set; }
+    IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types);
 }
 
 public class Scenario : IScenario, IExecutableScenario
@@ -55,7 +53,7 @@ public class Scenario : IScenario, IExecutableScenario
         {
             if (!File.Exists(fileName))
             {
-                return[];
+                return [];
             }
 
             using TextReader reader = new StreamReader(fileName);
@@ -66,7 +64,7 @@ public class Scenario : IScenario, IExecutableScenario
             catch (Exception)
             {
                 Console.WriteLine("Could not deserialize file: " + fileName);
-                return[];
+                return [];
             }
         };
 
@@ -76,7 +74,7 @@ public class Scenario : IScenario, IExecutableScenario
         {
             if (deserializedFileContent is null)
             {
-                return[];
+                return [];
             }
 
             IEnumerable<Dictionary<string, object>> collection = deserializedFileContent
@@ -156,8 +154,8 @@ public class Scenario : IScenario, IExecutableScenario
         };
 
     private readonly Func<string, Dictionary<object, object>> _initializedFileContentLoader;
-    private readonly Func<string, OneOf<object, None>> _settingLookup;
     private readonly Func<string, OneOf<object, None>> _secretsLookup;
+    private readonly Func<string, OneOf<object, None>> _settingLookup;
 
     public Scenario(IDeserializer deserializer)
     {
@@ -171,6 +169,22 @@ public class Scenario : IScenario, IExecutableScenario
     private IReadOnlyDictionary<string, object> Settings { get; set; }
 
     public List<Step> Steps { get; set; }
+
+    public IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types) =>
+        Steps
+            .Select(step => step.Activate(types, _settingLookup, _secretsLookup))
+            .Where(activeStep => activeStep.Item1.Value is not None)
+            .Select(activeStep => (activeStep.Item1.Value, activeStep.Item2));
+
+    /// <summary>
+    ///     Initializes scenario from YAML file.
+    /// </summary>
+    /// <param name="filename"></param>
+    public IExecutableScenario InitScript(string filename)
+    {
+        ReadFileContent(filename, GetSectionFromDeserializedContent, _initializedFileContentLoader);
+        return this;
+    }
 
     private void ReadFileContent(
         string fileName,
@@ -186,21 +200,5 @@ public class Scenario : IScenario, IExecutableScenario
             .TryGetValue("steps", out object stepsValue)
             ? ParseSteps(stepsValue as List<object>)
             : [];
-    }
-
-    public IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types) =>
-        Steps
-            .Select(step => step.Activate(types, _settingLookup, _secretsLookup))
-            .Where(activeStep => activeStep.Item1.Value is not None)
-            .Select(activeStep => (activeStep.Item1.Value, activeStep.Item2));
-
-    /// <summary>
-    /// Initializes scenario from YAML file.
-    /// </summary>
-    /// <param name="filename"></param>
-    public IExecutableScenario InitScript(string filename)
-    {
-        ReadFileContent(filename, GetSectionFromDeserializedContent, _initializedFileContentLoader);
-        return this;
     }
 }

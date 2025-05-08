@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Command;
 using Clio.Common;
 using Clio.Workspaces;
@@ -34,7 +33,7 @@ public class SwitchNugetToDllTests
 
         _toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
             _nugetMaterializer);
-        SwitchNugetToDllOptions toDllOptions = new () { PackageName = packageName };
+        SwitchNugetToDllOptions toDllOptions = new() { PackageName = packageName };
         SetWorkspace(true, _workspace);
 
         _fileSystem.ExistsFile(csProjFilePath).Returns(true);
@@ -61,7 +60,7 @@ public class SwitchNugetToDllTests
 
         _toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
             _nugetMaterializer);
-        SwitchNugetToDllOptions toDllOptions = new () { PackageName = packageName };
+        SwitchNugetToDllOptions toDllOptions = new() { PackageName = packageName };
         SetWorkspace(true, _workspace);
 
         _fileSystem.ExistsFile(csProjFilePath).Returns(false);
@@ -92,7 +91,7 @@ public class SwitchNugetToDllTests
         // Arrange
         _toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
             _nugetMaterializer);
-        SwitchNugetToDllOptions toDllOptions = new () { PackageName = "test-package" };
+        SwitchNugetToDllOptions toDllOptions = new() { PackageName = "test-package" };
         SetWorkspace(false, _workspace);
 
         // Act

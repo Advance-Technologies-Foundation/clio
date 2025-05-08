@@ -1,8 +1,5 @@
-import {Component, Input, ViewEncapsulation} from "@angular/core";
-import {
-  CrtInterfaceDesignerItem,
-  CrtViewElement,
-} from "@creatio-devkit/common";
+import {Component, ViewEncapsulation} from "@angular/core";
+import {CrtInterfaceDesignerItem, CrtViewElement,} from "@creatio-devkit/common";
 
 @CrtViewElement({
   selector: "<%vendorPrefix%>-demo",

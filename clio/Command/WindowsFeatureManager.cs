@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
-
 using Clio.Common;
 using Microsoft.Dism;
 
@@ -26,22 +25,25 @@ public interface IWindowsFeatureManager
     int GetActionMaxLength(IEnumerable<string> items);
 }
 
-public class WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
-    ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider, ILogger logger): IWindowsFeatureManager
+public class WindowsFeatureManager(
+    IWorkingDirectoriesProvider workingDirectoriesProvider,
+    ConsoleProgressbar consoleProgressBar,
+    IWindowsFeatureProvider windowsFeatureProvider,
+    ILogger logger) : IWindowsFeatureManager
 {
+    private readonly ConsoleProgressbar _consoleProgressBar = consoleProgressBar;
+    private readonly ILogger _logger = logger;
+    private readonly IWindowsFeatureProvider _windowsFeatureProvider = windowsFeatureProvider;
+
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
+
+    private IEnumerable<string> _requirmentNETFrameworkFeatures;
+
+    private IEnumerable<string> _windowsActiveFeatures;
+
     private string RequirmentNETFrameworkFeaturesFilePaths => Path.Join(
         _workingDirectoriesProvider.TemplateDirectory,
         "windows_features", "RequirmentNetFramework.txt");
-
-    private string GetInactiveFeaturesCode(string featureName)
-    {
-        List<WindowsFeature> windowsFeatures = _windowsFeatureProvider.GetWindowsFeatures();
-        WindowsFeature? feature = windowsFeatures.FirstOrDefault(i => i.Name?.ToLower() == featureName.ToLower() ||
-                                                                      i.Caption?.ToLower() == featureName.ToLower()) ?? throw new ItemNotFoundException($"Windows feature [{featureName}] not found in the System");
-        return feature.Name;
-    }
-
-    private IEnumerable<string> _requirmentNETFrameworkFeatures;
 
     public IEnumerable<string> RequirmentNETFrameworkFeatures
     {
@@ -52,6 +54,16 @@ public class WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectorie
             return _requirmentNETFrameworkFeatures;
         }
         set => _requirmentNETFrameworkFeatures = value;
+    }
+
+    private IEnumerable<string> WindowsActiveFeatures
+    {
+        get
+        {
+            _windowsActiveFeatures ??= _windowsFeatureProvider.GetActiveWindowsFeatures();
+
+            return _windowsActiveFeatures;
+        }
     }
 
     public List<WindowsFeature> GetMissedComponents()
@@ -75,8 +87,7 @@ public class WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectorie
         {
             requirmentFeatures.Add(new WindowsFeature
             {
-                Name = item,
-                Installed = WindowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower())
+                Name = item, Installed = WindowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower())
             });
         }
 
@@ -119,6 +130,16 @@ public class WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectorie
 
     public int GetActionMaxLength(IEnumerable<string> action) => action.Max(s => s.Length);
 
+    private string GetInactiveFeaturesCode(string featureName)
+    {
+        List<WindowsFeature> windowsFeatures = _windowsFeatureProvider.GetWindowsFeatures();
+        WindowsFeature? feature = windowsFeatures.FirstOrDefault(i => i.Name?.ToLower() == featureName.ToLower() ||
+                                                                      i.Caption?.ToLower() == featureName.ToLower()) ??
+                                  throw new ItemNotFoundException(
+                                      $"Windows feature [{featureName}] not found in the System");
+        return feature.Name;
+    }
+
     private void SetFeatureState(string featureName, bool state)
     {
         try
@@ -155,21 +176,4 @@ public class WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectorie
             DismApi.Shutdown();
         }
     }
-
-    private IEnumerable<string> _windowsActiveFeatures;
-
-    private IEnumerable<string> WindowsActiveFeatures
-    {
-        get
-        {
-            _windowsActiveFeatures ??= _windowsFeatureProvider.GetActiveWindowsFeatures();
-
-            return _windowsActiveFeatures;
-        }
-    }
-
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
-    private readonly ConsoleProgressbar _consoleProgressBar = consoleProgressBar;
-    private readonly IWindowsFeatureProvider _windowsFeatureProvider = windowsFeatureProvider;
-    private readonly ILogger _logger = logger;
 }

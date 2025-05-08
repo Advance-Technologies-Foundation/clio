@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
@@ -14,7 +13,7 @@ using MediatR;
 
 namespace Clio.Command;
 
-[Verb("link-from-repository", Aliases =["l4r", "link4repo"], HelpText = "Link repository package(s) to environment.")]
+[Verb("link-from-repository", Aliases = ["l4r", "link4repo"], HelpText = "Link repository package(s) to environment.")]
 public class Link4RepoOptions : EnvironmentOptions
 {
     [Option("envPkgPath", Required = false,
@@ -50,47 +49,50 @@ public class Link4RepoOptionsValidator : AbstractValidator<Link4RepoOptions>
             });
 }
 
-public class Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
-    IFileSystem fileSystem, IValidator<Link4RepoOptions> validator): Command<Link4RepoOptions>
+public class Link4RepoCommand(
+    ILogger logger,
+    IMediator mediator,
+    ISettingsRepository settingsRepository,
+    IFileSystem fileSystem,
+    IValidator<Link4RepoOptions> validator) : Command<Link4RepoOptions>
 {
+    private readonly IFileSystem _fileSystem = fileSystem;
     private readonly ILogger _logger = logger;
     private readonly IMediator _mediator = mediator;
     private readonly ISettingsRepository _settingsRepository = settingsRepository;
-    private readonly IFileSystem _fileSystem = fileSystem;
     private readonly IValidator<Link4RepoOptions> _validator = validator;
 
     private IEnumerable<IISScannerHandler.RegisteredSite> AllSites { get; set; }
 
     /// <summary>
-    ///  Gets the action to handle the completion of the request for all registered sites.
+    ///     Gets the action to handle the completion of the request for all registered sites.
     /// </summary>
     /// <remarks>
-    ///  This property performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Assigns the provided sites to the `AllSites` property.</item>
-    ///  </list>
+    ///     This property performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Assigns the provided sites to the `AllSites` property.</item>
+    ///     </list>
     /// </remarks>
     private Action<IEnumerable<IISScannerHandler.RegisteredSite>> OnAllSitesRequestCompleted =>
         sites => { AllSites = sites; };
 
 
-
     /// <summary>
-    ///  Executes a mediator request to retrieve all registered sites.
+    ///     Executes a mediator request to retrieve all registered sites.
     /// </summary>
     /// <param name="callback">The callback action to handle the retrieved sites.</param>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Creates a new `AllRegisteredSitesRequest` with the provided callback.</item>
-    ///   <item>Executes the request asynchronously using the mediator.</item>
-    ///   <item>Configures the task to not capture the current synchronization context.</item>
-    ///   <item>Waits for the task to complete and retrieves the result.</item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Creates a new `AllRegisteredSitesRequest` with the provided callback.</item>
+    ///         <item>Executes the request asynchronously using the mediator.</item>
+    ///         <item>Configures the task to not capture the current synchronization context.</item>
+    ///         <item>Waits for the task to complete and retrieves the result.</item>
+    ///     </list>
     /// </remarks>
     private void ExecuteMediatorRequest(Action<IEnumerable<IISScannerHandler.RegisteredSite>> callback)
     {
-        AllRegisteredSitesRequest request = new () { Callback = callback };
+        AllRegisteredSitesRequest request = new() { Callback = callback };
 
         Task.Run(async () => { await _mediator.Send(request); })
             .ConfigureAwait(false)
@@ -121,16 +123,16 @@ public class Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepos
     }
 
     /// <summary>
-    ///  Handles the linking of repository packages to the environment by environment name.
+    ///     Handles the linking of repository packages to the environment by environment name.
     /// </summary>
     /// <param name="envName">The name of the environment.</param>
     /// <param name="repoPath">The path to the package repository folder.</param>
     /// <param name="packages">The packages to link.</param>
     /// <returns>
-    ///  <list type="bullet">
-    ///   <item>0 if the linking is successful.</item>
-    ///   <item>1 if the environment is not registered or the URL is missing.</item>
-    ///  </list>
+    ///     <list type="bullet">
+    ///         <item>0 if the linking is successful.</item>
+    ///         <item>1 if the environment is not registered or the URL is missing.</item>
+    ///     </list>
     /// </returns>
     private int HandleLinkingByEnvName(string envName, string repoPath, string packages)
     {
@@ -180,16 +182,16 @@ public class Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepos
     }
 
     /// <summary>
-    ///  Handles the linking of repository packages to the environment by directory path.
+    ///     Handles the linking of repository packages to the environment by directory path.
     /// </summary>
     /// <param name="sitePath">The path to the site directory.</param>
     /// <param name="repoPath">The path to the package repository folder.</param>
     /// <param name="packages">The packages to link.</param>
     /// <returns>
-    ///  <list type="bullet">
-    ///   <item>0 if the linking is successful.</item>
-    ///   <item>1 if the linking fails.</item>
-    ///  </list>
+    ///     <list type="bullet">
+    ///         <item>0 if the linking is successful.</item>
+    ///         <item>1 if the linking fails.</item>
+    ///     </list>
     /// </returns>
     private int HandleLinkWithDirPath(string sitePath, string repoPath, string packages)
     {
@@ -205,27 +207,27 @@ public class Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepos
     }
 
 
-
     /// <summary>
-    ///  Executes the command to link repository packages to the environment.
+    ///     Executes the command to link repository packages to the environment.
     /// </summary>
     /// <param name="options">The options for the link-from-repository command.</param>
     /// <returns>
-    ///  <list type="bullet">
-    ///   <item>0 if the linking is successful.</item>
-    ///   <item>1 if the linking fails.</item>
-    ///  </list>
+    ///     <list type="bullet">
+    ///         <item>0 if the linking is successful.</item>
+    ///         <item>1 if the linking fails.</item>
+    ///     </list>
     /// </returns>
     /// <remarks>
-    ///  This method performs the following steps:
-    ///  <list type="bullet">
-    ///   <item>Checks if the current operating system is Windows.</item>
-    ///   <item>Attempts to create a URI from the provided environment package path.</item>
-    ///   <item>
-    ///    Calls the appropriate method to handle the linking based on whether the path is a valid URI or an environment
-    ///    name.
-    ///   </item>
-    ///  </list>
+    ///     This method performs the following steps:
+    ///     <list type="bullet">
+    ///         <item>Checks if the current operating system is Windows.</item>
+    ///         <item>Attempts to create a URI from the provided environment package path.</item>
+    ///         <item>
+    ///             Calls the appropriate method to handle the linking based on whether the path is a valid URI or an
+    ///             environment
+    ///             name.
+    ///         </item>
+    ///     </list>
     /// </remarks>
     public override int Execute(Link4RepoOptions options)
     {

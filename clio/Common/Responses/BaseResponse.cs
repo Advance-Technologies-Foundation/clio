@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.Serialization;
 
 namespace Clio.Common.Responses;
@@ -7,30 +7,17 @@ namespace Clio.Common.Responses;
 [DataContract]
 public class BaseResponse
 {
-    public BaseResponse()
-    {
-    }
+    [DataMember(Name = "success")] public bool Success { get; set; }
 
-    [DataMember(Name = "success")]
-    public bool Success { get; set; }
-
-    [DataMember(Name = "errorInfo")]
-    public ErrorInfo ErrorInfo { get; set; }
+    [DataMember(Name = "errorInfo")] public ErrorInfo ErrorInfo { get; set; }
 }
 
 [DataContract]
 public class ErrorInfo
 {
-    public ErrorInfo()
-    {
-    }
+    [DataMember(Name = "errorCode")] public string ErrorCode { get; set; }
 
-    [DataMember(Name = "errorCode")]
-    public string ErrorCode { get; set; }
+    [DataMember(Name = "message")] public string Message { get; set; }
 
-    [DataMember(Name = "message")]
-    public string Message { get; set; }
-
-    [DataMember(Name = "stackTrace")]
-    public string StackTrace { get; set; }
+    [DataMember(Name = "stackTrace")] public string StackTrace { get; set; }
 }

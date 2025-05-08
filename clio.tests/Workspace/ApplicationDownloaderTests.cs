@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Autofac;
 using Clio.Common;
 using Clio.Common.CsProjManager;
@@ -41,7 +40,7 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
         IApplicationDownloader downloader = container.Resolve<IApplicationDownloader>();
         List<Reference> refs =
         [
-            new ("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
+            new("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
         ];
         _initializedCsprojFile.GetPackageReferences()
             .Returns(refs);
@@ -68,7 +67,7 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
         IApplicationDownloader downloader = container.Resolve<IApplicationDownloader>();
         List<Reference> refs =
         [
-            new ("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
+            new("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
         ];
         _initializedCsprojFile.GetPackageReferences()
             .Returns(refs);

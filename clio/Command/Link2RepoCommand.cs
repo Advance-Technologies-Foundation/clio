@@ -1,9 +1,8 @@
-using System;
-
+﻿using System;
 using CommandLine;
-using Common;
 
 namespace Clio.Command;
+
 [Verb("link-to-repository", Aliases = new[] { "l2r", "link2repo" },
     HelpText = "Link environment package(s) to repository.")]
 internal class Link2RepoOptions

@@ -1,4 +1,4 @@
-using Autofac;
+﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -9,8 +9,10 @@ namespace Clio.Tests.Command;
 
 public class WindowsFeatureManagerTestFixture : BaseClioModuleTests
 {
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider =
+        Substitute.For<IWorkingDirectoriesProvider>();
+
     private IWindowsFeatureManager _sut;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 
     public override void Setup()
     {

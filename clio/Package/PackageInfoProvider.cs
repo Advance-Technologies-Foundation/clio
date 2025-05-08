@@ -1,23 +1,18 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-
 using Clio.Common;
 using Clio.Package;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
-using FileSystem = System.IO.Abstractions.FileSystem;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio;
 
 public class PackageInfoProvider : IPackageInfoProvider
 {
+    private readonly IFileSystem _fileSystem;
     protected readonly IJsonConverter _jsonConverter;
-    private readonly System.IO.Abstractions.IFileSystem _fileSystem;
 
-    public PackageInfoProvider(IJsonConverter jsonConverter, System.IO.Abstractions.IFileSystem fileSystem)
+    public PackageInfoProvider(IJsonConverter jsonConverter, IFileSystem fileSystem)
     {
         jsonConverter.CheckArgumentNull(nameof(jsonConverter));
         _jsonConverter = jsonConverter;

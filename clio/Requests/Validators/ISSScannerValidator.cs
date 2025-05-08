@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Specialized;
 using System.Globalization;
 using System.Runtime.InteropServices;
-
+using System.Web;
 using FluentValidation;
+using FluentValidation.Results;
 
 namespace Clio.Requests.Validators;
 
@@ -14,7 +15,7 @@ internal class ISSScannerValidator : AbstractValidator<IISScannerRequest>
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                context.AddFailure(new FluentValidation.Results.ValidationFailure
+                context.AddFailure(new ValidationFailure
                 {
                     ErrorCode = "OS001",
                     ErrorMessage =
@@ -26,13 +27,13 @@ internal class ISSScannerValidator : AbstractValidator<IISScannerRequest>
         }).Custom((value, context) =>
         {
             Uri.TryCreate(value, UriKind.Absolute, out Uri uri);
-            NameValueCollection nvc = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            NameValueCollection nvc = HttpUtility.ParseQueryString(uri.Query);
 
             string returnType = nvc["return"];
 
             if (string.IsNullOrEmpty(returnType) || string.IsNullOrWhiteSpace(returnType))
             {
-                context.AddFailure(new FluentValidation.Results.ValidationFailure
+                context.AddFailure(new ValidationFailure
                 {
                     ErrorCode = "ARG001",
                     ErrorMessage = "Return type cannot be empty",
@@ -43,14 +44,14 @@ internal class ISSScannerValidator : AbstractValidator<IISScannerRequest>
         }).Custom((value, context) =>
         {
             Uri.TryCreate(value, UriKind.Absolute, out Uri uri);
-            NameValueCollection nvc = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            NameValueCollection nvc = HttpUtility.ParseQueryString(uri.Query);
 
             string returnType = nvc["return"].ToLower(CultureInfo.InvariantCulture);
 
             string[] allowedValues = ["count", "details", "registerall", "remote"];
             if (Array.IndexOf(allowedValues, returnType) < 0)
             {
-                context.AddFailure(new FluentValidation.Results.ValidationFailure
+                context.AddFailure(new ValidationFailure
                 {
                     ErrorCode = "ARG002",
                     ErrorMessage = $"Return type must be one of {string.Join(", ", allowedValues)}",

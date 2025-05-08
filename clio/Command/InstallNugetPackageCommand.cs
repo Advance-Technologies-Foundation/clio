@@ -1,14 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("install-nuget-pkg", Aliases = new string[] { "installng" },
+[Verb("install-nuget-pkg", Aliases = new[] { "installng" },
     HelpText = "Install NuGet package to a web application (website)")]
 public class InstallNugetPkgOptions : EnvironmentOptions
 {

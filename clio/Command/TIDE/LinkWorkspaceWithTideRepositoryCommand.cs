@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Management.Automation;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Workspaces;
@@ -10,7 +9,7 @@ using CreatioModel;
 
 namespace Clio.Command.TIDE;
 
-[Verb("link-workspace-with-tide-repository", Aliases =["linkw"], HelpText = "Link workspace with T.I.D.E. repository",
+[Verb("link-workspace-with-tide-repository", Aliases = ["linkw"], HelpText = "Link workspace with T.I.D.E. repository",
     Hidden = true)]
 public class LinkWorkspaceWithTideRepositoryOptions : RemoteCommandOptions
 {
@@ -18,7 +17,8 @@ public class LinkWorkspaceWithTideRepositoryOptions : RemoteCommandOptions
     public string TideRepositoryId { get; set; }
 }
 
-public class LinkWorkspaceWithTideRepositoryCommand(IDataProvider dataProvider, IWorkspace workspace): Command<LinkWorkspaceWithTideRepositoryOptions>
+public class LinkWorkspaceWithTideRepositoryCommand(IDataProvider dataProvider, IWorkspace workspace)
+    : Command<LinkWorkspaceWithTideRepositoryOptions>
 {
     private readonly IDataProvider _dataProvider = dataProvider;
     private readonly IWorkspace _workspace = workspace;

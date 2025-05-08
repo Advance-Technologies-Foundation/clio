@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Clio.Common;
 using Clio.Workspaces;
 using NSubstitute;
@@ -12,6 +11,21 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 public class PropsBuilder_Tests
 {
+    [SetUp]
+    public void SetUp()
+    {
+        _fileSystem = Substitute.For<IFileSystem>();
+        _logger = Substitute.For<ILogger>();
+        _workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+
+        _workspacePathBuilder.RootPath.Returns(RootPath);
+        _workspacePathBuilder.NugetFolderPath.Returns(Path.Combine(RootPath, NugetFolderPath));
+        _workspacePathBuilder.PackagesFolderPath.Returns(Path.Combine(RootPath, PackageFolderPath));
+        _workspacePathBuilder.BuildPackageProjectPath(Arg.Is(PackageName))
+            .Returns(Path.Combine(RootPath, PackageFolderPath, PackageName, PackageName + ".csproj"));
+        _sut = new PropsBuilder(_fileSystem, _logger, _workspacePathBuilder);
+    }
+
     private const string RootPath = "rootPath";
     private const string NugetFolderPath = ".nuget";
     private const string PackageFolderPath = "packages";
@@ -33,21 +47,6 @@ public class PropsBuilder_Tests
 				<PackageReference Include=""ATF.Repository"" Version=""2.0.1.5"" />
 			</ItemGroup>
 		</Project>";
-
-    [SetUp]
-    public void SetUp()
-    {
-        _fileSystem = Substitute.For<IFileSystem>();
-        _logger = Substitute.For<ILogger>();
-        _workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
-
-        _workspacePathBuilder.RootPath.Returns(RootPath);
-        _workspacePathBuilder.NugetFolderPath.Returns(Path.Combine(RootPath, NugetFolderPath));
-        _workspacePathBuilder.PackagesFolderPath.Returns(Path.Combine(RootPath, PackageFolderPath));
-        _workspacePathBuilder.BuildPackageProjectPath(Arg.Is(PackageName))
-            .Returns(Path.Combine(RootPath, PackageFolderPath, PackageName, PackageName + ".csproj"));
-        _sut = new PropsBuilder(_fileSystem, _logger, _workspacePathBuilder);
-    }
 
     private PropsBuilder _sut;
     private IFileSystem _fileSystem;

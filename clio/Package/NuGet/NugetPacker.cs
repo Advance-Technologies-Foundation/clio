@@ -1,7 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
-
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
@@ -10,10 +8,10 @@ public class NugetPacker : INugetPacker
 {
     private const string NugetPackProjName = "NugetPackProj.csproj";
     private readonly IDotnetExecutor _dotnetExecutor;
-    private readonly ITemplateProvider _templateProvider;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
+    private readonly ITemplateProvider _templateProvider;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public NugetPacker(ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor,
         IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger)
@@ -28,6 +26,22 @@ public class NugetPacker : INugetPacker
         _workingDirectoriesProvider = workingDirectoriesProvider;
         _fileSystem = fileSystem;
         _logger = logger;
+    }
+
+    public string GetNupkgFileName(PackageInfo pkgInfo) =>
+        $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NupkgExtension}";
+
+    public void Pack(string nuspecFilePath, string destinationNupkgDirectory)
+    {
+        CheckArguments(nuspecFilePath, destinationNupkgDirectory);
+        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
+        {
+            string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
+            CreateNugetPackProj(nugetPackProjPath);
+            string packResult = PackPackage(nugetPackProjPath, nuspecFilePath, destinationNupkgDirectory);
+            DeleteTempNetstandardDirectoryIfExists(destinationNupkgDirectory);
+            _logger.WriteLine(packResult);
+        });
     }
 
     private static void CheckArguments(string nuspecFilePath, string destinationNupkgDirectory)
@@ -57,21 +71,5 @@ public class NugetPacker : INugetPacker
     {
         string netstandard20 = Path.Combine(destinationNupkgDirectory, "netstandard2.0");
         _fileSystem.DeleteDirectoryIfExists(netstandard20);
-    }
-
-    public string GetNupkgFileName(PackageInfo pkgInfo) =>
-        $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NupkgExtension}";
-
-    public void Pack(string nuspecFilePath, string destinationNupkgDirectory)
-    {
-        CheckArguments(nuspecFilePath, destinationNupkgDirectory);
-        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
-        {
-            string nugetPackProjPath = Path.Combine(tempDirectory, NugetPackProjName);
-            CreateNugetPackProj(nugetPackProjPath);
-            string packResult = PackPackage(nugetPackProjPath, nuspecFilePath, destinationNupkgDirectory);
-            DeleteTempNetstandardDirectoryIfExists(destinationNupkgDirectory);
-            _logger.WriteLine(packResult);
-        });
     }
 }

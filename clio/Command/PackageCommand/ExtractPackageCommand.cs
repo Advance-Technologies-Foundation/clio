@@ -1,12 +1,11 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command.PackageCommand;
 
-[Verb("extract-pkg-zip", Aliases =["extract", "unzip"], HelpText = "Prepare an archive of creatio package")]
+[Verb("extract-pkg-zip", Aliases = ["extract", "unzip"], HelpText = "Prepare an archive of creatio package")]
 public class UnzipPkgOptions
 {
     [Option('d', "DestinationPath", Required = false, HelpText = "Destination path for package folder")]
@@ -18,9 +17,9 @@ public class UnzipPkgOptions
 
 public class ExtractPackageCommand : Command<UnzipPkgOptions>
 {
-    private readonly IPackageArchiver _packageArchiver;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
+    private readonly IPackageArchiver _packageArchiver;
 
     public ExtractPackageCommand(IPackageArchiver packageArchiver, IFileSystem fileSystem, ILogger logger)
     {
@@ -37,7 +36,7 @@ public class ExtractPackageCommand : Command<UnzipPkgOptions>
         files = null;
         if (Directory.Exists(dir))
         {
-            DirectoryInfo directoryInfo = new (dir);
+            DirectoryInfo directoryInfo = new(dir);
             files = directoryInfo.GetFiles("*.gz");
             result = files.Length > 0;
         }

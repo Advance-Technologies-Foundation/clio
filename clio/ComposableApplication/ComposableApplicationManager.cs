@@ -1,17 +1,13 @@
-using System;
-using System.Collections;
+﻿using System;
 using System.IO;
-using System.IO.Abstractions;
 using System.Json;
 using System.Linq;
 using System.Text;
-
 using Clio.Common;
 using Clio.Package;
 using FluentValidation;
 using FluentValidation.Results;
 using Newtonsoft.Json;
-
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.ComposableApplication;
@@ -50,17 +46,20 @@ public class SetIconParametersValidator : AbstractValidator<SetIconParameters>
     }
 }
 
-public class ComposableApplicationManager(IFileSystem fileSystem, IValidator<SetIconParameters> validator,
-    IPackageArchiver archiver, IWorkingDirectoriesProvider directoriesProvider): IComposableApplicationManager
+public class ComposableApplicationManager(
+    IFileSystem fileSystem,
+    IValidator<SetIconParameters> validator,
+    IPackageArchiver archiver,
+    IWorkingDirectoriesProvider directoriesProvider) : IComposableApplicationManager
 {
-    private readonly IFileSystem _fileSystem = fileSystem;
-    private readonly IValidator<SetIconParameters> _validator = validator;
     private readonly IPackageArchiver _archiver = archiver;
     private readonly IWorkingDirectoriesProvider _directoriesProvider = directoriesProvider;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly IValidator<SetIconParameters> _validator = validator;
 
     public void SetIcon(string appPath, string iconPath, string appName)
     {
-        SetIconParameters parameters = new () { AppPath = appPath, IconPath = iconPath, AppName = appName };
+        SetIconParameters parameters = new() { AppPath = appPath, IconPath = iconPath, AppName = appName };
 
         ValidationResult validationResult = _validator.Validate(parameters);
         if (!validationResult.IsValid)
@@ -94,56 +93,6 @@ public class ComposableApplicationManager(IFileSystem fileSystem, IValidator<Set
         ChangeIcon(appPath, iconPath, appName);
     }
 
-    private void ChangeIcon(string appPath, string iconPath, string appName)
-    {
-        string[] files = _fileSystem.Directory
-            .GetFiles(appPath, "app-descriptor.json", SearchOption.AllDirectories);
-
-        if (files.Length == 0)
-        {
-            throw new FileNotFoundException(
-                $"No app-descriptor.json file found in the specified packages folder path. {appPath}");
-        }
-
-        var matchingFiles = files
-            .Select(file => new { File = file, Content = _fileSystem.File.ReadAllText(file) })
-            .Select(fileContent => new
-            {
-                fileContent.File,
-                AppDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(fileContent.Content)
-            })
-            .Where(fileDescriptor => string.IsNullOrWhiteSpace(appName) || fileDescriptor.AppDescriptor.Code == appName)
-            .ToList();
-
-        if (matchingFiles.Count > 1)
-        {
-            StringBuilder exceptionMessage = new ("More than one app-descriptor.json file found with the same Code:\n");
-            foreach (var file in matchingFiles)
-            {
-                exceptionMessage.AppendLine(file.File);
-            }
-
-            throw new InvalidOperationException(exceptionMessage.ToString());
-        }
-
-        if (matchingFiles.Count == 0)
-        {
-            throw new ValidationException($"App {appName} not found.");
-        }
-
-        var matchingFile = matchingFiles[0];
-
-        string fileExt = Path.GetExtension(iconPath);
-        string iconFileName = Path.GetFileNameWithoutExtension(iconPath);
-        string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-        matchingFile.AppDescriptor.IconName = $"{iconFileName}_{timestamp}{fileExt}";
-
-        string base64EncodedIcon = Convert.ToBase64String(_fileSystem.File.ReadAllBytes(iconPath));
-        matchingFile.AppDescriptor.Icon = base64EncodedIcon;
-        string formattedJsonString = JsonConvert.SerializeObject(matchingFile.AppDescriptor, Formatting.Indented);
-        _fileSystem.File.WriteAllText(matchingFile.File, formattedJsonString);
-    }
-
     public void SetVersion(string appPackagesFolderPath, string version, string packageName = null)
     {
         string[] appDescriptorPaths = _fileSystem.Directory.GetFiles(appPackagesFolderPath, "app-descriptor.json",
@@ -156,7 +105,7 @@ public class ComposableApplicationManager(IFileSystem fileSystem, IValidator<Set
                 string actualCode = JsonValue.Parse(_fileSystem.File.ReadAllText(descriptor))["Code"].ToString();
                 if (code != actualCode && code != string.Empty)
                 {
-                    StringBuilder exceptionMessage = new ();
+                    StringBuilder exceptionMessage = new();
                     exceptionMessage.AppendLine("Find more than one applications: ");
                     foreach (string path in appDescriptorPaths)
                     {
@@ -171,7 +120,7 @@ public class ComposableApplicationManager(IFileSystem fileSystem, IValidator<Set
 
             if (string.IsNullOrEmpty(packageName))
             {
-                StringBuilder exceptionMessage = new ();
+                StringBuilder exceptionMessage = new();
                 exceptionMessage.AppendLine(
                     $"Find more than one descriptors for application {code}. Specify package name.");
                 foreach (string path in appDescriptorPaths)
@@ -213,32 +162,80 @@ public class ComposableApplicationManager(IFileSystem fileSystem, IValidator<Set
             string code = JsonValue.Parse(_fileSystem.File.ReadAllText(appDescriptorPaths[0]))["Code"].ToString();
             return code.Trim('"');
         }
-        else if (appDescriptorPaths.Length == 0)
+
+        if (appDescriptorPaths.Length == 0)
         {
             throw new FileNotFoundException(
                 $"No app-descriptor.json file found in the specified workspace path. {workspacePath}");
         }
-        else
-        {
-            StringBuilder exceptionMessage = new ();
-            exceptionMessage.AppendLine("Find more than one applications: ");
-            foreach (string path in appDescriptorPaths)
-            {
-                exceptionMessage.AppendLine(path);
-            }
 
-            throw new Exception(exceptionMessage.ToString());
+        StringBuilder exceptionMessage = new();
+        exceptionMessage.AppendLine("Find more than one applications: ");
+        foreach (string path in appDescriptorPaths)
+        {
+            exceptionMessage.AppendLine(path);
         }
 
+        throw new Exception(exceptionMessage.ToString());
+
         throw new NotImplementedException();
+    }
+
+    private void ChangeIcon(string appPath, string iconPath, string appName)
+    {
+        string[] files = _fileSystem.Directory
+            .GetFiles(appPath, "app-descriptor.json", SearchOption.AllDirectories);
+
+        if (files.Length == 0)
+        {
+            throw new FileNotFoundException(
+                $"No app-descriptor.json file found in the specified packages folder path. {appPath}");
+        }
+
+        var matchingFiles = files
+            .Select(file => new { File = file, Content = _fileSystem.File.ReadAllText(file) })
+            .Select(fileContent => new
+            {
+                fileContent.File,
+                AppDescriptor = JsonConvert.DeserializeObject<AppDescriptorJson>(fileContent.Content)
+            })
+            .Where(fileDescriptor => string.IsNullOrWhiteSpace(appName) || fileDescriptor.AppDescriptor.Code == appName)
+            .ToList();
+
+        if (matchingFiles.Count > 1)
+        {
+            StringBuilder exceptionMessage = new("More than one app-descriptor.json file found with the same Code:\n");
+            foreach (var file in matchingFiles)
+            {
+                exceptionMessage.AppendLine(file.File);
+            }
+
+            throw new InvalidOperationException(exceptionMessage.ToString());
+        }
+
+        if (matchingFiles.Count == 0)
+        {
+            throw new ValidationException($"App {appName} not found.");
+        }
+
+        var matchingFile = matchingFiles[0];
+
+        string fileExt = Path.GetExtension(iconPath);
+        string iconFileName = Path.GetFileNameWithoutExtension(iconPath);
+        string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        matchingFile.AppDescriptor.IconName = $"{iconFileName}_{timestamp}{fileExt}";
+
+        string base64EncodedIcon = Convert.ToBase64String(_fileSystem.File.ReadAllBytes(iconPath));
+        matchingFile.AppDescriptor.Icon = base64EncodedIcon;
+        string formattedJsonString = JsonConvert.SerializeObject(matchingFile.AppDescriptor, Formatting.Indented);
+        _fileSystem.File.WriteAllText(matchingFile.File, formattedJsonString);
     }
 }
 
 public interface IComposableApplicationManager
 {
-
     /// <summary>
-    ///  Sets the icon for the specified application by updating the app-descriptor.json file.
+    ///     Sets the icon for the specified application by updating the app-descriptor.json file.
     /// </summary>
     /// <param name="packagesFolderPath">The path to the folder containing the application packages.</param>
     /// <param name="iconPath">The path to the icon file to be set.</param>

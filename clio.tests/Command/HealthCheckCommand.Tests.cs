@@ -1,21 +1,14 @@
-using System.Threading;
-
-using Autofac;
+﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using NSubstitute;
 using NUnit.Framework;
-using Query;
 
 namespace Clio.Tests.Command;
+
 [TestFixture]
 public class HealthCheckCommandTestCase
 {
-    private EnvironmentSettings _environmentSettings;
-    private IApplicationClient _applicationClient;
-    private HealthCheckCommand _hcCommand;
-    private HealthCheckOptions _options;
-
     [SetUp]
     public void SetUp()
     {
@@ -32,6 +25,11 @@ public class HealthCheckCommandTestCase
         _options = Substitute.For<HealthCheckOptions>();
     }
 
+    private EnvironmentSettings _environmentSettings;
+    private IApplicationClient _applicationClient;
+    private HealthCheckCommand _hcCommand;
+    private HealthCheckOptions _options;
+
     [Test]
     [Category("Unit")]
     public void HealthCheckCommand_FormsCorrectApplicationRequest_WhenWebHostIsTrue()
@@ -39,7 +37,7 @@ public class HealthCheckCommandTestCase
         _options.WebHost = "true";
         _hcCommand.Execute(_options);
         _applicationClient.Received(1).ExecuteGetRequest(
-            _environmentSettings.Uri + "/0/api/HealthCheck/Ping", Timeout.Infinite);
+            _environmentSettings.Uri + "/0/api/HealthCheck/Ping");
     }
 
     [Test]
@@ -49,14 +47,14 @@ public class HealthCheckCommandTestCase
         _options.WebApp = "true";
         _hcCommand.Execute(_options);
         _applicationClient.Received(1).ExecuteGetRequest(
-            _environmentSettings.Uri + "/api/HealthCheck/Ping", Timeout.Infinite);
+            _environmentSettings.Uri + "/api/HealthCheck/Ping");
     }
 
     [Test]
     [Category("Unit")]
     public void HealthCheckCommand_IsRegistered()
     {
-        BindingsModule bs = new ();
+        BindingsModule bs = new();
         IContainer container = bs.Register(_environmentSettings);
         HealthCheckCommand command = container.Resolve<HealthCheckCommand>();
         Assert.That(command, Is.Not.Null);

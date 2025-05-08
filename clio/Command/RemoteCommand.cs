@@ -1,11 +1,9 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
-
 using Clio.Common;
 using CommandLine;
-using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace Clio.Command;
 
@@ -41,7 +39,6 @@ public abstract class RemoteCommand<TEnvironmentOptions> : Command<TEnvironmentO
     public RemoteCommand()
     {
     } // for tests
-
 
 
     internal IApplicationClient ApplicationClient { get; set; }

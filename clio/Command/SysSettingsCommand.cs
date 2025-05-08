@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Common;
 using CommandLine;
 
@@ -22,11 +21,12 @@ public class SysSettingsOptions : EnvironmentOptions
     public bool IsGet { get; set; }
 }
 
-public class SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IClioGateway clioGateway): Command<SysSettingsOptions>
+public class SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IClioGateway clioGateway)
+    : Command<SysSettingsOptions>
 {
-    private readonly ISysSettingsManager _sysSettingsManager = sysSettingsManager;
-    private readonly ILogger _logger = logger;
     private readonly IClioGateway _clioGateway = clioGateway;
+    private readonly ILogger _logger = logger;
+    private readonly ISysSettingsManager _sysSettingsManager = sysSettingsManager;
 
     private void CreateSysSettingIfNotExists(SysSettingsOptions opts) =>
 

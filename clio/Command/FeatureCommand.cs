@@ -1,7 +1,5 @@
 using System;
 using System.Linq;
-using System.Text;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -30,8 +28,11 @@ public class FeatureOptions : RemoteCommandOptions
     public bool UseFeatureWebService { get; set; }
 }
 
-public class FeatureCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-    IDataProvider dataProvider, IServiceUrlBuilder serviceUrlBuilder): RemoteCommand<FeatureOptions>(applicationClient, settings)
+public class FeatureCommand(
+    IApplicationClient applicationClient,
+    EnvironmentSettings settings,
+    IDataProvider dataProvider,
+    IServiceUrlBuilder serviceUrlBuilder) : RemoteCommand<FeatureOptions>(applicationClient, settings)
 {
     private readonly IDataProvider _dataProvider = dataProvider;
     private readonly IServiceUrlBuilder _serviceUrlBuilder = serviceUrlBuilder;

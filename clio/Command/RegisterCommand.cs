@@ -1,9 +1,6 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
-
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -49,9 +46,9 @@ public class RegisterCommand : Command<RegisterOptions>
                 string folder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 string appDataClioFolderPath = Path.Combine(folder, "clio");
                 Directory.CreateDirectory(appDataClioFolderPath);
-                CreatioEnvironment environment = new ();
+                CreatioEnvironment environment = new();
                 string clioIconPath = Path.Combine(environment.GetAssemblyFolderPath(), "img");
-                DirectoryInfo imgFolder = new (clioIconPath);
+                DirectoryInfo imgFolder = new(clioIconPath);
                 FileInfo[] allImgFiles = imgFolder.GetFiles();
                 foreach (FileInfo imgFile in allImgFiles)
                 {
@@ -89,8 +86,8 @@ internal class UnregisterCommand : Command<UnregisterOptions>
     {
         try
         {
-            Process.Start(new ProcessStartInfo("cmd", $"/c reg delete HKEY_CLASSES_ROOT\\Folder\\shell\\clio /f"));
-            Process.Start(new ProcessStartInfo("cmd", $"/c reg delete HKEY_CLASSES_ROOT\\*\\shell\\clio /f"));
+            Process.Start(new ProcessStartInfo("cmd", "/c reg delete HKEY_CLASSES_ROOT\\Folder\\shell\\clio /f"));
+            Process.Start(new ProcessStartInfo("cmd", "/c reg delete HKEY_CLASSES_ROOT\\*\\shell\\clio /f"));
             Console.WriteLine("Clio context menu successfully unregistered");
             return 0;
         }

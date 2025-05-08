@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Abstractions;
-
 using Newtonsoft.Json;
 
 namespace Clio.Common;

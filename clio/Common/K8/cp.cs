@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-
 using ICSharpCode.SharpZipLib.Tar;
 using k8s;
 using k8s.Models;
@@ -39,15 +38,15 @@ internal class Cp(IKubernetes client)
         ValidatePathParameters(sourceFilePath, destinationFilePath);
 
         // The callback which processes the standard input, standard output and standard error of exec method
-        ExecAsyncCallback handler = new (async (stdIn, stdOut, stdError) =>
+        ExecAsyncCallback handler = async (stdIn, stdOut, stdError) =>
         {
-            FileInfo fileInfo = new (destinationFilePath);
+            FileInfo fileInfo = new(destinationFilePath);
             try
             {
-                using (MemoryStream memoryStream = new ())
+                using (MemoryStream memoryStream = new())
                 {
                     using (FileStream inputFileStream = File.OpenRead(sourceFilePath))
-                    using (TarOutputStream tarOutputStream = new (memoryStream, Encoding.Default))
+                    using (TarOutputStream tarOutputStream = new(memoryStream, Encoding.Default))
                     {
                         tarOutputStream.IsStreamOwner = false;
 
@@ -72,13 +71,13 @@ internal class Cp(IKubernetes client)
                 throw new IOException($"Copy command failed: {ex.Message}");
             }
 
-            using StreamReader streamReader = new (stdError);
+            using StreamReader streamReader = new(stdError);
             while (streamReader.EndOfStream == false)
             {
                 string error = await streamReader.ReadToEndAsync();
                 throw new IOException($"Copy command failed: {error}");
             }
-        });
+        };
 
         string destinationFolder = GetFolderName(destinationFilePath);
 
@@ -86,7 +85,7 @@ internal class Cp(IKubernetes client)
             name,
             @namespace,
             container,
-            new string[] { "sh", "-c", $"tar xmf - -C {destinationFolder}" },
+            new[] { "sh", "-c", $"tar xmf - -C {destinationFolder}" },
             false,
             handler,
             cancellationToken);

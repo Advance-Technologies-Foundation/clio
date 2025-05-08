@@ -1,48 +1,48 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Abstractions;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
-
 using Ms = System.IO.Abstractions;
 
 namespace Clio.Common;
 
-public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
+public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem
 {
+    public enum Algorithm
+    {
+        SHA1,
+        SHA256,
+        SHA384,
+        SHA512,
+        MD5
+    }
+
     internal static Encoding Utf8NoBom = new UTF8Encoding(false);
 
     private readonly Ms.IFileSystem _msFileSystem = msFileSystem;
 
     public byte[] ReadAllBytes(string filePath) => _msFileSystem.File.ReadAllBytes(filePath);
 
-    public FileSystemStream CreateFile(string filePath) => _msFileSystem.File.Create(filePath);
+    public Ms.FileSystemStream CreateFile(string filePath) => _msFileSystem.File.Create(filePath);
 
-    public FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share) =>
+    public Ms.FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share) =>
         _msFileSystem.File.Open(filePath, mode, access, share);
-
-    public static void CreateLink(string link, string target)
-    {
-        Process mklinkProcess = Process.Start(
-            new ProcessStartInfo("cmd", $"/c mklink /D \"{link}\" \"{target}\"") { CreateNoWindow = true });
-        mklinkProcess.WaitForExit();
-    }
 
     public long GetFileSize(string filePath)
     {
         filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-        IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
-        IFileInfo ff = fileInfoFactory.New(filePath);
+        Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+        Ms.IFileInfo ff = fileInfoFactory.New(filePath);
         return ff.Length;
     }
 
-    public long GetFileSize(IFileInfo fileInfo) => fileInfo.Length;
+    public long GetFileSize(Ms.IFileInfo fileInfo) => fileInfo.Length;
 
-    public IFileSystemInfo CreateSymLink(string path, string pathToTarget)
+    public Ms.IFileSystemInfo CreateSymLink(string path, string pathToTarget)
     {
         path.CheckArgumentNullOrWhiteSpace(nameof(path));
         pathToTarget.CheckArgumentNullOrWhiteSpace(nameof(pathToTarget));
@@ -59,10 +59,10 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
         throw new ArgumentOutOfRangeException(nameof(path), $"Path {path} does not exist");
     }
 
-    public IFileSystemInfo CreateFileSymLink(string path, string pathToTarget) =>
+    public Ms.IFileSystemInfo CreateFileSymLink(string path, string pathToTarget) =>
         _msFileSystem.File.CreateSymbolicLink(path, pathToTarget);
 
-    public IFileSystemInfo CreateDirectorySymLink(string path, string pathToTarget) =>
+    public Ms.IFileSystemInfo CreateDirectorySymLink(string path, string pathToTarget) =>
         _msFileSystem.Directory.CreateSymbolicLink(path, pathToTarget);
 
     public void CheckOrDeleteExistsFile(string filePath, bool delete)
@@ -88,8 +88,8 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
         destinationDirectory.CheckArgumentNullOrWhiteSpace(nameof(destinationDirectory));
         foreach (string sourceFilePath in filesPaths)
         {
-            IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
-            IFileInfo sourceFileInfo = fileInfoFactory.New(sourceFilePath);
+            Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+            Ms.IFileInfo sourceFileInfo = fileInfoFactory.New(sourceFilePath);
             string destinationFilePath = Path.Combine(destinationDirectory, sourceFileInfo.Name);
             _msFileSystem.File.Copy(sourceFilePath, destinationFilePath, overwrite);
         }
@@ -120,7 +120,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
     public string ExtractFileNameFromPath(string filePath)
     {
         filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-        FileInfo packageFileInfo = new (filePath);
+        FileInfo packageFileInfo = new(filePath);
         return GetFileNameWithoutExtension(packageFileInfo);
     }
 
@@ -129,8 +129,8 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
         filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
 
         // var fileInfo = new FileInfo(filePath);
-        IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
-        IFileInfo fileInfo = fileInfoFactory.New(filePath);
+        Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+        Ms.IFileInfo fileInfo = fileInfoFactory.New(filePath);
         return fileInfo.Extension;
     }
 
@@ -157,7 +157,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
     public FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption)
     {
         directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-        DirectoryInfo directoryInfo = new (directoryPath);
+        DirectoryInfo directoryInfo = new(directoryPath);
 
         // TODO: Discuss with P.Makarchuk
         // directoryInfo.GetFiles causes System.IO.DirectoryNotFoundException when Schemas does not exist
@@ -169,9 +169,9 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
         return new FileInfo[0];
     }
 
-    public IDirectoryInfo GetDirectoryInfo(string path)
+    public Ms.IDirectoryInfo GetDirectoryInfo(string path)
     {
-        IDirectoryInfoFactory dirInfoFactory = _msFileSystem.DirectoryInfo;
+        Ms.IDirectoryInfoFactory dirInfoFactory = _msFileSystem.DirectoryInfo;
         return dirInfoFactory.New(path);
     }
 
@@ -267,7 +267,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
         }
     }
 
-    public IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false)
+    public Ms.IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false)
     {
         if (throwWhenExists && ExistsDirectory(directoryPath))
         {
@@ -317,7 +317,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
     }
 
     /// <summary>
-    /// Checks if directory exists.
+    ///     Checks if directory exists.
     /// </summary>
     /// <param name="directoryPath"></param>
     /// <returns></returns>
@@ -389,17 +389,8 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
             return filePath;
         }
 
-        string[] filePathItem = filePath.Split(new char[] { '\\', '/' }, StringSplitOptions.None);
+        string[] filePathItem = filePath.Split(new[] { '\\', '/' }, StringSplitOptions.None);
         return Path.Combine(filePathItem);
-    }
-
-    public enum Algorithm
-    {
-        SHA1,
-        SHA256,
-        SHA384,
-        SHA512,
-        MD5
     }
 
     public string GetFileHash(Algorithm algorithm, string fileName)
@@ -414,7 +405,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
             _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, null)
         };
 
-        using FileSystemStream stream = _msFileSystem.File.OpenRead(fileName);
+        using Ms.FileSystemStream stream = _msFileSystem.File.OpenRead(fileName);
         byte[] hash = hashAlgorithm.ComputeHash(stream);
         return BitConverter.ToString(hash).Replace("-", string.Empty);
     }
@@ -436,10 +427,17 @@ public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
     public void WriteAllTextToFile(string filePath, string contents, Encoding encoding) =>
         _msFileSystem.File.WriteAllText(filePath, contents, encoding);
 
-    public IFileInfo GetFilesInfos(string filePath)
+    public Ms.IFileInfo GetFilesInfos(string filePath)
     {
-        IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
-        IFileInfo fileInfo = fileInfoFactory.New(filePath);
+        Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
+        Ms.IFileInfo fileInfo = fileInfoFactory.New(filePath);
         return fileInfo;
+    }
+
+    public static void CreateLink(string link, string target)
+    {
+        Process mklinkProcess = Process.Start(
+            new ProcessStartInfo("cmd", $"/c mklink /D \"{link}\" \"{target}\"") { CreateNoWindow = true });
+        mklinkProcess.WaitForExit();
     }
 }

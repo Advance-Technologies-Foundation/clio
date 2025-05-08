@@ -1,12 +1,10 @@
 using System;
 using System.Linq;
-
 using Clio.Common;
 using Clio.Common.Responses;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Package;
@@ -14,6 +12,14 @@ namespace Clio.Tests.Package;
 [TestFixture]
 public class BasePackageOperationTestCase
 {
+    [SetUp]
+    public virtual void Init()
+    {
+        applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
+        applicationClient = Substitute.For<IApplicationClient>();
+        serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+    }
+
     private class TestPackageOperation(
         IApplicationPackageListProvider applicationPackageListProvider,
         IApplicationClient applicationClient,
@@ -41,9 +47,8 @@ public class BasePackageOperationTestCase
             serviceUrlBuilder);
 
 
-
     protected static PackageInfo CreatePackageInfo(string packageName, Guid? packageUId = null) =>
-        new (new PackageDescriptor { Name = packageName, UId = packageUId ?? Guid.NewGuid() },
+        new(new PackageDescriptor { Name = packageName, UId = packageUId ?? Guid.NewGuid() },
             string.Empty,
             Enumerable.Empty<string>());
 
@@ -52,14 +57,6 @@ public class BasePackageOperationTestCase
 
     protected void SetupGetPackagesResponse(params PackageInfo[] packagesInfos) =>
         applicationPackageListProvider.GetPackages("{}").Returns(packagesInfos);
-
-    [SetUp]
-    public virtual void Init()
-    {
-        applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
-        applicationClient = Substitute.For<IApplicationClient>();
-        serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-    }
 
     [Test]
     [Category("Unit")]
@@ -83,7 +80,7 @@ public class BasePackageOperationTestCase
     public void GetPackageByName_ThrowsException_WhenPackageNotFoundByName()
     {
         InitTestPackageOperation();
-        PackageInfo[] packagesInfos =[CreatePackageInfo("TestPackage1")];
+        PackageInfo[] packagesInfos = [CreatePackageInfo("TestPackage1")];
         SetupGetPackagesResponse(packagesInfos);
         string packageName = "TestPackage2";
 
@@ -108,7 +105,7 @@ public class BasePackageOperationTestCase
     {
         InitTestPackageOperation();
         const string errorMessage = "Some error";
-        BaseResponse response = new () { Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage } };
+        BaseResponse response = new() { Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage } };
         Action act = () => _testPackageOperation.ProcessUnsuccessfulResponse(response);
         act.Should().Throw<Exception>().WithMessage(errorMessage);
     }
@@ -118,7 +115,7 @@ public class BasePackageOperationTestCase
     public void BaseClass_DoesNotThrowError_WhenReceivedSuccessfulResponse()
     {
         InitTestPackageOperation();
-        BaseResponse response = new () { Success = true };
+        BaseResponse response = new() { Success = true };
         Action act = () => _testPackageOperation.ProcessUnsuccessfulResponse(response);
         act.Should().NotThrow<Exception>();
     }
@@ -135,7 +132,7 @@ public class BasePackageOperationTestCase
         string methodName = "TestMethodName";
         string fullUrl = $"/ServiceModel/{serviceName}/{methodName}";
         serviceUrlBuilder.Build(fullUrl).Returns(fullUrl);
-        BaseResponse response = new () { Success = isSuccess };
+        BaseResponse response = new() { Success = isSuccess };
         applicationClient.ExecutePostRequest<BaseResponse>(fullUrl, testData).Returns(response);
         BaseResponse actualResponse = _testPackageOperation.ExecuteRequest(serviceName, methodName, testData);
         actualResponse.Success.Should().Be(isSuccess);

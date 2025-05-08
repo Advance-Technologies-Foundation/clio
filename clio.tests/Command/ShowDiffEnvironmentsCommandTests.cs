@@ -1,21 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.IO.Abstractions.TestingHelpers;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using ATF.Repository.Providers;
+﻿using System.IO.Abstractions.TestingHelpers;
 using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;
-using Clio.Tests.Infrastructure;
-using DocumentFormat.OpenXml.Presentation;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using YamlDotNet.Serialization;
 
 namespace Clio.Tests.Command;
 

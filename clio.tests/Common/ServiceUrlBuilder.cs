@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -201,8 +200,8 @@ internal class ServiceUrlBuilderCommandTests
     {
         // Arrange
         EnvironmentSettings environmentSettingsMock =
-            new () { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
-        ServiceUrlBuilder sut = new (environmentSettingsMock);
+            new() { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
+        ServiceUrlBuilder sut = new(environmentSettingsMock);
 
         // Act
         string actual = sut.Build(testCaseData.Route);
@@ -215,8 +214,8 @@ internal class ServiceUrlBuilderCommandTests
     [TestCase("Fdgbzdf")]
     public void Build_Throws_When_Invalid_Url(string url)
     {
-        EnvironmentSettings environmentSettingsMock = new () { Uri = url };
-        ServiceUrlBuilder sut = new (environmentSettingsMock);
+        EnvironmentSettings environmentSettingsMock = new() { Uri = url };
+        ServiceUrlBuilder sut = new(environmentSettingsMock);
 
         // Act
         Action act = () => sut.Build(string.Empty);
@@ -229,12 +228,11 @@ internal class ServiceUrlBuilderCommandTests
     public void BuildWithEnvs_Returns_CorrectUrl(TestCaseDataWithEnvSetting testCaseData)
     {
         // Arrange
-        EnvironmentSettings environmentSettingsMock = new ()
+        EnvironmentSettings environmentSettingsMock = new()
         {
-            Uri = testCaseData.EnvironmentSettings.Uri,
-            IsNetCore = testCaseData.EnvironmentSettings.IsNetCore
+            Uri = testCaseData.EnvironmentSettings.Uri, IsNetCore = testCaseData.EnvironmentSettings.IsNetCore
         };
-        ServiceUrlBuilder sut = new (new EnvironmentSettings());
+        ServiceUrlBuilder sut = new(new EnvironmentSettings());
 
         // Act
         string actual = sut.Build(testCaseData.Route, environmentSettingsMock);
@@ -247,12 +245,11 @@ internal class ServiceUrlBuilderCommandTests
     public void BuildWithEnvsAndKnownRoute_Returns_CorrectUrl(TestCaseDataWithEnvSettingAndKnownRoutes testCaseData)
     {
         // Arrange
-        EnvironmentSettings environmentSettingsMock = new ()
+        EnvironmentSettings environmentSettingsMock = new()
         {
-            Uri = testCaseData.EnvironmentSettings.Uri,
-            IsNetCore = testCaseData.EnvironmentSettings.IsNetCore
+            Uri = testCaseData.EnvironmentSettings.Uri, IsNetCore = testCaseData.EnvironmentSettings.IsNetCore
         };
-        ServiceUrlBuilder sut = new (new EnvironmentSettings());
+        ServiceUrlBuilder sut = new(new EnvironmentSettings());
 
         // Act
         string actual = sut.Build(testCaseData.KnownRoute, environmentSettingsMock);
@@ -266,8 +263,8 @@ internal class ServiceUrlBuilderCommandTests
     {
         // Arrange
         EnvironmentSettings environmentSettingsMock =
-            new () { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
-        ServiceUrlBuilder sut = new (environmentSettingsMock);
+            new() { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
+        ServiceUrlBuilder sut = new(environmentSettingsMock);
 
         // Act
         string actual = sut.Build(testCaseData.KnownRoute);

@@ -1,13 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-
-using Common;
-using Workspaces;
 
 namespace Clio.Package;
 
@@ -24,16 +20,16 @@ public partial class UiProjectCreator : IUiProjectCreator
     private const string PackagesDirectoryName = "packages";
     private const string ProjectsDirectoryName = "projects";
     private static readonly string[] _templateExtensions = [".json", ".js", ".ts", ".conf", ".config", ".scss", ".css"];
+    private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 
     private readonly EnvironmentSettings _environmentSettings;
-    private readonly IWorkspace _workspace;
-    private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+    private readonly IFileSystem _fileSystem;
     private readonly IPackageCreator _packageCreator;
     private readonly IPackageDownloader _packageDownloader;
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
     private readonly ITemplateProvider _templateProvider;
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-    private readonly IFileSystem _fileSystem;
+    private readonly IWorkspace _workspace;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder;
 
     public UiProjectCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
         IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
@@ -71,6 +67,25 @@ public partial class UiProjectCreator : IUiProjectCreator
         IsWorkspace
             ? _workspacePathBuilder.ProjectsFolderPath
             : Path.Combine(_workingDirectoriesProvider.CurrentDirectory, ProjectsDirectoryName);
+
+    public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
+        string creatioVersion, Func<string, bool> enableDownloadPackage)
+    {
+        CheckCorrectProjectName(projectName);
+        PackageInfo? package = FindExistingPackage(packageName);
+        if (package != null && enableDownloadPackage(packageName))
+        {
+            _packageDownloader.DownloadPackage(packageName, _environmentSettings,
+                _workspacePathBuilder.PackagesFolderPath);
+            _workspace.AddPackageIfNeeded(packageName);
+        }
+        else
+        {
+            CreatePackage(packageName);
+        }
+
+        CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
+    }
 
     private void UpdateTemplateInfo(string projectPath, string projectName, string packageName,
         string vendorPrefix)
@@ -135,25 +150,6 @@ public partial class UiProjectCreator : IUiProjectCreator
         {
             return null;
         }
-    }
-
-    public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
-        string creatioVersion, Func<string, bool> enableDownloadPackage)
-    {
-        CheckCorrectProjectName(projectName);
-        PackageInfo? package = FindExistingPackage(packageName);
-        if (package != null && enableDownloadPackage(packageName))
-        {
-            _packageDownloader.DownloadPackage(packageName, _environmentSettings,
-                _workspacePathBuilder.PackagesFolderPath);
-            _workspace.AddPackageIfNeeded(packageName);
-        }
-        else
-        {
-            CreatePackage(packageName);
-        }
-
-        CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
     }
 
     [GeneratedRegex("^([0-9a-z_]+)$")]

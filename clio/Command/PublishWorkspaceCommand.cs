@@ -1,12 +1,9 @@
-using System;
-
+﻿using System;
 using CommandLine;
-using Common;
-using Workspaces;
 
 namespace Clio.Command;
 
-[Verb("publish-app", Aliases = new string[] { "publishw", "publish-hub", "ph", "publish-workspace" },
+[Verb("publish-app", Aliases = new[] { "publishw", "publish-hub", "ph", "publish-workspace" },
     HelpText = "Publish workspace to zip file")]
 public class PublishWorkspaceCommandOptions : EnvironmentOptions
 {

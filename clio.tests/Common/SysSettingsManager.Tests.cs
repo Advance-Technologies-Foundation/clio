@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
-
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Common;
@@ -10,7 +9,6 @@ using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-
 using mockFs = System.IO.Abstractions;
 
 namespace Clio.Tests.Common;
@@ -24,12 +22,12 @@ public class SysSettingsManagerTests
 
     public SysSettingsManagerTests()
     {
-        BindingsModule bm = new (_fileSystem);
+        BindingsModule bm = new(_fileSystem);
         _container = bm.Register(EnvironmentSettings);
     }
 
     private static EnvironmentSettings EnvironmentSettings =>
-        new () { Uri = "https://localhost", Login = "Supervisor", Password = "Supervisor", IsNetCore = false };
+        new() { Uri = "https://localhost", Login = "Supervisor", Password = "Supervisor", IsNetCore = false };
 
     [TestCase("true")]
     [TestCase("True")]
@@ -233,7 +231,7 @@ public class SysSettingsManagerTests
     {
         // Arrange
         const string sysSettingCode = "nonExistingCode";
-        CultureInfo provider = new ("en-US");
+        CultureInfo provider = new("en-US");
         int sysSettingValue = (int)decimal.Parse(value, provider);
 
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();

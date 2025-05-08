@@ -1,8 +1,6 @@
 using System;
 using System.IO;
 
-using Common;
-
 namespace Clio.Workspaces;
 
 public class WorkspacePathBuilder : IWorkspacePathBuilder
@@ -24,8 +22,11 @@ public class WorkspacePathBuilder : IWorkspacePathBuilder
     private const string LibFolderName = "Lib";
     private const string ConfigurationBinFolderName = "bin";
     private readonly EnvironmentSettings _environmentSettings;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
+    private readonly Lazy<string> _rootPathLazy;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+
+    private string _rootPath;
 
     public WorkspacePathBuilder(
         EnvironmentSettings environmentSettings,
@@ -41,9 +42,6 @@ public class WorkspacePathBuilder : IWorkspacePathBuilder
     }
 
     private string RootApplicationFolderPath => Path.Combine(RootPath, ApplicationFolderName);
-
-    private string _rootPath;
-    private readonly Lazy<string> _rootPathLazy;
 
     public string RootPath
     {
@@ -84,30 +82,6 @@ public class WorkspacePathBuilder : IWorkspacePathBuilder
 
     public string ConfigurationBinFolderPath => Path.Combine(ApplicationFolderPath, ConfigurationBinFolderName);
 
-    private string GetRootPath()
-    {
-        string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
-        DirectoryInfo directoryInfo = new (currentDirectory);
-        while (true)
-        {
-            string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
-            if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath))
-            {
-                return directoryInfo.FullName;
-            }
-
-            if (directoryInfo.Parent == null)
-            {
-                return currentDirectory;
-            }
-
-            directoryInfo = directoryInfo.Parent;
-        }
-    }
-
-    private string BuildClioDirectoryPath(string rootPath) => Path.Combine(rootPath, ClioDirectoryName);
-
-
 
     public string BuildPackagePath(string packageName) => Path.Combine(PackagesFolderPath, packageName);
 
@@ -128,4 +102,27 @@ public class WorkspacePathBuilder : IWorkspacePathBuilder
             Path.Combine(PackagesFolderPath, "PackageName", "Files");
         return Path.GetRelativePath(templatePackageProjectRelativeDirectoryPath, destinationPath);
     }
+
+    private string GetRootPath()
+    {
+        string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
+        DirectoryInfo directoryInfo = new(currentDirectory);
+        while (true)
+        {
+            string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
+            if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath))
+            {
+                return directoryInfo.FullName;
+            }
+
+            if (directoryInfo.Parent == null)
+            {
+                return currentDirectory;
+            }
+
+            directoryInfo = directoryInfo.Parent;
+        }
+    }
+
+    private string BuildClioDirectoryPath(string rootPath) => Path.Combine(rootPath, ClioDirectoryName);
 }

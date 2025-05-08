@@ -1,23 +1,23 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
-
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("git-sync", Aliases = new string[] { "sync" }, HelpText = "Syncs environment with Git repository")]
+[Verb("git-sync", Aliases = new[] { "sync" }, HelpText = "Syncs environment with Git repository")]
 public class GitSyncOptions : EnvironmentNameOptions
 {
     [Option("Direction", Required = true, HelpText = "Sets sync direction")]
     public string Direction { get; set; }
 }
 
-public class GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger): Command<GitSyncOptions>
+public class GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger)
+    : Command<GitSyncOptions>
 {
-    private readonly EnvironmentSettings _settings = settings;
-    private readonly IProcessExecutor _processExecutor = processExecutor;
     private readonly ILogger _logger = logger;
+    private readonly IProcessExecutor _processExecutor = processExecutor;
+    private readonly EnvironmentSettings _settings = settings;
 
     public override int Execute(GitSyncOptions options)
     {

@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 
-using Common;
-
 namespace Clio.Package;
 
 public interface IPackageLockManager
@@ -18,8 +16,8 @@ public interface IPackageLockManager
 
 public class PackageLockManager : IPackageLockManager
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClientFactory _applicationClientFactory;
+    private readonly EnvironmentSettings _environmentSettings;
 
     public PackageLockManager(
         EnvironmentSettings environmentSettings,
@@ -30,12 +28,6 @@ public class PackageLockManager : IPackageLockManager
         _environmentSettings = environmentSettings;
         _applicationClientFactory = applicationClientFactory;
     }
-
-    private IApplicationClient CreateApplicationClient() =>
-        _applicationClientFactory.CreateClient(_environmentSettings);
-
-    private string GetRequestData(string argumentName, IEnumerable<string> packages) =>
-        "{\"" + argumentName + "\":[" + string.Join(",", packages.Select(pkg => $"\"{pkg.Trim()}\"")) + "]}";
 
     public void Unlock(IEnumerable<string> packages)
     {
@@ -54,4 +46,10 @@ public class PackageLockManager : IPackageLockManager
     }
 
     public void Lock() => Lock(Enumerable.Empty<string>());
+
+    private IApplicationClient CreateApplicationClient() =>
+        _applicationClientFactory.CreateClient(_environmentSettings);
+
+    private string GetRequestData(string argumentName, IEnumerable<string> packages) =>
+        "{\"" + argumentName + "\":[" + string.Join(",", packages.Select(pkg => $"\"{pkg.Trim()}\"")) + "]}";
 }

@@ -1,9 +1,7 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -16,9 +14,11 @@ namespace Clio.Tests.Command;
 public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompilationLogOptions>, IDisposable
 {
     private IApplicationClient _applicationClientMock;
-    private StringWriter _textWriter;
-    private StringBuilder _sb;
     private TextWriter _originalTextWriter;
+    private StringBuilder _sb;
+    private StringWriter _textWriter;
+
+    public void Dispose() => throw new NotImplementedException();
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -120,10 +120,5 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
         result.Should().Be(0);
         Thread.Sleep(500);
         _textWriter.ToString().TrimEnd().Should().Be(inputContent);
-    }
-
-    public void Dispose()
-    {
-        throw new NotImplementedException();
     }
 }

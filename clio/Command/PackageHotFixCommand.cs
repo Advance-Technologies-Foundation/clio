@@ -13,8 +13,9 @@ public class PackageHotFixCommandOptions : RemoteCommandOptions
     public bool Enable { get; internal set; }
 }
 
-public class PackageHotFixCommand(IPackageEditableMutator packageEditableMutator,
-    EnvironmentSettings environmentSettings): RemoteCommand<PackageHotFixCommandOptions>(environmentSettings)
+public class PackageHotFixCommand(
+    IPackageEditableMutator packageEditableMutator,
+    EnvironmentSettings environmentSettings) : RemoteCommand<PackageHotFixCommandOptions>(environmentSettings)
 {
     private readonly IPackageEditableMutator _packageEditableMutator = packageEditableMutator;
 
@@ -30,7 +31,7 @@ public class PackageHotFixCommand(IPackageEditableMutator packageEditableMutator
         }
 
         _packageEditableMutator.SetPackageHotfix(commandOptions.PackageName, commandOptions.Enable);
-        Logger.WriteInfo($"Done");
+        Logger.WriteInfo("Done");
         return 0;
     }
 }

@@ -1,12 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("generate-pkg-zip", Aliases =["compress"], HelpText = "Prepare an archive of creatio package")]
+[Verb("generate-pkg-zip", Aliases = ["compress"], HelpText = "Prepare an archive of creatio package")]
 public class GeneratePkgZipOptions
 {
     [Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
@@ -22,10 +21,10 @@ public class GeneratePkgZipOptions
     public bool SkipPdb { get; set; }
 }
 
-public class CompressPackageCommand(IPackageArchiver packageArchiver, ILogger logger): Command<GeneratePkgZipOptions>
+public class CompressPackageCommand(IPackageArchiver packageArchiver, ILogger logger) : Command<GeneratePkgZipOptions>
 {
-    private readonly IPackageArchiver _packageArchiver = packageArchiver;
     private readonly ILogger _logger = logger;
+    private readonly IPackageArchiver _packageArchiver = packageArchiver;
 
     public override int Execute(GeneratePkgZipOptions options)
     {
@@ -34,7 +33,7 @@ public class CompressPackageCommand(IPackageArchiver packageArchiver, ILogger lo
             string destinationPath = string.IsNullOrEmpty(options.DestinationPath)
                 ? $"{options.Name}.gz"
                 : options.DestinationPath;
-            _packageArchiver.Pack(options.Name, destinationPath, options.SkipPdb, true);
+            _packageArchiver.Pack(options.Name, destinationPath, options.SkipPdb);
         }
         else
         {
@@ -42,7 +41,7 @@ public class CompressPackageCommand(IPackageArchiver packageArchiver, ILogger lo
             string zipFileName = $"packages_{DateTime.Now:yy.MM.dd_hh.mm.ss}.zip";
             string destinationPath =
                 string.IsNullOrEmpty(options.DestinationPath) ? zipFileName : options.DestinationPath;
-            _packageArchiver.Pack(options.Name, destinationPath, packages, options.SkipPdb, true);
+            _packageArchiver.Pack(options.Name, destinationPath, packages, options.SkipPdb);
         }
 
         _logger.WriteInfo("Done");

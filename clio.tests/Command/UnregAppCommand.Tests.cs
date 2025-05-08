@@ -1,4 +1,4 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.UserEnvironment;
 using NSubstitute;
 using NUnit.Framework;
@@ -13,8 +13,8 @@ public class UnregAppCommandTestCase
     public void Execute_DeletesAppFromRepository()
     {
         ISettingsRepository? settingsRepository = Substitute.For<ISettingsRepository>();
-        UnregAppCommand command = new (settingsRepository);
-        UnregAppOptions options = new () { Name = "Test" };
+        UnregAppCommand command = new(settingsRepository);
+        UnregAppOptions options = new() { Name = "Test" };
         command.Execute(options);
         settingsRepository.Received(1).RemoveEnvironment("Test");
     }

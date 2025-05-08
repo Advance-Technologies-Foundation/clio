@@ -1,6 +1,4 @@
-using Clio.Project.NuGet;
-
-namespace Clio;
+﻿namespace Clio;
 
 public struct PackageDependency(string name, string packageVersion, string uid = null)
 {

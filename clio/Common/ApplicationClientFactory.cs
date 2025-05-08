@@ -1,6 +1,4 @@
-using Creatio.Client;
-
-namespace Clio.Common;
+﻿namespace Clio.Common;
 
 public class ApplicationClientFactory : IApplicationClientFactory
 {
@@ -11,25 +9,21 @@ public class ApplicationClientFactory : IApplicationClientFactory
             return new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
                 settings.IsNetCore);
         }
-        else
-        {
-            return new CreatioClientAdapter(settings.Uri, settings.ClientId,
-                settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore);
-        }
+
+        return new CreatioClientAdapter(settings.Uri, settings.ClientId,
+            settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore);
     }
 
     public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings)
     {
-        ServiceUrlBuilder serviceUrlBuilder = new (settings);
+        ServiceUrlBuilder serviceUrlBuilder = new(settings);
         if (string.IsNullOrEmpty(settings.ClientId))
         {
             return new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
                 settings.IsNetCore, serviceUrlBuilder);
         }
-        else
-        {
-            return new CreatioClientAdapter(settings.Uri, settings.ClientId,
-                settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore, serviceUrlBuilder);
-        }
+
+        return new CreatioClientAdapter(settings.Uri, settings.ClientId,
+            settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore, serviceUrlBuilder);
     }
 }

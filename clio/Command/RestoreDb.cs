@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.IO;
-
 using Clio.Common;
 using Clio.Common.db;
 using Clio.UserEnvironment;
@@ -9,17 +8,20 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("restore-db", Aliases = new string[] { "rdb" }, HelpText = "Restores database from backup file")]
+[Verb("restore-db", Aliases = new[] { "rdb" }, HelpText = "Restores database from backup file")]
 public class RestoreDbCommandOptions : EnvironmentOptions
 {
 }
 
-public class RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory,
-    ISettingsRepository settingsRepository): Command<RestoreDbCommandOptions>
+public class RestoreDbCommand(
+    ILogger logger,
+    IFileSystem fileSystem,
+    IDbClientFactory dbClientFactory,
+    ISettingsRepository settingsRepository) : Command<RestoreDbCommandOptions>
 {
-    private readonly ILogger _logger = logger;
-    private readonly IFileSystem _fileSystem = fileSystem;
     private readonly IDbClientFactory _dbClientFactory = dbClientFactory;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
     private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public override int Execute(RestoreDbCommandOptions options)

@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
-
 using Newtonsoft.Json;
 
 namespace Clio.Command.StartProcess;
@@ -9,18 +8,6 @@ namespace Clio.Command.StartProcess;
 [JsonObject]
 public record ProcessStartArgs
 {
-    [JsonObject]
-    public class ParameterValues
-    {
-        [JsonPropertyName("name")]
-        [JsonProperty("name")]
-        public string Name { get; init; }
-
-        [JsonPropertyName("value")]
-        [JsonProperty("value")]
-        public string Value { get; init; }
-    }
-
     [JsonProperty("schemaName")]
     [JsonPropertyName("schemaName")]
     public string SchemaName { get; init; }
@@ -32,6 +19,18 @@ public record ProcessStartArgs
     [JsonProperty("resultParameterNames")]
     [JsonPropertyName("resultParameterNames")]
     public string[] Result { get; init; }
+
+    [JsonObject]
+    public class ParameterValues
+    {
+        [JsonPropertyName("name")]
+        [JsonProperty("name")]
+        public string Name { get; init; }
+
+        [JsonPropertyName("value")]
+        [JsonProperty("value")]
+        public string Value { get; init; }
+    }
 }
 
 [JsonObject]

@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-
 using Autofac;
 using Clio.Common;
 using Clio.Common.db;
@@ -13,7 +12,6 @@ using Clio.UserEnvironment;
 using MediatR;
 using NSubstitute;
 using NUnit.Framework;
-
 using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
@@ -23,13 +21,16 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     private const string ConnectionStringsFileName = "ConnectionStrings.config";
     private const string EnvironmentName = "work";
     private const string InstalledCreatioPath = @"C:\inetpub\wwwroot\work";
-    private readonly ISettingsRepository _settingsRepositoryMock = Substitute.For<ISettingsRepository>();
-    private ICreatioUninstaller _sut;
-    private readonly IMediator _mediatorMock = Substitute.For<IMediator>();
-    private readonly ILogger _loggerMock = Substitute.For<ILogger>();
+
+    private readonly K8Commands.ConnectionStringParams _cnpMs = new(0, 0, 0, 0, string.Empty, string.Empty);
+    private readonly K8Commands.ConnectionStringParams _cnpPg = new(0, 0, 0, 0, string.Empty, string.Empty);
     private readonly Ik8Commands _k8CommandsMock = Substitute.For<Ik8Commands>();
+    private readonly ILogger _loggerMock = Substitute.For<ILogger>();
+    private readonly IMediator _mediatorMock = Substitute.For<IMediator>();
     private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
     private readonly IPostgres _postgresMock = Substitute.For<IPostgres>();
+    private readonly ISettingsRepository _settingsRepositoryMock = Substitute.For<ISettingsRepository>();
+    private ICreatioUninstaller _sut;
 
     private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> MockMediator =>
         allSitesMock =>
@@ -37,15 +38,15 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
             _mediatorMock.When(i =>
                     i.Send(Arg.Any<AllUnregisteredSitesRequest>()))
                 .Do(i =>
-                    {
-                        AllUnregisteredSitesRequest allUnregisteredSitesRequest = i[0] as AllUnregisteredSitesRequest;
-                        allUnregisteredSitesRequest?.Callback.Invoke(allSitesMock);
-                    });
+                {
+                    AllUnregisteredSitesRequest allUnregisteredSitesRequest = i[0] as AllUnregisteredSitesRequest;
+                    allUnregisteredSitesRequest?.Callback.Invoke(allSitesMock);
+                });
         };
 
     private void MockNoSitesFound()
     {
-        IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock =[];
+        IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock = [];
         MockMediator(allSitesMock);
     }
 
@@ -53,7 +54,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     {
         IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock =
         [
-            new (
+            new(
                 new IISScannerHandler.SiteBinding(siteName, "Started", string.Empty, InstalledCreatioPath),
                 [
                     string.IsNullOrWhiteSpace(url) ? new Uri(environmentSettings.Uri) : new Uri(url)
@@ -62,9 +63,6 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
         ];
         MockMediator(allSitesMock);
     }
-
-    private readonly K8Commands.ConnectionStringParams _cnpMs = new (0, 0, 0, 0, string.Empty, string.Empty);
-    private readonly K8Commands.ConnectionStringParams _cnpPg = new (0, 0, 0, 0, string.Empty, string.Empty);
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
@@ -80,7 +78,10 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     public override void Setup()
     {
         environmentSettings =
-            new EnvironmentSettings { Uri = "http://kkrylovn.tscrm.com:40090", Login = string.Empty, Password = string.Empty };
+            new EnvironmentSettings
+            {
+                Uri = "http://kkrylovn.tscrm.com:40090", Login = string.Empty, Password = string.Empty
+            };
         base.Setup();
         _settingsRepositoryMock.GetEnvironment(EnvironmentName).Returns(environmentSettings);
 

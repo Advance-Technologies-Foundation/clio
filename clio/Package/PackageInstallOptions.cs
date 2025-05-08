@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Clio.Package;
 
@@ -25,7 +25,8 @@ public class PackageInstallOptions
             return 1;
         }
 
-        PackageInstallOptions packageVersion = value as PackageInstallOptions ?? throw new ArgumentException(nameof(value));
+        PackageInstallOptions packageVersion =
+            value as PackageInstallOptions ?? throw new ArgumentException(nameof(value));
         return CompareTo(packageVersion);
     }
 

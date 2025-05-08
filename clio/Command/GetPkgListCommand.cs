@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -21,8 +20,8 @@ public class PkgListOptions : EnvironmentNameOptions
 
 public class GetPkgListCommand : Command<PkgListOptions>
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+    private readonly EnvironmentSettings _environmentSettings;
     private readonly IJsonResponseFormater _jsonResponseFormater;
     private readonly ILogger _logger;
 
@@ -48,11 +47,7 @@ public class GetPkgListCommand : Command<PkgListOptions>
 
     private void PrintPackageList(IEnumerable<PackageInfo> packages)
     {
-        IList<string[]> table = new List<string[]>
-        {
-            CreateRow("Name", "Version", "Maintainer"),
-            CreateEmptyRow()
-        };
+        IList<string[]> table = new List<string[]> { CreateRow("Name", "Version", "Maintainer"), CreateEmptyRow() };
         foreach (PackageInfo pkg in packages)
         {
             table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer));

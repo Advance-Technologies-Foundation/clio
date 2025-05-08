@@ -1,5 +1,4 @@
-using System.Linq;
-
+﻿using System.Linq;
 using Clio.Requests;
 using Clio.Requests.Validators;
 using FluentAssertions;
@@ -23,7 +22,7 @@ public class IISScannerRequestValidatorTestCase
     public void ISSScannerValidator_ShouldValidate_As_Valid(string content)
     {
         // Arange
-        IISScannerRequest request = new () { Content = content };
+        IISScannerRequest request = new() { Content = content };
 
         // Act
         ValidationResult? validationResults = _sut.Validate(request);
@@ -37,7 +36,7 @@ public class IISScannerRequestValidatorTestCase
     public void ISSScannerValidator_ShouldValidate_As_InValid_When_ReturnIsMissing(string content)
     {
         // Arange
-        IISScannerRequest request = new () { Content = content };
+        IISScannerRequest request = new() { Content = content };
 
         var expected = new
         {
@@ -65,9 +64,9 @@ public class IISScannerRequestValidatorTestCase
     public void ISSScannerValidator_ShouldValidate_As_InValid_WhenReturnParam_Is_Incorrect(string content)
     {
         // Arange
-        IISScannerRequest request = new () { Content = content };
+        IISScannerRequest request = new() { Content = content };
 
-        string[] allowedValues =["count", "details", "registerall", "remote"];
+        string[] allowedValues = ["count", "details", "registerall", "remote"];
         var expected = new
         {
             ErrorCode = "ARG002",

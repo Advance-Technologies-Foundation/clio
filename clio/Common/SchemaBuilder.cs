@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
-
 using Clio.Package;
 
 namespace Clio.Common;
@@ -13,12 +12,14 @@ public interface ISchemaBuilder
     void AddSchema(string schemaType, string schemaName, string packagePath);
 }
 
-public class SchemaBuilder(IFileSystem fileSystem, ITemplateProvider templateProvider,
-    IPackageInfoProvider packageInfoProvider): ISchemaBuilder
+public class SchemaBuilder(
+    IFileSystem fileSystem,
+    ITemplateProvider templateProvider,
+    IPackageInfoProvider packageInfoProvider) : ISchemaBuilder
 {
     private readonly IFileSystem _fileSystem = fileSystem;
-    private readonly ITemplateProvider _templateProvider = templateProvider;
     private readonly IPackageInfoProvider _packageInfoProvider = packageInfoProvider;
+    private readonly ITemplateProvider _templateProvider = templateProvider;
 
     public List<string> SupportedMacroKeys { get; } =
     [
@@ -53,7 +54,7 @@ public class SchemaBuilder(IFileSystem fileSystem, ITemplateProvider templatePro
 
         string modifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.UtcNow);
 
-        Dictionary<string, string> macrosValues = new ()
+        Dictionary<string, string> macrosValues = new()
         {
             { "[SCHEMA_NAME]", schemaName }, // User input
             { "[MAINTAINER]", maintainer }, // package maintainer otherwise Customer

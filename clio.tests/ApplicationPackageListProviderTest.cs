@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Autofac;
 using Clio.Common;
 using Clio.Package;
@@ -71,7 +70,7 @@ internal class ApplicationPackageListProviderTest : BaseClioModuleTests
     {
         // Arrange
         IJsonConverter jsonConverter = container.Resolve<IJsonConverter>();
-        ApplicationPackageListProvider provider = new (jsonConverter);
+        ApplicationPackageListProvider provider = new(jsonConverter);
 
         // Act
         IEnumerable<PackageInfo> result = provider.ParsePackageInfoResponse(responseData);
@@ -86,7 +85,7 @@ internal class ApplicationPackageListProviderTest : BaseClioModuleTests
     {
         // Arrange
         IJsonConverter jsonConverter = container.Resolve<IJsonConverter>();
-        ApplicationPackageListProvider provider = new (jsonConverter);
+        ApplicationPackageListProvider provider = new(jsonConverter);
         Action act = () => provider.ParsePackageInfoResponse(responseData);
 
         // Act, Assert

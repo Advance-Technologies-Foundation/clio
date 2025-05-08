@@ -1,32 +1,30 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-
 using Clio.Common.Responses;
-using Common;
 using Newtonsoft.Json;
-using WebApplication;
 
 namespace Clio.Package;
+
 public abstract class BasePackageInstaller
 {
     private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
     private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
     private const string DefLogFileName = "cliolog.txt";
+    private readonly IApplication _application;
+    protected readonly IApplicationClientFactory _applicationClientFactory;
     private readonly IApplicationLogProvider _applicationLogProvider;
     private readonly EnvironmentSettings _environmentSettings;
-    protected readonly IApplicationClientFactory _applicationClientFactory;
+    protected readonly IFileSystem _fileSystem;
+    protected readonly ILogger _logger;
     private readonly IPackageArchiver _packageArchiver;
+    private readonly IPackageLockManager _packageLockManager;
     private readonly ISqlScriptExecutor _scriptExecutor;
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
-    private readonly IPackageLockManager _packageLockManager;
-    protected readonly ILogger _logger;
-    private readonly IApplication _application;
     private string _reportPath;
-    protected readonly IFileSystem _fileSystem;
 
     public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
         IApplicationClientFactory applicationClientFactory, IApplication application,
@@ -92,7 +90,7 @@ public abstract class BasePackageInstaller
     private string UploadPackage(string filePath, EnvironmentSettings environmentSettings)
     {
         _logger.WriteLine("Uploading...");
-        FileInfo fileInfo = new (filePath);
+        FileInfo fileInfo = new(filePath);
         string packageName = fileInfo.Name;
         IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
         applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
@@ -106,7 +104,7 @@ public abstract class BasePackageInstaller
         try
         {
             _logger.WriteLine("Backup process...");
-            FileInfo fileInfo = new (filePath);
+            FileInfo fileInfo = new(filePath);
             string zipPackageName = fileInfo.Name;
             IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
             applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" +
@@ -185,10 +183,10 @@ public abstract class BasePackageInstaller
     {
         _logger.WriteLine($"Install {fileName} ...");
         _logger.WriteLine("Installation log:");
-        CancellationTokenSource cancellationTokenSource = new ();
+        CancellationTokenSource cancellationTokenSource = new();
         string log = string.Empty;
         Task<string> task = Task.Factory.StartNew(
-            (cancellationToken) =>
+            cancellationToken =>
                 log = ListenForLogs(cancellationToken, environmentSettings), cancellationTokenSource.Token);
         string result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
         BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
@@ -244,7 +242,7 @@ public abstract class BasePackageInstaller
         EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
     {
         string packedFilePath = $"{packageFolderPath}.gz";
-        _packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
+        _packageArchiver.Pack(packageFolderPath, packedFilePath, false);
         bool success = false;
         string logText;
         try

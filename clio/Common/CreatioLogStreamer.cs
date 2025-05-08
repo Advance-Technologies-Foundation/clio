@@ -1,8 +1,10 @@
+﻿using System.Text.Json;
 using Clio.Query;
 
 namespace Clio.Common;
 
-public class CreatioLogStreamer(CallServiceCommand callServiceCommand, IServiceUrlBuilder serviceUrlBuilder): ILogStreamer
+public class CreatioLogStreamer(CallServiceCommand callServiceCommand, IServiceUrlBuilder serviceUrlBuilder)
+    : ILogStreamer
 {
     private readonly CallServiceCommand _callServiceCommand = callServiceCommand;
 
@@ -18,6 +20,6 @@ public class CreatioLogStreamer(CallServiceCommand callServiceCommand, IServiceU
     private string CreateBody(string message)
     {
         var body = new { Sender = "Clio", Content = message, CommandName = "Show logs" };
-        return System.Text.Json.JsonSerializer.Serialize(body);
+        return JsonSerializer.Serialize(body);
     }
 }

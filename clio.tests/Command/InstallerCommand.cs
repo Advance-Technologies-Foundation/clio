@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Autofac;
 using Clio.Command.CreatioInstallCommand;
 using FluentAssertions;
@@ -29,7 +28,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
     {
         // Arrange
         InstallerCommand command = container.Resolve<InstallerCommand>();
-        PfInstallerOptions options = new () { IsSilent = true };
+        PfInstallerOptions options = new() { IsSilent = true };
         _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
             .Returns(0);
 
@@ -45,12 +44,12 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
     {
         // Arrange
         InstallerCommand command = container.Resolve<InstallerCommand>();
-        PfInstallerOptions options = new () { IsSilent = false };
+        PfInstallerOptions options = new() { IsSilent = false };
         _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
             .Returns(0);
 
         // Act
-        StringReader stringReader = new ("A");
+        StringReader stringReader = new("A");
         Console.SetIn(stringReader);
 
         int actual = command.Execute(options);
@@ -64,7 +63,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
     {
         // Arrange
         InstallerCommand command = container.Resolve<InstallerCommand>();
-        PfInstallerOptions options = new () { IsSilent = true };
+        PfInstallerOptions options = new() { IsSilent = true };
         _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
             .Returns(0);
 
@@ -84,14 +83,14 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
     {
         // Arrange
         InstallerCommand command = container.Resolve<InstallerCommand>();
-        PfInstallerOptions options = new () { IsSilent = false };
+        PfInstallerOptions options = new() { IsSilent = false };
         _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
             .Returns(0);
 
         _creatioInstallerServiceMock.StartWebBrowser(Arg.Any<PfInstallerOptions>())
             .Returns(0);
 
-        StringReader stringReader = new ("A");
+        StringReader stringReader = new("A");
         Console.SetIn(stringReader);
 
         // Act

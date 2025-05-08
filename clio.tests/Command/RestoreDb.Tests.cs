@@ -1,16 +1,12 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Clio.Command;
 using Clio.Common;
 using Clio.Common.db;
-using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using FluentAssertions;
-using MediatR;
 using NSubstitute;
 using NUnit.Framework;
-using OneOf;
 
 namespace Clio.Tests.Command;
 
@@ -42,7 +38,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
         const string host = "127.0.0.1";
         dbClientFactory.CreateMssql(host, port, username, password).Returns(mssql);
 
-        RestoreDbCommandOptions options = new ()
+        RestoreDbCommandOptions options = new()
         {
             Uri = $"mssql://{username}:{password}@{host}:{port}",
             BackUpFilePath = backUpFilePath,
@@ -55,9 +51,9 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
             DbName = options.DbName,
             BackupFilePath = options.BackUpFilePath
         });
-        RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository);
+        RestoreDbCommand sut = new(logger, fileSystem, dbClientFactory, settingsRepository);
 
-        StringReader input = new (newDbName);
+        StringReader input = new(newDbName);
         Console.SetIn(input);
 
         // Act

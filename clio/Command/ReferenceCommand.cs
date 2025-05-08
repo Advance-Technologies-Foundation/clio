@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
-
 using Clio.Project;
 using CommandLine;
 
@@ -23,7 +22,7 @@ public class ReferenceOptions
     public string ReferenceType { get; set; }
 }
 
-public class ReferenceCommand(ICreatioPkgProjectCreator projectCreator): Command<ReferenceOptions>
+public class ReferenceCommand(ICreatioPkgProjectCreator projectCreator) : Command<ReferenceOptions>
 {
     private readonly ICreatioPkgProjectCreator _projectCreator = projectCreator;
 
@@ -53,7 +52,7 @@ public class ReferenceCommand(ICreatioPkgProjectCreator projectCreator): Command
                 "custom" => project.RefToCustomPath(options.RefPattern),
                 "unit-bin" => project.RefToUnitBin(),
                 "unit-src" => project.RefToUnitCoreSrc(),
-                _ => throw new NotSupportedException($"You use not supported option type {options.ReferenceType}"),
+                _ => throw new NotSupportedException($"You use not supported option type {options.ReferenceType}")
             };
             project.SaveChanges();
             Console.WriteLine("Done");

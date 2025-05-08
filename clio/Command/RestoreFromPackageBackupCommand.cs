@@ -1,9 +1,8 @@
-using CommandLine;
-using Common;
+﻿using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("restore-configuration", Aliases = new string[] { "restore", "rc" },
+[Verb("restore-configuration", Aliases = new[] { "restore", "rc" },
     HelpText = "Restore configuration from last backup")]
 public class RestoreFromPackageBackupOptions : RemoteCommandOptions
 {
@@ -16,7 +15,8 @@ public class RestoreFromPackageBackupOptions : RemoteCommandOptions
     public bool IgnoreSqlScriptBackwardCompatibilityCheck { get; set; }
 }
 
-internal class RestoreFromPackageBackupCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<RestoreFromPackageBackupOptions>(applicationClient, settings)
+internal class RestoreFromPackageBackupCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+    : RemoteCommand<RestoreFromPackageBackupOptions>(applicationClient, settings)
 {
     protected override string ServicePath => @"/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup";
 

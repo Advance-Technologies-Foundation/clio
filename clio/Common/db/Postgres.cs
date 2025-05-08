@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Npgsql;
 
 namespace Clio.Common.db;
@@ -21,8 +20,8 @@ public interface IPostgres
 
 public class Postgres : IPostgres
 {
-    private string _connectionString;
     private readonly ILogger _logger = ConsoleLogger.Instance;
+    private string _connectionString;
 
     public Postgres()
     {

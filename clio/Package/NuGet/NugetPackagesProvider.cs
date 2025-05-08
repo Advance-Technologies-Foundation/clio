@@ -5,8 +5,6 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml.Linq;
-
 using Clio.Common;
 using Newtonsoft.Json.Linq;
 
@@ -16,6 +14,27 @@ public partial class NugetPackagesProvider : INugetPackagesProvider
 {
     private static readonly Regex _nugetPackageRegex =
         MyRegex();
+
+    public IEnumerable<LastVersionNugetPackages> GetLastVersionPackages(
+        IEnumerable<string> packagesNames,
+        string nugetSourceUrl)
+    {
+        packagesNames.CheckArgumentNull(nameof(packagesNames));
+        Task<AllVersionsNugetPackages>[] tasks = packagesNames
+            .Select(pkgName => FindAllVersionsNugetPackages(pkgName, nugetSourceUrl))
+            .ToArray();
+        Task.WaitAll(tasks, Timeout.Infinite);
+        return tasks
+            .Select(t => FindLastVersionNugetPackages(t.Result))
+            .Where(pkg => pkg != null);
+    }
+
+    public LastVersionNugetPackages GetLastVersionPackages(string packageName, string nugetSourceUrl)
+    {
+        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+        return GetLastVersionPackages(new[] { packageName }, nugetSourceUrl)
+            .FirstOrDefault();
+    }
 
     private static NugetPackage ConvertToNugetPackage(string xmlBase, string nugetPackageDescription)
     {
@@ -54,7 +73,7 @@ public partial class NugetPackagesProvider : INugetPackagesProvider
         string nugetApiUrl = $"{nugetServer}/v3-flatcontainer/{packageName.ToLower()}/index.json";
         List<string> versions = [];
 
-        using (HttpClient client = new ())
+        using (HttpClient client = new())
         {
             try
             {
@@ -87,27 +106,6 @@ public partial class NugetPackagesProvider : INugetPackagesProvider
         }
 
         return versions;
-    }
-
-    public IEnumerable<LastVersionNugetPackages> GetLastVersionPackages(
-        IEnumerable<string> packagesNames,
-        string nugetSourceUrl)
-    {
-        packagesNames.CheckArgumentNull(nameof(packagesNames));
-        Task<AllVersionsNugetPackages>[] tasks = packagesNames
-            .Select(pkgName => FindAllVersionsNugetPackages(pkgName, nugetSourceUrl))
-            .ToArray();
-        Task.WaitAll(tasks, Timeout.Infinite);
-        return tasks
-            .Select(t => FindLastVersionNugetPackages(t.Result))
-            .Where(pkg => pkg != null);
-    }
-
-    public LastVersionNugetPackages GetLastVersionPackages(string packageName, string nugetSourceUrl)
-    {
-        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-        return GetLastVersionPackages(new string[] { packageName }, nugetSourceUrl)
-            .FirstOrDefault();
     }
 
     [GeneratedRegex("^\\(Id='(?<Id>.*)',Version='(?<Version>.*)'\\)", RegexOptions.Compiled)]

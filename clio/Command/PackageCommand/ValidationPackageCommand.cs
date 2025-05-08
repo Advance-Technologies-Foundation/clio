@@ -1,12 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
-
-using CommandLine;
+﻿using CommandLine;
 
 namespace Clio.Command.PackageCommand;
 
-[Verb("validation-pkg", Aliases = new string[] { "validation" }, HelpText = "Validation package")]
+[Verb("validation-pkg", Aliases = new[] { "validation" }, HelpText = "Validation package")]
 public class ValidationPkgOptions
 {
     [Value(0, MetaName = "Name", Required = false, HelpText = "Name of the package for validation")]

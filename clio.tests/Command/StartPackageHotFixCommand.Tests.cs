@@ -1,5 +1,4 @@
 using System;
-
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -31,7 +30,7 @@ public class PackageHotFixCommandTestCase : BaseCommandTests<PackageHotFixComman
     {
         // Arrange
         const string errorMessage = "SomeErrorMessage";
-        PackageHotFixCommandOptions options = new () { PackageName = PackageName, Enable = true };
+        PackageHotFixCommandOptions options = new() { PackageName = PackageName, Enable = true };
         _packageEditableMutator.When(mutator => mutator.SetPackageHotfix(PackageName, true))
             .Throw(new Exception(errorMessage));
 
@@ -48,7 +47,7 @@ public class PackageHotFixCommandTestCase : BaseCommandTests<PackageHotFixComman
     public void Execute_StartsHotFixMode()
     {
         // Arrange
-        PackageHotFixCommandOptions options = new () { PackageName = PackageName, Enable = true };
+        PackageHotFixCommandOptions options = new() { PackageName = PackageName, Enable = true };
 
         // Act
         int result = _command.Execute(options);
@@ -65,7 +64,7 @@ public class PackageHotFixCommandTestCase : BaseCommandTests<PackageHotFixComman
     public void Execute_DisableHotFixMode()
     {
         // Arrange
-        PackageHotFixCommandOptions options = new () { PackageName = PackageName, Enable = false };
+        PackageHotFixCommandOptions options = new() { PackageName = PackageName, Enable = false };
 
         // Act
         int result = _command.Execute(options);

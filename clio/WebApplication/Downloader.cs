@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-
 using Clio.Common;
 
 namespace Clio.WebApplication;
@@ -12,11 +11,11 @@ public interface IDownloader
     void Download(IEnumerable<DownloadInfo> downloadInfos);
 
     /// <summary>
-    /// Downloads package dll from:
-    /// <list type="bullet">
-    /// <item>Terrasoft.Configuration\Pkg\PACKAGE_NAME\Files\Bin\netstandard</item>
-    /// <item>Terrasoft.Configuration\Pkg\PACKAGE_NAME\Files\Bin\</item>
-    /// </list>
+    ///     Downloads package dll from:
+    ///     <list type="bullet">
+    ///         <item>Terrasoft.Configuration\Pkg\PACKAGE_NAME\Files\Bin\netstandard</item>
+    ///         <item>Terrasoft.Configuration\Pkg\PACKAGE_NAME\Files\Bin\</item>
+    ///     </list>
     /// </summary>
     /// <param name="downloadInfos">Collection of download info objects.</param>
     /// <remarks>Uses POST rest/CreatioApiGateway/DownloadFile.</remarks>
@@ -26,12 +25,12 @@ public interface IDownloader
 
 public class Downloader : IDownloader
 {
-    private readonly EnvironmentSettings _environmentSettings;
-    private readonly ICompressionUtilities _compressionUtilities;
     private readonly IApplicationClientFactory _applicationClientFactory;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly ICompressionUtilities _compressionUtilities;
+    private readonly EnvironmentSettings _environmentSettings;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public Downloader(
         EnvironmentSettings environmentSettings,
@@ -56,6 +55,19 @@ public class Downloader : IDownloader
     }
 
     private Lazy<IApplicationClient> ApplicationClient { get; set; }
+
+    public void Download(IEnumerable<DownloadInfo> downloadInfos) =>
+        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
+        {
+            Parallel.ForEach(downloadInfos, downloadInfo => Download(downloadInfo, tempDirectory));
+        });
+
+    /// <inheritdoc cref="IDownloader.DownloadPackageDll" />
+    public void DownloadPackageDll(IEnumerable<DownloadInfo> downloadInfos) =>
+        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
+        {
+            Parallel.ForEach(downloadInfos, downloadInfo => DownloadPackageDll(downloadInfo, tempDirectory));
+        });
 
     private IApplicationClient CreateApplicationClient()
     {
@@ -118,17 +130,4 @@ public class Downloader : IDownloader
             _logger.WriteWarning(e.Message + Environment.NewLine + e.InnerException?.Message);
         }
     }
-
-    public void Download(IEnumerable<DownloadInfo> downloadInfos) =>
-        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
-        {
-            Parallel.ForEach(downloadInfos, downloadInfo => Download(downloadInfo, tempDirectory));
-        });
-
-    /// <inheritdoc cref="IDownloader.DownloadPackageDll"/>
-    public void DownloadPackageDll(IEnumerable<DownloadInfo> downloadInfos) =>
-        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
-        {
-            Parallel.ForEach(downloadInfos, downloadInfo => DownloadPackageDll(downloadInfo, tempDirectory));
-        });
 }

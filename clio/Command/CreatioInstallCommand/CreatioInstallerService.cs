@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -7,7 +7,6 @@ using System.Linq;
 using System.Management.Automation;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
@@ -15,7 +14,6 @@ using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using MediatR;
 using StackExchange.Redis;
-
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command.CreatioInstallCommand;
@@ -39,10 +37,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             byte[] buffer = new byte[bufferSize];
             int bytesRead;
 
-            using FileStream sourceStream = new (sourcePath, FileMode.Open, FileAccess.Read);
+            using FileStream sourceStream = new(sourcePath, FileMode.Open, FileAccess.Read);
             long totalBytes = sourceStream.Length;
 
-            using FileStream destinationStream = new (destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
+            using FileStream destinationStream = new(destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
             while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
             {
                 destinationStream.Write(buffer, 0, bytesRead);
@@ -53,13 +51,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             }
         };
 
-    private readonly string _iisRootFolder;
-    private readonly IPackageArchiver _packageArchiver;
-    private readonly K8Commands _k8;
-    private readonly IMediator _mediator;
-    private readonly RegAppCommand _registerCommand;
     private readonly IFileSystem _fileSystem;
+
+    private readonly string _iisRootFolder;
+    private readonly K8Commands _k8;
     private readonly ILogger _logger;
+    private readonly IMediator _mediator;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly RegAppCommand _registerCommand;
     protected string productFolder;
     protected string remoteArtefactServerPath;
 
@@ -80,35 +79,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
     public CreatioInstallerService()
     {
-    }
-
-    private int ExitWithErrorMessage(string message)
-    {
-        _logger.WriteError(message);
-        return 1;
-    }
-
-    private int ExitWithOkMessage(string message)
-    {
-        _logger.WriteInfo(message);
-        return 0;
-    }
-
-    private int FindEmptyRedisDb(int port)
-    {
-        ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
-        IServer server = redis.GetServer("localhost", port);
-        int count = server.DatabaseCount;
-        for (int i = 1; i < count; i++)
-        {
-            long records = server.DatabaseSize(i);
-            if (records == 0)
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
     public int StartWebBrowser(PfInstallerOptions options)
@@ -141,307 +111,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
             return 1;
         }
-    }
-
-    private string CopyLocalWhenNetworkDrive(string path)
-    {
-        if (path.StartsWith(@"\\"))
-        {
-            return CopyZipLocal(path);
-        }
-
-        return new DriveInfo(Path.GetPathRoot(path)) switch
-        {
-            { DriveType: DriveType.Network } => CopyZipLocal(path),
-            _ => path
-        };
-    }
-
-    private string CopyZipLocal(string src)
-    {
-        if (!Directory.Exists(productFolder))
-        {
-            Directory.CreateDirectory(productFolder);
-        }
-
-        FileInfo srcInfo = new (src);
-        string dest = Path.Join(productFolder, srcInfo.Name);
-
-        if (File.Exists(dest))
-        {
-            return dest;
-        }
-
-        _logger.WriteLine($"Detected network drive as source, copying to local folder {productFolder}");
-        Console.Write("Copy Progress:    ");
-        Progress<double> progressReporter = new (progress =>
-        {
-            string result = progress switch
-            {
-                < 10 => progress.ToString("0").PadLeft(2) + " %",
-                < 100 => progress.ToString("0").PadLeft(1) + " %",
-                100 => "100 %",
-                _ => string.Empty
-            };
-            Console.CursorLeft = 15;
-            Console.Write(result);
-        });
-        CopyFileWithProgress(src, dest, progressReporter);
-        return dest;
-    }
-
-    private async Task<int> CreateIISSite(DirectoryInfo unzippedDirectory, PfInstallerOptions options)
-    {
-        _logger.WriteInfo("[Create IIS Site] - Started");
-        CreateIISSiteRequest request = new ()
-        {
-            Arguments = new Dictionary<string, string>
-            {
-                { "siteName", options.SiteName },
-                { "port", options.SitePort.ToString() },
-                { "sourceDirectory", unzippedDirectory.FullName },
-                { "destinationDirectory", _iisRootFolder },
-                {
-                    "isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) ==
-                                       InstallerHelper.FrameworkType.NetFramework)
-                    .ToString()
-                }
-            }
-        };
-        return (await _mediator.Send(request)).Value switch
-        {
-            HandlerError error => ExitWithErrorMessage(error.ErrorDescription),
-            CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Success } result => ExitWithOkMessage(
-                result.Description),
-            CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Failure } result =>
-                ExitWithErrorMessage(result.Description),
-            _ => ExitWithErrorMessage("Unknown error occured")
-        };
-    }
-
-    private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName)
-    {
-        K8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-        Postgres postgres = new (csp.DbPort, csp.DbUsername, csp.DbPassword);
-
-        bool exists = postgres.CheckTemplateExists(tmpDbName);
-        if (exists)
-        {
-            return;
-        }
-
-        FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
-        _logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
-
-        _k8.CopyBackupFileToPod(K8Commands.PodType.Postgres, src.FullName, src.Name);
-
-        postgres.CreateDb(tmpDbName);
-        _k8.RestorePgDatabase(src.Name, tmpDbName);
-        postgres.SetDatabaseAsTemplate(tmpDbName);
-        _k8.DeleteBackupImage(K8Commands.PodType.Postgres, src.Name);
-        _logger.WriteInfo($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
-    }
-
-    private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName)
-    {
-        FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
-        _logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
-
-        if (src is not { Exists: true })
-        {
-            throw new FileNotFoundException("Backup file not found in the specified directory.");
-        }
-
-        bool useFs = false;
-        string dest = Path.Join("\\\\wsl.localhost", "rancher-desktop", "mnt", "clio-infrastructure", "mssql", "data",
-            $"{siteName}.bak");
-        if (src.Length < int.MaxValue)
-        {
-            _k8.CopyBackupFileToPod(K8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
-        }
-        else
-        {
-            // This is a hack, we have to fix Cp class to allow large files
-            useFs = true;
-            _logger.WriteWarning($"Copying large file to local directory {dest}");
-            _fileSystem.CopyFile(src.FullName, dest, true);
-        }
-
-        K8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
-        Mssql mssql = new (csp.DbPort, csp.DbUsername, csp.DbPassword);
-
-        bool exists = mssql.CheckDbExists(siteName);
-        if (!exists)
-        {
-            mssql.CreateDb(siteName, $"{siteName}.bak");
-        }
-
-        if (useFs)
-        {
-            _fileSystem.DeleteFile(dest);
-        }
-        else
-        {
-            _k8.DeleteBackupImage(K8Commands.PodType.Mssql, $"{siteName}.bak");
-        }
-
-        return 0;
-    }
-
-    private int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName)
-    {
-        string tmpDbName = "template_" + unzippedDirectory.Name;
-        K8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-        Postgres postgres = new (csp.DbPort, csp.DbUsername, csp.DbPassword);
-
-        CreatePgTemplate(unzippedDirectory, tmpDbName);
-        postgres.CreateDbFromTemplate(tmpDbName, destDbName);
-        _logger.WriteInfo($"[Database created] - {destDbName}");
-        return 0;
-    }
-
-    private Version GetLatestProductVersion(string latestBranchPath, Version latestVersion, string product,
-        CreatioRuntimePlatform platform)
-    {
-        string dirPath = Path.Combine(latestBranchPath, latestVersion.ToString(),
-            GetProductDirectoryName(product, platform));
-        if (Directory.Exists(dirPath))
-        {
-            return latestVersion;
-        }
-
-        Version previousVersion = new (latestVersion.Major, latestVersion.Minor, latestVersion.Build,
-            latestVersion.Revision - 1);
-        return GetLatestProductVersion(latestBranchPath, previousVersion, product, platform);
-    }
-
-    private string GetProductDirectoryName(string product, CreatioRuntimePlatform platform) =>
-        $"{product}{platform.ToRuntimePlatformString()}_Softkey_ENU";
-
-    private string GetProductFileNameWithoutBuildNumber(string product, CreatioDBType creatioDBType,
-        CreatioRuntimePlatform creatioRuntimePlatform) =>
-        $"_{product}{creatioRuntimePlatform.ToRuntimePlatformString()}_Softkey_{creatioDBType}_ENU.zip";
-
-    private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options)
-    {
-        _logger.WriteInfo("[CheckUpdate connection string] - Started");
-        InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
-        K8Commands.ConnectionStringParams csParam = dbType switch
-        {
-            InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
-            InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
-        };
-
-        int redisDb = FindEmptyRedisDb(csParam.RedisPort);
-
-        ConfigureConnectionStringRequest request = dbType switch
-        {
-            InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest
-            {
-                Arguments = new Dictionary<string, string>
-                {
-                    { "folderPath", Path.Join(_iisRootFolder, options.SiteName) },
-                    {
-                        "dbString",
-                        $"Server=127.0.0.1;Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
-                    },
-                    { "redis", $"host=127.0.0.1;db={redisDb};port={csParam.RedisPort}" },
-                    {
-                        "isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) ==
-                                           InstallerHelper.FrameworkType.NetFramework).ToString()
-                    }
-                }
-            },
-            InstallerHelper.DatabaseType.MsSql => new ConfigureConnectionStringRequest
-            {
-                Arguments = new Dictionary<string, string>
-                {
-                    { "folderPath", Path.Join(_iisRootFolder, options.SiteName) },
-                    {
-                        "dbString",
-                        $"Data Source=127.0.0.1,{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
-                    },
-                    { "redis", $"host=127.0.0.1;db={redisDb};port={csParam.RedisPort}" },
-                    {
-                        "isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) ==
-                                           InstallerHelper.FrameworkType.NetFramework).ToString()
-                    }
-                }
-            }
-        };
-
-        return (await _mediator.Send(request)).Value switch
-        {
-            HandlerError error => ExitWithErrorMessage(error.ErrorDescription),
-            ConfigureConnectionStringResponse
-            {
-                Status: BaseHandlerResponse.CompletionStatus.Success
-            } 
-result => ExitWithOkMessage(result.Description),
-            ConfigureConnectionStringResponse
-            {
-                Status: BaseHandlerResponse.CompletionStatus.Failure
-            } 
-result => ExitWithErrorMessage(result.Description),
-            _ => ExitWithErrorMessage("Unknown error occured")
-        };
-    }
-
-    internal string GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product,
-        CreatioDBType creatioDBType, CreatioRuntimePlatform platform)
-    {
-        Version latestBranchVersion = GetLatestVersion(remoteArtifactServerPath);
-        string latestBranchesBuildPath = Path.Combine(remoteArtifactServerPath, latestBranchVersion.ToString());
-        IDirectoryInfo latestBranchesDireInfo = _fileSystem.GetDirectoryInfo(latestBranchesBuildPath);
-        IOrderedEnumerable<IDirectoryInfo> latestBranchSubdirectories = latestBranchesDireInfo.GetDirectories()
-            .OrderByDescending(dir => dir.CreationTimeUtc);
-        List<IDirectoryInfo> revisionDirectories = [];
-        foreach (IDirectoryInfo subdir in latestBranchSubdirectories)
-        {
-            if (Version.TryParse(subdir.Name, out Version ver))
-            {
-                revisionDirectories.Add(subdir);
-            }
-        }
-
-        if (revisionDirectories.Count == 0)
-        {
-            revisionDirectories.Add(latestBranchesDireInfo);
-        }
-
-        string productZipFileName = GetProductFileNameWithoutBuildNumber(product, creatioDBType, platform);
-        foreach (IDirectoryInfo searchDir in revisionDirectories)
-        {
-            IOrderedEnumerable<IFileInfo> zipFiles = searchDir.GetFiles("*.zip", SearchOption.AllDirectories).ToList()
-                .OrderByDescending(product => product.LastWriteTime);
-            foreach (IFileInfo zipFile in zipFiles)
-            {
-                if (zipFile.Name.Contains(productZipFileName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return zipFile.FullName;
-                }
-            }
-        }
-
-        throw new ItemNotFoundException(productZipFileName);
-    }
-
-    internal Version GetLatestVersion(string remoteArtifactServerPath)
-    {
-        string[] branches = _fileSystem.GetDirectories(remoteArtifactServerPath);
-
-        // var branches = Directory.GetDirectories(remoteArtifactServerPath);
-        List<Version> version = [];
-        foreach (string branch in branches)
-        {
-            string branchName = branch.Split('\\').Last();
-            if (Version.TryParse(branchName, out Version ver))
-            {
-                version.Add(ver);
-            }
-        }
-
-        return version.Max();
     }
 
     public override int Execute(PfInstallerOptions options)
@@ -528,4 +197,334 @@ result => ExitWithErrorMessage(result.Description),
     public string GetBuildFilePathFromOptions(string product, CreatioDBType dBType,
         CreatioRuntimePlatform runtimePlatform) =>
         GetBuildFilePathFromOptions(remoteArtefactServerPath, product, dBType, runtimePlatform);
+
+    private int ExitWithErrorMessage(string message)
+    {
+        _logger.WriteError(message);
+        return 1;
+    }
+
+    private int ExitWithOkMessage(string message)
+    {
+        _logger.WriteInfo(message);
+        return 0;
+    }
+
+    private int FindEmptyRedisDb(int port)
+    {
+        ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
+        IServer server = redis.GetServer("localhost", port);
+        int count = server.DatabaseCount;
+        for (int i = 1; i < count; i++)
+        {
+            long records = server.DatabaseSize(i);
+            if (records == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private string CopyLocalWhenNetworkDrive(string path)
+    {
+        if (path.StartsWith(@"\\"))
+        {
+            return CopyZipLocal(path);
+        }
+
+        return new DriveInfo(Path.GetPathRoot(path)) switch
+        {
+            { DriveType: DriveType.Network } => CopyZipLocal(path),
+            _ => path
+        };
+    }
+
+    private string CopyZipLocal(string src)
+    {
+        if (!Directory.Exists(productFolder))
+        {
+            Directory.CreateDirectory(productFolder);
+        }
+
+        FileInfo srcInfo = new(src);
+        string dest = Path.Join(productFolder, srcInfo.Name);
+
+        if (File.Exists(dest))
+        {
+            return dest;
+        }
+
+        _logger.WriteLine($"Detected network drive as source, copying to local folder {productFolder}");
+        Console.Write("Copy Progress:    ");
+        Progress<double> progressReporter = new(progress =>
+        {
+            string result = progress switch
+            {
+                < 10 => progress.ToString("0").PadLeft(2) + " %",
+                < 100 => progress.ToString("0").PadLeft(1) + " %",
+                100 => "100 %",
+                _ => string.Empty
+            };
+            Console.CursorLeft = 15;
+            Console.Write(result);
+        });
+        CopyFileWithProgress(src, dest, progressReporter);
+        return dest;
+    }
+
+    private async Task<int> CreateIISSite(DirectoryInfo unzippedDirectory, PfInstallerOptions options)
+    {
+        _logger.WriteInfo("[Create IIS Site] - Started");
+        CreateIISSiteRequest request = new()
+        {
+            Arguments = new Dictionary<string, string>
+            {
+                { "siteName", options.SiteName },
+                { "port", options.SitePort.ToString() },
+                { "sourceDirectory", unzippedDirectory.FullName },
+                { "destinationDirectory", _iisRootFolder },
+                {
+                    "isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) ==
+                                       InstallerHelper.FrameworkType.NetFramework)
+                    .ToString()
+                }
+            }
+        };
+        return (await _mediator.Send(request)).Value switch
+        {
+            HandlerError error => ExitWithErrorMessage(error.ErrorDescription),
+            CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Success } result => ExitWithOkMessage(
+                result.Description),
+            CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Failure } result =>
+                ExitWithErrorMessage(result.Description),
+            _ => ExitWithErrorMessage("Unknown error occured")
+        };
+    }
+
+    private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName)
+    {
+        K8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+        Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
+        bool exists = postgres.CheckTemplateExists(tmpDbName);
+        if (exists)
+        {
+            return;
+        }
+
+        FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
+        _logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+
+        _k8.CopyBackupFileToPod(K8Commands.PodType.Postgres, src.FullName, src.Name);
+
+        postgres.CreateDb(tmpDbName);
+        _k8.RestorePgDatabase(src.Name, tmpDbName);
+        postgres.SetDatabaseAsTemplate(tmpDbName);
+        _k8.DeleteBackupImage(K8Commands.PodType.Postgres, src.Name);
+        _logger.WriteInfo($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
+    }
+
+    private int DoMsWork(DirectoryInfo unzippedDirectory, string siteName)
+    {
+        FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.bak").FirstOrDefault();
+        _logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+
+        if (src is not { Exists: true })
+        {
+            throw new FileNotFoundException("Backup file not found in the specified directory.");
+        }
+
+        bool useFs = false;
+        string dest = Path.Join("\\\\wsl.localhost", "rancher-desktop", "mnt", "clio-infrastructure", "mssql", "data",
+            $"{siteName}.bak");
+        if (src.Length < int.MaxValue)
+        {
+            _k8.CopyBackupFileToPod(K8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
+        }
+        else
+        {
+            // This is a hack, we have to fix Cp class to allow large files
+            useFs = true;
+            _logger.WriteWarning($"Copying large file to local directory {dest}");
+            _fileSystem.CopyFile(src.FullName, dest, true);
+        }
+
+        K8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
+        Mssql mssql = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
+        bool exists = mssql.CheckDbExists(siteName);
+        if (!exists)
+        {
+            mssql.CreateDb(siteName, $"{siteName}.bak");
+        }
+
+        if (useFs)
+        {
+            _fileSystem.DeleteFile(dest);
+        }
+        else
+        {
+            _k8.DeleteBackupImage(K8Commands.PodType.Mssql, $"{siteName}.bak");
+        }
+
+        return 0;
+    }
+
+    private int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName)
+    {
+        string tmpDbName = "template_" + unzippedDirectory.Name;
+        K8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+        Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
+        CreatePgTemplate(unzippedDirectory, tmpDbName);
+        postgres.CreateDbFromTemplate(tmpDbName, destDbName);
+        _logger.WriteInfo($"[Database created] - {destDbName}");
+        return 0;
+    }
+
+    private Version GetLatestProductVersion(string latestBranchPath, Version latestVersion, string product,
+        CreatioRuntimePlatform platform)
+    {
+        string dirPath = Path.Combine(latestBranchPath, latestVersion.ToString(),
+            GetProductDirectoryName(product, platform));
+        if (Directory.Exists(dirPath))
+        {
+            return latestVersion;
+        }
+
+        Version previousVersion = new(latestVersion.Major, latestVersion.Minor, latestVersion.Build,
+            latestVersion.Revision - 1);
+        return GetLatestProductVersion(latestBranchPath, previousVersion, product, platform);
+    }
+
+    private string GetProductDirectoryName(string product, CreatioRuntimePlatform platform) =>
+        $"{product}{platform.ToRuntimePlatformString()}_Softkey_ENU";
+
+    private string GetProductFileNameWithoutBuildNumber(string product, CreatioDBType creatioDBType,
+        CreatioRuntimePlatform creatioRuntimePlatform) =>
+        $"_{product}{creatioRuntimePlatform.ToRuntimePlatformString()}_Softkey_{creatioDBType}_ENU.zip";
+
+    private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options)
+    {
+        _logger.WriteInfo("[CheckUpdate connection string] - Started");
+        InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+        K8Commands.ConnectionStringParams csParam = dbType switch
+        {
+            InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
+            InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
+        };
+
+        int redisDb = FindEmptyRedisDb(csParam.RedisPort);
+
+        ConfigureConnectionStringRequest request = dbType switch
+        {
+            InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest
+            {
+                Arguments = new Dictionary<string, string>
+                {
+                    { "folderPath", Path.Join(_iisRootFolder, options.SiteName) },
+                    {
+                        "dbString",
+                        $"Server=127.0.0.1;Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
+                    },
+                    { "redis", $"host=127.0.0.1;db={redisDb};port={csParam.RedisPort}" },
+                    {
+                        "isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) ==
+                                           InstallerHelper.FrameworkType.NetFramework).ToString()
+                    }
+                }
+            },
+            InstallerHelper.DatabaseType.MsSql => new ConfigureConnectionStringRequest
+            {
+                Arguments = new Dictionary<string, string>
+                {
+                    { "folderPath", Path.Join(_iisRootFolder, options.SiteName) },
+                    {
+                        "dbString",
+                        $"Data Source=127.0.0.1,{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+                    },
+                    { "redis", $"host=127.0.0.1;db={redisDb};port={csParam.RedisPort}" },
+                    {
+                        "isNetFramework", (InstallerHelper.DetectFramework(unzippedDirectory) ==
+                                           InstallerHelper.FrameworkType.NetFramework).ToString()
+                    }
+                }
+            }
+        };
+
+        return (await _mediator.Send(request)).Value switch
+        {
+            HandlerError error => ExitWithErrorMessage(error.ErrorDescription),
+            ConfigureConnectionStringResponse
+                {
+                    Status: BaseHandlerResponse.CompletionStatus.Success
+                }
+                result => ExitWithOkMessage(result.Description),
+            ConfigureConnectionStringResponse
+                {
+                    Status: BaseHandlerResponse.CompletionStatus.Failure
+                }
+                result => ExitWithErrorMessage(result.Description),
+            _ => ExitWithErrorMessage("Unknown error occured")
+        };
+    }
+
+    internal string GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product,
+        CreatioDBType creatioDBType, CreatioRuntimePlatform platform)
+    {
+        Version latestBranchVersion = GetLatestVersion(remoteArtifactServerPath);
+        string latestBranchesBuildPath = Path.Combine(remoteArtifactServerPath, latestBranchVersion.ToString());
+        IDirectoryInfo latestBranchesDireInfo = _fileSystem.GetDirectoryInfo(latestBranchesBuildPath);
+        IOrderedEnumerable<IDirectoryInfo> latestBranchSubdirectories = latestBranchesDireInfo.GetDirectories()
+            .OrderByDescending(dir => dir.CreationTimeUtc);
+        List<IDirectoryInfo> revisionDirectories = [];
+        foreach (IDirectoryInfo subdir in latestBranchSubdirectories)
+        {
+            if (Version.TryParse(subdir.Name, out Version ver))
+            {
+                revisionDirectories.Add(subdir);
+            }
+        }
+
+        if (revisionDirectories.Count == 0)
+        {
+            revisionDirectories.Add(latestBranchesDireInfo);
+        }
+
+        string productZipFileName = GetProductFileNameWithoutBuildNumber(product, creatioDBType, platform);
+        foreach (IDirectoryInfo searchDir in revisionDirectories)
+        {
+            IOrderedEnumerable<IFileInfo> zipFiles = searchDir.GetFiles("*.zip", SearchOption.AllDirectories).ToList()
+                .OrderByDescending(product => product.LastWriteTime);
+            foreach (IFileInfo zipFile in zipFiles)
+            {
+                if (zipFile.Name.Contains(productZipFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return zipFile.FullName;
+                }
+            }
+        }
+
+        throw new ItemNotFoundException(productZipFileName);
+    }
+
+    internal Version GetLatestVersion(string remoteArtifactServerPath)
+    {
+        string[] branches = _fileSystem.GetDirectories(remoteArtifactServerPath);
+
+        // var branches = Directory.GetDirectories(remoteArtifactServerPath);
+        List<Version> version = [];
+        foreach (string branch in branches)
+        {
+            string branchName = branch.Split('\\').Last();
+            if (Version.TryParse(branchName, out Version ver))
+            {
+                version.Add(ver);
+            }
+        }
+
+        return version.Max();
+    }
 }

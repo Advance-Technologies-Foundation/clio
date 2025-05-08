@@ -1,4 +1,4 @@
-using Autofac;
+﻿using Autofac;
 using Clio.Command;
 using Clio.UserEnvironment;
 using NSubstitute;
@@ -29,7 +29,7 @@ public class RegAppCommandTests : BaseClioModuleTests
     public void RegAppCommand_ShouldNotThrowException_WithCfgOpenParaameters()
     {
         RegAppCommand command = container.Resolve<RegAppCommand>();
-        RegAppOptions openCfgOpts = new () { EnvironmentName = "open" };
+        RegAppOptions openCfgOpts = new() { EnvironmentName = "open" };
         Assert.DoesNotThrow(() => command.Execute(openCfgOpts));
         _settingsRepository.Received(1).OpenFile();
     }

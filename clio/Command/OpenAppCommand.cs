@@ -1,14 +1,13 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-
 using Clio.Common;
 using Clio.Utilities;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("open-web-app", Aliases = new string[] { "open" }, HelpText = "Open application in web browser")]
+[Verb("open-web-app", Aliases = new[] { "open" }, HelpText = "Open application in web browser")]
 public class OpenAppOptions : RemoteCommandOptions
 {
 }
@@ -29,7 +28,7 @@ public class OpenAppCommand : RemoteCommand<OpenAppOptions>
     {
         try
         {
-            SettingsRepository settings = new ();
+            SettingsRepository settings = new();
             EnvironmentSettings env = settings.GetEnvironment(options);
 
             if (string.IsNullOrEmpty(env.Uri))

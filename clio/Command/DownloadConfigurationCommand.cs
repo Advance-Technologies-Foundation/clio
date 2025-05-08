@@ -1,8 +1,4 @@
-using System;
-
-using CommandLine;
-using Common;
-using Workspaces;
+﻿using CommandLine;
 
 namespace Clio.Command;
 
@@ -15,8 +11,8 @@ public class DownloadConfigurationCommandOptions : EnvironmentOptions
 public class DownloadConfigurationCommand : Command<DownloadConfigurationCommandOptions>
 {
     private readonly IApplicationDownloader _applicationDownloader;
-    private readonly IWorkspace _workspace;
     private readonly ILogger _logger;
+    private readonly IWorkspace _workspace;
 
     public DownloadConfigurationCommand(IApplicationDownloader applicationDownloader, IWorkspace workspace,
         ILogger logger)

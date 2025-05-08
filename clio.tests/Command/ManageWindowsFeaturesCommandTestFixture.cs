@@ -1,13 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Management.Automation;
-
 using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
-using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -34,10 +32,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
     public void InstallComponent_Calls_WindowsFeatureManager(string actionName)
     {
         // Arrange
-        ManageWindowsFeaturesOptions options = new ()
+        ManageWindowsFeaturesOptions options = new()
         {
-            InstallMode = actionName == "install",
-            UnistallMode = actionName == "uninstall"
+            InstallMode = actionName == "install", UnistallMode = actionName == "uninstall"
         };
 
         // Act
@@ -64,8 +61,8 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         // Arrange
         List<WindowsFeature> existingComponents =
         [
-            new WindowsFeature { Name = "Feature3", Installed = false },
-            new WindowsFeature { Name = "Feature4", Installed = false }
+            new() { Name = "Feature3", Installed = false },
+            new() { Name = "Feature4", Installed = false }
         ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
@@ -73,9 +70,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         ILogger logger = Substitute.For<ILogger>();
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         WindowsFeatureManager windowsFeatureManager =
-            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures =["Feature1", "Feature2"]
+                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
             };
 
         // Act
@@ -92,8 +89,8 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         // Arrange
         List<WindowsFeature> existingComponents =
         [
-            new WindowsFeature { Name = "Feature1", Installed = true },
-            new WindowsFeature { Name = "Feature2", Installed = true }
+            new() { Name = "Feature1", Installed = true },
+            new() { Name = "Feature2", Installed = true }
         ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
@@ -102,9 +99,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
         WindowsFeatureManager windowsFeatureManager =
-            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures =["Feature1", "Feature2"]
+                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
             };
 
         // Act
@@ -121,8 +118,8 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         // Arrange
         List<WindowsFeature> existingComponents =
         [
-            new WindowsFeature { Name = "Feature1", Installed = true },
-            new WindowsFeature { Name = "Feature2", Installed = true }
+            new() { Name = "Feature1", Installed = true },
+            new() { Name = "Feature2", Installed = true }
         ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
@@ -131,9 +128,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
         WindowsFeatureManager windowsFeatureManager =
-            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures =["Feature1", "Feature2"]
+                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
             };
 
         // Act
@@ -150,8 +147,8 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         // Arrange
         List<WindowsFeature> existingComponents =
         [
-            new WindowsFeature { Name = "Feature1", Installed = true },
-            new WindowsFeature { Name = "Feature2", Installed = true }
+            new() { Name = "Feature1", Installed = true },
+            new() { Name = "Feature2", Installed = true }
         ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
@@ -160,9 +157,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
         WindowsFeatureManager windowsFeatureManager =
-            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures =["Feature3"]
+                RequirmentNETFrameworkFeatures = ["Feature3"]
             };
 
         // Act

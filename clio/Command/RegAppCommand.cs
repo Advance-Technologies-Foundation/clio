@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
@@ -12,7 +11,7 @@ using FluentValidation;
 
 namespace Clio.Command;
 
-[Verb("reg-web-app", Aliases =["reg", "cfg"], HelpText = "Configure a web application settings")]
+[Verb("reg-web-app", Aliases = ["reg", "cfg"], HelpText = "Configure a web application settings")]
 public class RegAppOptions : EnvironmentNameOptions
 {
     [Option('a', "ActiveEnvironment", Required = false, HelpText = "Set as default web application")]
@@ -28,13 +27,16 @@ public class RegAppOptions : EnvironmentNameOptions
     public string Host { get; set; }
 }
 
-public class RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory,
-    IPowerShellFactory powerShellFactory, ILogger logger): Command<RegAppOptions>
+public class RegAppCommand(
+    ISettingsRepository settingsRepository,
+    IApplicationClientFactory applicationClientFactory,
+    IPowerShellFactory powerShellFactory,
+    ILogger logger) : Command<RegAppOptions>
 {
-    private readonly ISettingsRepository _settingsRepository = settingsRepository;
     private readonly IApplicationClientFactory _applicationClientFactory = applicationClientFactory;
-    private readonly IPowerShellFactory _powerShellFactory = powerShellFactory;
     private readonly ILogger _logger = logger;
+    private readonly IPowerShellFactory _powerShellFactory = powerShellFactory;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public override int Execute(RegAppOptions options)
     {
@@ -70,7 +72,7 @@ public class RegAppCommand(ISettingsRepository settingsRepository, IApplicationC
                 return 0;
             }
 
-            EnvironmentSettings environment = new ()
+            EnvironmentSettings environment = new()
             {
                 Login = options.Login,
                 Password = options.Password,
@@ -128,13 +130,13 @@ public class RegAppCommand(ISettingsRepository settingsRepository, IApplicationC
     }
 }
 
-[Verb("open-settings", Aliases =["conf", "configuration", "settings", "os"],
+[Verb("open-settings", Aliases = ["conf", "configuration", "settings", "os"],
     HelpText = "Open configuration file")]
 public class OpenCfgOptions
 {
 }
 
-public class OpenCfgCommand(ILogger logger): Command<OpenCfgOptions>
+public class OpenCfgCommand(ILogger logger) : Command<OpenCfgOptions>
 {
     private readonly ILogger _logger = logger;
 

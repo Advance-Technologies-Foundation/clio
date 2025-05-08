@@ -5,14 +5,12 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
-
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using ConsoleTables;
 using Newtonsoft.Json;
 using YamlDotNet.Serialization;
-
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -20,8 +18,9 @@ namespace Clio;
 
 public class EnvironmentSettings
 {
-    [YamlMember(Alias = "url")]
-    public string Uri { get; set; }
+    private string _authAppUri;
+
+    [YamlMember(Alias = "url")] public string Uri { get; set; }
 
     public string DbName { get; set; }
 
@@ -39,14 +38,11 @@ public class EnvironmentSettings
 
     public string DbServerKey { get; set; }
 
-    [Newtonsoft.Json.JsonIgnore]
-    public DbServer DbServer { get; set; }
+    [Newtonsoft.Json.JsonIgnore] public DbServer DbServer { get; set; }
 
     public string ClientSecret { get; set; }
 
     public string WorkspacePathes { get; set; }
-
-    private string _authAppUri;
 
     [YamlMember(Alias = "authappurl")]
     public string AuthAppUri
@@ -93,6 +89,12 @@ public class EnvironmentSettings
             return simpleLoginUriText;
         }
     }
+
+    public bool? Safe { get; set; }
+
+    public bool? DeveloperModeEnabled { get; set; }
+
+    [Newtonsoft.Json.JsonIgnore] public bool IsDevMode => DeveloperModeEnabled ?? false;
 
     internal void Merge(EnvironmentSettings environment)
     {
@@ -155,16 +157,9 @@ public class EnvironmentSettings
         }
     }
 
-    public bool? Safe { get; set; }
-
-    public bool? DeveloperModeEnabled { get; set; }
-
-    [Newtonsoft.Json.JsonIgnore]
-    public bool IsDevMode => DeveloperModeEnabled ?? false;
-
     public EnvironmentSettings Fill(EnvironmentOptions options)
     {
-        EnvironmentSettings result = new ()
+        EnvironmentSettings result = new()
         {
             Uri = string.IsNullOrEmpty(options.Uri) ? Uri : options.Uri,
             IsNetCore = options.IsNetCore ?? IsNetCore,
@@ -175,12 +170,12 @@ public class EnvironmentSettings
             ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? ClientSecret : options.ClientSecret,
             AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? AuthAppUri : options.AuthAppUri,
             Maintainer =
-            string.IsNullOrEmpty(options.Maintainer) ? Maintainer : options.Maintainer
+                string.IsNullOrEmpty(options.Maintainer) ? Maintainer : options.Maintainer
         };
         if (Safe.HasValue && Safe.Value)
         {
             Console.WriteLine($"You try to apply the action on the production site {Uri}");
-            Console.Write($"Do you want to continue? [Y/N]:");
+            Console.Write("Do you want to continue? [Y/N]:");
             ConsoleKeyInfo answer = Console.ReadKey();
             Console.WriteLine();
             if (answer.KeyChar != 'y' && answer.KeyChar != 'Y')
@@ -238,11 +233,14 @@ public class EnvironmentSettings
 
 public class Settings
 {
-    public Settings() => Environments = [];
-
     // TODO: This wont work for Mac and Linux
     private const string DefaultCreatioProductFolder = @"C:\CreatioProductBuild";
+
+    // TODO: This wont work for Mac and Linux
+    private const string DefaultIisRootPath = @"C:\inetpub\wwwroot\clio";
     private string _creatioProductFolder;
+    private string _iISClioRootPath;
+    public Settings() => Environments = [];
 
     [JsonProperty("creatio-products")]
     public string CreatioProductFolder
@@ -251,10 +249,6 @@ public class Settings
         set => _creatioProductFolder = value;
     }
 
-    // TODO: This wont work for Mac and Linux
-    private const string DefaultIisRootPath = @"C:\inetpub\wwwroot\clio";
-    private string _iISClioRootPath;
-
     [JsonProperty("iis-clio-root-path")]
     public string IISClioRootPath
     {
@@ -262,13 +256,18 @@ public class Settings
         set => _iISClioRootPath = value;
     }
 
-    [JsonProperty("$schema")]
-    public string Schema => "./schema.json";
+    [JsonProperty("$schema")] public string Schema => "./schema.json";
 
     public string ActiveEnvironmentKey { get; set; }
 
     [JsonProperty("dbConnectionStringKeys")]
     public Dictionary<string, DbServer> DbServers { get; set; }
+
+    public bool Autoupdate { get; set; }
+
+    public Dictionary<string, EnvironmentSettings> Environments { get; set; }
+
+    public string RemoteArtefactServerPath { get; set; }
 
     public EnvironmentSettings GetActiveEnviroment()
     {
@@ -278,17 +277,9 @@ public class Settings
             ActiveEnvironmentKey = Environments.First().Key;
             return Environments.First().Value;
         }
-        else
-        {
-            return Environments[ActiveEnvironmentKey];
-        }
+
+        return Environments[ActiveEnvironmentKey];
     }
-
-    public bool Autoupdate { get; set; }
-
-    public Dictionary<string, EnvironmentSettings> Environments { get; set; }
-
-    public string RemoteArtefactServerPath { get; set; }
 }
 
 public class SettingsRepository : ISettingsRepository
@@ -296,7 +287,18 @@ public class SettingsRepository : ISettingsRepository
     private const string FileName = "appsettings.json";
     private const string SchemaFileName = "schema.json";
 
-    private Settings _settings = new ();
+    private Settings _settings = new();
+
+    public SettingsRepository(IFileSystem fileSystem = null)
+    {
+        if (fileSystem != null)
+        {
+            FileSystem = fileSystem;
+        }
+
+        InitializeSettingsFile();
+        InitSettings();
+    }
 
     public static string AppSettingsFolderPath
     {
@@ -317,22 +319,151 @@ public class SettingsRepository : ISettingsRepository
 
     public static string AppSettingsFile => Path.Combine(AppSettingsFolderPath, FileName);
 
-    public string AppSettingsFilePath => AppSettingsFile;
-
     private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
     internal static IFileSystem FileSystem { get; set; } = new FileSystem();
 
-    public SettingsRepository(IFileSystem fileSystem = null)
+    public string AppSettingsFilePath => AppSettingsFile;
+
+    public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false)
     {
-        if (fileSystem != null)
+        JsonSerializer serializer = new()
         {
-            FileSystem = fileSystem;
+            Formatting = Formatting.Indented, NullValueHandling = NullValueHandling.Ignore
+        };
+
+        if (string.IsNullOrEmpty(environment) && showShort)
+        {
+            streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
+
+            ConsoleTable t = new() { Columns = { "Name", "Url" } };
+
+            _settings.Environments.Select(e => new { name = e.Key, url = e.Value.Uri }).ToList()
+                .ForEach(e => { t.Rows.Add([e.name, e.url]); });
+            ConsoleLogger.Instance.PrintTable(t);
         }
 
-        InitializeSettingsFile();
-        InitSettings();
+        if (string.IsNullOrEmpty(environment) && !showShort)
+        {
+            streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
+            serializer.Serialize(streamWriter, _settings);
+        }
+        else
+        {
+            serializer.Serialize(streamWriter, _settings.Environments[environment]);
+        }
     }
+
+    public EnvironmentSettings GetEnvironment(string name = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            string activeEnvironment = _settings.ActiveEnvironmentKey;
+            return _settings.Environments[activeEnvironment];
+        }
+
+        if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment))
+        {
+            environment = new EnvironmentSettings();
+            _settings.Environments[name] = environment;
+        }
+
+        return environment;
+    }
+
+    public EnvironmentSettings FindEnvironment(string name = null)
+    {
+        EnvironmentSettings environment;
+        try
+        {
+            environment = GetEnvironment(name);
+        }
+        catch
+        {
+            return null;
+        }
+
+        return environment;
+    }
+
+    public EnvironmentSettings GetEnvironment(EnvironmentOptions options)
+    {
+        SettingsRepository settingsRepository = new();
+        EnvironmentSettings? _settings = settingsRepository.FindEnvironment(options.Environment);
+        if (_settings == null)
+        {
+            string envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
+            if (!settingsRepository.IsEnvironmentExists(envName) && string.IsNullOrEmpty(options.Uri))
+            {
+                throw new Exception(
+                    $"Environment with key '{envName}' not found. Check youre config file or command arguments.");
+            }
+
+            _settings = new EnvironmentSettings();
+        }
+
+        EnvironmentSettings result = _settings.Fill(options);
+        return result;
+    }
+
+    public bool IsEnvironmentExists(string name) => _settings.Environments.ContainsKey(name);
+
+    public string FindEnvironmentNameByUri(string uri)
+    {
+        string safeUri = uri.TrimEnd('/');
+        return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
+    }
+
+    public void ConfigureEnvironment(string name, EnvironmentSettings environment)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            _settings.GetActiveEnviroment().Merge(environment);
+        }
+        else if (_settings.Environments.ContainsKey(name))
+        {
+            _settings.Environments[name].Merge(environment);
+        }
+        else
+        {
+            _settings.Environments.Add(name, environment);
+        }
+
+        Save();
+    }
+
+    public void SetActiveEnvironment(string activeEnvironment)
+    {
+        _settings.ActiveEnvironmentKey = activeEnvironment;
+        Save();
+    }
+
+    public void RemoveEnvironment(string environment)
+    {
+        if (_settings.Environments.ContainsKey(environment))
+        {
+            _settings.Environments.Remove(environment);
+            Save();
+        }
+        else
+        {
+            throw new KeyNotFoundException($"Application \"{environment}\" not found");
+        }
+    }
+
+    public void OpenFile() => OpenSettingsFile();
+
+    public void RemoveAllEnvironment()
+    {
+        _settings.Environments.Clear();
+        Save();
+    }
+
+    public string GetIISClioRootPath() => _settings.IISClioRootPath;
+
+    public string GetCreatioProductsFolder() => _settings.CreatioProductFolder;
+
+    public string GetRemoteArtefactServerPath() => _settings.RemoteArtefactServerPath;
 
     private void InitSettings()
     {
@@ -398,8 +529,8 @@ public class SettingsRepository : ISettingsRepository
     }
 
     /// <summary>
-    /// Creates json schema file.
-    /// This file is used by intelisence in vs code and other json editors.
+    ///     Creates json schema file.
+    ///     This file is used by intelisence in vs code and other json editors.
     /// </summary>
     private void SaveSchema()
     {
@@ -413,10 +544,9 @@ public class SettingsRepository : ISettingsRepository
     {
         using (StreamWriter fileWriter = FileSystem.File.CreateText(AppSettingsFilePath))
         {
-            JsonSerializer serializer = new ()
+            JsonSerializer serializer = new()
             {
-                Formatting = Formatting.Indented,
-                NullValueHandling = NullValueHandling.Ignore
+                Formatting = Formatting.Indented, NullValueHandling = NullValueHandling.Ignore
             };
 
             // _settings.Schema =
@@ -429,163 +559,18 @@ public class SettingsRepository : ISettingsRepository
         }
     }
 
-    public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false)
-    {
-        JsonSerializer serializer = new ()
-        {
-            Formatting = Formatting.Indented,
-            NullValueHandling = NullValueHandling.Ignore
-        };
-
-        if (string.IsNullOrEmpty(environment) && showShort)
-        {
-            streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
-
-            ConsoleTable t = new () { Columns = { "Name", "Url" } };
-
-            _settings.Environments.Select(e => new { name = e.Key, url = e.Value.Uri }).ToList()
-                .ForEach(e => { t.Rows.Add([e.name, e.url]); });
-            ConsoleLogger.Instance.PrintTable(t);
-        }
-
-        if (string.IsNullOrEmpty(environment) && !showShort)
-        {
-            streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
-            serializer.Serialize(streamWriter, _settings);
-        }
-        else
-        {
-            serializer.Serialize(streamWriter, _settings.Environments[environment]);
-        }
-    }
-
-    public EnvironmentSettings GetEnvironment(string name = null)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            string activeEnvironment = _settings.ActiveEnvironmentKey;
-            return _settings.Environments[activeEnvironment];
-        }
-
-        if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment))
-        {
-            environment = new EnvironmentSettings();
-            _settings.Environments[name] = environment;
-        }
-
-        return environment;
-    }
-
-    public EnvironmentSettings FindEnvironment(string name = null)
-    {
-        EnvironmentSettings environment;
-        try
-        {
-            environment = GetEnvironment(name);
-        }
-        catch
-        {
-            return null;
-        }
-
-        return environment;
-    }
-
-    public EnvironmentSettings GetEnvironment(EnvironmentOptions options)
-    {
-        SettingsRepository settingsRepository = new ();
-        EnvironmentSettings? _settings = settingsRepository.FindEnvironment(options.Environment);
-        if (_settings == null)
-        {
-            string envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
-            if (!settingsRepository.IsEnvironmentExists(envName) && string.IsNullOrEmpty(options.Uri))
-            {
-                throw new Exception(
-                    $"Environment with key '{envName}' not found. Check youre config file or command arguments.");
-            }
-            else
-            {
-                _settings = new EnvironmentSettings();
-            }
-        }
-
-        EnvironmentSettings result = _settings.Fill(options);
-        return result;
-    }
-
     private string GetDefaultEnvironmentName() => _settings.ActiveEnvironmentKey;
-
-    public bool IsEnvironmentExists(string name) => _settings.Environments.ContainsKey(name);
-
-    public string FindEnvironmentNameByUri(string uri)
-    {
-        string safeUri = uri.TrimEnd('/');
-        return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
-    }
 
     internal bool GetAutoupdate() => _settings.Autoupdate;
 
-    public void ConfigureEnvironment(string name, EnvironmentSettings environment)
-    {
-        if (string.IsNullOrEmpty(name))
-        {
-            _settings.GetActiveEnviroment().Merge(environment);
-        }
-        else if (_settings.Environments.ContainsKey(name))
-        {
-            _settings.Environments[name].Merge(environment);
-        }
-        else
-        {
-            _settings.Environments.Add(name, environment);
-        }
-
-        Save();
-    }
-
-    public void SetActiveEnvironment(string activeEnvironment)
-    {
-        _settings.ActiveEnvironmentKey = activeEnvironment;
-        Save();
-    }
-
-    public void RemoveEnvironment(string environment)
-    {
-        if (_settings.Environments.ContainsKey(environment))
-        {
-            _settings.Environments.Remove(environment);
-            Save();
-        }
-        else
-        {
-            throw new KeyNotFoundException($"Application \"{environment}\" not found");
-        }
-    }
-
     public static void OpenSettingsFile() => FileManager.OpenFile(AppSettingsFile);
-
-    public void OpenFile() => OpenSettingsFile();
-
-    public void RemoveAllEnvironment()
-    {
-        _settings.Environments.Clear();
-        Save();
-    }
-
-    public string GetIISClioRootPath() => _settings.IISClioRootPath;
-
-    public string GetCreatioProductsFolder() => _settings.CreatioProductFolder;
-
-    public string GetRemoteArtefactServerPath() => _settings.RemoteArtefactServerPath;
 }
 
 public class DbServer
 {
-    [JsonPropertyName("uri")]
-    public Uri Uri { get; set; }
+    [JsonPropertyName("uri")] public Uri Uri { get; set; }
 
-    [JsonPropertyName("workingFolder")]
-    public string WorkingFolder { get; set; }
+    [JsonPropertyName("workingFolder")] public string WorkingFolder { get; set; }
 
     public string Password { get; internal set; }
 

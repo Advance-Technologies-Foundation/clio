@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
-
 using Autofac;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Tests.Command;
@@ -16,7 +15,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     private CreatioInstallerService _creatioInstallerService;
 
     protected override MockFileSystem CreateFs() =>
-        new (new Dictionary<string, MockFileData>
+        new(new Dictionary<string, MockFileData>
         {
             {
                 @"\\tscrm.com\dfs-ts\builds-7\8.1.2\8.1.2.3888\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.1.2.3888_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip",
@@ -62,7 +61,10 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
                 @"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\Studio_Softkey_ENU\8.1.3.3992_Studio_Softkey_PostgreSQL_ENU.zip",
                 new MockFileData(string.Empty)
             },
-            { @"D:\Projects\creatio_builds\8.1.1\8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip", new MockFileData(string.Empty) },
+            {
+                @"D:\Projects\creatio_builds\8.1.1\8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip",
+                new MockFileData(string.Empty)
+            },
             {
                 @"D:\Projects\creatio_builds\8.1.1\8.1.1.1425_SalesEnterpriseNet6_Softkey_PostgreSQL_ENU.zip",
                 new MockFileData(string.Empty)
@@ -107,7 +109,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     public void FindZipFilePathFromOptionsRemoteServer_bcj()
     {
         // Arrange
-        PfInstallerOptions options = new () { Product = "bcj" };
+        PfInstallerOptions options = new() { Product = "bcj" };
         string product = options.Product;
         const CreatioDBType creatioDbType = CreatioDBType.MSSQL;
         const CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NETFramework;
@@ -127,7 +129,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     public void FindZipFilePathFromOptionsRemoteServer_MSSQL_NF_S()
     {
         // Arrange
-        PfInstallerOptions options = new () { Product = "s" };
+        PfInstallerOptions options = new() { Product = "s" };
         string product = options.Product;
         CreatioDBType creatioDBType = CreatioDBType.MSSQL;
         CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NETFramework;
@@ -166,7 +168,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     public void FindZipFilePathFromOptionsRemoteServer_PG_NF_S()
     {
         // Arrange
-        PfInstallerOptions options = new () { Product = "s" };
+        PfInstallerOptions options = new() { Product = "s" };
         string product = options.Product;
         CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
         CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NETFramework;
@@ -186,7 +188,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     public void FindZipFilePathFromOptionsRemoteServer_PG_NF_S_Local()
     {
         // Arrange
-        PfInstallerOptions options = new () { Product = "s" };
+        PfInstallerOptions options = new() { Product = "s" };
         string product = options.Product;
         CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
         CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NETFramework;
@@ -205,7 +207,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     [Category("Unit")]
     public void FindZipFilePathFromOptionsRemoteServer_PG_NF_SE_Local()
     {
-        PfInstallerOptions options = new () { Product = "SalesEnterprise" };
+        PfInstallerOptions options = new() { Product = "SalesEnterprise" };
         string product = options.Product;
         CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
         CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NET6;
@@ -258,7 +260,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     [Category("Unit")]
     public void FindZipFilePathFromOptionsRemoteServerNet6Studio_semse()
     {
-        PfInstallerOptions options = new () { Product = "semse" };
+        PfInstallerOptions options = new() { Product = "semse" };
         string product = options.Product;
         const CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
         const CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NET6;
@@ -272,7 +274,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
     [Test]
     public void GetBuildFilePathFromOptions_Returns_Expected()
     {
-        PfInstallerOptions options = new () { Product = "semse" };
+        PfInstallerOptions options = new() { Product = "semse" };
         string product = options.Product;
         const CreatioDBType creatioDBType = CreatioDBType.PostgreSQL;
         const CreatioRuntimePlatform creatioRuntimePlatform = CreatioRuntimePlatform.NET6;

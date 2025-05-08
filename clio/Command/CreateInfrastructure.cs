@@ -1,26 +1,20 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Policy;
-
 using Clio.Common;
 using CommandLine;
-using DocumentFormat.OpenXml.Drawing;
-
 using Path = System.IO.Path;
 
 namespace Clio.Command;
 
-[Verb("create-k8-files", Aliases = new string[] { "ck8f" }, HelpText = "Prepare K8 files for deployment")]
+[Verb("create-k8-files", Aliases = new[] { "ck8f" }, HelpText = "Prepare K8 files for deployment")]
 public class CreateInfrastructureOptions
 {
 }
 
-[Verb("open-k8-files", Aliases = new string[] { "cfg-k8f", "cfg-k8s" },
+[Verb("open-k8-files", Aliases = new[] { "cfg-k8f", "cfg-k8s" },
     HelpText = "Open folder K8 files for deployment")]
 public class OpenInfrastructureOptions
 {
@@ -36,15 +30,13 @@ public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>
             Process.Start("explorer.exe", infrsatructureCfgFilesFolder);
             return 0;
         }
-        else
-        {
-            Console.WriteLine("Clio open-k8-files command is only supported on: 'windows'.");
-            return 1;
-        }
+
+        Console.WriteLine("Clio open-k8-files command is only supported on: 'windows'.");
+        return 1;
     }
 }
 
-public class CreateInfrastructureCommand(IFileSystem fileSystem): Command<CreateInfrastructureOptions>
+public class CreateInfrastructureCommand(IFileSystem fileSystem) : Command<CreateInfrastructureOptions>
 {
     private readonly IFileSystem _fileSystem = fileSystem;
 
@@ -59,7 +51,7 @@ public class CreateInfrastructureCommand(IFileSystem fileSystem): Command<Create
         Console.ForegroundColor = ConsoleColor.DarkRed;
         Console.WriteLine("****************************  IMPORTANT ****************************");
         Console.ForegroundColor = color;
-        Console.WriteLine($"All files have been copied to:");
+        Console.WriteLine("All files have been copied to:");
         Console.WriteLine($"\t{to}");
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.DarkRed;
@@ -72,11 +64,11 @@ public class CreateInfrastructureCommand(IFileSystem fileSystem): Command<Create
         Console.ForegroundColor = ConsoleColor.DarkYellow;
         IList<string[]> table = new List<string[]>
         {
-            ["Application", "Version", "Available on"] , 
-            ["-------------------------", "------------------------", "------------"] , 
-            ["Postgres SQL Server", "latest", "Port: 5432"] , 
-            ["Microsoft SQL Server 2022", "latest developer edition", "Port: 1434"] , 
-            ["Redis Server", "latest", "Port: 6379"] , 
+            ["Application", "Version", "Available on"],
+            ["-------------------------", "------------------------", "------------"],
+            ["Postgres SQL Server", "latest", "Port: 5432"],
+            ["Microsoft SQL Server 2022", "latest developer edition", "Port: 1434"],
+            ["Redis Server", "latest", "Port: 6379"],
             ["Email Listener", "1.0.10", "Port: 1090"]
         };
 
@@ -91,7 +83,7 @@ public class CreateInfrastructureCommand(IFileSystem fileSystem): Command<Create
         Console.ForegroundColor = color;
         Console.WriteLine($"To deploy new infrastructure execute from {to} folder in any terminal:");
         Console.ForegroundColor = ConsoleColor.DarkYellow;
-        Console.WriteLine($"\tkubectl apply -f infrastructure");
+        Console.WriteLine("\tkubectl apply -f infrastructure");
         Console.ForegroundColor = color;
         Console.WriteLine();
         Console.WriteLine("Use Rancher Desktop to check if infrastructure is deployed correctly");

@@ -6,14 +6,12 @@ namespace Clio.Package;
 public enum PackageType
 {
     /// <summary>
-    /// Default package type
+    ///     Default package type
     /// </summary>
-    [EnumMember]
-    General,
+    [EnumMember] General,
 
     /// <summary>
-    /// Package won't be compiled during installation and can be compiled without configuration build
+    ///     Package won't be compiled during installation and can be compiled without configuration build
     /// </summary>
-    [EnumMember]
-    Assembly
+    [EnumMember] Assembly
 }

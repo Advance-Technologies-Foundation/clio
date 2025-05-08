@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
@@ -13,7 +12,7 @@ public interface IInstalledApplication
     InstalledAppInfo GetInstalledAppInfo(string appCode);
 }
 
-public class InstalledApplication(IDataProvider provider): IInstalledApplication
+public class InstalledApplication(IDataProvider provider) : IInstalledApplication
 {
     private readonly IDataProvider _provider = provider;
 
@@ -37,23 +36,6 @@ public class InstalledAppInfo(IDataProvider provider)
 {
     private readonly IDataProvider _provider = provider;
 
-    public IEnumerable<string> GetPackages()
-    {
-        List<Guid> sysPackageIds =
-        [
-            .. AppDataContextFactory.GetAppDataContext(_provider)
-                        .Models<SysPackageInInstalledApp>()
-                        .Where(m => m.SysInstalledAppId == Id)
-                        .Select(m => m.SysPackageId),
-        ];
-        foreach (Guid sysPackageId in sysPackageIds)
-        {
-            SysPackage? package = AppDataContextFactory.GetAppDataContext(_provider)
-                .GetModel<SysPackage>(sysPackageId);
-            yield return package.Name;
-        }
-    }
-
     public Guid Id { get; set; }
 
     public string Name { get; set; }
@@ -63,4 +45,21 @@ public class InstalledAppInfo(IDataProvider provider)
     public string Description { get; set; }
 
     public string Version { get; set; }
+
+    public IEnumerable<string> GetPackages()
+    {
+        List<Guid> sysPackageIds =
+        [
+            .. AppDataContextFactory.GetAppDataContext(_provider)
+                .Models<SysPackageInInstalledApp>()
+                .Where(m => m.SysInstalledAppId == Id)
+                .Select(m => m.SysPackageId)
+        ];
+        foreach (Guid sysPackageId in sysPackageIds)
+        {
+            SysPackage? package = AppDataContextFactory.GetAppDataContext(_provider)
+                .GetModel<SysPackage>(sysPackageId);
+            yield return package.Name;
+        }
+    }
 }

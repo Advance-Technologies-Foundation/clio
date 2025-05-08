@@ -1,21 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-
 using Clio.Common;
-using Clio.Requests;
-using Clio.UserEnvironment;
-using Clio.Utilities;
 using Clio.Workspaces;
 using CommandLine;
-using DocumentFormat.OpenXml.Wordprocessing;
-using FluentValidation;
-using Microsoft.CodeAnalysis;
 
 namespace Clio.Command;
 
-[Verb("cfg-worspace", Aliases = new string[] { "cfgw" }, HelpText = "Configure workspace settings")]
+[Verb("cfg-worspace", Aliases = new[] { "cfgw" }, HelpText = "Configure workspace settings")]
 public class ConfigureWorkspaceOptions : EnvironmentOptions
 {
     [Option("Packages", Required = false, HelpText = "Packages")]
@@ -37,8 +29,8 @@ public class ConfigureWorkspaceOptions : EnvironmentOptions
 
 public class ConfigureWorkspaceCommand : Command<ConfigureWorkspaceOptions>
 {
-    private readonly IWorkspace _workspace;
     private readonly ILogger _logger;
+    private readonly IWorkspace _workspace;
 
     public ConfigureWorkspaceCommand(IWorkspace workspace, ILogger logger)
     {

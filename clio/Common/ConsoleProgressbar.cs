@@ -1,14 +1,13 @@
-namespace Clio.Common;
+﻿namespace Clio.Common;
 
 public interface IConsoleProgressbar
 {
-    string GetBuatifyProgress(string actionName, int value);
-
-    string GetBuatifyProgress(string actionName, int value, int total);
-
     int Scale { get; set; }
 
     int MaxActionNameLength { get; set; }
+    string GetBuatifyProgress(string actionName, int value);
+
+    string GetBuatifyProgress(string actionName, int value, int total);
 }
 
 public class ConsoleProgressbar : IConsoleProgressbar
@@ -16,17 +15,6 @@ public class ConsoleProgressbar : IConsoleProgressbar
     public int Scale { get; set; } = 10;
 
     public int MaxActionNameLength { get; set; }
-
-    public ConsoleProgressbar()
-    {
-    }
-
-    private string GetProgressResult(int value)
-    {
-        int starsCount = value / (100 / Scale);
-        int dotsCount = Scale - starsCount;
-        return new string('*', starsCount) + new string('.', dotsCount);
-    }
 
     public string GetBuatifyProgress(string actionName, int value)
     {
@@ -47,5 +35,12 @@ public class ConsoleProgressbar : IConsoleProgressbar
     {
         int percentValue = value * 100 / total;
         return GetBuatifyProgress(actionName, percentValue);
+    }
+
+    private string GetProgressResult(int value)
+    {
+        int starsCount = value / (100 / Scale);
+        int dotsCount = Scale - starsCount;
+        return new string('*', starsCount) + new string('.', dotsCount);
     }
 }

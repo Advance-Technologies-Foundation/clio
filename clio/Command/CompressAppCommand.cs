@@ -1,7 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -27,8 +25,10 @@ internal class CompressAppOptions
     public IEnumerable<string> RootPackageNames => StringParser.ParseArray(Packages);
 }
 
-internal class CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver packageArchiver,
-    IPackageUtilities packageUtilities): Command<CompressAppOptions>
+internal class CompressAppCommand(
+    IJsonConverter jsonConverter,
+    IPackageArchiver packageArchiver,
+    IPackageUtilities packageUtilities) : Command<CompressAppOptions>
 {
     private readonly IJsonConverter _jsonConverter = jsonConverter;
     private readonly IPackageArchiver _packageArchiver = packageArchiver;
@@ -37,7 +37,7 @@ internal class CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver
     public override int Execute(CompressAppOptions options)
     {
         FolderPackageRepository folderPackageRepository =
-            new (options.RepositoryFolderPath, _jsonConverter, _packageUtilities);
+            new(options.RepositoryFolderPath, _jsonConverter, _packageUtilities);
         IEnumerable<string> appPackageNames = folderPackageRepository.GetRelatedPackagesNames(options.RootPackageNames);
         string destinationPath = options.DestinationPath;
         if (!Directory.Exists(destinationPath))
@@ -57,12 +57,14 @@ internal class CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver
     }
 }
 
-internal class FolderPackageRepository(string repositoryFolderPath, IJsonConverter jsonConverter,
+internal class FolderPackageRepository(
+    string repositoryFolderPath,
+    IJsonConverter jsonConverter,
     IPackageUtilities packageUtilities)
 {
-    private readonly string _repositoryFolderPath = repositoryFolderPath;
     private readonly IJsonConverter _jsonConverter = jsonConverter;
     private readonly IPackageUtilities _packageUtilities = packageUtilities;
+    private readonly string _repositoryFolderPath = repositoryFolderPath;
 
     public IEnumerable<string> GetRelatedPackagesNames(IEnumerable<string> rootPackageNames)
     {
@@ -88,7 +90,7 @@ internal class FolderPackageRepository(string repositoryFolderPath, IJsonConvert
 
     private Stack<PackageDescriptor> GetStackPackageDescriptors(IEnumerable<string> packageNames)
     {
-        Stack<PackageDescriptor> processedPackages = new ();
+        Stack<PackageDescriptor> processedPackages = new();
         foreach (string packageName in packageNames)
         {
             PackageDescriptor packageDescriptor = GetPackageDescriptor(packageName);

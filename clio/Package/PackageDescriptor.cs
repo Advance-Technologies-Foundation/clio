@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Clio.Common;
 
 namespace Clio.Package;
@@ -24,7 +23,7 @@ public class PackageDescriptor
     public IList<PackageDependency> DependsOn { get; set; }
 
     private static DateTime ClearMilliseconds(DateTime dt) =>
-        new (dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
+        new(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
 
     public static string ConvertToModifiedOnUtc(DateTime dateTime)
     {

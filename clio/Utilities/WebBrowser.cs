@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Diagnostics;
 using System.Net;
-using System.Text;
 
 namespace Clio.Utilities;
 
@@ -12,7 +10,7 @@ internal class WebBrowser
 
     public static bool CheckUrl(string url)
     {
-        UriBuilder uriBuilder = new (url);
+        UriBuilder uriBuilder = new(url);
         WebRequest request = HttpWebRequest.Create(uriBuilder.Uri);
         HttpWebResponse response = (HttpWebResponse)request.GetResponse();
         return response.StatusCode == HttpStatusCode.OK && response.ResponseUri == request.RequestUri;

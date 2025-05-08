@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Xml;
-
 using Clio.Workspaces;
 
 namespace Clio.Common.CsProjManager;
@@ -13,7 +12,6 @@ namespace Clio.Common.CsProjManager;
 /// </summary>
 public interface ICsprojFile
 {
-
     /// <summary>
     ///     Initializes the .csproj file using a package name.
     /// </summary>
@@ -32,7 +30,6 @@ public interface ICsprojFile
 public interface IInitializedCsprojFile
 {
     public string CsProjFileContent { get; }
-
 
 
     /// <summary>
@@ -54,10 +51,33 @@ public interface IInitializedCsprojFile
     public IEnumerable<Reference> GetPackageReferences();
 }
 
-public class CsprojFile(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem): ICsprojFile, IInitializedCsprojFile
+public class CsprojFile(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem)
+    : ICsprojFile, IInitializedCsprojFile
 {
-    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
     private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
+
+    public IInitializedCsprojFile Initialize(string packageName)
+    {
+        string csprojFilePath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
+        bool existsFile = _fileSystem.ExistsFile(csprojFilePath);
+        if (existsFile)
+        {
+            CsProjFileContent = _fileSystem.ReadAllText(csprojFilePath);
+        }
+
+        return this;
+    }
+
+    public IInitializedCsprojFile Initialize(IFileInfo fileInfo)
+    {
+        if (fileInfo.Exists)
+        {
+            CsProjFileContent = _fileSystem.ReadAllText(fileInfo.FullName);
+        }
+
+        return this;
+    }
 
     public string CsProjFileContent { get; private set; }
 
@@ -68,7 +88,7 @@ public class CsprojFile(IWorkspacePathBuilder workspacePathBuilder, IFileSystem 
             return Array.Empty<Reference>();
         }
 
-        XmlDocument doc = new ();
+        XmlDocument doc = new();
         doc.LoadXml(CsProjFileContent);
         XmlNode rootNode = doc.DocumentElement;
 
@@ -94,32 +114,10 @@ public class CsprojFile(IWorkspacePathBuilder workspacePathBuilder, IFileSystem 
                     .FirstOrDefault(x => x.Name == "SpecificVersion")?.InnerText;
                 string @private = i.ChildNodes.OfType<XmlElement>().FirstOrDefault(x => x.Name == "Private")?.InnerText;
                 Version.TryParse(version, out Version ver);
-                Reference r = new (packageName, ver, hintPath ?? string.Empty,
+                Reference r = new(packageName, ver, hintPath ?? string.Empty,
                     bool.Parse(specificVersion ?? string.Empty), bool.Parse(@private ?? string.Empty));
                 return r;
             });
-    }
-
-    public IInitializedCsprojFile Initialize(string packageName)
-    {
-        string csprojFilePath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
-        bool existsFile = _fileSystem.ExistsFile(csprojFilePath);
-        if (existsFile)
-        {
-            CsProjFileContent = _fileSystem.ReadAllText(csprojFilePath);
-        }
-
-        return this;
-    }
-
-    public IInitializedCsprojFile Initialize(IFileInfo fileInfo)
-    {
-        if (fileInfo.Exists)
-        {
-            CsProjFileContent = _fileSystem.ReadAllText(fileInfo.FullName);
-        }
-
-        return this;
     }
 }
 

@@ -1,8 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
-
-using Common;
-using Package;
 
 namespace Clio.Project.NuGet;
 
@@ -10,8 +7,8 @@ public class InstallNugetPackage : IInstallNugetPackage
 {
     private readonly EnvironmentSettings _environmentSettings;
     private readonly INuGetManager _nugetManager;
-    private readonly IPackageInstaller _packageInstaller;
     private readonly IPackageArchiver _packageArchiver;
+    private readonly IPackageInstaller _packageInstaller;
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public InstallNugetPackage(EnvironmentSettings environmentSettings, INuGetManager nugetManager,
@@ -40,7 +37,7 @@ public class InstallNugetPackage : IInstallNugetPackage
 
             _workingDirectoriesProvider.CreateTempDirectory(zipTempDirectory =>
             {
-                DirectoryInfo restoreTempDirectoryInfo = new (restoreTempDirectory);
+                DirectoryInfo restoreTempDirectoryInfo = new(restoreTempDirectory);
                 string packagePath = Path.Combine(
                     zipTempDirectory,
                     _packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));

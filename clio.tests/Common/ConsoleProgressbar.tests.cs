@@ -1,10 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using Castle.Core.Logging;
+﻿using System;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -24,7 +18,7 @@ internal class ConsoleProgressbarTest
     [TestCase(46, 5, "[**...] 46%")]
     public void GetBuatifyProgress_CorrectReturn(int value, int scale, string expectedResult)
     {
-        ConsoleProgressbar progressbar = new () { Scale = scale };
+        ConsoleProgressbar progressbar = new() { Scale = scale };
         string actionName = "testaction";
         string result = progressbar.GetBuatifyProgress(actionName, value);
         result.Should().Contain(expectedResult);
@@ -40,7 +34,7 @@ internal class ConsoleProgressbarTest
     public void GetBuatifyProgress_CorrectReturnFromCurrentTotal(int value, int total, int scale,
         string expectedResult)
     {
-        ConsoleProgressbar progressbar = new () { Scale = scale };
+        ConsoleProgressbar progressbar = new() { Scale = scale };
         string actionName = "testaction";
         string result = progressbar.GetBuatifyProgress(actionName, value, total);
         result.Should().Contain(expectedResult);
@@ -59,7 +53,7 @@ internal class ConsoleProgressbarTest
     public void GetBuatifyProgress_AllignsItem(string actionName)
     {
         // Arrange
-        ConsoleProgressbar progressbar = new () { MaxActionNameLength = 10 };
+        ConsoleProgressbar progressbar = new() { MaxActionNameLength = 10 };
 
         // Act
         string result = progressbar.GetBuatifyProgress(actionName, 1, 1);

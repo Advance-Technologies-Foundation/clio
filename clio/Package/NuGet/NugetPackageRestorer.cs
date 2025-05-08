@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
@@ -11,12 +9,12 @@ public class NugetPackageRestorer : INugetPackageRestorer
 {
     private const string NugetRestoreProjName = "NugetRestoreProj.csproj";
     private readonly IDotnetExecutor _dotnetExecutor;
-    private readonly ITemplateProvider _templateProvider;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
-    private readonly IPackageArchiver _packageArchiver;
     private readonly ILogger _logger;
     private readonly INugetPackagesProvider _nugetPackagesProvider;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly ITemplateProvider _templateProvider;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public NugetPackageRestorer(INugetPackagesProvider nugetPackagesProvider, IPackageArchiver packageArchiver,
         ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor,
@@ -36,6 +34,33 @@ public class NugetPackageRestorer : INugetPackageRestorer
         _workingDirectoriesProvider = workingDirectoriesProvider;
         _fileSystem = fileSystem;
         _logger = logger;
+    }
+
+    public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+        string destinationNupkgDirectory)
+    {
+        CheckArguments(nugetPackageFullName, nugetSourceUrl);
+        string result = Restore(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory);
+        _logger.WriteLine(result);
+    }
+
+    public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+        string destinationNupkgDirectory, bool overwrite) =>
+        RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
+            gzipPackedPackagesFiles =>
+            {
+                _fileSystem.CopyFiles(gzipPackedPackagesFiles, destinationNupkgDirectory, overwrite);
+            });
+
+    public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+        string destinationNupkgDirectory, bool overwrite)
+    {
+        CheckArguments(nugetPackageFullName, nugetSourceUrl);
+        RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
+            gzipPackedPackagesFiles =>
+            {
+                _packageArchiver.Unpack(gzipPackedPackagesFiles, overwrite, false, destinationNupkgDirectory);
+            });
     }
 
     private static void CheckArguments(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl)
@@ -101,32 +126,5 @@ public class NugetPackageRestorer : INugetPackageRestorer
                 _packageArchiver.FindGzipPackedPackagesFiles(restoreTempDirectory);
             onRestored(gzipPackedPackagesFiles);
         });
-    }
-
-    public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
-        string destinationNupkgDirectory)
-    {
-        CheckArguments(nugetPackageFullName, nugetSourceUrl);
-        string result = Restore(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory);
-        _logger.WriteLine(result);
-    }
-
-    public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
-        string destinationNupkgDirectory, bool overwrite) =>
-        RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
-            gzipPackedPackagesFiles =>
-            {
-                _fileSystem.CopyFiles(gzipPackedPackagesFiles, destinationNupkgDirectory, overwrite);
-            });
-
-    public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
-        string destinationNupkgDirectory, bool overwrite)
-    {
-        CheckArguments(nugetPackageFullName, nugetSourceUrl);
-        RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationNupkgDirectory,
-            gzipPackedPackagesFiles =>
-            {
-                _packageArchiver.Unpack(gzipPackedPackagesFiles, overwrite, false, destinationNupkgDirectory);
-            });
     }
 }

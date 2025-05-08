@@ -1,7 +1,6 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-
 using Newtonsoft.Json;
 
 namespace Clio.Tests.Command;
@@ -17,7 +16,7 @@ internal class ODataResponse
         get
         {
             string pattern = @"#(\w+)";
-            Regex regex = new (pattern);
+            Regex regex = new(pattern);
             Match match = regex.Match(OdataContext);
             string entityName = match.Groups[1].Value;
             return entityName;

@@ -1,25 +1,22 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Clio.Package;
 using Clio.Project.NuGet;
-
 using Version = System.Version;
 
 namespace Clio.Common;
 
 public interface IClioGateway
 {
-
     /// <summary>
-    /// Retrieves the installed version of the package.
+    ///     Retrieves the installed version of the package.
     /// </summary>
-    /// <returns>The <see cref="PackageVersion"/> of the installed package, or null if no version is installed.</returns>
+    /// <returns>The <see cref="PackageVersion" /> of the installed package, or null if no version is installed.</returns>
     public PackageVersion GetInstalledVersion();
 
     /// <summary>
-    /// Determines if the specified version string is compatible with the installed package version.
+    ///     Determines if the specified version string is compatible with the installed package version.
     /// </summary>
     /// <param name="version">The version string to compare against the installed package version.</param>
     /// <returns>true if the specified version is compatible; otherwise, false.</returns>
@@ -27,14 +24,14 @@ public interface IClioGateway
 
 
     /// <summary>
-    /// Checks if the specified version is compatible with the installed package version.
-    /// Throws a NotSupportedException if the version is not compatible.
+    ///     Checks if the specified version is compatible with the installed package version.
+    ///     Throws a NotSupportedException if the version is not compatible.
     /// </summary>
     /// <param name="version">The version string to check for compatibility.</param>
     void CheckCompatibleVersion(string version);
 }
 
-public class ClioGateway(IApplicationPackageListProvider applicationPackageListProvider): IClioGateway
+public class ClioGateway(IApplicationPackageListProvider applicationPackageListProvider) : IClioGateway
 {
     private readonly IApplicationPackageListProvider _applicationPackageListProvider = applicationPackageListProvider;
 

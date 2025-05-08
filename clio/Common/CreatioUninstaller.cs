@@ -1,15 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml;
-
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Requests;
 using Clio.UserEnvironment;
-using DocumentFormat.OpenXml.Wordprocessing;
 using MediatR;
 using OneOf;
 using OneOf.Types;
@@ -18,7 +16,6 @@ namespace Clio.Common;
 
 public interface ICreatioUninstaller
 {
-
     /// <summary>
     ///     Uninstalls Creatio by the specified environment name.
     /// </summary>
@@ -61,16 +58,22 @@ public interface ICreatioUninstaller
     public void UninstallByPath(string creatioDirectoryPath);
 }
 
-public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
-    IMediator mediator, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres): ICreatioUninstaller
+public partial class CreatioUninstaller(
+    IFileSystem fileSystem,
+    ISettingsRepository settingsRepository,
+    IMediator mediator,
+    ILogger logger,
+    Ik8Commands k8Commands,
+    IMssql mssql,
+    IPostgres postgres) : ICreatioUninstaller
 {
-    private readonly IFileSystem _fileSystem = fileSystem;
-    private readonly ISettingsRepository _settingsRepository = settingsRepository;
-    private readonly IMediator _mediator = mediator;
-    private readonly ILogger _logger = logger;
-    private readonly Ik8Commands _k8Commands = k8Commands;
-    private readonly IMssql _mssql = mssql;
-    private readonly IPostgres _postgres = postgres;
+    private readonly Action<string, K8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
+        = (dbName, cn, logger, db) =>
+        {
+            db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
+            db.DropDb(dbName);
+            logger.WriteInfo($"MsSQL DB: {dbName} dropped");
+        };
 
     private readonly Action<string, K8Commands.ConnectionStringParams, ILogger, IPostgres> _dropPgDbByName
         = (dbName, cn, logger, db) =>
@@ -80,22 +83,92 @@ public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsReposit
             logger.WriteInfo($"Postgres DB: {dbName} dropped");
         };
 
-    private readonly Action<string, K8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
-        = (dbName, cn, logger, db) =>
-        {
-            db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
-            db.DropDb(dbName);
-            logger.WriteInfo($"MsSQL DB: {dbName} dropped");
-        };
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly Ik8Commands _k8Commands = k8Commands;
+    private readonly ILogger _logger = logger;
+    private readonly IMediator _mediator = mediator;
+    private readonly IMssql _mssql = mssql;
+    private readonly IPostgres _postgres = postgres;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     private IEnumerable<IISScannerHandler.UnregisteredSite> AllSites { get; set; }
 
     private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> OnAllSitesRequestCompleted =>
         sites => { AllSites = sites; };
 
+    public void UninstallByEnvironmentName(string environmentName)
+    {
+        AllUnregisteredSitesRequest request = new() { Callback = OnAllSitesRequestCompleted };
+        _mediator.Send(request);
+
+        EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentName);
+        Uri envUri = new(settings.Uri);
+
+        if (!AllSites.Any())
+        {
+            _logger.WriteWarning("IIS does not have any sites. Nothing to uninstall.");
+            return;
+        }
+
+        string directoryPath = AllSites.FirstOrDefault(all => all.Uris.Contains(envUri))?.siteBinding.path;
+        string directoryPath2 =
+            AllSites.FirstOrDefault(all => all.siteBinding.name == environmentName)?.siteBinding.path;
+        if (string.IsNullOrEmpty(directoryPath) && string.IsNullOrEmpty(directoryPath2))
+        {
+            _logger.WriteWarning($"Could not find IIS by environment name: {environmentName}");
+            return;
+        }
+
+        _logger.WriteInfo($"Uninstalling Creatio from directory: {directoryPath}");
+        UninstallByPath(directoryPath);
+
+        _settingsRepository.RemoveEnvironment(environmentName);
+        _logger.WriteInfo($"Unregisted {environmentName} from clio");
+    }
+
+    public void UninstallByPath(string creatioDirectoryPath)
+    {
+        if (!_fileSystem.ExistsDirectory(creatioDirectoryPath))
+        {
+            _logger.WriteWarning($"Directory {creatioDirectoryPath} does not exist.");
+            return;
+        }
+
+        StopIISSite(creatioDirectoryPath);
+        OneOf<DbInfo, Error> dbInfo = GetDbInfoFromConnectionStringsFile(creatioDirectoryPath);
+        DeleteIISSite(creatioDirectoryPath);
+
+        if (dbInfo.Value is Error or null or not DbInfo)
+        {
+            return;
+        }
+
+        DbInfo info = dbInfo.Value as DbInfo;
+        _logger.WriteInfo($"Found db: {info!.DbName}, Server: {info!.DbType}");
+
+        K8Commands.ConnectionStringParams cn = info.DbType switch
+        {
+            "MsSql" => _k8Commands.GetMssqlConnectionString(),
+            "PostgreSql" => _k8Commands.GetPostgresConnectionString(),
+            _ => throw new Exception("Unknown db type")
+        };
+
+        if (info.DbType == "MsSql")
+        {
+            _dropMsDbByName(info.DbName, cn, _logger, _mssql);
+        }
+        else
+        {
+            _dropPgDbByName(info.DbName, cn, _logger, _postgres);
+        }
+
+        _fileSystem.DeleteDirectory(creatioDirectoryPath, true);
+        _logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
+    }
+
     private static OneOf<DbInfo, Error> GetDbInfoFromXmlContent(string csContent)
     {
-        XmlDocument doc = new ();
+        XmlDocument doc = new();
         doc.LoadXml(csContent);
 
         const string mssqlMarker = "Data Source=";
@@ -172,41 +245,11 @@ public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsReposit
         return GetDbInfoFromXmlContent(csContent);
     }
 
-    public void UninstallByEnvironmentName(string environmentName)
-    {
-        AllUnregisteredSitesRequest request = new () { Callback = OnAllSitesRequestCompleted };
-        _mediator.Send(request);
-
-        EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentName);
-        Uri envUri = new (settings.Uri);
-
-        if (!AllSites.Any())
-        {
-            _logger.WriteWarning("IIS does not have any sites. Nothing to uninstall.");
-            return;
-        }
-
-        string directoryPath = AllSites.FirstOrDefault(all => all.Uris.Contains(envUri))?.siteBinding.path;
-        string directoryPath2 =
-            AllSites.FirstOrDefault(all => all.siteBinding.name == environmentName)?.siteBinding.path;
-        if (string.IsNullOrEmpty(directoryPath) && string.IsNullOrEmpty(directoryPath2))
-        {
-            _logger.WriteWarning($"Could not find IIS by environment name: {environmentName}");
-            return;
-        }
-
-        _logger.WriteInfo($"Uninstalling Creatio from directory: {directoryPath}");
-        UninstallByPath(directoryPath);
-
-        _settingsRepository.RemoveEnvironment(environmentName);
-        _logger.WriteInfo($"Unregisted {environmentName} from clio");
-    }
-
     private void StopIISSite(string creatioDirectoryPath)
     {
         if (AllSites is null)
         {
-            AllUnregisteredSitesRequest request = new () { Callback = OnAllSitesRequestCompleted };
+            AllUnregisteredSitesRequest request = new() { Callback = OnAllSitesRequestCompleted };
             _mediator.Send(request);
         }
 
@@ -214,7 +257,7 @@ public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsReposit
             AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
         if (site is not null)
         {
-            StopInstanceByNameRequest removeRequest = new () { SiteName = site.siteBinding.name };
+            StopInstanceByNameRequest removeRequest = new() { SiteName = site.siteBinding.name };
             _mediator.Send(removeRequest);
             _logger.WriteInfo($"IIS Stopped: {removeRequest.SiteName}");
         }
@@ -228,7 +271,7 @@ public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsReposit
     {
         if (AllSites is null)
         {
-            AllUnregisteredSitesRequest request = new () { Callback = OnAllSitesRequestCompleted };
+            AllUnregisteredSitesRequest request = new() { Callback = OnAllSitesRequestCompleted };
             _mediator.Send(request);
         }
 
@@ -236,7 +279,7 @@ public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsReposit
             AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
         if (site is not null)
         {
-            DeleteInstanceByNameRequest removeRequest = new () { SiteName = site.siteBinding.name };
+            DeleteInstanceByNameRequest removeRequest = new() { SiteName = site.siteBinding.name };
             _mediator.Send(removeRequest);
             _logger.WriteInfo($"IIS Removed: {removeRequest.SiteName}");
         }
@@ -246,48 +289,8 @@ public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsReposit
         }
     }
 
-    public void UninstallByPath(string creatioDirectoryPath)
-    {
-        if (!_fileSystem.ExistsDirectory(creatioDirectoryPath))
-        {
-            _logger.WriteWarning($"Directory {creatioDirectoryPath} does not exist.");
-            return;
-        }
-
-        StopIISSite(creatioDirectoryPath);
-        OneOf<DbInfo, Error> dbInfo = GetDbInfoFromConnectionStringsFile(creatioDirectoryPath);
-        DeleteIISSite(creatioDirectoryPath);
-
-        if (dbInfo.Value is Error or null or not DbInfo)
-        {
-            return;
-        }
-
-        DbInfo info = dbInfo.Value as DbInfo;
-        _logger.WriteInfo($"Found db: {info!.DbName}, Server: {info!.DbType}");
-
-        K8Commands.ConnectionStringParams cn = info.DbType switch
-        {
-            "MsSql" => _k8Commands.GetMssqlConnectionString(),
-            "PostgreSql" => _k8Commands.GetPostgresConnectionString(),
-            _ => throw new Exception("Unknown db type")
-        };
-
-        if (info.DbType == "MsSql")
-        {
-            _dropMsDbByName(info.DbName, cn, _logger, _mssql);
-        }
-        else
-        {
-            _dropPgDbByName(info.DbName, cn, _logger, _postgres);
-        }
-
-        _fileSystem.DeleteDirectory(creatioDirectoryPath, true);
-        _logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
-    }
-
-    private record DbInfo(string dbName, string dbType);
-
     [GeneratedRegex("Database=([^;]+)")]
     private static partial Regex MyRegex();
+
+    private record DbInfo(string dbName, string dbType);
 }

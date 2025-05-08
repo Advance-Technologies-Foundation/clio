@@ -1,8 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.YAML;
@@ -11,6 +9,7 @@ using NUnit.Framework;
 using YamlDotNet.Serialization;
 
 namespace Clio.Tests.YAML;
+
 [TestFixture(Author = "Kirill Krylov")]
 [Category("YAML")]
 public class ScenarioTests

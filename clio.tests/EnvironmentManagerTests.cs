@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
-
 using Autofac;
 using Clio.Command;
 using Clio.Tests.Command;
@@ -141,9 +140,9 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
 
         List<Feature> expected =
         [
-            new () { Code = "Feature1", Value = true },
+            new() { Code = "Feature1", Value = true },
 
-            new ()
+            new()
             {
                 Code = "Feature2",
                 Value = false,
@@ -156,7 +155,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
                 }
             },
 
-            new () { Code = "Feature3", Value = false }
+            new() { Code = "Feature3", Value = false }
         ];
         features.Should().BeEquivalentTo(expected);
     }
@@ -176,17 +175,17 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
 
         List<CreatioManifestSetting> expected =
         [
-            new () { Code = "IntSysSettingsATF", Value = "10" },
-            new () { Code = "FloatSysSettingsATF", Value = "0.5" },
+            new() { Code = "IntSysSettingsATF", Value = "10" },
+            new() { Code = "FloatSysSettingsATF", Value = "0.5" },
 
-            new () { Code = "StringSettingsATF", Value = "ATF" },
+            new() { Code = "StringSettingsATF", Value = "ATF" },
 
-            new () { Code = "DateTimeSettingsATF", Value = "2021-01-01T00:00:00" },
+            new() { Code = "DateTimeSettingsATF", Value = "2021-01-01T00:00:00" },
 
-            new () { Code = "GuidSettingsATF", Value = "00000000-0000-0000-0000-000000000001" },
+            new() { Code = "GuidSettingsATF", Value = "00000000-0000-0000-0000-000000000001" },
 
-            new () { Code = "LookupSettingsATF", Value = "TextLookupValue" },
-            new ()
+            new() { Code = "LookupSettingsATF", Value = "TextLookupValue" },
+            new()
             {
                 Code = "BooleanSettingsATF",
                 Value = "false",
@@ -198,7 +197,6 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
                     { "2nd-line support", "true" }
                 }
             }
-
         ];
         settings.Should().BeEquivalentTo(expected);
     }
@@ -244,8 +242,8 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
         webservices.Count().Should().Be(count);
         List<CreatioManifestWebService> expected =
         [
-            new () { Name = "WebService1", Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc" },
-            new () { Name = "WebService2", Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc" }
+            new() { Name = "WebService1", Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc" },
+            new() { Name = "WebService2", Url = "https://preprod.creatio.com/0/ServiceModel/EntityDataService.svc" }
         ];
         webservices.Should().BeEquivalentTo(expected);
     }
@@ -273,14 +271,14 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
     public void GetEnvironmentPackagesManifest()
     {
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
-        string manifestFileName = $"C:\\creatio-config-package.yaml";
+        string manifestFileName = "C:\\creatio-config-package.yaml";
         int expectedPackagesCount = 2;
         List<CreatioManifestPackage> packages = environmentManager.GetPackagesGromManifest(manifestFileName);
         packages.Should().HaveCount(expectedPackagesCount);
         List<CreatioManifestPackage> expected =
         [
-            new () { Name = "Base", Hash = "1234567890" },
-            new () { Name = "UI", Hash = "0987654321" }
+            new() { Name = "Base", Hash = "1234567890" },
+            new() { Name = "UI", Hash = "0987654321" }
         ];
         packages.Should().BeEquivalentTo(expected);
     }
@@ -289,7 +287,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
     public void GetEnvironmentEmptyPackagesManifest()
     {
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
-        string manifestFileName = $"C:\\creatio-config-empty-package.yaml";
+        string manifestFileName = "C:\\creatio-config-empty-package.yaml";
         int expectedPackagesCount = 0;
         List<CreatioManifestPackage> packages = environmentManager.GetPackagesGromManifest(manifestFileName);
         packages.Should().HaveCount(expectedPackagesCount);
@@ -300,14 +298,14 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
     {
         string environmentUrl = "https://preprod.atf.com";
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
-        string expectedManifestFileName = $"C:\\creatio-config-package.yaml";
-        string actualManifestFileName = $"C:\\actual-creatio-config-package.yaml";
+        string expectedManifestFileName = "C:\\creatio-config-package.yaml";
+        string actualManifestFileName = "C:\\actual-creatio-config-package.yaml";
         List<CreatioManifestPackage> environmnetPackages =
         [
-            new () { Name = "Base", Hash = "1234567890" },
-            new () { Name = "UI", Hash = "0987654321" }
+            new() { Name = "Base", Hash = "1234567890" },
+            new() { Name = "UI", Hash = "0987654321" }
         ];
-        EnvironmentManifest environmentManifest = new ()
+        EnvironmentManifest environmentManifest = new()
         {
             EnvironmentSettings = new EnvironmentSettings { Uri = environmentUrl, AuthAppUri = null },
             Packages = environmnetPackages
@@ -323,14 +321,14 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
     {
         string environmentUrl = "https://preprod.atf.com";
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
-        string expectedManifestFileName = $"C:\\creatio-config-package.yaml";
-        string actualManifestFileName = $"C:\\actual-creatio-config-package.yaml";
+        string expectedManifestFileName = "C:\\creatio-config-package.yaml";
+        string actualManifestFileName = "C:\\actual-creatio-config-package.yaml";
         List<CreatioManifestPackage> environmnetPackages =
         [
-            new () { Name = "UI", Hash = "0987654321" },
-            new () { Name = "Base", Hash = "1234567890" }
+            new() { Name = "UI", Hash = "0987654321" },
+            new() { Name = "Base", Hash = "1234567890" }
         ];
-        EnvironmentManifest environmentManifest = new ()
+        EnvironmentManifest environmentManifest = new()
         {
             EnvironmentSettings = new EnvironmentSettings { Uri = environmentUrl, AuthAppUri = null },
             Packages = environmnetPackages
@@ -344,9 +342,9 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
     [Test]
     public void ThrowException_If_SaveEnvironmentManifest_in_ExistingFile()
     {
-        string existingManifestFilePath = $"C:\\creatio-config-package.yaml";
+        string existingManifestFilePath = "C:\\creatio-config-package.yaml";
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
-        EnvironmentManifest environmentManifest = new ();
+        EnvironmentManifest environmentManifest = new();
         Action act = () => environmentManager.SaveManifestToFile(existingManifestFilePath, environmentManifest);
         act.Should().Throw<Exception>().WithMessage($"Manifest file already exists: {existingManifestFilePath}");
     }
@@ -354,9 +352,9 @@ internal class EnvironmentManagerTest : BaseClioModuleTests
     [Test]
     public void RewriteExistingManifest_If_SaveEnvironmentManifest_in_ExistingFile()
     {
-        string existingManifestFilePath = $"C:\\creatio-config-package.yaml";
+        string existingManifestFilePath = "C:\\creatio-config-package.yaml";
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
-        EnvironmentManifest environmentManifest = new ();
+        EnvironmentManifest environmentManifest = new();
         Action act = () => environmentManager.SaveManifestToFile(existingManifestFilePath, environmentManifest, true);
         act.Should().NotThrow<Exception>();
     }

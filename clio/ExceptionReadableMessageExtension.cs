@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Autofac.Core;
 
 namespace Clio;

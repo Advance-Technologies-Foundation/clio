@@ -1,7 +1,5 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -36,7 +34,7 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
 
     public override int Execute(ListInstalledAppsOptions options)
     {
-        ConsoleTable table = new ();
+        ConsoleTable table = new();
         table.Columns.Add(nameof(SysInstalledApp.Name));
         table.Columns.Add(nameof(SysInstalledApp.Code));
         table.Columns.Add(nameof(SysInstalledApp.Version));
@@ -44,7 +42,7 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
         List<SysInstalledApp> applications =
         [
             .. AppDataContextFactory.GetAppDataContext(_provider)
-                        .Models<SysInstalledApp>(),
+                .Models<SysInstalledApp>()
         ];
 
         if (!options.JsonFormat)

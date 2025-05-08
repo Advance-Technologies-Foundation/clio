@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Management;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Clio.Command;
 
@@ -21,7 +19,7 @@ public class WindowsFeatureProvider : IWindowsFeatureProvider
         List<string> features = [];
         try
         {
-            ManagementObjectSearcher searcher = new ("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
+            ManagementObjectSearcher searcher = new("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
             ManagementObjectCollection featureCollection = searcher.Get();
             foreach (ManagementObject featureObject in featureCollection.Cast<ManagementObject>())
             {
@@ -41,14 +39,13 @@ public class WindowsFeatureProvider : IWindowsFeatureProvider
     public List<WindowsFeature> GetWindowsFeatures()
     {
         List<WindowsFeature> features = [];
-        ManagementObjectSearcher searcher = new ("SELECT * FROM Win32_OptionalFeature");
+        ManagementObjectSearcher searcher = new("SELECT * FROM Win32_OptionalFeature");
         ManagementObjectCollection featureCollection = searcher.Get();
         foreach (ManagementObject featureObject in featureCollection.Cast<ManagementObject>())
         {
             features.Add(new WindowsFeature
             {
-                Name = featureObject["Name"].ToString(),
-                Caption = featureObject["Caption"].ToString()
+                Name = featureObject["Name"].ToString(), Caption = featureObject["Caption"].ToString()
             });
         }
 

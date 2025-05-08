@@ -1,13 +1,12 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
 
 namespace Clio.Command.PackageCommand;
 
-[Verb("get-pkg-version", Aliases = new string[] { "getpkgversion" }, HelpText = "Get package version")]
+[Verb("get-pkg-version", Aliases = new[] { "getpkgversion" }, HelpText = "Get package version")]
 public class GetPackageVersionOptions
 {
     [Value(0, MetaName = "PackagePath", Required = true, HelpText = "Package path")]

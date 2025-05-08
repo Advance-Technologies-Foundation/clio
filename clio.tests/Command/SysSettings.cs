@@ -1,4 +1,4 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -20,14 +20,14 @@ internal class SysSettingsCommandTests : BaseCommandTests<SysSettingsOptions>
     public void GetSysSettingByCode_Prints_CorrectValue_WhenClioGateIsInstalled()
     {
         // Arrange
-        SysSettingsOptions options = new () { IsGet = true, Code = "whatever" };
+        SysSettingsOptions options = new() { IsGet = true, Code = "whatever" };
 
         _clioGatewayMock.IsCompatibleWith(Arg.Any<string>()).Returns(true);
 
         const string mockValue = "this is sys setting value";
         _sysSettingsManager.GetSysSettingValueByCode(options.Code).Returns(mockValue);
 
-        SysSettingsCommand sut = new (_sysSettingsManager, _logger, _clioGatewayMock);
+        SysSettingsCommand sut = new(_sysSettingsManager, _logger, _clioGatewayMock);
 
         // Act
         int actual = sut.Execute(options);
@@ -42,20 +42,20 @@ internal class SysSettingsCommandTests : BaseCommandTests<SysSettingsOptions>
     public void GetSysSettingByCode_Prints_ErrorWhenClioGateNotInstalled()
     {
         // Arrange
-        SysSettingsOptions options = new () { IsGet = true, Code = "whatever" };
+        SysSettingsOptions options = new() { IsGet = true, Code = "whatever" };
 
         _clioGatewayMock.IsCompatibleWith(Arg.Any<string>()).Returns(false);
 
         const string mockValue = "this is sys setting value";
         _sysSettingsManager.GetSysSettingValueByCode(options.Code).Returns(mockValue);
 
-        SysSettingsCommand sut = new (_sysSettingsManager, _logger, _clioGatewayMock);
+        SysSettingsCommand sut = new(_sysSettingsManager, _logger, _clioGatewayMock);
 
         // Act
         int actual = sut.Execute(options);
 
         // Assert
-        const string expectedInfoLogMessage = $"To install cliogate use the following command: clio install-gate";
+        const string expectedInfoLogMessage = "To install cliogate use the following command: clio install-gate";
         _logger.Received(1).WriteInfo(expectedInfoLogMessage);
 
         const string expectedErrorLogMessage =

@@ -1,11 +1,10 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Threading;
 using System.Threading.Tasks;
-
-using DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 using OneOf;
 
@@ -30,7 +29,7 @@ public class UnzipRequestValidator : AbstractValidator<UnzipRequest>
                 if (!options.ContainsKey("from"))
                 {
                     context.AddFailure(
-                        new FluentValidation.Results.ValidationFailure("from", "Unzip step requires from option"));
+                        new ValidationFailure("from", "Unzip step requires from option"));
                 }
             })
             .Custom((options, context) =>
@@ -39,7 +38,7 @@ public class UnzipRequestValidator : AbstractValidator<UnzipRequest>
                 if (!File.Exists(fileName))
                 {
                     context.AddFailure(
-                        new FluentValidation.Results.ValidationFailure("from", $"File does not exist: {fileName}"));
+                        new ValidationFailure("from", $"File does not exist: {fileName}"));
                 }
             });
         RuleFor(x => x.Arguments).Custom((options, context) =>
@@ -47,7 +46,7 @@ public class UnzipRequestValidator : AbstractValidator<UnzipRequest>
             if (!options.ContainsKey("to"))
             {
                 context.AddFailure(
-                    new FluentValidation.Results.ValidationFailure("to", "Unzip step requires to option"));
+                    new ValidationFailure("to", "Unzip step requires to option"));
             }
         });
     }

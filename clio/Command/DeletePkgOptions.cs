@@ -1,8 +1,8 @@
-using CommandLine;
+﻿using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("delete-pkg-remote", Aliases = new string[] { "delete" }, HelpText = "Delete package from a web application")]
+[Verb("delete-pkg-remote", Aliases = new[] { "delete" }, HelpText = "Delete package from a web application")]
 public class DeletePkgOptions : RemoteCommandOptions
 {
     [Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]

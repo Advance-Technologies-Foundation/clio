@@ -1,24 +1,21 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-
 using Clio.Workspaces;
-using Common;
-using WebApplication;
 
 namespace Clio.Package;
 
 public class PackageDownloader : IPackageDownloader
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClientFactory _applicationClientFactory;
-    private readonly IPackageArchiver _packageArchiver;
     private readonly IApplicationDownloader _applicationDownloader;
-    private readonly IServiceUrlBuilder _serviceUrlBuilder;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IApplicationPing _applicationPing;
+    private readonly EnvironmentSettings _environmentSettings;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public PackageDownloader(
         EnvironmentSettings environmentSettings,
@@ -45,50 +42,6 @@ public class PackageDownloader : IPackageDownloader
         _applicationPing = applicationPing;
         _fileSystem = fileSystem;
         _logger = logger;
-    }
-
-    private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
-        _serviceUrlBuilder.Build(knownRoute, environmentSettings);
-
-    private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-        _applicationClientFactory.CreateClient(environmentSettings);
-
-    private string GetSafePackageName(string packageName) => packageName
-        .Replace(" ", string.Empty)
-        .Replace(",", "\",\"");
-
-    private string GetPackageZipPath(string packageName, string destinationPath)
-    {
-        string safePackageName = GetSafePackageName(packageName);
-        return Path.Combine(destinationPath, $"{safePackageName}.zip");
-    }
-
-    private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
-        string destinationPath, bool throwOnError = false)
-    {
-        string safePackageName = GetSafePackageName(packageName);
-        try
-        {
-            _logger.WriteLine($"Start download packages ({safePackageName}).");
-            string requestData = $"[\"{safePackageName}\"]";
-            string packageZipPath = GetPackageZipPath(packageName, destinationPath);
-            IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-            string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
-            applicationClient.Login();
-            applicationClient.DownloadFile(url, packageZipPath, requestData);
-            _logger.WriteLine($"Download packages ({safePackageName}) completed.");
-        }
-        catch (Exception e)
-        {
-#if DEBUG
-            _logger.WriteError(e.Message + "\r\n" + e.StackTrace);
-#endif
-            _logger.WriteLine($"Download packages ({safePackageName}) not completed.");
-            if (throwOnError)
-            {
-                throw;
-            }
-        }
     }
 
     public void DownloadZipPackages(
@@ -138,4 +91,48 @@ public class PackageDownloader : IPackageDownloader
     public void DownloadPackage(string packageName, EnvironmentSettings environmentSettings = null,
         string destinationPath = null) =>
         DownloadPackages(new[] { packageName }, environmentSettings, destinationPath);
+
+    private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
+        _serviceUrlBuilder.Build(knownRoute, environmentSettings);
+
+    private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+        _applicationClientFactory.CreateClient(environmentSettings);
+
+    private string GetSafePackageName(string packageName) => packageName
+        .Replace(" ", string.Empty)
+        .Replace(",", "\",\"");
+
+    private string GetPackageZipPath(string packageName, string destinationPath)
+    {
+        string safePackageName = GetSafePackageName(packageName);
+        return Path.Combine(destinationPath, $"{safePackageName}.zip");
+    }
+
+    private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
+        string destinationPath, bool throwOnError = false)
+    {
+        string safePackageName = GetSafePackageName(packageName);
+        try
+        {
+            _logger.WriteLine($"Start download packages ({safePackageName}).");
+            string requestData = $"[\"{safePackageName}\"]";
+            string packageZipPath = GetPackageZipPath(packageName, destinationPath);
+            IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+            string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
+            applicationClient.Login();
+            applicationClient.DownloadFile(url, packageZipPath, requestData);
+            _logger.WriteLine($"Download packages ({safePackageName}) completed.");
+        }
+        catch (Exception e)
+        {
+#if DEBUG
+            _logger.WriteError(e.Message + "\r\n" + e.StackTrace);
+#endif
+            _logger.WriteLine($"Download packages ({safePackageName}) not completed.");
+            if (throwOnError)
+            {
+                throw;
+            }
+        }
+    }
 }

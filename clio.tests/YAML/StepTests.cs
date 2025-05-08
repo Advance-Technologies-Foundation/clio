@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Clio.Command;
 using Clio.YAML;
 using FluentAssertions;
@@ -10,18 +9,19 @@ using OneOf;
 using OneOf.Types;
 
 namespace Clio.Tests.YAML;
+
 [TestFixture(Author = "Kirill Krylov")]
 [Category("YAML")]
 internal class StepTests
 {
-    private readonly RestartOptions _marker = new ();
+    private readonly RestartOptions _marker = new();
 
     [Test]
     public void Activate_Returns_Initialized_CommandOptionType()
     {
         // Arrange
         const string expectedEnvName = "digitalads";
-        Step step = new ()
+        Step step = new()
         {
             Action = "restart",
             Description = "restart application",
@@ -51,7 +51,7 @@ internal class StepTests
     public void Activate_Returns_Initialized_CommandOptionType_WithWrongMacro()
     {
         // Arrange
-        Step step = new ()
+        Step step = new()
         {
             Action = "restart",
             Description = "restart application",
@@ -80,7 +80,7 @@ internal class StepTests
     public void Activate_Returns_Initialized_CommandOptionType_WithWrongMacroFormat()
     {
         // Arrange
-        Step step = new ()
+        Step step = new()
         {
             Action = "restart",
             Description = "restart application",

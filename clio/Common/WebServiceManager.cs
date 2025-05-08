@@ -1,7 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -20,18 +18,21 @@ public interface IWebServiceManager
     public string GetServiceUrl(Guid packageUId, Guid serviceUId);
 }
 
-public class WebServiceManager(IApplicationClient client, IDataProvider dataProvider,
-    IServiceUrlBuilder serviceUrlBuilder, ILogger logger): IWebServiceManager
+public class WebServiceManager(
+    IApplicationClient client,
+    IDataProvider dataProvider,
+    IServiceUrlBuilder serviceUrlBuilder,
+    ILogger logger) : IWebServiceManager
 {
     private readonly IApplicationClient _client = client;
     private readonly IDataProvider _dataProvider = dataProvider;
-    private readonly IServiceUrlBuilder _serviceUrlBuilder = serviceUrlBuilder;
     private readonly ILogger _logger = logger;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder = serviceUrlBuilder;
 
     public List<VwWebServiceV2> GetAllServices()
     {
         IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-        return[.. ctx.Models<VwWebServiceV2>()];
+        return [.. ctx.Models<VwWebServiceV2>()];
     }
 
     public List<CreatioManifestWebService> GetCreatioManifestWebServices()

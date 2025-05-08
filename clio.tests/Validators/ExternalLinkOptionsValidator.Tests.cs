@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Linq;
-
 using Clio.Command;
 using Clio.Requests.Validators;
 using FluentAssertions;
@@ -25,7 +24,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinkOptionsValidator_ShouldValidate_As_Valid(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         // Act
         ValidationResult? validationResults = _sut.Validate(request);
@@ -43,7 +42,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinkOptionsValidator_ShouldValidate_As_InValid_NotAUri(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
         var expected = new
         {
             ErrorCode = "10",
@@ -70,7 +69,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinkValidator_ShouldValidate_As_InValid_EmptyContent(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         // Act
         ValidationResult? validationResults = _sut.Validate(request);
@@ -86,7 +85,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinkValidator_ShouldValidate_As_InValid_WhenDoesNotStartWithClio(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         var expected = new
         {
@@ -113,7 +112,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinkValidator_ShouldValidate_As_InValid_WhenCommandNotFound(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         Uri.TryCreate(content, UriKind.Absolute, out Uri _uriFromString);
         string commandName = _uriFromString?.Host;
@@ -143,7 +142,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinkValidator_ShouldValidate_As_Valid_WhenCommandFound(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         Uri.TryCreate(content, UriKind.Absolute, out Uri _uriFromString);
         string commandName = _uriFromString?.Host;
@@ -167,7 +166,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinlValidator_ShouldValidate_As_InValid_QueryIsWrong(string content, string key, string val)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         Uri.TryCreate(content, UriKind.Absolute, out Uri _uriFromString);
         _ = _uriFromString?.Host;
@@ -199,7 +198,7 @@ public class ExternalLinkOptionsValidatorTestCase
     public void ExternalLinlValidator_ShouldValidate_As_Valid_QueryIsCorrect(string content)
     {
         // Arange
-        ExternalLinkOptions request = new () { Content = content };
+        ExternalLinkOptions request = new() { Content = content };
 
         // Act
         ValidationResult? validationResults = _sut.Validate(request);

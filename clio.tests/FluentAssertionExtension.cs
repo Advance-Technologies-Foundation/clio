@@ -1,10 +1,16 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 
 namespace Clio.Tests;
 
 public static class AssertionExtensions
 {
-    public static FileAssertion Should(this FileToTest file) => new () { File = file };
+    public static FileAssertion Should(this FileToTest file) => new() { File = file };
+
+    public static FileToTest File(string fName) => new() { Path = fName };
+
+    public static DirectoryAssertion Should(this DirectoryToTest directory) => new() { Directory = directory };
+
+    public static DirectoryToTest Directory(string dName) => new() { Path = dName };
 
     public class FileAssertion
     {
@@ -19,14 +25,10 @@ public static class AssertionExtensions
                 .BeTrue(because ?? $"Expect existing file with path {File.Path}", reasonArgs);
     }
 
-    public static FileToTest File(string fName) => new () { Path = fName };
-
     public class FileToTest
     {
         public string Path;
     }
-
-    public static DirectoryAssertion Should(this DirectoryToTest directory) => new () { Directory = directory };
 
     public class DirectoryAssertion
     {
@@ -40,8 +42,6 @@ public static class AssertionExtensions
             => System.IO.Directory.Exists(Directory.Path).Should()
                 .BeTrue(because ?? $"Expect existing directory with path {Directory.Path}", reasonArgs);
     }
-
-    public static DirectoryToTest Directory(string dName) => new () { Path = dName };
 
     public class DirectoryToTest
     {

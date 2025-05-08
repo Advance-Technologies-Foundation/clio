@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
@@ -26,6 +25,19 @@ public class PackageVersion : ICloneable, IComparable
     public string Suffix { get; }
 
     public Version Version { get; }
+
+    public object Clone() => new PackageVersion(this);
+
+    public int CompareTo(object value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+
+        PackageVersion packageVersion = value as PackageVersion ?? throw new ArgumentException(nameof(value));
+        return CompareTo(packageVersion);
+    }
 
     private int CompareSuffix(PackageVersion packageVersion) =>
         string.IsNullOrWhiteSpace(Suffix)
@@ -79,7 +91,7 @@ public class PackageVersion : ICloneable, IComparable
         string suffix = index > 0
             ? fullVersionDescription.Substring(index + 1, fullVersionDescription.Length - index - 1)
             : string.Empty;
-        Version version = new (versionDescription.Trim());
+        Version version = new(versionDescription.Trim());
         return new PackageVersion(version, suffix.Trim());
     }
 
@@ -109,19 +121,6 @@ public class PackageVersion : ICloneable, IComparable
         string.IsNullOrWhiteSpace(Suffix)
             ? Version.ToString()
             : $"{Version}-{Suffix}";
-
-    public object Clone() => new PackageVersion(this);
-
-    public int CompareTo(object value)
-    {
-        if (value == null)
-        {
-            return 1;
-        }
-
-        PackageVersion packageVersion = value as PackageVersion ?? throw new ArgumentException(nameof(value));
-        return CompareTo(packageVersion);
-    }
 
     public int CompareTo(PackageVersion packageVersion) =>
         ReferenceEquals(packageVersion, this) ? 0 :

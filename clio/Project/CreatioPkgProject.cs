@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
-
 using Clio.Project;
 
 namespace Clio;
@@ -32,6 +31,10 @@ public class CreatioPkgProject : ICreatioPkgProject
         DetermineCurrentRef();
     }
 
+    public CreatioPkgProject()
+    {
+    }
+
     private XName HintPath => Namespace + HintElementName;
 
     private XName ItemGroup => Namespace + ItemGroupElementName;
@@ -48,11 +51,57 @@ public class CreatioPkgProject : ICreatioPkgProject
 
     public XNamespace Namespace { get; }
 
-    public static CreatioPkgProject LoadFromFile(string path) => new (path);
-
-    public CreatioPkgProject()
+    public CreatioPkgProject RefToBin()
     {
+        _activeHint = PathToBinDebug;
+        ChangeReference();
+        DeletePackagesConfig();
+        CurrentRefType = RefType.Bin;
+        return this;
     }
+
+    public CreatioPkgProject RefToCoreSrc()
+    {
+        _activeHint = PathToCoreDebug;
+        ChangeReference();
+        DeletePackagesConfig();
+        CurrentRefType = RefType.CoreSrc;
+        return this;
+    }
+
+    public CreatioPkgProject RefToCustomPath(string path)
+    {
+        _activeHint = path;
+        ChangeReference();
+        CurrentRefType = RefType.Custom;
+        return this;
+    }
+
+    public CreatioPkgProject RefToUnitBin()
+    {
+        _activeHint = PathToUnitTestBin;
+        RefType incomeRefType = CurrentRefType;
+        CurrentRefType = RefType.UnitTest;
+        ChangeReference();
+        DeletePackagesConfig();
+        CurrentRefType = incomeRefType;
+        return this;
+    }
+
+    public CreatioPkgProject RefToUnitCoreSrc()
+    {
+        _activeHint = PathToUnitTestCoreSrc;
+        RefType incomeRefType = CurrentRefType;
+        CurrentRefType = RefType.UnitTest;
+        ChangeReference();
+        DeletePackagesConfig();
+        CurrentRefType = incomeRefType;
+        return this;
+    }
+
+    public void SaveChanges() => Document.Save(LoadPath);
+
+    public static CreatioPkgProject LoadFromFile(string path) => new(path);
 
     private void ChangeHint(XElement element)
     {
@@ -128,17 +177,15 @@ public class CreatioPkgProject : ICreatioPkgProject
         return false;
     }
 
-    private string GetSearchPattern(RefType type)
-    {
-        return type switch
+    private string GetSearchPattern(RefType type) =>
+        type switch
         {
             RefType.Sdk => SdkSearchPattern,
             RefType.CoreSrc => PathToCoreDebug,
             RefType.UnitTest => UnitTestSearchPattern,
             RefType.TsCoreBinPath => TsCoreBinPathSearchPattern,
-            _ => "undefined",
+            _ => "undefined"
         };
-    }
 
     private void ChangeReference()
     {
@@ -164,56 +211,6 @@ public class CreatioPkgProject : ICreatioPkgProject
                                ((string)elem.Element(HintPath)).Contains(GetSearchPattern(CurrentRefType))));
         }
     }
-
-    public CreatioPkgProject RefToBin()
-    {
-        _activeHint = PathToBinDebug;
-        ChangeReference();
-        DeletePackagesConfig();
-        CurrentRefType = RefType.Bin;
-        return this;
-    }
-
-    public CreatioPkgProject RefToCoreSrc()
-    {
-        _activeHint = PathToCoreDebug;
-        ChangeReference();
-        DeletePackagesConfig();
-        CurrentRefType = RefType.CoreSrc;
-        return this;
-    }
-
-    public CreatioPkgProject RefToCustomPath(string path)
-    {
-        _activeHint = path;
-        ChangeReference();
-        CurrentRefType = RefType.Custom;
-        return this;
-    }
-
-    public CreatioPkgProject RefToUnitBin()
-    {
-        _activeHint = PathToUnitTestBin;
-        RefType incomeRefType = CurrentRefType;
-        CurrentRefType = RefType.UnitTest;
-        ChangeReference();
-        DeletePackagesConfig();
-        CurrentRefType = incomeRefType;
-        return this;
-    }
-
-    public CreatioPkgProject RefToUnitCoreSrc()
-    {
-        _activeHint = PathToUnitTestCoreSrc;
-        RefType incomeRefType = CurrentRefType;
-        CurrentRefType = RefType.UnitTest;
-        ChangeReference();
-        DeletePackagesConfig();
-        CurrentRefType = incomeRefType;
-        return this;
-    }
-
-    public void SaveChanges() => Document.Save(LoadPath);
 }
 
 public enum RefType

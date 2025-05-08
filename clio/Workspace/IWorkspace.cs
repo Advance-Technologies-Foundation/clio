@@ -1,5 +1,3 @@
-using Command;
-
 namespace Clio.Workspaces;
 
 public interface IWorkspace

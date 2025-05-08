@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.IO;
-
 using Clio.Package;
 using Clio.Project.NuGet;
 

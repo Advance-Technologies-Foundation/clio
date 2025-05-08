@@ -1,12 +1,8 @@
-using System;
-
 using CommandLine;
-using Common;
-using Package;
 
 namespace Clio.Command;
 
-[Verb("add-package", Aliases = new string[] { "ap" }, HelpText = "Add package to workspace or local folder")]
+[Verb("add-package", Aliases = new[] { "ap" }, HelpText = "Add package to workspace or local folder")]
 public class AddPackageOptions : EnvironmentOptions
 {
     [Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
@@ -17,10 +13,10 @@ public class AddPackageOptions : EnvironmentOptions
     public bool AsApp { get; set; }
 }
 
-public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger): Command<AddPackageOptions>
+public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger) : Command<AddPackageOptions>
 {
-    private readonly IPackageCreator _packageCreator = packageCreator;
     private readonly ILogger _logger = logger;
+    private readonly IPackageCreator _packageCreator = packageCreator;
 
     public override int Execute(AddPackageOptions options)
     {

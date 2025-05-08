@@ -1,8 +1,8 @@
 using System;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading;
-
 using Clio.Common;
 using CommandLine;
 using Creatio.Client.Dto;
@@ -29,15 +29,15 @@ public class ListenOptions : EnvironmentOptions
 
 public class ListenCommand : Command<ListenOptions>, IDisposable
 {
-    private readonly IApplicationClient _applicationClient;
-    private readonly ILogger _logger;
-    private readonly EnvironmentSettings _environmentSettings;
-    private readonly IFileSystem _fileSystem;
     private const string StartLogBroadcast = "/rest/ATFLogService/StartLogBroadcast";
     private const string StopLogBroadcast = "/rest/ATFLogService/ResetConfiguration";
+    private readonly IApplicationClient _applicationClient;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly IFileSystem _fileSystem;
+    private readonly ILogger _logger;
     private string logFilePath = string.Empty;
     private bool silent;
-    private readonly CancellationTokenSource _cancellationTokenSource = new ();
 
     public ListenCommand(IApplicationClient applicationClient, ILogger logger, EnvironmentSettings environmentSettings,
         IFileSystem fileSystem)
@@ -49,6 +49,8 @@ public class ListenCommand : Command<ListenOptions>, IDisposable
         _applicationClient.ConnectionStateChanged += OnConnectionStateChanged;
         _applicationClient.MessageReceived += OnMessageReceived;
     }
+
+    public void Dispose() => throw new NotImplementedException();
 
     public override int Execute(ListenOptions options)
     {
@@ -68,7 +70,7 @@ public class ListenCommand : Command<ListenOptions>, IDisposable
         string rootPath = _environmentSettings.IsNetCore ? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
         string requestUrl = rootPath + StartLogBroadcast;
         var payload = new { logLevelStr = options.LogLevel, bufferSize = 1, loggerPattern = options.LogPattern };
-        JsonSerializerOptions serializerOptions = new () { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        JsonSerializerOptions serializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         string payloadString = JsonSerializer.Serialize(payload, serializerOptions);
         _applicationClient.ExecutePostRequest(requestUrl, payloadString);
     }
@@ -87,9 +89,6 @@ public class ListenCommand : Command<ListenOptions>, IDisposable
             case "TelemetryService":
                 HandleTelemetryServiceMessages(message);
                 break;
-            default:
-                // _logger.WriteLine(message.Body);
-                break;
         }
     }
 
@@ -102,17 +101,12 @@ public class ListenCommand : Command<ListenOptions>, IDisposable
 
         if (!logFilePath.IsNullOrEmpty())
         {
-            System.IO.File.AppendAllText(logFilePath, Environment.NewLine + message.Body);
+            File.AppendAllText(logFilePath, Environment.NewLine + message.Body);
         }
     }
 
     private void OnConnectionStateChanged(object sender, WebSocketState state) =>
         _logger.WriteLine($"Connection state changed to {state}");
-
-    public void Dispose()
-    {
-        throw new NotImplementedException();
-    }
 }
 
 public record TelemetryMessage(LogPortion[] logPortion, int cpu, int ramMb);

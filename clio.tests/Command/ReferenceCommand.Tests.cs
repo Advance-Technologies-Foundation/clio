@@ -1,6 +1,4 @@
-using System;
-
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Project;
 using FluentAssertions;
 using NSubstitute;
@@ -17,8 +15,8 @@ public class ReferenceCommandTestCase
     public void Execute_Throws_WhenProjectPathIsNotDefined()
     {
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
-        ReferenceOptions options = new ();
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new();
+        ReferenceCommand command = new(creator);
         int actual = command.Execute(options);
         actual.Should().Be(1);
     }
@@ -30,8 +28,8 @@ public class ReferenceCommandTestCase
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
         ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
         creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-        ReferenceOptions options = new () { Path = "Testpath", ReferenceType = "src" };
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new() { Path = "Testpath", ReferenceType = "src" };
+        ReferenceCommand command = new(creator);
         command.Execute(options);
         project.Received(1).RefToCoreSrc();
     }
@@ -43,8 +41,8 @@ public class ReferenceCommandTestCase
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
         ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
         creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-        ReferenceOptions options = new () { Path = "Testpath", ReferenceType = "bin" };
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new() { Path = "Testpath", ReferenceType = "bin" };
+        ReferenceCommand command = new(creator);
         command.Execute(options);
         project.Received(1).RefToBin();
     }
@@ -56,8 +54,8 @@ public class ReferenceCommandTestCase
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
         ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
         creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-        ReferenceOptions options = new () { Path = "Testpath", ReferenceType = "unit-bin" };
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new() { Path = "Testpath", ReferenceType = "unit-bin" };
+        ReferenceCommand command = new(creator);
         command.Execute(options);
         project.Received(1).RefToUnitBin();
     }
@@ -69,8 +67,8 @@ public class ReferenceCommandTestCase
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
         ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
         creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-        ReferenceOptions options = new () { Path = "Testpath", ReferenceType = "unit-src" };
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new() { Path = "Testpath", ReferenceType = "unit-src" };
+        ReferenceCommand command = new(creator);
         command.Execute(options);
         project.Received(1).RefToUnitCoreSrc();
     }
@@ -82,8 +80,8 @@ public class ReferenceCommandTestCase
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
         ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
         creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-        ReferenceOptions options = new () { Path = "Testpath", ReferenceType = "custom", RefPattern = "TestPattern" };
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new() { Path = "Testpath", ReferenceType = "custom", RefPattern = "TestPattern" };
+        ReferenceCommand command = new(creator);
         command.Execute(options);
         project.Received(1).RefToCustomPath(options.RefPattern);
     }
@@ -95,8 +93,8 @@ public class ReferenceCommandTestCase
         ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
         ICreatioPkgProject project = Substitute.For<ICreatioPkgProject>();
         creator.CreateFromFile(Arg.Any<string>()).Returns(project);
-        ReferenceOptions options = new () { Path = "Testpath", RefPattern = "TestPattern" };
-        ReferenceCommand command = new (creator);
+        ReferenceOptions options = new() { Path = "Testpath", RefPattern = "TestPattern" };
+        ReferenceCommand command = new(creator);
         command.Execute(options);
         project.Received(1).RefToCustomPath(options.RefPattern);
     }

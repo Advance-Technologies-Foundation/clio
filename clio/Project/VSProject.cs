@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 
@@ -6,12 +6,6 @@ namespace Clio.Project;
 
 public class VSProject
 {
-    public string DestPath { get; set; }
-
-    public string Namespace { get; set; }
-
-    public string ProjFile { get; set; }
-
     public VSProject(string destPath = null, string @namespace = null)
     {
         DestPath = destPath;
@@ -29,7 +23,7 @@ public class VSProject
                 if (end > start)
                 {
                     Namespace = fileText.Substring(start + 15, end - start - 15);
-                    Console.WriteLine($"Detected namespace {@Namespace}");
+                    Console.WriteLine($"Detected namespace {Namespace}");
                 }
 
                 if (string.IsNullOrEmpty(DestPath))
@@ -39,6 +33,12 @@ public class VSProject
             }
         }
     }
+
+    public string DestPath { get; set; }
+
+    public string Namespace { get; set; }
+
+    public string ProjFile { get; set; }
 
     public void AddFile(string name, string body)
     {

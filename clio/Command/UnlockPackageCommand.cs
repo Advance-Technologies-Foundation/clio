@@ -1,20 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using CommandLine;
-using Package;
 
 namespace Clio.Command;
 
-[Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
+[Verb("unlock-package", Aliases = new[] { "up" }, HelpText = "Unlock package")]
 public class UnlockPackageOptions : EnvironmentOptions
 {
     [Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
     public string Name { get; set; }
 }
 
-public class UnlockPackageCommand(IPackageLockManager packageLockManager): Command<UnlockPackageOptions>
+public class UnlockPackageCommand(IPackageLockManager packageLockManager) : Command<UnlockPackageOptions>
 {
     private readonly IPackageLockManager _packageLockManager = packageLockManager;
 

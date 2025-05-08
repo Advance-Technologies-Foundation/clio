@@ -1,8 +1,5 @@
-using System;
-
+﻿using System;
 using CommandLine;
-using Common;
-using Package;
 
 namespace Clio.Command;
 
@@ -15,7 +12,7 @@ public class InstallOptions : EnvironmentOptions
     public string ReportPath { get; set; }
 }
 
-[Verb("install-application", Aliases = new string[] { "install-app", "push-app" },
+[Verb("install-application", Aliases = new[] { "install-app", "push-app" },
     HelpText = "Install application on a web application")]
 public class InstallApplicationOptions : InstallOptions
 {
@@ -23,10 +20,10 @@ public class InstallApplicationOptions : InstallOptions
 
 public class InstallApplicationCommand : Command<InstallApplicationOptions>
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationInstaller _applicationInstaller;
+    private readonly EnvironmentSettings _environmentSettings;
     private readonly IMarketplace _marketplace;
-    private readonly PackageInstallOptions _packageInstallOptionsDefault = new ();
+    private readonly PackageInstallOptions _packageInstallOptionsDefault = new();
 
     public InstallApplicationCommand(
         EnvironmentSettings environmentSettings,

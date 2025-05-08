@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-
 using Clio.Common;
 using Clio.Dto;
 using Creatio.Client;
@@ -13,19 +12,22 @@ using Newtonsoft.Json.Linq;
 
 namespace Clio;
 
-internal class ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts,
+internal class ModelBuilder(
+    CreatioClient creatioClient,
+    string appUrl,
+    ItemOptions opts,
     IWorkingDirectoriesProvider workingDirectoriesProvider)
 {
-    private readonly CreatioClient _creatioClient = creatioClient;
     private readonly string _appUrl = appUrl;
+    private readonly CreatioClient _creatioClient = creatioClient;
     private readonly ItemOptions _opts = opts;
+
+    private readonly Dictionary<string, Schema> _schemas = [];
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
 
     private string EntitySchemaManagerRequestUrl => _appUrl + @"/DataService/json/SyncReply/EntitySchemaManagerRequest";
 
     private string RuntimeEntitySchemaRequestUrl => _appUrl + @"/DataService/json/SyncReply/RuntimeEntitySchemaRequest";
-
-    private readonly Dictionary<string, Schema> _schemas = [];
 
     public void GetModels()
     {
@@ -39,7 +41,7 @@ internal class ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOpti
         }
 
         Console.WriteLine($"Models will be generated in directory: {_opts.DestinationPath}");
-        DirectoryInfo di = new (_opts.DestinationPath);
+        DirectoryInfo di = new(_opts.DestinationPath);
         if (!di.Exists)
         {
             di.Create();
@@ -60,7 +62,7 @@ internal class ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOpti
     {
         string? responseJson = _creatioClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
 
-        JsonSerializerSettings settings = new () { NullValueHandling = NullValueHandling.Ignore };
+        JsonSerializerSettings settings = new() { NullValueHandling = NullValueHandling.Ignore };
 
         EntitySchemaResponse col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson, settings);
         foreach (EntitySchema item in col.Collection.Where(item => !_schemas.ContainsKey(item.Name)))
@@ -83,7 +85,7 @@ internal class ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOpti
 
         foreach (KeyValuePair<Guid, JObject> item in columns)
         {
-            Column col = new ()
+            Column col = new()
             {
                 Name = (string)item.Value.GetValue("name"),
                 DataValueType = (int)item.Value.GetValue("dataValueType")
@@ -100,7 +102,7 @@ internal class ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOpti
 
     private string CreateClassFileText(KeyValuePair<string, Schema> schema)
     {
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         sb.AppendLine(@"#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
             .AppendLine()
             .AppendLine("using System;")

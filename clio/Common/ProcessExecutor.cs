@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Text;
 
@@ -11,7 +11,7 @@ public class ProcessExecutor : IProcessExecutor
     {
         program.CheckArgumentNullOrWhiteSpace(nameof(program));
         command.CheckArgumentNullOrWhiteSpace(nameof(command));
-        using Process process = new ();
+        using Process process = new();
         process.StartInfo = new ProcessStartInfo
         {
             FileName = program,
@@ -22,7 +22,7 @@ public class ProcessExecutor : IProcessExecutor
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         process.EnableRaisingEvents = waitForExit;
 
         if (showOutput)

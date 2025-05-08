@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -15,10 +14,10 @@ public class CompilePackageOptions : EnvironmentNameOptions
     public string[] PackageNames => PackageName.Split(',');
 }
 
-public class CompilePackageCommand(IPackageBuilder packageBuilder, ILogger logger): Command<CompilePackageOptions>
+public class CompilePackageCommand(IPackageBuilder packageBuilder, ILogger logger) : Command<CompilePackageOptions>
 {
-    private readonly IPackageBuilder _packageBuilder = packageBuilder;
     private readonly ILogger _logger = logger;
+    private readonly IPackageBuilder _packageBuilder = packageBuilder;
 
     public override int Execute(CompilePackageOptions options)
     {

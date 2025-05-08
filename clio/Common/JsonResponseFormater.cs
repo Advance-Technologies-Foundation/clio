@@ -1,5 +1,4 @@
-using System;
-
+﻿using System;
 using Clio.Common.Responses;
 
 namespace Clio.Common;
@@ -23,21 +22,19 @@ public class JsonResponseFormater : IJsonResponseFormater
 
     public string Format<T>(T value)
     {
-        ValueResponse<T> valueResponse = new () { Value = value, Success = true, ErrorInfo = null };
+        ValueResponse<T> valueResponse = new() { Value = value, Success = true, ErrorInfo = null };
         return _jsonConverter.SerializeObject(valueResponse);
     }
 
     public string Format(Exception exception)
     {
-        ValueResponse<object> valueResponse = new ()
+        ValueResponse<object> valueResponse = new()
         {
             Value = null,
             Success = false,
             ErrorInfo = new ErrorInfo
             {
-                Message = exception.Message,
-                StackTrace = exception.StackTrace,
-                ErrorCode = string.Empty
+                Message = exception.Message, StackTrace = exception.StackTrace, ErrorCode = string.Empty
             }
         };
         return _jsonConverter.SerializeObject(valueResponse);

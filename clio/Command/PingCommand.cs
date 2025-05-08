@@ -1,11 +1,9 @@
-using System;
-
-using Clio.Common;
+﻿using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("ping-app", Aliases = new string[] { "ping" }, HelpText = "Check current credentional for selected environments")]
+[Verb("ping-app", Aliases = new[] { "ping" }, HelpText = "Check current credentional for selected environments")]
 public class PingAppOptions : RemoteCommandOptions
 {
     [Option('x', "Endpoint", Required = false,

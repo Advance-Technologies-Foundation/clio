@@ -1,12 +1,11 @@
-using System;
-
+﻿using System;
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("restore-nuget-pkg", Aliases = new string[] { "restore-nuget", "rn" },
+[Verb("restore-nuget-pkg", Aliases = new[] { "restore-nuget", "rn" },
     HelpText = "Restore NuGet package to a folder")]
 public class RestoreNugetPkgOptions : EnvironmentOptions
 {
@@ -23,8 +22,8 @@ public class RestoreNugetPkgOptions : EnvironmentOptions
 
 public class RestoreNugetPackageCommand : Command<RestoreNugetPkgOptions>
 {
-    private readonly INuGetManager _nugetManager;
     private readonly ILogger _logger;
+    private readonly INuGetManager _nugetManager;
 
     public RestoreNugetPackageCommand(INuGetManager nugetManager, ILogger logger)
     {

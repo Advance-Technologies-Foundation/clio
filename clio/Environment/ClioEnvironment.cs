@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -15,9 +15,22 @@ internal class CreatioEnvironment : ICreatioEnvironment
 
     public static EnvironmentSettings Settings { get; set; }
 
+    public string GetRegisteredPath()
+    {
+        string? environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
+        string[] cliPath = environmentPath?.Split(Path.PathSeparator);
+        return cliPath?.FirstOrDefault(p => p.Contains("clio"));
+    }
+
+    public IResult UserRegisterPath(string path) => RegisterPath(path, EnvironmentVariableTarget.User);
+
+    public IResult MachineRegisterPath(string path) => RegisterPath(path, EnvironmentVariableTarget.Machine);
+
+    public string GetAssemblyFolderPath() => Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+
     private IResult RegisterPath(string path, EnvironmentVariableTarget target)
     {
-        EnvironmentResult result = new ();
+        EnvironmentResult result = new();
         string pathValue = Environment.GetEnvironmentVariable(PathVariableName, target);
         if (string.IsNullOrEmpty(pathValue))
         {
@@ -39,7 +52,7 @@ internal class CreatioEnvironment : ICreatioEnvironment
 
     private IResult UnregisterPath(EnvironmentVariableTarget target)
     {
-        EnvironmentResult result = new ();
+        EnvironmentResult result = new();
         string pathValue = Environment.GetEnvironmentVariable(PathVariableName, target);
         string[] paths = pathValue.Split(Path.PathSeparator);
         string clioPath = string.Empty;
@@ -47,7 +60,7 @@ internal class CreatioEnvironment : ICreatioEnvironment
         {
             if (Directory.Exists(path))
             {
-                DirectoryInfo dir = new (path);
+                DirectoryInfo dir = new(path);
                 FileInfo[] files = dir.GetFiles("clio.cmd");
                 if (files.Length > 0)
                 {
@@ -59,7 +72,7 @@ internal class CreatioEnvironment : ICreatioEnvironment
 
         if (string.IsNullOrEmpty(clioPath))
         {
-            result.AppendMessage($"Application already unregistered!");
+            result.AppendMessage("Application already unregistered!");
             return result;
         }
 
@@ -71,20 +84,7 @@ internal class CreatioEnvironment : ICreatioEnvironment
         return result;
     }
 
-    public string GetRegisteredPath()
-    {
-        string? environmentPath = Environment.GetEnvironmentVariable(PathVariableName);
-        string[] cliPath = environmentPath?.Split(Path.PathSeparator);
-        return cliPath?.FirstOrDefault(p => p.Contains("clio"));
-    }
-
-    public IResult UserRegisterPath(string path) => RegisterPath(path, EnvironmentVariableTarget.User);
-
-    public IResult MachineRegisterPath(string path) => RegisterPath(path, EnvironmentVariableTarget.Machine);
-
     public IResult MachineUnregisterPath() => UnregisterPath(EnvironmentVariableTarget.Machine);
 
     public IResult UserUnregisterPath() => UnregisterPath(EnvironmentVariableTarget.User);
-
-    public string GetAssemblyFolderPath() => Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 }

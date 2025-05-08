@@ -1,7 +1,8 @@
-using CommandLine;
+﻿using CommandLine;
 
 namespace Clio.Command.PackageCommand;
-[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
+
+[Verb("pull-pkg", Aliases = new[] { "download" }, HelpText = "Download package from a web application")]
 internal class PullPkgOptions : EnvironmentOptions
 {
     [Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]

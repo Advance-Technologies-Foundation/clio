@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,25 +7,15 @@ namespace Clio.Common;
 
 public class PackageUtilities : IPackageUtilities
 {
-    private readonly IFileSystem _fileSystem;
-
     private static readonly IEnumerable<string> PackageElementNames =
         new[] { "Assemblies", "Bin", "Data", "Files", "Resources", "Schemas", "SqlScripts" };
+
+    private readonly IFileSystem _fileSystem;
 
     public PackageUtilities(IFileSystem fileSystem)
     {
         fileSystem.CheckArgumentNull(nameof(fileSystem));
         _fileSystem = fileSystem;
-    }
-
-    private void CopyPackageElement(string sourcePath, string destinationPath, string name)
-    {
-        string fromAssembliesPath = Path.Combine(sourcePath, name);
-        if (_fileSystem.ExistsDirectory(fromAssembliesPath))
-        {
-            string toAssembliesPath = Path.Combine(destinationPath, name);
-            _fileSystem.CopyDirectory(fromAssembliesPath, toAssembliesPath, true);
-        }
     }
 
     public void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite)
@@ -54,11 +44,9 @@ public class PackageUtilities : IPackageUtilities
             {
                 return directories[0].FullName;
             }
-            else
-            {
-                throw new NotSupportedException($"Unsupported package folder structure." +
-                                                $"Expected structure contains one package version in folder '{repositoryPackageFolderBranchesPath}'.");
-            }
+
+            throw new NotSupportedException($"Unsupported package folder structure." +
+                                            $"Expected structure contains one package version in folder '{repositoryPackageFolderBranchesPath}'.");
         }
 
         return repositoryPackageFolderPath;
@@ -68,6 +56,16 @@ public class PackageUtilities : IPackageUtilities
     {
         string fullPackagePath = Path.Combine(repositoryFolderPath, packageName);
         return GetPackageContentFolderPath(fullPackagePath);
+    }
+
+    private void CopyPackageElement(string sourcePath, string destinationPath, string name)
+    {
+        string fromAssembliesPath = Path.Combine(sourcePath, name);
+        if (_fileSystem.ExistsDirectory(fromAssembliesPath))
+        {
+            string toAssembliesPath = Path.Combine(destinationPath, name);
+            _fileSystem.CopyDirectory(fromAssembliesPath, toAssembliesPath, true);
+        }
     }
 
     public static string BuildPackageDescriptorPath(string packagePath) =>

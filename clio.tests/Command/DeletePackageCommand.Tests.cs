@@ -1,10 +1,11 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Common;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
+
 public class DeletePackageCommandTestCase
 {
     [Test]
@@ -12,7 +13,7 @@ public class DeletePackageCommandTestCase
     public void Delete_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework()
     {
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-        DeletePkgOptions deleteOptions = new ()
+        DeletePkgOptions deleteOptions = new()
         {
             Login = "Test",
             Password = "Test",
@@ -21,9 +22,9 @@ public class DeletePackageCommandTestCase
             Uri = "http://test.domain.com",
             Name = "TestPackage"
         };
-        SettingsRepository settingsRepository = new ();
+        SettingsRepository settingsRepository = new();
         EnvironmentSettings environment = settingsRepository.GetEnvironment(deleteOptions);
-        DeletePackageCommand deleteCommand = new (applicationClient, environment);
+        DeletePackageCommand deleteCommand = new(applicationClient, environment);
         deleteCommand.Execute(deleteOptions);
         applicationClient.Received(1).ExecutePostRequest(
             deleteOptions.Uri + "/0/ServiceModel/AppInstallerService.svc/DeletePackage",

@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-
 using Autofac;
 using Clio.Common;
 using FluentAssertions;

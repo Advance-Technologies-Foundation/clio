@@ -1,11 +1,7 @@
-using System.IO.Abstractions.TestingHelpers;
-
+﻿using System.IO.Abstractions.TestingHelpers;
 using Autofac;
 using Clio.Tests.Infrastructure;
 using NUnit.Framework;
-using Terrasoft.Core.Configuration;
-
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
 
@@ -17,13 +13,15 @@ public abstract class BaseClioModuleTests
     {
         fileSystem = CreateFs();
 
-        BindingsModule bindingModule = new (fileSystem);
+        BindingsModule bindingModule = new(fileSystem);
         container = bindingModule.Register(environmentSettings, AdditionalRegistrations);
     }
 
     protected MockFileSystem fileSystem;
     protected IContainer container;
-    protected EnvironmentSettings environmentSettings = new () { Uri = "http://localhost", Login = string.Empty, Password = string.Empty };
+
+    protected EnvironmentSettings environmentSettings =
+        new() { Uri = "http://localhost", Login = string.Empty, Password = string.Empty };
 
     protected virtual MockFileSystem CreateFs() => TestFileSystem.MockFileSystem();
 

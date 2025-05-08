@@ -1,57 +1,38 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Xml.Linq;
-
 using Clio.Workspaces;
 
 namespace Clio.Common;
 
 /// <summary>
-/// Build .props file for the main csproj file of a package.
+///     Build .props file for the main csproj file of a package.
 /// </summary>
 public interface IPropsBuilder
 {
-
     /// <summary>
-    /// Builds props files for the project and copies all dlls from
-    /// nuget/bin folder to the package Libs folder.
+    ///     Builds props files for the project and copies all dlls from
+    ///     nuget/bin folder to the package Libs folder.
     /// </summary>
     /// <param name="packageName">Package name to convert.</param>
     /// <remarks>
-    /// It add Libs folder with the following structure : <br/>
-    /// 📦Files                                <br/>
-    /// ┣ 📂Libs                               <br/>
-    /// ┃ ┣ 📂net472                           <br/>
-    /// ┃ ┗ 📂netstandard                      <br/>
-    /// ┣ 📜PKG_NAME-net472.nuget.props        <br/>
-    /// ┣ 📜PKG_NAME-netstandard.nuget.props.   <br/>
+    ///     It add Libs folder with the following structure : <br />
+    ///     📦Files                                <br />
+    ///     ┣ 📂Libs                               <br />
+    ///     ┃ ┣ 📂net472                           <br />
+    ///     ┃ ┗ 📂netstandard                      <br />
+    ///     ┣ 📜PKG_NAME-net472.nuget.props        <br />
+    ///     ┣ 📜PKG_NAME-netstandard.nuget.props.   <br />
     /// </remarks>
     void Build(string packageName);
 }
 
-public class PropsBuilder(IFileSystem fileSystem, ILogger logger, IWorkspacePathBuilder workspacePathBuilder): IPropsBuilder
+public class PropsBuilder(IFileSystem fileSystem, ILogger logger, IWorkspacePathBuilder workspacePathBuilder)
+    : IPropsBuilder
 {
-    private enum ItemType
-    {
-        NugetFolder,
-        PackageFolder,
-        Net472BinDir,
-        NetStdBinDir,
-        NetStdPropsFilePath,
-        Net472PropsFilePath,
-        Net472PackageLibsPath,
-        NetStdPackageLibsPath
-    }
-
-    private enum Moniker
-    {
-        Net472,
-        Netstandard
-    }
-
     private const string IncludeTag = "Include";
     private const string ProjExtension = ".csproj";
     private const string PropsExtension = ".props";
@@ -59,6 +40,12 @@ public class PropsBuilder(IFileSystem fileSystem, ILogger logger, IWorkspacePath
     private readonly IFileSystem _fileSystem = fileSystem;
     private readonly ILogger _logger = logger;
     private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
+
+    public void Build(string packageName)
+    {
+        BuildNet472Props(packageName);
+        BuildNetStdProps(packageName);
+    }
 
     private void BuildNet472Props(string packageName)
     {
@@ -188,9 +175,21 @@ public class PropsBuilder(IFileSystem fileSystem, ILogger logger, IWorkspacePath
         return sb.ToString();
     }
 
-    public void Build(string packageName)
+    private enum ItemType
     {
-        BuildNet472Props(packageName);
-        BuildNetStdProps(packageName);
+        NugetFolder,
+        PackageFolder,
+        Net472BinDir,
+        NetStdBinDir,
+        NetStdPropsFilePath,
+        Net472PropsFilePath,
+        Net472PackageLibsPath,
+        NetStdPackageLibsPath
+    }
+
+    private enum Moniker
+    {
+        Net472,
+        Netstandard
     }
 }

@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-
 using Clio.CreatioModel;
 using Clio.Workspaces;
 using CreatioModel;
@@ -12,11 +11,12 @@ using YamlDotNet.Serialization;
 
 namespace Clio.Command;
 
-public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer): IEnvironmentManager
+public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer)
+    : IEnvironmentManager
 {
     private readonly IFileSystem fileSystem = fileSystem;
-    private readonly IDeserializer yamlDesirializer = deserializer;
     private readonly ISerializer serializer = serializer;
+    private readonly IDeserializer yamlDesirializer = deserializer;
 
     public int ApplyManifest(string manifestFilePath) => throw new NotImplementedException();
 
@@ -68,12 +68,6 @@ public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializ
         return appsFromAppHub;
     }
 
-    private IEnumerable<AppHubInfo> GetAppHubsFromManifest(string manifestFilePath)
-    {
-        EnvironmentManifest envManiifest = LoadEnvironmentManifestFromFile(manifestFilePath);
-        return envManiifest.AppHubs;
-    }
-
     public EnvironmentManifest LoadEnvironmentManifestFromFile(string manifestFilePath)
     {
         string manifest = fileSystem.File.ReadAllText(manifestFilePath);
@@ -83,7 +77,7 @@ public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializ
         string pattern = @"^\s*- code:\s*[""]?\s*[""]?\s*$";
         int[] lineNumbers = FindMatchingLines(lines, pattern);
 
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         bool hasError = false;
         if (lineNumbers.Any())
         {
@@ -130,21 +124,6 @@ public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializ
         return envManifest.Features;
     }
 
-    private static int[] FindMatchingLines(string[] lines, string pattern)
-    {
-        List<int> matchingLineNumbers = [];
-
-        for (int i = 0; i < lines.Length; i++)
-        {
-            if (Regex.IsMatch(lines[i], pattern))
-            {
-                matchingLineNumbers.Add(i + 1); // Add 1 because line numbers start from 1
-            }
-        }
-
-        return[.. matchingLineNumbers];
-    }
-
     public IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath) =>
         LoadEnvironmentManifestFromFile(manifestFilePath).Settings;
 
@@ -167,22 +146,41 @@ public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializ
 
     public EnvironmentManifest GetDiffManifest(EnvironmentManifest sourceManifest, EnvironmentManifest targetManifest)
     {
-        EnvironmentManifest diffManifest = new ()
+        EnvironmentManifest diffManifest = new()
         {
             Packages = sourceManifest.Packages
-            .Where(p => !targetManifest.Packages.Any(sp => sp.Name == p.Name))
-            .ToList(),
-
+                .Where(p => !targetManifest.Packages.Any(sp => sp.Name == p.Name))
+                .ToList(),
             Settings = sourceManifest.Settings
-            .Where(p => !targetManifest.Settings.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
-            .ToList(),
-
+                .Where(p => !targetManifest.Settings.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
+                .ToList(),
             Features = sourceManifest.Features
-            .Where(p => !targetManifest.Features.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
-            .ToList()
+                .Where(p => !targetManifest.Features.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
+                .ToList()
         };
 
         return diffManifest;
+    }
+
+    private IEnumerable<AppHubInfo> GetAppHubsFromManifest(string manifestFilePath)
+    {
+        EnvironmentManifest envManiifest = LoadEnvironmentManifestFromFile(manifestFilePath);
+        return envManiifest.AppHubs;
+    }
+
+    private static int[] FindMatchingLines(string[] lines, string pattern)
+    {
+        List<int> matchingLineNumbers = [];
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (Regex.IsMatch(lines[i], pattern))
+            {
+                matchingLineNumbers.Add(i + 1); // Add 1 because line numbers start from 1
+            }
+        }
+
+        return [.. matchingLineNumbers];
     }
 }
 
@@ -213,37 +211,29 @@ public interface IEnvironmentManager
 
 public class CreatioManifestSetting
 {
-    [YamlMember(Alias = "code")]
-    public string Code { get; set; }
+    [YamlMember(Alias = "code")] public string Code { get; set; }
 
-    [YamlMember(Alias = "value")]
-    public string Value { get; set; }
+    [YamlMember(Alias = "value")] public string Value { get; set; }
 
-    [YamlMember(Alias = "users_values")]
-    public Dictionary<string, string> UserValues { get; set; } = [];
+    [YamlMember(Alias = "users_values")] public Dictionary<string, string> UserValues { get; set; } = [];
 
     internal bool HasValue() => !string.IsNullOrEmpty(Value) && Value != "undefined";
 }
 
 public class CreatioManifestWebService
 {
-    [YamlMember(Alias = "url")]
-    public string Url { get; set; }
+    [YamlMember(Alias = "url")] public string Url { get; set; }
 
-    [YamlMember(Alias = "name")]
-    public string Name { get; set; }
+    [YamlMember(Alias = "name")] public string Name { get; set; }
 }
 
 public class Feature
 {
-    [YamlMember(Alias = "code")]
-    public string Code { get; set; }
+    [YamlMember(Alias = "code")] public string Code { get; set; }
 
-    [YamlMember(Alias = "value")]
-    public bool Value { get; set; }
+    [YamlMember(Alias = "value")] public bool Value { get; set; }
 
-    [YamlMember(Alias = "users_values")]
-    public Dictionary<string, bool> UserValues { get; set; } = [];
+    [YamlMember(Alias = "users_values")] public Dictionary<string, bool> UserValues { get; set; } = [];
 }
 
 public class CreatioManifestPackage

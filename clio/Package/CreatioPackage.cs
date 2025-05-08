@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.IO;
-
 using Clio.Common;
 using Newtonsoft.Json;
 
@@ -17,6 +16,21 @@ public class CreatioPackage
     public const string PlaceholderFileName = "placeholder.txt";
     public const string IgnoreFileName = "clioignore";
 
+    private readonly string[] _pkgDirectories =
+    [
+        "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs"
+    ];
+
+    private DateTime _createdOn;
+
+    protected CreatioPackage(string packageName, string maintainer)
+    {
+        PackageName = packageName;
+        Maintainer = maintainer;
+        CreatedOn = DateTime.UtcNow;
+        FullPath = Path.Combine(Environment.CurrentDirectory, packageName);
+    }
+
     public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
 
     public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
@@ -25,11 +39,6 @@ public class CreatioPackage
 
     public static string IgnoreFileTpl =>
         $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
-
-    private readonly string[] _pkgDirectories =
-    [
-        "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs"
-    ];
 
     private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 
@@ -49,20 +58,10 @@ public class CreatioPackage
 
     public string FullPath { get; protected set; }
 
-    private DateTime _createdOn;
-
     public DateTime CreatedOn
     {
         get => _createdOn;
         protected set => _createdOn = GetDateTimeTillSeconds(value);
-    }
-
-    protected CreatioPackage(string packageName, string maintainer)
-    {
-        PackageName = packageName;
-        Maintainer = maintainer;
-        CreatedOn = DateTime.UtcNow;
-        FullPath = Path.Combine(Environment.CurrentDirectory, packageName);
     }
 
     private static DateTime GetDateTimeTillSeconds(DateTime dateTime) =>
@@ -70,11 +69,12 @@ public class CreatioPackage
 
     private static string ToJsonMsDate(DateTime date)
     {
-        JsonSerializerSettings microsoftDateFormatSettings = new ()
+        JsonSerializerSettings microsoftDateFormatSettings = new()
         {
             DateFormatHandling = DateFormatHandling.MicrosoftDateFormat
         };
-        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", string.Empty).Replace("\\", string.Empty);
+        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", string.Empty)
+            .Replace("\\", string.Empty);
     }
 
     private string ReplaceMacro(string text) =>
@@ -200,7 +200,7 @@ public class CreatioPackage
     }
 
     public static CreatioPackage CreatePackage(string name, string maintainer) =>
-        new (name, maintainer) { ProjectId = Guid.NewGuid() };
+        new(name, maintainer) { ProjectId = Guid.NewGuid() };
 
     public void Create() => CreatePackageDirectories().CreatePackageFiles();
 

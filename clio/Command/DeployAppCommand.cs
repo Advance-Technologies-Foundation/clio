@@ -1,6 +1,4 @@
-using System;
-
-using ATF.Repository.Providers;
+﻿using ATF.Repository.Providers;
 using Clio.Command.PackageCommand;
 using Clio.Common;
 using CommandLine;
@@ -21,8 +19,11 @@ internal class DeployAppOptions : BaseAppCommandOptions
     public string DestinationEnvironment { get; set; }
 }
 
-internal class DeployAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
-    IDataProvider dataProvider, ApplicationManager applicationManager): BaseAppCommand<DeployAppOptions>(applicationClient,
+internal class DeployAppCommand(
+    IApplicationClient applicationClient,
+    EnvironmentSettings environmentSettings,
+    IDataProvider dataProvider,
+    ApplicationManager applicationManager) : BaseAppCommand<DeployAppOptions>(applicationClient,
     environmentSettings, dataProvider, applicationManager)
 {
     private readonly ApplicationManager _applicationManager = applicationManager;

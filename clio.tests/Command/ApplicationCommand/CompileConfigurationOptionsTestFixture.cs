@@ -1,5 +1,4 @@
-using System.Threading;
-
+﻿using System.Threading;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -13,7 +12,7 @@ public class CompileConfigurationOptionsTestFixture
     public void CanSetTimeout()
     {
         // Arrange
-        RemoteCommandOptions options = new () { TimeOut = 50 };
+        RemoteCommandOptions options = new() { TimeOut = 50 };
 
         // Assert
         options.TimeOut.Should().Be(50);
@@ -23,7 +22,7 @@ public class CompileConfigurationOptionsTestFixture
     public void DefaultTimeout_ShouldBe_Infinite()
     {
         // Arrange
-        CompileConfigurationOptions options = new ();
+        CompileConfigurationOptions options = new();
 
         // Assert
         options.TimeOut.Should().Be(Timeout.Infinite);
@@ -33,7 +32,7 @@ public class CompileConfigurationOptionsTestFixture
     public void DefaultTimeoutInReomoe_ShouldBe_100K()
     {
         // Arrange
-        RemoteCommandOptions options = new ();
+        RemoteCommandOptions options = new();
 
         // Assert
         options.TimeOut.Should().Be(100_000);
@@ -43,7 +42,7 @@ public class CompileConfigurationOptionsTestFixture
     public void RestartOPtions()
     {
         // Arrange
-        RestartOptions options = new ();
+        RestartOptions options = new();
 
         // Assert
         options.TimeOut.Should().Be(100_000);

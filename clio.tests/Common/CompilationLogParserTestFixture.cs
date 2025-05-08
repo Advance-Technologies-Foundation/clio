@@ -1,5 +1,4 @@
-using System.Net;
-
+﻿using System.IO;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -22,8 +21,8 @@ public class CompilationLogParserTestFixture
         // Arrange
         _sut = new CompilationLogParser();
 
-        string desiredOutputContent = System.IO.File.ReadAllText(expectedOutput);
-        string inputContent = System.IO.File.ReadAllText(input);
+        string desiredOutputContent = File.ReadAllText(expectedOutput);
+        string inputContent = File.ReadAllText(input);
 
         // Act
         string result = _sut.ParseCreatioCompilationLog(inputContent);

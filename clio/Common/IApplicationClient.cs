@@ -1,7 +1,6 @@
 using System;
 using System.Net.WebSockets;
 using System.Threading;
-
 using Clio.Common.Responses;
 using Creatio.Client;
 using Creatio.Client.Dto;
@@ -20,18 +19,18 @@ public interface IApplicationClient
     void DownloadFile(string url, string filePath, string requestData);
 
     /// <summary>
-    /// Executes GET Request with retry.
+    ///     Executes GET Request with retry.
     /// </summary>
     /// <param name="url">Request URL.</param>
     /// <param name="requestTimeout">Request Timeout.</param>
     /// <param name="retryCount">retry count.</param>
     /// <param name="delaySec">delay between retries in seconds.</param>
     /// <returns>Response.</returns>
-    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count.</exception>
+    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount" /> count.</exception>
     string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 
     /// <summary>
-    /// Executes POST Request with retry.
+    ///     Executes POST Request with retry.
     /// </summary>
     /// <param name="url">Request URL.</param>
     /// <param name="requestData">Request Data.</param>
@@ -39,7 +38,7 @@ public interface IApplicationClient
     /// <param name="retryCount">retry count.</param>
     /// <param name="delaySec">delay between retries in seconds.</param>
     /// <returns>Response.</returns>
-    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count.</exception>
+    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount" /> count.</exception>
     string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1,
         int delaySec = 1);
 
@@ -110,8 +109,6 @@ public class CreatioClientAdapter : IApplicationClient
 
     public string UploadAlmFile(string url, string filePath) => _creatioClient.UploadAlmFile(url, filePath);
 
-    internal T As<T>() => throw new NotImplementedException();
-
     public void Listen(CancellationToken cancellationToken)
     {
         _creatioClient.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
@@ -126,21 +123,23 @@ public class CreatioClientAdapter : IApplicationClient
     public event EventHandler<WebSocketState> ConnectionStateChanged;
 
     /// <summary>
-    /// Performs post request and returns deserialized response.
+    ///     Performs post request and returns deserialized response.
     /// </summary>
     /// <param name="url">Request url.</param>
     /// <param name="requestData">Request data.</param>
     /// <param name="requestTimeout">Request timeout. Default: infinity period.</param>
     /// <typeparam name="T">Return value type.</typeparam>
-    /// <returns>Response.<see cref="T"/>.</returns>
+    /// <returns>Response.<see cref="T" />.</returns>
     public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
         where T : BaseResponse, new()
     {
-        JsonConverter converter = new ();
+        JsonConverter converter = new();
         string response = _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
         return converter.DeserializeObject<T>(response);
     }
 
     public string UploadAlmFileByChunk(string url, string filePath) =>
         _creatioClient.UploadAlmFileByChunk(url, filePath);
+
+    internal T As<T>() => throw new NotImplementedException();
 }

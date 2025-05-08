@@ -1,12 +1,9 @@
 using System;
-
 using CommandLine;
-using Common;
-using Package;
 
 namespace Clio.Command;
 
-[Verb("pkg-to-file-system", Aliases = new string[] { "tofs", "2fs" },
+[Verb("pkg-to-file-system", Aliases = new[] { "tofs", "2fs" },
     HelpText = "Load packages to file system on a web application")]
 public class LoadPackagesToFileSystemOptions : EnvironmentOptions
 {

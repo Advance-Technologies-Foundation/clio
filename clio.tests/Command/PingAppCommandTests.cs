@@ -1,4 +1,4 @@
-using Autofac;
+﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using NSubstitute;
@@ -28,11 +28,11 @@ internal class PingAppCommandTests : BaseClioModuleTests
         // Arrange
         environmentSettings.IsNetCore = isNetCore;
         fileSystem = CreateFs();
-        BindingsModule bindingModule = new (fileSystem);
+        BindingsModule bindingModule = new(fileSystem);
         container = bindingModule.Register(environmentSettings, AdditionalRegistrations);
 
         PingAppCommand command = container.Resolve<PingAppCommand>();
-        PingAppOptions options = new () { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
+        PingAppOptions options = new() { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
 
         // Act
         command.Execute(options);
@@ -58,10 +58,10 @@ internal class PingAppCommandTests : BaseClioModuleTests
     {
         // Arrange
         fileSystem = CreateFs();
-        BindingsModule bindingModule = new (fileSystem);
+        BindingsModule bindingModule = new(fileSystem);
         container = bindingModule.Register(environmentSettings, AdditionalRegistrations);
         PingAppCommand command = container.Resolve<PingAppCommand>();
-        PingAppOptions options = new () { TimeOut = 1, RetryCount = 2, RetryDelay = 3, IsNetCore = isNetCore };
+        PingAppOptions options = new() { TimeOut = 1, RetryCount = 2, RetryDelay = 3, IsNetCore = isNetCore };
         command.EnvironmentSettings.IsNetCore = true;
 
         // Act

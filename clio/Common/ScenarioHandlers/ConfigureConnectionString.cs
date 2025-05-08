@@ -1,10 +1,8 @@
-using System.IO;
+﻿using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
-
 using MediatR;
 using OneOf;
 
@@ -41,15 +39,14 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
 
         return new ConfigureConnectionStringResponse
         {
-            Status = BaseHandlerResponse.CompletionStatus.Success,
-            Description = result
+            Status = BaseHandlerResponse.CompletionStatus.Success, Description = result
         };
     }
 
     private static string UpdateWebConfig(string webConfigPath)
     {
         string configContent = File.ReadAllText(webConfigPath);
-        XmlDocument doc = new ();
+        XmlDocument doc = new();
         doc.LoadXml(configContent);
         XmlNode root = doc.DocumentElement;
 
@@ -66,7 +63,7 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
     private static string ConfigureConnectionStrings(string cnFilePath, string db, string redis)
     {
         string cnFileContent = File.ReadAllText(cnFilePath);
-        XmlDocument doc = new ();
+        XmlDocument doc = new();
         doc.LoadXml(cnFileContent);
         XmlNode root = doc.DocumentElement;
 
@@ -90,7 +87,7 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
 
         doc.Save(cnFilePath);
 
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         sb.AppendLine("Set db to:")
             .Append("\t").AppendLine(db)
             .AppendLine("Set redis to:")

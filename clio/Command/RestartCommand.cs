@@ -3,12 +3,13 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("restart-web-app", Aliases = new string[] { "restart" }, HelpText = "Restart a web application")]
+[Verb("restart-web-app", Aliases = new[] { "restart" }, HelpText = "Restart a web application")]
 public class RestartOptions : RemoteCommandOptions
 {
 }
 
-public class RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<RestartOptions>(applicationClient, settings)
+public class RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+    : RemoteCommand<RestartOptions>(applicationClient, settings)
 {
     protected override string ServicePath => EnvironmentSettings.IsNetCore
         ? @"/ServiceModel/AppInstallerService.svc/RestartApp"

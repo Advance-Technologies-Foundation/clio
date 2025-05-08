@@ -1,11 +1,10 @@
-using System;
-
+﻿using System;
 using Clio.UserEnvironment;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("unreg-web-app", Aliases = new string[] { "unreg" },
+[Verb("unreg-web-app", Aliases = new[] { "unreg" },
     HelpText = "Unregister application's settings from the list")]
 public class UnregAppOptions : EnvironmentOptions
 {
@@ -16,7 +15,7 @@ public class UnregAppOptions : EnvironmentOptions
     public bool UnregAll { get; set; }
 }
 
-public class UnregAppCommand(ISettingsRepository settingsRepository): Command<UnregAppOptions>
+public class UnregAppCommand(ISettingsRepository settingsRepository) : Command<UnregAppOptions>
 {
     private readonly ISettingsRepository _settingsRepository = settingsRepository;
 

@@ -1,13 +1,11 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
-
-using Common;
-using Models;
 using Newtonsoft.Json;
 
 namespace Clio;
+
 public interface IMarketplace
 {
     Task<string> GetFileByIdAsync(int id);
@@ -16,8 +14,8 @@ public interface IMarketplace
 public class Marketplace : IMarketplace, IDisposable
 {
     private const string _baseUri = "https://marketplace.creatio.com";
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly HttpClient _httpClient;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private MarketplaceApplicationModel _model;
 
     public Marketplace(IWorkingDirectoriesProvider workingDirectoriesProvider)
@@ -26,11 +24,10 @@ public class Marketplace : IMarketplace, IDisposable
         _workingDirectoriesProvider = workingDirectoriesProvider;
     }
 
-    private async Task GetMrkModelById(int id)
+    public void Dispose()
     {
-        Uri relativeUri = new ($"marketplace/install?appId=com-{id}", UriKind.Relative);
-        string resposne = await _httpClient.GetStringAsync(relativeUri);
-        _model = JsonConvert.DeserializeObject<MarketplaceApplicationModel>(resposne);
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     public async Task<string> GetFileByIdAsync(int id)
@@ -43,15 +40,16 @@ public class Marketplace : IMarketplace, IDisposable
         Console.WriteLine(fullpath);
         byte[] bites = await _httpClient.GetByteArrayAsync(_model.FileLink.PathAndQuery);
 
-        using FileStream fs = new (fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using FileStream fs = new(fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
         await fs.WriteAsync(bites);
         return fullpath;
     }
 
-    public void Dispose()
+    private async Task GetMrkModelById(int id)
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
+        Uri relativeUri = new($"marketplace/install?appId=com-{id}", UriKind.Relative);
+        string resposne = await _httpClient.GetStringAsync(relativeUri);
+        _model = JsonConvert.DeserializeObject<MarketplaceApplicationModel>(resposne);
     }
 
     protected virtual void Dispose(bool disposing) => _httpClient.Dispose();

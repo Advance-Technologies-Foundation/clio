@@ -1,14 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Json;
 using System.Linq;
 using System.Reflection;
-
 using Clio.Common;
 using Newtonsoft.Json;
-
 using File = System.IO.File;
 
 namespace Clio;
@@ -18,10 +16,10 @@ internal interface IPackageConverter
     int Convert(ConvertOptions options);
 }
 
-internal class PackageConverter(ILogger logger): IPackageConverter
+internal class PackageConverter(ILogger logger) : IPackageConverter
 {
-    private readonly string prefix = string.Empty;
     private readonly ILogger _logger = logger;
+    private readonly string prefix = string.Empty;
 
     public int Convert(ConvertOptions options)
     {
@@ -32,7 +30,7 @@ internal class PackageConverter(ILogger logger): IPackageConverter
 
             if (string.IsNullOrEmpty(options.Name))
             {
-                DirectoryInfo info = new (options.Path);
+                DirectoryInfo info = new(options.Path);
                 if (File.Exists(Path.Combine(info.FullName, prefix, "descriptor.json")))
                 {
                     packagePathes.Add(info.FullName);
@@ -48,15 +46,14 @@ internal class PackageConverter(ILogger logger): IPackageConverter
             }
             else
             {
-                packagePathes = options.Name.Split(',').Select((a) => a.Trim()).ToList();
+                packagePathes = options.Name.Split(',').Select(a => a.Trim()).ToList();
             }
 
             foreach (string packagePath in packagePathes)
             {
-                ConvertOptions convertOptions = new ()
+                ConvertOptions convertOptions = new()
                 {
-                    Path = packagePath,
-                    ConvertSourceCode = options.ConvertSourceCode
+                    Path = packagePath, ConvertSourceCode = options.ConvertSourceCode
                 };
                 if (ConvertPackage(convertOptions) == 1)
                 {
@@ -78,7 +75,7 @@ internal class PackageConverter(ILogger logger): IPackageConverter
         try
         {
             string packageFolderPath = options.Path;
-            DirectoryInfo packageDirectory = new (packageFolderPath);
+            DirectoryInfo packageDirectory = new(packageFolderPath);
             FileInfo[] existingProjects = packageDirectory.GetFiles("*.csproj");
             string packageName = packageDirectory.Name;
             if (existingProjects.Length > 0)
@@ -129,12 +126,12 @@ internal class PackageConverter(ILogger logger): IPackageConverter
             Directory.CreateDirectory(csFilesPath);
         }
 
-        DirectoryInfo csFilesDir = new (csFilesPath);
+        DirectoryInfo csFilesDir = new(csFilesPath);
         foreach (FileInfo file in csFilesDir.GetFiles("*.cs"))
         {
             string name = file.Name.Split('.')[0];
             names.Add(name);
-            DirectoryInfo currentResourcesDirectory = new (Path.Combine(resourcePath, name + ".SourceCode"));
+            DirectoryInfo currentResourcesDirectory = new(Path.Combine(resourcePath, name + ".SourceCode"));
             if (!currentResourcesDirectory.Exists)
             {
                 break;
@@ -179,10 +176,10 @@ internal class PackageConverter(ILogger logger): IPackageConverter
         string propertiesDirPath = Path.Combine(path, "Properties");
         Directory.CreateDirectory(propertiesDirPath);
         string propertiesFilePath = Path.Combine(propertiesDirPath, "AssemblyInfo.cs");
-        CreateFromTpl(GetTplPath(CreatioPackage.AssemblyInfoTpl), propertiesFilePath, name,[],
+        CreateFromTpl(GetTplPath(CreatioPackage.AssemblyInfoTpl), propertiesFilePath, name, [],
             maintainer, refs, depends);
         string packagesConfigFilePath = Path.Combine(path, "packages.config");
-        CreateFromTpl(GetTplPath(CreatioPackage.PackageConfigTpl), packagesConfigFilePath, name,[],
+        CreateFromTpl(GetTplPath(CreatioPackage.PackageConfigTpl), packagesConfigFilePath, name, [],
             maintainer, refs, depends);
     }
 
@@ -210,7 +207,7 @@ internal class PackageConverter(ILogger logger): IPackageConverter
         string line;
         try
         {
-            StreamReader sr = new (path);
+            StreamReader sr = new(path);
             line = sr.ReadLine();
             line = sr.ReadLine();
             line = sr.ReadLine();
@@ -246,7 +243,7 @@ internal class PackageConverter(ILogger logger): IPackageConverter
         }
         catch (Exception)
         {
-            return[];
+            return [];
         }
 
         return result;
@@ -256,7 +253,7 @@ internal class PackageConverter(ILogger logger): IPackageConverter
         string maintainer, List<string> refs, List<string> deps)
     {
         string text = ReplaceMacro(File.ReadAllText(tplPath), packageName, fileNames, maintainer, refs, deps);
-        FileInfo file = new (filePath);
+        FileInfo file = new(filePath);
         using (StreamWriter sw = file.CreateText())
         {
             sw.Write(text);
@@ -329,17 +326,18 @@ internal class PackageConverter(ILogger logger): IPackageConverter
 
     private static string ToJsonMsDate(DateTime date)
     {
-        JsonSerializerSettings microsoftDateFormatSettings = new ()
+        JsonSerializerSettings microsoftDateFormatSettings = new()
         {
             DateFormatHandling = DateFormatHandling.MicrosoftDateFormat
         };
-        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", string.Empty).Replace("\\", string.Empty);
+        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", string.Empty)
+            .Replace("\\", string.Empty);
     }
 
     private static List<string> MoveFiles(string schemasPath, string filesPath, string extension)
     {
         List<string> fileNames = [];
-        DirectoryInfo dir = new (schemasPath);
+        DirectoryInfo dir = new(schemasPath);
         foreach (DirectoryInfo schemaDirectory in dir.GetDirectories())
         {
             foreach (FileInfo file in schemaDirectory.GetFiles(extension))

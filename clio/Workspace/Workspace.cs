@@ -1,26 +1,22 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
-
-using Command;
-using Common;
-using ComposableApplication;
-using UserEnvironment;
 
 namespace Clio.Workspaces;
 
 public class Workspace : IWorkspace
 {
+    private readonly IComposableApplicationManager _composableApplicationManager;
     private readonly EnvironmentSettings _environmentSettings;
+    private readonly IJsonConverter _jsonConverter;
+    private readonly IWorkspaceCreator _workspaceCreator;
+    private readonly IWorkspaceInstaller _workspaceInstaller;
 
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IWorkspaceCreator _workspaceCreator;
     private readonly IWorkspaceRestorer _workspaceRestorer;
-    private readonly IWorkspaceInstaller _workspaceInstaller;
     private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
-    private readonly IJsonConverter _jsonConverter;
-    private readonly IComposableApplicationManager _composableApplicationManager;
+
+    private Lazy<WorkspaceSettings> _workspaceSettings;
 
     public Workspace(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
         IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
@@ -49,18 +45,9 @@ public class Workspace : IWorkspace
 
     private string WorkspaceEnvironmentSettingsPath => _workspacePathBuilder.WorkspaceEnvironmentSettingsPath;
 
-    private Lazy<WorkspaceSettings> _workspaceSettings;
-
     public WorkspaceSettings WorkspaceSettings => _workspaceSettings.Value;
 
     public bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
-
-    private void ResetLazyWorkspaceSettings() =>
-        _workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
-
-    private WorkspaceSettings ReadWorkspaceSettings() =>
-        _jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
-
 
 
     public void SaveWorkspaceEnvironment(string environmentName) =>
@@ -123,9 +110,15 @@ public class Workspace : IWorkspace
         return _workspaceInstaller.PublishToFolder(workspacePath, sanitizeFileName, destinationFolderPath, false);
     }
 
-    public static string GetSanitizeFileNameFromString(string fileName) =>
-        string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
-
     public string GetWorkspaceApplicationCode() =>
         _composableApplicationManager.GetCode(_workspacePathBuilder.PackagesFolderPath);
+
+    private void ResetLazyWorkspaceSettings() =>
+        _workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+
+    private WorkspaceSettings ReadWorkspaceSettings() =>
+        _jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
+
+    public static string GetSanitizeFileNameFromString(string fileName) =>
+        string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
 }

@@ -1,6 +1,4 @@
-using System;
-
-namespace Clio.Project.NuGet;
+﻿namespace Clio.Project.NuGet;
 
 public class NugetPackage(string name, PackageVersion version)
 {

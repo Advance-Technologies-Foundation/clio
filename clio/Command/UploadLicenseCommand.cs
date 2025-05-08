@@ -1,13 +1,9 @@
-using System;
-
+﻿using System;
 using CommandLine;
-using Common;
-using WebApplication;
-using Workspaces;
 
 namespace Clio.Command;
 
-[Verb("upload-license", Aliases = new string[] { "license", "loadlicense", "load-license" },
+[Verb("upload-license", Aliases = new[] { "license", "loadlicense", "load-license" },
     HelpText = "Load license to selected environment")]
 public class UploadLicenseCommandOptions : EnvironmentOptions
 {

@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using Clio.Common;
 using CommandLine;
 using FluentValidation;
@@ -99,12 +98,14 @@ public class UninstallCreatioCommandOptions : EnvironmentNameOptions
     public string PhysicalPath { get; set; }
 }
 
-public class UninstallCreatioCommand(IValidator<UninstallCreatioCommandOptions> validator,
-    ILogger logger, ICreatioUninstaller creatioUninstaller): Command<UninstallCreatioCommandOptions>
+public class UninstallCreatioCommand(
+    IValidator<UninstallCreatioCommandOptions> validator,
+    ILogger logger,
+    ICreatioUninstaller creatioUninstaller) : Command<UninstallCreatioCommandOptions>
 {
-    private readonly IValidator<UninstallCreatioCommandOptions> _validator = validator;
-    private readonly ILogger _logger = logger;
     private readonly ICreatioUninstaller _creatioUninstaller = creatioUninstaller;
+    private readonly ILogger _logger = logger;
+    private readonly IValidator<UninstallCreatioCommandOptions> _validator = validator;
 
     private int PrintDoneAndExit(UninstallCreatioCommandOptions options)
     {

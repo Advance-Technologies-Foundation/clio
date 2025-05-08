@@ -1,16 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
-
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("pack-nuget-pkg", Aliases = new string[] { "pack" }, HelpText = "Pack NuGet package")]
+[Verb("pack-nuget-pkg", Aliases = new[] { "pack" }, HelpText = "Pack NuGet package")]
 public class PackNuGetPkgOptions : EnvironmentOptions
 {
     [Value(0, MetaName = "PackagePath", Required = true, HelpText = "Path of package folder")]

@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-
 using Autofac;
 using Clio.Common;
 using Clio.Package;
@@ -18,12 +17,13 @@ public class ClioGatewayTests : BaseClioModuleTests
 {
     private const string Net6ClioPkgName = "cliogate_netcore";
     private const string NetFrameworkClioPkgName = "cliogate";
+
     private readonly IApplicationPackageListProvider _applicationPackageListProviderMock
         = Substitute.For<IApplicationPackageListProvider>();
 
     private readonly Func<Version, string, PackageInfo> _createPackageInfo = (version, name) =>
     {
-        PackageDescriptor descriptor = new ()
+        PackageDescriptor descriptor = new()
         {
             DependsOn = new List<PackageDependency>(),
             UId = Guid.NewGuid(),

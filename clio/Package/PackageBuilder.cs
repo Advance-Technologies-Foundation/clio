@@ -1,7 +1,5 @@
 using System.Collections.Generic;
 
-using Common;
-
 namespace Clio.Package;
 
 public interface IPackageBuilder
@@ -13,10 +11,10 @@ public interface IPackageBuilder
 
 public class PackageBuilder : IPackageBuilder
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClientFactory _applicationClientFactory;
-    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly EnvironmentSettings _environmentSettings;
     private readonly ILogger _logger;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
     public PackageBuilder(
         EnvironmentSettings environmentSettings,
@@ -31,6 +29,10 @@ public class PackageBuilder : IPackageBuilder
         _serviceUrlBuilder = serviceUrlBuilder;
         _logger = logger;
     }
+
+    public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
+
+    public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
 
     private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
 
@@ -59,8 +61,4 @@ public class PackageBuilder : IPackageBuilder
             _logger.WriteLine($"End {compilationName} packages ({safePackageName}).");
         }
     }
-
-    public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
-
-    public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
 }

@@ -1,9 +1,6 @@
 using System;
 using System.IO;
-
 using CommandLine;
-using Common;
-using Workspaces;
 
 namespace Clio.Command;
 
@@ -26,7 +23,7 @@ public class WorkspaceOptions : EnvironmentOptions
     public string AppCode { get; set; }
 }
 
-[Verb("restore-workspace", Aliases = new string[] { "restorew", "pullw", "pull-workspace" },
+[Verb("restore-workspace", Aliases = new[] { "restorew", "pullw", "pull-workspace" },
     HelpText = "Restore clio workspace")]
 public class RestoreWorkspaceOptions : WorkspaceOptions
 {
@@ -34,10 +31,10 @@ public class RestoreWorkspaceOptions : WorkspaceOptions
 
 public class RestoreWorkspaceCommand : Command<RestoreWorkspaceOptions>
 {
-    private readonly IWorkspace _workspace;
-    private readonly ILogger _logger;
-    private readonly CreateWorkspaceCommand _createWorkspaceCommand;
     private readonly IClioGateway _clioGateway;
+    private readonly CreateWorkspaceCommand _createWorkspaceCommand;
+    private readonly ILogger _logger;
+    private readonly IWorkspace _workspace;
 
     public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger, CreateWorkspaceCommand createWorkspaceCommand,
         IClioGateway clioGateway)
@@ -70,7 +67,7 @@ public class RestoreWorkspaceCommand : Command<RestoreWorkspaceOptions>
     }
 
     private CreateWorkspaceCommandOptions CloneFromRestoreOptions(RestoreWorkspaceOptions options) =>
-        new ()
+        new()
         {
             IsNugetRestore = options.IsNugetRestore,
             IsCreateSolution = options.IsCreateSolution,

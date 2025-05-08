@@ -1,14 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-
 using CommandLine;
-using Common;
-using Workspaces;
 
 namespace Clio.Command;
 
-[Verb("create-workspace", Aliases = new string[] { "createw" }, HelpText = "Create open project cmd file")]
+[Verb("create-workspace", Aliases = new[] { "createw" }, HelpText = "Create open project cmd file")]
 public class CreateWorkspaceCommandOptions : WorkspaceOptions
 {
     internal override bool RequiredEnvironment => false;
@@ -16,8 +12,8 @@ public class CreateWorkspaceCommandOptions : WorkspaceOptions
 
 public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>
 {
-    private readonly IWorkspace _workspace;
     private readonly ILogger _logger;
+    private readonly IWorkspace _workspace;
 
     public CreateWorkspaceCommand(IWorkspace workspace, ILogger logger)
     {

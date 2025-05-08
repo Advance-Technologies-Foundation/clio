@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-
 using Clio.Common;
 using Clio.Package;
 
@@ -11,22 +10,23 @@ namespace Clio.Project.NuGet;
 
 public class NuGetManager : INuGetManager
 {
-    private readonly INuspecFilesGenerator _nuspecFilesGenerator;
-    private readonly INugetPacker _nugetPacker;
-    private readonly INugetPackageRestorer _nugetPackageRestorer;
-    private readonly INugetPackagesProvider _nugetPackagesProvider;
-    private readonly IPackageInfoProvider _packageInfoProvider;
     private readonly IApplicationPackageListProvider _applicationPackageListProvider;
-    private readonly IPackageArchiver _packageArchiver;
     private readonly IDotnetExecutor _dotnetExecutor;
     private readonly IFileSystem _fileSystem;
-    private readonly ILogger _logger;
 
     private readonly IEnumerable<string> _isNotEmptyPackageInfoFields = new[]
     {
         nameof(PackageInfo.Descriptor.Name), nameof(PackageInfo.Descriptor.Maintainer),
         nameof(PackageInfo.Descriptor.PackageVersion)
     };
+
+    private readonly ILogger _logger;
+    private readonly INugetPackageRestorer _nugetPackageRestorer;
+    private readonly INugetPackagesProvider _nugetPackagesProvider;
+    private readonly INugetPacker _nugetPacker;
+    private readonly INuspecFilesGenerator _nuspecFilesGenerator;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly IPackageInfoProvider _packageInfoProvider;
 
     public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker,
         INugetPackageRestorer nugetPackageRestorer, INugetPackagesProvider nugetPackagesProvider,
@@ -55,6 +55,74 @@ public class NuGetManager : INuGetManager
         _dotnetExecutor = dotnetExecutor;
         _fileSystem = fileSystem;
         _logger = logger;
+    }
+
+    public void Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb,
+        string destinationNupkgDirectory)
+    {
+        CheckPackArguments(packagePath, dependencies);
+        destinationNupkgDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationNupkgDirectory);
+        PackageInfo packageInfo = _packageInfoProvider.GetPackageInfo(packagePath);
+        CheckEmptyFieldsPackageInfo(packageInfo);
+        IEnumerable<PackageDependency> packagesDependencies =
+            SetEmptyUIdDependencies(packageInfo.Descriptor.DependsOn);
+        CheckDependencies(dependencies, packagesDependencies);
+        string packedPackagePath = Path.Combine(
+            destinationNupkgDirectory,
+            _packageArchiver.GetPackedPackageFileName(packageInfo.Descriptor.Name));
+        string nuspecFilePath = Path.Combine(
+            destinationNupkgDirectory,
+            _nuspecFilesGenerator.GetNuspecFileName(packageInfo));
+        try
+        {
+            _packageArchiver.Pack(packagePath, packedPackagePath, skipPdb);
+            _nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
+            _nugetPacker.Pack(nuspecFilePath, destinationNupkgDirectory);
+        }
+        finally
+        {
+            _fileSystem.DeleteFileIfExists(nuspecFilePath);
+            _fileSystem.DeleteFileIfExists(packedPackagePath);
+        }
+    }
+
+    public void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl)
+    {
+        CheckPushArguments(nupkgFilePath, apiKey, nugetSourceUrl);
+        if (!File.Exists(nupkgFilePath))
+        {
+            throw new InvalidOperationException($"Invalid nupkg file path '{nupkgFilePath}'");
+        }
+
+        string pushCommand = $"nuget push \"{nupkgFilePath}\" -k {apiKey} -s {nugetSourceUrl}";
+        string result = _dotnetExecutor.Execute(pushCommand, true);
+        _logger.WriteLine(result);
+    }
+
+    public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+        string destinationDirectory) =>
+        _nugetPackageRestorer.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, destinationDirectory);
+
+    public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+        string destinationDirectory, bool overwrite) =>
+        _nugetPackageRestorer.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationDirectory,
+            overwrite);
+
+    public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
+        string destinationDirectory, bool overwrite) =>
+        _nugetPackageRestorer.RestoreToPackageStorage(nugetPackageFullName, nugetSourceUrl,
+            destinationDirectory, overwrite);
+
+    public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl)
+    {
+        nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
+        IEnumerable<PackageInfo> applicationPackages = _applicationPackageListProvider.GetPackages();
+        IEnumerable<string> appPackagesNames = applicationPackages
+            .Select(pkg => pkg.Descriptor.Name)
+            .Distinct();
+        IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget =
+            _nugetPackagesProvider.GetLastVersionPackages(appPackagesNames, nugetSourceUrl);
+        return GetPackagesForUpdate(applicationPackages, appPackagesNamesInNuget);
     }
 
     private static void CheckPackArguments(string packagePath, IEnumerable<PackageDependency> dependencies)
@@ -133,7 +201,7 @@ public class NuGetManager : INuGetManager
             PackageInfo package = applicationPackages
                 .First(pkg => pkg.Descriptor.Name == lastVersionNugetPackages.Name);
             if (!PackageVersion.TryParseVersion(
-                package.Descriptor.PackageVersion,
+                    package.Descriptor.PackageVersion,
                     out PackageVersion packageVersion))
             {
                 continue;
@@ -146,73 +214,5 @@ public class NuGetManager : INuGetManager
         }
 
         return packagesForUpdate;
-    }
-
-    public void Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb,
-        string destinationNupkgDirectory)
-    {
-        CheckPackArguments(packagePath, dependencies);
-        destinationNupkgDirectory = _fileSystem.GetCurrentDirectoryIfEmpty(destinationNupkgDirectory);
-        PackageInfo packageInfo = _packageInfoProvider.GetPackageInfo(packagePath);
-        CheckEmptyFieldsPackageInfo(packageInfo);
-        IEnumerable<PackageDependency> packagesDependencies =
-            SetEmptyUIdDependencies(packageInfo.Descriptor.DependsOn);
-        CheckDependencies(dependencies, packagesDependencies);
-        string packedPackagePath = Path.Combine(
-            destinationNupkgDirectory,
-            _packageArchiver.GetPackedPackageFileName(packageInfo.Descriptor.Name));
-        string nuspecFilePath = Path.Combine(
-            destinationNupkgDirectory,
-            _nuspecFilesGenerator.GetNuspecFileName(packageInfo));
-        try
-        {
-            _packageArchiver.Pack(packagePath, packedPackagePath, skipPdb, true);
-            _nuspecFilesGenerator.Create(packageInfo, dependencies, packedPackagePath, nuspecFilePath);
-            _nugetPacker.Pack(nuspecFilePath, destinationNupkgDirectory);
-        }
-        finally
-        {
-            _fileSystem.DeleteFileIfExists(nuspecFilePath);
-            _fileSystem.DeleteFileIfExists(packedPackagePath);
-        }
-    }
-
-    public void Push(string nupkgFilePath, string apiKey, string nugetSourceUrl)
-    {
-        CheckPushArguments(nupkgFilePath, apiKey, nugetSourceUrl);
-        if (!File.Exists(nupkgFilePath))
-        {
-            throw new InvalidOperationException($"Invalid nupkg file path '{nupkgFilePath}'");
-        }
-
-        string pushCommand = $"nuget push \"{nupkgFilePath}\" -k {apiKey} -s {nugetSourceUrl}";
-        string result = _dotnetExecutor.Execute(pushCommand, true);
-        _logger.WriteLine(result);
-    }
-
-    public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
-        string destinationDirectory) =>
-        _nugetPackageRestorer.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl, destinationDirectory);
-
-    public void RestoreToDirectory(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
-        string destinationDirectory, bool overwrite) =>
-        _nugetPackageRestorer.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, destinationDirectory,
-            overwrite);
-
-    public void RestoreToPackageStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
-        string destinationDirectory, bool overwrite) =>
-        _nugetPackageRestorer.RestoreToPackageStorage(nugetPackageFullName, nugetSourceUrl,
-            destinationDirectory, overwrite);
-
-    public IEnumerable<PackageForUpdate> GetPackagesForUpdate(string nugetSourceUrl)
-    {
-        nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
-        IEnumerable<PackageInfo> applicationPackages = _applicationPackageListProvider.GetPackages();
-        IEnumerable<string> appPackagesNames = applicationPackages
-            .Select(pkg => pkg.Descriptor.Name)
-            .Distinct();
-        IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget =
-            _nugetPackagesProvider.GetLastVersionPackages(appPackagesNames, nugetSourceUrl);
-        return GetPackagesForUpdate(applicationPackages, appPackagesNamesInNuget);
     }
 }

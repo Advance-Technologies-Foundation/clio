@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 
@@ -27,7 +27,7 @@ public static class FileSystemExtension
 
         foreach (string exampleFile in exampleFiles)
         {
-            FileInfo fileInfo = new (exampleFile);
+            FileInfo fileInfo = new(exampleFile);
             string destinationFilePath = string.IsNullOrEmpty(destinationFolderName)
                 ? fileInfo.Name
                 : Path.Combine(destinationFolderName, fileInfo.Name);
@@ -64,7 +64,7 @@ public static class FileSystemExtension
         string[] exampleFiles = Directory.GetFiles(folderPath);
         foreach (string exampleFile in exampleFiles)
         {
-            FileInfo fileInfo = new (exampleFile);
+            FileInfo fileInfo = new(exampleFile);
             mockFileSystem.AddFile(fileInfo.FullName, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
         }
 

@@ -7,8 +7,8 @@ namespace Clio.Common;
 
 public class TemplateProvider : ITemplateProvider
 {
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public TemplateProvider(IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem)
     {
@@ -16,45 +16,6 @@ public class TemplateProvider : ITemplateProvider
         fileSystem.CheckArgumentNull(nameof(fileSystem));
         _workingDirectoriesProvider = workingDirectoriesProvider;
         _fileSystem = fileSystem;
-    }
-
-    private string GetCompatibleVersionTemplatePath(string templateName, string creatioVersion = "",
-        string group = "")
-    {
-        bool groupExists = !string.IsNullOrWhiteSpace(group);
-        if (!groupExists && string.IsNullOrWhiteSpace(creatioVersion))
-        {
-            return _workingDirectoriesProvider.GetTemplateFolderPath(templateName);
-        }
-
-        string root = groupExists ? group : templateName;
-        string rootPath = _workingDirectoriesProvider.GetTemplateFolderPath(root);
-        DirectoryInfo[] versions = new DirectoryInfo(rootPath).GetDirectories();
-
-        List<Version> availableVersions = [];
-        foreach (DirectoryInfo item in versions)
-        {
-            if (Version.TryParse(item.Name, out Version version))
-            {
-                availableVersions.Add(version);
-            }
-        }
-
-        availableVersions.Sort();
-        Version compatibleVersion = availableVersions.FindLast(v => v <= new Version(creatioVersion)) ?? throw new ArgumentException(
-            $"Minimum compatible version is {availableVersions.First()}",
-                "version");
-        return Path.Combine(rootPath, compatibleVersion.ToString(), groupExists ? templateName : string.Empty);
-    }
-
-    private string ReplaceMacrosInText(string content, Dictionary<string, string> macrosValues)
-    {
-        foreach (KeyValuePair<string, string> macro in macrosValues)
-        {
-            content = content.Replace(macro.Key, macro.Value);
-        }
-
-        return content;
     }
 
     public void CopyTemplateFolder(string templateFolderName, string destinationPath, string creatioVersion = "",
@@ -104,5 +65,45 @@ public class TemplateProvider : ITemplateProvider
     {
         string templateFolder = _workingDirectoriesProvider.GetTemplateFolderPath(templateCode);
         return _fileSystem.GetDirectories(templateFolder);
+    }
+
+    private string GetCompatibleVersionTemplatePath(string templateName, string creatioVersion = "",
+        string group = "")
+    {
+        bool groupExists = !string.IsNullOrWhiteSpace(group);
+        if (!groupExists && string.IsNullOrWhiteSpace(creatioVersion))
+        {
+            return _workingDirectoriesProvider.GetTemplateFolderPath(templateName);
+        }
+
+        string root = groupExists ? group : templateName;
+        string rootPath = _workingDirectoriesProvider.GetTemplateFolderPath(root);
+        DirectoryInfo[] versions = new DirectoryInfo(rootPath).GetDirectories();
+
+        List<Version> availableVersions = [];
+        foreach (DirectoryInfo item in versions)
+        {
+            if (Version.TryParse(item.Name, out Version version))
+            {
+                availableVersions.Add(version);
+            }
+        }
+
+        availableVersions.Sort();
+        Version compatibleVersion = availableVersions.FindLast(v => v <= new Version(creatioVersion)) ??
+                                    throw new ArgumentException(
+                                        $"Minimum compatible version is {availableVersions.First()}",
+                                        "version");
+        return Path.Combine(rootPath, compatibleVersion.ToString(), groupExists ? templateName : string.Empty);
+    }
+
+    private string ReplaceMacrosInText(string content, Dictionary<string, string> macrosValues)
+    {
+        foreach (KeyValuePair<string, string> macro in macrosValues)
+        {
+            content = content.Replace(macro.Key, macro.Value);
+        }
+
+        return content;
     }
 }

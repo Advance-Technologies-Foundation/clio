@@ -1,15 +1,13 @@
 using System;
 using System.IO;
 
-using Common;
-
 namespace Clio.Workspaces;
 
 public class EnvironmentScriptCreator : IEnvironmentScriptCreator
 {
+    private readonly IFileSystem _fileSystem;
     private readonly ITemplateProvider _templateProvider;
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IFileSystem _fileSystem;
 
     public EnvironmentScriptCreator(ITemplateProvider templateProvider, IWorkspacePathBuilder workspacePathBuilder,
         IFileSystem fileSystem)
@@ -20,6 +18,12 @@ public class EnvironmentScriptCreator : IEnvironmentScriptCreator
         _templateProvider = templateProvider;
         _workspacePathBuilder = workspacePathBuilder;
         _fileSystem = fileSystem;
+    }
+
+    public void Create(Version nugetCreatioSdkVersion)
+    {
+        CreateSetFrameworkEnvironmentCmd(nugetCreatioSdkVersion);
+        CreateSetNetCoreEnvironmentCmd(nugetCreatioSdkVersion);
     }
 
     private string ReplaceMacro(string template, string coreLibPath, string coreTargetFramework) =>
@@ -47,11 +51,5 @@ public class EnvironmentScriptCreator : IEnvironmentScriptCreator
     {
         string coreCreatioSdkPath = _workspacePathBuilder.BuildCoreCreatioSdkPath(nugetVersion);
         CreateSetEnvironmentCmd("set-netcore-environment.cmd", coreCreatioSdkPath, "netstandard2.0");
-    }
-
-    public void Create(Version nugetCreatioSdkVersion)
-    {
-        CreateSetFrameworkEnvironmentCmd(nugetCreatioSdkVersion);
-        CreateSetNetCoreEnvironmentCmd(nugetCreatioSdkVersion);
     }
 }

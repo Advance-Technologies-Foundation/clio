@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using CommandLine;
 using CommandLine.Text;
 
@@ -83,29 +82,6 @@ public class EnvironmentOptions
     [Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
     public bool RestartEnvironment { get; set; }
 
-    public static bool IsNullOrEmpty(EnvironmentOptions options)
-    {
-        if (options == null)
-        {
-            return true;
-        }
-
-        if (string.IsNullOrEmpty(options.Uri) &&
-            string.IsNullOrEmpty(options.Login) &&
-            string.IsNullOrEmpty(options.Password) &&
-            string.IsNullOrEmpty(options.ClientId) &&
-            string.IsNullOrEmpty(options.ClientSecret) &&
-            string.IsNullOrEmpty(options.AuthAppUri) &&
-            string.IsNullOrEmpty(options.Maintainer))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    public virtual bool ShowDefaultEnvironment() => true;
-
     [Option("db-server-uri", Required = false, HelpText = "Db server uri")]
     public string DbServerUri { get; set; }
 
@@ -131,6 +107,29 @@ public class EnvironmentOptions
     public string CallbackProcess { get; set; }
 
     internal virtual bool RequiredEnvironment => true;
+
+    public static bool IsNullOrEmpty(EnvironmentOptions options)
+    {
+        if (options == null)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrEmpty(options.Uri) &&
+            string.IsNullOrEmpty(options.Login) &&
+            string.IsNullOrEmpty(options.Password) &&
+            string.IsNullOrEmpty(options.ClientId) &&
+            string.IsNullOrEmpty(options.ClientSecret) &&
+            string.IsNullOrEmpty(options.AuthAppUri) &&
+            string.IsNullOrEmpty(options.Maintainer))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public virtual bool ShowDefaultEnvironment() => true;
 
     public void CopyFromEnvironmentSettings(EnvironmentOptions source)
     {
@@ -200,20 +199,20 @@ internal class ConvertOptions
     public static IEnumerable<Example> Examples =>
         new List<Example>
         {
-            new ("Convert existing packages",
+            new("Convert existing packages",
                 new ConvertOptions { Path = "C:\\Pkg\\", Name = "MyApp,MyIntegration" }),
-            new ("Convert all packages in folder",
+            new("Convert all packages in folder",
                 new ConvertOptions { Path = "C:\\Pkg\\" })
         };
 }
 
-[Verb("install-gate", Aliases = new string[] { "update-gate", "gate", "installgate" },
+[Verb("install-gate", Aliases = new[] { "update-gate", "gate", "installgate" },
     HelpText = "Install clio api gateway to application")]
 internal class InstallGateOptions : EnvironmentNameOptions
 {
 }
 
-[Verb("add-item", Aliases = new string[] { "create" }, HelpText = "Create item in project")]
+[Verb("add-item", Aliases = new[] { "create" }, HelpText = "Create item in project")]
 internal class ItemOptions : EnvironmentOptions
 {
     [Value(0, MetaName = "Item type", Required = true, HelpText = "Item type")]
@@ -238,7 +237,7 @@ internal class ItemOptions : EnvironmentOptions
     public string Culture { get; set; }
 }
 
-[Verb("set-dev-mode", Aliases = new string[] { "dev", "unlock" },
+[Verb("set-dev-mode", Aliases = new[] { "dev", "unlock" },
     HelpText = "Activate developer mode for selected environment")]
 internal class DeveloperModeOptions : EnvironmentNameOptions
 {

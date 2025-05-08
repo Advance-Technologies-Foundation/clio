@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json;
-
 using Autofac;
 using Clio.Workspaces;
 using FluentAssertions;
@@ -87,10 +86,10 @@ internal class WorkspaceTest
         string appName = "iframe-sample";
         string appVersion = "1.0.0";
         string expectedFileName =
-            Clio.Workspaces.Workspace.GetSanitizeFileNameFromString($"{appName}_{branch}_{appVersion}.zip");
+            Workspaces.Workspace.GetSanitizeFileNameFromString($"{appName}_{branch}_{appVersion}.zip");
         string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
         string exampleWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
-        string branchFolderName = Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(branch);
+        string branchFolderName = Workspaces.Workspace.GetSanitizeFileNameFromString(branch);
 
         // app_store_path\app_name\bramch\file_name
         string expectedFilePath = Path.Combine(appStorePath, appName, branchFolderName, expectedFileName);

@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-
 using ATF.Repository.Mock;
 using Clio.Command;
 using Clio.Common;
@@ -21,12 +20,12 @@ public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsO
     public void Repository_ShouldBeCalled()
     {
         // Arrange
-        DataProviderMock dataProviderMock = new ();
+        DataProviderMock dataProviderMock = new();
         ILogger loggerMock = Substitute.For<ILogger>();
         IApplicationClient applicationClientMock = Substitute.For<IApplicationClient>();
-        ListInstalledAppsCommand command = new (dataProviderMock, loggerMock, applicationClientMock,
+        ListInstalledAppsCommand command = new(dataProviderMock, loggerMock, applicationClientMock,
             environmentSettings);
-        ListInstalledAppsOptions options = new ();
+        ListInstalledAppsOptions options = new();
 
         IItemsMock? mock = dataProviderMock
             .MockItems(nameof(SysInstalledApp));
@@ -36,7 +35,6 @@ public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsO
             {
                 { "Id", Guid.NewGuid() }, { "Name", "Fake name" }, { "Code", "FakeCode" }, { "Version", "1.0.0" }
             }
-
         ]);
 
         int callCount = 0;
@@ -48,9 +46,9 @@ public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsO
         // Assert
         callCount.Should().Be(1);
         loggerMock.Received(1).PrintTable(Arg.Is<ConsoleTable>(table =>
-                table.Rows.Count == 1
-                && (string)table.Rows[0].GetValue(0) == "Fake name"
-                && (string)table.Rows[0].GetValue(1) == "FakeCode"
-                && (string)table.Rows[0].GetValue(2) == "1.0.0"));
+            table.Rows.Count == 1
+            && (string)table.Rows[0].GetValue(0) == "Fake name"
+            && (string)table.Rows[0].GetValue(1) == "FakeCode"
+            && (string)table.Rows[0].GetValue(2) == "1.0.0"));
     }
 }

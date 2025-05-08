@@ -1,8 +1,7 @@
-using System;
-
+﻿using System;
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Common;
 using Clio.Package;
-using Clio.Requests;
 using Clio.Tests.Command;
 using Clio.WebApplication;
 using FluentAssertions;
@@ -18,11 +17,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
     public void RestartApplicationAfterInstallPackageInNet6()
     {
         string packagePath = "T:\\TestClioPackage.gz";
-        fileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
-        EnvironmentSettings environmentSettings = new ()
-        {
-            IsNetCore = true
-        };
+        fileSystem.AddFile(packagePath, new MockFileData(new byte[0]));
+        EnvironmentSettings environmentSettings = new() { IsNetCore = true };
         IApplicationClientFactory? applicationClientFactory = Substitute.For<IApplicationClientFactory>();
         IApplication? application = Substitute.For<IApplication>();
         IPackageArchiver? packageArchiver = Substitute.For<IPackageArchiver>();
@@ -31,8 +27,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
         IApplicationLogProvider? applicationLogProvider = Substitute.For<IApplicationLogProvider>();
         ILogger? logger = Substitute.For<ILogger>();
         IPackageLockManager? packageLockManager = Substitute.For<IPackageLockManager>();
-        FileSystem clioFileSystem = new (fileSystem);
-        ApplicationInstaller applicationInstaller = new (applicationLogProvider,
+        FileSystem clioFileSystem = new(fileSystem);
+        ApplicationInstaller applicationInstaller = new(applicationLogProvider,
             environmentSettings,
             applicationClientFactory,
             application,
@@ -51,10 +47,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
     {
         string packageFolderPath = "T:\\TestClioPackageFolder";
         fileSystem.AddDirectory(packageFolderPath);
-        EnvironmentSettings environmentSettings = new ()
-        {
-            IsNetCore = true
-        };
+        EnvironmentSettings environmentSettings = new() { IsNetCore = true };
         IApplicationClientFactory? applicationClientFactory = Substitute.For<IApplicationClientFactory>();
         IApplication? application = Substitute.For<IApplication>();
         IPackageArchiver? packageArchiver = Substitute.For<IPackageArchiver>();
@@ -64,9 +57,9 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
         IServiceUrlBuilder? serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
         ILogger? logger = Substitute.For<ILogger>();
         IPackageLockManager? packageLockManager = Substitute.For<IPackageLockManager>();
-        FileSystem clioFileSystem = new (fileSystem);
+        FileSystem clioFileSystem = new(fileSystem);
         IApplicationLogProvider? applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-        ApplicationInstaller applicationInstaller = new (applicationLogProvider,
+        ApplicationInstaller applicationInstaller = new(applicationLogProvider,
             environmentSettings,
             applicationClientFactory,
             application,
@@ -85,10 +78,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
     {
         string packageFolderPath = "T:\\TestClioPackageFolder";
         fileSystem.AddDirectory(packageFolderPath);
-        EnvironmentSettings environmentSettings = new ()
-        {
-            IsNetCore = true
-        };
+        EnvironmentSettings environmentSettings = new() { IsNetCore = true };
         IApplicationClientFactory? applicationClientFactory = Substitute.For<IApplicationClientFactory>();
         IApplication? application = Substitute.For<IApplication>();
         application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
@@ -99,9 +89,9 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
         IServiceUrlBuilder? serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
         ILogger? logger = Substitute.For<ILogger>();
         IPackageLockManager? packageLockManager = Substitute.For<IPackageLockManager>();
-        FileSystem clioFileSystem = new (fileSystem);
+        FileSystem clioFileSystem = new(fileSystem);
         IApplicationLogProvider? applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-        ApplicationInstaller applicationInstaller = new (applicationLogProvider,
+        ApplicationInstaller applicationInstaller = new(applicationLogProvider,
             environmentSettings,
             applicationClientFactory,
             application,
@@ -119,10 +109,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
     {
         string packageFolderPath = "T:\\TestClioPackageFolder";
         fileSystem.AddDirectory(packageFolderPath);
-        EnvironmentSettings environmentSettings = new ()
-        {
-            IsNetCore = true
-        };
+        EnvironmentSettings environmentSettings = new() { IsNetCore = true };
         IApplicationClientFactory? applicationClientFactory = Substitute.For<IApplicationClientFactory>();
         IApplication? application = Substitute.For<IApplication>();
         application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
@@ -133,11 +120,11 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
         IServiceUrlBuilder? serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
         ILogger? logger = Substitute.For<ILogger>();
         IPackageLockManager? packageLockManager = Substitute.For<IPackageLockManager>();
-        FileSystem clioFileSystem = new (fileSystem);
+        FileSystem clioFileSystem = new(fileSystem);
         IApplicationLogProvider? applicationLogProvider = Substitute.For<IApplicationLogProvider>();
         applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
             .Returns("SOME LOG WITHOUT SUCCESS MESSAGE");
-        ApplicationInstaller applicationInstaller = new (applicationLogProvider,
+        ApplicationInstaller applicationInstaller = new(applicationLogProvider,
             environmentSettings,
             applicationClientFactory,
             application,
@@ -157,10 +144,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
     {
         string packageFolderPath = "T:\\TestClioPackageFolder";
         fileSystem.AddDirectory(packageFolderPath);
-        EnvironmentSettings environmentSettings = new ()
-        {
-            IsNetCore = true
-        };
+        EnvironmentSettings environmentSettings = new() { IsNetCore = true };
         IApplicationClientFactory? applicationClientFactory = Substitute.For<IApplicationClientFactory>();
         IApplication? application = Substitute.For<IApplication>();
         application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
@@ -171,11 +155,11 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
         IServiceUrlBuilder? serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
         ILogger? logger = Substitute.For<ILogger>();
         IPackageLockManager? packageLockManager = Substitute.For<IPackageLockManager>();
-        FileSystem clioFileSystem = new (fileSystem);
+        FileSystem clioFileSystem = new(fileSystem);
         IApplicationLogProvider? applicationLogProvider = Substitute.For<IApplicationLogProvider>();
         applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
             .Returns("appLication InstallEd successfully");
-        ApplicationInstaller applicationInstaller = new (applicationLogProvider,
+        ApplicationInstaller applicationInstaller = new(applicationLogProvider,
             environmentSettings,
             applicationClientFactory,
             application,

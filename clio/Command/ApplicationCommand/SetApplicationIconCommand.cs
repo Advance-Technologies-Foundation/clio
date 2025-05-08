@@ -1,8 +1,5 @@
-using System.IO;
-
-using Clio.ComposableApplication;
+﻿using Clio.ComposableApplication;
 using CommandLine;
-using Terrasoft.Common;
 
 namespace Clio.Command.ApplicationCommand;
 
@@ -19,7 +16,8 @@ internal class SetApplicationIconOption
     public string AppPath { get; internal set; }
 }
 
-internal class SetApplicationIconCommand(IComposableApplicationManager composableApplicationManager): Command<SetApplicationIconOption>
+internal class SetApplicationIconCommand(IComposableApplicationManager composableApplicationManager)
+    : Command<SetApplicationIconOption>
 {
     private readonly IComposableApplicationManager _composableApplicationManager = composableApplicationManager;
 

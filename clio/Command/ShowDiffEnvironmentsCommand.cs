@@ -1,20 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-
-using ATF.Repository;
+﻿using System.IO;
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
-using CreatioModel;
-using DocumentFormat.OpenXml.Drawing;
-using k8s.Models;
 using YamlDotNet.Serialization;
 
 namespace Clio.Command;
@@ -45,9 +34,9 @@ internal class ShowDiffEnvironmentsOptions : EnvironmentNameOptions
 internal class ShowDiffEnvironmentsCommand : BaseDataContextCommand<ShowDiffEnvironmentsOptions>
 {
     private readonly IEnvironmentManager _environmentManager;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly ISerializer _serializer;
     private readonly ISettingsRepository _settingsRepository;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
     public ShowDiffEnvironmentsCommand()
     {
@@ -102,8 +91,8 @@ internal class ShowDiffEnvironmentsCommand : BaseDataContextCommand<ShowDiffEnvi
         string manifestFileName = FileName ?? $"diff-{Source}-{Target}.yaml";
         string sourceName = $"source-{Source}-manifest.yaml";
         string targetName = $"target-{Target}-manifest.yaml";
-        string sourceFilePath = System.IO.Path.Combine(workingDirectory, sourceName);
-        string targetFilePath = System.IO.Path.Combine(workingDirectory, targetName);
+        string sourceFilePath = Path.Combine(workingDirectory, sourceName);
+        string targetFilePath = Path.Combine(workingDirectory, targetName);
 
         SaveEnvironmentManifest(Source, sourceFilePath);
         SaveEnvironmentManifest(Target, targetFilePath);

@@ -1,16 +1,11 @@
-using System;
+﻿using System;
 using System.IO;
-using System.Linq;
-using System.Net;
-using System.Text;
-
 using CommandLine;
-using Common;
 using Newtonsoft.Json.Linq;
 
 namespace Clio.Command;
 
-[Verb("alm-deploy", Aliases = new string[] { "deploy" }, HelpText = "Install package to selected environment")]
+[Verb("alm-deploy", Aliases = new[] { "deploy" }, HelpText = "Install package to selected environment")]
 public class DeployCommandOptions : RemoteCommandOptions
 {
     [Value(0, MetaName = "File", Required = true, HelpText = "Package file path")]
@@ -25,8 +20,8 @@ public class DeployCommandOptions : RemoteCommandOptions
 
 public class DeployCommand : RemoteCommand<DeployCommandOptions>
 {
-    private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClient _applicationClient;
+    private readonly EnvironmentSettings _environmentSettings;
 
     public DeployCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
         : base(applicationClient, settings)
@@ -83,13 +78,13 @@ public class DeployCommand : RemoteCommand<DeployCommandOptions>
 
     private bool UploadFile(string uploadLicenseUrl, string filePath, Guid fileId)
     {
-        FileInfo fi = new (filePath);
+        FileInfo fi = new(filePath);
         string uploadLicenseEnpointUrl = _environmentSettings.Uri + uploadLicenseUrl
                                                                   + "?fileName=" + fi.Name + "&totalFileLength=" +
                                                                   fi.Length + "&fileId=" + fileId;
         Logger.WriteInfo($"Start uploading file {fi.Name}");
         string uploadResult = _applicationClient.UploadAlmFileByChunk(uploadLicenseEnpointUrl, filePath);
-        Logger.WriteInfo($"End of uploading");
+        Logger.WriteInfo("End of uploading");
         JObject json = JObject.Parse(uploadResult);
         return json["success"].ToString() == "True";
     }

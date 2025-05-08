@@ -1,15 +1,11 @@
 using System;
 using System.Text.Json;
-
 using Clio.Command.TIDE;
 using CommandLine;
-using Common;
-using StartProcess;
-using Workspaces;
 
 namespace Clio.Command;
 
-[Verb("push-workspace", Aliases = new string[] { "pushw" }, HelpText = "Push workspace to selected environment")]
+[Verb("push-workspace", Aliases = new[] { "pushw" }, HelpText = "Push workspace to selected environment")]
 public class PushWorkspaceCommandOptions : EnvironmentOptions
 {
     [Option("unlock", Required = false,
@@ -22,12 +18,12 @@ public class PushWorkspaceCommandOptions : EnvironmentOptions
 
 public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
 {
-    private readonly IWorkspace _workspace;
-    private readonly UnlockPackageCommand _unlockPackageCommand;
-    public IApplicationClientFactory _applicationClientFactory;
     private readonly EnvironmentSettings _environmentSettings;
-    private readonly IServiceUrlBuilder _serviceUrlBuilder;
     private readonly LinkWorkspaceWithTideRepositoryCommand _linkWorkspaceWithTideRepositoryCommand;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly UnlockPackageCommand _unlockPackageCommand;
+    private readonly IWorkspace _workspace;
+    public IApplicationClientFactory _applicationClientFactory;
 
     public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand,
         IApplicationClientFactory applicationClientFactory, EnvironmentSettings environmentSettings,
@@ -55,7 +51,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
             {
                 try
                 {
-                    LinkWorkspaceWithTideRepositoryOptions opt = new () { TideRepositoryId = options.TideRepositoryId };
+                    LinkWorkspaceWithTideRepositoryOptions opt = new() { TideRepositoryId = options.TideRepositoryId };
                     opt.CopyFromEnvironmentSettings(options);
                     _linkWorkspaceWithTideRepositoryCommand.Execute(opt);
                     CallbackInfo(options.CallbackProcess, "Application linked with repository");
@@ -67,7 +63,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
 
             if (options.NeedUnlockPackage)
             {
-                UnlockPackageOptions unlockPackageCommandOptions = new ();
+                UnlockPackageOptions unlockPackageCommandOptions = new();
                 unlockPackageCommandOptions.CopyFromEnvironmentSettings(options);
                 unlockPackageCommandOptions.Name = string.Join(',', _workspace.WorkspaceSettings.Packages);
                 Console.WriteLine("Unlock packages...");
@@ -93,7 +89,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
         {
             IApplicationClient applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
             string runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
-            ProcessStartArgs runProcessArgs = new ()
+            ProcessStartArgs runProcessArgs = new()
             {
                 SchemaName = callbackProcess,
                 Values =

@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Autofac;
 using Clio.Command;
 using Clio.Tests.Command;
@@ -138,7 +137,7 @@ public class UninstallCreatioCommandOptionsValidatorTestFixture : BaseClioModule
     public void Validate_ShouldNotReturnError_When_EnvNotEmpty()
     {
         // Arrange
-        UninstallCreatioCommandOptions opts = new () { EnvironmentName = "some_env" };
+        UninstallCreatioCommandOptions opts = new() { EnvironmentName = "some_env" };
 
         // Act
         ValidationResult validationResult = _sut.Validate(opts);
@@ -154,7 +153,7 @@ public class UninstallCreatioCommandOptionsValidatorTestFixture : BaseClioModule
         const string dirName = @"C:\inetpup\wwwroot\";
         fileSystem.AddDirectory(dirName);
 
-        UninstallCreatioCommandOptions opts = new () { PhysicalPath = dirName };
+        UninstallCreatioCommandOptions opts = new() { PhysicalPath = dirName };
 
         // Act
         ValidationResult validationResult = _sut.Validate(opts);
