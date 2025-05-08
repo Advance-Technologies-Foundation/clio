@@ -1,6 +1,3 @@
-using Clio.UserEnvironment;
-using Clio.Utilities;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,9 +5,14 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
+
 using Clio.Common;
+using Clio.UserEnvironment;
+using Clio.Utilities;
 using ConsoleTables;
+using Newtonsoft.Json;
 using YamlDotNet.Serialization;
+
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -18,12 +20,12 @@ namespace Clio;
 
 public class EnvironmentSettings
 {
-    [YamlMember(Alias = "url")] public string Uri { get; set; }
+    [YamlMember(Alias = "url")]
+    public string Uri { get; set; }
 
     public string DbName { get; set; }
 
     public string BackupFilePath { get; set; }
-
 
     public string Login { get; set; }
 
@@ -37,7 +39,8 @@ public class EnvironmentSettings
 
     public string DbServerKey { get; set; }
 
-    [Newtonsoft.Json.JsonIgnore] public DbServer DbServer { get; set; }
+    [Newtonsoft.Json.JsonIgnore]
+    public DbServer DbServer { get; set; }
 
     public string ClientSecret { get; set; }
 
@@ -71,7 +74,7 @@ public class EnvironmentSettings
         {
             if (Uri == null)
             {
-                return "";
+                return string.Empty;
             }
 
             string cleanUri = Uri;
@@ -141,10 +144,7 @@ public class EnvironmentSettings
 
         if (environment.DbServer?.Uri != null)
         {
-            if (DbServer == null)
-            {
-                DbServer = new DbServer();
-            }
+            DbServer ??= new DbServer();
 
             DbServer.Uri = environment.DbServer.Uri;
         }
@@ -157,24 +157,26 @@ public class EnvironmentSettings
 
     public bool? Safe { get; set; }
 
-
     public bool? DeveloperModeEnabled { get; set; }
 
-    [Newtonsoft.Json.JsonIgnore] public bool IsDevMode => DeveloperModeEnabled ?? false;
+    [Newtonsoft.Json.JsonIgnore]
+    public bool IsDevMode => DeveloperModeEnabled ?? false;
 
     public EnvironmentSettings Fill(EnvironmentOptions options)
     {
-        EnvironmentSettings result = new();
-        result.Uri = string.IsNullOrEmpty(options.Uri) ? Uri : options.Uri;
-        result.IsNetCore = options.IsNetCore ?? IsNetCore;
-        result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? DeveloperModeEnabled;
-        result.Login = string.IsNullOrEmpty(options.Login) ? Login : options.Login;
-        result.Password = string.IsNullOrEmpty(options.Password) ? Password : options.Password;
-        result.ClientId = string.IsNullOrEmpty(options.ClientId) ? ClientId : options.ClientId;
-        result.ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? ClientSecret : options.ClientSecret;
-        result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? AuthAppUri : options.AuthAppUri;
-        result.Maintainer =
-            string.IsNullOrEmpty(options.Maintainer) ? Maintainer : options.Maintainer;
+        EnvironmentSettings result = new ()
+        {
+            Uri = string.IsNullOrEmpty(options.Uri) ? Uri : options.Uri,
+            IsNetCore = options.IsNetCore ?? IsNetCore,
+            DeveloperModeEnabled = options.DeveloperModeEnabled ?? DeveloperModeEnabled,
+            Login = string.IsNullOrEmpty(options.Login) ? Login : options.Login,
+            Password = string.IsNullOrEmpty(options.Password) ? Password : options.Password,
+            ClientId = string.IsNullOrEmpty(options.ClientId) ? ClientId : options.ClientId,
+            ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? ClientSecret : options.ClientSecret,
+            AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? AuthAppUri : options.AuthAppUri,
+            Maintainer =
+            string.IsNullOrEmpty(options.Maintainer) ? Maintainer : options.Maintainer
+        };
         if (Safe.HasValue && Safe.Value)
         {
             Console.WriteLine($"You try to apply the action on the production site {Uri}");
@@ -194,40 +196,28 @@ public class EnvironmentSettings
         bool isUri = System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
         if (isUri)
         {
-            if (result.DbServer == null)
-            {
-                result.DbServer = new DbServer();
-            }
+            result.DbServer ??= new DbServer();
 
             result.DbServer.Uri = uri;
         }
 
         if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder))
         {
-            if (result.DbServer == null)
-            {
-                result.DbServer = new DbServer();
-            }
+            result.DbServer ??= new DbServer();
 
             result.DbServer.WorkingFolder = options.DbWorknigFolder;
         }
 
         if (!string.IsNullOrWhiteSpace(options.DbUser))
         {
-            if (result.DbServer == null)
-            {
-                result.DbServer = new DbServer();
-            }
+            result.DbServer ??= new DbServer();
 
             result.DbServer.Login = options.DbUser;
         }
 
         if (!string.IsNullOrWhiteSpace(options.DbPassword))
         {
-            if (result.DbServer == null)
-            {
-                result.DbServer = new DbServer();
-            }
+            result.DbServer ??= new DbServer();
 
             result.DbServer.Password = options.DbPassword;
         }
@@ -248,9 +238,9 @@ public class EnvironmentSettings
 
 public class Settings
 {
-    public Settings() => Environments = new Dictionary<string, EnvironmentSettings>();
+    public Settings() => Environments = [];
 
-    //TODO: This wont work for Mac and Linux
+    // TODO: This wont work for Mac and Linux
     private const string DefaultCreatioProductFolder = @"C:\CreatioProductBuild";
     private string _creatioProductFolder;
 
@@ -261,7 +251,7 @@ public class Settings
         set => _creatioProductFolder = value;
     }
 
-    //TODO: This wont work for Mac and Linux
+    // TODO: This wont work for Mac and Linux
     private const string DefaultIisRootPath = @"C:\inetpub\wwwroot\clio";
     private string _iISClioRootPath;
 
@@ -272,14 +262,13 @@ public class Settings
         set => _iISClioRootPath = value;
     }
 
-    [JsonProperty("$schema")] public string Schema => "./schema.json";
+    [JsonProperty("$schema")]
+    public string Schema => "./schema.json";
 
     public string ActiveEnvironmentKey { get; set; }
 
-
     [JsonProperty("dbConnectionStringKeys")]
     public Dictionary<string, DbServer> DbServers { get; set; }
-
 
     public EnvironmentSettings GetActiveEnviroment()
     {
@@ -298,6 +287,7 @@ public class Settings
     public bool Autoupdate { get; set; }
 
     public Dictionary<string, EnvironmentSettings> Environments { get; set; }
+
     public string RemoteArtefactServerPath { get; set; }
 }
 
@@ -306,7 +296,7 @@ public class SettingsRepository : ISettingsRepository
     private const string FileName = "appsettings.json";
     private const string SchemaFileName = "schema.json";
 
-    private Settings _settings = new();
+    private Settings _settings = new ();
 
     public static string AppSettingsFolderPath
     {
@@ -319,17 +309,16 @@ public class SettingsRepository : ISettingsRepository
                 .FirstOrDefault();
             AssemblyProductAttribute? product = assy.GetCustomAttributes<AssemblyProductAttribute>()
                 .FirstOrDefault();
-            if (userPath == null)
-            {
-                userPath = "";
-            }
+            userPath ??= string.Empty;
 
             return Path.Combine(userPath, companyName?.Company, product?.Product);
         }
     }
 
     public static string AppSettingsFile => Path.Combine(AppSettingsFolderPath, FileName);
+
     public string AppSettingsFilePath => AppSettingsFile;
+
     private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
     internal static IFileSystem FileSystem { get; set; } = new FileSystem();
@@ -401,7 +390,8 @@ public class SettingsRepository : ISettingsRepository
     private void InitDefaultSettings()
     {
         _settings = new Settings();
-        _settings.Environments.Add("dev",
+        _settings.Environments.Add(
+            "dev",
             new EnvironmentSettings { Login = "Supervisor", Password = "Supervisor", Uri = "http://localhost" });
         _settings.ActiveEnvironmentKey = "dev";
         SaveSchema();
@@ -423,13 +413,13 @@ public class SettingsRepository : ISettingsRepository
     {
         using (StreamWriter fileWriter = FileSystem.File.CreateText(AppSettingsFilePath))
         {
-            JsonSerializer serializer = new()
+            JsonSerializer serializer = new ()
             {
                 Formatting = Formatting.Indented,
                 NullValueHandling = NullValueHandling.Ignore
             };
 
-            //_settings.Schema = 
+            // _settings.Schema =
             serializer.Serialize(fileWriter, _settings);
         }
 
@@ -441,7 +431,7 @@ public class SettingsRepository : ISettingsRepository
 
     public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false)
     {
-        JsonSerializer serializer = new()
+        JsonSerializer serializer = new ()
         {
             Formatting = Formatting.Indented,
             NullValueHandling = NullValueHandling.Ignore
@@ -451,7 +441,7 @@ public class SettingsRepository : ISettingsRepository
         {
             streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 
-            ConsoleTable t = new() { Columns = { "Name", "Url" } };
+            ConsoleTable t = new () { Columns = { "Name", "Url" } };
 
             _settings.Environments.Select(e => new { name = e.Key, url = e.Value.Uri }).ToList()
                 .ForEach(e => { t.Rows.Add([e.name, e.url]); });
@@ -486,7 +476,6 @@ public class SettingsRepository : ISettingsRepository
         return environment;
     }
 
-
     public EnvironmentSettings FindEnvironment(string name = null)
     {
         EnvironmentSettings environment;
@@ -504,7 +493,7 @@ public class SettingsRepository : ISettingsRepository
 
     public EnvironmentSettings GetEnvironment(EnvironmentOptions options)
     {
-        SettingsRepository settingsRepository = new();
+        SettingsRepository settingsRepository = new ();
         EnvironmentSettings? _settings = settingsRepository.FindEnvironment(options.Environment);
         if (_settings == null)
         {
@@ -577,7 +566,7 @@ public class SettingsRepository : ISettingsRepository
 
     public void OpenFile() => OpenSettingsFile();
 
-    void ISettingsRepository.RemoveAllEnvironment()
+    public void RemoveAllEnvironment()
     {
         _settings.Environments.Clear();
         Save();
@@ -592,10 +581,14 @@ public class SettingsRepository : ISettingsRepository
 
 public class DbServer
 {
-    [JsonPropertyName("uri")] public Uri Uri { get; set; }
+    [JsonPropertyName("uri")]
+    public Uri Uri { get; set; }
 
-    [JsonPropertyName("workingFolder")] public string WorkingFolder { get; set; }
+    [JsonPropertyName("workingFolder")]
+    public string WorkingFolder { get; set; }
+
     public string Password { get; internal set; }
+
     public string Login { get; internal set; }
 
     public Credentials GetCredentials() =>
@@ -606,4 +599,4 @@ public class DbServer
         };
 }
 
-public record Credentials(string Username, string Password);
+public record Credentials(string username, string password);

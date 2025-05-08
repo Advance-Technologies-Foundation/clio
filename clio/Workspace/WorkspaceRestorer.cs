@@ -1,29 +1,22 @@
-namespace Clio.Workspaces;
-
 using System;
 using System.Collections.Generic;
 using System.IO;
+
 using Command;
 using Common;
 using Package;
 using Project.NuGet;
 
-#region Class: WorkspaceSettings
+namespace Clio.Workspaces;
 
 public class WorkspaceRestorer : IWorkspaceRestorer
 {
-    #region Fields: Private
-
     private readonly INuGetManager _nugetManager;
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
     private readonly IEnvironmentScriptCreator _environmentScriptCreator;
     private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
     private readonly IPackageDownloader _packageDownloader;
     private readonly ICreatioSdk _creatioSdk;
-
-    #endregion
-
-    #region Constructors: Public
 
     public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
         IEnvironmentScriptCreator environmentScriptCreator, IWorkspaceSolutionCreator workspaceSolutionCreator,
@@ -43,15 +36,11 @@ public class WorkspaceRestorer : IWorkspaceRestorer
         _creatioSdk = creatioSdk;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion)
     {
         const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
         const string packageName = "CreatioSDK";
-        NugetPackageFullName nugetPackageFullName = new()
+        NugetPackageFullName nugetPackageFullName = new ()
         {
             Name = packageName,
             Version = nugetCreatioSdkVersion.ToString()
@@ -64,11 +53,6 @@ public class WorkspaceRestorer : IWorkspaceRestorer
 
     private void CreateEnvironmentScript(Version nugetCreatioSdkVersion) =>
         _environmentScriptCreator.Create(nugetCreatioSdkVersion);
-
-    #endregion
-
-
-    #region Methods: Public
 
     public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
         WorkspaceOptions restoreWorkspaceOptions)
@@ -87,8 +71,4 @@ public class WorkspaceRestorer : IWorkspaceRestorer
             CreateSolution();
         }
     }
-
-    #endregion
 }
-
-#endregion

@@ -5,8 +5,10 @@ using System.IO.Compression;
 using System.Json;
 using System.Linq;
 using System.Reflection;
+
 using Clio.Common;
 using Newtonsoft.Json;
+
 using File = System.IO.File;
 
 namespace Clio;
@@ -16,26 +18,21 @@ internal interface IPackageConverter
     int Convert(ConvertOptions options);
 }
 
-internal class PackageConverter : IPackageConverter
+internal class PackageConverter(ILogger logger): IPackageConverter
 {
     private readonly string prefix = string.Empty;
-    private readonly ILogger _logger;
-
-    public PackageConverter(ILogger logger) => _logger = logger;
+    private readonly ILogger _logger = logger;
 
     public int Convert(ConvertOptions options)
     {
         try
         {
-            List<string> packagePathes = new();
-            if (options.Path == null)
-            {
-                options.Path = Environment.CurrentDirectory;
-            }
+            List<string> packagePathes = [];
+            options.Path ??= Environment.CurrentDirectory;
 
             if (string.IsNullOrEmpty(options.Name))
             {
-                DirectoryInfo info = new(options.Path);
+                DirectoryInfo info = new (options.Path);
                 if (File.Exists(Path.Combine(info.FullName, prefix, "descriptor.json")))
                 {
                     packagePathes.Add(info.FullName);
@@ -56,7 +53,7 @@ internal class PackageConverter : IPackageConverter
 
             foreach (string packagePath in packagePathes)
             {
-                ConvertOptions convertOptions = new()
+                ConvertOptions convertOptions = new ()
                 {
                     Path = packagePath,
                     ConvertSourceCode = options.ConvertSourceCode
@@ -81,7 +78,7 @@ internal class PackageConverter : IPackageConverter
         try
         {
             string packageFolderPath = options.Path;
-            DirectoryInfo packageDirectory = new(packageFolderPath);
+            DirectoryInfo packageDirectory = new (packageFolderPath);
             FileInfo[] existingProjects = packageDirectory.GetFiles("*.csproj");
             string packageName = packageDirectory.Name;
             if (existingProjects.Length > 0)
@@ -100,7 +97,7 @@ internal class PackageConverter : IPackageConverter
 
             ZipFile.CreateFromDirectory(packagePath, backupPath);
             _logger.WriteInfo($"Created backup package '{packageName}'.");
-            List<string> fileNames = options.ConvertSourceCode ? MoveCsFiles(packagePath) : new List<string>();
+            List<string> fileNames = options.ConvertSourceCode ? MoveCsFiles(packagePath) : [];
             CorrectingFiles(packagePath);
             CreateProjectInfo(packagePath, packageName, fileNames);
             _logger.WriteInfo($"Package '{packageName}' was converted.");
@@ -126,18 +123,18 @@ internal class PackageConverter : IPackageConverter
         string csFilesPath = Path.Combine(path, "Files", "cs");
         string resourcePath = Path.Combine(path, "Resources");
         string schemasPath = Path.Combine(path, "Schemas");
-        List<string> names = new();
+        List<string> names = [];
         if (!Directory.Exists(csFilesPath))
         {
             Directory.CreateDirectory(csFilesPath);
         }
 
-        DirectoryInfo csFilesDir = new(csFilesPath);
+        DirectoryInfo csFilesDir = new (csFilesPath);
         foreach (FileInfo file in csFilesDir.GetFiles("*.cs"))
         {
             string name = file.Name.Split('.')[0];
             names.Add(name);
-            DirectoryInfo currentResourcesDirectory = new(Path.Combine(resourcePath, name + ".SourceCode"));
+            DirectoryInfo currentResourcesDirectory = new (Path.Combine(resourcePath, name + ".SourceCode"));
             if (!currentResourcesDirectory.Exists)
             {
                 break;
@@ -171,7 +168,7 @@ internal class PackageConverter : IPackageConverter
         string descriptorContent = File.ReadAllText(descriptorPath);
         JsonObject jsonDoc = (JsonObject)JsonObject.Parse(descriptorContent);
         string maintainer = jsonDoc["Descriptor"]["Maintainer"];
-        List<string> depends = new();
+        List<string> depends = [];
         foreach (object? depend in jsonDoc["Descriptor"]["DependsOn"])
         {
             string curName = depend.ToString().Split("\": \"")[1].Split("\"")[0];
@@ -182,16 +179,16 @@ internal class PackageConverter : IPackageConverter
         string propertiesDirPath = Path.Combine(path, "Properties");
         Directory.CreateDirectory(propertiesDirPath);
         string propertiesFilePath = Path.Combine(propertiesDirPath, "AssemblyInfo.cs");
-        CreateFromTpl(GetTplPath(CreatioPackage.AssemblyInfoTpl), propertiesFilePath, name, new List<string>(),
+        CreateFromTpl(GetTplPath(CreatioPackage.AssemblyInfoTpl), propertiesFilePath, name,[],
             maintainer, refs, depends);
         string packagesConfigFilePath = Path.Combine(path, "packages.config");
-        CreateFromTpl(GetTplPath(CreatioPackage.PackageConfigTpl), packagesConfigFilePath, name, new List<string>(),
+        CreateFromTpl(GetTplPath(CreatioPackage.PackageConfigTpl), packagesConfigFilePath, name,[],
             maintainer, refs, depends);
     }
 
     private List<string> GetRefs(string path, List<string> files)
     {
-        List<string> result = new();
+        List<string> result = [];
         foreach (string fileName in files)
         {
             List<string> refs = GetRefFromFile(Path.Combine(path, fileName));
@@ -207,14 +204,13 @@ internal class PackageConverter : IPackageConverter
         return result;
     }
 
-
     private static List<string> GetRefFromFile(string path)
     {
-        List<string> result = new();
+        List<string> result = [];
         string line;
         try
         {
-            StreamReader sr = new(path);
+            StreamReader sr = new (path);
             line = sr.ReadLine();
             line = sr.ReadLine();
             line = sr.ReadLine();
@@ -250,7 +246,7 @@ internal class PackageConverter : IPackageConverter
         }
         catch (Exception)
         {
-            return new List<string>();
+            return[];
         }
 
         return result;
@@ -260,7 +256,7 @@ internal class PackageConverter : IPackageConverter
         string maintainer, List<string> refs, List<string> deps)
     {
         string text = ReplaceMacro(File.ReadAllText(tplPath), packageName, fileNames, maintainer, refs, deps);
-        FileInfo file = new(filePath);
+        FileInfo file = new (filePath);
         using (StreamWriter sw = file.CreateText())
         {
             sw.Write(text);
@@ -333,17 +329,17 @@ internal class PackageConverter : IPackageConverter
 
     private static string ToJsonMsDate(DateTime date)
     {
-        JsonSerializerSettings microsoftDateFormatSettings = new()
+        JsonSerializerSettings microsoftDateFormatSettings = new ()
         {
             DateFormatHandling = DateFormatHandling.MicrosoftDateFormat
         };
-        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", "").Replace("\\", "");
+        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", string.Empty).Replace("\\", string.Empty);
     }
 
     private static List<string> MoveFiles(string schemasPath, string filesPath, string extension)
     {
-        List<string> fileNames = new();
-        DirectoryInfo dir = new(schemasPath);
+        List<string> fileNames = [];
+        DirectoryInfo dir = new (schemasPath);
         foreach (DirectoryInfo schemaDirectory in dir.GetDirectories())
         {
             foreach (FileInfo file in schemaDirectory.GetFiles(extension))

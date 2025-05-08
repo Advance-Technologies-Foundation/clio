@@ -1,13 +1,14 @@
 using System;
-using FluentValidation;
-using MediatR;
-using OneOf;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Clio.Command;
+using FluentValidation;
+using MediatR;
+using OneOf;
 
 namespace Clio.Common.ScenarioHandlers;
 
@@ -108,14 +109,12 @@ public class CreateIISSiteRequestValidator : AbstractValidator<CreateIISSiteRequ
 }
 
 internal class
-    CreateIISSiteRequestHandler : IRequestHandler<CreateIISSiteRequest, OneOf<BaseHandlerResponse, HandlerError>>
+    CreateIISSiteRequestHandler(IProcessExecutor processExecutor): IRequestHandler<CreateIISSiteRequest, OneOf<BaseHandlerResponse, HandlerError>>
 {
-    private readonly IProcessExecutor _processExecutor;
+    private readonly IProcessExecutor _processExecutor = processExecutor;
 
-    public CreateIISSiteRequestHandler(IProcessExecutor processExecutor) => _processExecutor = processExecutor;
-
-
-    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(CreateIISSiteRequest request,
+    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(
+        CreateIISSiteRequest request,
         CancellationToken cancellationToken)
     {
         string siteName = request.Arguments["siteName"].Trim();
@@ -124,7 +123,7 @@ internal class
         string destinationFolder = Path.Join(request.Arguments["destinationDirectory"].Trim(), siteName);
         bool isNetFramework = bool.Parse(request.Arguments["isNetFramework"]);
 
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
 
         CopyFiles(sourceDirectory, destinationFolder);
         sb.AppendLine($"Copied directory");
@@ -164,7 +163,8 @@ internal class
     private string CreateWebSite(string siteName, int port, string destinationFolder)
     {
         string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
-        //string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
+
+        // string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
         string command =
             $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:{InstallerHelper.FetFQDN()}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
 
@@ -181,8 +181,8 @@ internal class
 
     private static void CopyFiles(string sourceDirectory, string destinationDirectory)
     {
-        DirectoryInfo diSource = new(sourceDirectory);
-        DirectoryInfo diTarget = new(destinationDirectory);
+        DirectoryInfo diSource = new (sourceDirectory);
+        DirectoryInfo diTarget = new (destinationDirectory);
         CopyAll(diSource, diTarget);
     }
 

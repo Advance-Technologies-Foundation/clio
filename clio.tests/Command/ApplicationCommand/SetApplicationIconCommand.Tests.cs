@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Autofac;
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
@@ -10,18 +11,12 @@ namespace Clio.Tests.Command.ApplicationCommand;
 
 internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicationVersionOption>
 {
-    #region Fields: Private
-
     private static readonly string MockWorkspacePath = Path.Combine("C:", "MockWorkspaceFolder");
 
     private static readonly string MockWorkspaceAppPackageFolderPath
         = Path.Combine(MockWorkspacePath, "packages", "IFrameSample");
 
     private IComposableApplicationManager _composableApplicationManager;
-
-    #endregion
-
-    #region Methods: Protected
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
@@ -30,14 +25,12 @@ internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicati
         base.AdditionalRegistrations(containerBuilder);
     }
 
-    #endregion
-
     [Test]
     public void SetApplicationIconCommand_CallsComposableAppmanager()
     {
         string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Files", "icon.svg");
         string appName = "ExampleAppName";
-        SetApplicationIconCommand command = Container.Resolve<SetApplicationIconCommand>();
+        SetApplicationIconCommand command = container.Resolve<SetApplicationIconCommand>();
         command.Execute(new SetApplicationIconOption
         {
             IconPath = iconPath,

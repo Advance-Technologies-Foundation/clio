@@ -3,33 +3,24 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+
 using Clio.Common;
 using Clio.Workspaces;
 using Terrasoft.Core.Packages;
+
 using JsonConverter = System.Text.Json.Serialization.JsonConverter;
 
 namespace Clio.Package;
 
-#region Interface: IPackageCreator
-
 public interface IPackageCreator
 {
-    #region Methods: Public
-
     void Create(string packageName, bool? asApp);
+
     void Create(string packagesPath, string packageName);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: PackageCreator
 
 public class PackageCreator : IPackageCreator
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IWorkspace _workspace;
     private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
@@ -39,10 +30,6 @@ public class PackageCreator : IPackageCreator
     private readonly IJsonConverter _jsonConverter;
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public PackageCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
         IWorkspaceSolutionCreator workspaceSolutionCreator, ITemplateProvider templateProvider,
@@ -70,20 +57,12 @@ public class PackageCreator : IPackageCreator
         _fileSystem = fileSystem;
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 
     private string Maintainer => _environmentSettings.Maintainer ?? "Customer";
 
-    #endregion
-
-    #region Methods: Private
-
     private PackageDescriptorDto CreatePackageDescriptor(string packageName, bool isStandalonePackage = true) =>
-        new()
+        new ()
         {
             Descriptor = new PackageDescriptor
             {
@@ -166,10 +145,6 @@ public class PackageCreator : IPackageCreator
         _workspaceSolutionCreator.Create();
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Create(string packageName, bool? asApp)
     {
         string packagesPath = GetPackagesPath();
@@ -217,7 +192,7 @@ public class PackageCreator : IPackageCreator
 
     internal void SaveAppDescriptorToFile(AppDescriptorJson appDescriptor, string fileName)
     {
-        JsonSerializerOptions options = new() { WriteIndented = true };
+        JsonSerializerOptions options = new () { WriteIndented = true };
         string appDescriptorContent = JsonSerializer.Serialize(appDescriptor, options);
         _fileSystem.WriteAllTextToFile(fileName, appDescriptorContent);
     }
@@ -236,50 +211,59 @@ public class PackageCreator : IPackageCreator
     private void AddAppDescriptor(string packagesPath, string packageName)
     {
         Package package = GetPackageFromDescriptor(packagesPath, packageName);
-        AppDescriptorJson addDescriptorDto = new()
+        AppDescriptorJson addDescriptorDto = new ()
         {
             Name = packageName,
             Maintainer = Maintainer,
-            Description = "",
-            Icon = "",
-            IconName = "",
-            MarketplaceLink = "",
-            OrderLink = "",
-            SupportEmail = "",
-            HelpLink = "",
+            Description = string.Empty,
+            Icon = string.Empty,
+            IconName = string.Empty,
+            MarketplaceLink = string.Empty,
+            OrderLink = string.Empty,
+            SupportEmail = string.Empty,
+            HelpLink = string.Empty,
             Color = "#FFAC07",
             Version = "0.1.0",
             Code = packageName,
-            Packages = new List<Package> { package }
+            Packages = [package]
         };
         string appDescriptorPath = Path.Combine(packagesPath, packageName, "Files", "app-descriptor.json");
         SaveAppDescriptorToFile(addDescriptorDto, appDescriptorPath);
     }
-
-    #endregion
 }
-
-#endregion
 
 public class AppDescriptorJson
 {
     public string Name { get; set; }
+
     public string Description { get; set; }
+
     public string Maintainer { get; set; }
+
     public string Icon { get; set; }
+
     public string IconName { get; set; }
+
     public string Color { get; set; }
+
     public string Version { get; set; }
+
     public string MarketplaceLink { get; set; }
+
     public string HelpLink { get; set; }
+
     public string OrderLink { get; set; }
+
     public string SupportEmail { get; set; }
+
     public string Code { get; set; }
+
     public List<Package> Packages { get; set; }
 }
 
 public class Package
 {
     public string UId { get; set; }
+
     public string Name { get; set; }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Clio.Common;
 using Clio.Package;
 using Clio.Project.NuGet;
@@ -8,27 +9,15 @@ using Clio.Utilities;
 
 namespace Clio.Workspaces;
 
-#region Interface: IWorkspaceCreator
-
 public interface IWorkspaceCreator
 {
-    #region Methods: Public
-
     void Create(string environmentName, bool isAddingPackageNames = false);
 
     void SaveWorkspaceEnvironmentSettings(string environmentName);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: WorkspaceCreator
 
 public class WorkspaceCreator : IWorkspaceCreator
 {
-    #region Fields: Private
-
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
     private readonly ICreatioSdk _creatioSdk;
     private readonly ITemplateProvider _templateProvider;
@@ -37,10 +26,6 @@ public class WorkspaceCreator : IWorkspaceCreator
     private readonly IApplicationPackageListProvider _applicationPackageListProvider;
     private readonly IExecutablePermissionsActualizer _executablePermissionsActualizer;
     private readonly IOSPlatformChecker _osPlatformChecker;
-
-    #endregion
-
-    #region Constructors: Public
 
     public WorkspaceCreator(IWorkspacePathBuilder workspacePathBuilder, ICreatioSdk creatioSdk,
         ITemplateProvider templateProvider, IJsonConverter jsonConverter, IFileSystem fileSystem,
@@ -66,24 +51,20 @@ public class WorkspaceCreator : IWorkspaceCreator
         _osPlatformChecker = osPlatformChecker;
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private string RootPath => _workspacePathBuilder.RootPath;
+
     private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
+
     private string WorkspaceEnvironmentSettingsPath => _workspacePathBuilder.WorkspaceEnvironmentSettingsPath;
+
     private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
+
     private bool ExistsWorkspaceSettingsFile => _fileSystem.ExistsFile(WorkspaceSettingsPath);
-
-    #endregion
-
-    #region Methods: Private
 
     private WorkspaceSettings CreateDefaultWorkspaceSettings(string[] packages)
     {
         Version lv = _creatioSdk.LastVersion;
-        WorkspaceSettings workspaceSettings = new()
+        WorkspaceSettings workspaceSettings = new ()
         {
             ApplicationVersion = new Version(lv.Major, lv.Minor, lv.Build),
             Packages = packages
@@ -93,7 +74,7 @@ public class WorkspaceCreator : IWorkspaceCreator
 
     private void CreateWorkspaceSettingsFile(bool isAddingPackageNames = false)
     {
-        string[] packages = new string[] { };
+        string[] packages = [];
         if (isAddingPackageNames)
         {
             IEnumerable<PackageInfo> packagesInfo =
@@ -130,13 +111,9 @@ public class WorkspaceCreator : IWorkspaceCreator
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void SaveWorkspaceEnvironmentSettings(string environmentName)
     {
-        WorkspaceEnvironmentSettings defaultWorkspaceSettings = new() { Environment = environmentName ?? string.Empty };
+        WorkspaceEnvironmentSettings defaultWorkspaceSettings = new () { Environment = environmentName ?? string.Empty };
         _jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceEnvironmentSettingsPath);
     }
 
@@ -144,7 +121,7 @@ public class WorkspaceCreator : IWorkspaceCreator
     {
         ValidateNotExistingWorkspace();
         ValidateDirectory();
-        _templateProvider.CopyTemplateFolder("workspace", RootPath, "", "", false);
+        _templateProvider.CopyTemplateFolder("workspace", RootPath, string.Empty, string.Empty, false);
         if (!ExistsWorkspaceSettingsFile)
         {
             CreateWorkspaceSettingsFile(isAddingPackageNames);
@@ -158,8 +135,4 @@ public class WorkspaceCreator : IWorkspaceCreator
 
         ActualizeExecutablePermissions();
     }
-
-    #endregion
 }
-
-#endregion

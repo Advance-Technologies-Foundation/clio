@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Package;
@@ -12,18 +13,12 @@ namespace Clio.Command;
     HelpText = "Apply manifest to environment")]
 public class ApplyEnvironmentManifestOptions : EnvironmentOptions
 {
-    #region Properties: Public
-
     [Value(0, MetaName = "ManifestFilePath", Required = true, HelpText = "Path to manifest")]
     public string ManifestFilePath { get; set; }
-
-    #endregion
 }
 
 public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestOptions>
 {
-    #region Fields: Private
-
     private readonly EnvironmentManager _environmentManager;
     private readonly IApplicationInstaller _applicationInstaller;
     private readonly FeatureCommand _featureCommand;
@@ -32,19 +27,12 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
     private readonly IDataProvider _dataProvider;
     private readonly EnvironmentSettings _environmentSettings;
 
-    #endregion
-
-    #region Constructors: Internal
-
     internal ApplyEnvironmentManifestCommand()
     {
     }
 
-    #endregion
-
-    #region Constructors: Public
-
-    public ApplyEnvironmentManifestCommand(EnvironmentManager environmentManager,
+    public ApplyEnvironmentManifestCommand(
+        EnvironmentManager environmentManager,
         IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand,
         SetWebServiceUrlCommand setWebServiceUrlCommand, IDataProvider dataProvider,
         EnvironmentSettings environmentSettings)
@@ -58,11 +46,8 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
         _environmentSettings = environmentSettings;
     }
 
-    #endregion
-
-    #region Methods: Private
-
-    private void ApplyApplicationFromManifest(ApplyEnvironmentManifestOptions options,
+    private void ApplyApplicationFromManifest(
+        ApplyEnvironmentManifestOptions options,
         List<SysInstalledApp> remoteApplications,
         List<SysInstalledApp> manifestApplications, EnvironmentSettings environmentInstance)
     {
@@ -101,9 +86,8 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 
         foreach (Feature feature in features)
         {
-            FeatureOptions featureCommandOptions = new() { Code = feature.Code, State = feature.Value ? 1 : 0 };
+            FeatureOptions featureCommandOptions = new () { Code = feature.Code, State = feature.Value ? 1 : 0 };
             featureCommandOptions.CopyFromEnvironmentSettings(options);
-            ;
             _featureCommand.SetFeatureStateDefValue(featureCommandOptions);
             foreach (KeyValuePair<string, bool> userValue in feature?.UserValues)
             {
@@ -114,7 +98,8 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
         }
     }
 
-    private void ApplySettingsFromManifest(ApplyEnvironmentManifestOptions options,
+    private void ApplySettingsFromManifest(
+        ApplyEnvironmentManifestOptions options,
         IEnumerable<CreatioManifestSetting> settings, EnvironmentSettings environmentInstance)
     {
         if (settings is null || settings.Count() == 0)
@@ -124,13 +109,14 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 
         foreach (CreatioManifestSetting setting in settings)
         {
-            SysSettingsOptions sysSettingOption = new() { Code = setting.Code, Value = setting.Value };
+            SysSettingsOptions sysSettingOption = new () { Code = setting.Code, Value = setting.Value };
             sysSettingOption.CopyFromEnvironmentSettings(options);
             _sysSettingCommand.UpdateSysSetting(sysSettingOption);
         }
     }
 
-    private void ApplyWebservicesFromManifest(ApplyEnvironmentManifestOptions options,
+    private void ApplyWebservicesFromManifest(
+        ApplyEnvironmentManifestOptions options,
         IEnumerable<CreatioManifestWebService> webservices, EnvironmentSettings environmentInstance)
     {
         if (webservices is null || webservices.Count() == 0)
@@ -140,7 +126,7 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 
         foreach (CreatioManifestWebService webservice in webservices)
         {
-            SetWebServiceUrlOptions webserviceUrlOption = new()
+            SetWebServiceUrlOptions webserviceUrlOption = new ()
             {
                 WebServiceName = webservice.Name,
                 WebServiceUrl = webservice.Url
@@ -150,17 +136,15 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(ApplyEnvironmentManifestOptions options)
     {
         List<SysInstalledApp> manifestApplications
             = _environmentManager.GetApplicationsFromManifest(options.ManifestFilePath);
-        List<SysInstalledApp> remoteApplications = AppDataContextFactory.GetAppDataContext(_dataProvider)
-            .Models<SysInstalledApp>()
-            .ToList();
+        List<SysInstalledApp> remoteApplications =
+        [
+            .. AppDataContextFactory.GetAppDataContext(_dataProvider)
+                        .Models<SysInstalledApp>(),
+        ];
 
         ApplyApplicationFromManifest(options, remoteApplications, manifestApplications, _environmentSettings);
 
@@ -174,6 +158,4 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
         ApplyWebservicesFromManifest(options, webservices, _environmentSettings);
         return 0;
     }
-
-    #endregion
 }

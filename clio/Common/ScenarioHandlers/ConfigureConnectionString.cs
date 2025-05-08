@@ -1,11 +1,12 @@
-using MediatR;
-using OneOf;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+
+using MediatR;
+using OneOf;
 
 namespace Clio.Common.ScenarioHandlers;
 
@@ -20,7 +21,8 @@ public class ConfigureConnectionStringResponse : BaseHandlerResponse
 internal class ConfigureConnectionStringRequestHandler : IRequestHandler<ConfigureConnectionStringRequest,
     OneOf<BaseHandlerResponse, HandlerError>>
 {
-    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request,
+    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(
+        ConfigureConnectionStringRequest request,
         CancellationToken cancellationToken)
     {
         string folder = request.Arguments["folderPath"];
@@ -44,11 +46,10 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
         };
     }
 
-
     private static string UpdateWebConfig(string webConfigPath)
     {
         string configContent = File.ReadAllText(webConfigPath);
-        XmlDocument doc = new();
+        XmlDocument doc = new ();
         doc.LoadXml(configContent);
         XmlNode root = doc.DocumentElement;
 
@@ -65,7 +66,7 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
     private static string ConfigureConnectionStrings(string cnFilePath, string db, string redis)
     {
         string cnFileContent = File.ReadAllText(cnFilePath);
-        XmlDocument doc = new();
+        XmlDocument doc = new ();
         doc.LoadXml(cnFileContent);
         XmlNode root = doc.DocumentElement;
 
@@ -81,7 +82,6 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
             dbNode.Attributes["connectionString"].Value = db;
         }
 
-
         XmlNode redisNode = root?.SelectSingleNode("descendant::add[@name='redis']");
         if (redisNode != null)
         {
@@ -90,7 +90,7 @@ internal class ConfigureConnectionStringRequestHandler : IRequestHandler<Configu
 
         doc.Save(cnFilePath);
 
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         sb.AppendLine("Set db to:")
             .Append("\t").AppendLine(db)
             .AppendLine("Set redis to:")

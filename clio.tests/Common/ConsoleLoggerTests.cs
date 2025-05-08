@@ -2,11 +2,13 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading;
+
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
+
 using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
@@ -21,8 +23,8 @@ internal class ConsoleLoggerTests
     {
         // Arrange
         Program.AddTimeStampToOutput = true;
-        StringBuilder stringBuilder = new();
-        StringWriter textWriter = new(stringBuilder);
+        StringBuilder stringBuilder = new ();
+        StringWriter textWriter = new (stringBuilder);
         Console.SetOut(textWriter);
 
         ILogger logger = ConsoleLogger.Instance;
@@ -63,8 +65,8 @@ internal class ConsoleLoggerTests
     {
         // Arrange
         Program.AddTimeStampToOutput = false;
-        StringBuilder stringBuilder = new();
-        StringWriter textWriter = new(stringBuilder);
+        StringBuilder stringBuilder = new ();
+        StringWriter textWriter = new (stringBuilder);
         Console.SetOut(textWriter);
 
         ILogger logger = ConsoleLogger.Instance;
@@ -95,7 +97,7 @@ internal class ConsoleLoggerTests
     public void Dispose_test()
     {
         ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
-        TextWriter? mockLogFileWtiter = Substitute.For<System.IO.TextWriter>();
+        TextWriter? mockLogFileWtiter = Substitute.For<TextWriter>();
         logger.LogFileWriter = mockLogFileWtiter;
         logger.Dispose();
         mockLogFileWtiter.Received().Dispose();
@@ -113,7 +115,7 @@ internal class ConsoleLoggerTests
     public void Dispose_Twice_WhenLogFileWriterIsNull()
     {
         ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
-        logger.LogFileWriter = Substitute.For<System.IO.TextWriter>();
+        logger.LogFileWriter = Substitute.For<TextWriter>();
         logger.Dispose();
         Assert.That(logger.LogFileWriter, Is.Null);
         Assert.DoesNotThrow(() => logger.Dispose());

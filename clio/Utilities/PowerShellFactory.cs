@@ -8,7 +8,9 @@ namespace Clio.Utilities;
 public interface IPowerShellFactory : IDisposable
 {
     string ComputerName { get; }
+
     PowerShell GetInstance();
+
     void Initialize(string userName, string password, string computerName);
 }
 
@@ -17,9 +19,8 @@ public class PowerShellFactory : IPowerShellFactory
     private bool _disposed = false;
     private string _userName;
     private string _password;
-    private string _computerName;
 
-    public string ComputerName => _computerName;
+    public string ComputerName { get; private set; }
 
     private Runspace Runspace { get; set; }
 
@@ -27,26 +28,25 @@ public class PowerShellFactory : IPowerShellFactory
 
     private WSManConnectionInfo ConnectionInfo { get; set; }
 
-
     public void Initialize(string userName, string password, string computerName)
     {
         _userName = userName ?? string.Empty;
         _password = password ?? string.Empty;
-        _computerName = computerName ?? "localhost";
+        ComputerName = computerName ?? "localhost";
         CreateConnectionInfo();
         CreateRunspace();
     }
 
     private void CreateConnectionInfo()
     {
-        AuthenticationMechanism _authenticationMechanism = _computerName == "localhost"
+        AuthenticationMechanism _authenticationMechanism = ComputerName == "localhost"
             ? AuthenticationMechanism.Default
             : AuthenticationMechanism.Kerberos;
         if (string.IsNullOrEmpty(_userName) && string.IsNullOrEmpty(_password))
         {
             ConnectionInfo = new WSManConnectionInfo
             {
-                ComputerName = _computerName,
+                ComputerName = ComputerName,
                 AuthenticationMechanism = AuthenticationMechanism.Default
             };
         }
@@ -58,11 +58,11 @@ public class PowerShellFactory : IPowerShellFactory
                 SecureString.AppendChar(c);
             }
 
-            PSCredential creds = new(_userName, SecureString);
+            PSCredential creds = new (_userName, SecureString);
             ConnectionInfo = new WSManConnectionInfo
             {
                 Credential = creds,
-                ComputerName = _computerName,
+                ComputerName = ComputerName,
                 AuthenticationMechanism = _authenticationMechanism
             };
         }
@@ -89,8 +89,6 @@ public class PowerShellFactory : IPowerShellFactory
         return ps;
     }
 
-    #region IDIsposable
-
     public void Dispose()
     {
         Dispose(true);
@@ -115,6 +113,4 @@ public class PowerShellFactory : IPowerShellFactory
 
         _disposed = true;
     }
-
-    #endregion
 }

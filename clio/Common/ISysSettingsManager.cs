@@ -5,17 +5,18 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
 using Newtonsoft.Json.Linq;
+
 using static CreatioModel.SysSettings;
 
 namespace Clio.Common;
 
 public interface ISysSettingsManager
 {
-    #region Methods: Public
 
     /// <summary>
     ///     Retrieves the value of a system setting by its code.
@@ -23,7 +24,7 @@ public interface ISysSettingsManager
     /// <param name="code">The unique code identifier of the system setting.</param>
     /// <returns>A string representation of the system setting's value.</returns>
     /// <remarks>
-    ///     Uses GetSysSettingValueByCode endpoint implemented in clio-gate
+    ///     Uses GetSysSettingValueByCode endpoint implemented in clio-gate.
     /// </remarks>
     string GetSysSettingValueByCode(string code);
 
@@ -48,7 +49,6 @@ public interface ISysSettingsManager
 
     bool UpdateSysSetting(string code, object value, string valueTypeName = "");
 
-    #endregion
 
     void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
 
@@ -57,8 +57,6 @@ public interface ISysSettingsManager
 
 public class SysSettingsManager : ISysSettingsManager
 {
-    #region Fields: Private
-
     private readonly IApplicationClient _creatioClient;
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
     private readonly IDataProvider _dataProvider;
@@ -66,18 +64,15 @@ public class SysSettingsManager : ISysSettingsManager
     private readonly IFileSystem _filesystem;
     private readonly ILogger _logger;
 
-    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new ()
     {
         WriteIndented = false,
         AllowTrailingCommas = false,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    #endregion
-
-    #region Constructors: Public
-
-    public SysSettingsManager(IApplicationClient creatioClient,
+    public SysSettingsManager(
+        IApplicationClient creatioClient,
         IServiceUrlBuilder serviceUrlBuilder, IDataProvider dataProvider,
         IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem, ILogger logger)
     {
@@ -90,10 +85,6 @@ public class SysSettingsManager : ISysSettingsManager
     }
 
     public SysSettingsManager(IDataProvider providerMock) => _dataProvider = providerMock;
-
-    #endregion
-
-    #region Methods: Private
 
     private static object ConvertToBool(string value)
     {
@@ -138,7 +129,7 @@ public class SysSettingsManager : ISysSettingsManager
     private static object ConvertToInt(string value)
     {
         const NumberStyles style = NumberStyles.Integer | NumberStyles.AllowThousands;
-        CultureInfo provider = new("en-US"); //Should probably get culture from creatio
+        CultureInfo provider = new ("en-US"); // Should probably get culture from creatio
         bool isInt = int.TryParse(value, style, provider, out int intValue);
         return isInt
             ? (object)intValue
@@ -172,7 +163,6 @@ public class SysSettingsManager : ISysSettingsManager
         return sysSchema.Name;
     }
 
-
     private SysSettings GetSysSettingByCode(string code)
     {
         SysSettings sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
@@ -181,10 +171,6 @@ public class SysSettingsManager : ISysSettingsManager
             .ToList().FirstOrDefault();
         return sysSetting;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public string GetSysSettingValueByCode(string code)
     {
@@ -252,7 +238,7 @@ public class SysSettingsManager : ISysSettingsManager
         {
             if (optionsType == "Lookup")
             {
-                bool isGuid = Guid.TryParse(value.ToString(), out Guid id);
+                bool isGuid = Guid.TryParse(value.ToString(), out Guid _);
                 if (!isGuid)
                 {
                     Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
@@ -268,7 +254,7 @@ public class SysSettingsManager : ISysSettingsManager
                     .ToString("yyyy-MM-ddTHH:mm:ss.fff");
             }
 
-            //Enclosed opts.Value in "", otherwise update fails for all text settings
+            // Enclosed opts.Value in "", otherwise update fails for all text settings
             requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
         }
         else
@@ -283,7 +269,7 @@ public class SysSettingsManager : ISysSettingsManager
 
         string postSysSettingsValuesUrl
             = _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-        string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+        _ = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
         return true;
     }
 
@@ -305,14 +291,18 @@ public class SysSettingsManager : ISysSettingsManager
 
     public List<SysSettings> GetAllSysSettingsWithValues()
     {
-        List<SysSettings> sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
-            .Models<SysSettings>()
-            .Where(s => s.ValueTypeName != "Binary")
-            .ToList();
+        List<SysSettings> sysSettings =
+        [
+            .. AppDataContextFactory.GetAppDataContext(_dataProvider)
+                        .Models<SysSettings>()
+                        .Where(s => s.ValueTypeName != "Binary"),
+        ];
 
-        List<SysSettingsValue> sysSettingsValues = AppDataContextFactory.GetAppDataContext(_dataProvider)
-            .Models<SysSettingsValue>()
-            .ToList();
+        List<SysSettingsValue> sysSettingsValues =
+        [
+            .. AppDataContextFactory.GetAppDataContext(_dataProvider)
+                        .Models<SysSettingsValue>(),
+        ];
         foreach (SysSettings sysSetting in sysSettings)
         {
             List<SysSettingsValue> currentSysSettingValue = sysSettingsValues
@@ -324,35 +314,31 @@ public class SysSettingsManager : ISysSettingsManager
         return sysSettings;
     }
 
-    #endregion
+    internal record GetSettingRequestData(string code);
 
-    internal record GetSettingRequestData(string Code);
-
-    internal record InsertSysSettingRequest(Guid Id, string Name, string Code, string ValueTypeName, bool IsCacheable);
+    internal record InsertSysSettingRequest(Guid id, string name, string code, string valueTypeName, bool isCacheable);
 
     public record InsertSysSettingResponse(
         [property: JsonPropertyName("responseStatus")]
-        ResponseStatus ResponseStatus,
-        [property: JsonPropertyName("id")] Guid Id,
+        ResponseStatus responseStatus,
+        [property: JsonPropertyName("id")] Guid id,
         [property: JsonPropertyName("rowsAffected")]
-        int RowsAffected,
+        int rowsAffected,
         [property: JsonPropertyName("nextPrcElReady")]
-        bool NextPrcElReady,
+        bool nextPrcElReady,
         [property: JsonPropertyName("success")]
-        bool Success);
+        bool success);
 
     public record ResponseStatus(
         [property: JsonPropertyName("ErrorCode")]
-        string ErrorCode,
+        string errorCode,
         [property: JsonPropertyName("Message")]
-        string Message,
-        [property: JsonPropertyName("Errors")] object[] Errors);
+        string message,
+        [property: JsonPropertyName("Errors")] object[] errors);
 }
 
 public sealed class TextSetting : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public TextSetting(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -363,19 +349,11 @@ public sealed class TextSetting : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Text";
-
-    #endregion
 }
 
 public sealed class ShortText : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public ShortText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -386,19 +364,11 @@ public sealed class ShortText : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "ShortText";
-
-    #endregion
 }
 
 public sealed class MediumText : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public MediumText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -409,19 +379,11 @@ public sealed class MediumText : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "MediumText";
-
-    #endregion
 }
 
 public sealed class LongText : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public LongText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -432,19 +394,11 @@ public sealed class LongText : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "LongText";
-
-    #endregion
 }
 
 public sealed class SecureText : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public SecureText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -455,19 +409,11 @@ public sealed class SecureText : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "SecureText";
-
-    #endregion
 }
 
 public sealed class MaxSizeText : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public MaxSizeText(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -478,19 +424,11 @@ public sealed class MaxSizeText : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "MaxSizeText";
-
-    #endregion
 }
 
 public sealed class CBoolean : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CBoolean(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -501,19 +439,11 @@ public sealed class CBoolean : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Boolean";
-
-    #endregion
 }
 
 public sealed class CDateTime : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CDateTime(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -524,19 +454,11 @@ public sealed class CDateTime : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "DateTime";
-
-    #endregion
 }
 
 public sealed class CTime : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CTime(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -547,19 +469,11 @@ public sealed class CTime : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Time";
-
-    #endregion
 }
 
 public sealed class CDate : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CDate(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -570,19 +484,11 @@ public sealed class CDate : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Date";
-
-    #endregion
 }
 
 public sealed class CInteger : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CInteger(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -593,19 +499,11 @@ public sealed class CInteger : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Integer";
-
-    #endregion
 }
 
 public sealed class CCurrency : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CCurrency(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -616,19 +514,11 @@ public sealed class CCurrency : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Money";
-
-    #endregion
 }
 
 public sealed class CDecimal : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public CDecimal(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -639,19 +529,11 @@ public sealed class CDecimal : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Float";
-
-    #endregion
 }
 
 public sealed class Lookup : CreatioSysSetting
 {
-    #region Constructors: Public
-
     public Lookup(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
         : base(name, code, value, isCacheable, description, isPersonal)
     {
@@ -662,20 +544,12 @@ public sealed class Lookup : CreatioSysSetting
     {
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public override string ValueTypeName => "Lookup";
-
-    #endregion
 }
 
 public abstract class CreatioSysSetting
 {
-    #region Fields: Private
-
-    private static readonly JsonSerializerOptions JsonSerializerOptions = new()
+    private static readonly JsonSerializerOptions JsonSerializerOptions = new ()
     {
         WriteIndented = false,
         AllowTrailingCommas = false,
@@ -683,31 +557,28 @@ public abstract class CreatioSysSetting
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    #endregion
+    [JsonPropertyName("valueTypeName")]
+    public abstract string ValueTypeName { get; }
 
-    #region Properties: Public
+    [JsonPropertyName("code")]
+    public string Code { get; set; }
 
-    [JsonPropertyName("valueTypeName")] public abstract string ValueTypeName { get; }
+    [JsonPropertyName("description")]
+    public string Description { get; set; }
 
-    [JsonPropertyName("code")] public string Code { get; set; }
+    [JsonPropertyName("isCacheable")]
+    public bool IsCacheable { get; set; }
 
-    [JsonPropertyName("description")] public string Description { get; set; }
+    [JsonPropertyName("isPersonal")]
+    public bool IsPersonal { get; set; }
 
-    [JsonPropertyName("isCacheable")] public bool IsCacheable { get; set; }
+    [JsonPropertyName("name")]
+    public string Name { get; set; }
 
-    [JsonPropertyName("isPersonal")] public bool IsPersonal { get; set; }
-
-    [JsonPropertyName("name")] public string Name { get; set; }
-
-    [JsonPropertyName("value")] public string Value { get; set; }
-
-    #endregion
-
-    #region Methods: Public
+    [JsonPropertyName("value")]
+    public string Value { get; set; }
 
     public override string ToString() => JsonSerializer.Serialize(this, JsonSerializerOptions);
-
-    #endregion
 
     private protected CreatioSysSetting(string name, string code, string value, bool isCacheable, string description,
         bool isPersonal)

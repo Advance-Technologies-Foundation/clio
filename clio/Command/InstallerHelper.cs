@@ -8,8 +8,6 @@ namespace Clio.Command;
 
 public static class InstallerHelper
 {
-    #region Enum: Public
-
     public enum DatabaseType
     {
         Postgres,
@@ -22,30 +20,22 @@ public static class InstallerHelper
         NetCore
     }
 
-    #endregion
-
-    #region Constants: Private
-
     private const string MsSqlBackupExtension = ".bak";
     private const string PgBackupExtension = ".backup";
 
-    #endregion
-
-    #region Fields: Public
-
     public static string FetFQDN()
     {
-        string FQDN = "localhost";
+        string fQDN = "localhost";
         try
         {
-            FQDN = Dns.GetHostName();
-            FQDN = Dns.GetHostEntry(Dns.GetHostName()).HostName;
-            return FQDN;
+            fQDN = Dns.GetHostName();
+            fQDN = Dns.GetHostEntry(Dns.GetHostName()).HostName;
+            return fQDN;
         }
         catch (Exception)
         {
             Console.WriteLine("Defaulting to localhost");
-            return FQDN;
+            return fQDN;
         }
     }
 
@@ -61,7 +51,8 @@ public static class InstallerHelper
     public static readonly Func<string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExisting =
         (zipFile, packageArchiver) =>
         {
-            string destinationPath = Path.Join(new FileInfo(zipFile).Directory.FullName,
+            string destinationPath = Path.Join(
+                new FileInfo(zipFile).Directory.FullName,
                 Path.GetFileNameWithoutExtension(new FileInfo(zipFile).FullName));
             return Directory.Exists(destinationPath) switch
             {
@@ -75,7 +66,7 @@ public static class InstallerHelper
     /// </summary>
     /// <param name="unzippedDirectory">The directory where the database files are expected to be found.</param>
     /// <returns>
-    /// DatabaseType enum which indicates whether the database is of type MsSql or Postgres, 
+    /// DatabaseType enum which indicates whether the database is of type MsSql or Postgres,
     /// based on the respective file backup extensions.
     /// </returns>
     /// <exception cref="Exception">An exception is thrown if the backup file does not exist in the expected db folder.</exception>
@@ -113,11 +104,6 @@ public static class InstallerHelper
                 $"Cannot determine framework type, Terrasoft.WebApp or Terrasoft.WebAppCore does not exist in {unzippedDirectory}")
         };
 
-    #endregion
-
-
-    #region Fields: Private
-
     [NotNull]
     private static readonly Func<IPackageArchiver, FileInfo, string, DirectoryInfo> Unzip =
         (packageArchiver, sourceFile, destingationPath) =>
@@ -125,6 +111,4 @@ public static class InstallerHelper
             packageArchiver.UnZip(sourceFile.FullName, false, Directory.CreateDirectory(destingationPath).FullName);
             return new DirectoryInfo(destingationPath);
         };
-
-    #endregion
 }

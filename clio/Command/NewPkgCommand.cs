@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -20,28 +21,19 @@ public class NewPkgOptions
     public static IEnumerable<Example> Examples =>
         new List<Example>
         {
-            new("Create new package with name 'ATF'",
-                new NewPkgOptions { Name = "ATF" }
-            ),
-            new("Create new package with name 'ATF' and with links on local installation creatio with file design mode",
-                new NewPkgOptions { Name = "ATF", Rebase = "bin" }
-            )
+            new ("Create new package with name 'ATF'",
+                new NewPkgOptions { Name = "ATF" }),
+            new ("Create new package with name 'ATF' and with links on local installation creatio with file design mode",
+                new NewPkgOptions { Name = "ATF", Rebase = "bin" })
         };
 }
 
-public class NewPkgCommand : Command<NewPkgOptions>
+public class NewPkgCommand(ISettingsRepository settingsRepository, Command<ReferenceOptions> referenceCommand,
+    ILogger logger): Command<NewPkgOptions>
 {
-    private readonly ISettingsRepository _settingsRepository;
-    private readonly Command<ReferenceOptions> _referenceCommand;
-    private readonly ILogger _logger;
-
-    public NewPkgCommand(ISettingsRepository settingsRepository, Command<ReferenceOptions> referenceCommand,
-        ILogger logger)
-    {
-        _settingsRepository = settingsRepository;
-        _referenceCommand = referenceCommand;
-        _logger = logger;
-    }
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly Command<ReferenceOptions> _referenceCommand = referenceCommand;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(NewPkgOptions options)
     {

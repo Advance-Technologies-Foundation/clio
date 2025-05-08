@@ -1,11 +1,12 @@
-using Clio.Common;
-using Clio.UserEnvironment;
-using CommandLine;
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+
+using Clio.Common;
+using Clio.UserEnvironment;
+using CommandLine;
 
 namespace Clio.Command;
 
@@ -48,9 +49,9 @@ public class RegisterCommand : Command<RegisterOptions>
                 string folder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 string appDataClioFolderPath = Path.Combine(folder, "clio");
                 Directory.CreateDirectory(appDataClioFolderPath);
-                CreatioEnvironment environment = new();
+                CreatioEnvironment environment = new ();
                 string clioIconPath = Path.Combine(environment.GetAssemblyFolderPath(), "img");
-                DirectoryInfo imgFolder = new(clioIconPath);
+                DirectoryInfo imgFolder = new (clioIconPath);
                 FileInfo[] allImgFiles = imgFolder.GetFiles();
                 foreach (FileInfo imgFile in allImgFiles)
                 {
@@ -78,51 +79,6 @@ public class RegisterCommand : Command<RegisterOptions>
         {
             Console.WriteLine(e);
             return 1;
-        }
-    }
-
-    /// <summary>
-    /// Installs VS Code Extension with force
-    /// </summary>
-    /// <remarks>
-    /// See <see href="https://code.visualstudio.com/docs/editor/command-line#_working-with-extensions">working with extensions</see> 
-    /// vscode cli documentation
-    /// </remarks>
-    private async Task InstallVsCodeExtension()
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            //Check if extension is installed
-            using (Process? process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = "/c code --list-extensions",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            }))
-            {
-                string extensions = await process.StandardOutput.ReadToEndAsync();
-                if (extensions.Contains("AdvanceTechnologiesFoundation.clio-explorer"))
-                {
-                    Console.WriteLine("clio-explorer is already installed");
-                    return;
-                }
-            }
-
-            // install extension
-            using (Process process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments =
-                           "/c code --install-extension AdvanceTechnologiesFoundation.clio-explorer --force",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            }))
-            {
-                string installLog = await process.StandardOutput.ReadToEndAsync();
-            }
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
+
 using Clio.Common;
 using Microsoft.Dism;
 
@@ -11,6 +12,7 @@ namespace Clio.Command;
 public interface IWindowsFeatureManager
 {
     void InstallFeature(string featureName);
+
     List<WindowsFeature> GetMissedComponents();
 
     IEnumerable<WindowsFeature> GerRequiredComponent();
@@ -24,32 +26,18 @@ public interface IWindowsFeatureManager
     int GetActionMaxLength(IEnumerable<string> items);
 }
 
-public class WindowsFeatureManager : IWindowsFeatureManager
+public class WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
+    ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider, ILogger logger): IWindowsFeatureManager
 {
-    public WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
-        ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider, ILogger logger)
-    {
-        _workingDirectoriesProvider = workingDirectoriesProvider;
-        _consoleProgressBar = consoleProgressBar;
-        _windowsFeatureProvider = windowsFeatureProvider;
-        _logger = logger;
-    }
-
-
-    private string RequirmentNETFrameworkFeaturesFilePaths => Path.Join(_workingDirectoriesProvider.TemplateDirectory,
+    private string RequirmentNETFrameworkFeaturesFilePaths => Path.Join(
+        _workingDirectoriesProvider.TemplateDirectory,
         "windows_features", "RequirmentNetFramework.txt");
-
 
     private string GetInactiveFeaturesCode(string featureName)
     {
         List<WindowsFeature> windowsFeatures = _windowsFeatureProvider.GetWindowsFeatures();
         WindowsFeature? feature = windowsFeatures.FirstOrDefault(i => i.Name?.ToLower() == featureName.ToLower() ||
-                                                                      i.Caption?.ToLower() == featureName.ToLower());
-        if (feature is null)
-        {
-            throw new ItemNotFoundException($"Windows feature [{featureName}] not found in the System");
-        }
-
+                                                                      i.Caption?.ToLower() == featureName.ToLower()) ?? throw new ItemNotFoundException($"Windows feature [{featureName}] not found in the System");
         return feature.Name;
     }
 
@@ -59,23 +47,19 @@ public class WindowsFeatureManager : IWindowsFeatureManager
     {
         get
         {
-            if (_requirmentNETFrameworkFeatures == null)
-            {
-                _requirmentNETFrameworkFeatures = File.ReadAllLines(RequirmentNETFrameworkFeaturesFilePaths);
-            }
+            _requirmentNETFrameworkFeatures ??= File.ReadAllLines(RequirmentNETFrameworkFeaturesFilePaths);
 
             return _requirmentNETFrameworkFeatures;
         }
         set => _requirmentNETFrameworkFeatures = value;
     }
 
-
     public List<WindowsFeature> GetMissedComponents()
     {
-        List<WindowsFeature> missedComponents = new();
+        List<WindowsFeature> missedComponents = [];
         foreach (string item in RequirmentNETFrameworkFeatures)
         {
-            if (!windowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower()))
+            if (!WindowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower()))
             {
                 missedComponents.Add(new WindowsFeature { Name = item, Installed = false });
             }
@@ -86,13 +70,13 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
     public IEnumerable<WindowsFeature> GerRequiredComponent()
     {
-        List<WindowsFeature> requirmentFeatures = new();
+        List<WindowsFeature> requirmentFeatures = [];
         foreach (string item in RequirmentNETFrameworkFeatures)
         {
             requirmentFeatures.Add(new WindowsFeature
             {
                 Name = item,
-                Installed = windowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower())
+                Installed = WindowsActiveFeatures.Select(i => i.ToLower()).Contains(item.ToLower())
             });
         }
 
@@ -135,7 +119,6 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
     public int GetActionMaxLength(IEnumerable<string> action) => action.Max(s => s.Length);
 
-
     private void SetFeatureState(string featureName, bool state)
     {
         try
@@ -175,21 +158,18 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 
     private IEnumerable<string> _windowsActiveFeatures;
 
-    private IEnumerable<string> windowsActiveFeatures
+    private IEnumerable<string> WindowsActiveFeatures
     {
         get
         {
-            if (_windowsActiveFeatures == null)
-            {
-                _windowsActiveFeatures = _windowsFeatureProvider.GetActiveWindowsFeatures();
-            }
+            _windowsActiveFeatures ??= _windowsFeatureProvider.GetActiveWindowsFeatures();
 
             return _windowsActiveFeatures;
         }
     }
 
-    private IWorkingDirectoriesProvider _workingDirectoriesProvider;
-    private ConsoleProgressbar _consoleProgressBar;
-    private IWindowsFeatureProvider _windowsFeatureProvider;
-    private readonly ILogger _logger;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
+    private readonly ConsoleProgressbar _consoleProgressBar = consoleProgressBar;
+    private readonly IWindowsFeatureProvider _windowsFeatureProvider = windowsFeatureProvider;
+    private readonly ILogger _logger = logger;
 }

@@ -1,33 +1,19 @@
 using System;
+
 using Clio.Common.Responses;
 
 namespace Clio.Common;
 
-#region Interface: IJsonResponseFormater
-
 public interface IJsonResponseFormater
 {
-    #region Methods: Public
-
     string Format<T>(T value);
+
     string Format(Exception exception);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: JsonResponseFormater
 
 public class JsonResponseFormater : IJsonResponseFormater
 {
-    #region Fields: Private
-
     private readonly IJsonConverter _jsonConverter;
-
-    #endregion
-
-    #region Constructors: Public
 
     public JsonResponseFormater(IJsonConverter jsonConverter)
     {
@@ -35,19 +21,15 @@ public class JsonResponseFormater : IJsonResponseFormater
         _jsonConverter = jsonConverter;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public string Format<T>(T value)
     {
-        ValueResponse<T> valueResponse = new() { Value = value, Success = true, ErrorInfo = null };
+        ValueResponse<T> valueResponse = new () { Value = value, Success = true, ErrorInfo = null };
         return _jsonConverter.SerializeObject(valueResponse);
     }
 
     public string Format(Exception exception)
     {
-        ValueResponse<object> valueResponse = new()
+        ValueResponse<object> valueResponse = new ()
         {
             Value = null,
             Success = false,
@@ -60,8 +42,4 @@ public class JsonResponseFormater : IJsonResponseFormater
         };
         return _jsonConverter.SerializeObject(valueResponse);
     }
-
-    #endregion
 }
-
-#endregion

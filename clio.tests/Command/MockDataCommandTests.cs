@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;
@@ -14,8 +15,6 @@ namespace Clio.Tests.Command;
 [TestFixture]
 internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 {
-    #region Methods: Protected
-
     protected override MockFileSystem CreateFs()
     {
         MockFileSystem mockFS = base.CreateFs();
@@ -23,31 +22,30 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
         return mockFS;
     }
 
-    #endregion
-
     [Test]
     public void CreateDataFiles()
     {
-        FileSystem clioFileSystem = new(FileSystem);
+        FileSystem clioFileSystem = new (fileSystem);
+
         // Arrange
-        MockDataCommand command = new(null, null, clioFileSystem);
-        MockDataCommandOptions options = new()
+        MockDataCommand command = new (null, null, clioFileSystem);
+        MockDataCommandOptions options = new ()
         {
             Models = @"T:\MockDataProjects",
             Data = @"T:\MockDataProjects\Tests\MockData"
         };
         command.Execute(options);
-        FileSystem.Directory.Exists(options.Models).Should().BeTrue();
-        FileSystem.Directory.Exists(options.Data).Should().BeTrue();
+        fileSystem.Directory.Exists(options.Models).Should().BeTrue();
+        fileSystem.Directory.Exists(options.Data).Should().BeTrue();
     }
 
     [Test]
     public void FindModels()
     {
         // Arrange
-        FileSystem clioFileSystem = new(FileSystem);
-        MockDataCommand command = new(null, null, clioFileSystem);
-        MockDataCommandOptions options = new()
+        FileSystem clioFileSystem = new (fileSystem);
+        MockDataCommand command = new (null, null, clioFileSystem);
+        MockDataCommandOptions options = new ()
         {
             Models = @"T:/MockDataProjects",
             Data = @"T:/MockDataProjects/Tests/MockData"
@@ -62,7 +60,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
     public void GetODataData()
     {
         // Arrange
-        FileSystem clioFileSystem = new(FileSystem);
+        FileSystem clioFileSystem = new (fileSystem);
         IApplicationClient mockCreatioClient = Substitute.For<IApplicationClient>();
         string contactExpectedContent
             = clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Contact.json"));
@@ -79,18 +77,19 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
         mockCreatioClient
             .ExecuteGetRequest(Arg.Is<string>(s => s.EndsWith("Account")), Arg.Any<int>(), Arg.Any<int>(),
                 Arg.Any<int>()).Returns(accountExpectedContent);
-        MockDataCommand command = new(mockCreatioClient, new EnvironmentSettings(), clioFileSystem);
-        MockDataCommandOptions options = new()
+        MockDataCommand command = new (mockCreatioClient, new EnvironmentSettings(), clioFileSystem);
+        MockDataCommandOptions options = new ()
         {
             Models = @"T:\MockDataProjects",
             Data = @"T:\MockDataProjects\Tests\MockData"
         };
-        //Act
+
+        // Act
         command.Execute(options);
 
-        //Assert
+        // Assert
         List<string> models = command.FindModels(options.Models);
-        string[] dataFiles = FileSystem.Directory.GetFiles(options.Data, "*.json", SearchOption.AllDirectories);
+        string[] dataFiles = fileSystem.Directory.GetFiles(options.Data, "*.json", SearchOption.AllDirectories);
         dataFiles.Count().Should().Be(models.Count);
         foreach (string dataFile in dataFiles)
         {

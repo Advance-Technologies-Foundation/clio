@@ -10,6 +10,7 @@ namespace Clio.Command;
 public interface IWindowsFeatureProvider
 {
     IEnumerable<string> GetActiveWindowsFeatures();
+
     List<WindowsFeature> GetWindowsFeatures();
 }
 
@@ -17,12 +18,12 @@ public class WindowsFeatureProvider : IWindowsFeatureProvider
 {
     public IEnumerable<string> GetActiveWindowsFeatures()
     {
-        List<string> features = new();
+        List<string> features = [];
         try
         {
-            ManagementObjectSearcher searcher = new("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
+            ManagementObjectSearcher searcher = new ("SELECT * FROM Win32_OptionalFeature WHERE InstallState = 1");
             ManagementObjectCollection featureCollection = searcher.Get();
-            foreach (ManagementObject featureObject in featureCollection)
+            foreach (ManagementObject featureObject in featureCollection.Cast<ManagementObject>())
             {
                 string featureName = featureObject["Name"].ToString();
                 features.Add(featureName);
@@ -39,10 +40,10 @@ public class WindowsFeatureProvider : IWindowsFeatureProvider
 
     public List<WindowsFeature> GetWindowsFeatures()
     {
-        List<WindowsFeature> features = new();
-        ManagementObjectSearcher searcher = new("SELECT * FROM Win32_OptionalFeature");
+        List<WindowsFeature> features = [];
+        ManagementObjectSearcher searcher = new ("SELECT * FROM Win32_OptionalFeature");
         ManagementObjectCollection featureCollection = searcher.Get();
-        foreach (ManagementObject featureObject in featureCollection)
+        foreach (ManagementObject featureObject in featureCollection.Cast<ManagementObject>())
         {
             features.Add(new WindowsFeature
             {

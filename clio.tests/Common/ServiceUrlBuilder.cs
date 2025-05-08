@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -11,8 +12,6 @@ namespace Clio.Tests.Common;
 [TestFixture]
 internal class ServiceUrlBuilderCommandTests
 {
-    #region Properties: Public
-
     public static IEnumerable<TestCaseData> TestCases
     {
         get
@@ -52,94 +51,115 @@ internal class ServiceUrlBuilderCommandTests
     {
         get
         {
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost" },
                 "http://localhost/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost" }, "http://localhost/somepath1");
 
-
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost" },
                 "http://localhost/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost" }, "http://localhost/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost/" },
                 "http://localhost/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost/" }, "http://localhost/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost/" },
                 "http://localhost/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost/" }, "http://localhost/somepath1");
 
-
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost:81/" },
                 "http://localhost:81/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost:81/" },
                 "http://localhost:81/somepath1");
 
-
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost:81/" },
                 "http://localhost:81/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost:81/" },
                 "http://localhost:81/somepath1");
 
-
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost:81/sub" },
                 "http://localhost:81/sub/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost:81/sub" },
                 "http://localhost:81/sub/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost:81/sub" },
                 "http://localhost:81/sub/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost:81/sub" },
                 "http://localhost:81/sub/somepath1");
 
-
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost:81/sub/" },
                 "http://localhost:81/sub/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("/somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "/somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost:81/sub/" },
                 "http://localhost:81/sub/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "https://localhost" },
                 "https://localhost/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "https://localhost" }, "https://localhost/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "https://localhost/" },
                 "https://localhost/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "https://localhost/" },
                 "https://localhost/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "https://localhost:81/" },
                 "https://localhost:81/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "https://localhost:81/" },
                 "https://localhost:81/somepath1");
 
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = false, Uri = "http://localhost:81/sub" },
                 "http://localhost:81/sub/0/somepath1");
-            yield return new TestCaseDataWithEnvSetting("somepath1",
+            yield return new TestCaseDataWithEnvSetting(
+                "somepath1",
                 new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost:81/sub" },
                 "http://localhost:81/sub/somepath1");
         }
@@ -176,22 +196,18 @@ internal class ServiceUrlBuilderCommandTests
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     [TestCaseSource(nameof(TestCases))]
     public void Build_Returns_CorrectUrl(TestCaseData testCaseData)
     {
-        //Arrange
+        // Arrange
         EnvironmentSettings environmentSettingsMock =
-            new() { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
-        ServiceUrlBuilder sut = new(environmentSettingsMock);
+            new () { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
+        ServiceUrlBuilder sut = new (environmentSettingsMock);
 
-        //Act
+        // Act
         string actual = sut.Build(testCaseData.Route);
 
-        //Assert
+        // Assert
         actual.Should().Be(testCaseData.ExpectedUrl);
     }
 
@@ -199,95 +215,89 @@ internal class ServiceUrlBuilderCommandTests
     [TestCase("Fdgbzdf")]
     public void Build_Throws_When_Invalid_Url(string url)
     {
-        EnvironmentSettings environmentSettingsMock = new() { Uri = url };
-        ServiceUrlBuilder sut = new(environmentSettingsMock);
+        EnvironmentSettings environmentSettingsMock = new () { Uri = url };
+        ServiceUrlBuilder sut = new (environmentSettingsMock);
 
-        //Act
-        Action act = () => sut.Build("");
+        // Act
+        Action act = () => sut.Build(string.Empty);
 
-        //Assert
-
+        // Assert
         act.Should().Throw<ArgumentException>().WithMessage("Misconfigured Url, check settings and try again *");
     }
 
     [TestCaseSource(nameof(TestCasesWithEnvSettings))]
     public void BuildWithEnvs_Returns_CorrectUrl(TestCaseDataWithEnvSetting testCaseData)
     {
-        //Arrange
-        EnvironmentSettings environmentSettingsMock = new()
+        // Arrange
+        EnvironmentSettings environmentSettingsMock = new ()
         {
             Uri = testCaseData.EnvironmentSettings.Uri,
             IsNetCore = testCaseData.EnvironmentSettings.IsNetCore
         };
-        ServiceUrlBuilder sut = new(new EnvironmentSettings());
+        ServiceUrlBuilder sut = new (new EnvironmentSettings());
 
-        //Act
-
+        // Act
         string actual = sut.Build(testCaseData.Route, environmentSettingsMock);
 
-        //Assert
+        // Assert
         actual.Should().Be(testCaseData.ExpectedUrl);
     }
 
     [TestCaseSource(nameof(TestCasesWithEnvSettingsAndKnownRoutes))]
     public void BuildWithEnvsAndKnownRoute_Returns_CorrectUrl(TestCaseDataWithEnvSettingAndKnownRoutes testCaseData)
     {
-        //Arrange
-        EnvironmentSettings environmentSettingsMock = new()
+        // Arrange
+        EnvironmentSettings environmentSettingsMock = new ()
         {
             Uri = testCaseData.EnvironmentSettings.Uri,
             IsNetCore = testCaseData.EnvironmentSettings.IsNetCore
         };
-        ServiceUrlBuilder sut = new(new EnvironmentSettings());
+        ServiceUrlBuilder sut = new (new EnvironmentSettings());
 
-        //Act
-
+        // Act
         string actual = sut.Build(testCaseData.KnownRoute, environmentSettingsMock);
 
-        //Assert
+        // Assert
         actual.Should().Be(testCaseData.ExpectedUrl);
     }
 
     [TestCaseSource(nameof(TestCasesWithKnownRoute))]
     public void BuildWithKnownRoute_Returns_CorrectUrl(TestCaseDataWithKnownRoutes testCaseData)
     {
-        //Arrange
+        // Arrange
         EnvironmentSettings environmentSettingsMock =
-            new() { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
-        ServiceUrlBuilder sut = new(environmentSettingsMock);
+            new () { Uri = testCaseData.Uri, IsNetCore = testCaseData.IsNetCore };
+        ServiceUrlBuilder sut = new (environmentSettingsMock);
 
-        //Act
+        // Act
         string actual = sut.Build(testCaseData.KnownRoute);
 
-        //Assert
+        // Assert
         actual.Should().Be(testCaseData.ExpectedUrl);
     }
-
 
     [Test]
     public void AllEnumsHaveRoutes()
     {
-        ServiceUrlBuilder sut = new(new EnvironmentSettings());
+        _ = new ServiceUrlBuilder(new EnvironmentSettings());
         foreach (ServiceUrlBuilder.KnownRoute route in Enum.GetValues<ServiceUrlBuilder.KnownRoute>())
         {
             ServiceUrlBuilder.KnownRoutes[route].Should().NotBeNullOrWhiteSpace();
         }
     }
 
-    #endregion
-
-    public record TestCaseData(bool IsNetCore, string Uri, string Route, string ExpectedUrl);
+    public record TestCaseData(bool isNetCore, string uri, string route, string expectedUrl);
 
     public record TestCaseDataWithKnownRoutes(
-        bool IsNetCore,
-        string Uri,
-        ServiceUrlBuilder.KnownRoute KnownRoute,
-        string ExpectedUrl);
+        bool isNetCore,
+        string uri,
+        ServiceUrlBuilder.KnownRoute knownRoute,
+        string expectedUrl);
 
-    public record TestCaseDataWithEnvSetting(string Route, EnvironmentSettings EnvironmentSettings, string ExpectedUrl);
+    public record TestCaseDataWithEnvSetting(string route, EnvironmentSettings environmentSettings, string expectedUrl);
 
     public record TestCaseDataWithEnvSettingAndKnownRoutes(
-        ServiceUrlBuilder.KnownRoute KnownRoute,
-        EnvironmentSettings EnvironmentSettings,
-        string ExpectedUrl);
+        ServiceUrlBuilder.KnownRoute knownRoute,
+        EnvironmentSettings environmentSettings,
+        string expectedUrl);
 }
