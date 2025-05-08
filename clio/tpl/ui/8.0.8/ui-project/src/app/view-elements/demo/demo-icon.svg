@@ -18,9 +18,11 @@
       <g clip-path="url(#clip-path)" data-name="Mask Group 83" id="Mask_Group_83" transform="translate(0 0)">
         <path d="M26,26V81.869H81.869V26H26M0,0H107.869V107.869H0Z" data-name="Rectangle 10309" fill="#fff"
               id="Rectangle_10309" opacity="0.07" transform="translate(26.065 26.065)"/>
-        <path d="M72.668,26a46.668,46.668,0,1,0,46.668,46.668A46.721,46.721,0,0,0,72.668,26m0-26A72.668,72.668,0,1,1,0,72.668,72.668,72.668,0,0,1,72.668,0Z" data-name="Ellipse 1626"
-              fill="#fff"
-              id="Ellipse_1626" opacity="0.07" transform="translate(5.136 7.332)"/>
+        <path
+          d="M72.668,26a46.668,46.668,0,1,0,46.668,46.668A46.721,46.721,0,0,0,72.668,26m0-26A72.668,72.668,0,1,1,0,72.668,72.668,72.668,0,0,1,72.668,0Z"
+          data-name="Ellipse 1626"
+          fill="#fff"
+          id="Ellipse_1626" opacity="0.07" transform="translate(5.136 7.332)"/>
         <path d="M63.165,52.056,45,83.561H81.329L63.165,52.056M63.165,0,126.33,109.561H0Z" data-name="Polygon 19"
               fill="#fff"
               id="Polygon_19" opacity="0.07" transform="translate(146.91 16.834) rotate(90)"/>

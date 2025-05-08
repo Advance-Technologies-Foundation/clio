@@ -14,7 +14,8 @@ import {CrtInterfaceDesignerItem, CrtViewElement,} from "@creatio-devkit/common"
 })
 @Component({
   selector: "<%vendorPrefix%>-demo",
-  template: `<button (click)="showAlert()">Click me!</button>`,
+  template: `
+    <button (click)="showAlert()">Click me!</button>`,
   encapsulation: ViewEncapsulation.ShadowDom
 })
 export class DemoComponent {
