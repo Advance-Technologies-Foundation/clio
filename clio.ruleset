@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <RuleSet Name="Microsoft Recommended Rules for Clio" Description="These rules focus on the most critical problems in your code, including potential security holes, application crashes, and other important logic and design errors. This is an extended version based on Microsoft Recommended Rules with StyleCop integration." ToolsVersion="16.0">
   <Include Path="allrules.ruleset" Action="Default" />
   <Rules AnalyzerId="Microsoft.Analyzers.ManagedCodeAnalysis" RuleNamespace="Microsoft.Rules.Managed">
