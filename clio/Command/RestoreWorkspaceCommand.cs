@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using Clio.Common;
+using Clio.Workspaces;
 using CommandLine;
 
 namespace Clio.Command;

@@ -1,6 +1,9 @@
 using System;
 using System.Text.Json;
+using Clio.Command.StartProcess;
 using Clio.Command.TIDE;
+using Clio.Common;
+using Clio.Workspaces;
 using CommandLine;
 
 namespace Clio.Command;

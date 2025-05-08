@@ -1,4 +1,7 @@
-﻿namespace Clio.Package;
+﻿using Clio.Common;
+using Clio.WebApplication;
+
+namespace Clio.Package;
 
 public class PackageInstaller(
     IApplicationLogProvider applicationLogProvider,

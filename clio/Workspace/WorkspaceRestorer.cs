@@ -1,4 +1,8 @@
 using System;
+using Clio.Command;
+using Clio.Common;
+using Clio.Package;
+using Clio.Project.NuGet;
 
 namespace Clio.Workspaces;
 

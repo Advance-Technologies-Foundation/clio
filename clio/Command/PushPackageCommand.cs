@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Clio.Common;
+using Clio.Package;
+using Clio.WebApplication;
 using CommandLine;
 
 namespace Clio.Command;

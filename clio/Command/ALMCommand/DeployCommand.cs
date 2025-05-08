@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json.Linq;
 

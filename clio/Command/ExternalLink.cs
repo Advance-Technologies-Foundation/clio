@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using Clio.Common;
+using Clio.Requests;
 using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;

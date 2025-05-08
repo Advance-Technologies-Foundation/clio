@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Clio.Common;
+using Clio.Package;
 using Clio.Utilities;
 
 namespace Clio.Workspaces;

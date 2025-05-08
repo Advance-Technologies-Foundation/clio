@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Clio.Command;
+using Clio.Common;
+using Clio.ComposableApplication;
 
 namespace Clio.Workspaces;
 

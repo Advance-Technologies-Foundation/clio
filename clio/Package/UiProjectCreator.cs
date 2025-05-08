@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Clio.Common;
+using Clio.Workspaces;
 
 namespace Clio.Package;
 

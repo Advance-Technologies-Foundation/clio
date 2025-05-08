@@ -1,4 +1,6 @@
-﻿using CommandLine;
+﻿using Clio.Common;
+using Clio.Workspaces;
+using CommandLine;
 
 namespace Clio.Command;
 

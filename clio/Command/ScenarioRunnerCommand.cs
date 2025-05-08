@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Linq;
 using Autofac;
 using Clio.Common;
+using Clio.YAML;
 using CommandLine;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;

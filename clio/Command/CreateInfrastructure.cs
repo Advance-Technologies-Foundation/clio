@@ -64,12 +64,12 @@ public class CreateInfrastructureCommand(IFileSystem fileSystem) : Command<Creat
         Console.ForegroundColor = ConsoleColor.DarkYellow;
         IList<string[]> table = new List<string[]>
         {
-            ["Application", "Version", "Available on"],
-            ["-------------------------", "------------------------", "------------"],
-            ["Postgres SQL Server", "latest", "Port: 5432"],
-            ["Microsoft SQL Server 2022", "latest developer edition", "Port: 1434"],
-            ["Redis Server", "latest", "Port: 6379"],
-            ["Email Listener", "1.0.10", "Port: 1090"]
+            new string[] { "Application", "Version", "Available on" },
+            new string[] { "-------------------------", "------------------------", "------------" },
+            new string[] { "Postgres SQL Server", "latest", "Port: 5432" },
+            new string[] { "Microsoft SQL Server 2022", "latest developer edition", "Port: 1434" },
+            new string[] { "Redis Server", "latest", "Port: 6379" },
+            new string[] { "Email Listener", "1.0.10", "Port: 1090" }
         };
 
         Console.Write(TextUtilities.ConvertTableToString(table));

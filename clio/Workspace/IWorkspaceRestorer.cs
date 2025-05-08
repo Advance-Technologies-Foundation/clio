@@ -1,3 +1,5 @@
+using Clio.Command;
+
 namespace Clio.Workspaces;
 
 public interface IWorkspaceRestorer
