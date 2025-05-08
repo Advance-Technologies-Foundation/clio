@@ -10,25 +10,41 @@ namespace Clio.Tests.Command;
 public class WindowsFeatureManagerTestFixture : BaseClioModuleTests
 {
 
-	IWindowsFeatureManager _sut;
-	IWorkingDirectoriesProvider _workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-	
-	public override void Setup(){
-		base.Setup();
-		_sut = Container.Resolve<IWindowsFeatureManager>();
-	}
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_workingDirectoriesProvider).As<IWorkingDirectoriesProvider>();
-		//containerBuilder.RegisterInstance<ConsoleProgressbar>();
-	}
+    #region Fields: Private
 
-	[Test]
-	public void BuildPrintString_AllignsItems(){
-		
-		var actual = _sut.GetActionMaxLength(["x","xx","xxx"]);
-		actual.Should().Be(3);
-	}
-	
+    private IWindowsFeatureManager _sut;
+
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider
+        = Substitute.For<IWorkingDirectoriesProvider>();
+
+    #endregion
+
+    #region Methods: Protected
+
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_workingDirectoriesProvider).As<IWorkingDirectoriesProvider>();
+        //containerBuilder.RegisterInstance<ConsoleProgressbar>();
+    }
+
+    #endregion
+
+    #region Methods: Public
+
+    public override void Setup()
+    {
+        base.Setup();
+        _sut = Container.Resolve<IWindowsFeatureManager>();
+    }
+
+    #endregion
+
+    [Test]
+    public void BuildPrintString_AllignsItems()
+    {
+        int actual = _sut.GetActionMaxLength(["x", "xx", "xxx"]);
+        actual.Should().Be(3);
+    }
 
 }

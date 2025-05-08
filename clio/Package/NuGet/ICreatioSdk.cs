@@ -1,26 +1,24 @@
-namespace Clio.Project.NuGet
+using System;
+
+namespace Clio.Project.NuGet;
+
+#region Interface: ICreatioSdk
+
+public interface ICreatioSdk
 {
-	using System;
 
-	#region Interface: ICreatioSdk
+    #region Properties: Public
 
-	public interface ICreatioSdk
-	{
+    public Version LastVersion { get; }
 
-		#region Properties: Public
+    #endregion
 
-		public Version LastVersion { get; }
+    #region Methods: Public
 
-		#endregion
+    Version FindLatestSdkVersion(Version applicationVersion);
 
-		#region Methods: Public
-
-		Version FindLatestSdkVersion(Version applicationVersion);
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

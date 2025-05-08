@@ -1,62 +1,67 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Clio.Common;
 using Clio.Package;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using FileSystem = System.IO.Abstractions.FileSystem;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
-namespace Clio
+namespace Clio;
+
+#region Class: InstallNugetPackage
+
+public class PackageInfoProvider : IPackageInfoProvider
 {
 
-	#region Class: InstallNugetPackage
+    #region Fields: Private
 
-	public class PackageInfoProvider : IPackageInfoProvider
-	{
+    private readonly IFileSystem _fileSystem;
 
-		#region Fields: Private
+    #endregion
 
-		protected readonly IJsonConverter _jsonConverter;
-		private readonly System.IO.Abstractions.IFileSystem _fileSystem;
+    #region Fields: Protected
 
-		#endregion
+    protected readonly IJsonConverter _jsonConverter;
 
-		#region Constructors: Public
+    #endregion
 
-		public PackageInfoProvider(IJsonConverter jsonConverter, System.IO.Abstractions.IFileSystem fileSystem) {
-			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
-			_jsonConverter = jsonConverter;
-			_fileSystem = fileSystem;
-		}
+    #region Constructors: Public
 
-		#endregion
+    public PackageInfoProvider(IJsonConverter jsonConverter, IFileSystem fileSystem)
+    {
+        jsonConverter.CheckArgumentNull(nameof(jsonConverter));
+        _jsonConverter = jsonConverter;
+        _fileSystem = fileSystem;
+    }
 
-		#region Methods: Public
+    #endregion
 
-		public PackageInfo GetPackageInfo(string packagePath) {
-			packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
-			string packageDescriptorPath = PackageUtilities.BuildPackageDescriptorPath(packagePath);
-			if (!_fileSystem.File.Exists(packageDescriptorPath)) {
-				throw new Exception($"Package descriptor not found by path: '{packageDescriptorPath}'"); 
-			}
-			try {
-				PackageDescriptorDto packageDescriptorDto = 
-					_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
-				IEnumerable<string> filePaths = _fileSystem.Directory
-					.EnumerateFiles(packagePath, "*.*", SearchOption.AllDirectories);
-				return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths);
-			}
-			catch (Exception ex) {
-				throw new Exception($"Package descriptor is wrong: '{ex.Message}'");
-			}
-		}
+    #region Methods: Public
 
-		#endregion
+    public PackageInfo GetPackageInfo(string packagePath)
+    {
+        packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
+        string packageDescriptorPath = PackageUtilities.BuildPackageDescriptorPath(packagePath);
+        if (!_fileSystem.File.Exists(packageDescriptorPath))
+        {
+            throw new Exception($"Package descriptor not found by path: '{packageDescriptorPath}'");
+        }
+        try
+        {
+            PackageDescriptorDto packageDescriptorDto =
+                _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
+            IEnumerable<string> filePaths = _fileSystem.Directory
+                                                       .EnumerateFiles(packagePath, "*.*",
+                                                           SearchOption.AllDirectories);
+            return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Package descriptor is wrong: '{ex.Message}'");
+        }
+    }
 
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

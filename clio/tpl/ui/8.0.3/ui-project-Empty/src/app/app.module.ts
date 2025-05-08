@@ -1,6 +1,6 @@
-import { DoBootstrap, Injector, NgModule } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-import { CrtModule } from '@creatio-devkit/common';
+import {DoBootstrap, Injector, NgModule} from '@angular/core';
+import {BrowserModule} from '@angular/platform-browser';
+import {CrtModule} from '@creatio-devkit/common';
 
 @CrtModule({
   viewElements: [],
@@ -11,7 +11,8 @@ import { CrtModule } from '@creatio-devkit/common';
   providers: [],
 })
 export class AppModule implements DoBootstrap {
-  constructor(private _injector: Injector) {}
+  constructor(private _injector: Injector) {
+  }
 
   ngDoBootstrap(): void {
   }

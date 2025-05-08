@@ -1,20 +1,17 @@
-﻿namespace Clio.Project.NuGet
+﻿namespace Clio.Project.NuGet;
+
+#region Class: PackageInstaller
+
+public static class NugetConstants
 {
 
-	#region Class: PackageInstaller
+    #region Constants: Public
 
-	public static class NugetConstants
-	{
+    public const string NupkgExtension = "nupkg";
+    public const string NuspecExtension = "nuspec";
 
-		#region Constants: Private
-
-		public const string NupkgExtension = "nupkg";
-		public const string NuspecExtension = "nuspec";
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

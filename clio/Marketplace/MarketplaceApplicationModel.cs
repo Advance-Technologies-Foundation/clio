@@ -1,40 +1,46 @@
-﻿namespace Clio.Models
+﻿using System;
+using Newtonsoft.Json;
+
+namespace Clio.Models;
+
+internal class MarketplaceApplicationModel
 {
-	using System;
-	using Newtonsoft.Json;
 
-	class MarketplaceApplicationModel
-	{
-		[JsonProperty("Name")]
-		public string Name { get; set; }
+    #region Properties: Public
 
-		[JsonProperty("Maintainer")]
-		public string Maintainer { get; set; }
+    [JsonProperty("AppLicName")]
+    public string AppLicName { get; set; }
 
-		[JsonProperty("SupportEmail")]
-		public string SupportEmail { get; set; }
+    [JsonProperty("DistributionType")]
+    public string DistributionType { get; set; }
 
-		[JsonProperty("LastUpdate")]
-		public long LastUpdate { get; set; }
+    [JsonProperty("FileLink")]
+    public Uri FileLink { get; set; }
 
-		[JsonProperty("MarketplaceLink")]
-		public Uri MarketplaceLink { get; set; }
+    [JsonProperty("HelpLink")]
+    public Uri HelpLink { get; set; }
 
-		[JsonProperty("OrderLink")]
-		public Uri OrderLink { get; set; }
+    [JsonProperty("IsLicenseRequired")]
+    public bool IsLicenseRequired { get; set; }
 
-		[JsonProperty("FileLink")]
-		public Uri FileLink { get; set; }
+    [JsonProperty("LastUpdate")]
+    public long LastUpdate { get; set; }
 
-		[JsonProperty("HelpLink")]
-		public Uri HelpLink { get; set; }
+    [JsonProperty("Maintainer")]
+    public string Maintainer { get; set; }
 
-		[JsonProperty("IsLicenseRequired")]
-		public bool IsLicenseRequired { get; set; }
+    [JsonProperty("MarketplaceLink")]
+    public Uri MarketplaceLink { get; set; }
 
-		[JsonProperty("DistributionType")]
-		public string DistributionType { get; set; }
-		[JsonProperty("AppLicName")]
-		public string AppLicName { get; set; }
-	}
+    [JsonProperty("Name")]
+    public string Name { get; set; }
+
+    [JsonProperty("OrderLink")]
+    public Uri OrderLink { get; set; }
+
+    [JsonProperty("SupportEmail")]
+    public string SupportEmail { get; set; }
+
+    #endregion
+
 }

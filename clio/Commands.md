@@ -1,5 +1,6 @@
 Clio Command Reference
 ======================
+
 ## In this article
 
 - [Arguments](#command-arguments)
@@ -16,13 +17,18 @@ Clio Command Reference
 - [Installation of Creatio](#installation-of-creatio-using-clio)
 
 # Running Clio
+
 The general syntax for running clio:
+
 ```bash
 clio <COMMAND> [arguments] [command_options]
 ```
-Where  `<COMMAND>` is clio command name, use [help](#help) to get list of available commands. `[arguments]` are values relevant to running the command, `[command_options]` behavior modifiers starting with `-` minus symbol.  
+
+Where  `<COMMAND>` is clio command name, use [help](#help) to get list of available commands. `[arguments]` are values
+relevant to running the command, `[command_options]` behavior modifiers starting with `-` minus symbol.
 
 ## Command arguments
+
 - `<PACKAGE_NAME>` - package name
 - `<ENVIRONMENT_NAME>` - environment name
 - `<ITEM_NAME>` - item name
@@ -60,8 +66,9 @@ Where  `<COMMAND>` is clio command name, use [help](#help) to get list of availa
 - `-x`, `--Culture` (optional, default: `en-US`): Description culture.
 
 # Help and examples
-  - [Help](#help)
-  - [Version](#ver)
+
+- [Help](#help)
+- [Version](#ver)
 
 ## help
 
@@ -80,39 +87,44 @@ clio <COMMAND_NAME> --help
 #
 
 Get versions of all known components
+
 ```bash
 clio ver
 ```
 
 Get current clio version
+
 ```bash
 clio ver --clio
 ```
 
 Get current cliogate version
+
 ```bash
 clio ver --gate
 ```
 
 Get dotnet runtime that executes clio
+
 ```bash
 clio ver --runtime
 ```
 
 # Package Management
-  - [Create a new package](#new-pkg)
-  - [Add a new package to workspace](#add-package)
-  - [Install package](#push-pkg)
-  - [Compile package](#compile-package)
-  - [Pull package from remote application](#pull-pkg)
-  - [Delete package](#delete-pkg-remote)
-  - [Compress package](#generate-pkg-zip)
-  - [Extract package](#extract-package)
-  - [Restore configuration](#restore-configuration)
-  - [Get package list](#get-pkg-list)
-  - [Set package version](#set-pkg-version)
-  - [Set application version](#set-application-version)
-  - [Set application icon](#set-application-icon)
+
+- [Create a new package](#new-pkg)
+- [Add a new package to workspace](#add-package)
+- [Install package](#push-pkg)
+- [Compile package](#compile-package)
+- [Pull package from remote application](#pull-pkg)
+- [Delete package](#delete-pkg-remote)
+- [Compress package](#generate-pkg-zip)
+- [Extract package](#extract-package)
+- [Restore configuration](#restore-configuration)
+- [Get package list](#get-pkg-list)
+- [Set package version](#set-pkg-version)
+- [Set application version](#set-application-version)
+- [Set application icon](#set-application-icon)
 
 ## new-pkg
 
@@ -129,8 +141,10 @@ you can set reference on local core assembly by using Creatio file design mode w
 ```
 
 ## add-package
+
 When creating package with option -a True then an `app-descriptor.json` will be created.
 All subsequent packages will be added to `app-descriptor.json`.
+
 ```bash
 #To add package with app descriptor
 clio add-package <PACKAGE_NAME> -a True
@@ -138,7 +152,6 @@ clio add-package <PACKAGE_NAME> -a True
 #To add package without app descriptor
 clio add-package <PACKAGE_NAME> -a False
 ```
-
 
 ## push-pkg
 
@@ -174,7 +187,8 @@ clio push-pkg --id 22966 10096
 ```
 
 > [!IMPORTANT]
-> When you work with packages from Application Hub, you need use command push-app with same parameters like push-pkg. For example
+> When you work with packages from Application Hub, you need use command push-app with same parameters like push-pkg.
+> For example
 
 ```
 clio push-app C:\Packages\package.gz
@@ -251,6 +265,7 @@ Restore configuration
 ```
 clio restore-configuration
 ```
+
 Restore configuration without rollback data
 
 ```
@@ -298,10 +313,9 @@ clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
 
 ```
 
-
 ## set-app-icon
 
-The `set-app-icon` command is used to set the icon for a specified application 
+The `set-app-icon` command is used to set the icon for a specified application
 by updating the `app-descriptor.json` file.
 
 ### Usage
@@ -309,6 +323,7 @@ by updating the `app-descriptor.json` file.
 ```bash
 clio set-app-icon [options]
 ```
+
 -p, --app-name (required): The name or code of the application.
 -i, --app-icon (required): The path to the SVG icon file to be set.
 -f, --app-path (required): Path to application package folder or archive.
@@ -317,32 +332,33 @@ Examples
 Set the icon for an application with a specified name:
 
 ```bash
-clio set-app-icon -p MyAppName -i /path/to/icon.svg -f /path/to/app 
+clio set-app-icon -p MyAppName -i /path/to/icon.svg -f /path/to/app
 ```
-
 
 ## pkg-hotfix
 
-Enable/Disable pkg hotfix mode. To see full description about Hot Fix mode visit [Creatio Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
+Enable/Disable pkg hotfix mode. To see full description about Hot Fix mode
+visit [Creatio Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
 )
 
 ```bash
 
-# To enable hot-fix mode for a package  
-clio pkg-hotfix <PACKAGE_NAME> true -e <ENVIRONMENT_NAME> 
+# To enable hot-fix mode for a package
+clio pkg-hotfix <PACKAGE_NAME> true -e <ENVIRONMENT_NAME>
 
-# To disable hot-fix mode for a package 
-clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME> 
+# To disable hot-fix mode for a package
+clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME>
 
 
 ```
 
 # NuGet Packages
-  - [Pack NuGet package](#pack-nuget-pkg)
-  - [Push NuGet package](#push-nuget-pkg)
-  - [Restore NuGet package](#restore-nuget-pkg)
-  - [Install NuGet package](#install-nuget-pkg)
-  - [Check packages updates in NuGet](#check-nuget-update)
+
+- [Pack NuGet package](#pack-nuget-pkg)
+- [Push NuGet package](#push-nuget-pkg)
+- [Restore NuGet package](#restore-nuget-pkg)
+- [Install NuGet package](#install-nuget-pkg)
+- [Check packages updates in NuGet](#check-nuget-update)
 
 ## pack-nuget-pkg
 
@@ -419,23 +435,24 @@ clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
 Default value of 'Source' argument: https://www.nuget.org/api/v2
 
 # Application
-  - [Deploy application](#deploy-application)
-  - [Uninstall application](#uninstall-app-remote)
-  - [List installed applications](#get-app-list)
-  - [Upload Licenses](#lic)
-  - [Restart application](#restart-web-app)
-  - [Clear Redis database](#clear-redis-db)
-  - [Compile configuration](#compile-configuration)
-  - [Get compilation log](#last-compilation-log)
-  - [Set system setting](#set-syssetting)
-  - [Get system setting](#get-syssetting) 
-  - [Features](#set-feature)
-  - [Set base web wervice url](#set-webservice-url)
+
+- [Deploy application](#deploy-application)
+- [Uninstall application](#uninstall-app-remote)
+- [List installed applications](#get-app-list)
+- [Upload Licenses](#lic)
+- [Restart application](#restart-web-app)
+- [Clear Redis database](#clear-redis-db)
+- [Compile configuration](#compile-configuration)
+- [Get compilation log](#last-compilation-log)
+- [Set system setting](#set-syssetting)
+- [Get system setting](#get-syssetting)
+- [Features](#set-feature)
+- [Set base web wervice url](#set-webservice-url)
 
 ## download-app
 
 ```bash
-clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> 
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME>
 #or
 clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> --FilePath <FILE_PATH.ZIP>
 ```
@@ -452,8 +469,6 @@ clio deploy-application <APP_NAME|APP_CODE> -e <SOURCE_ENVIRONMENT_NAME> -d <DES
 clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
 ````
 
-
-
 ## uninstall-app-remote
 
 To uninstall application, use the next command:
@@ -462,18 +477,17 @@ To uninstall application, use the next command:
 clio uninstall-app-remote <APP_NAME|APP_CODE>
 ```
 
-
 ## get-app-list
 
-The `get-app-list` command, also short alias as `apps`, 
-is used to list all the installed applications in the selected environment. 
-This command is useful when you want to check which applications are currently 
+The `get-app-list` command, also short alias as `apps`,
+is used to list all the installed applications in the selected environment.
+This command is useful when you want to check which applications are currently
 installed in your Creatio environment.
 
 ```bash
 clio get-app-list
 
-#or 
+#or
 
 clio apps
 ```
@@ -525,7 +539,9 @@ For compile configuration
 ```bash
 clio compile-configuration
 ```
+
 or
+
 ```bash
 clio compile-configuration <ENVIRONMENT_NAME>
 ```
@@ -551,7 +567,7 @@ clio last-compilation-log -e <ENVIRONMENT_NAME> --raw
 ```
 
 ```bash
-# Save creatio compilation log to file, 
+# Save creatio compilation log to file,
 # --log option can be used jointly with --raw
 clio last-compilation-log -e <ENVIRONMENT_NAME> --log "C:\log.txt"
 ```
@@ -594,8 +610,8 @@ clio set-feature <CODE> 1 --SysAdminUnitName Supervisor
 
 ## set-webservice-url
 
-To configure a base url of a web service, in an environment use the following command. 
-It may be useful when you need to change the base url of a web service in a development or 
+To configure a base url of a web service, in an environment use the following command.
+It may be useful when you need to change the base url of a web service in a development or
 testing environment.
 
 ```bash
@@ -603,20 +619,21 @@ clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
 
 ```
 
-
 # Environment settings
-  - [Create/Update an environment](#reg-web-app)
-  - [Delete the existing environment](#unreg-web-app)
-  - [Ping environment](#ping)
-  - [View application list](#show-web-app-list)
-  - [View application options](#show-web-app)
-  - [Open application](#open)
-  - [Clone environment](#clone-env)
-  - [Healthcheck](#healthcheck)
-  - [Get Creatio Info](#get-info)
-  - [CustomizeDataProtection](#CustomizeDataProtection)
 
-Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
+- [Create/Update an environment](#reg-web-app)
+- [Delete the existing environment](#unreg-web-app)
+- [Ping environment](#ping)
+- [View application list](#show-web-app-list)
+- [View application options](#show-web-app)
+- [Open application](#open)
+- [Clone environment](#clone-env)
+- [Healthcheck](#healthcheck)
+- [Get Creatio Info](#get-info)
+- [CustomizeDataProtection](#CustomizeDataProtection)
+
+Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password.
+See [Environment options](#environment-options) for list of all options.
 
 ## reg-web-app
 
@@ -633,6 +650,7 @@ clio reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
 ```
 
 ### Set the active environment
+
 ```
 clio reg-web-app -a <ENVIRONMENT_NAME>
 ```
@@ -660,6 +678,7 @@ clio show-web-app-list
 ```
 
 ## show-web-app
+
 View application settings
 
 ```bash
@@ -676,19 +695,19 @@ clio open <ENVIRONMENT NAME>
 
 ## clone-env
 
-For clone environment use next command. 
+For clone environment use next command.
 
 ```bash
 clio clone-env --source Dev --target QA --working-directory [OPTIONAL PATH TO STORE]
 ```
 
-The command creates a manifest from the source and target, calculates the difference between them, downloads the changed package from the source environment to the working directory (optional parameter), and installs it in the source environment.
-
+The command creates a manifest from the source and target, calculates the difference between them, downloads the changed
+package from the source environment to the working directory (optional parameter), and installs it in the source
+environment.
 
 ## healthcheck
 
 Check application health
-
 
 ```bash
 clio hc <ENVIRONMENT NAME>
@@ -704,7 +723,7 @@ clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 
 ## get-info
 
-This command is designed to retrieve information about the Creatio instance, version, 
+This command is designed to retrieve information about the Creatio instance, version,
 underlying runtime and database type and product name.
 
 ```bash
@@ -716,7 +735,9 @@ clio get-info <ENVIRONMENT_NAME>
 ````
 
 ## CustomizeDataProtection
+
 Adjusts `CustomizeDataProtection` in appsettings. Useful for development on Net8
+
 ```bash
 
 clio cdp true -e <ENVIRONMENT_NAME>
@@ -726,22 +747,23 @@ clio cdp true -e <ENVIRONMENT_NAME>
 clio cdp false -e <ENVIRONMENT_NAME>
 ```
 
-
 # Workspaces
-  - [Create workspace](#create-workspace)
-  - [Restore workspace](#restore-workspace)
-  - [Push code to an environment](#push-workspace)
-  - [Build workspace](#build-workspace)
+
+- [Create workspace](#create-workspace)
+- [Restore workspace](#restore-workspace)
+- [Push code to an environment](#push-workspace)
+- [Build workspace](#build-workspace)
 
 ## Workspaces
 
-To connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.** 
+To connect professional developer tools and Creatio no-code designers, you can organize development flow in you local
+file system in **workspace.**
 Workspace associates local folder with source code and local or remote Creatio environment (application).
 See [Environment options](#environment-options) for list of all options.
 
 ## create-workspace
 
-Create workspace in local directory, execute create-workspace command 
+Create workspace in local directory, execute create-workspace command
 
 ```bash
 clio create-workspace
@@ -749,7 +771,8 @@ clio create-workspace
 
 In directory **.clio** specify you packages
 
-Create workspace in local directory with all editable packages from environment, execute create-workspace command with argument -e <Environment name>
+Create workspace in local directory with all editable packages from environment, execute create-workspace command with
+argument -e <Environment name>
 
 ```bash
 clio create-workspace -e demo
@@ -770,7 +793,7 @@ Restore packages in you file system via command from selected environment
 clio restore-workspace -e demo
 ```
 
-Workspace supports Package assembly. Clio creates, ready to go solution that you can work on 
+Workspace supports Package assembly. Clio creates, ready to go solution that you can work on
 in a professional IDE of your choice. To open solution execute command
 
 ```powershell
@@ -785,36 +808,41 @@ Push code to an environment via command, then work with it from Creatio
 clio push-workspace -e demo
 ```
 
-**IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install additional system package **cliogate** to you environment.
+**IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install
+additional system package **cliogate** to you environment.
 
 ```bash
 clio install-gate -e demo
 ```
 
 ## build-workspace
+
 ```bash
 clio build-workspace
 ```
 
 # Development
-  - [Convert package](#convert)
-  - [Execute assembly](#execute-assembly-code)
-  - [Set references](#ref-to)
-  - [Execute custom SQL script](#execute-sql-script)
-  - [Execute service request](#callservice)
-  - [Execute dataservice request](#dataservice)
-  - [Add item](#add-item)
-  - [Add schema](#add-schema)
-  - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
-  - [Link Workspace to File Design Mode](#link-from-repository)
-  - [Mock data for Unit Tests](#mock-data)
+
+- [Convert package](#convert)
+- [Execute assembly](#execute-assembly-code)
+- [Set references](#ref-to)
+- [Execute custom SQL script](#execute-sql-script)
+- [Execute service request](#callservice)
+- [Execute dataservice request](#dataservice)
+- [Add item](#add-item)
+- [Add schema](#add-schema)
+- [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
+- [Link Workspace to File Design Mode](#link-from-repository)
+- [Mock data for Unit Tests](#mock-data)
 
 ## convert
+
 Convert package to project.
 
 ```bash
 clio convert <PACKAGE_NAMES>
 ```
+
 Arguments:
 
 <PACKAGE_NAMES> (string): Name of the convert instance (or comma separated names).
@@ -826,13 +854,17 @@ Options:
 `-c, --ConvertSourceCode` (bool): Convert source code schema to files. Default is `false`.
 
 Convert existing packages:
+
 ```
 clio convert -p "C:\\Pkg\\" MyApp,MyIntegration
 ```
+
 Convert all packages in folder:
+
 ```
 clio convert -p "C:\\Pkg\\"
 ```
+
 ## execute-assembly-code
 
 Execute code from assembly
@@ -855,7 +887,7 @@ Set references for project on application distributive binary files
 clio ref-to bin
 ```
 
-## execute-sql-script 
+## execute-sql-script
 
 Execute custom SQL script on a web application
 
@@ -883,8 +915,6 @@ Example:
 clio call-service --service-path ServiceModel/ApplicationInfoService.svc/GetApplicationInfo -e myEnv --destination C:\json.json
 ```
 
-
-
 ## DataService
 
 Execute dataservice requests on a web application.
@@ -897,6 +927,7 @@ Execute dataservice requests on a web application.
 | -v  | Variables to substitute | List of key-value pairs to substitute in an input file |
 
 Execute dataservice request with variable substitution.
+
 ```json
 {
 	"rootSchemaName": "{{rootSchemaName}}",
@@ -924,47 +955,57 @@ clio ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v 
 ```
 
 ## add-item
+
 Create item in project
+
 ```
 clio <ITEM-TYPE> <ITEM-NAME> <OPTIONS>
 ```
 
 Add web service template to project
+
 ```
 clio add-item service test
-``` 
+```
 
 Add entity-listener template to project
+
 ```bash
 clio add-item entity-listener test
-``` 
+```
 
-Generate AFT model for `Contact` entity with `Name` and `Email` fields, set namespace to `MyNameSpace` and save to `current directory`
+Generate AFT model for `Contact` entity with `Name` and `Email` fields, set namespace to `MyNameSpace` and save to
+`current directory`
+
 ```bash
 clio add-item model Contact -f Name,Email -n MyNameSpace -d .
 ```
 
-Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set `ATF.Repository.Models` namespace and save them to `C:\MyModels`
+Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set
+`ATF.Repository.Models` namespace and save them to `C:\MyModels`
+
 ```bash
 clio add-item model -n "<YOUR_NAMESPACE>" -d <TARGET_PATH>
 ```
 
 To generate all models in current directory
+
 ```bash
-clio add-item model -n "<YOUR_NAMESPACE>" 
+clio add-item model -n "<YOUR_NAMESPACE>"
 ```
 
 OPTIONS
 
-| Short name   | Long name       | Description                                    |
-|:-------------|:----------------|:-----------------------------------------------|
-| d            | DestinationPath | Path to source directory                       |
-| n            | Namespace       | Name space for service classes and ATF models  |
-| f            | Fields          | Required fields for ATF model class            |
-| a            | All             | Create ATF models for all Entities             |
-| x            | Culture         | Description culture                            |
+| Short name | Long name       | Description                                   |
+|:-----------|:----------------|:----------------------------------------------|
+| d          | DestinationPath | Path to source directory                      |
+| n          | Namespace       | Name space for service classes and ATF models |
+| f          | Fields          | Required fields for ATF model class           |
+| a          | All             | Create ATF models for all Entities            |
+| x          | Culture         | Description culture                           |
 
 ## add-schema
+
 Adds cs schema to a project
 
 ```bash
@@ -973,23 +1014,25 @@ clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
 
 ## switch-nuget-to-dll-reference
 
-The `switch-nuget-to-dll-reference` command is a vital tool for managing NuGet package references, 
-especially in scenarios where internet access is limited or unavailable. 
-This command is specifically designed to convert NuGet package references into direct dll 
+The `switch-nuget-to-dll-reference` command is a vital tool for managing NuGet package references,
+especially in scenarios where internet access is limited or unavailable.
+This command is specifically designed to convert NuGet package references into direct dll
 (Dynamic Link Library) references.
 
 ### Use Case
 
-`switch-nuget-to-dll-reference` command, is beneficial when developing a package on for installation on Creatio 
-instance that lacks internet connectivity. Command converts `[PackageReference]` into local DLLs, 
+`switch-nuget-to-dll-reference` command, is beneficial when developing a package on for installation on Creatio
+instance that lacks internet connectivity. Command converts `[PackageReference]` into local DLLs,
 This facilitates seamless package installation and operation in offline environments.
 
 Lear more about [PackageReference] and [Reference] in Microsoft documentation.
 
 [PackageReference]: https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files
+
 [Reference]: https://learn.microsoft.com/en-us/visualstudio/msbuild/common-msbuild-project-items?view=vs-2022#reference
 
 ### How to Use
+
 ```bash
 clio switch-nuget-to-dll-reference <PACKAGE_NAME>
 
@@ -1001,9 +1044,11 @@ clio nuget2dll <PACKAGE_NAME>
 ## link-from-repository
 
 To connect your package from workspace to local system in file design mode use command
+
 ```
 clio link-from-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
+
 <details>
 <summary>Link all packages from repository</summary>
 
@@ -1016,6 +1061,7 @@ clio l4r -e ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)
 ## link-to-repository
 
 To connect your local system in file design mode use command to workspace
+
 ```bash
 clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
@@ -1039,7 +1085,8 @@ clio restart -u https://mysite.creatio.com -l administrator -p password
 
 # Web farm deployments
 
-To ensure proper functioning of Creatio in Web Farm mode, it is crucial that all nodes are identical. Clio provides the following command to verify this:
+To ensure proper functioning of Creatio in Web Farm mode, it is crucial that all nodes are identical. Clio provides the
+following command to verify this:
 
 ```bash
 clio check-web-farm-node "\\Node1\Creatio,\\Node2\Creatio" -d
@@ -1052,7 +1099,8 @@ clio check-web-farm-node "\\Node1\Creatio,\\Node2\Creatio" -d
 - [Show difference in settings for two Creatio intances](#show-diff)
 - [Automation scenarios](#run-scenario)
 
-To support GitOps approach clio provides yaml manifest file.  This file has following structure to describes desired state of Creatio instance.
+To support GitOps approach clio provides yaml manifest file. This file has following structure to describes desired
+state of Creatio instance.
 Example of manifest:
 
 ```yaml
@@ -1112,7 +1160,8 @@ clio apply-manifest "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
 
 ## save-state
 
-To control changes of an instance download state to manifest file and store it in Git. To download state use the following command
+To control changes of an instance download state to manifest file and store it in Git. To download state use the
+following command
 
 ```
 clio save-state "D:\manifest\myinstance-creatio-manifest.yaml" -e MyInstance
@@ -1133,11 +1182,15 @@ clio show-diff --source production --target qa --file diff-production-qa.yaml
 ```
 
 ## run-scenario
-You can combine multiple commands into one scenario and execute it with 
+
+You can combine multiple commands into one scenario and execute it with
+
 ```
 clio run-scenario --file-name scenario.yaml
 ```
+
 Scenario consists of and steps and optional settings and/or secrets.
+
 ```yaml
 secrets:
   Login: real-login
@@ -1145,7 +1198,7 @@ secrets:
 
 settings:
   uri: http://localhost:80
-  
+
 steps:
   - action: restart
     description: restart application
@@ -1155,21 +1208,25 @@ steps:
       Password: {{secrets.Password}}
 ```
 
-See more examples in [samples](https://github.com/Advance-Technologies-Foundation/clio-docs/tree/main/clio/Samples/Scenarios)
+See more examples
+in [samples](https://github.com/Advance-Technologies-Foundation/clio-docs/tree/main/clio/Samples/Scenarios)
 
 # Installation of Creatio using Clio
-  - [Check Windows features](#check-windows-features)
-  - [Manage Windows features](#manage-windows-features)
-  - [Generate deployment scripts](#create-k8-files)
-  - [Install Creatio](#deploy-creatio)
-  - [Uninstall Creatio](#uninstall-creatio)
+
+- [Check Windows features](#check-windows-features)
+- [Manage Windows features](#manage-windows-features)
+- [Generate deployment scripts](#create-k8-files)
+- [Install Creatio](#deploy-creatio)
+- [Uninstall Creatio](#uninstall-creatio)
 
 ## check-windows-features
-  
-For automated check of Windows features required for Creatio installation execute command 
+
+For automated check of Windows features required for Creatio installation execute command
+
 ```bash
 clio check-windows-features
 ```
+
 ## manage-windows-features
 
 To manage Windows features required for Creatio installation execute command
@@ -1186,6 +1243,7 @@ clio manage-windows-features -i
 clio manage-windows-features -u
 
 ```
+
 ## Installing Creatio using Clio
 
 Clio provides functionality to install Creatio on a local machine using a zip file or an unzipped folder.
@@ -1195,15 +1253,20 @@ Clio provides functionality to install Creatio on a local machine using a zip fi
 Here's how you can do it:
 
 ### Prepare Infrastructure
-To simply installation of dependencies, clio provides deployment files for 
-Microsoft SQL, Postgres, and Redis server in your local Kubernetes cluster. 
-To create an empty cluster, we recommend using [Rancher Desktop](https://rancherdesktop.io), however there are other alternatives.
 
-> If you already have running MSSQL/PostgresSQL/Redis servers on you local machine you have to configure kubernetes services ports to avoid collisions. Reffer to services.yaml in related directories
+To simply installation of dependencies, clio provides deployment files for
+Microsoft SQL, Postgres, and Redis server in your local Kubernetes cluster.
+To create an empty cluster, we recommend using [Rancher Desktop](https://rancherdesktop.io), however there are other
+alternatives.
+
+> If you already have running MSSQL/PostgresSQL/Redis servers on you local machine you have to configure kubernetes
+> services ports to avoid collisions. Reffer to services.yaml in related directories
 
 ### Install [Rancher Desktop](https://rancherdesktop.io) and configure resources
+
 On Windows configure resources with [.wlsconfig](https://learn.microsoft.com/en-us/windows/wsl/wsl-config) file.
 Sample config:
+
 ```
 [wsl2]
 memory=8GB # Limits VM memory in WSL 2 to 16 GB
@@ -1213,16 +1276,23 @@ processors=4 # Makes the WSL  VM use 8 virtual processors
 ## create-k8-files
 
 Generates deployment scripts
+
 ```bash
 clio create-k8-files
 ```
+
 Review files in `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure` folder.
 Things to review:
-- `mssql-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
+
+- `mssql-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's
+  hardware.
 - `mssql-stateful-set.yaml` - make sure you agree with terms and conditions of Microsoft SQL Server Developer Edition.
-- `mssql-stateful-set.yaml` - will try to allocate 20Gb of disk space for database files. Make sure you have enough space on your disk.
-- `postgres-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
-- `postgres-stateful-set.yaml` - will try to allocate 40Gb of disk space for database files and 5Gb for backup files. Make sure you have enough space on your disk.
+- `mssql-stateful-set.yaml` - will try to allocate 20Gb of disk space for database files. Make sure you have enough
+  space on your disk.
+- `postgres-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's
+  hardware.
+- `postgres-stateful-set.yaml` - will try to allocate 40Gb of disk space for database files and 5Gb for backup files.
+  Make sure you have enough space on your disk.
 
 Deploy necessary components by executing a series of commands from `C:\Users\YOUR_USER\AppData\Local\creatio\clio\`
 or execute command to open directory
@@ -1234,6 +1304,7 @@ Opens folder with deployment scripts
 ```
 clio open-k8-files
 ```
+
 ```ps
 # common
 kubectl apply -f clio-namespace.yaml
@@ -1252,17 +1323,19 @@ kubectl apply -f postgres
 kubectl apply -f pgadmin
 ```
 
-
 ### Prepare IIS Configuration and Launch
+
 Prepare IIS Configuration and Launch. Clio will set up an IIS site, configure the relevant app pool,
-and then launch Creatio in your default browser. 
-You can override default location in of an IIS folder in `appsetting.json` `iis-clio-root-path` property. 
+and then launch Creatio in your default browser.
+You can override default location in of an IIS folder in `appsetting.json` `iis-clio-root-path` property.
 
+- Enable
+  required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
+- Enable
+  required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
 
-- Enable required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
-- Enable required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
+For automated check you can execute command
 
-For automated check you can execute command 
 ```bash
 clio check-windows-features
 ```
@@ -1270,12 +1343,14 @@ clio check-windows-features
 ### Run Creatio Installation
 
 To get a Windows (only) context menu for `.zip` file execute
+
 ```ps
   clio register
 ```
 
-You may need to close all Explorer windows and open them again. Find Creatio installation `zip` file and right-click on it. 
-You should see `clio: deploy Creatio` menu item. Click on the menu item and follow the prompts. 
+You may need to close all Explorer windows and open them again. Find Creatio installation `zip` file and right-click on
+it.
+You should see `clio: deploy Creatio` menu item. Click on the menu item and follow the prompts.
 You may need _**Administrator**_ privileges.
 > Other OS use command to install Creatio
 
@@ -1290,30 +1365,35 @@ You may need _**Administrator**_ privileges.
 Clio will automatically determine if the zip file is stored remotely.
 If the file isn't on your local machine, Clio will copy it to a predefined local working folder location,
 You can change the default location in `appsetting.json` file `creatio-products` property.
-To see your `appsetting.json` file execute 
+To see your `appsetting.json` file execute
+
 ```bash
 clio cfg open
 ```
+
 If the zip file already exists in your working directory, Clio will skip this step.
 
 ### For IIS deployment
-Make sure that iis working directory defined in `appsettings.json` file `iis-clio-root-path` has allow `Full Control` for IIS_IUSRS
+
+Make sure that iis working directory defined in `appsettings.json` file `iis-clio-root-path` has allow `Full Control`
+for IIS_IUSRS
 
 ![](https://academy.creatio.com/sites/en/files/documentation/sdk/en/BPMonlineWebSDK/Screenshots/WorkingWithIDE/permissions.png)
 
 ### Extracting the Zip File
-Clio will extract the zip file to the same directory where the original zip file is located. 
+
+Clio will extract the zip file to the same directory where the original zip file is located.
 If the folder already exists, Clio will skip this step.
 
-
 ### Constructing the Connection String
+
 The connection string will be generated based on your existing cluster configuration.
 
-
 ### Database Restoration
+
 Initially, the backup file will be copied to a folder that is accessible by the database server.
 Scripts suitable for both Microsoft SQL and Postgres deployment within a Kubernetes cluster are provided.
-Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and 
+Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and
 copy files as needed.
 Once files are copied, Clio will proceed to restore the database.
 By default, database will be available on default port
@@ -1322,10 +1402,10 @@ By default, database will be available on default port
 - PG Admin: localhost:1080 (root@creatio.com/root)
 - MSSQL: localhost:5432 (sa/$Zarelon01$Zarelon01)
 
-> Postgres - clio will create a template database, and then a real database from the template. If Database or template already exists, Clio will skip this step.
+> Postgres - clio will create a template database, and then a real database from the template. If Database or template
+> already exists, Clio will skip this step.
 
 > You can change port and secrets in configuration files `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure`
-
 
 ## Restore database for Creatio environments
 
@@ -1346,8 +1426,10 @@ You can register db-servers in clio config file (`appsetting.json`) see example 
       }
   }
 ```
-To link environment with a db server use `DbServerKey` property in environment settings. 
+
+To link environment with a db server use `DbServerKey` property in environment settings.
 You can also specify `DbName` and `BackupFilePath` properties to simplify command.
+
 ```json
   "Environments": {
     "apollo-bundle-framework": {

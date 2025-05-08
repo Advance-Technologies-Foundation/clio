@@ -8,12 +8,12 @@ metadata:
   labels:
     app: clio-postgres
 spec:
-    ports:
+  ports:
     - port: 5432
       targetPort: 5432
-    type: LoadBalancer
-    selector:
-      app: clio-postgres
+  type: LoadBalancer
+  selector:
+    app: clio-postgres
 
 
 ---
@@ -27,9 +27,9 @@ metadata:
   labels:
     app: clio-postgres
 spec:
-    ports:
+  ports:
     - port: 5432
       targetPort: 5432
-    type: ClusterIP
-    selector:
-      app: clio-postgres
+  type: ClusterIP
+  selector:
+    app: clio-postgres

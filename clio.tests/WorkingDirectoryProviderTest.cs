@@ -1,52 +1,54 @@
-﻿using Castle.Core.Logging;
-using Clio.Common;
-using NUnit.Framework;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading.Tasks;
+using Clio.Common;
 using FluentAssertions;
+using NUnit.Framework;
 using ConsoleLogger = Clio.Common.ConsoleLogger;
+using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests;
 
 [TestFixture]
 internal class WorkingDirectoryProviderTest
 {
-	[Test]
-	public void GetTemplatePath_TemplateName_ReturnsTemplatePath() {
-		// Arrange
-		var logger = ConsoleLogger.Instance; 
-		var provider = new WorkingDirectoriesProvider(logger, new MockFileSystem());
-		var templateName = "TestTemplate";
-		var expectedPath = Path.Combine(provider.TemplateDirectory, $"{templateName}.tpl");
 
-		// Act
-		var actualPath = provider.GetTemplatePath(templateName);
+    [Test]
+    public void GetTemplatePath_Multiple_Create_Temp_Directory()
+    {
+        // Arrange
+        ILogger logger = ConsoleLogger.Instance;
+        WorkingDirectoriesProvider provider = new(logger, new MockFileSystem());
+        ConcurrentBag<string> paths = new();
 
-		// Assert
-		expectedPath.Should().Be(actualPath);
-	}
+        // Act
+        int repeatCount = 100;
+        Parallel.ForEach(Enumerable.Range(0, repeatCount), i => { paths.Add(provider.GenerateTempDirectoryPath()); });
 
-	[Test]
-	public void GetTemplatePath_Multiple_Create_Temp_Directory() {
-		// Arrange
-		var logger = ConsoleLogger.Instance;
-		var provider = new WorkingDirectoriesProvider(logger, new MockFileSystem());
-		ConcurrentBag<string> paths = new ConcurrentBag<string>();
-			
-		// Act
-		var repeatCount = 100;
-		Parallel.ForEach(Enumerable.Range(0, repeatCount), i => {
-			paths.Add(provider.GenerateTempDirectoryPath());
-		});
+        int uniqCount = paths.Distinct().Count();
+        int dashContainsCount = paths.Count(p => p.Contains("-"));
 
-		var uniqCount = paths.Distinct().Count();
-		var dashContainsCount = paths.Count(p => p.Contains("-"));
-			
-		// Assert
-		paths.Distinct().Should().HaveCount(repeatCount);
-		dashContainsCount.Should().Be(0);
-	}
+        // Assert
+        paths.Distinct().Should().HaveCount(repeatCount);
+        dashContainsCount.Should().Be(0);
+    }
+
+    [Test]
+    public void GetTemplatePath_TemplateName_ReturnsTemplatePath()
+    {
+        // Arrange
+        ILogger logger = ConsoleLogger.Instance;
+        WorkingDirectoriesProvider provider = new(logger, new MockFileSystem());
+        string templateName = "TestTemplate";
+        string expectedPath = Path.Combine(provider.TemplateDirectory, $"{templateName}.tpl");
+
+        // Act
+        string actualPath = provider.GetTemplatePath(templateName);
+
+        // Assert
+        expectedPath.Should().Be(actualPath);
+    }
+
 }

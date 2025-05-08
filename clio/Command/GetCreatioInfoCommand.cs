@@ -9,8 +9,11 @@ namespace Clio.Command;
 
 //clio get-info -e work
 
-[Verb("get-info", Aliases = new[] {"describe", "describe-creatio", "instance-info"},
-	HelpText = "Gets system information for Creatio instance.")]
+[Verb("get-info", Aliases = new[]
+    {
+        "describe", "describe-creatio", "instance-info"
+    },
+    HelpText = "Gets system information for Creatio instance.")]
 public class GetCreatioInfoCommandOptions : RemoteCommandOptions
 { }
 
@@ -21,40 +24,42 @@ public class GetCreatioInfoCommandOptions : RemoteCommandOptions
 public class GetCreatioInfoCommand : RemoteCommand<GetCreatioInfoCommandOptions>
 {
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public GetCreatioInfoCommand(IApplicationClient applicationClient, 
-		EnvironmentSettings environmentSettings, IClioGateway clioGateway)
-		: base(applicationClient, environmentSettings){
-		ClioGateWay = clioGateway;
-	}
+    public GetCreatioInfoCommand(IApplicationClient applicationClient,
+        EnvironmentSettings environmentSettings, IClioGateway clioGateway)
+        : base(applicationClient, environmentSettings)
+    {
+        ClioGateWay = clioGateway;
+    }
 
-	#endregion
+    #endregion
 
-	#region Properties: Protected
+    #region Properties: Protected
 
-	protected override string ServicePath => "/rest/CreatioApiGateway/GetSysInfo";
+    protected override string ClioGateMinVersion { get; } = "2.0.0.32";
 
-	protected override string ClioGateMinVersion { get; } = "2.0.0.32";
+    protected override string ServicePath => "/rest/CreatioApiGateway/GetSysInfo";
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public override HttpMethod HttpMethod => HttpMethod.Get;
+    public override HttpMethod HttpMethod => HttpMethod.Get;
 
-	#endregion
+    #endregion
 
-	#region Methods: Protected
+    #region Methods: Protected
 
-	protected override void ProceedResponse(string response, GetCreatioInfoCommandOptions options){
-		base.ProceedResponse(response, options);
-		JObject jResponse = JObject.Parse(response);
-		JToken sysInfo = jResponse["SysInfo"];
-		Logger.WriteLine(sysInfo.ToString());
-	}
+    protected override void ProceedResponse(string response, GetCreatioInfoCommandOptions options)
+    {
+        base.ProceedResponse(response, options);
+        JObject jResponse = JObject.Parse(response);
+        JToken sysInfo = jResponse["SysInfo"];
+        Logger.WriteLine(sysInfo.ToString());
+    }
 
-	#endregion
+    #endregion
 
 }
 

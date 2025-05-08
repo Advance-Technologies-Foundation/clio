@@ -1,5 +1,4 @@
-﻿using System.Threading.Tasks;
-using Autofac;
+﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -14,42 +13,53 @@ namespace Clio.Tests.Command;
 internal class AddSchemaCommandTests : BaseCommandTests<AddSchemaOptions>
 {
 
-	ISchemaBuilder _schemaBuilderMock = Substitute.For<ISchemaBuilder>();
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_schemaBuilderMock);
-	}
+    #region Fields: Private
 
-	[Test(Description = "Describe your test, or ask copilot to describe it for you")]
-	public void Execute_ShouldReturn_WhenCalled(){
-		//Arrange
-		var command = Container.Resolve<AddSchemaCommand>();
-		var options = new AddSchemaOptions();
+    private readonly ISchemaBuilder _schemaBuilderMock = Substitute.For<ISchemaBuilder>();
 
-		//Act
-		int result = command.Execute(options);
+    #endregion
 
-		//Assert
-		result.Should().Be(0);
-	}
-	
-	[Test(Description = "Describe your test, or ask copilot to describe it for you")]
-	public void Execute_ShouldCall_SchemaBuilder(){
-		//Arrange
-		var command = Container.Resolve<AddSchemaCommand>();
-		var options = new AddSchemaOptions() {
-			Package = "Pkg1",
-			SchemaName = "MyService",
-			SchemaType = "WebService"
-		};
+    #region Methods: Protected
 
-		//Act
-		int result = command.Execute(options);
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_schemaBuilderMock);
+    }
 
-		//Assert
-		result.Should().Be(0);
-		
-		_schemaBuilderMock.Received(1).AddSchema(options.SchemaType, options.SchemaName, options.Package);
-	}
+    #endregion
+
+    [Test(Description = "Describe your test, or ask copilot to describe it for you")]
+    public void Execute_ShouldCall_SchemaBuilder()
+    {
+        //Arrange
+        AddSchemaCommand command = Container.Resolve<AddSchemaCommand>();
+        AddSchemaOptions options = new()
+        {
+            Package = "Pkg1", SchemaName = "MyService", SchemaType = "WebService"
+        };
+
+        //Act
+        int result = command.Execute(options);
+
+        //Assert
+        result.Should().Be(0);
+
+        _schemaBuilderMock.Received(1).AddSchema(options.SchemaType, options.SchemaName, options.Package);
+    }
+
+    [Test(Description = "Describe your test, or ask copilot to describe it for you")]
+    public void Execute_ShouldReturn_WhenCalled()
+    {
+        //Arrange
+        AddSchemaCommand command = Container.Resolve<AddSchemaCommand>();
+        AddSchemaOptions options = new();
+
+        //Act
+        int result = command.Execute(options);
+
+        //Assert
+        result.Should().Be(0);
+    }
 
 }

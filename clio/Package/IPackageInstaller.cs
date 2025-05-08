@@ -1,20 +1,17 @@
-﻿namespace Clio.Package
+﻿namespace Clio.Package;
+
+#region Interface: IPackageDownloader
+
+public interface IPackageInstaller
 {
 
-	#region Interface: IPackageDownloader
+    #region Methods: Public
 
-	public interface IPackageInstaller
-	{
+    bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
+        PackageInstallOptions packageInstallOptions = null, string reportPath = null);
 
-		#region Methods: Public
-
-		bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			PackageInstallOptions packageInstallOptions = null, string reportPath = null);
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

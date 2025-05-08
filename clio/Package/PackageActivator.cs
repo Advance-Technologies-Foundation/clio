@@ -6,32 +6,34 @@ namespace Clio.Package;
 
 internal class PackageActivator : BasePackageOperation, IPackageActivator
 {
-	#region Constructors: Public
 
-	public PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-		base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-	{
-	}
+    #region Constructors: Public
 
-	#endregion
+    public PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
+        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+        :
+        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
+    { }
 
-	#region Methods: Protected
+    #endregion
 
-	protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
+    #region Methods: Protected
 
-	#endregion
+    protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
 
-	#region Methods: Public
+    #endregion
 
-	public IEnumerable<PackageActivationResultDto> Activate(string packageName)
-	{
-		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		PackageActivationResponse activationResponse =
-			SendRequest<string, PackageActivationResponse>(PackageServiceUrl, "ActivatePackage", packageName);
-		ThrowsErrorIfUnsuccessfulResponseReceived(activationResponse);
-		return activationResponse.PackagesActivationResults;
-	}
+    #region Methods: Public
 
-	#endregion
+    public IEnumerable<PackageActivationResultDto> Activate(string packageName)
+    {
+        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+        PackageActivationResponse activationResponse =
+            SendRequest<string, PackageActivationResponse>(PackageServiceUrl, "ActivatePackage", packageName);
+        ThrowsErrorIfUnsuccessfulResponseReceived(activationResponse);
+        return activationResponse.PackagesActivationResults;
+    }
+
+    #endregion
+
 }

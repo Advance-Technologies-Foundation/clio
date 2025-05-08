@@ -10,66 +10,88 @@ namespace Clio.Tests.Command;
 internal class PingAppCommandTests : BaseClioModuleTests
 {
 
-	private readonly IApplicationClient _creatioClient = Substitute.For<IApplicationClient>();
+    #region Fields: Private
 
-	public override void Setup(){}
+    private readonly IApplicationClient _creatioClient = Substitute.For<IApplicationClient>();
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_creatioClient).As<IApplicationClient>();
-	}
+    #endregion
 
-	[TestCase(true)]
-	[TestCase(false)]
-	public void PingAppCommandShouldBeUsesAllRetryOptions(bool isNetCore) {
-		//Arrange
-		EnvironmentSettings.IsNetCore = isNetCore;
-		FileSystem = CreateFs();
-		BindingsModule bindingModule = new(FileSystem);
-		Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
-			
-		PingAppCommand command = Container.Resolve<PingAppCommand>();
-		PingAppOptions options = new PingAppOptions() { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
-			
-		// Act
-		command.Execute(options);
+    #region Methods: Protected
 
-		// Assert
-		if(isNetCore) {
-			_creatioClient.Received(1)
-				.ExecuteGetRequest(Arg.Any<string>(), 1, 2, 3);
-		}else {
-			_creatioClient.Received(1)
-				.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 1, 2, 3);
-		}
-		_creatioClient.ClearReceivedCalls();
-	}
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_creatioClient).As<IApplicationClient>();
+    }
 
-	[TestCase(true)]
-	[TestCase(false)]
-	public void PingAppCommandShouldBeUsesAllRetryOptionsOnNet6Environment(bool isNetCore) {
-		//Arrange
-		FileSystem = CreateFs();
-		BindingsModule bindingModule = new(FileSystem);
-		Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
-		PingAppCommand command = Container.Resolve<PingAppCommand>();
-		PingAppOptions options = new PingAppOptions() {
-			TimeOut = 1,
-			RetryCount = 2,
-			RetryDelay = 3,
-			IsNetCore = isNetCore
-		};
-		command.EnvironmentSettings.IsNetCore = true;
-			
-		// Act
-		command.Execute(options);
+    #endregion
 
-		//Assert
-		if(isNetCore) {
-				
-		}else {
-			_creatioClient.Received(1).ExecuteGetRequest(Arg.Any<string>(), 1, 2, 3);
-		}
-		_creatioClient.ClearReceivedCalls();
-	}
+    #region Methods: Public
+
+    public override void Setup()
+    { }
+
+    #endregion
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void PingAppCommandShouldBeUsesAllRetryOptions(bool isNetCore)
+    {
+        //Arrange
+        EnvironmentSettings.IsNetCore = isNetCore;
+        FileSystem = CreateFs();
+        BindingsModule bindingModule = new(FileSystem);
+        Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
+
+        PingAppCommand command = Container.Resolve<PingAppCommand>();
+        PingAppOptions options = new()
+        {
+            TimeOut = 1, RetryCount = 2, RetryDelay = 3
+        };
+
+        // Act
+        command.Execute(options);
+
+        // Assert
+        if (isNetCore)
+        {
+            _creatioClient.Received(1)
+                          .ExecuteGetRequest(Arg.Any<string>(), 1, 2, 3);
+        }
+        else
+        {
+            _creatioClient.Received(1)
+                          .ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 1, 2, 3);
+        }
+        _creatioClient.ClearReceivedCalls();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void PingAppCommandShouldBeUsesAllRetryOptionsOnNet6Environment(bool isNetCore)
+    {
+        //Arrange
+        FileSystem = CreateFs();
+        BindingsModule bindingModule = new(FileSystem);
+        Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
+        PingAppCommand command = Container.Resolve<PingAppCommand>();
+        PingAppOptions options = new()
+        {
+            TimeOut = 1, RetryCount = 2, RetryDelay = 3, IsNetCore = isNetCore
+        };
+        command.EnvironmentSettings.IsNetCore = true;
+
+        // Act
+        command.Execute(options);
+
+        //Assert
+        if (isNetCore)
+        { }
+        else
+        {
+            _creatioClient.Received(1).ExecuteGetRequest(Arg.Any<string>(), 1, 2, 3);
+        }
+        _creatioClient.ClearReceivedCalls();
+    }
+
 }

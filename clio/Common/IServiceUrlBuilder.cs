@@ -3,16 +3,16 @@
 public interface IServiceUrlBuilder
 {
 
-	#region Methods: Public
+    #region Methods: Public
 
-	string Build(string serviceEndpoint);
+    string Build(string serviceEndpoint);
 
-	string Build(ServiceUrlBuilder.KnownRoute knownRoute);
+    string Build(ServiceUrlBuilder.KnownRoute knownRoute);
 
-	string Build(string serviceEndpoint, EnvironmentSettings environmentSettings);
+    string Build(string serviceEndpoint, EnvironmentSettings environmentSettings);
 
-	string Build(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings);
+    string Build(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings);
 
-	#endregion
+    #endregion
 
 }

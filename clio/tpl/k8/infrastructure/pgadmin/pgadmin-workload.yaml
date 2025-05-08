@@ -16,7 +16,7 @@ spec:
       initContainers:
         - name: hack
           image: busybox
-          command: ["sh", "-c", "chown -R 5050:5050 /var/lib/pgadmin;", "sh", "-c", "chown -R 5050:5050 /pgadmin4/servers.json"]
+          command: [ "sh", "-c", "chown -R 5050:5050 /var/lib/pgadmin;", "sh", "-c", "chown -R 5050:5050 /pgadmin4/servers.json" ]
           volumeMounts:
             - name: pgadmin-data
               mountPath: /var/lib/pgadmin
@@ -56,9 +56,9 @@ spec:
             - containerPort: 80
               name: clio-pgadmin
       volumes:
-      - name: pgadmin-data
-        persistentVolumeClaim:
-          claimName: pgadmin-pvc
-      - name: pgadmin-config
-        configMap:
-          name: pgadmin-config
+        - name: pgadmin-data
+          persistentVolumeClaim:
+            claimName: pgadmin-pvc
+        - name: pgadmin-config
+          configMap:
+            name: pgadmin-config

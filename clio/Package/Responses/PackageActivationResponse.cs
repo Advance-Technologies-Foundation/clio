@@ -1,7 +1,7 @@
-namespace Clio.Package.Responses;
-
 using System.Runtime.Serialization;
 using Clio.Common.Responses;
+
+namespace Clio.Package.Responses;
 
 #region Class: PackageActivationResponse
 
@@ -9,12 +9,12 @@ using Clio.Common.Responses;
 public class PackageActivationResponse : BaseResponse
 {
 
-	#region Properties: Public
+    #region Properties: Public
 
-	[DataMember(Name = "packagesActivationResults")]
-	public PackageActivationResultDto[] PackagesActivationResults { get; set; }
+    [DataMember(Name = "packagesActivationResults")]
+    public PackageActivationResultDto[] PackagesActivationResults { get; set; }
 
-	#endregion
+    #endregion
 
 }
 

@@ -1,65 +1,97 @@
-﻿namespace Clio
+﻿using System;
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Clio.Common;
+using Clio.Models;
+using Newtonsoft.Json;
+
+namespace Clio;
+
+public interface IMarketplace
 {
-	using Clio.Common;
-	using Clio.Models;
-	using Newtonsoft.Json;
-	using System;
-	using System.IO;
-	using System.Net.Http;
-	using System.Threading.Tasks;
 
-	public interface IMarketplace
-	{
-		Task<string> GetFileByIdAsync(int id);
-	}
+    #region Methods: Public
 
-	public class Marketplace : IMarketplace, IDisposable
-	{
-		const string _baseUri = "https://marketplace.creatio.com";
-		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		private readonly HttpClient _httpClient;
-		private MarketplaceApplicationModel _model;
+    Task<string> GetFileByIdAsync(int id);
 
-		public Marketplace(IWorkingDirectoriesProvider workingDirectoriesProvider)
-		{
-			_httpClient = new HttpClient
-			{
-				BaseAddress = new Uri(_baseUri)
-			};
-			_workingDirectoriesProvider = workingDirectoriesProvider;
-		}
+    #endregion
 
-		private async Task GetMrkModelById(int id)
-		{
-			Uri relativeUri = new Uri($"marketplace/install?appId=com-{id}", UriKind.Relative);
-			var resposne = await _httpClient.GetStringAsync(relativeUri);
-			_model = JsonConvert.DeserializeObject<MarketplaceApplicationModel>(resposne);
-		}
+}
 
-		public async Task<string> GetFileByIdAsync(int id)
-		{
-			await GetMrkModelById(id);
-			var dir = _workingDirectoriesProvider.BaseTempDirectory;
+public class Marketplace : IMarketplace, IDisposable
+{
 
-			var filename = _model.FileLink.Segments[^1];
-			var fullpath = Path.Combine(dir, filename);
-			Console.WriteLine(fullpath);
-			var bites = await _httpClient.GetByteArrayAsync(_model.FileLink.PathAndQuery);
+    #region Constants: Private
 
-			using var fs = new FileStream(fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
-			await fs.WriteAsync(bites);
-			return fullpath;
-		}
+    private const string _baseUri = "https://marketplace.creatio.com";
 
-		public void Dispose()
-		{
-			Dispose(true);
-			GC.SuppressFinalize(this);
-		}
+    #endregion
 
-		protected virtual void Dispose(bool disposing)
-		{
-			_httpClient.Dispose();
-		}
-	}
+    #region Fields: Private
+
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly HttpClient _httpClient;
+    private MarketplaceApplicationModel _model;
+
+    #endregion
+
+    #region Constructors: Public
+
+    public Marketplace(IWorkingDirectoriesProvider workingDirectoriesProvider)
+    {
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(_baseUri)
+        };
+        _workingDirectoriesProvider = workingDirectoriesProvider;
+    }
+
+    #endregion
+
+    #region Methods: Private
+
+    private async Task GetMrkModelById(int id)
+    {
+        Uri relativeUri = new($"marketplace/install?appId=com-{id}", UriKind.Relative);
+        string resposne = await _httpClient.GetStringAsync(relativeUri);
+        _model = JsonConvert.DeserializeObject<MarketplaceApplicationModel>(resposne);
+    }
+
+    #endregion
+
+    #region Methods: Protected
+
+    protected virtual void Dispose(bool disposing)
+    {
+        _httpClient.Dispose();
+    }
+
+    #endregion
+
+    #region Methods: Public
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    public async Task<string> GetFileByIdAsync(int id)
+    {
+        await GetMrkModelById(id);
+        string dir = _workingDirectoriesProvider.BaseTempDirectory;
+
+        string filename = _model.FileLink.Segments[^1];
+        string fullpath = Path.Combine(dir, filename);
+        Console.WriteLine(fullpath);
+        byte[] bites = await _httpClient.GetByteArrayAsync(_model.FileLink.PathAndQuery);
+
+        using FileStream fs = new(fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await fs.WriteAsync(bites);
+        return fullpath;
+    }
+
+    #endregion
+
 }

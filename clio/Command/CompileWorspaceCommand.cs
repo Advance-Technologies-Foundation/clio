@@ -1,28 +1,48 @@
 ﻿using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command;
+
+[Verb("build-workspace", Aliases = new[]
 {
-	[Verb("build-workspace", Aliases = new[] { "build", "compile", "compile-all", "rebuild" }, HelpText = "Build/Rebuild worksapce for selected environment")]
-	public class CompileOptions : RemoteCommandOptions
-	{
-		[Option('o', "ModifiedItems", HelpText = "Build modified items")]
-		public bool ModifiedItems { get; set; }
-	}
+    "build", "compile", "compile-all", "rebuild"
+}, HelpText = "Build/Rebuild worksapce for selected environment")]
+public class CompileOptions : RemoteCommandOptions
+{
 
+    #region Properties: Public
 
-	public class CompileWorkspaceCommand : RemoteCommand<CompileOptions>
-	{
-		public CompileWorkspaceCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings) {
-		}
+    [Option('o', "ModifiedItems", HelpText = "Build modified items")]
+    public bool ModifiedItems { get; set; }
 
-		protected override string ServicePath => @"/rest/CreatioApiGateway/CompileWorkspace";
+    #endregion
 
-		protected override string GetRequestData(CompileOptions options)
-		{
-			return "{" + $"\"compileModified\":{options.ModifiedItems.ToString().ToLower()}" + "}";
-		}
-	}
+}
+
+public class CompileWorkspaceCommand : RemoteCommand<CompileOptions>
+{
+
+    #region Constructors: Public
+
+    public CompileWorkspaceCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+        : base(applicationClient, settings)
+    { }
+
+    #endregion
+
+    #region Properties: Protected
+
+    protected override string ServicePath => @"/rest/CreatioApiGateway/CompileWorkspace";
+
+    #endregion
+
+    #region Methods: Protected
+
+    protected override string GetRequestData(CompileOptions options)
+    {
+        return "{" + $"\"compileModified\":{options.ModifiedItems.ToString().ToLower()}" + "}";
+    }
+
+    #endregion
 
 }

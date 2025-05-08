@@ -1,25 +1,25 @@
 using System.Collections.Generic;
 
-namespace Clio.Common
+namespace Clio.Common;
+
+#region Interface: ITemplateProvider
+
+public interface ITemplateProvider
 {
-	#region Interface: ITemplateProvider
 
-	public interface ITemplateProvider
-	{
+    #region Methods: Public
 
-		#region Methods: Public
+    void CopyTemplateFolder(string templateCode, string destinationPath, string creatioVersion = "",
+        string group = "", bool overrideFolder = true);
 
-		string GetTemplate(string templateName);
+    void CopyTemplateFolder(string templateFolderName, string destinationPath, Dictionary<string, string> macrosValues);
 
-		void CopyTemplateFolder(string templateCode, string destinationPath, string creatioVersion = "",
-			string group = "", bool overrideFolder = true);
-		
-		void CopyTemplateFolder(string templateFolderName, string destinationPath, Dictionary<string, string> macrosValues);
-		string[] GetTemplateDirectories(string templateCode);
+    string GetTemplate(string templateName);
 
-		#endregion
+    string[] GetTemplateDirectories(string templateCode);
 
-	}
+    #endregion
 
-	#endregion
 }
+
+#endregion

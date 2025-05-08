@@ -6,9 +6,4 @@ namespace Clio.Tests;
 
 [TestFixture]
 internal class DeployAppCommandTests : BaseCommandTests<DeployAppOptions>
-{
-
-
-
-
-}
+{ }

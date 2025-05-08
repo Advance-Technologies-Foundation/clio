@@ -1,9 +1,7 @@
-﻿using Autofac;
+﻿using System.IO.Abstractions.TestingHelpers;
+using Autofac;
 using Clio.Tests.Infrastructure;
 using NUnit.Framework;
-using System.IO.Abstractions.TestingHelpers;
-using Terrasoft.Core.Configuration;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
 
@@ -11,39 +9,41 @@ namespace Clio.Tests.Command;
 public abstract class BaseClioModuleTests
 {
 
-	#region Setup/Teardown
+    #region Setup/Teardown
 
-	[SetUp]
-	public virtual void Setup(){
-		FileSystem = CreateFs();
-		
-		BindingsModule bindingModule = new(FileSystem);
-		Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
-	}
+    [SetUp]
+    public virtual void Setup()
+    {
+        FileSystem = CreateFs();
 
-	#endregion
+        BindingsModule bindingModule = new(FileSystem);
+        Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
+    }
 
-	#region Fields: Protected
+    #endregion
 
-	protected MockFileSystem FileSystem;
-	protected IContainer Container;
-	protected EnvironmentSettings EnvironmentSettings = new() {
-		Uri = "http://localhost",
-		Login = "",
-		Password = ""
-	};
+    #region Fields: Protected
 
-	#endregion
+    protected MockFileSystem FileSystem;
+    protected IContainer Container;
 
-	#region Methods: Protected
+    protected EnvironmentSettings EnvironmentSettings = new()
+    {
+        Uri = "http://localhost", Login = "", Password = ""
+    };
 
-	protected virtual MockFileSystem CreateFs(){
-		return TestFileSystem.MockFileSystem();
-	}
+    #endregion
 
-	protected virtual void AdditionalRegistrations(ContainerBuilder containerBuilder) {
-	}
+    #region Methods: Protected
 
-	#endregion
+    protected virtual void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    { }
+
+    protected virtual MockFileSystem CreateFs()
+    {
+        return TestFileSystem.MockFileSystem();
+    }
+
+    #endregion
 
 }

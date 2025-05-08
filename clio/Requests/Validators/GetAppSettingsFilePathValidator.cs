@@ -1,6 +1,4 @@
-﻿namespace Clio.Requests.Validators
-{
-	//internal class GetAppSettingsFilePathValidator : AbstractValidator<GetAppSettingsFilePath>
-	//{
-	//}
-}
+﻿namespace Clio.Requests.Validators;
+//internal class GetAppSettingsFilePathValidator : AbstractValidator<GetAppSettingsFilePath>
+//{
+//}

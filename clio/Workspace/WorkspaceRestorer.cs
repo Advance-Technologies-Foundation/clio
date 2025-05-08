@@ -1,95 +1,96 @@
-namespace Clio.Workspaces
+using System;
+using Clio.Command;
+using Clio.Common;
+using Clio.Package;
+using Clio.Project.NuGet;
+
+namespace Clio.Workspaces;
+
+#region Class: WorkspaceSettings
+
+public class WorkspaceRestorer : IWorkspaceRestorer
 {
-	using System;
-	using System.Collections.Generic;
-	using System.IO;
-	using Clio.Command;
-	using Clio.Common;
-	using Clio.Package;
-	using Clio.Project.NuGet;
 
-	#region Class: WorkspaceSettings
+    #region Fields: Private
 
-	public class WorkspaceRestorer : IWorkspaceRestorer
-	{
+    private readonly INuGetManager _nugetManager;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder;
+    private readonly IEnvironmentScriptCreator _environmentScriptCreator;
+    private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
+    private readonly IPackageDownloader _packageDownloader;
+    private readonly ICreatioSdk _creatioSdk;
 
-		#region Fields: Private
+    #endregion
 
-		private readonly INuGetManager _nugetManager;
-		private readonly IWorkspacePathBuilder _workspacePathBuilder;
-		private readonly IEnvironmentScriptCreator _environmentScriptCreator;
-		private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
-		private readonly IPackageDownloader _packageDownloader;
-		private readonly ICreatioSdk _creatioSdk;
+    #region Constructors: Public
 
+    public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
+        IEnvironmentScriptCreator environmentScriptCreator, IWorkspaceSolutionCreator workspaceSolutionCreator,
+        IPackageDownloader packageDownloader, ICreatioSdk creatioSdk)
+    {
+        nugetManager.CheckArgumentNull(nameof(nugetManager));
+        workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
+        environmentScriptCreator.CheckArgumentNull(nameof(environmentScriptCreator));
+        workspaceSolutionCreator.CheckArgumentNull(nameof(workspaceSolutionCreator));
+        packageDownloader.CheckArgumentNull(nameof(packageDownloader));
+        creatioSdk.CheckArgumentNull(nameof(creatioSdk));
+        _nugetManager = nugetManager;
+        _workspacePathBuilder = workspacePathBuilder;
+        _environmentScriptCreator = environmentScriptCreator;
+        _workspaceSolutionCreator = workspaceSolutionCreator;
+        _packageDownloader = packageDownloader;
+        _creatioSdk = creatioSdk;
+    }
 
-		#endregion
+    #endregion
 
-		#region Constructors: Public
+    #region Methods: Private
 
-		public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
-				IEnvironmentScriptCreator environmentScriptCreator, IWorkspaceSolutionCreator workspaceSolutionCreator,
-				IPackageDownloader packageDownloader, ICreatioSdk creatioSdk) {
-			nugetManager.CheckArgumentNull(nameof(nugetManager));
-			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
-			environmentScriptCreator.CheckArgumentNull(nameof(environmentScriptCreator));
-			workspaceSolutionCreator.CheckArgumentNull(nameof(workspaceSolutionCreator));
-			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
-			creatioSdk.CheckArgumentNull(nameof(creatioSdk));
-			_nugetManager = nugetManager;
-			_workspacePathBuilder = workspacePathBuilder;
-			_environmentScriptCreator = environmentScriptCreator;
-			_workspaceSolutionCreator = workspaceSolutionCreator;
-			_packageDownloader = packageDownloader;
-			_creatioSdk = creatioSdk;
-		}
+    private void CreateEnvironmentScript(Version nugetCreatioSdkVersion)
+    {
+        _environmentScriptCreator.Create(nugetCreatioSdkVersion);
+    }
 
-		#endregion
+    private void CreateSolution()
+    {
+        _workspaceSolutionCreator.Create();
+    }
 
-		#region Methods: Private
+    private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion)
+    {
+        const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
+        const string packageName = "CreatioSDK";
+        NugetPackageFullName nugetPackageFullName = new()
+        {
+            Name = packageName, Version = nugetCreatioSdkVersion.ToString()
+        };
+        _nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl,
+            _workspacePathBuilder.NugetFolderPath);
+    }
 
-		private void RestoreNugetCreatioSdk(Version nugetCreatioSdkVersion) {
-			const string nugetSourceUrl = "https://api.nuget.org/v3/index.json";
-			const string packageName = "CreatioSDK";
-			NugetPackageFullName nugetPackageFullName = new NugetPackageFullName() {
-				Name = packageName,
-				Version = nugetCreatioSdkVersion.ToString()
-			};
-			_nugetManager.RestoreToNugetFileStorage(nugetPackageFullName, nugetSourceUrl,
-				_workspacePathBuilder.NugetFolderPath);
-		}
+    #endregion
 
-		private void CreateSolution() {
-			_workspaceSolutionCreator.Create();
-		}
+    #region Methods: Public
 
-		private void CreateEnvironmentScript(Version nugetCreatioSdkVersion) {
-			_environmentScriptCreator.Create(nugetCreatioSdkVersion);
-		}
+    public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
+        WorkspaceOptions restoreWorkspaceOptions)
+    {
+        Version creatioSdkVersion = _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion);
+        _packageDownloader.DownloadPackages(workspaceSettings.Packages, environmentSettings,
+            _workspacePathBuilder.PackagesFolderPath);
+        if (restoreWorkspaceOptions.IsNugetRestore == true)
+        {
+            RestoreNugetCreatioSdk(creatioSdkVersion);
+            CreateEnvironmentScript(creatioSdkVersion);
+        }
+        if (restoreWorkspaceOptions.IsCreateSolution == true)
+        {
+            CreateSolution();
+        }
+    }
 
-		#endregion
-
-
-		#region Methods: Public
-
-		public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
-				WorkspaceOptions restoreWorkspaceOptions) {
-			Version creatioSdkVersion = _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion);
-			_packageDownloader.DownloadPackages(workspaceSettings.Packages, environmentSettings,
-				_workspacePathBuilder.PackagesFolderPath);
-			if (restoreWorkspaceOptions.IsNugetRestore ==true) {
-				RestoreNugetCreatioSdk(creatioSdkVersion);
-				CreateEnvironmentScript(creatioSdkVersion);
-			}
-			if (restoreWorkspaceOptions.IsCreateSolution == true) {
-				CreateSolution();
-			}
-		}
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

@@ -4,38 +4,41 @@ using Clio.Common.Responses;
 
 namespace Clio.Package;
 
-/// <inheritdoc cref="IPackageDeactivator"/>
+/// <inheritdoc cref="IPackageDeactivator" />
 internal class PackageDeactivator : BasePackageOperation, IPackageDeactivator
 {
-	#region Constructors: Public
 
-	public PackageDeactivator(IApplicationPackageListProvider applicationPackageListProvider,
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-		base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-	{
-	}
+    #region Constructors: Public
 
-	#endregion
+    public PackageDeactivator(IApplicationPackageListProvider applicationPackageListProvider,
+        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+        :
+        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
+    { }
 
-	#region Methods: Protected
+    #endregion
 
-	protected override string CreateRequestData<TRequest>(TRequest request)
-	{
-		return "\"" + request + "\"";
-	}
+    #region Methods: Protected
 
-	#endregion
+    protected override string CreateRequestData<TRequest>(TRequest request)
+    {
+        return "\"" + request + "\"";
+    }
 
-	#region Methods: Public
+    #endregion
 
-	/// <inheritdoc cref="IPackageDeactivator.Deactivate"/>
-	public void Deactivate(string packageName)
-	{
-		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		Guid packageUId = GetPackageUId(packageName);
-		BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "DeactivatePackage", packageUId);
-		ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
-	}
+    #region Methods: Public
 
-	#endregion
+    /// <inheritdoc cref="IPackageDeactivator.Deactivate" />
+    public void Deactivate(string packageName)
+    {
+        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+        Guid packageUId = GetPackageUId(packageName);
+        BaseResponse deactivateResponse
+            = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "DeactivatePackage", packageUId);
+        ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+    }
+
+    #endregion
+
 }

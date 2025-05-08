@@ -2,18 +2,29 @@
 
 public class WindowsFeature
 {
-	public string Name { get; set; }
 
-	public string Caption { get; set; }
+    #region Properties: Public
 
-	public string State { get {
-			return Installed ? "OK" : "Not installed";
-		}
-	}
+    public string Caption { get; set; }
 
-	public bool Installed { get; set; }
+    public bool Installed { get; set; }
 
-	public override string ToString() {
-		return $"{State} : {Name}";
-	}
+    public string Name { get; set; }
+
+    public string State
+    {
+        get { return Installed ? "OK" : "Not installed"; }
+    }
+
+    #endregion
+
+    #region Methods: Public
+
+    public override string ToString()
+    {
+        return $"{State} : {Name}";
+    }
+
+    #endregion
+
 }

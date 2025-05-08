@@ -12,7 +12,6 @@ using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Package;
 
@@ -20,198 +19,212 @@ namespace Clio.Tests.Package;
 internal class PackageCreatorTest : BaseClioModuleTests
 {
 
-	#region Fields: Private
+    #region Constants: Private
 
-	private const string PackagesPath = @"T:\\";
-	private const string PackageNameOne = "TestPackageOne";
-	private const string PackageNameTwo = "TestPackageTwo";
-	private const string PackageNameThree = "TestPackageThree";
+    private const string PackageNameOne = "TestPackageOne";
+    private const string PackageNameThree = "TestPackageThree";
+    private const string PackageNameTwo = "TestPackageTwo";
+    private const string PackagesPath = @"T:\\";
 
-	#endregion
+    #endregion
 
-	#region Methods: Private
+    #region Methods: Private
 
-	private PackageCreator InitCreator(){
-		return new PackageCreator(Container.Resolve<EnvironmentSettings>(), Container.Resolve<IWorkspace>(),
-			Container.Resolve<IWorkspaceSolutionCreator>(),
-			Container.Resolve<ITemplateProvider>(), Container.Resolve<IWorkspacePathBuilder>(),
-			Container.Resolve<IStandalonePackageFileManager>(), Container.Resolve<IJsonConverter>(),
-			Container.Resolve<IWorkingDirectoriesProvider>(), Container.Resolve<Clio.Common.IFileSystem>());
-	}
+    private PackageCreator InitCreator()
+    {
+        return new PackageCreator(Container.Resolve<EnvironmentSettings>(), Container.Resolve<IWorkspace>(),
+            Container.Resolve<IWorkspaceSolutionCreator>(),
+            Container.Resolve<ITemplateProvider>(), Container.Resolve<IWorkspacePathBuilder>(),
+            Container.Resolve<IStandalonePackageFileManager>(), Container.Resolve<IJsonConverter>(),
+            Container.Resolve<IWorkingDirectoriesProvider>(), Container.Resolve<IFileSystem>());
+    }
 
-	#endregion
+    #endregion
 
-	#region Methods: Protected
+    #region Methods: Protected
 
-	protected override MockFileSystem CreateFs(){
-		MockFileSystem x = (MockFileSystem)base.CreateFs();
-		ILogger logger = Substitute.For<ILogger>();
-		WorkingDirectoriesProvider wdp = new (logger, x);
-		x.MockFolderWithDir(wdp.TemplateDirectory);
-		return x;
-	}
+    protected override MockFileSystem CreateFs()
+    {
+        MockFileSystem x = base.CreateFs();
+        ILogger logger = Substitute.For<ILogger>();
+        WorkingDirectoriesProvider wdp = new(logger, x);
+        x.MockFolderWithDir(wdp.TemplateDirectory);
+        return x;
+    }
 
-	#endregion
+    #endregion
 
-	[Test]
-	public void Create_AddPackageToWorkspaceWithTwoApplication(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_AddPackageToWorkspaceWithTwoApplication()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, true);
-		creator.Create(PackagesPath, PackageNameTwo, true);
-		creator.Create(PackagesPath, PackageNameThree);
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, true);
+        creator.Create(PackagesPath, PackageNameTwo, true);
+        creator.Create(PackagesPath, PackageNameThree);
 
-		//Assert
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
-		string appDescriptorPathThree = Path.Combine(PackagesPath, PackageNameThree, "Files", "app-descriptor.json");
+        //Assert
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
+        string appDescriptorPathThree = Path.Combine(PackagesPath, PackageNameThree, "Files", "app-descriptor.json");
 
-		FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
-		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
-		FileSystem.File.Exists(appDescriptorPathThree).Should().BeFalse();
-	}
+        FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
+        FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
+        FileSystem.File.Exists(appDescriptorPathThree).Should().BeFalse();
+    }
 
-	[Test]
-	public void Create_AddTwoApplicationsToWorkplace(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_AddTwoApplicationsToWorkplace()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, true);
-		creator.Create(PackagesPath, PackageNameTwo, true);
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, true);
+        creator.Create(PackagesPath, PackageNameTwo, true);
 
-		//Assert
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
+        //Assert
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
 
-		FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
-		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
-	}
+        FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
+        FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
+    }
 
-	[Test]
-	public void Create_AddTwoPackagesInEmptyWorkspaceByDefault(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_AddTwoPackagesInEmptyWorkspaceByDefault()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne);
-		creator.Create(PackagesPath, PackageNameTwo);
+        //Act
+        creator.Create(PackagesPath, PackageNameOne);
+        creator.Create(PackagesPath, PackageNameTwo);
 
-		//Assert
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
+        //Assert
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
 
-		FileSystem.File.Exists(appDescriptorPathOne).Should().BeFalse();
-		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
-	}
+        FileSystem.File.Exists(appDescriptorPathOne).Should().BeFalse();
+        FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
+    }
 
-	[Test]
-	public void Create_AddTwoPackagesWithoutApplication(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_AddTwoPackagesWithoutApplication()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, false);
-		creator.Create(PackagesPath, PackageNameTwo, false);
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, false);
+        creator.Create(PackagesPath, PackageNameTwo, false);
 
-		//Assert
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
+        //Assert
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
 
-		FileSystem.File.Exists(appDescriptorPathOne).Should().BeFalse();
-		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
-	}
+        FileSystem.File.Exists(appDescriptorPathOne).Should().BeFalse();
+        FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
+    }
 
-	[Test]
-	public void Create_RewritePackageIfPackagesWithSameNamesExistsOnDescriptor(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_RewritePackageIfPackagesWithSameNamesExistsOnDescriptor()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, true);
-		creator.Create(PackagesPath, PackageNameTwo);
-		FileSystem.Directory.Delete(Path.Combine(PackagesPath, PackageNameTwo), true);
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
-		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
-		appDescriptor.Packages.Add(new Clio.Package.Package {Name = PackageNameTwo, UId = Guid.NewGuid().ToString()});
-		creator.SaveAppDescriptorToFile(appDescriptor, appDescriptorPathOne);
-		creator.Create(PackagesPath, PackageNameTwo);
-		appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
-		appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
-		appDescriptor.Packages.Count().Should().Be(2);
-	}
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, true);
+        creator.Create(PackagesPath, PackageNameTwo);
+        FileSystem.Directory.Delete(Path.Combine(PackagesPath, PackageNameTwo), true);
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
+        AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
+        appDescriptor.Packages.Add(new Clio.Package.Package
+        {
+            Name = PackageNameTwo, UId = Guid.NewGuid().ToString()
+        });
+        creator.SaveAppDescriptorToFile(appDescriptor, appDescriptorPathOne);
+        creator.Create(PackagesPath, PackageNameTwo);
+        appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
+        appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
+        appDescriptor.Packages.Count().Should().Be(2);
+    }
 
-	[Test]
-	public void Create_RewritePackageIfPackageWithSameNameExistsOnDescriptor(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_RewritePackageIfPackageWithSameNameExistsOnDescriptor()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, true);
-		creator.Create(PackagesPath, PackageNameTwo);
-		FileSystem.Directory.Delete(Path.Combine(PackagesPath, PackageNameTwo), true);
-		creator.Create(PackagesPath, PackageNameTwo);
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
-		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
-		appDescriptor.Packages.Count().Should().Be(2);
-	}
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, true);
+        creator.Create(PackagesPath, PackageNameTwo);
+        FileSystem.Directory.Delete(Path.Combine(PackagesPath, PackageNameTwo), true);
+        creator.Create(PackagesPath, PackageNameTwo);
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
+        AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
+        appDescriptor.Packages.Count().Should().Be(2);
+    }
 
-	[Test]
-	public void Create_ThrowExceptionIfPackageExists(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_ThrowExceptionIfPackageExists()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, false);
-		Assert.Throws<InvalidOperationException>(() => creator.Create(PackagesPath, PackageNameOne, false));
-	}
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, false);
+        Assert.Throws<InvalidOperationException>(() => creator.Create(PackagesPath, PackageNameOne, false));
+    }
 
-	[Test]
-	public void Create_TwoPackages(){
-		//Arrange
-		PackageCreator creator = InitCreator();
+    [Test]
+    public void Create_TwoPackages()
+    {
+        //Arrange
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, true);
-		creator.Create(PackagesPath, PackageNameTwo);
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, true);
+        creator.Create(PackagesPath, PackageNameTwo);
 
-		//Assert
-		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
+        //Assert
+        string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
+        string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
 
-		FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
-		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
+        FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
+        FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
 
-		string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
-		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
-		appDescriptor.Packages.Count().Should().Be(2);
-	}
+        string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
+        AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
+        appDescriptor.Packages.Count().Should().Be(2);
+    }
 
-	[Test]
-	public void Create_With(){
-		//Arrange
+    [Test]
+    public void Create_With()
+    {
+        //Arrange
 
-		PackageCreator creator = InitCreator();
+        PackageCreator creator = InitCreator();
 
-		//Act
-		creator.Create(PackagesPath, PackageNameOne, true);
+        //Act
+        creator.Create(PackagesPath, PackageNameOne, true);
 
-		//Assert
-		string appDescriptorContent
-			= FileSystem.File.ReadAllText(Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json"));
-		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
+        //Assert
+        string appDescriptorContent
+            = FileSystem.File.ReadAllText(Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json"));
+        AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
 
-		appDescriptor.Name.Should().Be(PackageNameOne);
-		appDescriptor.Code.Should().Be(PackageNameOne);
-		appDescriptor.Color.Should().Be("#FFAC07");
-		appDescriptor.Maintainer.Should().Be("Customer");
-		appDescriptor.Version.Should().Be("0.1.0");
-		appDescriptor.Packages.Should().HaveCount(1);
-		appDescriptor.Packages.First().Name.Should().Be(PackageNameOne);
-	}
+        appDescriptor.Name.Should().Be(PackageNameOne);
+        appDescriptor.Code.Should().Be(PackageNameOne);
+        appDescriptor.Color.Should().Be("#FFAC07");
+        appDescriptor.Maintainer.Should().Be("Customer");
+        appDescriptor.Version.Should().Be("0.1.0");
+        appDescriptor.Packages.Should().HaveCount(1);
+        appDescriptor.Packages.First().Name.Should().Be(PackageNameOne);
+    }
 
 }

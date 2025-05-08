@@ -6,7 +6,4 @@ namespace Clio.Tests.Command;
 [Category("UnitTests")]
 [TestFixture]
 public class SetWebServiceUrlCommandTests : BaseCommandTests<SetWebServiceUrlOptions>
-{
-
-	
-}
+{ }

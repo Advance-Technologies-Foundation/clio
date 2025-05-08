@@ -1,23 +1,20 @@
-﻿using System.Collections.Generic;
+﻿namespace Clio.Common;
 
-namespace Clio.Common
+#region Interface: IPackageUtilities
+
+public interface IPackageUtilities
 {
 
-	#region Interface: IPackageUtilities
+    #region Methods: Public
 
-	public interface IPackageUtilities
-	{
+    void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite);
 
-		#region Methods: Public
+    string GetPackageContentFolderPath(string repositoryPackageFolderPath);
 
-		void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite);
-		string GetPackageContentFolderPath(string repositoryPackageFolderPath);
-		string GetPackageContentFolderPath(string repositoryFolderPath, string packageName);
+    string GetPackageContentFolderPath(string repositoryFolderPath, string packageName);
 
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

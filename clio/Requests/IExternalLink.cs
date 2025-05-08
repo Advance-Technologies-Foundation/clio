@@ -1,13 +1,14 @@
 ﻿using MediatR;
 
-namespace Clio.Requests
+namespace Clio.Requests;
+
+internal interface IExternalLink : IRequest
 {
-	internal interface IExternalLink : IRequest
-	{
-		public string Content
-		{
-			get; set;
-		}
-	}
+
+    #region Properties: Public
+
+    public string Content { get; set; }
+
+    #endregion
 
 }

@@ -2,46 +2,52 @@
 using System.Collections.Generic;
 using Clio.Common;
 
-namespace Clio.Package
+namespace Clio.Package;
+
+#region Class: PackageDescriptor
+
+public class PackageDescriptor
 {
 
-	#region Class: PackageDescriptor
+    #region Properties: Public
 
-	public class PackageDescriptor
-	{
+    public IList<PackageDependency> DependsOn { get; set; }
 
-		#region Properties: Public
+    public string Maintainer { get; set; }
 
-		public Guid UId { get; set; }
-		public string PackageVersion { get; set; }
-		public string Name { get; set; }
-		public PackageType Type { get; set; } = PackageType.General;
-		public string ProjectPath { get; set; } = string.Empty;
-		public string ModifiedOnUtc { get; set; }
-		public string Maintainer { get; set; }
-		public IList<PackageDependency> DependsOn { get; set; }
+    public string ModifiedOnUtc { get; set; }
 
-		#endregion
+    public string Name { get; set; }
 
-		#region Methods: Public
+    public string PackageVersion { get; set; }
 
-		private static DateTime ClearMilliseconds(DateTime dt) {
-			return new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
-		}
+    public string ProjectPath { get; set; } = string.Empty;
 
-		#endregion
+    public PackageType Type { get; set; } = PackageType.General;
 
-		#region Methods: Public
+    public Guid UId { get; set; }
 
-		public static string ConvertToModifiedOnUtc(DateTime dateTime) {
-			long unixDateTime = UnixTimeConverter.CovertToUnixDateTime(ClearMilliseconds(dateTime));
-			return $"/Date({unixDateTime})/";
-		}
+    #endregion
 
-		#endregion
+    #region Methods: Private
 
-	}
+    private static DateTime ClearMilliseconds(DateTime dt)
+    {
+        return new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
+    }
 
-	#endregion
+    #endregion
+
+    #region Methods: Public
+
+    public static string ConvertToModifiedOnUtc(DateTime dateTime)
+    {
+        long unixDateTime = UnixTimeConverter.CovertToUnixDateTime(ClearMilliseconds(dateTime));
+        return $"/Date({unixDateTime})/";
+    }
+
+    #endregion
 
 }
+
+#endregion

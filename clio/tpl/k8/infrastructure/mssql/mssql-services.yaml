@@ -5,13 +5,13 @@ metadata:
   namespace: clio-infrastructure
   labels:
     app: clio-mssql
-spec: 
+spec:
   selector:
     app: clio-mssql
   type: LoadBalancer
   ports:
-  - port: 1433
-    targetPort: 1433
+    - port: 1433
+      targetPort: 1433
 
 
 ---
@@ -29,4 +29,4 @@ spec:
   ports:
     - port: 1433
       targetPort: 1433
- 
+

@@ -1,20 +1,18 @@
-namespace Clio.Workspaces
+using System.Collections.Generic;
+
+namespace Clio.Workspaces;
+
+#region Interface: ISolutionCreator
+
+public interface ISolutionCreator
 {
-	using System.Collections.Generic;
 
-	#region Interface: ISolutionCreator
+    #region Methods: Public
 
-	public interface ISolutionCreator
-	{
+    void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects);
 
-		#region Methods: Public
-
-		void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects);
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

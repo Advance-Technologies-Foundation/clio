@@ -1,94 +1,95 @@
-namespace Clio.Package
+using System.Collections.Generic;
+using Clio.Common;
+
+namespace Clio.Package;
+
+#region Interface: IPackageBuilder
+
+public interface IPackageBuilder
 {
-	using System.Collections.Generic;
-	using Clio.Common;
 
-	#region Interface: IPackageBuilder
+    #region Methods: Public
 
-	public interface IPackageBuilder
-	{
+    void Build(IEnumerable<string> packagesNames);
 
-		#region Methods: Public
+    void Rebuild(IEnumerable<string> packagesNames);
 
-		void Build(IEnumerable<string> packagesNames);
+    #endregion
 
-		void Rebuild(IEnumerable<string> packagesNames);
-
-		#endregion
-
-	}
-
-	#endregion
-
-	#region Class: PackageBuilder
-
-	public class PackageBuilder : IPackageBuilder
-	{
-		
-		#region Fields: Private
-
-		private readonly EnvironmentSettings _environmentSettings;
-		private readonly IApplicationClientFactory _applicationClientFactory;
-		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private readonly ILogger _logger;
-
-		#endregion
-
-		#region Constructors: Public
-
-		public PackageBuilder(EnvironmentSettings environmentSettings,
-			IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder, ILogger logger){
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
-			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
-			logger.CheckArgumentNull(nameof(logger));
-			_environmentSettings = environmentSettings;
-			_applicationClientFactory = applicationClientFactory;
-			_serviceUrlBuilder = serviceUrlBuilder;
-			_logger = logger;
-		}
-
-		#endregion
-
-		#region Methods: Private
-
-		private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
-
-		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
-
-		private string GetSafePackageName(string packageName) =>
-			packageName
-				.Replace(" ", string.Empty)
-				.Replace(",", "\",\"");
-
-		private void Compilation(IEnumerable<string> packagesNames, bool force){
-			IApplicationClient applicationClient = CreateClient();
-			string compilationName = force ? "rebuild" : "build";
-			string fullBuildPackageUrl = _serviceUrlBuilder.Build(
-				force
-				? ServiceUrlBuilder.KnownRoute.RebuildPackage 
-				: ServiceUrlBuilder.KnownRoute.BuildPackage);
-
-			foreach (string packageName in packagesNames) {
-				string safePackageName = GetSafePackageName(packageName);
-				_logger.WriteLine($"Start {compilationName} packages ({safePackageName}).");
-				var requestData = CreateRequestData(safePackageName);
-				applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
-				_logger.WriteLine($"End {compilationName} packages ({safePackageName}).");
-			}
-		}
-
-		#endregion
-
-		#region Methods: Public
-
-		public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
-
-		public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
-
-		#endregion
-
-	}
-
-	#endregion
 }
+
+#endregion
+
+#region Class: PackageBuilder
+
+public class PackageBuilder : IPackageBuilder
+{
+
+    #region Fields: Private
+
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly IApplicationClientFactory _applicationClientFactory;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly ILogger _logger;
+
+    #endregion
+
+    #region Constructors: Public
+
+    public PackageBuilder(EnvironmentSettings environmentSettings,
+        IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder, ILogger logger)
+    {
+        environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
+        serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
+        logger.CheckArgumentNull(nameof(logger));
+        _environmentSettings = environmentSettings;
+        _applicationClientFactory = applicationClientFactory;
+        _serviceUrlBuilder = serviceUrlBuilder;
+        _logger = logger;
+    }
+
+    #endregion
+
+    #region Methods: Private
+
+    private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
+
+    private void Compilation(IEnumerable<string> packagesNames, bool force)
+    {
+        IApplicationClient applicationClient = CreateClient();
+        string compilationName = force ? "rebuild" : "build";
+        string fullBuildPackageUrl = _serviceUrlBuilder.Build(force
+            ? ServiceUrlBuilder.KnownRoute.RebuildPackage
+            : ServiceUrlBuilder.KnownRoute.BuildPackage);
+
+        foreach (string packageName in packagesNames)
+        {
+            string safePackageName = GetSafePackageName(packageName);
+            _logger.WriteLine($"Start {compilationName} packages ({safePackageName}).");
+            string requestData = CreateRequestData(safePackageName);
+            applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
+            _logger.WriteLine($"End {compilationName} packages ({safePackageName}).");
+        }
+    }
+
+    private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
+
+    private string GetSafePackageName(string packageName) =>
+        packageName
+            .Replace(" ", string.Empty)
+            .Replace(",", "\",\"");
+
+    #endregion
+
+    #region Methods: Public
+
+    public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
+
+    public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
+
+    #endregion
+
+}
+
+#endregion

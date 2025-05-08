@@ -1,10 +1,26 @@
-﻿namespace Clio.Common.ScenarioHandlers {
-    public class BaseHandlerResponse {
+﻿namespace Clio.Common.ScenarioHandlers;
 
-        public CompletionStatus Status { get; set; }
-        public string Description { get; set; }
-        public enum CompletionStatus {
-            Success, Failure
-        }
+public class BaseHandlerResponse
+{
+
+    #region Enum: Public
+
+    public enum CompletionStatus
+    {
+
+        Success,
+        Failure
+
     }
+
+    #endregion
+
+    #region Properties: Public
+
+    public string Description { get; set; }
+
+    public CompletionStatus Status { get; set; }
+
+    #endregion
+
 }

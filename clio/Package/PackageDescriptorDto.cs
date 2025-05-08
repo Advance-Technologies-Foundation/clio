@@ -1,7 +1,12 @@
-﻿namespace Clio.Package
+﻿namespace Clio.Package;
+
+public class PackageDescriptorDto
 {
-	public class PackageDescriptorDto
-	{
-		public PackageDescriptor Descriptor { get; set; }
-	}
+
+    #region Properties: Public
+
+    public PackageDescriptor Descriptor { get; set; }
+
+    #endregion
+
 }

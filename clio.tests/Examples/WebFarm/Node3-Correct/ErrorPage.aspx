@@ -7,7 +7,7 @@
 		function showDetail() {
 			var labelDetailTextEl = Ext.get('lblDetailMessage');
 			var displayStyle = labelDetailTextEl.dom.style['display'];
-			labelDetailTextEl.dom.style['display'] = (displayStyle == 'none' ? 'block' : 'none');
+			labelDetailTextEl.dom.style['display'] = displayStyle == 'none' ? 'block' : 'none';
 		}
 	</script>
 	<title></title>

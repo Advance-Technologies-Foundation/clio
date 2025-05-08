@@ -9,57 +9,76 @@ namespace Clio.Command.StartProcess;
 public record ProcessStartArgs
 {
 
-	[JsonObject]
-	public class ParameterValues
-	{
-		[JsonPropertyName("name")]
-		[JsonProperty("name")]
-		public string Name { get; init; }
+    #region Class: Public
 
-		[JsonPropertyName("value")]
-		[JsonProperty("value")]
-		public string Value { get; init; }
-	}
+    [JsonObject]
+    public class ParameterValues
+    {
 
-	[JsonProperty("schemaName")]
-	[JsonPropertyName("schemaName")]
-	public string SchemaName { get; init; }
+        #region Properties: Public
 
-	[JsonProperty("parameterValues")]
-	[JsonPropertyName("parameterValues")]
-	public ParameterValues[] Values { get; init; }
+        [JsonPropertyName("name")]
+        [JsonProperty("name")]
+        public string Name { get; init; }
 
-	[JsonProperty("resultParameterNames")]
-	[JsonPropertyName("resultParameterNames")]
-	public string[] Result { get; init; }
+        [JsonPropertyName("value")]
+        [JsonProperty("value")]
+        public string Value { get; init; }
+
+        #endregion
+
+    }
+
+    #endregion
+
+    #region Properties: Public
+
+    [JsonProperty("resultParameterNames")]
+    [JsonPropertyName("resultParameterNames")]
+    public string[] Result { get; init; }
+
+    [JsonProperty("schemaName")]
+    [JsonPropertyName("schemaName")]
+    public string SchemaName { get; init; }
+
+    [JsonProperty("parameterValues")]
+    [JsonPropertyName("parameterValues")]
+    public ParameterValues[] Values { get; init; }
+
+    #endregion
 
 }
-
 
 [JsonObject]
 public record ProcessStartResponse
 {
-	[JsonPropertyName("processId")]
-	[JsonProperty("processId")]
-	public Guid ProcessId { get; init; }
-	
-	[JsonPropertyName("processStatus")]
-	[JsonProperty("processStatus")]
-	public int ProcessStatus { get; init; }
-	
-	[JsonPropertyName("resultParameterValues")]
-	[JsonProperty("resultParameterValues")]
-	public Dictionary<string, object> ResultParameterValues { get; init; }
-	
-	[JsonPropertyName("executionData")]
-	[JsonProperty("executionData")]
-	public object ExecutionData { get; init; }
-	
-	[JsonPropertyName("success")]
-	[JsonProperty("success")]
-	public bool Success { get; init; }
 
-	[JsonPropertyName("errorInfo")]
-	[JsonProperty("errorInfo")]
-	public object ErrorInfo { get; init; }
+    #region Properties: Public
+
+    [JsonPropertyName("errorInfo")]
+    [JsonProperty("errorInfo")]
+    public object ErrorInfo { get; init; }
+
+    [JsonPropertyName("executionData")]
+    [JsonProperty("executionData")]
+    public object ExecutionData { get; init; }
+
+    [JsonPropertyName("processId")]
+    [JsonProperty("processId")]
+    public Guid ProcessId { get; init; }
+
+    [JsonPropertyName("processStatus")]
+    [JsonProperty("processStatus")]
+    public int ProcessStatus { get; init; }
+
+    [JsonPropertyName("resultParameterValues")]
+    [JsonProperty("resultParameterValues")]
+    public Dictionary<string, object> ResultParameterValues { get; init; }
+
+    [JsonPropertyName("success")]
+    [JsonProperty("success")]
+    public bool Success { get; init; }
+
+    #endregion
+
 }

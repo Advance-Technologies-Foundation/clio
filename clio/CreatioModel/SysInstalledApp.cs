@@ -1,78 +1,79 @@
 #pragma warning disable CS8618, // Non-nullable field is uninitialized.
-
-using System;
+using System.Diagnostics.CodeAnalysis;
 using ATF.Repository;
 using ATF.Repository.Attributes;
-using System.Diagnostics.CodeAnalysis;
 using YamlDotNet.Serialization;
-using Guid = System.Guid;
 
-namespace CreatioModel
+namespace CreatioModel;
+
+[ExcludeFromCodeCoverage]
+[Schema("SysInstalledApp")]
+public class SysInstalledApp : BaseModel
 {
 
-	[ExcludeFromCodeCoverage]
-	[Schema("SysInstalledApp")]
-	public class SysInstalledApp : BaseModel
-	{
+    #region Fields: Private
 
-		[YamlMember(Alias = "name")]
-		[SchemaProperty("Name")]
-		public string Name { get; set; }
+    private string _version;
 
-		[YamlMember(Alias = "code")]
-		[SchemaProperty("Code")]
-		public string Code { get; set; }
+    #endregion
 
-		[YamlMember(Alias = "aliases")]
-		[SchemaProperty("Aliases")]
-		public string[] Aliases { get; set; }
+    #region Properties: Public
 
+    [YamlMember(Alias = "aliases")]
+    [SchemaProperty("Aliases")]
+    public string[] Aliases { get; set; }
 
-		[SchemaProperty("Description")]
-		public string Description { get; set; }
+    [YamlMember(Alias = "apphub")]
+    public string AppHubName { get; set; }
 
-		private string _version;
-		[YamlMember(Alias = "version")]
-		[SchemaProperty("Version")]
-		public string Version {
-			get { 
-				return string.IsNullOrEmpty(_version) ? "none" : _version;
-			}
-			set { 
-				_version = value;
-			}
-		}
+    [YamlMember(Alias = "branch")]
+    public string Branch { get; set; }
 
+    [YamlMember(Alias = "code")]
+    [SchemaProperty("Code")]
+    public string Code { get; set; }
 
-		public override string ToString() {
-			return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
-		}
+    [SchemaProperty("Description")]
+    public string Description { get; set; }
 
-		[YamlMember(Alias = "apphub")]
-		public string AppHubName { get; set; }
+    [YamlMember(Alias = "name")]
+    [SchemaProperty("Name")]
+    public string Name { get; set; }
 
+    [YamlMember(Alias = "version")]
+    [SchemaProperty("Version")]
+    public string Version
+    {
+        get { return string.IsNullOrEmpty(_version) ? "none" : _version; }
+        set { _version = value; }
+    }
 
-		public string ZipFileName
-		{
-			get;
-			internal set;
-		}
+    public string ZipFileName { get; internal set; }
 
-		[YamlMember(Alias = "branch")]
-		public string Branch { get;  set; }
-	}
+    #endregion
 
-	[ExcludeFromCodeCoverage]
-	[Schema("Contact")]
-	public class Contact : BaseModel
-	{
+    #region Methods: Public
 
-		[SchemaProperty("Name")]
-		public string Name {
-			get; set;
-		}
+    public override string ToString()
+    {
+        return $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
+    }
 
-	}
+    #endregion
+
+}
+
+[ExcludeFromCodeCoverage]
+[Schema("Contact")]
+public class Contact : BaseModel
+{
+
+    #region Properties: Public
+
+    [SchemaProperty("Name")]
+    public string Name { get; set; }
+
+    #endregion
 
 }
 

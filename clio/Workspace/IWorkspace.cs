@@ -1,33 +1,43 @@
-namespace Clio.Workspaces
+using Clio.Command;
+
+namespace Clio.Workspaces;
+
+#region Interface: IWorkspace
+
+public interface IWorkspace
 {
-	using Clio.Command;
 
-	#region Interface: IWorkspace
+    #region Properties: Public
 
-	public interface IWorkspace
-	{
-		#region Properties: Public
+    bool IsWorkspace { get; }
 
-		WorkspaceSettings WorkspaceSettings { get; }
-		bool IsWorkspace { get; }
+    WorkspaceSettings WorkspaceSettings { get; }
 
-		#endregion
+    #endregion
 
-		#region Methods: Public
+    #region Methods: Public
 
-		void SaveWorkspaceSettings();
-		void Create(string environmentName, bool isAddedPackageNames = false);
-		void Restore(WorkspaceOptions restoreWorkspaceOptions);
-		void Install(string creatioPackagesZipName = null);
-		void AddPackageIfNeeded(string packageName);
-		void SaveWorkspaceEnvironment(string environmentName);
-		void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile);
-		string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion, string branch = null);
-		string GetWorkspaceApplicationCode();
-		#endregion
+    void AddPackageIfNeeded(string packageName);
 
-	}
+    void Create(string environmentName, bool isAddedPackageNames = false);
 
-	#endregion
+    string GetWorkspaceApplicationCode();
+
+    void Install(string creatioPackagesZipName = null);
+
+    string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion,
+        string branch = null);
+
+    void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile);
+
+    void Restore(WorkspaceOptions restoreWorkspaceOptions);
+
+    void SaveWorkspaceEnvironment(string environmentName);
+
+    void SaveWorkspaceSettings();
+
+    #endregion
 
 }
+
+#endregion

@@ -6,8 +6,4 @@ namespace Clio.Tests;
 
 [TestFixture]
 internal class DownloadAppCommandTests : BaseCommandTests<DownloadAppOptions>
-{
-
-		
-
-}
+{ }

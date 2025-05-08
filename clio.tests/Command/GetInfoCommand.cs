@@ -6,9 +6,5 @@ namespace Clio.Tests.Command;
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 [Category("UnitTests")]
 [TestFixture]
-public class GetInfoCommandTests: BaseCommandTests<GetCreatioInfoCommandOptions>
-{
-
-	
-
-}
+public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions>
+{ }

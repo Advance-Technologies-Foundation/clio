@@ -1,9 +1,15 @@
-﻿namespace Clio.Project
+﻿namespace Clio.Project;
+
+public class CreatioPkgProjectCreator : ICreatioPkgProjectCreator
 {
-	public class CreatioPkgProjectCreator : ICreatioPkgProjectCreator
-	{
-		public ICreatioPkgProject CreateFromFile(string path) {
-			return CreatioPkgProject.LoadFromFile(path);
-		}
-	}
+
+    #region Methods: Public
+
+    public ICreatioPkgProject CreateFromFile(string path)
+    {
+        return CreatioPkgProject.LoadFromFile(path);
+    }
+
+    #endregion
+
 }

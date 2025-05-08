@@ -30,13 +30,13 @@ features:
       2nd-line support: true
   - code: Feature3
     value: false
-  
+
 settings:
   - code: "IntSysSettingsATF"
-    value: 
+    value:
   - code: ""
     value: ""
-  - code: 
+  - code:
     value: "ATF"
   - code: "DateTimeSettingsATF"
     value: "2021-01-01T00:00:00"

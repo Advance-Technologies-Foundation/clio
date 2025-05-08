@@ -1,59 +1,64 @@
-namespace Clio.Command
+using System;
+using Clio.Common;
+using Clio.Package;
+using CommandLine;
+
+namespace Clio.Command;
+
+#region Class: LoadPackagesToDbOptions
+
+[Verb("pkg-to-db", Aliases = new[]
+    {
+        "todb", "2db"
+    },
+    HelpText = "Load packages to database on a web application")]
+public class LoadPackagesToDbOptions : EnvironmentOptions
+{ }
+
+#endregion
+
+#region Class: LoadPackagesToDbCommand
+
+public class LoadPackagesToDbCommand : Command<EnvironmentOptions>
 {
-	using System;
-	using Clio.Common;
-	using Clio.Package;
-	using CommandLine;
 
-	#region Class: LoadPackagesToDbOptions
+    #region Fields: Private
 
-	[Verb("pkg-to-db", Aliases = new string[] { "todb", "2db" },
-		HelpText = "Load packages to database on a web application")]
-	public class LoadPackagesToDbOptions : EnvironmentOptions
-	{
-	}
+    private readonly IFileDesignModePackages _fileDesignModePackages;
+    private readonly ILogger _logger;
 
-	#endregion
+    #endregion
 
-	#region Class: LoadPackagesToDbCommand
-	
-	public class LoadPackagesToDbCommand : Command<EnvironmentOptions>
-	{
+    #region Constructors: Public
 
-		#region Fields: Private
+    public LoadPackagesToDbCommand(IFileDesignModePackages fileDesignModePackages, ILogger logger)
+    {
+        fileDesignModePackages.CheckArgumentNull(nameof(fileDesignModePackages));
+        _fileDesignModePackages = fileDesignModePackages;
+        _logger = logger;
+    }
 
-		private readonly IFileDesignModePackages _fileDesignModePackages;
-		private readonly ILogger _logger;
+    #endregion
 
-		#endregion
+    #region Methods: Public
 
-		#region Constructors: Public
+    public override int Execute(EnvironmentOptions options)
+    {
+        try
+        {
+            _fileDesignModePackages.LoadPackagesToDb();
+            _logger.WriteLine();
+            return 0;
+        }
+        catch (Exception e)
+        {
+            _logger.WriteError(e.ToString());
+            return 1;
+        }
+    }
 
-		public LoadPackagesToDbCommand(IFileDesignModePackages fileDesignModePackages, ILogger logger) {
-			fileDesignModePackages.CheckArgumentNull(nameof(fileDesignModePackages));
-			_fileDesignModePackages = fileDesignModePackages;
-			_logger = logger;
-		}
-
-		#endregion
-
-		#region Methods: Public
-
-		public override int Execute(EnvironmentOptions options) {
-			try {
-				_fileDesignModePackages.LoadPackagesToDb();
-				_logger.WriteLine();
-				return 0;
-			} catch (Exception e) {
-				_logger.WriteError(e.ToString());
-				return 1;
-			}
-		}
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

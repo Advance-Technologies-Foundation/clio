@@ -1,53 +1,67 @@
 using System;
 
-namespace Clio.Workspaces
+namespace Clio.Workspaces;
+
+#region Interface: IWorkspacePathBuilder
+
+public interface IWorkspacePathBuilder
 {
 
-	#region Interface: IWorkspacePathBuilder
+    #region Properties: Public
 
-	public interface IWorkspacePathBuilder
-	{
+    string ApplicationFolderPath { get; }
 
-		#region Properties: Public
-		
-		string RootPath { get; set; }
-		bool IsWorkspace { get; }
-		string ClioDirectoryPath { get; }
-		string WorkspaceSettingsPath { get; }
-		string WorkspaceEnvironmentSettingsPath { get; }
-		string PackagesFolderPath { get; }
-		string ProjectsFolderPath { get; }
-		string ProjectsTestsFolderPath { get; }
-		
-		string SolutionFolderPath { get; }
-		string SolutionPath { get; }
-		string NugetFolderPath { get; }
-		string TasksFolderPath { get; }
-		string ApplicationFolderPath { get; }
-		string CoreBinFolderPath { get; } 
-		string LibFolderPath { get; }
-		string ConfigurationBinFolderPath { get; }
+    string ClioDirectoryPath { get; }
 
-		#endregion
+    string ConfigurationBinFolderPath { get; }
 
-		#region Methods: Public
+    string CoreBinFolderPath { get; }
 
-		string BuildPackagePath(string packageName);
-		
-		/// <summary>
-		/// Path to csproj file of package
-		/// </summary>
-		/// <param name="packageName"></param>
-		/// <returns></returns>
-		string BuildPackageProjectPath(string packageName);
-		string BuildFrameworkCreatioSdkPath(Version nugetVersion);
-		string BuildCoreCreatioSdkPath(Version nugetVersion);
-		string BuildRelativePathRegardingPackageProjectPath(string destinationPath);
+    bool IsWorkspace { get; }
 
-		#endregion
+    string LibFolderPath { get; }
 
-	}
+    string NugetFolderPath { get; }
 
-	#endregion
+    string PackagesFolderPath { get; }
+
+    string ProjectsFolderPath { get; }
+
+    string ProjectsTestsFolderPath { get; }
+
+    string RootPath { get; set; }
+
+    string SolutionFolderPath { get; }
+
+    string SolutionPath { get; }
+
+    string TasksFolderPath { get; }
+
+    string WorkspaceEnvironmentSettingsPath { get; }
+
+    string WorkspaceSettingsPath { get; }
+
+    #endregion
+
+    #region Methods: Public
+
+    string BuildCoreCreatioSdkPath(Version nugetVersion);
+
+    string BuildFrameworkCreatioSdkPath(Version nugetVersion);
+
+    string BuildPackagePath(string packageName);
+
+    /// <summary>
+    ///     Path to csproj file of package
+    /// </summary>
+    /// <param name="packageName"></param>
+    /// <returns></returns>
+    string BuildPackageProjectPath(string packageName);
+
+    string BuildRelativePathRegardingPackageProjectPath(string destinationPath);
+
+    #endregion
 
 }
+
+#endregion

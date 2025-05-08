@@ -3,6 +3,10 @@
 public interface ILogStreamer
 {
 
-	public void WriteLine(string v);
+    #region Methods: Public
+
+    public void WriteLine(string v);
+
+    #endregion
 
 }

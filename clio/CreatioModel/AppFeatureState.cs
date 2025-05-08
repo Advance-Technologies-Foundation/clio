@@ -1,34 +1,34 @@
 #pragma warning disable CS8618, // Non-nullable field is uninitialized.
-
 using System;
+using System.Diagnostics.CodeAnalysis;
 using ATF.Repository;
 using ATF.Repository.Attributes;
-using System.Diagnostics.CodeAnalysis;
 
-namespace CreatioModel
+namespace CreatioModel;
+
+[ExcludeFromCodeCoverage]
+[Schema("AppFeatureState")]
+public class AppFeatureState : BaseModel
 {
 
-	[ExcludeFromCodeCoverage]
-	[Schema("AppFeatureState")]
-	public class AppFeatureState: BaseModel
-	{
-		
+    #region Properties: Public
 
-		[SchemaProperty("FeatureState")]
-		public bool FeatureState { get; set; }
+    [LookupProperty("AdminUnit")]
+    public virtual SysAdminUnit AdminUnit { get; set; }
 
-		[SchemaProperty("AdminUnit")]
-		public Guid AdminUnitId { get; set; }
+    [SchemaProperty("AdminUnit")]
+    public Guid AdminUnitId { get; set; }
 
-		[LookupProperty("AdminUnit")]
-		public virtual SysAdminUnit AdminUnit { get; set; }
+    [LookupProperty("Feature")]
+    public virtual AppFeature Feature { get; set; }
 
-		[SchemaProperty("Feature")]
-		public Guid FeatureId { get; set; }
+    [SchemaProperty("Feature")]
+    public Guid FeatureId { get; set; }
 
-		[LookupProperty("Feature")]
-		public virtual AppFeature Feature { get; set; }
+    [SchemaProperty("FeatureState")]
+    public bool FeatureState { get; set; }
 
-	}
+    #endregion
+
 }
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.

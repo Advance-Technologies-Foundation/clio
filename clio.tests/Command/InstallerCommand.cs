@@ -14,99 +14,118 @@ namespace Clio.Tests.Command;
 internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 {
 
-	
-	ICreatioInstallerService _creatioInstallerServiceMock = Substitute.For<ICreatioInstallerService>();
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_creatioInstallerServiceMock);
-		
-	}
+    #region Fields: Private
 
-	public override void Setup() {
-		base.Setup();
-	}
+    private readonly ICreatioInstallerService _creatioInstallerServiceMock = Substitute.For<ICreatioInstallerService>();
 
-	[Test(Description = "Should return without waiting for user input")]
-	public void Execute_ReturnsWithoutWaitingForInput_WhenSilent(){
-		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
-		PfInstallerOptions options = new () {
-			IsSilent = true
-		};
-		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
-			.Returns(0);
+    #endregion
 
-		//Act
-		var actual = command.Execute(options);
-		
-		//Assert
-		actual.Should().Be(0);
-	}
-	
-	[Test(Description = "Execute completes on Enter when not silent")]
-	public void Execute_ReturnsAfterConsoleInput_WhenNotSilent(){
-		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
-		PfInstallerOptions options = new () {
-			IsSilent = false
-		};
-		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
-			.Returns(0);
+    #region Methods: Protected
 
-		//Act
-		var stringReader = new StringReader("A");
-		Console.SetIn(stringReader);
-		
-		var actual = command.Execute(options);
-		//Assert
-		actual.Should().Be(0);
-		
-	}
-	
-	[Test(Description = "Should return 0 when OK")]
-	public void Execute_DoesNotOpenBrowser_WhenSilent(){
-		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
-		PfInstallerOptions options = new PfInstallerOptions() {
-			IsSilent = true
-		};
-		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
-			.Returns(0);
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_creatioInstallerServiceMock);
+    }
 
-		_creatioInstallerServiceMock.StartWebBrowser(Arg.Any<PfInstallerOptions>())
-			.Returns(0);
+    #endregion
 
-		//Act
-		var actual = command.Execute(options);
-		
-		//Assert
-		actual.Should().Be(0);
-		_creatioInstallerServiceMock.Received(0).StartWebBrowser(options);
-	}
-	
-	[Test(Description = "Should open browser")]
-	public void Execute_OpensBrowser_WhenNotSilent(){
-		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
-		PfInstallerOptions options = new PfInstallerOptions() {
-			IsSilent = false
-		};
-		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
-			.Returns(0);
+    #region Methods: Public
 
-		_creatioInstallerServiceMock.StartWebBrowser(Arg.Any<PfInstallerOptions>())
-			.Returns(0);
+    public override void Setup()
+    {
+        base.Setup();
+    }
 
-		var stringReader = new StringReader("A");
-		Console.SetIn(stringReader);
-		
-		//Act
-		var actual = command.Execute(options);
-		//Assert
-		actual.Should().Be(0);
-		
-		
-		_creatioInstallerServiceMock.Received(1).StartWebBrowser(options);
-	}
+    #endregion
+
+    [Test(Description = "Should return 0 when OK")]
+    public void Execute_DoesNotOpenBrowser_WhenSilent()
+    {
+        //Arrange
+        InstallerCommand command = Container.Resolve<InstallerCommand>();
+        PfInstallerOptions options = new()
+        {
+            IsSilent = true
+        };
+        _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
+                                    .Returns(0);
+
+        _creatioInstallerServiceMock.StartWebBrowser(Arg.Any<PfInstallerOptions>())
+                                    .Returns(0);
+
+        //Act
+        int actual = command.Execute(options);
+
+        //Assert
+        actual.Should().Be(0);
+        _creatioInstallerServiceMock.Received(0).StartWebBrowser(options);
+    }
+
+    [Test(Description = "Should open browser")]
+    public void Execute_OpensBrowser_WhenNotSilent()
+    {
+        //Arrange
+        InstallerCommand command = Container.Resolve<InstallerCommand>();
+        PfInstallerOptions options = new()
+        {
+            IsSilent = false
+        };
+        _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
+                                    .Returns(0);
+
+        _creatioInstallerServiceMock.StartWebBrowser(Arg.Any<PfInstallerOptions>())
+                                    .Returns(0);
+
+        StringReader stringReader = new("A");
+        Console.SetIn(stringReader);
+
+        //Act
+        int actual = command.Execute(options);
+        //Assert
+        actual.Should().Be(0);
+
+        _creatioInstallerServiceMock.Received(1).StartWebBrowser(options);
+    }
+
+    [Test(Description = "Execute completes on Enter when not silent")]
+    public void Execute_ReturnsAfterConsoleInput_WhenNotSilent()
+    {
+        //Arrange
+        InstallerCommand command = Container.Resolve<InstallerCommand>();
+        PfInstallerOptions options = new()
+        {
+            IsSilent = false
+        };
+        _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
+                                    .Returns(0);
+
+        //Act
+        StringReader stringReader = new("A");
+        Console.SetIn(stringReader);
+
+        int actual = command.Execute(options);
+        //Assert
+        actual.Should().Be(0);
+    }
+
+    [Test(Description = "Should return without waiting for user input")]
+    public void Execute_ReturnsWithoutWaitingForInput_WhenSilent()
+    {
+        //Arrange
+        InstallerCommand command = Container.Resolve<InstallerCommand>();
+        PfInstallerOptions options = new()
+        {
+            IsSilent = true
+        };
+        _creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
+                                    .Returns(0);
+
+        //Act
+        int actual = command.Execute(options);
+
+        //Assert
+        actual.Should().Be(0);
+    }
 
 }

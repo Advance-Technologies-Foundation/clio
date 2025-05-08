@@ -18,37 +18,40 @@ public class RestoreBdResponse : BaseHandlerResponse
 internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf<BaseHandlerResponse, HandlerError>>
 {
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public Dictionary<string, string> Arguments { get; set; }
+    public Dictionary<string, string> Arguments { get; set; }
 
-	#endregion
+    #endregion
 
-	#region Methods: Private
+    #region Methods: Private
 
-	private void ConnectToSQl(string connectionString){
-		using SqlConnection connection = new SqlConnection(connectionString);
-		connection.Open();
-		RestoreDbFromFile(connection);
-		CreateDbUser(connection);
-		GrantPermissionToUser(connection);
-	}
+    private void ConnectToSQl(string connectionString)
+    {
+        using SqlConnection connection = new(connectionString);
+        connection.Open();
+        RestoreDbFromFile(connection);
+        CreateDbUser(connection);
+        GrantPermissionToUser(connection);
+    }
 
-	private void CopyBackUpFile(){
-		string backupFolderPath = Arguments["backupFolderPath"];
-		string backUpSrc = Arguments["backUpSrc"];
+    private void CopyBackUpFile()
+    {
+        string backupFolderPath = Arguments["backupFolderPath"];
+        string backUpSrc = Arguments["backUpSrc"];
 
-		string dbBackUpFileFolderPath = Path.Join(backUpSrc, "db");
-		string[] files = Directory.GetFiles(dbBackUpFileFolderPath);
-		FileInfo src = new(files.FirstOrDefault());
-		string backupFileName = Path.Join(backupFolderPath, src.Name);
-		src.CopyTo(backupFileName, true);
-	}
+        string dbBackUpFileFolderPath = Path.Join(backUpSrc, "db");
+        string[] files = Directory.GetFiles(dbBackUpFileFolderPath);
+        FileInfo src = new(files.FirstOrDefault());
+        string backupFileName = Path.Join(backupFolderPath, src.Name);
+        src.CopyTo(backupFileName, true);
+    }
 
-	private void CreateDbUser(SqlConnection connection){
-		string dbUserName = Arguments["dbUserName"];
-		string dbPassword = Arguments["dbPassword"];
-		string query = @$"
+    private void CreateDbUser(SqlConnection connection)
+    {
+        string dbUserName = Arguments["dbUserName"];
+        string dbPassword = Arguments["dbPassword"];
+        string query = @$"
                 if not Exists (select loginname from master.dbo.syslogins where name = '{dbUserName}')
                 Begin
 	                declare @SqlStatement as nvarchar(max) = 'USE [master]'
@@ -58,63 +61,67 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
                 End
             ";
 
-		SqlCommand sqlCommand = new(query, connection);
-		sqlCommand.ExecuteNonQuery();
-	}
+        SqlCommand sqlCommand = new(query, connection);
+        sqlCommand.ExecuteNonQuery();
+    }
 
-	private void GrantPermissionToUser(SqlConnection connection){
-		string dbName = Arguments["dbName"];
-		string dbUserName = Arguments["dbUserName"];
-		string query = @$"USE [{dbName}]
+    private void GrantPermissionToUser(SqlConnection connection)
+    {
+        string dbName = Arguments["dbName"];
+        string dbUserName = Arguments["dbUserName"];
+        string query = @$"USE [{dbName}]
                 CREATE USER [{dbUserName}] FOR LOGIN [{dbUserName}];
                 ALTER ROLE [db_owner] ADD MEMBER [{dbUserName}];
                 ";
-		SqlCommand sqlCommand = new(query, connection);
-		sqlCommand.ExecuteNonQuery();
-	}
+        SqlCommand sqlCommand = new(query, connection);
+        sqlCommand.ExecuteNonQuery();
+    }
 
-	private void RestoreDbFromFile(SqlConnection connection){
-		string backupFolderPath = Arguments["backupFolderPath"];
-		string dataFolderPath = Arguments["dataFolderPath"];
-		string backUpSrc = Arguments["backUpSrc"];
-		string dbName = Arguments["dbName"];
+    private void RestoreDbFromFile(SqlConnection connection)
+    {
+        string backupFolderPath = Arguments["backupFolderPath"];
+        string dataFolderPath = Arguments["dataFolderPath"];
+        string backUpSrc = Arguments["backUpSrc"];
+        string dbName = Arguments["dbName"];
 
-		string dbBackUpFileFolderPath = Path.Join(backUpSrc, "db");
-		string[] files = Directory.GetFiles(dbBackUpFileFolderPath);
-		FileInfo ffi = new(files.FirstOrDefault());
-		string backupFileName = Path.Join(backupFolderPath, ffi.Name);
+        string dbBackUpFileFolderPath = Path.Join(backUpSrc, "db");
+        string[] files = Directory.GetFiles(dbBackUpFileFolderPath);
+        FileInfo ffi = new(files.FirstOrDefault());
+        string backupFileName = Path.Join(backupFolderPath, ffi.Name);
 
-		string mdf = Path.Join(dataFolderPath, dbName + ".mdf");
-		string ldf = Path.Join(dataFolderPath, dbName + ".ldf");
+        string mdf = Path.Join(dataFolderPath, dbName + ".mdf");
+        string ldf = Path.Join(dataFolderPath, dbName + ".ldf");
 
-		string query = @$"
+        string query = @$"
                 USE [master] RESTORE DATABASE [{dbName}] 
                 FROM  DISK = N'{backupFileName}' WITH  FILE = 1, 
                 MOVE N'TSOnline_Data' TO N'{mdf}', 
                 MOVE N'TSOnline_Log' TO N'{ldf}', 
                 NOUNLOAD,  STATS = 5
             ";
-		
-		SqlCommand sqlCommand = new(query, connection);
-		sqlCommand.ExecuteNonQuery();
-	}
 
-	#endregion
+        SqlCommand sqlCommand = new(query, connection);
+        sqlCommand.ExecuteNonQuery();
+    }
 
-	#region Methods: Public
+    #endregion
 
-	public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(RestoreBdRequest request,
-		CancellationToken cancellationToken){
-		Arguments = request.Arguments;
-		string adminConectionString = request.Arguments["adminConectionString"];
-		CopyBackUpFile();
-		ConnectToSQl(adminConectionString);
+    #region Methods: Public
 
-		return new RestoreBdResponse {
-			Status = BaseHandlerResponse.CompletionStatus.Success
-		};
-	}
+    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(RestoreBdRequest request,
+        CancellationToken cancellationToken)
+    {
+        Arguments = request.Arguments;
+        string adminConectionString = request.Arguments["adminConectionString"];
+        CopyBackUpFile();
+        ConnectToSQl(adminConectionString);
 
-	#endregion
+        return new RestoreBdResponse
+        {
+            Status = BaseHandlerResponse.CompletionStatus.Success
+        };
+    }
+
+    #endregion
 
 }

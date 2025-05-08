@@ -1,30 +1,36 @@
 using System;
 
-namespace Clio.Common
+namespace Clio.Common;
+
+public interface IWorkingDirectoriesProvider
 {
-	public interface IWorkingDirectoriesProvider
-	{
 
-		#region Properties: Public
+    #region Properties: Public
 
-		string ExecutingDirectory { get; }
-		string TemplateDirectory { get; }
-		string BaseTempDirectory { get; }
-		string CurrentDirectory { get; }
+    string BaseTempDirectory { get; }
 
-		#endregion
+    string CurrentDirectory { get; }
 
-		#region Methods: Public
+    string ExecutingDirectory { get; }
 
-		string GetTemplatePath(string templateName);
-		string GetTemplateFolderPath(string templateFolderName);
-		string CreateTempDirectory();
-		void CreateTempDirectory(Action<string> onCreated);
-		T CreateTempDirectory<T>(Func<string, T> onCreated);
-		void DeleteDirectoryIfExists(string path);
+    string TemplateDirectory { get; }
 
-		#endregion
+    #endregion
 
-	}
+    #region Methods: Public
+
+    string CreateTempDirectory();
+
+    void CreateTempDirectory(Action<string> onCreated);
+
+    T CreateTempDirectory<T>(Func<string, T> onCreated);
+
+    void DeleteDirectoryIfExists(string path);
+
+    string GetTemplateFolderPath(string templateFolderName);
+
+    string GetTemplatePath(string templateName);
+
+    #endregion
 
 }

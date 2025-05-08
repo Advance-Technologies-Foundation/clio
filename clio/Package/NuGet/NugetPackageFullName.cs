@@ -1,84 +1,96 @@
 ﻿using System;
 
-namespace Clio.Project.NuGet
+namespace Clio.Project.NuGet;
+
+#region Struct: NugetPackageFullName
+
+public struct NugetPackageFullName
 {
 
-	#region Struct: NugetPackageFullName
+    #region Constructors: Public
 
-	public struct NugetPackageFullName
-	{
+    public NugetPackageFullName(string fullNamesDescription)
+    {
+        string[] fullNameItems = fullNamesDescription
+            .Split(new[]
+            {
+                ':'
+            }, StringSplitOptions.RemoveEmptyEntries);
+        if (fullNameItems.Length > 2)
+        {
+            throw new ArgumentException($"Wrong format the Nuget package full name: '{fullNamesDescription}'. "
+                + "The format the Nuget package full name mast be: "
+                + "'<PackageName>' or '<PackageName>:<PackageVersion>'");
+        }
+        Name = fullNameItems[0];
+        Version = fullNameItems.Length == 2
+            ? fullNameItems[1]
+            : PackageVersion.LastVersion;
+    }
 
-		#region Constructors: Public
+    public NugetPackageFullName(string name, string version)
+    {
+        Name = name;
+        Version = string.IsNullOrWhiteSpace(version)
+            ? PackageVersion.LastVersion
+            : version;
+    }
 
-		public NugetPackageFullName(string fullNamesDescription) {
-			string[] fullNameItems = fullNamesDescription
-				.Split(new [] {':'}, StringSplitOptions.RemoveEmptyEntries);
-			if (fullNameItems.Length > 2) {
-				throw new ArgumentException($"Wrong format the Nuget package full name: '{fullNamesDescription}'. " 
-					+ "The format the Nuget package full name mast be: " 
-					+ "'<PackageName>' or '<PackageName>:<PackageVersion>'");
-			}
-			Name = fullNameItems[0];
-			Version = fullNameItems.Length == 2
-				? fullNameItems[1]
-				: PackageVersion.LastVersion;
-		}
+    #endregion
 
-		public NugetPackageFullName(string name, string version) {
-			Name = name;
-			Version = string.IsNullOrWhiteSpace(version)
-				? PackageVersion.LastVersion
-				: version;
-		}
+    #region Properties: Public
 
-		#endregion
+    public string Name { get; set; }
 
-		#region Properties: Public
+    public string Version { get; set; }
 
-		public string Version { get; set; }
-		public string Name { get; set; }
+    #endregion
 
-		#endregion
+    #region Methods: Public
 
-		#region Methods: Public
+    public static bool operator ==(NugetPackageFullName packageFullName1, NugetPackageFullName packageFullName2)
+    {
+        return packageFullName1.Equals(packageFullName2);
+    }
 
-		public static bool operator ==(NugetPackageFullName packageFullName1, NugetPackageFullName packageFullName2) {
-			return packageFullName1.Equals(packageFullName2);
-		}
+    public static implicit operator string(NugetPackageFullName packageFullName)
+    {
+        return packageFullName.ToString();
+    }
 
-		public static bool operator !=(NugetPackageFullName packageFullName1, NugetPackageFullName packageFullName2) {
-			return !packageFullName1.Equals(packageFullName2);
-		}
+    public static bool operator !=(NugetPackageFullName packageFullName1, NugetPackageFullName packageFullName2)
+    {
+        return !packageFullName1.Equals(packageFullName2);
+    }
 
-		public static implicit operator string(NugetPackageFullName packageFullName) {
-			return packageFullName.ToString();
-		}
+    public override bool Equals(object obj)
+    {
+        if (obj == null || GetType() != obj.GetType())
+        {
+            return false;
+        }
+        NugetPackageFullName packageFullName = (NugetPackageFullName)obj;
+        return packageFullName.Name == Name &&
+            packageFullName.Version == Version;
+    }
 
-		public bool Equals(NugetPackageFullName packageFullName) {
-			return Equals(packageFullName, this);
-		}
+    public override int GetHashCode()
+    {
+        return ToString().GetHashCode();
+    }
 
-		public override bool Equals(object obj) {
-			if (obj == null || GetType() != obj.GetType()) {
-				return false;
-			}
-			var packageFullName = (NugetPackageFullName) obj;
-			return packageFullName.Name == Name &&
-			       packageFullName.Version == Version;
-		}
+    public override string ToString()
+    {
+        return $"{Name}:{Version}";
+    }
 
-		public override int GetHashCode() {
-			return ToString().GetHashCode();
-		}
+    public bool Equals(NugetPackageFullName packageFullName)
+    {
+        return Equals(packageFullName, this);
+    }
 
-		public override string ToString() {
-			return $"{Name}:{Version}";
-		}
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

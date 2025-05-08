@@ -1,8 +1,5 @@
-import { Component } from "@angular/core";
-import {
-  CrtInterfaceDesignerItem,
-  CrtViewElement,
-} from "@creatio-devkit/common";
+import {Component} from "@angular/core";
+import {CrtInterfaceDesignerItem, CrtViewElement,} from "@creatio-devkit/common";
 
 @CrtViewElement({
   selector: "<%vendorPrefix%>-demo",
@@ -17,7 +14,8 @@ import {
 })
 @Component({
   selector: "<%vendorPrefix%>-demo",
-  template: `<button (click)="showAlert()">Click me!</button>`,
+  template: `
+    <button (click)="showAlert()">Click me!</button>`,
 })
 export class DemoComponent {
   public showAlert() {

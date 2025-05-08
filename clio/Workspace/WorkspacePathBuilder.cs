@@ -1,149 +1,159 @@
-namespace Clio.Workspaces
+using System;
+using System.IO;
+using Clio.Common;
+
+namespace Clio.Workspaces;
+
+#region Class: WorkspacePathBuilder
+
+public class WorkspacePathBuilder : IWorkspacePathBuilder
 {
-	using System;
-	using System.IO;
-	using Clio.Common;
 
-	#region Class: WorkspacePathBuilder
+    #region Constants: Private
 
-	public class WorkspacePathBuilder : IWorkspacePathBuilder
-	{
+    private const string ApplicationFolderName = ".application";
+    private const string ClioDirectoryName = ".clio";
+    private const string ConfigurationBinFolderName = "bin";
+    private const string CoreBinFolderName = "core-bin";
+    private const string LibFolderName = "Lib";
+    private const string NetCoreFolderName = "net-core";
+    private const string NetFrameworkFolderName = "net-framework";
+    private const string NugetFolderName = ".nuget";
+    private const string PackagesFolderName = "packages";
+    private const string ProjectsFolderName = "projects";
+    private const string SolutionFolderName = ".solution";
+    private const string SolutionName = "CreatioPackages.sln";
+    private const string TasksFolderName = "tasks";
+    private const string TestProjectsFolderName = "tests";
+    private const string WorkspaceEnvironmentSettingsJson = "workspaceEnvironmentSettings.json";
+    private const string WorkspaceSettingsJson = "workspaceSettings.json";
 
-		#region Constants: Private
+    #endregion
 
-		private const string PackagesFolderName = "packages";
-		private const string ProjectsFolderName = "projects";
-		private const string TestProjectsFolderName ="tests";
-		private const string ClioDirectoryName = ".clio";
-		private const string WorkspaceSettingsJson = "workspaceSettings.json";
-		private const string WorkspaceEnvironmentSettingsJson = "workspaceEnvironmentSettings.json";
-		private const string SolutionName = "CreatioPackages.sln";
-		private const string NugetFolderName = ".nuget";
-		private const string SolutionFolderName = ".solution";
-		private const string TasksFolderName = "tasks";
-		private const string ApplicationFolderName = ".application";
-		private const string NetCoreFolderName = "net-core";
-		private const string NetFrameworkFolderName = "net-framework";
-		private const string CoreBinFolderName = "core-bin";
-		private const string LibFolderName = "Lib";
-		private const string ConfigurationBinFolderName = "bin";
+    #region Fields: Private
 
-		#endregion
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly IFileSystem _fileSystem;
+    private string _rootPath;
+    private readonly Lazy<string> _rootPathLazy;
 
-		#region Fields: Private
+    #endregion
 
-		private readonly EnvironmentSettings _environmentSettings;
-		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		private readonly IFileSystem _fileSystem;
+    #region Constructors: Public
 
-		#endregion
+    public WorkspacePathBuilder(EnvironmentSettings environmentSettings,
+        IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem)
+    {
+        environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+        fileSystem.CheckArgumentNull(nameof(fileSystem));
+        _environmentSettings = environmentSettings;
+        _workingDirectoriesProvider = workingDirectoriesProvider;
+        _fileSystem = fileSystem;
+        _rootPathLazy = new Lazy<string>(GetRootPath);
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public WorkspacePathBuilder(EnvironmentSettings environmentSettings, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
-			fileSystem.CheckArgumentNull(nameof(fileSystem));
-			_environmentSettings = environmentSettings;
-			_workingDirectoriesProvider = workingDirectoriesProvider;
-			_fileSystem = fileSystem;
-			_rootPathLazy = new Lazy<string>(GetRootPath);
+    #region Properties: Private
 
-		}
+    private string RootApplicationFolderPath => Path.Combine(RootPath, ApplicationFolderName);
 
-		#endregion
+    #endregion
 
+    #region Properties: Public
 
-		#region Properties: Private
+    public string ApplicationFolderPath =>
+        _environmentSettings.IsNetCore
+            ? Path.Combine(RootApplicationFolderPath, NetCoreFolderName)
+            : Path.Combine(RootApplicationFolderPath, NetFrameworkFolderName);
 
-		private string RootApplicationFolderPath  => Path.Combine(RootPath, ApplicationFolderName);
+    public string ClioDirectoryPath => Path.Combine(RootPath, ClioDirectoryName);
 
-		#endregion
+    public string ConfigurationBinFolderPath => Path.Combine(ApplicationFolderPath, ConfigurationBinFolderName);
 
+    public string CoreBinFolderPath => Path.Combine(ApplicationFolderPath, CoreBinFolderName);
 
-		#region Properties: Public
+    public bool IsWorkspace => _fileSystem.ExistsFile(WorkspaceSettingsPath);
 
-		private string _rootPath;
-		private readonly Lazy<string> _rootPathLazy;
-		public string RootPath { 
-			get {
-				return _rootPath ?? _rootPathLazy.Value;
-			}
-			set {
-				_rootPath = value;
-			}
-		}
+    public string LibFolderPath => Path.Combine(ApplicationFolderPath, LibFolderName);
 
-		public bool IsWorkspace => _fileSystem.ExistsFile(WorkspaceSettingsPath);
-		public string ClioDirectoryPath => Path.Combine(RootPath, ClioDirectoryName);
+    public string NugetFolderPath => Path.Combine(RootPath, NugetFolderName);
 
-		public string WorkspaceSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceSettingsJson);
-		public string WorkspaceEnvironmentSettingsPath =>
-			Path.Combine(ClioDirectoryPath, WorkspaceEnvironmentSettingsJson);
+    public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
 
-		public string PackagesFolderPath => Path.Combine(RootPath, PackagesFolderName);
-		public string ProjectsFolderPath => Path.Combine(RootPath, ProjectsFolderName);
-		
-		public string ProjectsTestsFolderPath => Path.Combine(RootPath, TestProjectsFolderName);
+    public string ProjectsFolderPath => Path.Combine(RootPath, ProjectsFolderName);
 
-		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);
-		public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
+    public string ProjectsTestsFolderPath => Path.Combine(RootPath, TestProjectsFolderName);
 
-		public string NugetFolderPath => Path.Combine(RootPath, NugetFolderName);
-		public string TasksFolderPath => Path.Combine(RootPath, TasksFolderName);
-		public string ApplicationFolderPath => _environmentSettings.IsNetCore 
-			? Path.Combine(RootApplicationFolderPath, NetCoreFolderName)
-			: Path.Combine(RootApplicationFolderPath, NetFrameworkFolderName);
-		public string CoreBinFolderPath => Path.Combine(ApplicationFolderPath, CoreBinFolderName);
-		public string LibFolderPath => Path.Combine(ApplicationFolderPath, LibFolderName);
-		public string ConfigurationBinFolderPath => Path.Combine(ApplicationFolderPath, ConfigurationBinFolderName);
+    public string RootPath
+    {
+        get { return _rootPath ?? _rootPathLazy.Value; }
+        set { _rootPath = value; }
+    }
 
-		#endregion
+    public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);
 
-		#region Methods: Private
+    public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
 
-		private string GetRootPath() {
-			string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
-			DirectoryInfo directoryInfo = new DirectoryInfo(currentDirectory);
-			while (true) {
-				string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
-				if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath)) {
-					return directoryInfo.FullName;
-				}
-				if (directoryInfo.Parent == null) {
-					return currentDirectory;
-				}
-				directoryInfo = directoryInfo.Parent;
-			}
-		}
+    public string TasksFolderPath => Path.Combine(RootPath, TasksFolderName);
 
-		private string BuildClioDirectoryPath(string rootPath) => Path.Combine(rootPath, ClioDirectoryName);
+    public string WorkspaceEnvironmentSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceEnvironmentSettingsJson);
 
-		#endregion
+    public string WorkspaceSettingsPath => Path.Combine(ClioDirectoryPath, WorkspaceSettingsJson);
 
-		#region Methods: Public
+    #endregion
 
-		public string BuildPackagePath(string packageName) => Path.Combine(PackagesFolderPath, packageName);
-		public string BuildPackageProjectPath(string packageName) => Path.Combine(PackagesFolderPath, packageName, "Files", packageName+".csproj");
-		public string BuildFrameworkCreatioSdkPath(Version nugetVersion) =>
-			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
-				"net40");
+    #region Methods: Private
 
-		public string BuildCoreCreatioSdkPath(Version nugetVersion) =>
-			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
-				"netstandard2.0");
+    private string BuildClioDirectoryPath(string rootPath) => Path.Combine(rootPath, ClioDirectoryName);
 
-		public string BuildRelativePathRegardingPackageProjectPath(string destinationPath) {
-			string templatePackageProjectRelativeDirectoryPath =
-				Path.Combine(PackagesFolderPath, "PackageName", "Files");
-			return Path.GetRelativePath(templatePackageProjectRelativeDirectoryPath, destinationPath);
-		}
+    private string GetRootPath()
+    {
+        string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
+        DirectoryInfo directoryInfo = new(currentDirectory);
+        while (true)
+        {
+            string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
+            if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath))
+            {
+                return directoryInfo.FullName;
+            }
+            if (directoryInfo.Parent == null)
+            {
+                return currentDirectory;
+            }
+            directoryInfo = directoryInfo.Parent;
+        }
+    }
 
-		#endregion
+    #endregion
 
-	}
+    #region Methods: Public
 
-	#endregion
+    public string BuildCoreCreatioSdkPath(Version nugetVersion) =>
+        Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
+            "netstandard2.0");
+
+    public string BuildFrameworkCreatioSdkPath(Version nugetVersion) =>
+        Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
+            "net40");
+
+    public string BuildPackagePath(string packageName) => Path.Combine(PackagesFolderPath, packageName);
+
+    public string BuildPackageProjectPath(string packageName) =>
+        Path.Combine(PackagesFolderPath, packageName, "Files", packageName + ".csproj");
+
+    public string BuildRelativePathRegardingPackageProjectPath(string destinationPath)
+    {
+        string templatePackageProjectRelativeDirectoryPath =
+            Path.Combine(PackagesFolderPath, "PackageName", "Files");
+        return Path.GetRelativePath(templatePackageProjectRelativeDirectoryPath, destinationPath);
+    }
+
+    #endregion
 
 }
+
+#endregion

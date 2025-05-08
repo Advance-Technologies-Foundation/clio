@@ -1,28 +1,26 @@
 ﻿using CommandLine;
 
-namespace Clio
+namespace Clio;
+
+public class BaseCommandOptions
 {
-	public class BaseCommandOptions
-	{
 
-		[Option("--fail-on-error", Required = false, HelpText = "Return fail code on errors")]
-		public bool FailOnError {
-			get {
-				return GlobalContext.FailOnError;
-			}
-			set {
-				GlobalContext.FailOnError = value;
-			}
-		}
+    #region Properties: Public
 
-		[Option("--fail-on-warning", Required = false, HelpText = "Return fail code on warnings ")]
-		public bool FailOnWarning {
-			get {
-				return GlobalContext.FailOnWarning;
-			}
-			set {
-				GlobalContext.FailOnWarning = value;
-			}
-		}
-	}
+    [Option("--fail-on-error", Required = false, HelpText = "Return fail code on errors")]
+    public bool FailOnError
+    {
+        get { return GlobalContext.FailOnError; }
+        set { GlobalContext.FailOnError = value; }
+    }
+
+    [Option("--fail-on-warning", Required = false, HelpText = "Return fail code on warnings ")]
+    public bool FailOnWarning
+    {
+        get { return GlobalContext.FailOnWarning; }
+        set { GlobalContext.FailOnWarning = value; }
+    }
+
+    #endregion
+
 }

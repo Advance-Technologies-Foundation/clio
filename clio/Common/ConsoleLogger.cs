@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using ConsoleTables;
 using FluentValidation.Results;
@@ -12,274 +13,312 @@ namespace Clio.Common;
 
 #region Class: ConsoleLogger
 
-/// <inheritdoc cref="ILogger"/>
+/// <inheritdoc cref="ILogger" />
 public class ConsoleLogger : ILogger, IDisposable
 {
 
-	#region Fields: Private
-	private TextWriter _logFileWriter;
-	private ILogStreamer _creatioLogStreamer;
-	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
-	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
-	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
-	
-	#endregion
+    #region Fields: Private
 
-	#region Constructors: Private
+    private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
+    private ILogStreamer _creatioLogStreamer;
+    private readonly ConcurrentQueue<LogMessage> _logQueue = new();
+    private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
+    private Thread _printThread;
+    private bool _isStarted;
 
-	private ConsoleLogger(){
-		CancellationToken = CancellationTokenSource.Token;
-		Console.OutputEncoding = System.Text.Encoding.UTF8;
-	}
+    #endregion
 
-	#endregion
+    #region Constructors: Private
 
-	#region Properties: Private
+    private ConsoleLogger()
+    {
+        CancellationToken = CancellationTokenSource.Token;
+        Console.OutputEncoding = Encoding.UTF8;
+    }
 
-	private bool AddTimeStampToOutput {
-		get {
-			return Program.AddTimeStampToOutput;
-		}
-	}
+    #endregion
 
-	private CancellationToken CancellationToken { get; set; }
+    #region Properties: Private
 
-	private CancellationTokenSource CancellationTokenSource { get; } = new();
+    private bool AddTimeStampToOutput
+    {
+        get { return Program.AddTimeStampToOutput; }
+    }
 
-	#endregion
+    private CancellationToken CancellationToken { get; set; }
 
-	#region Properties: Public
+    private CancellationTokenSource CancellationTokenSource { get; } = new();
 
-	public static ILogger Instance => Lazy.Value;
+    private string LogFileName { get; set; }
 
-	#endregion
+    #endregion
 
-	#region Methods: Private
-	
-	private void FlushQueue() {
-		while (_logQueue.TryPeek( out var _)) {
-			bool isItem = _logQueue.TryDequeue(out LogMessage item);
-			if (isItem) {
-				Action action = item switch {
-					InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
-					ErrorMessage errorMessage => () => WriteErrorInternal(errorMessage.Value.ToString()),
-					WarningMessage warningMessage => () => WriteWarningInternal(warningMessage.Value.ToString()),
-					UndecoratedMessage noneMessage => () => WriteLineInternal(noneMessage.Value.ToString()),
-					TableMessage tableMessage => () => PrintTableInternal(tableMessage.Value),
-					_ => throw new ArgumentOutOfRangeException()
-				};
-				action.Invoke();
-			}
-		}
-	}
-	
-	
-	private void PrintInternal(){
-		while (!CancellationToken.IsCancellationRequested) {
-			FlushQueue();
-			Thread.Sleep(100);
-		}
-		FlushQueue();
-	}
+    #region Properties: Public
 
-	private void PrintTableInternal(object table){
-		if (AddTimeStampToOutput) {
-			WriteLineInternal(GetTimeStamp());
-		}
-		WriteLineInternal(table.ToString());
-	}
+    public static ILogger Instance => Lazy.Value;
 
-	private void WriteErrorInternal(string value){
-		Console.ForegroundColor = ConsoleColor.Red;
-		string linePrefix = GetLinePrefix("[ERR]");
-		Console.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.WriteLine(value);
-		_logFileWriter?.WriteLine($"{linePrefix}{value}");
-	}
+    public TextWriter LogFileWriter { get; internal set; }
 
-	private string GetTimeStamp() {
-		return AddTimeStampToOutput ? DateTime.Now.ToString("HH:mm:ss") + " " : string.Empty;
-	}
+    #endregion
 
-	private void WriteInfoInternal(string value){
-		string linePrefix = GetLinePrefix("[INF]");
-		Console.ForegroundColor = ConsoleColor.Green;
-		Console.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.WriteLine(value);
-		_logFileWriter?.WriteLine($"{linePrefix}{value}");
-		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
-	}
+    #region Methods: Private
 
-	private void WriteLineInternal(string value){
-		Console.WriteLine(value);
-		string linePrefix = GetLinePrefix();
-		_logFileWriter?.WriteLine($"{linePrefix}{value}");
-		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
-	}
+    private void FlushQueue()
+    {
+        while (_logQueue.TryPeek(out LogMessage _))
+        {
+            bool isItem = _logQueue.TryDequeue(out LogMessage item);
+            if (isItem)
+            {
+                Action action = item switch
+                                {
+                                    InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
+                                    ErrorMessage errorMessage => () =>
+                                        WriteErrorInternal(errorMessage.Value.ToString()),
+                                    WarningMessage warningMessage => () =>
+                                        WriteWarningInternal(warningMessage.Value.ToString()),
+                                    UndecoratedMessage noneMessage => () =>
+                                        WriteLineInternal(noneMessage.Value.ToString()),
+                                    TableMessage tableMessage => () => PrintTableInternal(tableMessage.Value),
+                                    var _ => throw new ArgumentOutOfRangeException()
+                                };
+                action.Invoke();
+            }
+        }
+    }
 
-	private void WriteWarningInternal(string value){
-		Console.ForegroundColor = ConsoleColor.DarkYellow;
-		string linePrefix = GetLinePrefix("[WAR]");
-		Console.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.WriteLine(value);
-		_logFileWriter?.WriteLine($"{linePrefix}{value}");
-		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
-	}
-	
-	private string GetLinePrefix(string severity = ""){
-		string prefix = $"{GetTimeStamp()}{severity}";
-		return string.IsNullOrWhiteSpace(prefix) 
-			? string.Empty 
-			: $"{prefix} - ";
-	}
-	
-	
-	#endregion
+    private string GetLinePrefix(string severity = "")
+    {
+        string prefix = $"{GetTimeStamp()}{severity}";
+        return string.IsNullOrWhiteSpace(prefix)
+            ? string.Empty
+            : $"{prefix} - ";
+    }
 
-	#region Methods: Public
-	
-	public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) {
-		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
-			.ToList().ForEach(e =>
-			{
-				string msg = $"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}";
-				WriteError(msg);
-			});
-	}
+    private string GetTimeStamp()
+    {
+        return AddTimeStampToOutput ? DateTime.Now.ToString("HH:mm:ss") + " " : string.Empty;
+    }
 
-	private string LogFileName { get; set; }
-	public TextWriter LogFileWriter {
-		get => _logFileWriter;
-		internal set => _logFileWriter = value;
-	}
+    private void PrintInternal()
+    {
+        while (!CancellationToken.IsCancellationRequested)
+        {
+            FlushQueue();
+            Thread.Sleep(100);
+        }
+        FlushQueue();
+    }
 
-	public void PrintTable(ConsoleTable table){
-		_logQueue.Enqueue(new TableMessage(table));
-	}
+    private void PrintTableInternal(object table)
+    {
+        if (AddTimeStampToOutput)
+        {
+            WriteLineInternal(GetTimeStamp());
+        }
+        WriteLineInternal(table.ToString());
+    }
 
-	/// <summary>
-	/// Starts the logging process runs.
-	/// This method initiates a new thread that continuously dequeues log messages from the queue
-	/// and writes them to the console.
-	/// </summary>
-	public void Start(string logFileName = ""){
-		if (_isStarted) {
-			return;
-		}
-		if (!string.IsNullOrEmpty(logFileName)) {
-			_logFileWriter = new StreamWriter(logFileName, append: true) {
-				AutoFlush = true
-			};
-		}
-		_printThread = new(PrintInternal);
-		_printThread.Start();
-		_isStarted = true;
-		LogFileName = logFileName;
-	}
+    private void WriteErrorInternal(string value)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        string linePrefix = GetLinePrefix("[ERR]");
+        Console.Write(linePrefix);
+        Console.ForegroundColor = _defaultConsoleColor;
+        Console.WriteLine(value);
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
+    }
 
-	public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer) {
-		_creatioLogStreamer = creatioLogStreamer;
-	}
+    private void WriteInfoInternal(string value)
+    {
+        string linePrefix = GetLinePrefix("[INF]");
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.Write(linePrefix);
+        Console.ForegroundColor = _defaultConsoleColor;
+        Console.WriteLine(value);
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
+        _creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
+    }
 
-	public void StartWithStream() {
-		if (_isStarted) {
-			return;
-		}
+    private void WriteLineInternal(string value)
+    {
+        Console.WriteLine(value);
+        string linePrefix = GetLinePrefix();
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
+        _creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
+    }
 
-		_printThread = new(PrintInternal);
-		_printThread.Start();
-		_isStarted = true;
-	}
+    private void WriteWarningInternal(string value)
+    {
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        string linePrefix = GetLinePrefix("[WAR]");
+        Console.Write(linePrefix);
+        Console.ForegroundColor = _defaultConsoleColor;
+        Console.WriteLine(value);
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
+        _creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
+    }
 
-	private Thread _printThread;
-	private bool _isStarted = false; 
-	
-	/// <summary>
-	/// Stops the logging process.
-	/// This method signals the cancellation token to stop the logging thread.
-	/// </summary>	
-	public void Stop(){
-		CancellationTokenSource.Cancel();
-		CancellationToken = CancellationTokenSource.Token;
-		_isStarted = false;
-		_printThread.Join();
-		_logFileWriter?.Close();
-	}
+    #endregion
 
-	public void Write(string value){
-		if(CancellationToken.IsCancellationRequested) {
-			return;
-		}
-		_logQueue.Enqueue(new UndecoratedMessage(value));
-	}
+    #region Methods: Public
 
-	/// <summary>
-	/// Enqueues an error message to the log queue.
-	/// </summary>
-	/// <param name="value">String value to be printed to the log</param>
-	public void WriteError(string value){
-		if(CancellationToken.IsCancellationRequested) {
-			return;
-		}
-		_logQueue.Enqueue(new ErrorMessage(value));
-		
-	}
+    /// <summary>
+    ///     Dispose the log file writer.
+    /// </summary>
+    public void Dispose()
+    {
+        LogFileWriter?.Dispose();
+        LogFileWriter = null;
+    }
 
-	/// <summary>
-	/// Enqueues an error message to the log queue.
-	/// </summary>
-	/// <param name="value">String value to be printed to the log</param>
-	public void WriteInfo(string value){
-		if(CancellationToken.IsCancellationRequested) {
-			return;
-		}
-		_logQueue.Enqueue(new InfoMessage(value));
-	}
+    public void PrintTable(ConsoleTable table)
+    {
+        _logQueue.Enqueue(new TableMessage(table));
+    }
 
-	/// <summary>
-	/// Write a empty line to the log.
-	/// </summary>
-	public void WriteLine() {
-		if (CancellationToken.IsCancellationRequested) {
-			return;
-		}
-		_logQueue.Enqueue(new UndecoratedMessage(string.Empty));
-	}
+    public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors)
+    {
+        errors.Select(e => new
+              {
+                  e.ErrorMessage, e.ErrorCode, e.Severity
+              })
+              .ToList().ForEach(e =>
+              {
+                  string msg
+                      = $"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}";
+                  WriteError(msg);
+              });
+    }
 
-	/// <summary>
-	/// Enqueues an error message to the log queue.
-	/// </summary>
-	/// <param name="value">String value to be printed to the log</param>
-	public void WriteLine(string value){
-		if(CancellationToken.IsCancellationRequested) {
-			return;
-		}
-		_logQueue.Enqueue(new UndecoratedMessage(value));
-	}
+    public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer)
+    {
+        _creatioLogStreamer = creatioLogStreamer;
+    }
 
-	/// <summary>
-	/// Enqueues an error message to the log queue.
-	/// </summary>
-	/// <param name="value">String value to be printed to the log</param>
-	public void WriteWarning(string value){
-		if(CancellationToken.IsCancellationRequested) {
-			return;
-		}
-		_logQueue.Enqueue(new WarningMessage(value));
-	}
+    /// <summary>
+    ///     Starts the logging process runs.
+    ///     This method initiates a new thread that continuously dequeues log messages from the queue
+    ///     and writes them to the console.
+    /// </summary>
+    public void Start(string logFileName = "")
+    {
+        if (_isStarted)
+        {
+            return;
+        }
+        if (!string.IsNullOrEmpty(logFileName))
+        {
+            LogFileWriter = new StreamWriter(logFileName, true)
+            {
+                AutoFlush = true
+            };
+        }
+        _printThread = new Thread(PrintInternal);
+        _printThread.Start();
+        _isStarted = true;
+        LogFileName = logFileName;
+    }
 
-	/// <summary>
-	/// Dispose the log file writer.
-	/// </summary>
-	public void Dispose() {
-		_logFileWriter?.Dispose();
-		_logFileWriter = null;
-	}
+    public void StartWithStream()
+    {
+        if (_isStarted)
+        {
+            return;
+        }
 
-	#endregion
+        _printThread = new Thread(PrintInternal);
+        _printThread.Start();
+        _isStarted = true;
+    }
+
+    /// <summary>
+    ///     Stops the logging process.
+    ///     This method signals the cancellation token to stop the logging thread.
+    /// </summary>
+    public void Stop()
+    {
+        CancellationTokenSource.Cancel();
+        CancellationToken = CancellationTokenSource.Token;
+        _isStarted = false;
+        _printThread.Join();
+        LogFileWriter?.Close();
+    }
+
+    public void Write(string value)
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        _logQueue.Enqueue(new UndecoratedMessage(value));
+    }
+
+    /// <summary>
+    ///     Enqueues an error message to the log queue.
+    /// </summary>
+    /// <param name="value">String value to be printed to the log</param>
+    public void WriteError(string value)
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        _logQueue.Enqueue(new ErrorMessage(value));
+    }
+
+    /// <summary>
+    ///     Enqueues an error message to the log queue.
+    /// </summary>
+    /// <param name="value">String value to be printed to the log</param>
+    public void WriteInfo(string value)
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        _logQueue.Enqueue(new InfoMessage(value));
+    }
+
+    /// <summary>
+    ///     Write a empty line to the log.
+    /// </summary>
+    public void WriteLine()
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        _logQueue.Enqueue(new UndecoratedMessage(string.Empty));
+    }
+
+    /// <summary>
+    ///     Enqueues an error message to the log queue.
+    /// </summary>
+    /// <param name="value">String value to be printed to the log</param>
+    public void WriteLine(string value)
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        _logQueue.Enqueue(new UndecoratedMessage(value));
+    }
+
+    /// <summary>
+    ///     Enqueues an error message to the log queue.
+    /// </summary>
+    /// <param name="value">String value to be printed to the log</param>
+    public void WriteWarning(string value)
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        _logQueue.Enqueue(new WarningMessage(value));
+    }
+
+    #endregion
 
 }
 
@@ -288,121 +327,127 @@ public class ConsoleLogger : ILogger, IDisposable
 public enum LogDecoratorType
 {
 
-	Info,
-	Error,
-	Warning,
-	None,
-	Table
+    Info,
+    Error,
+    Warning,
+    None,
+    Table
 
 }
 
 internal class InfoMessage : LogMessage
 {
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public InfoMessage(string value)
-		: base(value){ }
+    public InfoMessage(string value)
+        : base(value)
+    { }
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public override LogDecoratorType LogDecoratorType => LogDecoratorType.Info;
+    public override LogDecoratorType LogDecoratorType => LogDecoratorType.Info;
 
-	#endregion
+    #endregion
 
 }
 
 internal class ErrorMessage : LogMessage
 {
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public ErrorMessage(string value)
-		: base(value){ }
+    public ErrorMessage(string value)
+        : base(value)
+    { }
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public override LogDecoratorType LogDecoratorType => LogDecoratorType.Error;
+    public override LogDecoratorType LogDecoratorType => LogDecoratorType.Error;
 
-	#endregion
+    #endregion
 
 }
 
 internal class WarningMessage : LogMessage
 {
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public WarningMessage(string value)
-		: base(value){ }
+    public WarningMessage(string value)
+        : base(value)
+    { }
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public override LogDecoratorType LogDecoratorType => LogDecoratorType.Warning;
+    public override LogDecoratorType LogDecoratorType => LogDecoratorType.Warning;
 
-	#endregion
+    #endregion
 
 }
 
 internal class UndecoratedMessage : LogMessage
 {
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public UndecoratedMessage(string value)
-		: base(value){ }
+    public UndecoratedMessage(string value)
+        : base(value)
+    { }
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public override LogDecoratorType LogDecoratorType => LogDecoratorType.None;
+    public override LogDecoratorType LogDecoratorType => LogDecoratorType.None;
 
-	#endregion
+    #endregion
 
 }
 
 internal class TableMessage : LogMessage
 {
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public TableMessage(ConsoleTable value)
-		: base(value){ }
+    public TableMessage(ConsoleTable value)
+        : base(value)
+    { }
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public override LogDecoratorType LogDecoratorType => LogDecoratorType.Table;
+    public override LogDecoratorType LogDecoratorType => LogDecoratorType.Table;
 
-	#endregion
+    #endregion
 
 }
 
 internal abstract class LogMessage
 {
 
-	#region Constructors: Protected
+    #region Constructors: Protected
 
-	protected LogMessage(object value){
-		Value = value;
-	}
+    protected LogMessage(object value)
+    {
+        Value = value;
+    }
 
-	#endregion
+    #endregion
 
-	#region Properties: Public
+    #region Properties: Public
 
-	public abstract LogDecoratorType LogDecoratorType { get; }
+    public abstract LogDecoratorType LogDecoratorType { get; }
 
-	public object Value { get; set; }
+    public object Value { get; set; }
 
-	#endregion
+    #endregion
 
 }

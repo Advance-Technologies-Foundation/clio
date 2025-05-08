@@ -1,5 +1,5 @@
 webservices:
-- url: https://creatio.com
-  name: Creatio
-- url: https://google.ca
-  name: Google
+  - name: Creatio
+    url: https://creatio.com
+  - name: Google
+    url: https://google.ca

@@ -1,37 +1,36 @@
-namespace Clio.Common
+namespace Clio.Common;
+
+#region Class: DotnetExecutor
+
+public class DotnetExecutor : IDotnetExecutor
 {
 
-	#region Class: DotnetExecutor
+    #region Fields: Private
 
-	public class DotnetExecutor : IDotnetExecutor
-	{
+    private readonly IProcessExecutor _processExecutor;
 
-		#region Fields: Private
+    #endregion
 
-		private readonly IProcessExecutor _processExecutor;
+    #region Constructors: Public
 
-		#endregion
+    public DotnetExecutor(IProcessExecutor processExecutor)
+    {
+        processExecutor.CheckArgumentNull(nameof(processExecutor));
+        _processExecutor = processExecutor;
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public DotnetExecutor(IProcessExecutor processExecutor) {
-			processExecutor.CheckArgumentNull(nameof(processExecutor));
-			_processExecutor = processExecutor;
-		}
+    #region Methods: Public
 
-		#endregion
+    public string Execute(string command, bool waitForExit, string workingDirectory = null)
+    {
+        command.CheckArgumentNullOrWhiteSpace(nameof(command));
+        return _processExecutor.Execute("dotnet", command, waitForExit, workingDirectory);
+    }
 
-		#region Methods: Public
-
-		public string Execute(string command, bool waitForExit, string workingDirectory = null) {
-			command.CheckArgumentNullOrWhiteSpace(nameof(command));
-			return _processExecutor.Execute("dotnet", command, waitForExit, workingDirectory);
-		}
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

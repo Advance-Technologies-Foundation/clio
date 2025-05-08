@@ -1,7 +1,12 @@
-﻿namespace Clio.Command
+﻿namespace Clio.Command;
+
+public abstract class Command<TEnvironmentOptions>
 {
-	public abstract class Command<TEnvironmentOptions>
-	{
-		public abstract int Execute(TEnvironmentOptions options);
-	}
+
+    #region Methods: Public
+
+    public abstract int Execute(TEnvironmentOptions options);
+
+    #endregion
+
 }

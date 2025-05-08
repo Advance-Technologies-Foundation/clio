@@ -31,222 +31,230 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio;
 
-public class BindingsModule {
+public class BindingsModule
+{
 
-	#region Fields: Private
+    #region Fields: Private
 
-	private readonly IFileSystem _fileSystem;
+    private readonly IFileSystem _fileSystem;
 
-	#endregion
+    #endregion
 
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public BindingsModule(IFileSystem fileSystem = null){
-		_fileSystem = fileSystem;
-	}
+    public BindingsModule(IFileSystem fileSystem = null)
+    {
+        _fileSystem = fileSystem;
+    }
 
-	#endregion
+    #endregion
 
-	#region Methods: Public
+    #region Methods: Public
 
-	public IContainer Register(EnvironmentSettings settings = null,
-		Action<ContainerBuilder> additionalRegistrations = null){
-		ContainerBuilder containerBuilder = new();
+    public IContainer Register(EnvironmentSettings settings = null,
+        Action<ContainerBuilder> additionalRegistrations = null)
+    {
+        ContainerBuilder containerBuilder = new();
 
-		containerBuilder
-			.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
-			.Where(t => t != typeof(ConsoleLogger))
-			.AsImplementedInterfaces();
+        containerBuilder
+            .RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
+            .Where(t => t != typeof(ConsoleLogger))
+            .AsImplementedInterfaces();
 
-		containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
+        containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
 
-		if (settings != null) {
-			containerBuilder.Register(provider => {
-				IApplicationClient creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
-				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
-				IDataProvider dataProvider = string.IsNullOrEmpty(settings.ClientId) switch {
-												false => new RemoteDataProvider(settings.Uri, settings.AuthAppUri,
-													settings.ClientId, settings.ClientSecret, settings.IsNetCore),
-												true => new RemoteDataProvider(settings.Uri, settings.Login,
-													settings.Password, settings.IsNetCore)
-											};
-				return dataProvider;
-			});
-			containerBuilder.RegisterInstance(settings);
-		}
+        if (settings != null)
+        {
+            containerBuilder.Register(provider =>
+            {
+                IApplicationClient creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
+                containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
+                IDataProvider dataProvider = string.IsNullOrEmpty(settings.ClientId) switch
+                                             {
+                                                 false => new RemoteDataProvider(settings.Uri, settings.AuthAppUri,
+                                                     settings.ClientId, settings.ClientSecret, settings.IsNetCore),
+                                                 true => new RemoteDataProvider(settings.Uri, settings.Login,
+                                                     settings.Password, settings.IsNetCore)
+                                             };
+                return dataProvider;
+            });
+            containerBuilder.RegisterInstance(settings);
+        }
 
-		containerBuilder.Register(provider => {
-			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
-			return new Kubernetes(config);
-		}).As<IKubernetes>();
-		containerBuilder.RegisterType<k8Commands>();
-		containerBuilder.RegisterType<InstallerCommand>();
+        containerBuilder.Register(provider =>
+        {
+            KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+            return new Kubernetes(config);
+        }).As<IKubernetes>();
+        containerBuilder.RegisterType<k8Commands>();
+        containerBuilder.RegisterType<InstallerCommand>();
 
-		if (_fileSystem is not null) {
-			containerBuilder.RegisterInstance(_fileSystem).As<IFileSystem>();
-		}
-		else {
-			containerBuilder.RegisterType<FileSystem>().As<IFileSystem>();
-		}
+        if (_fileSystem is not null)
+        {
+            containerBuilder.RegisterInstance(_fileSystem).As<IFileSystem>();
+        }
+        else
+        {
+            containerBuilder.RegisterType<FileSystem>().As<IFileSystem>();
+        }
 
-		IDeserializer deserializer = new DeserializerBuilder()
-									.WithNamingConvention(UnderscoredNamingConvention.Instance)
-									.IgnoreUnmatchedProperties()
-									.Build();
+        IDeserializer deserializer = new DeserializerBuilder()
+                                     .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                                     .IgnoreUnmatchedProperties()
+                                     .Build();
 
-		ISerializer serializer = new SerializerBuilder()
-								.WithNamingConvention(UnderscoredNamingConvention.Instance)
-								.ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults |
-									DefaultValuesHandling.OmitEmptyCollections)
-								.Build();
+        ISerializer serializer = new SerializerBuilder()
+                                 .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                                 .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults |
+                                     DefaultValuesHandling.OmitEmptyCollections)
+                                 .Build();
 
-		#region Epiremental CreatioCLient
+        #region Epiremental CreatioCLient
 
-		if (settings is not null) {
-			CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId)
-				? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore)
-				: CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId,
-					settings.ClientSecret, settings.IsNetCore);
-			IApplicationClient clientAdapter = new CreatioClientAdapter(creatioClient);
-			containerBuilder.RegisterInstance(clientAdapter).As<IApplicationClient>();
+        if (settings is not null)
+        {
+            CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId)
+                ? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore)
+                : CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId,
+                    settings.ClientSecret, settings.IsNetCore);
+            IApplicationClient clientAdapter = new CreatioClientAdapter(creatioClient);
+            containerBuilder.RegisterInstance(clientAdapter).As<IApplicationClient>();
 
-			containerBuilder.RegisterType<SysSettingsManager>();
-		}
+            containerBuilder.RegisterType<SysSettingsManager>();
+        }
 
-		#endregion
+        #endregion
 
-		containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
-		containerBuilder.RegisterInstance(serializer).As<ISerializer>();
-		containerBuilder.RegisterType<FeatureCommand>();
-		containerBuilder.RegisterType<SysSettingsCommand>();
-		containerBuilder.RegisterType<BuildInfoCommand>();
-		containerBuilder.RegisterType<PushPackageCommand>();
-		containerBuilder.RegisterType<InstallApplicationCommand>();
-		containerBuilder.RegisterType<OpenCfgCommand>();
-		containerBuilder.RegisterType<InstallGatePkgCommand>();
-		containerBuilder.RegisterType<PingAppCommand>();
-		containerBuilder.RegisterType<SqlScriptCommand>();
-		containerBuilder.RegisterType<CompressPackageCommand>();
-		containerBuilder.RegisterType<PushNuGetPackagesCommand>();
-		containerBuilder.RegisterType<PackNuGetPackageCommand>();
-		containerBuilder.RegisterType<RestoreNugetPackageCommand>();
-		containerBuilder.RegisterType<InstallNugetPackageCommand>();
-		containerBuilder.RegisterType<SetPackageVersionCommand>();
-		containerBuilder.RegisterType<GetPackageVersionCommand>();
-		containerBuilder.RegisterType<CheckNugetUpdateCommand>();
-		containerBuilder.RegisterType<DeletePackageCommand>();
-		containerBuilder.RegisterType<GetPkgListCommand>();
-		containerBuilder.RegisterType<RestoreWorkspaceCommand>();
-		containerBuilder.RegisterType<CreateWorkspaceCommand>();
-		containerBuilder.RegisterType<PushWorkspaceCommand>();
-		containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
-		containerBuilder.RegisterType<LoadPackagesToDbCommand>();
-		containerBuilder.RegisterType<UploadLicensesCommand>();
-		containerBuilder.RegisterType<HealthCheckCommand>();
-		containerBuilder.RegisterType<AddPackageCommand>();
-		containerBuilder.RegisterType<UnlockPackageCommand>();
-		containerBuilder.RegisterType<LockPackageCommand>();
-		containerBuilder.RegisterType<DataServiceQuery>();
-		containerBuilder.RegisterType<CallServiceCommand>();
-		containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
-		containerBuilder.RegisterType<Marketplace>();
-		containerBuilder.RegisterType<CreateUiProjectCommand>();
-		containerBuilder.RegisterType<CreateUiProjectOptionsValidator>();
-		containerBuilder.RegisterType<SetIconParametersValidator>();
-		containerBuilder.RegisterType<DownloadConfigurationCommand>();
-		containerBuilder.RegisterType<DeployCommand>();
-		containerBuilder.RegisterType<InfoCommand>();
-		containerBuilder.RegisterType<ExtractPackageCommand>();
-		containerBuilder.RegisterType<ExternalLinkCommand>();
-		containerBuilder.RegisterType<PowerShellFactory>();
-		containerBuilder.RegisterType<RegAppCommand>();
-		containerBuilder.RegisterType<RestartCommand>();
-		containerBuilder.RegisterType<SetFsmConfigCommand>();
-		containerBuilder.RegisterType<TurnFsmCommand>();
-		containerBuilder.RegisterType<ScenarioRunnerCommand>();
-		containerBuilder.RegisterType<CompressAppCommand>();
-		containerBuilder.RegisterType<Scenario>();
-		containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
-		containerBuilder.RegisterType<CreateInfrastructureCommand>();
-		containerBuilder.RegisterType<OpenInfrastructureCommand>();
-		containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
-		containerBuilder.RegisterType<ManageWindowsFeaturesCommand>();
-		containerBuilder.RegisterType<CreateTestProjectCommand>();
-		containerBuilder.RegisterType<ListenCommand>();
-		containerBuilder.RegisterType<ShowPackageFileContentCommand>();
-		containerBuilder.RegisterType<CompilePackageCommand>();
-		containerBuilder.RegisterType<SwitchNugetToDllCommand>();
-		containerBuilder.RegisterType<NugetMaterializer>();
-		containerBuilder.RegisterType<PropsBuilder>();
-		containerBuilder.RegisterType<UninstallAppCommand>();
-		containerBuilder.RegisterType<DownloadAppCommand>();
-		containerBuilder.RegisterType<DeployAppCommand>();
-		containerBuilder.RegisterType<ApplicationManager>();
-		containerBuilder.RegisterType<RestoreDbCommand>();
-		containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
-		containerBuilder.RegisterType<SetWebServiceUrlCommand>();
-		containerBuilder.RegisterType<ListInstalledAppsCommand>();
-		containerBuilder.RegisterType<GetCreatioInfoCommand>();
-		containerBuilder.RegisterType<SetApplicationVersionCommand>();
-		containerBuilder.RegisterType<ApplyEnvironmentManifestCommand>();
-		containerBuilder.RegisterType<EnvironmentManager>();
-		containerBuilder.RegisterType<GetWebServiceUrlCommand>();
-		containerBuilder.RegisterType<MockDataCommand>();
-		containerBuilder.RegisterType<ConsoleProgressbar>();
-		containerBuilder.RegisterType<ApplicationLogProvider>();
-		containerBuilder.RegisterType<LastCompilationLogCommand>();
-		//containerBuilder.RegisterType<CreateEntityCommand>();
-		containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
-		containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
-		
-		containerBuilder.RegisterType<Link4RepoCommand>();
-		
-		
+        containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
+        containerBuilder.RegisterInstance(serializer).As<ISerializer>();
+        containerBuilder.RegisterType<FeatureCommand>();
+        containerBuilder.RegisterType<SysSettingsCommand>();
+        containerBuilder.RegisterType<BuildInfoCommand>();
+        containerBuilder.RegisterType<PushPackageCommand>();
+        containerBuilder.RegisterType<InstallApplicationCommand>();
+        containerBuilder.RegisterType<OpenCfgCommand>();
+        containerBuilder.RegisterType<InstallGatePkgCommand>();
+        containerBuilder.RegisterType<PingAppCommand>();
+        containerBuilder.RegisterType<SqlScriptCommand>();
+        containerBuilder.RegisterType<CompressPackageCommand>();
+        containerBuilder.RegisterType<PushNuGetPackagesCommand>();
+        containerBuilder.RegisterType<PackNuGetPackageCommand>();
+        containerBuilder.RegisterType<RestoreNugetPackageCommand>();
+        containerBuilder.RegisterType<InstallNugetPackageCommand>();
+        containerBuilder.RegisterType<SetPackageVersionCommand>();
+        containerBuilder.RegisterType<GetPackageVersionCommand>();
+        containerBuilder.RegisterType<CheckNugetUpdateCommand>();
+        containerBuilder.RegisterType<DeletePackageCommand>();
+        containerBuilder.RegisterType<GetPkgListCommand>();
+        containerBuilder.RegisterType<RestoreWorkspaceCommand>();
+        containerBuilder.RegisterType<CreateWorkspaceCommand>();
+        containerBuilder.RegisterType<PushWorkspaceCommand>();
+        containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
+        containerBuilder.RegisterType<LoadPackagesToDbCommand>();
+        containerBuilder.RegisterType<UploadLicensesCommand>();
+        containerBuilder.RegisterType<HealthCheckCommand>();
+        containerBuilder.RegisterType<AddPackageCommand>();
+        containerBuilder.RegisterType<UnlockPackageCommand>();
+        containerBuilder.RegisterType<LockPackageCommand>();
+        containerBuilder.RegisterType<DataServiceQuery>();
+        containerBuilder.RegisterType<CallServiceCommand>();
+        containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
+        containerBuilder.RegisterType<Marketplace>();
+        containerBuilder.RegisterType<CreateUiProjectCommand>();
+        containerBuilder.RegisterType<CreateUiProjectOptionsValidator>();
+        containerBuilder.RegisterType<SetIconParametersValidator>();
+        containerBuilder.RegisterType<DownloadConfigurationCommand>();
+        containerBuilder.RegisterType<DeployCommand>();
+        containerBuilder.RegisterType<InfoCommand>();
+        containerBuilder.RegisterType<ExtractPackageCommand>();
+        containerBuilder.RegisterType<ExternalLinkCommand>();
+        containerBuilder.RegisterType<PowerShellFactory>();
+        containerBuilder.RegisterType<RegAppCommand>();
+        containerBuilder.RegisterType<RestartCommand>();
+        containerBuilder.RegisterType<SetFsmConfigCommand>();
+        containerBuilder.RegisterType<TurnFsmCommand>();
+        containerBuilder.RegisterType<ScenarioRunnerCommand>();
+        containerBuilder.RegisterType<CompressAppCommand>();
+        containerBuilder.RegisterType<Scenario>();
+        containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
+        containerBuilder.RegisterType<CreateInfrastructureCommand>();
+        containerBuilder.RegisterType<OpenInfrastructureCommand>();
+        containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
+        containerBuilder.RegisterType<ManageWindowsFeaturesCommand>();
+        containerBuilder.RegisterType<CreateTestProjectCommand>();
+        containerBuilder.RegisterType<ListenCommand>();
+        containerBuilder.RegisterType<ShowPackageFileContentCommand>();
+        containerBuilder.RegisterType<CompilePackageCommand>();
+        containerBuilder.RegisterType<SwitchNugetToDllCommand>();
+        containerBuilder.RegisterType<NugetMaterializer>();
+        containerBuilder.RegisterType<PropsBuilder>();
+        containerBuilder.RegisterType<UninstallAppCommand>();
+        containerBuilder.RegisterType<DownloadAppCommand>();
+        containerBuilder.RegisterType<DeployAppCommand>();
+        containerBuilder.RegisterType<ApplicationManager>();
+        containerBuilder.RegisterType<RestoreDbCommand>();
+        containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
+        containerBuilder.RegisterType<SetWebServiceUrlCommand>();
+        containerBuilder.RegisterType<ListInstalledAppsCommand>();
+        containerBuilder.RegisterType<GetCreatioInfoCommand>();
+        containerBuilder.RegisterType<SetApplicationVersionCommand>();
+        containerBuilder.RegisterType<ApplyEnvironmentManifestCommand>();
+        containerBuilder.RegisterType<EnvironmentManager>();
+        containerBuilder.RegisterType<GetWebServiceUrlCommand>();
+        containerBuilder.RegisterType<MockDataCommand>();
+        containerBuilder.RegisterType<ConsoleProgressbar>();
+        containerBuilder.RegisterType<ApplicationLogProvider>();
+        containerBuilder.RegisterType<LastCompilationLogCommand>();
+        //containerBuilder.RegisterType<CreateEntityCommand>();
+        containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
+        containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
 
-		MediatRConfiguration configuration = MediatRConfigurationBuilder
-											.Create(typeof(BindingsModule).Assembly)
-											.WithAllOpenGenericHandlerTypesRegistered()
-											.Build();
-		containerBuilder.RegisterMediatR(configuration);
+        containerBuilder.RegisterType<Link4RepoCommand>();
 
-		containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
+        MediatRConfiguration configuration = MediatRConfigurationBuilder
+                                             .Create(typeof(BindingsModule).Assembly)
+                                             .WithAllOpenGenericHandlerTypesRegistered()
+                                             .Build();
+        containerBuilder.RegisterMediatR(configuration);
 
-		//Validators
-		containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
-		containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
-		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
-		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
+        containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
 
-		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
-		containerBuilder.RegisterType<UnzipRequestValidator>();
-		containerBuilder.RegisterType<GitSyncCommand>();
-		containerBuilder.RegisterType<DeactivatePackageCommand>();
-		containerBuilder.RegisterType<PublishWorkspaceCommand>();
-		containerBuilder.RegisterType<ActivatePackageCommand>();
-		containerBuilder.RegisterType<PackageHotFixCommand>();
-		containerBuilder.RegisterType<PackageEditableMutator>();
-		containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
-		containerBuilder.RegisterType<ShowDiffEnvironmentsCommand>();
-		containerBuilder.RegisterType<CloneEnvironmentCommand>();
-		containerBuilder.RegisterType<PullPkgCommand>();
-		containerBuilder.RegisterType<AssemblyCommand>();
-		containerBuilder.RegisterType<UninstallCreatioCommand>();
-		containerBuilder.RegisterType<InstallTideCommand>();
-		containerBuilder.RegisterType<AddSchemaCommand>();
-		containerBuilder.RegisterType<CreatioInstallerService>();
-		containerBuilder.RegisterType<SetApplicationIconCommand>();
-		containerBuilder.RegisterType<CustomizeDataProtectionCommand>();
-		containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
+        //Validators
+        containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
+        containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
+        containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
+        containerBuilder.RegisterType<Link4RepoOptionsValidator>();
 
-		containerBuilder.RegisterType<ClioGateway>();
+        containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
+        containerBuilder.RegisterType<UnzipRequestValidator>();
+        containerBuilder.RegisterType<GitSyncCommand>();
+        containerBuilder.RegisterType<DeactivatePackageCommand>();
+        containerBuilder.RegisterType<PublishWorkspaceCommand>();
+        containerBuilder.RegisterType<ActivatePackageCommand>();
+        containerBuilder.RegisterType<PackageHotFixCommand>();
+        containerBuilder.RegisterType<PackageEditableMutator>();
+        containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
+        containerBuilder.RegisterType<ShowDiffEnvironmentsCommand>();
+        containerBuilder.RegisterType<CloneEnvironmentCommand>();
+        containerBuilder.RegisterType<PullPkgCommand>();
+        containerBuilder.RegisterType<AssemblyCommand>();
+        containerBuilder.RegisterType<UninstallCreatioCommand>();
+        containerBuilder.RegisterType<InstallTideCommand>();
+        containerBuilder.RegisterType<AddSchemaCommand>();
+        containerBuilder.RegisterType<CreatioInstallerService>();
+        containerBuilder.RegisterType<SetApplicationIconCommand>();
+        containerBuilder.RegisterType<CustomizeDataProtectionCommand>();
+        containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
 
-		containerBuilder.RegisterType<Mssql>().As<IMssql>();
-		containerBuilder.RegisterType<Postgres>().As<IPostgres>();
+        containerBuilder.RegisterType<ClioGateway>();
 
-		additionalRegistrations?.Invoke(containerBuilder);
-		return containerBuilder.Build();
-	}
+        containerBuilder.RegisterType<Mssql>().As<IMssql>();
+        containerBuilder.RegisterType<Postgres>().As<IPostgres>();
 
-	#endregion
+        additionalRegistrations?.Invoke(containerBuilder);
+        return containerBuilder.Build();
+    }
+
+    #endregion
 
 }

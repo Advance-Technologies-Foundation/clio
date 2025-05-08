@@ -1,8 +1,8 @@
-import { DoBootstrap, Injector, NgModule } from "@angular/core";
-import { createCustomElement } from "@angular/elements";
-import { BrowserModule } from "@angular/platform-browser";
-import { CrtModule } from "@creatio-devkit/common";
-import { DemoComponent } from "./view-elements";
+import {DoBootstrap, Injector, NgModule} from "@angular/core";
+import {createCustomElement} from "@angular/elements";
+import {BrowserModule} from "@angular/platform-browser";
+import {CrtModule} from "@creatio-devkit/common";
+import {DemoComponent} from "./view-elements";
 
 @CrtModule({
   viewElements: [DemoComponent],
@@ -13,7 +13,8 @@ import { DemoComponent } from "./view-elements";
   providers: [],
 })
 export class AppModule implements DoBootstrap {
-  constructor(private _injector: Injector) {}
+  constructor(private _injector: Injector) {
+  }
 
   ngDoBootstrap(): void {
     const cmp = createCustomElement(DemoComponent, {

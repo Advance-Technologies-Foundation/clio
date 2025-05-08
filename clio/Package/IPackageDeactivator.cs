@@ -3,19 +3,21 @@ namespace Clio.Package;
 #region Interface: IPackageDeactivator
 
 /// <summary>
-/// Provides interface for package deactivation.
+///     Provides interface for package deactivation.
 /// </summary>
-public interface IPackageDeactivator {
+public interface IPackageDeactivator
+{
 
-    #region Methods: Internal
+    #region Methods: Public
 
     /// <summary>
-    /// Deactivate package by name.
+    ///     Deactivate package by name.
     /// </summary>
     /// <param name="packageName"></param>
     void Deactivate(string packageName);
 
     #endregion
+
 }
 
 #endregion

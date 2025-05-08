@@ -1,12 +1,8 @@
-namespace Clio.Common.Responses
-{
+namespace Clio.Common.Responses;
 
-	#region Class: ValueResponse
+#region Class: ValueResponse
 
-	public class BoolResponse : ValueResponse<bool>
-	{
-	}
+public class BoolResponse : ValueResponse<bool>
+{ }
 
-	#endregion
-
-}
+#endregion

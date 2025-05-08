@@ -1,7 +1,12 @@
-﻿namespace Clio.Common
+﻿namespace Clio.Common;
+
+public interface ISqlScriptExecutor
 {
-	public interface ISqlScriptExecutor
-	{
-		string Execute(string sql, IApplicationClient applicationClient, EnvironmentSettings settings);
-	}
+
+    #region Methods: Public
+
+    string Execute(string sql, IApplicationClient applicationClient, EnvironmentSettings settings);
+
+    #endregion
+
 }

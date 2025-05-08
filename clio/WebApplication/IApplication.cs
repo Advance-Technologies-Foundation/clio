@@ -1,9 +1,14 @@
-﻿namespace Clio.WebApplication
-{
-	public interface IApplication
-	{
-		void Restart();
+﻿namespace Clio.WebApplication;
 
-		void LoadLicense(string filePath);
-	}
+public interface IApplication
+{
+
+    #region Methods: Public
+
+    void LoadLicense(string filePath);
+
+    void Restart();
+
+    #endregion
+
 }

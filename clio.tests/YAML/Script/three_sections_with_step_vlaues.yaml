@@ -7,6 +7,6 @@ settings:
   values: 'YAML/Script/additional_settings_sections.yaml'
   setting_one: setting_one_value
   setting_two: setting_two_value
-  
+
 steps:
   values: 'YAML/Script/additional_steps_sections.yaml'

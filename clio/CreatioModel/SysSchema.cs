@@ -11,30 +11,30 @@ namespace CreatioModel;
 public class SysSchema : BaseModel
 {
 
-	#region Properties: Public
+    #region Properties: Public
 
-	[SchemaProperty("ManagerName")]
-	public string ManagerName { get; set; }
+    [SchemaProperty("Checksum")]
+    public string Checksum { get; set; }
 
-	[SchemaProperty("Name")]
-	public string Name { get; set; }
-	
-	[SchemaProperty("UId")]
-	public Guid UId { get; set; }
+    [SchemaProperty("ManagerName")]
+    public string ManagerName { get; set; }
 
-	[SchemaProperty("ModifiedOn")]
-	public DateTime ModifiedOn { get; set; }
+    [SchemaProperty("ModifiedOn")]
+    public DateTime ModifiedOn { get; set; }
 
-	[SchemaProperty("Checksum")]
-	public string Checksum { get; set; }
+    [SchemaProperty("Name")]
+    public string Name { get; set; }
 
-	[SchemaProperty("SysPackage")]
-	public Guid SysPackageId { get; set; }
- 
-	[LookupProperty("SysPackage")]
-	public virtual SysPackage SysPackage { get; set; }
+    [LookupProperty("SysPackage")]
+    public virtual SysPackage SysPackage { get; set; }
 
-	#endregion
+    [SchemaProperty("SysPackage")]
+    public Guid SysPackageId { get; set; }
+
+    [SchemaProperty("UId")]
+    public Guid UId { get; set; }
+
+    #endregion
 
 }
 

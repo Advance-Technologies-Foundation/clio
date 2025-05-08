@@ -1,81 +1,127 @@
-﻿using Clio.Common;
-using CommandLine;
-using DocumentFormat.OpenXml.Wordprocessing;
-using System;
+﻿using System;
 using System.Net.Http;
-using System.Runtime.Intrinsics.Arm;
-using System.Security.Policy;
+using Clio.Common;
+using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command;
+
+[Verb("show-package-file-content", Aliases = new[]
 {
-	[Verb("show-package-file-content", Aliases = new string[] { "show-files", "files" }, HelpText = "Show package file context")]
-	public class ShowPackageFileContentOptions : RemoteCommandOptions
-	{
-		[Option("package", Required = true, HelpText = "Package name")]
-		public string PackageName { get; internal set; }
+    "show-files", "files"
+}, HelpText = "Show package file context")]
+public class ShowPackageFileContentOptions : RemoteCommandOptions
+{
 
-		[Option("file", Required = false, HelpText = "file path")]
-		public string FilePath { get; internal set; }
-	}
+    #region Properties: Public
 
-	internal class ShowPackageFileContentCommand : RemoteCommand<ShowPackageFileContentOptions>
-	{
-		public override HttpMethod HttpMethod => HttpMethod.Get;
+    [Option("file", Required = false, HelpText = "file path")]
+    public string FilePath { get; internal set; }
 
-		private object _packageName;
-		private string _filePath;
+    [Option("package", Required = true, HelpText = "Package name")]
+    public string PackageName { get; internal set; }
 
-		protected override string ServicePath {
-			get {
-				return IsReadFile ? 
-					$"/rest/CreatioApiGateway/GetPackageFileContent?packageName={_packageName}&filePath={Uri.EscapeDataString(_filePath)}" 
-					: $"/rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName={_packageName}";
-			}
-		}
+    #endregion
 
-		public bool IsReadFile {
-			get {
-				return !string.IsNullOrEmpty(_filePath);
-			}
-		}
+}
 
-		public ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings) : base(applicationClient, environmentSettings) {
-		}
+internal class ShowPackageFileContentCommand : RemoteCommand<ShowPackageFileContentOptions>
+{
 
-		public override int Execute(ShowPackageFileContentOptions options) {
-			_packageName = options.PackageName;
-			_filePath = options.FilePath?.Trim('\\','/');
-			return base.Execute(options);
-		}
+    #region Fields: Private
 
-		protected override void ProceedResponse(string response, ShowPackageFileContentOptions options) {
-			base.ProceedResponse(response, options);
-			if (IsReadFile) {
-				PrintFileContent(response);
-			} else {
-				PrintFolderContent(response);
-			}
-		}
+    private object _packageName;
+    private string _filePath;
 
-		private static void PrintFolderContent(string response) {
-			Console.WriteLine();
-			string trimmedResponse = response.Trim('[', ']');
-			var files = trimmedResponse.Split(new char[] { ',' });
-			foreach (var item in files) {
-				var prettyFilePath = item.Trim('"').Replace("\\\\", "\\").Replace("//", "/").Trim('\\');
-				Console.WriteLine(prettyFilePath);
-			}
-			Console.WriteLine();
-		}
+    #endregion
 
-		private static void PrintFileContent(string response) {
-			Console.WriteLine();
-			string prettyFormat = response.Replace("\\r", "\r").
-				Replace("\\t", "\t").Replace("\\n", "\n").Trim('"').Replace("\\\"", "\"").Replace("\\/", "/");
-			Console.WriteLine(prettyFormat);
-			Console.WriteLine();
-		}
-	}
+    #region Constructors: Public
 
+    public ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings)
+        : base(applicationClient, environmentSettings)
+    { }
+
+    #endregion
+
+    #region Properties: Protected
+
+    protected override string ServicePath
+    {
+        get
+        {
+            return IsReadFile ?
+                $"/rest/CreatioApiGateway/GetPackageFileContent?packageName={_packageName}&filePath={Uri.EscapeDataString(_filePath)}"
+                : $"/rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName={_packageName}";
+        }
+    }
+
+    #endregion
+
+    #region Properties: Public
+
+    public override HttpMethod HttpMethod => HttpMethod.Get;
+
+    public bool IsReadFile
+    {
+        get { return !string.IsNullOrEmpty(_filePath); }
+    }
+
+    #endregion
+
+    #region Methods: Private
+
+    private static void PrintFileContent(string response)
+    {
+        Console.WriteLine();
+        string prettyFormat = response.Replace("\\r", "\r").Replace("\\t", "\t").Replace("\\n", "\n").Trim('"')
+                                      .Replace("\\\"", "\"").Replace("\\/", "/");
+        Console.WriteLine(prettyFormat);
+        Console.WriteLine();
+    }
+
+    private static void PrintFolderContent(string response)
+    {
+        Console.WriteLine();
+        string trimmedResponse = response.Trim('[', ']');
+        string[] files = trimmedResponse.Split(new[]
+        {
+            ','
+        });
+        foreach (string item in files)
+        {
+            string prettyFilePath = item.Trim('"').Replace("\\\\", "\\").Replace("//", "/").Trim('\\');
+            Console.WriteLine(prettyFilePath);
+        }
+        Console.WriteLine();
+    }
+
+    #endregion
+
+    #region Methods: Protected
+
+    protected override void ProceedResponse(string response, ShowPackageFileContentOptions options)
+    {
+        base.ProceedResponse(response, options);
+        if (IsReadFile)
+        {
+            PrintFileContent(response);
+        }
+        else
+        {
+            PrintFolderContent(response);
+        }
+    }
+
+    #endregion
+
+    #region Methods: Public
+
+    public override int Execute(ShowPackageFileContentOptions options)
+    {
+        _packageName = options.PackageName;
+        _filePath = options.FilePath?.Trim('\\', '/');
+        return base.Execute(options);
+    }
+
+    #endregion
 
 }

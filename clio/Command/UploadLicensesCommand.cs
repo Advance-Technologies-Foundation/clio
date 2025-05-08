@@ -1,51 +1,75 @@
-﻿namespace Clio.Command.PackageCommand
+﻿using System;
+using System.IO;
+using System.Text.Json;
+using Clio.Common;
+
+namespace Clio.Command.PackageCommand;
+
+public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>
 {
-	using System;
-	using System.IO;
-	using System.Text.Json;
-	using Clio.Common;
 
-	public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>
-	{
+    #region Constructors: Public
 
-		public UploadLicensesCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings) {
-		}
+    public UploadLicensesCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+        : base(applicationClient, settings)
+    { }
 
-		protected override string ServicePath => @"/ServiceModel/LicenseService.svc/UploadLicenses";
+    #endregion
 
-		protected override string GetRequestData(UploadLicensesOptions options) {
-			string fileBody = File.ReadAllText(options.FilePath);
-			fileBody = fileBody.Replace("\"", "\\\"");
-			return "{\"licData\":\"" + fileBody + "\"}";
-		}
+    #region Properties: Protected
 
-		protected override void ProceedResponse(string response, UploadLicensesOptions options) {
-			var json = JsonDocument.Parse(response);
-			if (json.RootElement.TryGetProperty("success", out var successProperty) &&
-				successProperty.GetBoolean() == false) {
-				if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo)) {
-					var errorMessage = errorInfo.TryGetProperty("message", out var messageProperty)
-						? messageProperty.GetString()
-						: "Unknown error message";
-					var errorCode = errorInfo.TryGetProperty("errorCode", out var codeProperty)
-						? codeProperty.GetString()
-						: "UNKNOWN_CODE";
-					throw new LicenseInstallationException(
-						$"License not installed. ErrorCode: {errorCode}, Message: {errorMessage}");
-				}
-				throw new LicenseInstallationException("License not installed: Unknown error details");
-			}
-			if (response.ToLower().Contains("authentication failed")) {
-				throw new LicenseInstallationException("License not installed: Authentication failed.");
-			}
-				base.ProceedResponse(response, options);
-		}
-	}
+    protected override string ServicePath => @"/ServiceModel/LicenseService.svc/UploadLicenses";
 
-	public class LicenseInstallationException : Exception
-	{
-		public LicenseInstallationException(string message) : base(message) { }
-	}
+    #endregion
+
+    #region Methods: Protected
+
+    protected override string GetRequestData(UploadLicensesOptions options)
+    {
+        string fileBody = File.ReadAllText(options.FilePath);
+        fileBody = fileBody.Replace("\"", "\\\"");
+        return "{\"licData\":\"" + fileBody + "\"}";
+    }
+
+    protected override void ProceedResponse(string response, UploadLicensesOptions options)
+    {
+        JsonDocument json = JsonDocument.Parse(response);
+        if (json.RootElement.TryGetProperty("success", out JsonElement successProperty) &&
+            successProperty.GetBoolean() == false)
+        {
+            if (json.RootElement.TryGetProperty("errorInfo", out JsonElement errorInfo))
+            {
+                string errorMessage = errorInfo.TryGetProperty("message", out JsonElement messageProperty)
+                    ? messageProperty.GetString()
+                    : "Unknown error message";
+                string errorCode = errorInfo.TryGetProperty("errorCode", out JsonElement codeProperty)
+                    ? codeProperty.GetString()
+                    : "UNKNOWN_CODE";
+                throw new LicenseInstallationException(
+                    $"License not installed. ErrorCode: {errorCode}, Message: {errorMessage}");
+            }
+            throw new LicenseInstallationException("License not installed: Unknown error details");
+        }
+        if (response.ToLower().Contains("authentication failed"))
+        {
+            throw new LicenseInstallationException("License not installed: Authentication failed.");
+        }
+        base.ProceedResponse(response, options);
+    }
+
+    #endregion
+
+}
+
+public class LicenseInstallationException : Exception
+{
+
+    #region Constructors: Public
+
+    public LicenseInstallationException(string message)
+        : base(message)
+    { }
+
+    #endregion
 
 }

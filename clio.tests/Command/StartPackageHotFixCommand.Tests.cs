@@ -12,91 +12,94 @@ namespace Clio.Tests.Command;
 public class PackageHotFixCommandTestCase : BaseCommandTests<PackageHotFixCommandOptions>
 {
 
-	#region Setup/Teardown
+    #region Setup/Teardown
 
-	[SetUp]
-	public void Init(){
-		_packageEditableMutator = Substitute.For<IPackageEditableMutator>();
-		_logger = Substitute.For<ILogger>();
-		_command = new PackageHotFixCommand(_packageEditableMutator, new EnvironmentSettings()) {
-			Logger = _logger
-		};
-	}
+    [SetUp]
+    public void Init()
+    {
+        _packageEditableMutator = Substitute.For<IPackageEditableMutator>();
+        _logger = Substitute.For<ILogger>();
+        _command = new PackageHotFixCommand(_packageEditableMutator, new EnvironmentSettings())
+        {
+            Logger = _logger
+        };
+    }
 
-	#endregion
+    #endregion
 
-	#region Constants: Private
+    #region Constants: Private
 
-	private const string PackageName = "TestPackageName";
+    private const string PackageName = "TestPackageName";
 
-	#endregion
+    #endregion
 
-	#region Fields: Private
+    #region Fields: Private
 
-	private PackageHotFixCommand _command;
-	private ILogger _logger;
-	private IPackageEditableMutator _packageEditableMutator;
+    private PackageHotFixCommand _command;
+    private ILogger _logger;
+    private IPackageEditableMutator _packageEditableMutator;
 
-	#endregion
+    #endregion
 
+    [Test]
+    [Category("Unit")]
+    public void Execute_DisableHotFixMode()
+    {
+        //Arrange
+        PackageHotFixCommandOptions options = new()
+        {
+            PackageName = PackageName, Enable = false
+        };
 
-	[Test]
-	[Category("Unit")]
-	public void Execute_ShowsErrorMessage_WhenPackageHotFixModeNotSet(){
-		//Arrange
-		const string errorMessage = "SomeErrorMessage";
-		PackageHotFixCommandOptions options = new() {
-			PackageName = PackageName,
-			Enable = true
-		};
-		_packageEditableMutator.When(mutator => mutator.SetPackageHotfix(PackageName, true))
-			.Throw(new Exception(errorMessage));
+        //Act
+        int result = _command.Execute(options);
 
-		//Act
-		Action act = () => _command.Execute(options);
+        //Assert
+        result.Should().Be(0);
+        _logger.Received().WriteInfo($"Disable hotfix state for package: \"{PackageName}\"");
+        _logger.Received().WriteInfo("Done");
+        _packageEditableMutator.Received(1).SetPackageHotfix(PackageName, false);
+    }
 
-		//Assert
-		act.Should().Throw<Exception>().WithMessage(errorMessage);
-		_logger.Received().WriteInfo($"Enable hotfix state for package: \"{PackageName}\"");
-	}
+    [Test]
+    [Category("Unit")]
+    public void Execute_ShowsErrorMessage_WhenPackageHotFixModeNotSet()
+    {
+        //Arrange
+        const string errorMessage = "SomeErrorMessage";
+        PackageHotFixCommandOptions options = new()
+        {
+            PackageName = PackageName, Enable = true
+        };
+        _packageEditableMutator.When(mutator => mutator.SetPackageHotfix(PackageName, true))
+                               .Throw(new Exception(errorMessage));
 
-	[Test]
-	[Category("Unit")]
-	public void Execute_StartsHotFixMode(){
-		//Arrange
-		PackageHotFixCommandOptions options = new() {
-			PackageName = PackageName,
-			Enable = true
-		};
+        //Act
+        Action act = () => _command.Execute(options);
 
-		//Act
-		int result = _command.Execute(options);
+        //Assert
+        act.Should().Throw<Exception>().WithMessage(errorMessage);
+        _logger.Received().WriteInfo($"Enable hotfix state for package: \"{PackageName}\"");
+    }
 
-		//Assert
-		result.Should().Be(0);
-		_logger.Received().WriteInfo($"Enable hotfix state for package: \"{PackageName}\"");
-		_logger.Received().WriteInfo("Done");
-		_packageEditableMutator.Received(1).SetPackageHotfix(PackageName, true);
-	}
+    [Test]
+    [Category("Unit")]
+    public void Execute_StartsHotFixMode()
+    {
+        //Arrange
+        PackageHotFixCommandOptions options = new()
+        {
+            PackageName = PackageName, Enable = true
+        };
 
-	[Test]
-	[Category("Unit")]
-	public void Execute_DisableHotFixMode() {
-		//Arrange
-		PackageHotFixCommandOptions options = new() {
-			PackageName = PackageName,
-			Enable = false
-		};
+        //Act
+        int result = _command.Execute(options);
 
-		//Act
-		int result = _command.Execute(options);
-
-		//Assert
-		result.Should().Be(0);
-		_logger.Received().WriteInfo($"Disable hotfix state for package: \"{PackageName}\"");
-		_logger.Received().WriteInfo("Done");
-		_packageEditableMutator.Received(1).SetPackageHotfix(PackageName, false);
-	}
-
+        //Assert
+        result.Should().Be(0);
+        _logger.Received().WriteInfo($"Enable hotfix state for package: \"{PackageName}\"");
+        _logger.Received().WriteInfo("Done");
+        _packageEditableMutator.Received(1).SetPackageHotfix(PackageName, true);
+    }
 
 }

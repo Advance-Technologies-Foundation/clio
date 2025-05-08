@@ -1,21 +1,20 @@
-﻿namespace Clio.Package
+﻿using System.Collections.Generic;
+
+namespace Clio.Package;
+
+#region Interface: IApplicationPackageListProvider
+
+public interface IApplicationPackageListProvider
 {
-	using System.Collections.Generic;
 
-	#region Interface: IApplicationPackageListProvider
-	
-	public interface IApplicationPackageListProvider
-	{
+    #region Methods: Public
 
-		#region Methods: Public
+    IEnumerable<PackageInfo> GetPackages();
 
-		IEnumerable<PackageInfo> GetPackages();
-		IEnumerable<PackageInfo> GetPackages(string scriptData);
+    IEnumerable<PackageInfo> GetPackages(string scriptData);
 
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion

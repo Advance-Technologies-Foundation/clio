@@ -1,6 +1,6 @@
 environment:
   url: http://localhost:40015
-    
+
 settings:
 #  - code: "Maintainer"
 #    value: "Customer"
@@ -20,6 +20,5 @@ settings:
 #    value: "Canada"
 webservices:
   - name: CreatioMarketplaceApi
-#    url: https://github.com/Advance-Technologies-Foundation/clio
+    #    url: https://github.com/Advance-Technologies-Foundation/clio
     url: https://marketplace.creatio.com/api
-  

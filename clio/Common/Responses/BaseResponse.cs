@@ -1,58 +1,48 @@
-﻿namespace Clio.Common.Responses
+﻿using System;
+using System.Runtime.Serialization;
+
+namespace Clio.Common.Responses;
+
+#region Class: BaseResponse
+
+[Serializable]
+[DataContract]
+public class BaseResponse
 {
-	using System;
-	using System.Runtime.Serialization;
 
-	#region Class: BaseResponse
+    #region Properties: Public
 
-	[Serializable, DataContract]
-	public class BaseResponse
-	{
+    [DataMember(Name = "errorInfo")]
+    public ErrorInfo ErrorInfo { get; set; }
 
-		#region Constructors: Public
+    [DataMember(Name = "success")]
+    public bool Success { get; set; }
 
-		public BaseResponse() { }
-
-		#endregion
-
-		#region Properties: Public
-
-		[DataMember(Name = "success")]
-		public bool Success { get; set; }
-		[DataMember(Name = "errorInfo")]
-		public ErrorInfo ErrorInfo { get; set; }
-
-		#endregion
-
-	}
-
-	#endregion
-
-	#region Class: ErrorInfo
-
-	[DataContract]
-	public class ErrorInfo
-	{
-
-		#region Constructors: Public
-
-		public ErrorInfo() { }
-
-		#endregion
-
-		#region Properties: Public
-
-		[DataMember(Name = "errorCode")]
-		public string ErrorCode { get; set; }
-		[DataMember(Name = "message")]
-		public string Message { get; set; }
-		[DataMember(Name = "stackTrace")]
-		public string StackTrace { get; set; }
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion
+
+#region Class: ErrorInfo
+
+[DataContract]
+public class ErrorInfo
+{
+
+    #region Properties: Public
+
+    [DataMember(Name = "errorCode")]
+    public string ErrorCode { get; set; }
+
+    [DataMember(Name = "message")]
+    public string Message { get; set; }
+
+    [DataMember(Name = "stackTrace")]
+    public string StackTrace { get; set; }
+
+    #endregion
+
+}
+
+#endregion

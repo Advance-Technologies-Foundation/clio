@@ -1,23 +1,21 @@
-namespace Clio.Workspaces
+using System;
+using System.Collections.Generic;
+
+namespace Clio.Workspaces;
+
+#region Class: WorkspaceSettings
+
+public class WorkspaceSettings
 {
-	using System;
-	using Newtonsoft.Json;
-	using System.Collections.Generic;
 
-	#region Class: WorkspaceSettings
+    #region Properties: Public
 
-	public class WorkspaceSettings
-	{
+    public Version ApplicationVersion { get; set; }
 
-		#region Properties: Public
+    public IList<string> Packages { get; set; } = new List<string>();
 
-		public IList<string> Packages { get; set; } = new List<string>();
-		public Version ApplicationVersion { get; set; }
-
-		#endregion
-
-	}
-
-	#endregion
+    #endregion
 
 }
+
+#endregion
