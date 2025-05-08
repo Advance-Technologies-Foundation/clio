@@ -1,18 +1,14 @@
-namespace Clio.Workspaces
+namespace Clio.Workspaces;
+
+#region Class: WorkspaceEnvironment
+
+public class WorkspaceEnvironment
 {
+    #region Properties: Public
 
-	#region Class: WorkspaceEnvironment
+    public string Uri { get; set; } = string.Empty;
 
-	public class WorkspaceEnvironment
-	{
-		#region Properties: Public
-
-		public string Uri { get; set; } = string.Empty;
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

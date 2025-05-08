@@ -2,7 +2,7 @@ name: release-to-nuget
 
 on:
   release:
-    types: [published]
+    types: [ published ]
 
 jobs:
   build:
@@ -19,10 +19,10 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: powershell
         run: |
-            $ErrorActionPreference = 'Stop'
-            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
-            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
-            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
+          $ErrorActionPreference = 'Stop'
+          dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+          /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
+          /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
 
       - name: Build and analyze
         env:

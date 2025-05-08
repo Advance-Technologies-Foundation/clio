@@ -6,32 +6,32 @@ namespace Clio.Package;
 
 internal class PackageActivator : BasePackageOperation, IPackageActivator
 {
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-		base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-	{
-	}
+    public PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
+        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
+        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
+    {
+    }
 
-	#endregion
+    #endregion
 
-	#region Methods: Protected
+    #region Methods: Protected
 
-	protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
+    protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
 
-	#endregion
+    #endregion
 
-	#region Methods: Public
+    #region Methods: Public
 
-	public IEnumerable<PackageActivationResultDto> Activate(string packageName)
-	{
-		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		PackageActivationResponse activationResponse =
-			SendRequest<string, PackageActivationResponse>(PackageServiceUrl, "ActivatePackage", packageName);
-		ThrowsErrorIfUnsuccessfulResponseReceived(activationResponse);
-		return activationResponse.PackagesActivationResults;
-	}
+    public IEnumerable<PackageActivationResultDto> Activate(string packageName)
+    {
+        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+        PackageActivationResponse activationResponse =
+            SendRequest<string, PackageActivationResponse>(PackageServiceUrl, "ActivatePackage", packageName);
+        ThrowsErrorIfUnsuccessfulResponseReceived(activationResponse);
+        return activationResponse.PackagesActivationResults;
+    }
 
-	#endregion
+    #endregion
 }

@@ -1,11 +1,10 @@
-﻿using CommandLine;
+using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command;
+
+[Verb("upload-licenses", Aliases = new string[] { "lic" }, HelpText = "Upload licenses")]
+public class UploadLicensesOptions : RemoteCommandOptions
 {
-	[Verb("upload-licenses", Aliases = new string[] { "lic" }, HelpText = "Upload licenses")]
-	public class UploadLicensesOptions : RemoteCommandOptions
-	{
-		[Value(0, MetaName = "FilePath", Required = true, HelpText = "License file path")]
-		public string FilePath { get; set; }
-	}
+    [Value(0, MetaName = "FilePath", Required = true, HelpText = "License file path")]
+    public string FilePath { get; set; }
 }

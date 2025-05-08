@@ -1,65 +1,75 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 
-namespace cliogate.Files.cs
+namespace cliogate.Files.cs;
+
+#region Class: CompressionUtilities
+
+public static class CompressionUtilities
 {
+    #region Methods: Private
 
-	#region Class: CompressionUtilities
+    private static void WriteFileName(string relativeFilePath, GZipStream zipStream)
+    {
+        char[] chars = relativeFilePath.ToCharArray();
+        zipStream.Write(BitConverter.GetBytes(chars.Length), 0, sizeof(int));
+        foreach (char c in chars)
+        {
+            zipStream.Write(BitConverter.GetBytes(c), 0, sizeof(char));
+        }
+    }
 
-	public static class CompressionUtilities
-	{
+    private static void WriteFileContent(string filePath, GZipStream zipStream)
+    {
+        byte[] bytes = File.ReadAllBytes(filePath);
+        zipStream.Write(BitConverter.GetBytes(bytes.Length), 0, sizeof(int));
+        zipStream.Write(bytes, 0, bytes.Length);
+    }
 
-		#region Methods: Private
-		private static void WriteFileName(string relativeFilePath, GZipStream zipStream) {
-			char[] chars = relativeFilePath.ToCharArray();
-			zipStream.Write(BitConverter.GetBytes(chars.Length), 0, sizeof(int));
-			foreach (char c in chars) {
-				zipStream.Write(BitConverter.GetBytes(c), 0, sizeof(char));
-			}
-		}
+    private static void PackToGZip(string filePath, string rootDirectoryPath, GZipStream zipStream)
+    {
+        string relativeFilePath = filePath.Substring(rootDirectoryPath.Length);
+        WriteFileName(relativeFilePath.TrimStart(Path.DirectorySeparatorChar), zipStream);
+        WriteFileContent(filePath, zipStream);
+    }
 
-		private static void WriteFileContent(string filePath, GZipStream zipStream) {
-			byte[] bytes = File.ReadAllBytes(filePath);
-			zipStream.Write(BitConverter.GetBytes(bytes.Length), 0, sizeof(int));
-			zipStream.Write(bytes, 0, bytes.Length);
-		}
+    #endregion
 
-		private static void PackToGZip(string filePath, string rootDirectoryPath, GZipStream zipStream) {
-			string relativeFilePath = filePath.Substring(rootDirectoryPath.Length);
-			WriteFileName(relativeFilePath.TrimStart(Path.DirectorySeparatorChar), zipStream);
-			WriteFileContent(filePath, zipStream);
-		}
+    #region Methods: Public
 
-		#endregion
+    public static MemoryStream GetCompressedFolder(string rootDirectoryPath,
+        IEnumerable<string> ignoreDirectoriesName = null)
+    {
+        string[] files = Directory.GetFiles(rootDirectoryPath, "*.*", SearchOption.AllDirectories);
+        if (ignoreDirectoriesName != null)
+        {
+            IEnumerable<string> startNameIgnore = ignoreDirectoriesName.Select(d => Path.Combine(rootDirectoryPath, d));
+            files = files.Where(f => !startNameIgnore.Any(f.StartsWith)).ToArray();
+        }
 
-		#region Methods: Public
+        byte[] compressed;
+        using (MemoryStream outStream = new())
+        {
+            using (GZipStream zipStream = new(outStream, CompressionMode.Compress))
+            {
+                foreach (string filePath in files)
+                {
+                    PackToGZip(filePath, rootDirectoryPath, zipStream);
+                }
 
-		public static MemoryStream GetCompressedFolder(string rootDirectoryPath, IEnumerable<string> ignoreDirectoriesName = null) {
-			var files = Directory.GetFiles(rootDirectoryPath, "*.*", SearchOption.AllDirectories);
-			if(ignoreDirectoriesName != null) {
-				IEnumerable<string> startNameIgnore = ignoreDirectoriesName.Select(d => Path.Combine(rootDirectoryPath, d)); 
-				files = files.Where(f=> !startNameIgnore.Any(f.StartsWith)).ToArray();
-			}
-			byte[] compressed;
-			using (var outStream = new MemoryStream()) {
-				using (var zipStream = new GZipStream(outStream, CompressionMode.Compress)) {
-					foreach (string filePath in files) {
-						PackToGZip(filePath, rootDirectoryPath, zipStream);
-					}
-					zipStream.Flush();
-				}
-				compressed = outStream.ToArray();
-			}
-			return new MemoryStream(compressed);
-		}
+                zipStream.Flush();
+            }
 
-		#endregion
+            compressed = outStream.ToArray();
+        }
 
-	}
+        return new MemoryStream(compressed);
+    }
 
-	#endregion
-
+    #endregion
 }
+
+#endregion

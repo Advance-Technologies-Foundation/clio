@@ -39,17 +39,17 @@ metadata:
   namespace: clio-infrastructure
 data:
   servers.json: |
-   {
-       "Servers": {
-         "1": {
-           "Name": "PostgreSQL",
-           "Group": "Servers",
-           "Port": 5432,
-           "Username": "postgres",
-           "Password": "root",
-           "Host": "postgres-service-internal",
-           "SSLMode": "prefer",
-           "MaintenanceDB": "postgres"
-         }
-       }
-   }
+    {
+      "Servers": {
+        "1": {
+          "Name": "PostgreSQL",
+          "Group": "Servers",
+          "Port": 5432,
+          "Username": "postgres",
+          "Password": "root",
+          "Host": "postgres-service-internal",
+          "SSLMode": "prefer",
+          "MaintenanceDB": "postgres"
+        }
+      }
+    }

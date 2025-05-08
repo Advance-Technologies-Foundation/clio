@@ -16,7 +16,7 @@ spec:
       containers:
         - name: redis
           image: redis:latest
-          command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+          command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
           env:
             - name: ALLOW_EMPTY_PASSWORD
               value: "yes"
@@ -45,9 +45,9 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
- name: redis-config
- namespace: clio-infrastructure
+  name: redis-config
+  namespace: clio-infrastructure
 data:
- redis.conf: |-
-   databases 100
+  redis.conf: |-
+    databases 100
 

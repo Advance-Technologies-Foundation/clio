@@ -6,42 +6,42 @@ namespace Clio.Package;
 
 internal class PackageEditableMutator : BasePackageOperation, IPackageEditableMutator
 {
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public PackageEditableMutator(IApplicationPackageListProvider applicationPackageListProvider,
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-		base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-	{
-	}
+    public PackageEditableMutator(IApplicationPackageListProvider applicationPackageListProvider,
+        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
+        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
+    {
+    }
 
-	#endregion
+    #endregion
 
-	#region Methods: Protected
+    #region Methods: Protected
 
-	protected override string CreateRequestData<TRequest>(TRequest request)
-	{
-		return "{\"uId\": \"" + request + "\"}";
-	}
+    protected override string CreateRequestData<TRequest>(TRequest request) => "{\"uId\": \"" + request + "\"}";
 
-	#endregion
+    #endregion
 
-	#region Methods: Public
+    #region Methods: Public
 
-	/// <inheritdoc cref="IPackageEditableMutator.SetPackageHotfix"/>
-	public void SetPackageHotfix(string packageName, bool state)
-	{
-		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		Guid packageUId = GetPackageUId(packageName);
-		if (state) {
-			BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "StartPackageHotfix", packageUId);
-			ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
-		} else {
-			BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "FinishPackageHotfix", packageUId);
-			ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
-		}
+    /// <inheritdoc cref="IPackageEditableMutator.SetPackageHotfix"/>
+    public void SetPackageHotfix(string packageName, bool state)
+    {
+        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+        Guid packageUId = GetPackageUId(packageName);
+        if (state)
+        {
+            BaseResponse deactivateResponse =
+                SendRequest<Guid, BaseResponse>(PackageServiceUrl, "StartPackageHotfix", packageUId);
+            ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+        }
+        else
+        {
+            BaseResponse deactivateResponse =
+                SendRequest<Guid, BaseResponse>(PackageServiceUrl, "FinishPackageHotfix", packageUId);
+            ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+        }
+    }
 
-	}
-
-
-	#endregion
+    #endregion
 }

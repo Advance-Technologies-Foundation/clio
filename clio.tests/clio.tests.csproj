@@ -6,24 +6,24 @@
     <RootNamespace>Clio.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup Label="References">
-    <ProjectReference Include="..\clio\clio.csproj" />
-    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.11" />
+    <ProjectReference Include="..\clio\clio.csproj"/>
+    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.11"/>
     <PackageReference Include="coverlet.collector" Version="6.0.4">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="FluentAssertions" Version="[7.0.0]" />
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
-    <PackageReference Include="nunit" Version="4.3.2" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
-    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.2.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.1" />
+    <PackageReference Include="FluentAssertions" Version="[7.0.0]"/>
+    <PackageReference Include="NSubstitute" Version="5.3.0"/>
+    <PackageReference Include="nunit" Version="4.3.2"/>
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0"/>
+    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.2.1"/>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0"/>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.1"/>
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
-      <!-- Exclude the project from analysis -->
-      <SonarQubeExclude>true</SonarQubeExclude>
-      <SonarQubeTestProject>true</SonarQubeTestProject>
+    <!-- Exclude the project from analysis -->
+    <SonarQubeExclude>true</SonarQubeExclude>
+    <SonarQubeTestProject>true</SonarQubeTestProject>
   </PropertyGroup>
   <ItemGroup Label="OldFileContent Needs refactoring">
     <None Update="BinNet472ReferenceHint.xml">
@@ -66,7 +66,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  
+
   <ItemGroup Label="File Content">
     <None Include="Examples\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -77,19 +77,19 @@
     <None Include="YAML\Script\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <Compile Remove="Examples\WebFarm\**" />
-    <Compile Remove="Examples\WebFarm\Node1-Main\**" />
-    <Compile Remove="Examples\WebFarm\Node1-Main\ErrorPage.aspx" />
-    <Compile Remove="samplefiles\AssemblyInfo.cs" />
+    <Compile Remove="Examples\WebFarm\**"/>
+    <Compile Remove="Examples\WebFarm\Node1-Main\**"/>
+    <Compile Remove="Examples\WebFarm\Node1-Main\ErrorPage.aspx"/>
+    <Compile Remove="samplefiles\AssemblyInfo.cs"/>
 
     <None Include="Examples\Sites\N8_Site\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    
+
   </ItemGroup>
-  
+
   <ItemGroup Label="CodeAnalyzers">
-    <AdditionalFiles Include="..\stylecop.json" Link="stylecop.json" />
+    <AdditionalFiles Include="..\stylecop.json" Link="stylecop.json"/>
     <PackageReference Include="StyleCop.Analyzers" Version="1.1.118">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -99,5 +99,5 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
-  
+
 </Project>

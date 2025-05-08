@@ -1,66 +1,64 @@
-﻿using System.IO;
+using System.IO;
 using System.Threading;
 using Clio.Common;
 
-namespace Clio.WebApplication
+namespace Clio.WebApplication;
+
+#region Class: Application
+
+public class Application : IApplication
 {
+    #region Fields: Private
 
-	#region Class: Application
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly IApplicationClient _applicationClient;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private ILogger _logger;
+    private readonly string uploadLicenseServiceUrl = "/ServiceModel/LicenseService.svc/UploadLicenses";
 
-	public class Application : IApplication
-	{
+    #endregion
 
-		#region Fields: Private
+    #region Constructors: Public
 
-		private readonly EnvironmentSettings _environmentSettings;
-		private readonly IApplicationClient _applicationClient;
-		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private ILogger _logger;
-		private readonly string uploadLicenseServiceUrl = "/ServiceModel/LicenseService.svc/UploadLicenses";
+    public Application(EnvironmentSettings environmentSettings, IApplicationClient applicationClient,
+        IServiceUrlBuilder serviceUrlBuilder, ILogger logger)
+    {
+        environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        applicationClient.CheckArgumentNull(nameof(applicationClient));
+        serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
+        _environmentSettings = environmentSettings;
+        _applicationClient = applicationClient;
+        _serviceUrlBuilder = serviceUrlBuilder;
+        _logger = logger;
+    }
 
-        #endregion
+    #endregion
 
-        #region Constructors: Public
+    #region Methods: Private
 
-        public Application(EnvironmentSettings environmentSettings, IApplicationClient applicationClient,
-				IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			applicationClient.CheckArgumentNull(nameof(applicationClient));
-			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
-			_environmentSettings = environmentSettings;
-			_applicationClient = applicationClient;
-			_serviceUrlBuilder = serviceUrlBuilder;
-			_logger = logger;
-		}
+    private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url);
 
-		#endregion
+    #endregion
 
-		#region Methods: Private
+    #region Methods: Public
 
-		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url); 
+    public void Restart()
+    {
+        _logger.WriteLine("Restart application...");
+        string servicePath = _environmentSettings.IsNetCore
+            ? @"/ServiceModel/AppInstallerService.svc/RestartApp"
+            : @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+        _applicationClient.ExecutePostRequest(GetCompleteUrl(servicePath), "{}", Timeout.Infinite);
+    }
 
-		#endregion
+    public void LoadLicense(string licenseFilePath)
+    {
+        string fileData = File.ReadAllText(licenseFilePath);
+        string licData = $"{{ \"licData\":\"{fileData}\"}}";
+        _applicationClient.ExecutePostRequest(uploadLicenseServiceUrl, licenseFilePath);
+    }
 
-		#region Methods: Public
-
-		public void Restart() {
-			_logger.WriteLine("Restart application...");
-			string servicePath = _environmentSettings.IsNetCore 
-				? @"/ServiceModel/AppInstallerService.svc/RestartApp" 
-				: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-			_applicationClient.ExecutePostRequest(GetCompleteUrl(servicePath), "{}", Timeout.Infinite);
-		}
-
-		public void LoadLicense(string licenseFilePath) {
-			var fileData = File.ReadAllText(licenseFilePath);
-			string licData = $"{{ \"licData\":\"{fileData}\"}}";
-			_applicationClient.ExecutePostRequest(uploadLicenseServiceUrl, licenseFilePath);
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

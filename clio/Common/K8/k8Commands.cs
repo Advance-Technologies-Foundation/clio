@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,256 +13,264 @@ namespace Clio.Common.K8;
 
 public interface Ik8Commands
 {
+    void CopyBackupFileToPod(k8Commands.PodType podType, string src, string destFileName);
 
-	void CopyBackupFileToPod(k8Commands.PodType podType, string src, string destFileName);
+    string DeleteBackupImage(k8Commands.PodType podType, string fileName);
 
-	string DeleteBackupImage(k8Commands.PodType podType, string fileName);
+    string RestorePgDatabase(string backupFileName, string dbName);
 
-	string RestorePgDatabase(string backupFileName, string dbName);
+    k8Commands.ConnectionStringParams GetPostgresConnectionString();
 
-	k8Commands.ConnectionStringParams GetPostgresConnectionString();
-
-	k8Commands.ConnectionStringParams GetMssqlConnectionString();
-
+    k8Commands.ConnectionStringParams GetMssqlConnectionString();
 }
 
 public class k8Commands : Ik8Commands
 {
+    #region Enum: Public
 
-	#region Enum: Public
+    public enum PodType
+    {
+        Mssql,
+        Postgres
+    }
 
-	public enum PodType
-	{
+    #endregion
 
-		Mssql,
-		Postgres
+    #region Struct: Private
 
-	}
+    private readonly struct ActivePod
+    {
+        #region Constants: Private
 
-	#endregion
+        private const string MssqlContainerName = "clio-mssql";
+        private const string MssqlFolderInVolumeMountName = "data";
+        private const string MssqlPodLabel = "clio-mssql";
+        private const string MssqlVolumeMountName = "mssql-data";
+        private const string MssqlAppName = "clio-mssql";
+        private const string MssqlUserNameKey = "";
+        private const string MssqlPasswordKey = "MSSQL_SA_PASSWORD";
+        private const string MssqlSecretName = "clio-mssql-secret";
+        private const string MssqlInternalServiceName = "mssql-service-internal";
 
-	#region Struct: Private
+        private const string PostgresContainerName = "clio-postgres";
+        private const string PostgresPodLabel = "clio-postgres";
+        private const string PostgresVolumeMountName = "postgres-backup-images";
+        private const string PostgresAppName = "clio-postgres";
+        private const string PostgresUserNameKey = "POSTGRES_USER";
+        private const string PostgresPasswordKey = "POSTGRES_PASSWORD";
+        private const string PostgresSecretName = "clio-postgres-secret";
+        private const string PostgresInternalServiceName = "postgres-service-internal";
 
-	private readonly struct ActivePod
-	{
+        #endregion
 
-		#region Constants: Private
+        #region Fields: Internal
 
-		private const string MssqlContainerName = "clio-mssql";
-		private const string MssqlFolderInVolumeMountName = "data";
-		private const string MssqlPodLabel = "clio-mssql";
-		private const string MssqlVolumeMountName = "mssql-data";
-		private const string MssqlAppName = "clio-mssql";
-		private const string MssqlUserNameKey = "";
-		private const string MssqlPasswordKey = "MSSQL_SA_PASSWORD";
-		private const string MssqlSecretName = "clio-mssql-secret";
-		private const string MssqlInternalServiceName = "mssql-service-internal";
-		
-		private const string PostgresContainerName = "clio-postgres";
-		private const string PostgresPodLabel = "clio-postgres";
-		private const string PostgresVolumeMountName = "postgres-backup-images";
-		private const string PostgresAppName = "clio-postgres";
-		private const string PostgresUserNameKey = "POSTGRES_USER";
-		private const string PostgresPasswordKey = "POSTGRES_PASSWORD";
-		private const string PostgresSecretName = "clio-postgres-secret";
-		private const string PostgresInternalServiceName = "postgres-service-internal";
-		
-		#endregion
+        internal readonly string ContainerName;
+        internal readonly string PodLabel;
+        internal readonly string VolumeMountName;
+        internal readonly string FolderInVolumeMountName;
+        internal readonly string AppName;
+        internal readonly string UsernameKey;
+        internal readonly string PasswordKey;
+        internal const string RedisAppName = "clio-redis";
+        internal const string RedisLoadBalancerServiceName = "redis-service-lb";
+        internal const string RedisInternalServiceName = "redis-service-internal";
+        internal readonly string SecretName;
+        internal readonly string InternalServiceName;
 
-		#region Fields: Internal
+        #endregion
 
-		internal readonly string ContainerName;
-		internal readonly string PodLabel;
-		internal readonly string VolumeMountName;
-		internal readonly string FolderInVolumeMountName;
-		internal readonly string AppName;
-		internal readonly string UsernameKey;
-		internal readonly string PasswordKey;
-		internal const string RedisAppName = "clio-redis";
-		internal const string RedisLoadBalancerServiceName = "redis-service-lb";
-		internal const string RedisInternalServiceName = "redis-service-internal";
-		internal readonly string SecretName;
-		internal readonly string InternalServiceName;
-		
-		#endregion
+        #region Constructors: Public
 
-		#region Constructors: Public
+        public ActivePod(PodType podType) =>
+            (ContainerName, PodLabel, VolumeMountName, FolderInVolumeMountName, AppName, UsernameKey, PasswordKey,
+                SecretName, InternalServiceName) = podType switch
+                {
+                    PodType.Postgres => (PostgresContainerName, PostgresPodLabel, PostgresVolumeMountName, string.Empty,
+                        PostgresAppName, PostgresUserNameKey, PostgresPasswordKey, PostgresSecretName,
+                        PostgresInternalServiceName),
+                    PodType.Mssql => (MssqlContainerName, MssqlPodLabel, MssqlVolumeMountName, MssqlFolderInVolumeMountName,
+                        MssqlAppName, "", MssqlPasswordKey, MssqlSecretName, MssqlInternalServiceName),
+                    _ => throw new InvalidOperationException($"Unsupported PodType: {podType}")
+                };
 
-		public ActivePod(PodType podType) {
-			(ContainerName, PodLabel, VolumeMountName, FolderInVolumeMountName, AppName, UsernameKey, PasswordKey, SecretName, InternalServiceName) = podType switch {
-				PodType.Postgres => (PostgresContainerName, PostgresPodLabel, PostgresVolumeMountName, string.Empty, 
-					PostgresAppName, PostgresUserNameKey, PostgresPasswordKey, PostgresSecretName, PostgresInternalServiceName),
-				PodType.Mssql => (MssqlContainerName, MssqlPodLabel, MssqlVolumeMountName, MssqlFolderInVolumeMountName,
-					MssqlAppName, "",MssqlPasswordKey, MssqlSecretName, MssqlInternalServiceName),
-				_ => throw new InvalidOperationException($"Unsupported PodType: {podType}")
-			};
-		}
+        #endregion
+    }
 
-		#endregion
+    #endregion
 
-	}
+    #region Constants: Private
 
-	#endregion
+    private const string K8NNameSpace = "clio-infrastructure";
 
-	#region Constants: Private
+    #endregion
 
-	private const string K8NNameSpace = "clio-infrastructure";
+    #region Fields: Private
 
-	#endregion
+    private static readonly Func<ActivePod, V1Pod, string, string> GetBackupFullDestPath =
+        (currentPodType, pod, destFileName) =>
+        {
+            string mountpath = pod.Spec.Containers
+                .FirstOrDefault(c => c.Name == currentPodType.ContainerName)?
+                .VolumeMounts.FirstOrDefault(vm => vm.Name == currentPodType.VolumeMountName)?.MountPath;
+            return string.IsNullOrWhiteSpace(currentPodType.FolderInVolumeMountName) switch
+            {
+                true => $"{mountpath}/{destFileName}",
+                _ => $"{mountpath}/{currentPodType.FolderInVolumeMountName}/{destFileName}"
+            };
+        };
 
-	#region Fields: Private
 
-	private static readonly Func<ActivePod, V1Pod, string, string> GetBackupFullDestPath =
-		(currentPodType, pod, destFileName) => {
-			string mountpath = pod.Spec.Containers
-				.FirstOrDefault(c => c.Name == currentPodType.ContainerName)?
-				.VolumeMounts.FirstOrDefault(vm => vm.Name == currentPodType.VolumeMountName)?.MountPath;
-			return string.IsNullOrWhiteSpace(currentPodType.FolderInVolumeMountName) switch {
-				true => $"{mountpath}/{destFileName}",
-				_ => $"{mountpath}/{currentPodType.FolderInVolumeMountName}/{destFileName}"
-			};
-		};
+    private readonly IKubernetes _client;
 
-	
-	
-	private readonly IKubernetes _client;
+    #endregion
 
-	#endregion
+    #region Constructors: Public
 
-	#region Constructors: Public
+    public k8Commands(IKubernetes client) => _client = client;
 
-	public k8Commands(IKubernetes client) {
-		_client = client;
-	}
+    #endregion
 
-	#endregion
+    #region Methods: Private
 
-	#region Methods: Private
+    private async Task<string> ExecInPod(ActivePod currentPod, V1Pod pod, IEnumerable<string> commandToExecute)
+    {
+        try
+        {
+            WebSocket webSocket =
+                await _client.WebSocketNamespacedPodExecAsync(pod.Metadata.Name, K8NNameSpace, commandToExecute,
+                    currentPod.ContainerName).ConfigureAwait(false);
 
-	private async Task<string> ExecInPod(ActivePod currentPod, V1Pod pod, IEnumerable<string> commandToExecute) {
-		try {
-			WebSocket webSocket =
-				await _client.WebSocketNamespacedPodExecAsync(pod.Metadata.Name, K8NNameSpace, commandToExecute,
-					currentPod.ContainerName).ConfigureAwait(false);
+            using StreamDemuxer demux = new(webSocket);
+            demux.Start();
+            await using Stream stream = demux.GetStream(1, 1);
+            using MemoryStream ms = new();
+            await stream.CopyToAsync(ms);
+            ms.Seek(0, SeekOrigin.Begin);
 
-			using StreamDemuxer demux = new(webSocket);
-			demux.Start();
-			await using Stream stream = demux.GetStream(1, 1);
-			using MemoryStream ms = new MemoryStream();
-			await stream.CopyToAsync(ms);
-			ms.Seek(0,SeekOrigin.Begin);
-			
-			StreamReader sr = new StreamReader(ms);
-			return await sr.ReadToEndAsync();
-		}
-		catch (Exception e){
-			Console.WriteLine(e);
-		}
-		return "";
-	}
+            StreamReader sr = new(ms);
+            return await sr.ReadToEndAsync();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+        }
 
-	// private V1Namespace GetNamespaces(){
-	// 	
-	// 	//TODO - Can we do better ?
-	// 	var namespaces = _client.CoreV1.ListNamespace().Items.FirstOrDefault(ns => ns.Metadata.Name == K8NNameSpace);
-	 //        if (namespaces == null) {
-	 //        	throw new Exception($"{K8NNameSpace} namespace not found");
-	 //        }
-	// 	return namespaces;
-	// }
+        return "";
+    }
 
-	private V1Pod GetPodByLabel(string appName) {
-		V1Pod pod = _client.CoreV1
-			.ListNamespacedPod(K8NNameSpace, null, null, null, $"app={appName}")
-			.Items.FirstOrDefault();
-		return pod;
-	}
+    // private V1Namespace GetNamespaces(){
+    // 	
+    // 	//TODO - Can we do better ?
+    // 	var namespaces = _client.CoreV1.ListNamespace().Items.FirstOrDefault(ns => ns.Metadata.Name == K8NNameSpace);
+    //        if (namespaces == null) {
+    //        	throw new Exception($"{K8NNameSpace} namespace not found");
+    //        }
+    // 	return namespaces;
+    // }
 
-	#endregion
+    private V1Pod GetPodByLabel(string appName)
+    {
+        V1Pod pod = _client.CoreV1
+            .ListNamespacedPod(K8NNameSpace, null, null, null, $"app={appName}")
+            .Items.FirstOrDefault();
+        return pod;
+    }
 
-	#region Methods: Public
+    #endregion
 
-	public void CopyBackupFileToPod(PodType podType, string src, string destFileName) {
-		ActivePod currentPod = new(podType);
-		V1Pod pod = GetPodByLabel(currentPod.PodLabel);
-		string fullDestFilePath = GetBackupFullDestPath(currentPod, pod, destFileName);
-		Cp cp = new(_client);
-		cp.Copy(pod, K8NNameSpace, currentPod.ContainerName, src, $"{fullDestFilePath}").GetAwaiter().GetResult();
-	}
+    #region Methods: Public
 
-	public string DeleteBackupImage(PodType podType, string fileName) {
-		ActivePod currentPod = new(podType);
-		V1Pod pod = GetPodByLabel(currentPod.PodLabel);
-		string fullBackupFileName = GetBackupFullDestPath(currentPod, pod, fileName);
-		string[] command = new[] {"rm", fullBackupFileName};
-		return ExecInPod(currentPod, pod, command).GetAwaiter().GetResult();
-	}
+    public void CopyBackupFileToPod(PodType podType, string src, string destFileName)
+    {
+        ActivePod currentPod = new(podType);
+        V1Pod pod = GetPodByLabel(currentPod.PodLabel);
+        string fullDestFilePath = GetBackupFullDestPath(currentPod, pod, destFileName);
+        Cp cp = new(_client);
+        cp.Copy(pod, K8NNameSpace, currentPod.ContainerName, src, $"{fullDestFilePath}").GetAwaiter().GetResult();
+    }
 
-	public string RestorePgDatabase(string backupFileName, string dbName) {
-		ActivePod currentPod = new(PodType.Postgres);
-		V1Pod pod = GetPodByLabel(currentPod.PodLabel);
-		string[] command = new[] {
-			"pg_restore", 
-			$"/usr/local/backup-images/{backupFileName}", 
-			$"--dbname={dbName}", 
-			"--verbose",
-			"--no-owner", 
-			"--no-privileges", 
-			"--jobs=4", 
-			"--username=postgres"
-		};
-		string result =  ExecInPod(currentPod, pod, command).GetAwaiter().GetResult();
-		return result;
-	}
-	
-	public ConnectionStringParams GetPostgresConnectionString() {
-		ActivePod currentPod = new ActivePod(PodType.Postgres);
-		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
-			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
-		string serviceName = statefulSet.Spec.ServiceName;
-		
-		V1ServicePort pgPort = GetServicePort(currentPod.AppName, serviceName);
-		V1ServicePort dbPortInternal = GetServicePort(currentPod.AppName, currentPod.InternalServiceName);
-		V1ServicePort redisPort = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisLoadBalancerServiceName);
-		V1ServicePort redisPortInternal = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisInternalServiceName);
-		
-		
-		V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
-			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
-		
-		byte[] password = secrets?.Data[currentPod.PasswordKey];
-		byte[] username = secrets?.Data[currentPod.UsernameKey];
-		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
-		string usernameStr = Encoding.UTF8.GetString(username ?? Array.Empty<byte>());
-		return new ConnectionStringParams(pgPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port, usernameStr, passwordStr);
-	}
-	
-	public ConnectionStringParams GetMssqlConnectionString() {
-		ActivePod currentPod = new ActivePod(PodType.Mssql);
-		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
-			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
-		string serviceName = statefulSet.Spec.ServiceName;
-		
-		V1ServicePort dbPort = GetServicePort(currentPod.AppName, serviceName);
-		V1ServicePort dbPortInternal = GetServicePort(currentPod.AppName, currentPod.InternalServiceName);
-		V1ServicePort redisPort = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisLoadBalancerServiceName);
-		V1ServicePort redisPortInternal = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisInternalServiceName);
-		
-		V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
-			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
-		byte[] password = secrets?.Data[currentPod.PasswordKey];
-		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
-		
-		return new ConnectionStringParams(dbPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port,"sa", passwordStr);
-	}
-	private V1ServicePort GetServicePort(string appName, string serviceName ) {
-		V1Service service = _client.CoreV1.ListNamespacedService(K8NNameSpace, labelSelector:$"app={appName}")
-			.Items.FirstOrDefault(s=> s.Metadata.Name == serviceName);
-		return service?.Spec.Ports.FirstOrDefault();
-	}
-	#endregion
-	public record ConnectionStringParams(int DbPort, int DbInternalPort,int RedisPort, int RedisInternalPort,string DbUsername, string DbPassword);
-	
+    public string DeleteBackupImage(PodType podType, string fileName)
+    {
+        ActivePod currentPod = new(podType);
+        V1Pod pod = GetPodByLabel(currentPod.PodLabel);
+        string fullBackupFileName = GetBackupFullDestPath(currentPod, pod, fileName);
+        string[] command = new[] { "rm", fullBackupFileName };
+        return ExecInPod(currentPod, pod, command).GetAwaiter().GetResult();
+    }
+
+    public string RestorePgDatabase(string backupFileName, string dbName)
+    {
+        ActivePod currentPod = new(PodType.Postgres);
+        V1Pod pod = GetPodByLabel(currentPod.PodLabel);
+        string[] command = new[]
+        {
+            "pg_restore", $"/usr/local/backup-images/{backupFileName}", $"--dbname={dbName}", "--verbose",
+            "--no-owner", "--no-privileges", "--jobs=4", "--username=postgres"
+        };
+        string result = ExecInPod(currentPod, pod, command).GetAwaiter().GetResult();
+        return result;
+    }
+
+    public ConnectionStringParams GetPostgresConnectionString()
+    {
+        ActivePod currentPod = new(PodType.Postgres);
+        V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
+            .Items.FirstOrDefault(s => s.Metadata.Name == currentPod.AppName);
+        string serviceName = statefulSet.Spec.ServiceName;
+
+        V1ServicePort pgPort = GetServicePort(currentPod.AppName, serviceName);
+        V1ServicePort dbPortInternal = GetServicePort(currentPod.AppName, currentPod.InternalServiceName);
+        V1ServicePort redisPort = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisLoadBalancerServiceName);
+        V1ServicePort redisPortInternal = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisInternalServiceName);
+
+
+        V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
+            .Items.FirstOrDefault(s => s.Metadata.Name == currentPod.SecretName);
+
+        byte[] password = secrets?.Data[currentPod.PasswordKey];
+        byte[] username = secrets?.Data[currentPod.UsernameKey];
+        string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
+        string usernameStr = Encoding.UTF8.GetString(username ?? Array.Empty<byte>());
+        return new ConnectionStringParams(pgPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port,
+            usernameStr, passwordStr);
+    }
+
+    public ConnectionStringParams GetMssqlConnectionString()
+    {
+        ActivePod currentPod = new(PodType.Mssql);
+        V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
+            .Items.FirstOrDefault(s => s.Metadata.Name == currentPod.AppName);
+        string serviceName = statefulSet.Spec.ServiceName;
+
+        V1ServicePort dbPort = GetServicePort(currentPod.AppName, serviceName);
+        V1ServicePort dbPortInternal = GetServicePort(currentPod.AppName, currentPod.InternalServiceName);
+        V1ServicePort redisPort = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisLoadBalancerServiceName);
+        V1ServicePort redisPortInternal = GetServicePort(ActivePod.RedisAppName, ActivePod.RedisInternalServiceName);
+
+        V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
+            .Items.FirstOrDefault(s => s.Metadata.Name == currentPod.SecretName);
+        byte[] password = secrets?.Data[currentPod.PasswordKey];
+        string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
+
+        return new ConnectionStringParams(dbPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port,
+            "sa", passwordStr);
+    }
+
+    private V1ServicePort GetServicePort(string appName, string serviceName)
+    {
+        V1Service service = _client.CoreV1.ListNamespacedService(K8NNameSpace, labelSelector: $"app={appName}")
+            .Items.FirstOrDefault(s => s.Metadata.Name == serviceName);
+        return service?.Spec.Ports.FirstOrDefault();
+    }
+
+    #endregion
+
+    public record ConnectionStringParams(
+        int DbPort,
+        int DbInternalPort,
+        int RedisPort,
+        int RedisInternalPort,
+        string DbUsername,
+        string DbPassword);
 }
-
-

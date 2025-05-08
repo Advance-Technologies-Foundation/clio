@@ -1,7 +1,6 @@
-﻿namespace Clio.Project
+namespace Clio.Project;
+
+public interface ICreatioPkgProjectCreator
 {
-	public interface ICreatioPkgProjectCreator
-	{
-		ICreatioPkgProject CreateFromFile(string path);
-	}
+    ICreatioPkgProject CreateFromFile(string path);
 }

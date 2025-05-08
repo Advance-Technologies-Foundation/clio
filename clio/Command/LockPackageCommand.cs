@@ -3,81 +3,80 @@ using System.Linq;
 
 namespace Clio.Command
 {
-	
 }
 
 namespace Clio.Command
 {
-	using System;
-	using CommandLine;
-	using Clio.Package;
-	using Clio.Common;
+    using System;
+    using CommandLine;
+    using Package;
+    using Common;
 
-	#region Class: LockPackageOptions
+    #region Class: LockPackageOptions
 
-	[Verb("lock-package", Aliases = new string[] { "lp" }, HelpText = "Lock package")]
-	public class LockPackageOptions : EnvironmentOptions
-	{
+    [Verb("lock-package", Aliases = new string[] { "lp" }, HelpText = "Lock package")]
+    public class LockPackageOptions : EnvironmentOptions
+    {
+        #region Properties: Public
 
-		#region Properties: Public
+        [Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
+        public string Name { get; set; }
 
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
-		public string Name { get; set; }
+        #endregion
+    }
 
-		#endregion
+    #endregion
 
-	}
+    #region Class: LockPackageCommand
 
-	#endregion
+    public class LockPackageCommand : Command<LockPackageOptions>
+    {
+        #region Fields: Private
 
-	#region Class: LockPackageCommand
+        private readonly IPackageLockManager _packageLockManager;
+        private readonly ILogger _logger;
 
-	public class LockPackageCommand : Command<LockPackageOptions>
-	{
+        #endregion
 
-		#region Fields: Private
+        #region Constructors: Public
 
-		private readonly IPackageLockManager _packageLockManager;
-		private readonly ILogger _logger;
+        public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger)
+        {
+            _packageLockManager = packageLockManager;
+            _logger = logger;
+        }
 
-		#endregion
+        #endregion
 
-		#region Constructors: Public
+        #region Methods: Private
 
-		public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger) {
-			_packageLockManager = packageLockManager;
-			_logger = logger;
-		}
+        public IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
+            string.IsNullOrWhiteSpace(options.Name)
+                ? Enumerable.Empty<string>()
+                : new[] { options.Name };
 
-		#endregion
+        #endregion
 
-		#region Methods: Private
+        #region Methods: Public
 
-		public IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
-			string.IsNullOrWhiteSpace(options.Name)
-				? Enumerable.Empty<string>()
-				: new[] { options.Name }; 
+        public override int Execute(LockPackageOptions options)
+        {
+            try
+            {
+                _packageLockManager.Lock(GetPackagesNames(options));
+                _logger.WriteLine();
+                _logger.WriteInfo("Done");
+                return 0;
+            }
+            catch (Exception e)
+            {
+                _logger.WriteError(e.Message);
+                return 1;
+            }
+        }
 
-		#endregion
+        #endregion
+    }
 
-		#region Methods: Public
-
-		public override int Execute(LockPackageOptions options) {
-			try {
-				_packageLockManager.Lock(GetPackagesNames(options));
-				_logger.WriteLine();
-				_logger.WriteInfo("Done");
-				return 0;
-			} catch (Exception e) {
-				_logger.WriteError(e.Message);
-				return 1;
-			}
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }

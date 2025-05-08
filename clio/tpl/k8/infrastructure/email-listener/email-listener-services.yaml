@@ -8,9 +8,9 @@ metadata:
   labels:
     app: clio-email-listener
 spec:
-    selector:
-      app: clio-email-listener
-    type: LoadBalancer
-    ports:
+  selector:
+    app: clio-email-listener
+  type: LoadBalancer
+  ports:
     - port: 1090
       targetPort: 8080

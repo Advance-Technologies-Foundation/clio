@@ -19,7 +19,13 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SOLUTION_PATH="$SCRIPT_DIR/clio.sln"
 
 # Форматирование кода с применением стилей из .editorconfig
-echo -e "${CYAN}Форматирование кода решения согласно .editorconfig и ruleset...${NC}"
-dotnet format "$SOLUTION_PATH" --fix-style info --fix-analyzers info --verbosity diagnostic
+echo -e "${CYAN}Форматирование whitespace согласно .editorconfig...${NC}"
+dotnet format "$SOLUTION_PATH" whitespace --no-restore --verbosity normal
+
+echo -e "${CYAN}Применение code style из .editorconfig...${NC}"
+dotnet format "$SOLUTION_PATH" style --no-restore --severity info --verbosity normal
+
+echo -e "${CYAN}Применение исправлений от сторонних анализаторов...${NC}"
+dotnet format "$SOLUTION_PATH" analyzers --no-restore --severity info --verbosity normal
 
 echo -e "${GREEN}Форматирование завершено!${NC}"

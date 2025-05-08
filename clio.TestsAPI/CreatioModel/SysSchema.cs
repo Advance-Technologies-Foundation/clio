@@ -1,4 +1,4 @@
-﻿#pragma warning disable CS8618, // Non-nullable field is uninitialized.
+#pragma warning disable CS8618, // Non-nullable field is uninitialized.
 using System;
 using System.Diagnostics.CodeAnalysis;
 using ATF.Repository;
@@ -10,20 +10,15 @@ namespace CreatioModel;
 [Schema("SysSchema")]
 public class SysSchema : BaseModel
 {
+    #region Properties: Public
 
-	#region Properties: Public
+    [SchemaProperty("ManagerName")] public string ManagerName { get; set; }
 
-	[SchemaProperty("ManagerName")]
-	public string ManagerName { get; set; }
+    [SchemaProperty("Name")] public string Name { get; set; }
 
-	[SchemaProperty("Name")]
-	public string Name { get; set; }
-	
-	[SchemaProperty("UId")]
-	public Guid UId { get; set; }
+    [SchemaProperty("UId")] public Guid UId { get; set; }
 
-	#endregion
-
+    #endregion
 }
 
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using CommandLine;
 
@@ -7,113 +7,128 @@ namespace Clio.Command.CreatioInstallCommand;
 [Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creation"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
+    #region Fields: Private
 
-	#region Fields: Private
+    private readonly Dictionary<string, string> _productList = new()
+    {
+        { "s", "Studio" },
+        { "semse", "SalesEnterprise_Marketing_ServiceEnterprise" },
+        { "bcj", "BankSales_BankCustomerJourney_Lending_Marketing" }
+    };
 
-	private readonly Dictionary<string, string> _productList = new() {
-		{"s", "Studio"},
-		{"semse", "SalesEnterprise_Marketing_ServiceEnterprise"},
-		{"bcj", "BankSales_BankCustomerJourney_Lending_Marketing"}
-	};
+    private CreatioDBType _dbType;
+    private CreatioRuntimePlatform _platform;
 
-	private CreatioDBType _dbType;
-	private CreatioRuntimePlatform _platform;
+    #endregion
 
-	#endregion
+    #region Properties: Internal
 
-	#region Properties: Internal
+    internal CreatioDBType DBType
+    {
+        get
+        {
+            if (DB.ToLower() == "pg")
+            {
+                return CreatioDBType.PostgreSQL;
+            }
 
-	internal CreatioDBType DBType {
-		get {
-			if (DB.ToLower() == "pg") {
-				return CreatioDBType.PostgreSQL;
-			}
-			if (DB.ToLower() == "mssql") {
-				return CreatioDBType.MSSQL;
-			}
-			return _dbType;
-		}
-		set { _dbType = value; }
-	}
+            if (DB.ToLower() == "mssql")
+            {
+                return CreatioDBType.MSSQL;
+            }
 
-	internal CreatioRuntimePlatform RuntimePlatform {
-		get {
-			if (Platform.ToLower() == "net6") {
-				return CreatioRuntimePlatform.NET6;
-			}
-			if (Platform.ToLower() == "netframework" || Platform.ToLower() == "nf") {
-				return CreatioRuntimePlatform.NETFramework;
-			}
-			return _platform;
-		}
-		set { _platform = value; }
-	}
+            return _dbType;
+        }
+        set => _dbType = value;
+    }
 
-	#endregion
+    internal CreatioRuntimePlatform RuntimePlatform
+    {
+        get
+        {
+            if (Platform.ToLower() == "net6")
+            {
+                return CreatioRuntimePlatform.NET6;
+            }
 
-	#region Properties: Public
+            if (Platform.ToLower() == "netframework" || Platform.ToLower() == "nf")
+            {
+                return CreatioRuntimePlatform.NETFramework;
+            }
 
-	[Option("db", Required = false, HelpText = "DB type: pg|mssql")]
-	public string DB { get; set; }
+            return _platform;
+        }
+        set => _platform = value;
+    }
 
-	[Option("platform", Required = false, HelpText = "Runtime platform: net6|netframework")]
-	public string Platform { get; set; }
+    #endregion
 
-	public string Product {
-		get {
-			if (_productList.ContainsKey(ProductKey)) {
-				return _productList[ProductKey];
-			}
-			return ProductKey;
-		}
-		set { ProductKey = value; }
-	}
+    #region Properties: Public
 
-	[Option("product", Required = false, HelpText = "Product name")]
-	public string ProductKey { get; set; }
+    [Option("db", Required = false, HelpText = "DB type: pg|mssql")]
+    public string DB { get; set; }
 
-	[Option("SiteName", Required = false, HelpText = "SiteName")]
-	public string SiteName { get; set; }
+    [Option("platform", Required = false, HelpText = "Runtime platform: net6|netframework")]
+    public string Platform { get; set; }
 
-	[Option("SitePort", Required = false, HelpText = "Site port")]
-	public int SitePort { get; set; }
+    public string Product
+    {
+        get
+        {
+            if (_productList.ContainsKey(ProductKey))
+            {
+                return _productList[ProductKey];
+            }
 
-	[Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
-	public string ZipFile { get; set; }
+            return ProductKey;
+        }
+        set => ProductKey = value;
+    }
 
-	#endregion
+    [Option("product", Required = false, HelpText = "Product name")]
+    public string ProductKey { get; set; }
 
+    [Option("SiteName", Required = false, HelpText = "SiteName")]
+    public string SiteName { get; set; }
+
+    [Option("SitePort", Required = false, HelpText = "Site port")]
+    public int SitePort { get; set; }
+
+    [Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
+    public string ZipFile { get; set; }
+
+    #endregion
 }
 
 public class InstallerCommand : Command<PfInstallerOptions>
 {
+    #region Fields: Private
 
-	#region Fields: Private
+    private readonly ICreatioInstallerService _creatioInstallerService;
 
-	private readonly ICreatioInstallerService _creatioInstallerService;
+    #endregion
 
-	#endregion
+    #region Constructors: Public
 
-	#region Constructors: Public
+    public InstallerCommand(ICreatioInstallerService creatioInstallerService) =>
+        _creatioInstallerService = creatioInstallerService;
 
-	public InstallerCommand(ICreatioInstallerService creatioInstallerService){
-		_creatioInstallerService = creatioInstallerService;
-	}
+    #endregion
 
-	#endregion
+    #region Methods: Public
 
-	#region Methods: Public
+    public override int Execute(PfInstallerOptions options)
+    {
+        int result = _creatioInstallerService.Execute(options);
+        if (!options.IsSilent)
+        {
+            _creatioInstallerService.StartWebBrowser(options);
+            Console.WriteLine("Press enter to exit...");
+            Console.ReadLine();
+        }
 
-	public override int Execute(PfInstallerOptions options){
-		int result = _creatioInstallerService.Execute(options);
-		if (!options.IsSilent) {
-			_creatioInstallerService.StartWebBrowser(options);
-			Console.WriteLine("Press enter to exit...");
-			Console.ReadLine();
-		}
-		return result;
-	}
+        return result;
+    }
 
-	#endregion
-
+    #endregion
 }

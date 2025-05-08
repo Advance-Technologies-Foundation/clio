@@ -5,30 +5,20 @@ using ATF.Repository;
 using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
 
-namespace CreatioModel
+namespace CreatioModel;
+
+[ExcludeFromCodeCoverage]
+[Schema("AdminUnitFeatureState")]
+public class AdminUnitFeatureState : BaseModel
 {
+    [SchemaProperty("FeatureState")] public bool FeatureState { get; set; }
 
-	[ExcludeFromCodeCoverage]
-	[Schema("AdminUnitFeatureState")]
-	public class AdminUnitFeatureState: BaseModel
-	{
-		
+    [SchemaProperty("SysAdminUnit")] public Guid AdminUnitId { get; set; }
 
-		[SchemaProperty("FeatureState")]
-		public bool FeatureState { get; set; }
+    [LookupProperty("SysAdminUnit")] public virtual SysAdminUnit AdminUnit { get; set; }
 
-		[SchemaProperty("SysAdminUnit")]
-		public Guid AdminUnitId { get; set; }
+    [SchemaProperty("Feature")] public Guid FeatureId { get; set; }
 
-		[LookupProperty("SysAdminUnit")]
-		public virtual SysAdminUnit AdminUnit { get; set; }
-
-		[SchemaProperty("Feature")]
-		public Guid FeatureId { get; set; }
-
-		[LookupProperty("Feature")]
-		public virtual AppFeature Feature { get; set; }
-
-	}
+    [LookupProperty("Feature")] public virtual AppFeature Feature { get; set; }
 }
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.

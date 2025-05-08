@@ -1,13 +1,8 @@
-﻿using MediatR;
+using MediatR;
 
-namespace Clio.Requests
+namespace Clio.Requests;
+
+internal interface IExternalLink : IRequest
 {
-	internal interface IExternalLink : IRequest
-	{
-		public string Content
-		{
-			get; set;
-		}
-	}
-
+    public string Content { get; set; }
 }

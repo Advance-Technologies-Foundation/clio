@@ -1,220 +1,219 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.Text;
 using System.Text.Unicode;
 
-namespace Clio.Common
+namespace Clio.Common;
+
+#region Interface: IFileSystem
+
+/// <summary>
+/// The IFileSystem interface provides methods for interacting with the file system.
+/// </summary>
+public interface IFileSystem
 {
-	#region Interface: IFileSystem
+    public FileSystemStream CreateFile(string filePath);
 
-	/// <summary>
-	/// The IFileSystem interface provides methods for interacting with the file system.
-	/// </summary>
-	public interface IFileSystem
-	{
-		public FileSystemStream CreateFile(string filePath);
+    #region Methods: Public
 
-		#region Methods: Public
+    byte[] ReadAllBytes(string filePath);
+    FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share);
+    public IDirectoryInfo GetDirectoryInfo(string path);
 
-		byte[] ReadAllBytes(string filePath);
-		FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share);
-		public IDirectoryInfo GetDirectoryInfo(string path);
-		
 
-		public long GetFileSize(string filePath);
-		long GetFileSize(IFileInfo fileInfo);
-		
-		
-		/// <summary>
-		/// Creates a symbolic link at the specified path that points to the target path.
-		/// </summary>
-		/// <param name="path">The path where the symbolic link should be created.</param>
-		/// <param name="pathToTarget">The path that the symbolic link should point to.</param>
-		/// <returns>An object that represents the symbolic link.</returns>
-		/// <exception cref="System.ArgumentNullException">Thrown when the path or pathToTarget is null</exception>
-		/// <exception cref="System.ArgumentException">Thrown when – path or pathToTarget is empty. -or- path or pathToTarget contains invalid path characters.</exception>
-		/// <exception cref="System.IO.IOException"> A file or directory already exists in the location of path. -or- An I/O error occurred</exception>
-		IFileSystemInfo CreateSymLink(string path, string pathToTarget);
-		
-		/// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateSymbolicLink(string,string)"/>
-		IFileSystemInfo CreateDirectorySymLink(string path, string pathToTarget);
-		
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.CreateSymbolicLink(string,string)"/>
-		IFileSystemInfo CreateFileSymLink(string path, string pathToTarget);
+    public long GetFileSize(string filePath);
+    long GetFileSize(IFileInfo fileInfo);
 
-		/// <summary>
-		/// Checks if a file exists at the given file path. If the file exists and the delete flag is set to true, the file is deleted.
-		/// If the file exists and the delete flag is set to false, an exception is thrown.
-		/// </summary>
-		/// <param name="filePath">The path of the file to check or delete.</param>
-		/// <param name="delete">A flag indicating whether to delete the file if it exists.</param>
-		/// <exception cref="System.Exception">Thrown when the file exists and the delete flag is set to false.</exception>
-		void CheckOrDeleteExistsFile(string filePath, bool delete);
 
-		void CopyFiles(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
-		
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.Copy(string,string,bool)"/>
-		void CopyFile(string from, string to, bool overwrite);
+    /// <summary>
+    /// Creates a symbolic link at the specified path that points to the target path.
+    /// </summary>
+    /// <param name="path">The path where the symbolic link should be created.</param>
+    /// <param name="pathToTarget">The path that the symbolic link should point to.</param>
+    /// <returns>An object that represents the symbolic link.</returns>
+    /// <exception cref="System.ArgumentNullException">Thrown when the path or pathToTarget is null</exception>
+    /// <exception cref="System.ArgumentException">Thrown when – path or pathToTarget is empty. -or- path or pathToTarget contains invalid path characters.</exception>
+    /// <exception cref="System.IO.IOException"> A file or directory already exists in the location of path. -or- An I/O error occurred</exception>
+    IFileSystemInfo CreateSymLink(string path, string pathToTarget);
 
-		/// <summary>
-		/// Deletes the file at the specified path.
-		/// </summary>
-		/// <param name="filePath">The path of the file to delete.</param>
-		/// <returns>True if the file was deleted, false otherwise.</returns>
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.Delete(string)"/>
-		bool DeleteFile(string filePath);
+    /// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateSymbolicLink(string,string)"/>
+    IFileSystemInfo CreateDirectorySymLink(string path, string pathToTarget);
 
-		/// <summary>
-		/// Deletes the file at the specified path if it exists.
-		/// </summary>
-		/// <param name="filePath">The path of the file to delete.</param>
-		/// <returns>True if the file was deleted, false otherwise.</returns>
-		/// <inheritdoc cref="DeleteFile"/>
-		bool DeleteFileIfExists(string filePath);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.CreateSymbolicLink(string,string)"/>
+    IFileSystemInfo CreateFileSymLink(string path, string pathToTarget);
 
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.Exists(string)"/>
-		bool ExistsFile(string filePath);
+    /// <summary>
+    /// Checks if a file exists at the given file path. If the file exists and the delete flag is set to true, the file is deleted.
+    /// If the file exists and the delete flag is set to false, an exception is thrown.
+    /// </summary>
+    /// <param name="filePath">The path of the file to check or delete.</param>
+    /// <param name="delete">A flag indicating whether to delete the file if it exists.</param>
+    /// <exception cref="System.Exception">Thrown when the file exists and the delete flag is set to false.</exception>
+    void CheckOrDeleteExistsFile(string filePath, bool delete);
 
-		string ExtractFileNameFromPath(string filePath);
+    void CopyFiles(IEnumerable<string> filesPaths, string destinationDirectory, bool overwrite);
 
-		string ExtractFileExtensionFromPath(string filePath);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.Copy(string,string,bool)"/>
+    void CopyFile(string from, string to, bool overwrite);
 
-		string GetFileNameWithoutExtension(FileInfo fileInfo);
+    /// <summary>
+    /// Deletes the file at the specified path.
+    /// </summary>
+    /// <param name="filePath">The path of the file to delete.</param>
+    /// <returns>True if the file was deleted, false otherwise.</returns>
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.Delete(string)"/>
+    bool DeleteFile(string filePath);
 
-		string[] GetFiles(string directoryPath);
+    /// <summary>
+    /// Deletes the file at the specified path if it exists.
+    /// </summary>
+    /// <param name="filePath">The path of the file to delete.</param>
+    /// <returns>True if the file was deleted, false otherwise.</returns>
+    /// <inheritdoc cref="DeleteFile"/>
+    bool DeleteFileIfExists(string filePath);
 
-		string[] GetFiles(string directoryPath, string searchPattern, SearchOption searchOption);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.Exists(string)"/>
+    bool ExistsFile(string filePath);
 
-		FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption);
+    string ExtractFileNameFromPath(string filePath);
 
-		/// <summary>
-		/// Checks if the file at the given path is read-only.
-		/// </summary>
-		/// <param name="filePath">The path of the file to check.</param>
-		/// <returns>True if the file is read-only, false otherwise.</returns>
-		bool IsReadOnlyFile(string filePath);
+    string ExtractFileExtensionFromPath(string filePath);
 
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.Move(string, string)"/>
-		void MoveFile(string oldFilePath, string newFilePath);
+    string GetFileNameWithoutExtension(FileInfo fileInfo);
 
-		/// <summary>
-		/// Resets the read-only attribute of the file at the given path.
-		/// </summary>
-		/// <param name="filePath">The path of the file to reset the read-only attribute for.</param>
-		/// <exception cref="T:System.ArgumentException">.NET Framework and .NET Core versions older than 2.1: <paramref name="filePath" />
-		/// is empty, contains only white spaces, contains invalid characters, or the file attribute is invalid.</exception>
-		/// <exception cref="T:System.IO.PathTooLongException">The specified path, file name, or both exceed the system-defined maximum length.</exception>
-		/// <exception cref="T:System.NotSupportedException"><paramref name="filePath" /> is in an invalid format.</exception>
-		/// <exception cref="T:System.IO.DirectoryNotFoundException">The specified path is invalid, (for example, it is on an unmapped drive).</exception>
-		/// <exception cref="T:System.IO.FileNotFoundException">The file cannot be found.</exception>
-		/// <exception cref="T:System.UnauthorizedAccessException"><paramref name="filePath" /> specified a file that is read-only.
-		/// 
-		/// -or-
-		/// 
-		/// This operation is not supported on the current platform.
-		/// 
-		/// -or-
-		/// 
-		/// <paramref name="filePath" /> specified a directory.
-		/// 
-		/// -or-
-		/// 
-		/// The caller does not have the required permission.</exception>
-		void ResetFileReadOnlyAttribute(string filePath);
+    string[] GetFiles(string directoryPath);
 
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.ReadAllText(string)"/>
-		string ReadAllText(string filePath);
+    string[] GetFiles(string directoryPath, string searchPattern, SearchOption searchOption);
 
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string)"/>
-		/// <remarks>Enforces UTF No BOM encoding</remarks>
-		void WriteAllTextToFile(string filePath, string contents);
+    FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption);
 
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
-		void WriteAllTextToFile(string filePath, string contents, Encoding encoding);
+    /// <summary>
+    /// Checks if the file at the given path is read-only.
+    /// </summary>
+    /// <param name="filePath">The path of the file to check.</param>
+    /// <returns>True if the file is read-only, false otherwise.</returns>
+    bool IsReadOnlyFile(string filePath);
 
-		void ClearOrCreateDirectory(string directoryPath);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.Move(string, string)"/>
+    void MoveFile(string oldFilePath, string newFilePath);
 
-		void CreateOrOverwriteExistsDirectoryIfNeeded(string directoryPath, bool overwrite);
+    /// <summary>
+    /// Resets the read-only attribute of the file at the given path.
+    /// </summary>
+    /// <param name="filePath">The path of the file to reset the read-only attribute for.</param>
+    /// <exception cref="T:System.ArgumentException">.NET Framework and .NET Core versions older than 2.1: <paramref name="filePath" />
+    /// is empty, contains only white spaces, contains invalid characters, or the file attribute is invalid.</exception>
+    /// <exception cref="T:System.IO.PathTooLongException">The specified path, file name, or both exceed the system-defined maximum length.</exception>
+    /// <exception cref="T:System.NotSupportedException"><paramref name="filePath" /> is in an invalid format.</exception>
+    /// <exception cref="T:System.IO.DirectoryNotFoundException">The specified path is invalid, (for example, it is on an unmapped drive).</exception>
+    /// <exception cref="T:System.IO.FileNotFoundException">The file cannot be found.</exception>
+    /// <exception cref="T:System.UnauthorizedAccessException"><paramref name="filePath" /> specified a file that is read-only.
+    /// 
+    /// -or-
+    /// 
+    /// This operation is not supported on the current platform.
+    /// 
+    /// -or-
+    /// 
+    /// <paramref name="filePath" /> specified a directory.
+    /// 
+    /// -or-
+    /// 
+    /// The caller does not have the required permission.</exception>
+    void ResetFileReadOnlyAttribute(string filePath);
 
-		/// <summary>
-		/// Clears the directory at the specified path.
-		/// </summary>
-		/// <param name="directoryPath">The path of the directory to clear.</param>
-		/// <remarks>
-		/// This method deletes all files and subdirectories within the specified directory.
-		/// It uses the `GetFiles` method to retrieve all files in the directory and the `DeleteFileIfExists` method to delete each file.
-		/// It also uses the `GetDirectories` method to retrieve all subdirectories in the directory and the `SafeDeleteDirectory` method to delete each subdirectory.
-		/// </remarks>
-		void ClearDirectory(string directoryPath);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.ReadAllText(string)"/>
+    string ReadAllText(string filePath);
 
-		void CopyDirectory(string source, string destination, bool overwrite);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string)"/>
+    /// <remarks>Enforces UTF No BOM encoding</remarks>
+    void WriteAllTextToFile(string filePath, string contents);
 
-		/// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateDirectory(string)"/>
-		IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false);
-		
-		void CreateDirectoryIfNotExists(string directoryPath);
+    /// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
+    void WriteAllTextToFile(string filePath, string contents, Encoding encoding);
 
-		void CreateOrClearDirectory(string directoryPath);
+    void ClearOrCreateDirectory(string directoryPath);
 
-		void DeleteDirectory(string directoryPath);
+    void CreateOrOverwriteExistsDirectoryIfNeeded(string directoryPath, bool overwrite);
 
-		void DeleteDirectory(string directoryPath, bool recursive);
+    /// <summary>
+    /// Clears the directory at the specified path.
+    /// </summary>
+    /// <param name="directoryPath">The path of the directory to clear.</param>
+    /// <remarks>
+    /// This method deletes all files and subdirectories within the specified directory.
+    /// It uses the `GetFiles` method to retrieve all files in the directory and the `DeleteFileIfExists` method to delete each file.
+    /// It also uses the `GetDirectories` method to retrieve all subdirectories in the directory and the `SafeDeleteDirectory` method to delete each subdirectory.
+    /// </remarks>
+    void ClearDirectory(string directoryPath);
 
-		void DeleteDirectoryIfExists(string directoryPath);
+    void CopyDirectory(string source, string destination, bool overwrite);
 
-		bool ExistsDirectory(string directoryPath);
+    /// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateDirectory(string)"/>
+    IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false);
 
-		string GetCurrentDirectoryIfEmpty(string directoryPath);
+    void CreateDirectoryIfNotExists(string directoryPath);
 
-		bool IsEmptyDirectory();
+    void CreateOrClearDirectory(string directoryPath);
 
-		string GetDestinationFileDirectory(string filePath, string destinationPath);
+    void DeleteDirectory(string directoryPath);
 
-		string[] GetDirectories(string directoryPath);
+    void DeleteDirectory(string directoryPath, bool recursive);
 
-		string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption);
+    void DeleteDirectoryIfExists(string directoryPath);
 
-		void OverwriteExistsDirectory(string directoryPath);
+    bool ExistsDirectory(string directoryPath);
 
-		void SafeDeleteDirectory(string directoryPath);
+    string GetCurrentDirectoryIfEmpty(string directoryPath);
 
-		string ConvertToRelativePath(string path, string rootDirectoryPath);
+    bool IsEmptyDirectory();
 
-		string NormalizeFilePathByPlatform(string filePath);
-		string[] GetDirectories();
+    string GetDestinationFileDirectory(string filePath, string destinationPath);
 
-		/// <summary>
-		/// Computes hash string of a files
-		/// </summary>
-		/// <param name="algorithm">Algorithm to use</param>
-		/// <param name="fileName">Full file path</param>
-		/// <returns></returns>
-		string GetFileHash(FileSystem.Algorithm algorithm, string fileName);
+    string[] GetDirectories(string directoryPath);
 
-		/// <summary>
-		/// Compares two files by their hashes, with a specific algorithm
-		/// </summary>
-		/// <param name="algorithm"></param>
-		/// <param name="first"></param>
-		/// <param name="second"></param>
-		/// <returns></returns>
-		bool CompareFiles(FileSystem.Algorithm algorithm, string first, string second);
+    string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption);
 
-		/// <summary>
-		/// Compares two files by their hashes
-		/// </summary>
-		/// <param name="fileName1">Full path to the first file</param>
-		/// <param name="fileName2">Full path to the second file</param>
-		/// <returns>Result of the comparison</returns>
-		/// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default</remarks>
-		/// <exception cref="FileNotFoundException">when either of the files is not found</exception>
-		bool CompareFiles(string fileName1, string fileName2);
-		IFileInfo GetFilesInfos(string fileName);
+    void OverwriteExistsDirectory(string directoryPath);
 
-		#endregion
+    void SafeDeleteDirectory(string directoryPath);
 
-	}
+    string ConvertToRelativePath(string path, string rootDirectoryPath);
 
-	#endregion
+    string NormalizeFilePathByPlatform(string filePath);
+    string[] GetDirectories();
+
+    /// <summary>
+    /// Computes hash string of a files
+    /// </summary>
+    /// <param name="algorithm">Algorithm to use</param>
+    /// <param name="fileName">Full file path</param>
+    /// <returns></returns>
+    string GetFileHash(FileSystem.Algorithm algorithm, string fileName);
+
+    /// <summary>
+    /// Compares two files by their hashes, with a specific algorithm
+    /// </summary>
+    /// <param name="algorithm"></param>
+    /// <param name="first"></param>
+    /// <param name="second"></param>
+    /// <returns></returns>
+    bool CompareFiles(FileSystem.Algorithm algorithm, string first, string second);
+
+    /// <summary>
+    /// Compares two files by their hashes
+    /// </summary>
+    /// <param name="fileName1">Full path to the first file</param>
+    /// <param name="fileName2">Full path to the second file</param>
+    /// <returns>Result of the comparison</returns>
+    /// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default</remarks>
+    /// <exception cref="FileNotFoundException">when either of the files is not found</exception>
+    bool CompareFiles(string fileName1, string fileName2);
+
+    IFileInfo GetFilesInfos(string fileName);
+
+    #endregion
 }
+
+#endregion

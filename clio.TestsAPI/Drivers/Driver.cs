@@ -1,7 +1,7 @@
 using System;
 
-namespace clio.Tests.Api.Drivers
+namespace clio.Tests.Api.Drivers;
+
+public class Driver
 {
-	public class Driver
-	{ }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Text;
 using ATF.Repository;
@@ -9,161 +9,182 @@ using CreatioModel;
 
 namespace Clio.Command;
 
-[Verb("set-feature", Aliases = new[] {"feature"}, HelpText = "Set feature state")]
-public class FeatureOptions : RemoteCommandOptions {
+[Verb("set-feature", Aliases = new[] { "feature" }, HelpText = "Set feature state")]
+public class FeatureOptions : RemoteCommandOptions
+{
+    #region Properties: Public
 
-	#region Properties: Public
+    [Value(0, MetaName = "Code", Required = true, HelpText = "Feature code")]
+    public string Code { get; set; }
 
-	[Value(0, MetaName = "Code", Required = true, HelpText = "Feature code")]
-	public string Code { get; set; }
+    [Value(2, MetaName = "onlyCurrentUser", Required = false, Default = false, HelpText = "Only current user")]
+    public bool OnlyCurrentUser { get; set; }
 
-	[Value(2, MetaName = "onlyCurrentUser", Required = false, Default = false, HelpText = "Only current user")]
-	public bool OnlyCurrentUser { get; set; }
+    [Value(1, MetaName = "State", Required = true, HelpText = "Feature state")]
+    public int State { get; set; }
 
-	[Value(1, MetaName = "State", Required = true, HelpText = "Feature state")]
-	public int State { get; set; }
+    [Option("SysAdminUnitName", Required = false, HelpText = "Name of the user for whom to set feature state for")]
+    public string SysAdminUnitName { get; set; }
 
-	[Option("SysAdminUnitName", Required = false, HelpText = "Name of the user for whom to set feature state for")]
-	public string SysAdminUnitName { get; set; }
+    [Option("UseFeatureWebService", Required = false,
+        HelpText = "Use obsolete method to set feature state via feature webservice")]
+    public bool UseFeatureWebService { get; set; }
 
-	[Option("UseFeatureWebService", Required = false,
-		HelpText = "Use obsolete method to set feature state via feature webservice")]
-	public bool UseFeatureWebService { get; set; }
-
-	#endregion
-
+    #endregion
 }
 
-public class FeatureCommand : RemoteCommand<FeatureOptions> {
+public class FeatureCommand : RemoteCommand<FeatureOptions>
+{
+    #region Fields: Private
 
-	#region Fields: Private
+    private readonly IDataProvider _dataProvider;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly ILogger _logger;
 
-	private readonly IDataProvider _dataProvider;
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
-	private readonly ILogger _logger;
+    #endregion
 
-	#endregion
+    #region Constructors: Public
 
-	#region Constructors: Public
+    public FeatureCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+        IDataProvider dataProvider, IServiceUrlBuilder serviceUrlBuilder)
+        : base(applicationClient, settings)
+    {
+        _dataProvider = dataProvider;
+        _serviceUrlBuilder = serviceUrlBuilder;
+    }
 
-	public FeatureCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IDataProvider dataProvider, IServiceUrlBuilder serviceUrlBuilder)
-		: base(applicationClient, settings){
-		_dataProvider = dataProvider;
-		_serviceUrlBuilder = serviceUrlBuilder;
-	}
+    #endregion
 
-	#endregion
+    #region Properties: Protected
 
-	#region Properties: Protected
+    protected override string ServicePath => @"/rest/FeatureStateService/SetFeatureState";
 
-	protected override string ServicePath => @"/rest/FeatureStateService/SetFeatureState";
+    #endregion
 
-	#endregion
+    #region Methods: Protected
 
-	#region Methods: Protected
+    protected override string GetRequestData(FeatureOptions options) =>
+        "{" +
+        $"\"code\":\"{options.Code}\",\"state\":\"{options.State}\",\"onlyCurrentUser\":{options.OnlyCurrentUser.ToString().ToLower()}" +
+        "}";
 
-	protected override string GetRequestData(FeatureOptions options){
-		return "{" +
-			$"\"code\":\"{options.Code}\",\"state\":\"{options.State}\",\"onlyCurrentUser\":{options.OnlyCurrentUser.ToString().ToLower()}" +
-			"}";
-	}
+    #endregion
 
-	#endregion
+    #region Methods: Internal
 
-	#region Methods: Internal
+    internal void ClearCache(string featureName)
+    {
+        string base64FeatureName = Convert.ToBase64String(FileSystem.Utf8NoBom.GetBytes(featureName));
+        string url
+            = $"{_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ClearFeaturesCacheForAllUsers)}/{base64FeatureName}";
+        string response = ApplicationClient.ExecuteGetRequest(url);
+        Logger.WriteInfo($"{response}");
+    }
 
-	internal void ClearCache(string featureName){
-		string base64FeatureName = Convert.ToBase64String(FileSystem.Utf8NoBom.GetBytes(featureName));
-		string url
-			= $"{_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ClearFeaturesCacheForAllUsers)}/{base64FeatureName}";
-		string response = ApplicationClient.ExecuteGetRequest(url);
-		Logger.WriteInfo($"{response}");
-	}
+    #endregion
 
-	#endregion
+    #region Methods: Public
 
-	#region Methods: Public
+    public override int Execute(FeatureOptions options)
+    {
+        if (options.UseFeatureWebService)
+        {
+            Logger.WriteWarning("Use of UseFeatureWebService flag is not recommended");
+            return base.Execute(options);
+        }
 
-	public override int Execute(FeatureOptions options){
-		if (options.UseFeatureWebService) {
-			Logger.WriteWarning("Use of UseFeatureWebService flag is not recommended");
-			return base.Execute(options);
-		}
-		if (options.SysAdminUnitName is null) {
-			SetFeatureStateDefValue(options);
-		} else {
-			SetFeatureStateForUser(options);
-		}
-		ClearCache(options.Code);
-		return 0;
-	}
+        if (options.SysAdminUnitName is null)
+        {
+            SetFeatureStateDefValue(options);
+        }
+        else
+        {
+            SetFeatureStateForUser(options);
+        }
 
-	public AppFeature GetFeature(string featureCode){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-		AppFeature feature = ctx.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == featureCode);
+        ClearCache(options.Code);
+        return 0;
+    }
 
-		if (feature is null || feature.Id == Guid.Empty) {
-			feature = ctx.CreateModel<AppFeature>();
-			feature.Code = featureCode;
-			feature.Name = featureCode;
-			ctx.Save();
-		}
-		return feature;
-	}
+    public AppFeature GetFeature(string featureCode)
+    {
+        IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+        AppFeature feature = ctx.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == featureCode);
 
-	public void SaveFeatureState(AppFeature feature, Guid sysAdminUnitId, bool state){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+        if (feature is null || feature.Id == Guid.Empty)
+        {
+            feature = ctx.CreateModel<AppFeature>();
+            feature.Code = featureCode;
+            feature.Name = featureCode;
+            ctx.Save();
+        }
 
-		Guid? featureStateId = ctx.Models<AdminUnitFeatureState>()
-								.FirstOrDefault(f => f.FeatureId == feature.Id && f.AdminUnitId == sysAdminUnitId)?.Id;
+        return feature;
+    }
 
-		if (featureStateId is null) {
-			AppFeatureState featureState = ctx.CreateModel<AppFeatureState>();
-			featureState.FeatureId = feature.Id;
-			featureState.FeatureState = state;
-			featureState.AdminUnitId = sysAdminUnitId;
-			ctx.Save();
-		} else {
-			AppFeatureState featureState = ctx
-											.Models<AppFeatureState>()
-											.FirstOrDefault(f => f.Id == featureStateId);
-			featureState.FeatureState = state;
-			ctx.Save();
-		}
-	}
+    public void SaveFeatureState(AppFeature feature, Guid sysAdminUnitId, bool state)
+    {
+        IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 
-	public void SetFeatureStateDefValue(FeatureOptions options){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-		AppFeature feature = ctx.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == options.Code);
+        Guid? featureStateId = ctx.Models<AdminUnitFeatureState>()
+            .FirstOrDefault(f => f.FeatureId == feature.Id && f.AdminUnitId == sysAdminUnitId)?.Id;
 
-		if (feature is null || feature.Id == Guid.Empty) {
-			feature = ctx.CreateModel<AppFeature>();
-			feature.Code = options.Code;
-			feature.Name = options.Code;
-		}
-		feature.State = options.State == 1;
-		feature.StateForCurrentUser = options.OnlyCurrentUser;
-		ctx.Save();
-	}
+        if (featureStateId is null)
+        {
+            AppFeatureState featureState = ctx.CreateModel<AppFeatureState>();
+            featureState.FeatureId = feature.Id;
+            featureState.FeatureState = state;
+            featureState.AdminUnitId = sysAdminUnitId;
+            ctx.Save();
+        }
+        else
+        {
+            AppFeatureState featureState = ctx
+                .Models<AppFeatureState>()
+                .FirstOrDefault(f => f.Id == featureStateId);
+            featureState.FeatureState = state;
+            ctx.Save();
+        }
+    }
 
-	public void SetFeatureStateForUser(FeatureOptions options){
-		if (options.SysAdminUnitName is null) {
-			return;
-		}
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-		SysAdminUnit user = ctx
-							.Models<SysAdminUnit>()
-							.FirstOrDefault(s => s.Name == options.SysAdminUnitName);
-		if (user is null) {
-			Logger.WriteWarning($"User with name {options.SysAdminUnitName} was not found");
-			return;
-		}
-		Guid id = user.Id;
-		AppFeature feature = GetFeature(options.Code);
-		SaveFeatureState(feature, id, options.State == 1);
-	}
+    public void SetFeatureStateDefValue(FeatureOptions options)
+    {
+        IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+        AppFeature feature = ctx.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == options.Code);
 
-	#endregion
+        if (feature is null || feature.Id == Guid.Empty)
+        {
+            feature = ctx.CreateModel<AppFeature>();
+            feature.Code = options.Code;
+            feature.Name = options.Code;
+        }
 
+        feature.State = options.State == 1;
+        feature.StateForCurrentUser = options.OnlyCurrentUser;
+        ctx.Save();
+    }
+
+    public void SetFeatureStateForUser(FeatureOptions options)
+    {
+        if (options.SysAdminUnitName is null)
+        {
+            return;
+        }
+
+        IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+        SysAdminUnit user = ctx
+            .Models<SysAdminUnit>()
+            .FirstOrDefault(s => s.Name == options.SysAdminUnitName);
+        if (user is null)
+        {
+            Logger.WriteWarning($"User with name {options.SysAdminUnitName} was not found");
+            return;
+        }
+
+        Guid id = user.Id;
+        AppFeature feature = GetFeature(options.Code);
+        SaveFeatureState(feature, id, options.State == 1);
+    }
+
+    #endregion
 }

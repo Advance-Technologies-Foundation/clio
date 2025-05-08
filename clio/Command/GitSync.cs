@@ -1,49 +1,45 @@
-﻿using System.IO;
+using System.IO;
 using System.Runtime.InteropServices;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command;
+
+[Verb("git-sync", Aliases = new string[] { "sync" }, HelpText = "Syncs environment with Git repository")]
+public class GitSyncOptions : EnvironmentNameOptions
 {
-	[Verb("git-sync", Aliases = new string[] { "sync" }, HelpText = "Syncs environment with Git repository")]
-	public class GitSyncOptions : EnvironmentNameOptions
-	{
+    [Option("Direction", Required = true, HelpText = "Sets sync direction")]
+    public string Direction { get; set; }
+}
 
-		[Option("Direction", Required = true, HelpText = "Sets sync direction")]
-		public string Direction {
-			get; set;
-		}
-		
-	}
+public class GitSyncCommand : Command<GitSyncOptions>
+{
+    private readonly EnvironmentSettings _settings;
+    private readonly IProcessExecutor _processExecutor;
+    private readonly ILogger _logger;
 
-	public class GitSyncCommand : Command<GitSyncOptions>
-	{
+    public GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger)
+    {
+        _settings = settings;
+        _processExecutor = processExecutor;
+        _logger = logger;
+    }
 
-		private readonly EnvironmentSettings _settings;
-		private readonly IProcessExecutor _processExecutor;
-		private readonly ILogger _logger;
+    public override int Execute(GitSyncOptions options)
+    {
+        string ext = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd" : "sh";
 
-		public GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger) {
-			_settings = settings;
-			_processExecutor = processExecutor;
-			_logger = logger;
-		}
+        string fileName = options.Direction.ToLower().IndexOf("git") < options.Direction.ToLower().IndexOf("env")
+            ? "git-to-env"
+            : "env-to-git";
 
-		public override int Execute(GitSyncOptions options) {
-			
-			var ext = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd" : "sh";
-			
-			var fileName = options.Direction.ToLower().IndexOf("git") < options.Direction.ToLower().IndexOf("env") ?"git-to-env" : "env-to-git";
-			
-            var batPath  = Path.Join(_settings.WorkspacePathes,"tasks",$"{fileName}.{ext}");
-			
-			var result = _processExecutor.Execute(batPath, 
-				options.Environment, true, _settings.WorkspacePathes, true);
-			
-			_logger.WriteInfo(result);
-			
-			return 0;
-		}
+        string batPath = Path.Join(_settings.WorkspacePathes, "tasks", $"{fileName}.{ext}");
 
-	}
+        string result = _processExecutor.Execute(batPath,
+            options.Environment, true, _settings.WorkspacePathes, true);
+
+        _logger.WriteInfo(result);
+
+        return 0;
+    }
 }

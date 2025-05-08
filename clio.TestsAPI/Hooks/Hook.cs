@@ -1,6 +1,6 @@
-namespace clio.ApiTest.Hooks
+namespace clio.ApiTest.Hooks;
+
+[Binding]
+public class Hooks
 {
-	[Binding]
-	public class Hooks
-	{ }
 }

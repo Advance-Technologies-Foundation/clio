@@ -25,9 +25,9 @@ spec:
               cpu: "0.5"
               memory: "512Mi"
           env:
-          - name: ExchangeListenerRedisHost
-            value: "redis-service-internal:6379"
-          - name: ExchangeListenerRedisDatabase
-            value: "0"
+            - name: ExchangeListenerRedisHost
+              value: "redis-service-internal:6379"
+            - name: ExchangeListenerRedisDatabase
+              value: "0"
           ports:
-          - containerPort: 8080
+            - containerPort: 8080

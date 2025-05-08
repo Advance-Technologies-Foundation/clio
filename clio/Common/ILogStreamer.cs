@@ -1,8 +1,6 @@
-﻿namespace Clio.Common;
+namespace Clio.Common;
 
 public interface ILogStreamer
 {
-
-	public void WriteLine(string v);
-
+    public void WriteLine(string v);
 }

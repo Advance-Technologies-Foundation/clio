@@ -1,33 +1,29 @@
-﻿namespace Clio.WebApplication
+namespace Clio.WebApplication;
+
+#region Class: DownloadInfo
+
+public class DownloadInfo
 {
+    #region Constructors: Public
 
-	#region Class: DownloadInfo
+    public DownloadInfo(string url, string archiveName, string destinationPath, string requestData = null)
+    {
+        Url = url;
+        ArchiveName = archiveName;
+        DestinationPath = destinationPath;
+        RequestData = requestData;
+    }
 
-	public class DownloadInfo
-	{
+    #endregion
 
-		#region Constructors: Public
+    #region Properties: Public
 
-		public DownloadInfo(string url, string archiveName, string destinationPath, string requestData = null) {
-			Url = url;
-			ArchiveName = archiveName;
-			DestinationPath = destinationPath;
-			RequestData = requestData;
-		}
+    public string Url { get; }
+    public string ArchiveName { get; }
+    public string DestinationPath { get; }
+    public string RequestData { get; }
 
-		#endregion
-
-		#region Properties: Public
-
-		public string Url { get; }
-		public string ArchiveName { get; }
-		public string DestinationPath { get; }
-		public string RequestData { get; }
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

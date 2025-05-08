@@ -1,17 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
-namespace cliogate.Files.cs.Dto
+namespace cliogate.Files.cs.Dto;
+
+public class ProductInfo
 {
-	public class ProductInfo
-	{
+    public string Name { get; set; }
 
-		public string Name { get; set; }
+    public Version Version { get; set; }
 
-		public Version Version { get; set; }
-
-		public string[] Packages { get; set; }
-		
-
-	}
+    public string[] Packages { get; set; }
 }

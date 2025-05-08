@@ -1,6 +1,7 @@
 # Using backend unit tests for Creatio development
 
 Prerequisites:
+
 - Initialized workspace with one or more packages in it
 
 ## Creating unit test project
@@ -8,7 +9,7 @@ Prerequisites:
 To create a new UnitTest project for every package in the workspace, run the following command in the workspace folder:
 
 ```bash
-clio new-test-project 
+clio new-test-project
 ```
 
 To specify a package for which a UnitTest will be created, run the following command in the workspace folder:
@@ -22,7 +23,6 @@ To open UnitTest solution use task open-test-project:
 ```bash
 <WORKSPACE_FOLDER>\tasks\open-test-project.cmd
 ```
-
 
 Add TestFixture class to the test project
 
@@ -39,7 +39,7 @@ public class TestClass {
 
 		//Act
 		var result = sut.DoSomething();
-		
+
 		//Assert
 		Assert.AreEqual(result, expected);
 	}

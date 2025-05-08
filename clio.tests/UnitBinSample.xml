@@ -1,7 +1,7 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Reference Include="System.Xml" />
-    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Xml"/>
+    <Reference Include="System.Xml.Linq"/>
     <Reference Include="Terrasoft.Common">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\Bin\Terrasoft.Common.dll</HintPath>

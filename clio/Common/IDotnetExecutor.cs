@@ -1,9 +1,6 @@
-namespace Clio.Common
+namespace Clio.Common;
+
+public interface IDotnetExecutor
 {
-	public interface IDotnetExecutor
-	{ 
-		string Execute(string command, bool waitForExit, string workingDirectory = null);
-
-	}
-
+    string Execute(string command, bool waitForExit, string workingDirectory = null);
 }

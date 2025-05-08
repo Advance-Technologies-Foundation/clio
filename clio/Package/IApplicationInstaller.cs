@@ -1,26 +1,21 @@
-﻿using System;
+using System;
 using CreatioModel;
 
-namespace Clio.Package
+namespace Clio.Package;
+
+#region Interface: IPackageDownloader
+
+public interface IApplicationInstaller
 {
+    #region Methods: Public
 
-	#region Interface: IPackageDownloader
+    bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
+        string reportPath = null);
 
-	public interface IApplicationInstaller
-	{
+    bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
+        string reportPath = null);
 
-		#region Methods: Public
-
-		bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null);
-
-		bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
-			string reportPath = null);
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

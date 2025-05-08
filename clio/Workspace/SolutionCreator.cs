@@ -1,68 +1,71 @@
-namespace Clio.Workspaces
+namespace Clio.Workspaces;
+
+using System.Collections.Generic;
+using System.Text;
+using Common;
+
+#region Class: SolutionCreator
+
+public class SolutionCreator : ISolutionCreator
 {
-	using System.Collections.Generic;
-	using System.Text;
-	using Clio.Common;
+    #region Fields: Private
 
-	#region Class: SolutionCreator
+    private readonly IFileSystem _fileSystem;
 
-	public class SolutionCreator : ISolutionCreator
-	{
+    #endregion
 
-		#region Fields: Private
+    #region Constructors: Public
 
-		private readonly IFileSystem _fileSystem;
+    public SolutionCreator(IFileSystem fileSystem)
+    {
+        fileSystem.CheckArgumentNull(nameof(fileSystem));
+        _fileSystem = fileSystem;
+    }
 
-		#endregion
+    #endregion
 
-		#region Constructors: Public
+    #region Methods: Private
 
-		public SolutionCreator(IFileSystem fileSystem) {
-			fileSystem.CheckArgumentNull(nameof(fileSystem));
-			_fileSystem = fileSystem;
-		}
+    public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects)
+    {
+        StringBuilder sb = new();
+        sb.AppendLine("Microsoft Visual Studio Solution File, Format Version 12.00");
+        foreach (SolutionProject sp in solutionProjects)
+        {
+            sb.AppendLine($"Project(\"{{{sp.Id}}}\") = \"{sp.Name}\", \"{sp.Path}\", \"{{{sp.UId}}}\"");
+            sb.AppendLine("EndProject");
+        }
 
-		#endregion
+        sb.AppendLine("Global");
+        sb.AppendLine("\tGlobalSection(SolutionConfigurationPlatforms) = preSolution");
+        sb.AppendLine("\t\tDebug|Any CPU = Debug|Any CPU");
+        sb.AppendLine("\t\tRelease|Any CPU = Release|Any CPU");
+        sb.AppendLine("\tEndGlobalSection");
+        sb.AppendLine("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution");
+        foreach (SolutionProject sp in solutionProjects)
+        {
+            sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.ActiveCfg = Debug|Any CPU");
+            sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.Build.0 = Debug|Any CPU");
+            sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.ActiveCfg = Release|Any CPU");
+            sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.Build.0 = Release|Any CPU");
+        }
 
-		#region Methods: Private
+        sb.AppendLine("\tEndGlobalSection");
+        sb.AppendLine("EndGlobal");
+        return sb.ToString();
+    }
 
-		public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects) {
-			var sb = new StringBuilder();
-			sb.AppendLine("Microsoft Visual Studio Solution File, Format Version 12.00");
-			foreach (SolutionProject sp in solutionProjects) {
-				sb.AppendLine($"Project(\"{{{sp.Id}}}\") = \"{sp.Name}\", \"{sp.Path}\", \"{{{sp.UId}}}\"");
-				sb.AppendLine("EndProject");
-			}
-			sb.AppendLine("Global");
-			sb.AppendLine("\tGlobalSection(SolutionConfigurationPlatforms) = preSolution");
-			sb.AppendLine("\t\tDebug|Any CPU = Debug|Any CPU");
-			sb.AppendLine("\t\tRelease|Any CPU = Release|Any CPU");
-			sb.AppendLine("\tEndGlobalSection");
-			sb.AppendLine("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution");
-			foreach (SolutionProject sp in solutionProjects) {
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.ActiveCfg = Debug|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.Build.0 = Debug|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.ActiveCfg = Release|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.Build.0 = Release|Any CPU");
-			}
-			sb.AppendLine("\tEndGlobalSection");
-			sb.AppendLine("EndGlobal");
-			return sb.ToString();
-		}
+    #endregion
 
-		#endregion
+    #region Methods: Public
 
-		#region Methods: Public
+    public void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects)
+    {
+        string solutionContent = BuildSolutionContent(solutionProjects);
+        _fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
+    }
 
-		public void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects) {
-			string solutionContent = BuildSolutionContent(solutionProjects);
-			_fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

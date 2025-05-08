@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.Data;
@@ -36,760 +36,842 @@ using System.Globalization;
 using Terrasoft.Web.Http.Abstractions;
 #endif
 
-namespace cliogate.Files.cs
+namespace cliogate.Files.cs;
+
+#region Class: CompilationResult
+
+[DataContract]
+public class CompilationResult
 {
-	#region Class: CompilationResult
+    #region Properties: Public
 
-	[DataContract]
-	public class CompilationResult
-	{
+    [JsonProperty("compilerErrors")] public CompilerErrorCollection CompilerErrors { get; set; }
 
-		#region Properties: Public
+    [JsonProperty("status")] public BuildResultType Status { get; set; }
 
-		[JsonProperty("compilerErrors")]
-		public CompilerErrorCollection CompilerErrors { get; set; }
+    #endregion
+}
 
-		[JsonProperty("status")]
-		public BuildResultType Status { get; set; }
+#endregion
 
-		#endregion
+#region Class: CreatioApiGateway
 
-	}
+[ServiceContract]
+[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]
+public class CreatioApiGateway : BaseService
+{
+    private readonly UserConnection _userConnection;
+    public CreatioApiGateway() => _userConnection = ClassFactory.Get<UserConnection>();
+    private HttpContext HttpContext => HttpContextAccessor.GetInstance();
 
-	#endregion
+    #region Fields: Private
 
-	#region Class: CreatioApiGateway
+    private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
+    private readonly string splitName = "#OriginalMaintainer:";
 
-	[ServiceContract]
-	[AspNetCompatibilityRequirements(RequirementsMode = AspNetCompatibilityRequirementsMode.Required)]
-	public class CreatioApiGateway : BaseService
-	{
+    #endregion
 
-		private readonly UserConnection _userConnection;
-		public CreatioApiGateway(){
-			_userConnection = ClassFactory.Get<UserConnection>();
-		}
-		private HttpContext HttpContext => HttpContextAccessor.GetInstance();
-		#region Fields: Private
+    #region Methods: Private
 
-		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
-		private readonly string splitName = "#OriginalMaintainer:";
-
-		#endregion
-
-		#region Methods: Private
-
-		private void AssignFileResponseContent(string contentType, long contentLength,
-			string contentDisposition){
+    private void AssignFileResponseContent(string contentType, long contentLength,
+        string contentDisposition)
+    {
 #if !NETSTANDARD2_0
 			WebOperationContext.Current.OutgoingResponse.ContentType = contentType;
 			WebOperationContext.Current.OutgoingResponse.ContentLength = contentLength;
 			WebOperationContext.Current.OutgoingResponse.Headers.Add("Content-Disposition", contentDisposition);
 #else
-			HttpContext httpContext = HttpContextAccessor.GetInstance();
-			HttpResponse response = httpContext.Response;
-			response.ContentType = contentType;
-			response.Headers["Content-Length"] = contentLength.ToString(CultureInfo.InvariantCulture);
-			response.Headers["Content-Disposition"] = contentDisposition;
+        HttpContext httpContext = HttpContextAccessor.GetInstance();
+        HttpResponse response = httpContext.Response;
+        response.ContentType = contentType;
+        response.Headers["Content-Length"] = contentLength.ToString(CultureInfo.InvariantCulture);
+        response.Headers["Content-Disposition"] = contentDisposition;
 #endif
-		}
+    }
 
-		private void AssignFileResponseContent(long contentLength, string fileName) =>
-			AssignFileResponseContent("application/octet-stream", contentLength,
-				$"attachment; filename=\"{fileName}\"");
+    private void AssignFileResponseContent(long contentLength, string fileName) =>
+        AssignFileResponseContent("application/octet-stream", contentLength,
+            $"attachment; filename=\"{fileName}\"");
 
-		private void CheckCanManageSolution(){
-			if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
-				throw new Exception("You don't have permission for operation CanManageSolution");
-			}
-		}
-		private void CheckCanManageSysSettings(){
-			if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSysSettings")) {
-				throw new Exception("You don't have permission for operation CanManageSysSettings");
-			}
-		}
-		
-		/// <summary>
-		///  Sets the return status code of the HTTP response.
-		/// </summary>
-		/// <param name="statusCode"></param>
-		private void SetReturnStatusCode(HttpStatusCode statusCode){
+    private void CheckCanManageSolution()
+    {
+        if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
+        {
+            throw new Exception("You don't have permission for operation CanManageSolution");
+        }
+    }
+
+    private void CheckCanManageSysSettings()
+    {
+        if (!_userConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSysSettings"))
+        {
+            throw new Exception("You don't have permission for operation CanManageSysSettings");
+        }
+    }
+
+    /// <summary>
+    ///  Sets the return status code of the HTTP response.
+    /// </summary>
+    /// <param name="statusCode"></param>
+    private void SetReturnStatusCode(HttpStatusCode statusCode)
+    {
 #if NETFRAMEWORK
 			if (WebOperationContext.Current != null) {
 				WebOperationContext.Current.OutgoingResponse.StatusCode = statusCode;
 			}
 			HttpContext.Current.Response.StatusCode = (int)statusCode;
 #elif !NETFRAMEWORK
-			HttpContext.Response.StatusCode = (int)statusCode;
+        HttpContext.Response.StatusCode = (int)statusCode;
 #endif
-		}
-		
+    }
 
-		private PackageInstallUtilities CreateInstallUtilities(){
-			return new PackageInstallUtilities(UserConnection);
-		}
 
-		private Stream GetCompressedFolder(string rootRelativePath, string fileName,
-			IEnumerable<string> ignoreDirectoriesName = null){
-			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-			string rootDirectoryPath = Path.Combine(baseDirectory, rootRelativePath);
-			if (!Directory.Exists(rootDirectoryPath)) {
-				return null;
-			}
-			MemoryStream compressedAutogeneratedFolder
-				= CompressionUtilities.GetCompressedFolder(rootDirectoryPath, ignoreDirectoriesName);
-			AssignFileResponseContent(compressedAutogeneratedFolder?.Length ?? 0, fileName);
-			return compressedAutogeneratedFolder;
-		}
+    private PackageInstallUtilities CreateInstallUtilities() => new(UserConnection);
 
-		private IEnumerable<Guid> GetEntitySchemasWithNeedUpdateStructure(){
-			List<Guid> result = new List<Guid>();
-			EntitySchemaQuery esq
-				= new EntitySchemaQuery(UserConnection.EntitySchemaManager, "VwSysEntitySchemaInWorkspace");
-			esq.AddAllSchemaColumns();
-			esq.Filters.LogicalOperation = LogicalOperationStrict.And;
-			IEntitySchemaQueryFilterItem needUpdateFilter
-				= esq.CreateFilterWithParameters(FilterComparisonType.Equal, "NeedUpdateStructure", true);
-			esq.Filters.Add(needUpdateFilter);
-			EntityCollection packages = esq.GetEntityCollection(UserConnection);
-			foreach (Entity p in packages) {
-				Guid schemaUId = p.GetTypedColumnValue<Guid>("UId");
-				result.Add(schemaUId);
-			}
-			return result;
-		}
+    private Stream GetCompressedFolder(string rootRelativePath, string fileName,
+        IEnumerable<string> ignoreDirectoriesName = null)
+    {
+        string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        string rootDirectoryPath = Path.Combine(baseDirectory, rootRelativePath);
+        if (!Directory.Exists(rootDirectoryPath))
+        {
+            return null;
+        }
 
-		private T GetPackageAttributeValue<T>(string key, string packageName){
-			Select query = new Select(UserConnection)
-				.From("SysPackage")
-				.Column(key)
-				.Where("Name")
-				.IsEqual(Column.Parameter(packageName)) as Select;
-			T result = query.ExecuteScalar<T>();
-			return result;
-		}
+        MemoryStream compressedAutogeneratedFolder
+            = CompressionUtilities.GetCompressedFolder(rootDirectoryPath, ignoreDirectoriesName);
+        AssignFileResponseContent(compressedAutogeneratedFolder?.Length ?? 0, fileName);
+        return compressedAutogeneratedFolder;
+    }
 
-		#endregion
+    private IEnumerable<Guid> GetEntitySchemasWithNeedUpdateStructure()
+    {
+        List<Guid> result = [];
+        EntitySchemaQuery esq = new(UserConnection.EntitySchemaManager, "VwSysEntitySchemaInWorkspace");
+        esq.AddAllSchemaColumns();
+        esq.Filters.LogicalOperation = LogicalOperationStrict.And;
+        IEntitySchemaQueryFilterItem needUpdateFilter
+            = esq.CreateFilterWithParameters(FilterComparisonType.Equal, "NeedUpdateStructure", true);
+        esq.Filters.Add(needUpdateFilter);
+        EntityCollection packages = esq.GetEntityCollection(UserConnection);
+        foreach (Entity p in packages)
+        {
+            Guid schemaUId = p.GetTypedColumnValue<Guid>("UId");
+            result.Add(schemaUId);
+        }
 
-		#region Methods: Public
+        return result;
+    }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-        			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string GetSysSettingValueByCode(string code){
-			CheckCanManageSysSettings();
-			bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
-			
-			if(value == null || !isValue) {
-				var v  = SysSettings.GetDefValue(_userConnection, code);
-				if(v != null) {
-					value = v;
-					isValue = true;
-				}
-			}
-			
-			if(value == null || !isValue) {
-				return string.Empty;
-			}
-			
-			
-			const string schemaName = "SysSettings";
-			Entity sysSettingsEntity = _userConnection.EntitySchemaManager
-				.FindInstanceByName(schemaName).CreateEntity(_userConnection);
-			
-			bool isFetched = sysSettingsEntity.FetchFromDB("Code", code, false);
-			string valueTypeName = sysSettingsEntity.GetTypedColumnValue<string>("ValueTypeName");
+    private T GetPackageAttributeValue<T>(string key, string packageName)
+    {
+        Select query = new Select(UserConnection)
+            .From("SysPackage")
+            .Column(key)
+            .Where("Name")
+            .IsEqual(Column.Parameter(packageName)) as Select;
+        T result = query.ExecuteScalar<T>();
+        return result;
+    }
 
-			string returnValue;
-			switch (valueTypeName) {
-				case "DateTime":
-					DateTime dt1 = DateTime.Parse(value.ToString());
-					returnValue = dt1.ToString("dd-MMM-yyyy HH:mm:ss");
-					break;
-				case "Date":
-					DateTime dt2 = DateTime.Parse(value.ToString()).Date;
-					returnValue = dt2.ToString("dd-MMM-yyyy");
-					break;
-				case "Time":
-					DateTime dt3 = DateTime.Parse(value.ToString());
-					returnValue = dt3.ToString(@"HH:mm:ss");
-					break;
-				default:
-					returnValue = value.ToString();
-					break;
-			}
-			return returnValue;
-		}
-		
-		
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public CompilationResult CompileWorkspace(bool compileModified = false){
-			CheckCanManageSolution();
-			WorkspaceBuilder workspaceBuilder = WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
-			CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace,
-				out BuildResultType buildResultType);
-			IAppConfigurationBuilder configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
-			if (compileModified) {
-				configurationBuilder.BuildChanged();
-			} else {
-				configurationBuilder.BuildAll();
-			}
-			return new CompilationResult {
-				Status = buildResultType,
-				CompilerErrors = compilerErrors
-			};
-		}
+    #endregion
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "ExecuteSqlScript", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string ExecuteSqlScript(string script){
-			CheckCanManageSolution();
-			return SQLFunctions.ExecuteSQL(script, UserConnection);
-		}
+    #region Methods: Public
 
-		[OperationContract]
-		[WebInvoke(Method = "GET", UriTemplate = "GetApiVersion", RequestFormat = WebMessageFormat.Json,
-			ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.WrappedRequest)]
-		public string GetApiVersion(){
-			Version version = typeof(CreatioApiGateway).Assembly.GetName().Version;
-			return version.ToString();
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode",
+        BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public string GetSysSettingValueByCode(string code)
+    {
+        CheckCanManageSysSettings();
+        bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public Stream GetAutogeneratedFolder(string packageName){
-			CheckCanManageSolution();
-			string rootRelativePath = Path.Combine("Terrasoft.Configuration", "Pkg",
-				packageName, "Autogenerated");
-			return GetCompressedFolder(rootRelativePath, $"Autogenerated.{packageName}.gz");
-		}
+        if (value == null || !isValue)
+        {
+            object? v = SysSettings.GetDefValue(_userConnection, code);
+            if (v != null)
+            {
+                value = v;
+                isValue = true;
+            }
+        }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public Stream GetConfigurationBinFolder(){
-			CheckCanManageSolution();
-			string rootRelativePath = Path.Combine("Terrasoft.Configuration", "bin");
-			return GetCompressedFolder(rootRelativePath, "Bin.gz");
-		}
+        if (value == null || !isValue)
+        {
+            return string.Empty;
+        }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public Stream GetConfigurationLibFolder(){
-			CheckCanManageSolution();
-			string rootRelativePath = Path.Combine("Terrasoft.Configuration", "Lib");
-			return GetCompressedFolder(rootRelativePath, "Lib.gz");
-		}
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public Stream GetCoreBinFolder(){
-			CheckCanManageSolution();
-			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-			string rootRelativePath = "bin";
+        const string schemaName = "SysSettings";
+        Entity sysSettingsEntity = _userConnection.EntitySchemaManager
+            .FindInstanceByName(schemaName).CreateEntity(_userConnection);
+        _ = sysSettingsEntity.FetchFromDB("Code", code, false);
+        string valueTypeName = sysSettingsEntity.GetTypedColumnValue<string>("ValueTypeName");
 
-			string[] ignoreDirectoriesName = null;
-			if (!Directory.Exists(Path.Combine(baseDirectory, "bin"))) {
-				ignoreDirectoriesName = new[] {
-					"AppTemplates", "conf", "Packages", "Resources", "runtimes", "Terrasoft.Configuration", "WebFarm",
-					"WorkspaceConsole"
-				};
-				rootRelativePath = string.Empty;
-			}
-			return GetCompressedFolder(rootRelativePath, "CoreBin.gz", ignoreDirectoriesName);
-		}
+        string returnValue;
+        switch (valueTypeName)
+        {
+            case "DateTime":
+                DateTime dt1 = DateTime.Parse(value.ToString());
+                returnValue = dt1.ToString("dd-MMM-yyyy HH:mm:ss");
+                break;
+            case "Date":
+                DateTime dt2 = DateTime.Parse(value.ToString()).Date;
+                returnValue = dt2.ToString("dd-MMM-yyyy");
+                break;
+            case "Time":
+                DateTime dt3 = DateTime.Parse(value.ToString());
+                returnValue = dt3.ToString(@"HH:mm:ss");
+                break;
+            default:
+                returnValue = value.ToString();
+                break;
+        }
 
-		[OperationContract]
-		[WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}/{fields}", ResponseFormat = WebMessageFormat.Json,
-			BodyStyle = WebMessageBodyStyle.Bare)]
-		public string GetEntitySchemaModels(string entitySchema, string fields){
-			CheckCanManageSolution();
-			EntitySchemaModelClassGenerator generator
-				= new EntitySchemaModelClassGenerator(UserConnection.EntitySchemaManager);
-			List<string> columns = new List<string>();
-			if (!string.IsNullOrEmpty(fields)) {
-				columns = new List<string>(fields.Split(','));
-			}
-			Dictionary<string, string> models = generator.Generate(entitySchema, columns);
-			return JsonConvert.SerializeObject(models, Formatting.Indented);
-		}
+        return returnValue;
+    }
 
-		// /rest/CreatioApiGateway/GetPackageFileContent?packageName=CrtBase&filePath=descriptor.json
-		[OperationContract]
-		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string GetPackageFileContent(string packageName, string filePath){
-			CheckCanManageSolution();
 
-			PackageExplorer packageExplorer = new PackageExplorer(packageName);
-			return packageExplorer.GetPackageFileContent(filePath);
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "CompileWorkspace", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public CompilationResult CompileWorkspace(bool compileModified = false)
+    {
+        CheckCanManageSolution();
+        WorkspaceBuilder workspaceBuilder = WorkspaceBuilderUtility.CreateWorkspaceBuilder(AppConnection);
+        CompilerErrorCollection compilerErrors = workspaceBuilder.Rebuild(AppConnection.Workspace,
+            out BuildResultType buildResultType);
+        IAppConfigurationBuilder configurationBuilder = ClassFactory.Get<IAppConfigurationBuilder>();
+        if (compileModified)
+        {
+            configurationBuilder.BuildChanged();
+        }
+        else
+        {
+            configurationBuilder.BuildAll();
+        }
 
-		// /rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName=CrtBase
-		[OperationContract]
-		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public IEnumerable<string> GetPackageFilesDirectoryContent(string packageName){
-			CheckCanManageSolution();
+        return new CompilationResult { Status = buildResultType, CompilerErrors = compilerErrors };
+    }
 
-			PackageExplorer packageExplorer = new PackageExplorer(packageName);
-			return packageExplorer.GetPackageFilesDirectoryContent();
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "ExecuteSqlScript", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public string ExecuteSqlScript(string script)
+    {
+        CheckCanManageSolution();
+        return SQLFunctions.ExecuteSQL(script, UserConnection);
+    }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "GetPackages", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string GetPackages(bool isCustomer = false){
-			CheckCanManageSolution();
-			List<Dictionary<string, string>> packageList = new List<Dictionary<string, string>>();
-			EntitySchemaQuery esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
-			esq.AddAllSchemaColumns();
-			if (isCustomer) {
-				string maintainerName = SysSettings.GetValue(UserConnection, "Maintainer", string.Empty);
-				Guid customPackageUId = SysSettings.GetValue(UserConnection, "CustomPackageUId", Guid.Empty);
-				IEntitySchemaQueryFilterItem maintainerNameFilter =
-					esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Maintainer", maintainerName);
-				IEntitySchemaQueryFilterItem nameNotEqualCustomFilter =
-					esq.CreateFilterWithParameters(FilterComparisonType.NotEqual, "UId", customPackageUId);
-				IEntitySchemaQueryFilterItem installTypeFilter =
-					esq.CreateFilterWithParameters(FilterComparisonType.Equal, "InstallType", 0);
-				esq.Filters.Add(maintainerNameFilter);
-				esq.Filters.Add(nameNotEqualCustomFilter);
-				esq.Filters.Add(installTypeFilter);
-			}
-			EntityCollection packages = esq.GetEntityCollection(UserConnection);
-			foreach (Entity p in packages) {
-				Dictionary<string, string> package = new Dictionary<string, string> {
-					["Name"] = p.PrimaryDisplayColumnValue,
-					["UId"] = p.GetTypedColumnValue<string>("UId"),
-					["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer"),
-					["Version"] = p.GetTypedColumnValue<string>("Version")
-				};
-				packageList.Add(package);
-			}
-			string json = JsonConvert.SerializeObject(packageList);
-			return json;
-		}
+    [OperationContract]
+    [WebInvoke(Method = "GET", UriTemplate = "GetApiVersion", RequestFormat = WebMessageFormat.Json,
+        ResponseFormat = WebMessageFormat.Json, BodyStyle = WebMessageBodyStyle.WrappedRequest)]
+    public string GetApiVersion()
+    {
+        Version version = typeof(CreatioApiGateway).Assembly.GetName().Version;
+        return version.ToString();
+    }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "LockPackages",
-			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
-			ResponseFormat = WebMessageFormat.Json)]
-		public bool LockPackages(string[] lockPackages = null){
-			CheckCanManageSolution();
-			_log.WarnFormat("Start LockPackages, packages: {0}", string.Join(", ", lockPackages));
-			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
-			if (lockPackages != null && lockPackages.Any()) {
-				foreach (string lockPackage in lockPackages) {
-					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", lockPackage);
-					string[] description = GetPackageAttributeValue<string>("Description", lockPackage)
-						.Split(new[] {splitName}, StringSplitOptions.None);
-					string maintainer = description.Length > 1 ? description.Last() : originalMaintainer;
-					Query query = new Update(UserConnection, "SysPackage")
-						.Set("InstallType", Column.Parameter(1))
-						.Set("Maintainer", Column.Parameter(maintainer))
-						.Set("Description", Column.Parameter(description[0]))
-						.Where("Name").IsEqual(Column.Parameter(lockPackage));
-					Update update = query as Update;
-					update.BuildParametersAsValue = true;
-					update.Execute();
-				}
-			} else {
-				Query query = new Update(UserConnection, "SysPackage")
-					.Set("InstallType", Column.Parameter(1, "Integer"))
-					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode))
-					.And("Name").IsNotEqual(Column.Parameter("Custom")) as Update;
-				Update update = query as Update;
-				update.Execute();
-			}
-			return true;
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public Stream GetAutogeneratedFolder(string packageName)
+    {
+        CheckCanManageSolution();
+        string rootRelativePath = Path.Combine("Terrasoft.Configuration", "Pkg",
+            packageName, "Autogenerated");
+        return GetCompressedFolder(rootRelativePath, $"Autogenerated.{packageName}.gz");
+    }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "ResetSchemaChangeState",
-			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
-			ResponseFormat = WebMessageFormat.Json)]
-		public bool ResetSchemaChangeState(string packageName){
-			CheckCanManageSolution();
-			Update update = new Update(UserConnection, "SysSchema")
-				.Set("IsChanged", Column.Parameter(false, "Boolean"))
-				.Where("SysPackageId").In(new Select(UserConnection).Column("Id").From("SysPackage")
-					.Where("SysPackage", "Name").IsEqual(Column.Parameter(packageName))) as Update;
-			update.Execute();
-			return true;
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public Stream GetConfigurationBinFolder()
+    {
+        CheckCanManageSolution();
+        string rootRelativePath = Path.Combine("Terrasoft.Configuration", "bin");
+        return GetCompressedFolder(rootRelativePath, "Bin.gz");
+    }
 
-		// /rest/CreatioApiGateway/SavePackageFileContent?packageName=CrtBase&filePath=descriptor12345.json&fileContent=123
-		[OperationContract]
-		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
-			ResponseFormat = WebMessageFormat.Json)]
-		public BaseResponse SavePackageFileContent(string packageName, string filePath, string fileContent){
-			CheckCanManageSolution();
+    [OperationContract]
+    [WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public Stream GetConfigurationLibFolder()
+    {
+        CheckCanManageSolution();
+        string rootRelativePath = Path.Combine("Terrasoft.Configuration", "Lib");
+        return GetCompressedFolder(rootRelativePath, "Lib.gz");
+    }
 
-			PackageExplorer packageExplorer = new PackageExplorer(packageName);
-			var result = packageExplorer.SaveFileContent(filePath, fileContent);
-			return new BaseResponse {
-				Success = result.isSuccess,
-				ErrorInfo = new ErrorInfo() {
-					Message = result.ex?.Message,
-					StackTrace = result.ex?.StackTrace
-				}
-			};
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public Stream GetCoreBinFolder()
+    {
+        CheckCanManageSolution();
+        string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        string rootRelativePath = "bin";
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "UnlockPackages",
-			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
-			ResponseFormat = WebMessageFormat.Json)]
-		public bool UnlockPackages(string[] unlockPackages = null){
-			CheckCanManageSolution();
-			_log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages));
-			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
-			if (unlockPackages != null && unlockPackages.Any()) {
-				foreach (string unlockPackage in unlockPackages) {
-					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
-					string originalDescription = GetPackageAttributeValue<string>("Description", unlockPackage);
-					string description = originalDescription.Contains(splitName) ? originalDescription
-						: originalDescription + splitName + originalMaintainer;
-					Query query = new Update(UserConnection, "SysPackage")
-						.Set("InstallType", Column.Parameter(0))
-						.Set("Maintainer", Column.Parameter(maintainerCode))
-						.Set("Description", Column.Parameter(description))
-						.Where("Name").IsEqual(Column.Parameter(unlockPackage));
-					Update update = query as Update;
-					update.BuildParametersAsValue = true;
-					update.Execute();
-				}
-			} else {
-				Query query = new Update(UserConnection, "SysPackage")
-					.Set("InstallType", Column.Parameter(0))
-					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode));
-				Update update = query as Update;
-				update.Execute();
-			}
-			return true;
-		}
+        string[] ignoreDirectoriesName = null;
+        if (!Directory.Exists(Path.Combine(baseDirectory, "bin")))
+        {
+            ignoreDirectoriesName =
+            [
+                "AppTemplates", "conf", "Packages", "Resources", "runtimes", "Terrasoft.Configuration", "WebFarm",
+                "WorkspaceConsole"
+            ];
+            rootRelativePath = string.Empty;
+        }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "UpdateDBStructure", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public bool UpdateDBStructure(){
-			CheckCanManageSolution();
-			IEnumerable<Guid> invalidSchemas = GetEntitySchemasWithNeedUpdateStructure();
-			return CreateInstallUtilities().SaveSchemaDBStructure(invalidSchemas, true);
-		}
+        return GetCompressedFolder(rootRelativePath, "CoreBin.gz", ignoreDirectoriesName);
+    }
 
-		[OperationContract]
-		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public BaseResponse UploadFile(Stream stream){
-			CheckCanManageSolution();
-			HttpContext contextAccessor = HttpContextAccessor.GetInstance();
-			HeaderCollection headers = contextAccessor.Request.Headers;
-			const string fileNameHeader = "X-File-Name";
-			const string packageNameHeader = "X-Package-Name";
-			if(!headers.AllKeys.Contains(fileNameHeader)) {
-				return new BaseResponse {
-					Success = false,
-					ErrorInfo = new ErrorInfo() {
-						Message = $"Error: {fileNameHeader} header missing",
-					}
-				};
-			}
-			if(!headers.AllKeys.Contains(packageNameHeader)) {
-				return new BaseResponse {
-					Success = false,
-					ErrorInfo = new ErrorInfo() {
-						Message = $"Error: {packageNameHeader} header missing",
-					}
-				};
-			}
-			string filename = headers[fileNameHeader];
-			string packageName = headers[packageNameHeader];
-			
-			PackageExplorer packageExplorer = new PackageExplorer(packageName);
-			packageExplorer.SaveFileContent(filename, stream);
-			
-			return new BaseResponse {
-				Success = true
-			};
-		}
-		// 200: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
-		// 404: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
-		[OperationContract]
-		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public void DownloadFile(string packageName, string dllName){
-			CheckCanManageSolution();
-			PackageExplorer packageExplorer = new PackageExplorer(packageName);
-			bool isNetCore = !HttpContext.Request.BaseUrl.EndsWith("/0");
-			byte[] bytes = packageExplorer.GetBinaryFileContent(dllName, isNetCore);
-			
-			AssignFileResponseContent(bytes.Length, dllName);
-			if(bytes.Length == 0) {
-				SetReturnStatusCode(HttpStatusCode.NotFound);
-			}
-			SetReturnStatusCode(HttpStatusCode.OK);
-			HttpContext.Current.Response.OutputStream.Write(bytes, 0, bytes.Length);
-		}
-		
-		
-		[OperationContract]
-		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public BaseResponse DeleteFile(string packageName, string filePath){
-			CheckCanManageSolution();
-			PackageExplorer packageExplorer = new PackageExplorer(packageName);
-			(bool isSuccess, Exception ex) = packageExplorer.DeleteFile(filePath);
-			
-			if(!isSuccess) {
-				return new BaseResponse {
-					Success = isSuccess,
-					ErrorInfo = {
-						Message = ex.Message,
-						StackTrace = ex.StackTrace
-					}
-				};
-			}
-			return new BaseResponse {
-				Success = true
-			};
-			
-		}
+    [OperationContract]
+    [WebGet(UriTemplate = "GetEntitySchemaModels/{entitySchema}/{fields}", ResponseFormat = WebMessageFormat.Json,
+        BodyStyle = WebMessageBodyStyle.Bare)]
+    public string GetEntitySchemaModels(string entitySchema, string fields)
+    {
+        CheckCanManageSolution();
+        EntitySchemaModelClassGenerator generator = new(UserConnection.EntitySchemaManager);
+        List<string> columns = [];
+        if (!string.IsNullOrEmpty(fields))
+        {
+            columns = new List<string>(fields.Split(','));
+        }
 
-		// /rest/CreatioApiGateway/SendEventToUI
-		[OperationContract]
-		[WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public void SendEventToUI(EventModel eventModel) {
-			CheckCanManageSolution();
-			var liveLogger = new LiveLogger(new WebSocket()); // Instantiate LiveLogger with WebSocket
-			liveLogger.Log(eventModel.Content); // Use LiveLogger to log the event content
-		}
-		
-		
-		// /rest/CreatioApiGateway/GetApplicationIdByName?appName=ttt1
-		[OperationContract]
-		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string GetApplicationIdByName(string appName) {
-			CheckCanManageSolution();
-			EntitySchemaQuery esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysInstalledApp");
-			var columndId = esq.AddColumn("Id");
-			
-			esq.Filters.Add(
-				esq.CreateFilterWithParameters(FilterComparisonType.Equal,"Name", appName));
-			esq.Filters.Add(
-				esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Code", appName));
-			esq.Filters.LogicalOperation = LogicalOperationStrict.Or;
-			EntityCollection entities = esq.GetEntityCollection(UserConnection);
-			if (entities.Count == 0) {
-				return $"Application {appName} not found.";
-			}
-			if (entities.Count > 1) {
-				return $"More then one application found.";
-			}
-			return entities[0].GetTypedColumnValue<string>(columndId.Name);
-		}
+        Dictionary<string, string> models = generator.Generate(entitySchema, columns);
+        return JsonConvert.SerializeObject(models, Formatting.Indented);
+    }
 
-		
-		// /rest/CreatioApiGateway/GetSysInfo
-		[OperationContract]
-		[WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public SysInfoResponse GetSysInfo(){
-			if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
-				return new SysInfoResponse {
-					Success = false,
-					ErrorInfo = new ErrorInfo {
-						Message = "You don't have permission for operation CanManageSolution"
-					}
-				};
-			}
+    // /rest/CreatioApiGateway/GetPackageFileContent?packageName=CrtBase&filePath=descriptor.json
+    [OperationContract]
+    [WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public string GetPackageFileContent(string packageName, string filePath)
+    {
+        CheckCanManageSolution();
 
-			EntitySchemaQuery esq = new EntitySchemaQuery(UserConnection.EntitySchemaManager, "SysPackage");
-			esq.AddAllSchemaColumns();
-			var packages = esq.GetEntityCollection(UserConnection);
-			List<string> packageNames = new List<string>();
-			foreach (Entity package in packages) {
-				string name = package.GetTypedColumnValue<string>("Name");
-				packageNames.Add(name);
-			}
-		
-			bool isNetCore = !(Environment.Version.Major == 4); 
-			
-			var ver = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version;
-			ProductManager pm  = new ProductManager();
-			SysInfoResponse sysInfoResponse = new SysInfoResponse {
-				SysInfo = new CreatioPlatformInfo{
-					Runtime = RuntimeInformation.FrameworkDescription,
-					CoreVersion = ver.ToString(),
-					DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
-					ProductName = pm.FindProductNameByPackages(packageNames, ver, isNetCore),
-					IsNetCore = isNetCore,
-				}
-			};
+        PackageExplorer packageExplorer = new(packageName);
+        return packageExplorer.GetPackageFileContent(filePath);
+    }
 
-			LicManager lm = UserConnection.AppConnection.LicManager;
-			sysInfoResponse.SysInfo.LicenseInfo = new LicenseInfo {
-				CustomerId = lm.CustomerId
-			};
-			IDataStore appData = UserConnection.AppConnection.SystemUserConnection.ApplicationData;
-			if (appData.Keys.Contains("IsDemoMode")) {
-				object isDemoMode = appData["IsDemoMode"];
-				if (isDemoMode != null) {
-					bool isBool = bool.TryParse(isDemoMode.ToString(), out bool demoMode);
-					if (isBool) {
-						sysInfoResponse.SysInfo.LicenseInfo.IsDemoMode = demoMode;
-					}
-				}
-			}
-			return sysInfoResponse;
-		}
-		#endregion
-		
-	}
-	
-	[DataContract]
-	public class EventModel {
+    // /rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName=CrtBase
+    [OperationContract]
+    [WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public IEnumerable<string> GetPackageFilesDirectoryContent(string packageName)
+    {
+        CheckCanManageSolution();
 
-		[DataMember(Name = "Sender")]
-		public string Sender { get; set; }
-		
-		[DataMember(Name = "Content")]
-		public string Content { get; set; }
+        PackageExplorer packageExplorer = new(packageName);
+        return packageExplorer.GetPackageFilesDirectoryContent();
+    }
 
-		[DataMember(Name = "CommandName")]
-		public string CommandName { get; set; }
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "GetPackages", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public string GetPackages(bool isCustomer = false)
+    {
+        CheckCanManageSolution();
+        List<Dictionary<string, string>> packageList = [];
+        EntitySchemaQuery esq = new(UserConnection.EntitySchemaManager, "SysPackage");
+        esq.AddAllSchemaColumns();
+        if (isCustomer)
+        {
+            string maintainerName = SysSettings.GetValue(UserConnection, "Maintainer", string.Empty);
+            Guid customPackageUId = SysSettings.GetValue(UserConnection, "CustomPackageUId", Guid.Empty);
+            IEntitySchemaQueryFilterItem maintainerNameFilter =
+                esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Maintainer", maintainerName);
+            IEntitySchemaQueryFilterItem nameNotEqualCustomFilter =
+                esq.CreateFilterWithParameters(FilterComparisonType.NotEqual, "UId", customPackageUId);
+            IEntitySchemaQueryFilterItem installTypeFilter =
+                esq.CreateFilterWithParameters(FilterComparisonType.Equal, "InstallType", 0);
+            esq.Filters.Add(maintainerNameFilter);
+            esq.Filters.Add(nameNotEqualCustomFilter);
+            esq.Filters.Add(installTypeFilter);
+        }
 
-	}
-	
-	
-	public class PackageExplorer
-	{
+        EntityCollection packages = esq.GetEntityCollection(UserConnection);
+        foreach (Entity p in packages)
+        {
+            Dictionary<string, string> package = new()
+            {
+                ["Name"] = p.PrimaryDisplayColumnValue,
+                ["UId"] = p.GetTypedColumnValue<string>("UId"),
+                ["Maintainer"] = p.GetTypedColumnValue<string>("Maintainer"),
+                ["Version"] = p.GetTypedColumnValue<string>("Version")
+            };
+            packageList.Add(package);
+        }
 
-		#region Fields: Private
+        string json = JsonConvert.SerializeObject(packageList);
+        return json;
+    }
 
-		private readonly string _packageName;
-		private readonly string _baseDir = AppDomain.CurrentDomain.BaseDirectory;
-		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "LockPackages",
+        BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+        ResponseFormat = WebMessageFormat.Json)]
+    public bool LockPackages(string[] lockPackages = null)
+    {
+        CheckCanManageSolution();
+        _log.WarnFormat("Start LockPackages, packages: {0}", string.Join(", ", lockPackages));
+        string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
+        if (lockPackages != null && lockPackages.Any())
+        {
+            foreach (string lockPackage in lockPackages)
+            {
+                string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", lockPackage);
+                string[] description = GetPackageAttributeValue<string>("Description", lockPackage)
+                    .Split(new[] { splitName }, StringSplitOptions.None);
+                string maintainer = description.Length > 1 ? description.Last() : originalMaintainer;
+                Query query = new Update(UserConnection, "SysPackage")
+                    .Set("InstallType", Column.Parameter(1))
+                    .Set("Maintainer", Column.Parameter(maintainer))
+                    .Set("Description", Column.Parameter(description[0]))
+                    .Where("Name").IsEqual(Column.Parameter(lockPackage));
+                Update update = query as Update;
+                update.BuildParametersAsValue = true;
+                update.Execute();
+            }
+        }
+        else
+        {
+            Query query = new Update(UserConnection, "SysPackage")
+                .Set("InstallType", Column.Parameter(1, "Integer"))
+                .Where("Maintainer").IsEqual(Column.Parameter(maintainerCode))
+                .And("Name").IsNotEqual(Column.Parameter("Custom")) as Update;
+            Update update = query as Update;
+            update.Execute();
+        }
 
-		#endregion
+        return true;
+    }
 
-		#region Constructors: Public
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "ResetSchemaChangeState",
+        BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+        ResponseFormat = WebMessageFormat.Json)]
+    public bool ResetSchemaChangeState(string packageName)
+    {
+        CheckCanManageSolution();
+        Update update = new Update(UserConnection, "SysSchema")
+            .Set("IsChanged", Column.Parameter(false, "Boolean"))
+            .Where("SysPackageId").In(new Select(UserConnection).Column("Id").From("SysPackage")
+                .Where("SysPackage", "Name").IsEqual(Column.Parameter(packageName))) as Update;
+        update.Execute();
+        return true;
+    }
 
-		public PackageExplorer(string packageName){
-			CheckNameForDeniedSymbols(packageName);
-			_packageName = packageName;
-		}
+    // /rest/CreatioApiGateway/SavePackageFileContent?packageName=CrtBase&filePath=descriptor12345.json&fileContent=123
+    [OperationContract]
+    [WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+        ResponseFormat = WebMessageFormat.Json)]
+    public BaseResponse SavePackageFileContent(string packageName, string filePath, string fileContent)
+    {
+        CheckCanManageSolution();
 
-		#endregion
+        PackageExplorer packageExplorer = new(packageName);
+        (bool isSuccess, Exception ex) = packageExplorer.SaveFileContent(filePath, fileContent);
+        return new BaseResponse
+        {
+            Success = isSuccess,
+            ErrorInfo = new ErrorInfo { Message = ex?.Message, StackTrace = ex?.StackTrace }
+        };
+    }
 
-		#region Methods: Private
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "UnlockPackages",
+        BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+        ResponseFormat = WebMessageFormat.Json)]
+    public bool UnlockPackages(string[] unlockPackages = null)
+    {
+        CheckCanManageSolution();
+        _log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages));
+        string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
+        if (unlockPackages != null && unlockPackages.Any())
+        {
+            foreach (string unlockPackage in unlockPackages)
+            {
+                string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
+                string originalDescription = GetPackageAttributeValue<string>("Description", unlockPackage);
+                string description = originalDescription.Contains(splitName)
+                    ? originalDescription
+                    : originalDescription + splitName + originalMaintainer;
+                Query query = new Update(UserConnection, "SysPackage")
+                    .Set("InstallType", Column.Parameter(0))
+                    .Set("Maintainer", Column.Parameter(maintainerCode))
+                    .Set("Description", Column.Parameter(description))
+                    .Where("Name").IsEqual(Column.Parameter(unlockPackage));
+                Update update = query as Update;
+                update.BuildParametersAsValue = true;
+                update.Execute();
+            }
+        }
+        else
+        {
+            Query query = new Update(UserConnection, "SysPackage")
+                .Set("InstallType", Column.Parameter(0))
+                .Where("Maintainer").IsEqual(Column.Parameter(maintainerCode));
+            Update update = query as Update;
+            update.Execute();
+        }
 
-		private void CheckNameForDeniedSymbols(string name){
-			string[] invalidArgs = {
-				"%2e%2e%2f", "%2e%2e/", "..%2f", "%2e%2e%5c", "2e%2e\\", "..%5c",
-				"%252e%252e%255c", "..%255c", "../", "..\\"
-			};
-			foreach (string invalidArg in invalidArgs) {
-				if (name.Contains(invalidArg)) {
-					throw new Exception("Invalid character");
-				}
-			}
-		}
+        return true;
+    }
 
-		private string PackageDirectoryPath(){
-			return Path.Combine(_baseDir, "Terrasoft.Configuration", "Pkg", _packageName, "Files");
-		}
+    [OperationContract]
+    [WebInvoke(Method = "POST", UriTemplate = "UpdateDBStructure", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public bool UpdateDBStructure()
+    {
+        CheckCanManageSolution();
+        IEnumerable<Guid> invalidSchemas = GetEntitySchemasWithNeedUpdateStructure();
+        return CreateInstallUtilities().SaveSchemaDBStructure(invalidSchemas, true);
+    }
 
-		
-		private string PackageBinDirectoryPath()=> Path.Combine(PackageDirectoryPath(), "Bin");
-		
-		private bool IsPackageUnlocked(string packageName){
-			var userConnection = ClassFactory.Get<UserConnection>();
-			string maintainerCode = SysSettings.GetValue(userConnection, "Maintainer", "NonImplemented");
-			Select select = new Select(userConnection)
-				.From("SysPackage").WithHints(new NoLockHint())
-				.Column(Func.Count("Id")).As("Count")
-				.Where("Name").IsEqual(Column.Parameter(packageName)) 
-				.And("InstallType").IsEqual(Column.Parameter(0))
-				.And("Maintainer").IsEqual(Column.Parameter(maintainerCode))
-				as Select;
-			return select.ExecuteScalar<int>() == 1;
-		}
-		
-		#endregion
+    [OperationContract]
+    [WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public BaseResponse UploadFile(Stream stream)
+    {
+        CheckCanManageSolution();
+        HttpContext contextAccessor = HttpContextAccessor.GetInstance();
+        HeaderCollection headers = contextAccessor.Request.Headers;
+        const string fileNameHeader = "X-File-Name";
+        const string packageNameHeader = "X-Package-Name";
+        if (!headers.AllKeys.Contains(fileNameHeader))
+        {
+            return new BaseResponse
+            {
+                Success = false,
+                ErrorInfo = new ErrorInfo { Message = $"Error: {fileNameHeader} header missing" }
+            };
+        }
 
-		#region Methods: Public
+        if (!headers.AllKeys.Contains(packageNameHeader))
+        {
+            return new BaseResponse
+            {
+                Success = false,
+                ErrorInfo = new ErrorInfo { Message = $"Error: {packageNameHeader} header missing" }
+            };
+        }
 
-		public byte[] GetBinaryFileContent(string dllName, bool isNetCore){
-			try {
-				CheckNameForDeniedSymbols(dllName);
-				return isNetCore  
-					? File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), "netstandard", dllName))
-					: File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), dllName));
-			}catch(Exception ex) {
-				_log.Error($"Error while reading file {dllName} from package {_packageName}", ex);
-				return Array.Empty<byte>();
-			}
-		}
-		
-		public string GetPackageFileContent(string filePath){
-			CheckNameForDeniedSymbols(filePath);
-			return File.ReadAllText(Path.Combine(PackageDirectoryPath(), filePath));
-		}
+        string filename = headers[fileNameHeader];
+        string packageName = headers[packageNameHeader];
 
-		public IEnumerable<string> GetPackageFilesDirectoryContent() =>
-			Directory
-				.GetFiles(PackageDirectoryPath(), "*.*", SearchOption.AllDirectories)
-				.Select(f => f.Replace(PackageDirectoryPath(), string.Empty));
+        PackageExplorer packageExplorer = new(packageName);
+        packageExplorer.SaveFileContent(filename, stream);
 
-		public (bool isSuccess, Exception ex) SaveFileContent(string filePath, string fileContent){
-			CheckNameForDeniedSymbols(filePath);
-			if(!IsPackageUnlocked(_packageName)) {
-				return (false, new Exception("Cannot save file in a locked package"));
-			}
-			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
-			string directoryPath = Path.GetDirectoryName(fullPath);
-			if (!Directory.Exists(directoryPath)) {
-				Directory.CreateDirectory(directoryPath);
-			}
-			File.WriteAllText(fullPath, fileContent);
-			return (true, null);
-		}
-		public (bool isSuccess, Exception ex) SaveFileContent(string filePath, Stream fileContent){
-			CheckNameForDeniedSymbols(filePath);
-			if(!IsPackageUnlocked(_packageName)) {
-				return (false, new Exception("Cannot save file in a locked package"));
-			}
-			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
-			string directoryPath = Path.GetDirectoryName(fullPath);
-			if (!Directory.Exists(directoryPath)) {
-				Directory.CreateDirectory(directoryPath);
-			}
-			File.WriteAllBytes(fullPath, fileContent.GetAllBytes());
-			return (true, null);
-		}
+        return new BaseResponse { Success = true };
+    }
 
-		#endregion
+    // 200: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
+    // 404: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
+    [OperationContract]
+    [WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public void DownloadFile(string packageName, string dllName)
+    {
+        CheckCanManageSolution();
+        PackageExplorer packageExplorer = new(packageName);
+        bool isNetCore = !HttpContext.Request.BaseUrl.EndsWith("/0");
+        byte[] bytes = packageExplorer.GetBinaryFileContent(dllName, isNetCore);
 
-		public (bool isSuccess, Exception ex) DeleteFile(string filePath){
-			CheckNameForDeniedSymbols(filePath);
-			if(!IsPackageUnlocked(_packageName)) {
-				return (false, new Exception("Cannot save file in a locked package"));
-			}
-			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
-			string directoryPath = Path.GetDirectoryName(fullPath);
-			if (!Directory.Exists(directoryPath)) {
-				return (false, new DirectoryNotFoundException(directoryPath));
-			}
-			try {
-				File.Delete(fullPath);
-				return (true, null);
-			} catch (Exception ex) {
-				return (false, ex);
-			}
-		}
+        AssignFileResponseContent(bytes.Length, dllName);
+        if (bytes.Length == 0)
+        {
+            SetReturnStatusCode(HttpStatusCode.NotFound);
+        }
 
-	}
+        SetReturnStatusCode(HttpStatusCode.OK);
+        HttpContext.Current.Response.OutputStream.Write(bytes, 0, bytes.Length);
+    }
 
-	#endregion
+
+    [OperationContract]
+    [WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+        RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public BaseResponse DeleteFile(string packageName, string filePath)
+    {
+        CheckCanManageSolution();
+        PackageExplorer packageExplorer = new(packageName);
+        (bool isSuccess, Exception ex) = packageExplorer.DeleteFile(filePath);
+
+        if (!isSuccess)
+        {
+            return new BaseResponse
+            {
+                Success = isSuccess,
+                ErrorInfo = { Message = ex.Message, StackTrace = ex.StackTrace }
+            };
+        }
+
+        return new BaseResponse { Success = true };
+    }
+
+    // /rest/CreatioApiGateway/SendEventToUI
+    [OperationContract]
+    [WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public void SendEventToUI(EventModel eventModel)
+    {
+        CheckCanManageSolution();
+        LiveLogger liveLogger = new(new WebSocket()); // Instantiate LiveLogger with WebSocket
+        liveLogger.Log(eventModel.Content); // Use LiveLogger to log the event content
+    }
+
+
+    // /rest/CreatioApiGateway/GetApplicationIdByName?appName=ttt1
+    [OperationContract]
+    [WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public string GetApplicationIdByName(string appName)
+    {
+        CheckCanManageSolution();
+        EntitySchemaQuery esq = new(UserConnection.EntitySchemaManager, "SysInstalledApp");
+        EntitySchemaQueryColumn? columndId = esq.AddColumn("Id");
+
+        esq.Filters.Add(
+            esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Name", appName));
+        esq.Filters.Add(
+            esq.CreateFilterWithParameters(FilterComparisonType.Equal, "Code", appName));
+        esq.Filters.LogicalOperation = LogicalOperationStrict.Or;
+        EntityCollection entities = esq.GetEntityCollection(UserConnection);
+        if (entities.Count == 0)
+        {
+            return $"Application {appName} not found.";
+        }
+
+        if (entities.Count > 1)
+        {
+            return $"More then one application found.";
+        }
+
+        return entities[0].GetTypedColumnValue<string>(columndId.Name);
+    }
+
+
+    // /rest/CreatioApiGateway/GetSysInfo
+    [OperationContract]
+    [WebInvoke(Method = "GET", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+    public SysInfoResponse GetSysInfo()
+    {
+        if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution"))
+        {
+            return new SysInfoResponse
+            {
+                Success = false,
+                ErrorInfo = new ErrorInfo { Message = "You don't have permission for operation CanManageSolution" }
+            };
+        }
+
+        EntitySchemaQuery esq = new(UserConnection.EntitySchemaManager, "SysPackage");
+        esq.AddAllSchemaColumns();
+        EntityCollection? packages = esq.GetEntityCollection(UserConnection);
+        List<string> packageNames = [];
+        foreach (Entity package in packages)
+        {
+            string name = package.GetTypedColumnValue<string>("Name");
+            packageNames.Add(name);
+        }
+
+        bool isNetCore = !(Environment.Version.Major == 4);
+
+        Version? ver = Assembly.GetAssembly(typeof(UserConnection)).GetName().Version;
+        ProductManager pm = new();
+        SysInfoResponse sysInfoResponse = new()
+        {
+            SysInfo = new CreatioPlatformInfo
+            {
+                Runtime = RuntimeInformation.FrameworkDescription,
+                CoreVersion = ver.ToString(),
+                DbEngineType = UserConnection.DBEngine.DBEngineType.ToString(),
+                ProductName = pm.FindProductNameByPackages(packageNames, ver, isNetCore),
+                IsNetCore = isNetCore
+            }
+        };
+
+        LicManager lm = UserConnection.AppConnection.LicManager;
+        sysInfoResponse.SysInfo.LicenseInfo = new LicenseInfo { CustomerId = lm.CustomerId };
+        IDataStore appData = UserConnection.AppConnection.SystemUserConnection.ApplicationData;
+        if (appData.Keys.Contains("IsDemoMode"))
+        {
+            object isDemoMode = appData["IsDemoMode"];
+            if (isDemoMode != null)
+            {
+                bool isBool = bool.TryParse(isDemoMode.ToString(), out bool demoMode);
+                if (isBool)
+                {
+                    sysInfoResponse.SysInfo.LicenseInfo.IsDemoMode = demoMode;
+                }
+            }
+        }
+
+        return sysInfoResponse;
+    }
+
+    #endregion
 }
+
+[DataContract]
+public class EventModel
+{
+    [DataMember(Name = "Sender")] public string Sender { get; set; }
+
+    [DataMember(Name = "Content")] public string Content { get; set; }
+
+    [DataMember(Name = "CommandName")] public string CommandName { get; set; }
+}
+
+public class PackageExplorer
+{
+    #region Fields: Private
+
+    private readonly string _packageName;
+    private readonly string _baseDir = AppDomain.CurrentDomain.BaseDirectory;
+    private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
+
+    #endregion
+
+    #region Constructors: Public
+
+    public PackageExplorer(string packageName)
+    {
+        CheckNameForDeniedSymbols(packageName);
+        _packageName = packageName;
+    }
+
+    #endregion
+
+    #region Methods: Private
+
+    private void CheckNameForDeniedSymbols(string name)
+    {
+        string[] invalidArgs =
+        [
+            "%2e%2e%2f", "%2e%2e/", "..%2f", "%2e%2e%5c", "2e%2e\\", "..%5c", "%252e%252e%255c", "..%255c", "../",
+            "..\\"
+        ];
+        foreach (string invalidArg in invalidArgs)
+        {
+            if (name.Contains(invalidArg))
+            {
+                throw new Exception("Invalid character");
+            }
+        }
+    }
+
+    private string PackageDirectoryPath() =>
+        Path.Combine(_baseDir, "Terrasoft.Configuration", "Pkg", _packageName, "Files");
+
+
+    private string PackageBinDirectoryPath() => Path.Combine(PackageDirectoryPath(), "Bin");
+
+    private bool IsPackageUnlocked(string packageName)
+    {
+        UserConnection? userConnection = ClassFactory.Get<UserConnection>();
+        string maintainerCode = SysSettings.GetValue(userConnection, "Maintainer", "NonImplemented");
+        Select select = new Select(userConnection)
+                .From("SysPackage").WithHints(new NoLockHint())
+                .Column(Func.Count("Id")).As("Count")
+                .Where("Name").IsEqual(Column.Parameter(packageName))
+                .And("InstallType").IsEqual(Column.Parameter(0))
+                .And("Maintainer").IsEqual(Column.Parameter(maintainerCode))
+            as Select;
+        return select.ExecuteScalar<int>() == 1;
+    }
+
+    #endregion
+
+    #region Methods: Public
+
+    public byte[] GetBinaryFileContent(string dllName, bool isNetCore)
+    {
+        try
+        {
+            CheckNameForDeniedSymbols(dllName);
+            return isNetCore
+                ? File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), "netstandard", dllName))
+                : File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), dllName));
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"Error while reading file {dllName} from package {_packageName}", ex);
+            return [];
+        }
+    }
+
+    public string GetPackageFileContent(string filePath)
+    {
+        CheckNameForDeniedSymbols(filePath);
+        return File.ReadAllText(Path.Combine(PackageDirectoryPath(), filePath));
+    }
+
+    public IEnumerable<string> GetPackageFilesDirectoryContent() =>
+        Directory
+            .GetFiles(PackageDirectoryPath(), "*.*", SearchOption.AllDirectories)
+            .Select(f => f.Replace(PackageDirectoryPath(), string.Empty));
+
+    public (bool isSuccess, Exception ex) SaveFileContent(string filePath, string fileContent)
+    {
+        CheckNameForDeniedSymbols(filePath);
+        if (!IsPackageUnlocked(_packageName))
+        {
+            return (false, new Exception("Cannot save file in a locked package"));
+        }
+
+        string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+        string directoryPath = Path.GetDirectoryName(fullPath);
+        if (!Directory.Exists(directoryPath))
+        {
+            Directory.CreateDirectory(directoryPath);
+        }
+
+        File.WriteAllText(fullPath, fileContent);
+        return (true, null);
+    }
+
+    public (bool isSuccess, Exception ex) SaveFileContent(string filePath, Stream fileContent)
+    {
+        CheckNameForDeniedSymbols(filePath);
+        if (!IsPackageUnlocked(_packageName))
+        {
+            return (false, new Exception("Cannot save file in a locked package"));
+        }
+
+        string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+        string directoryPath = Path.GetDirectoryName(fullPath);
+        if (!Directory.Exists(directoryPath))
+        {
+            Directory.CreateDirectory(directoryPath);
+        }
+
+        File.WriteAllBytes(fullPath, fileContent.GetAllBytes());
+        return (true, null);
+    }
+
+    #endregion
+
+    public (bool isSuccess, Exception ex) DeleteFile(string filePath)
+    {
+        CheckNameForDeniedSymbols(filePath);
+        if (!IsPackageUnlocked(_packageName))
+        {
+            return (false, new Exception("Cannot save file in a locked package"));
+        }
+
+        string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+        string directoryPath = Path.GetDirectoryName(fullPath);
+        if (!Directory.Exists(directoryPath))
+        {
+            return (false, new DirectoryNotFoundException(directoryPath));
+        }
+
+        try
+        {
+            File.Delete(fullPath);
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex);
+        }
+    }
+}
+
+#endregion

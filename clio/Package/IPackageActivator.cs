@@ -8,8 +8,8 @@ namespace Clio.Package;
 /// <summary>
 /// Provides interface for package activation.
 /// </summary>
-public interface IPackageActivator {
-
+public interface IPackageActivator
+{
     #region Methods: Internal
 
     /// <summary>

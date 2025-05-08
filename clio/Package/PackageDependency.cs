@@ -1,68 +1,58 @@
-﻿using Clio.Project.NuGet;
+using Clio.Project.NuGet;
 
-namespace Clio
+namespace Clio;
+
+#region Struct: NugetPackageFullName
+
+public struct PackageDependency
 {
+    #region Constructors: Public
 
-	#region Struct: NugetPackageFullName
+    public PackageDependency(string name, string packageVersion, string uid = null)
+    {
+        Name = name;
+        PackageVersion = packageVersion;
+        UId = uid ?? string.Empty;
+    }
 
-	public struct PackageDependency
-	{
+    #endregion
 
-		#region Constructors: Public
+    #region Properties: Public
 
-		public PackageDependency(string name, string packageVersion, string uid = null) {
-			Name = name;
-			PackageVersion = packageVersion;
-			UId = uid ?? string.Empty;
-		}
+    public string UId { get; set; }
+    public string PackageVersion { get; set; }
+    public string Name { get; set; }
 
-		#endregion
+    #endregion
 
-		#region Properties: Public
+    #region Methods: Public
 
-		public string UId { get; set; }
-		public string PackageVersion { get; set; }
-		public string Name { get; set; }
+    public static bool operator ==(PackageDependency packageDependency1, PackageDependency packageDependency2) =>
+        packageDependency1.Equals(packageDependency2);
 
-		#endregion
+    public static bool operator !=(PackageDependency packageDependency1, PackageDependency packageDependency2) =>
+        !packageDependency1.Equals(packageDependency2);
 
-		#region Methods: Public
+    public bool Equals(PackageDependency packageDependency) => Equals(packageDependency, this);
 
-		public static bool operator ==(PackageDependency packageDependency1, PackageDependency packageDependency2) {
-			return packageDependency1.Equals(packageDependency2);
-		}
+    public override bool Equals(object obj)
+    {
+        if (obj == null || GetType() != obj.GetType())
+        {
+            return false;
+        }
 
-		public static bool operator !=(PackageDependency packageDependency1, PackageDependency packageDependency2) {
-			return !packageDependency1.Equals(packageDependency2);
-		}
+        PackageDependency dependencyInfo = (PackageDependency)obj;
+        return dependencyInfo.Name == Name &&
+               dependencyInfo.PackageVersion == PackageVersion &&
+               dependencyInfo.UId == UId;
+    }
 
-		public bool Equals(PackageDependency packageDependency) {
-			return Equals(packageDependency, this);
-		}
+    public override int GetHashCode() => ToString().GetHashCode();
 
-		public override bool Equals(object obj) {
-			if (obj == null || GetType() != obj.GetType()) {
-				return false;
-			}
-			var dependencyInfo = (PackageDependency) obj;
-			return dependencyInfo.Name == Name && 
-				dependencyInfo.PackageVersion == PackageVersion &&
-				dependencyInfo.UId == UId;
-			
-		}
+    public override string ToString() => $"{Name}:{PackageVersion}(UId='{UId}')";
 
-		public override int GetHashCode() {
-			return ToString().GetHashCode();
-		}
-
-		public override string ToString() {
-			return $"{Name}:{PackageVersion}(UId='{UId}')";
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

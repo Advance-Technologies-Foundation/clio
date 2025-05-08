@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -8,58 +8,55 @@ namespace Clio.Command;
 [Verb("compile-package", HelpText = "Build package command")]
 public class CompilePackageOptions : EnvironmentNameOptions
 {
+    #region Properties: Public
 
-	#region Properties: Public
+    [Value(0, MetaName = "PackageName", Required = true, HelpText = "Specified package name")]
+    public string PackageName { get; set; }
 
+    public string[] PackageNames => PackageName.Split(',');
 
-	[Value(0, MetaName = "PackageName", Required = true, HelpText = "Specified package name")]
-	public string PackageName
-	{
-		get; set;
-	}
-
-	public string[] PackageNames => PackageName.Split(',');
-
-	#endregion
-
+    #endregion
 }
 
 public class CompilePackageCommand : Command<CompilePackageOptions>
 {
+    #region Fields: Private
 
-	#region Fields: Private
+    private IPackageBuilder _packageBuilder;
+    private readonly ILogger _logger;
 
-	IPackageBuilder _packageBuilder;
-	private readonly ILogger _logger;
+    #endregion
 
-	#endregion
+    #region Constructors: Public
 
-	#region Constructors: Public
+    public CompilePackageCommand(IPackageBuilder packageBuilder, ILogger logger)
+    {
+        _packageBuilder = packageBuilder;
+        _logger = logger;
+    }
 
-	public CompilePackageCommand(IPackageBuilder packageBuilder, ILogger logger) {
-		_packageBuilder = packageBuilder;
-		_logger = logger;
-	}
+    #endregion
 
-	#endregion
+    #region Methods: Private
 
-	#region Methods: Private
-		
-	#endregion
+    #endregion
 
-	#region Methods: Public
+    #region Methods: Public
 
-	public override int Execute(CompilePackageOptions options) {
-		try {
-			_packageBuilder.Rebuild(options.PackageNames);
-			_logger.WriteInfo("Done");
-			return 0;
-		} catch (Exception e) {
-			_logger.WriteError(e.Message);
-			return 1;
-		}
-	}
+    public override int Execute(CompilePackageOptions options)
+    {
+        try
+        {
+            _packageBuilder.Rebuild(options.PackageNames);
+            _logger.WriteInfo("Done");
+            return 0;
+        }
+        catch (Exception e)
+        {
+            _logger.WriteError(e.Message);
+            return 1;
+        }
+    }
 
-	#endregion
-
+    #endregion
 }

@@ -7,39 +7,39 @@ settings:
   values: 'YAML/Script/additional_settings_sections.yaml'
   setting_one: setting_one_value
   setting_two: setting_two_value
-  
-  
+
+
 steps:
-- action: restart
-  description: restart application
-  options:
-    Environment: digitalads
-    p: Supervisor
-    l: Supervisor
+  - action: restart
+    description: restart application
+    options:
+      Environment: digitalads
+      p: Supervisor
+      l: Supervisor
 
-- action: flushdb
-  description: flush Redis database
-  options:
-    Environment: digitalads
+  - action: flushdb
+    description: flush Redis database
+    options:
+      Environment: digitalads
 
-- action: ver
-  description: get runtime version
-  options:
-    all: true
+  - action: ver
+    description: get runtime version
+    options:
+      all: true
 
-- action: download
-  description: download package from Creatio
-  options:
-    Name: CrtDigitalAdsApp
-    Environment: digitalads
-    DestinationPath: D:\CrtDigitalAdsApp
-    UnZip: true
-      
+  - action: download
+    description: download package from Creatio
+    options:
+      Name: CrtDigitalAdsApp
+      Environment: digitalads
+      DestinationPath: D:\CrtDigitalAdsApp
+      UnZip: true
 
-- action: wrongAction
-  description: download package from Creatio
-  options:
-    Name: CrtDigitalAdsApp
-    Environment: digitalads
-    DestinationPath: D:\CrtDigitalAdsApp
-    UnZip: true
+
+  - action: wrongAction
+    description: download package from Creatio
+    options:
+      Name: CrtDigitalAdsApp
+      Environment: digitalads
+      DestinationPath: D:\CrtDigitalAdsApp
+      UnZip: true

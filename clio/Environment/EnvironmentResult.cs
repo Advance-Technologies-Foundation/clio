@@ -1,19 +1,13 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 
-namespace Clio.UserEnvironment
+namespace Clio.UserEnvironment;
+
+internal class EnvironmentResult : IResult
 {
-	class EnvironmentResult : IResult
-	{
+    private readonly List<string> _messages = new();
 
-		private readonly List<string> _messages = new List<string>();
+    public void ShowMessagesTo(TextWriter writer) => _messages.ForEach(writer.WriteLine);
 
-		public void ShowMessagesTo(TextWriter writer) {
-			_messages.ForEach(writer.WriteLine);
-		}
-
-		public void AppendMessage(string message) {
-			_messages.Add(message);
-		}
-	}
+    public void AppendMessage(string message) => _messages.Add(message);
 }

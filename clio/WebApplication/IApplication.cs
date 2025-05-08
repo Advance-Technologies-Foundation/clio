@@ -1,9 +1,8 @@
-﻿namespace Clio.WebApplication
-{
-	public interface IApplication
-	{
-		void Restart();
+namespace Clio.WebApplication;
 
-		void LoadLicense(string filePath);
-	}
+public interface IApplication
+{
+    void Restart();
+
+    void LoadLicense(string filePath);
 }

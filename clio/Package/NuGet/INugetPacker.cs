@@ -1,12 +1,10 @@
 using System.Collections.Generic;
 
-namespace Clio.Project.NuGet
+namespace Clio.Project.NuGet;
+
+public interface INugetPacker
 {
-	public interface INugetPacker
-	{
+    string GetNupkgFileName(PackageInfo packageInfo);
 
-		string GetNupkgFileName(PackageInfo packageInfo); 
-
-		void Pack(string nuspecFilePath, string destinationNupkgDirectory);
-	}
+    void Pack(string nuspecFilePath, string destinationNupkgDirectory);
 }

@@ -29,6 +29,8 @@
     "strictInjectionParameters": true,
     "strictInputAccessModifiers": true,
     "strictTemplates": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   }
 }

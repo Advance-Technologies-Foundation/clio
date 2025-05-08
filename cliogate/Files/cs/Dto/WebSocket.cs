@@ -1,37 +1,27 @@
-﻿using System;
+using System;
 using Newtonsoft.Json;
 using Terrasoft.Common.Json;
 
-namespace Cliogate.Dto
+namespace Cliogate.Dto;
+
+internal class WebSocket(string commandName, string message)
 {
-	internal class WebSocket
-	{
 
-		#region Constructors: Public
-		public WebSocket(string commandName, string message) {
-			CommandName = commandName;
-			Message = message;
-		}
+    #region Constructors: Public
 
-		#endregion
+    #endregion
 
-		#region Properties: Public
+    #region Properties: Public
 
-		[JsonProperty("commandName")]
-		public string CommandName { get; private set; }
+    [JsonProperty("commandName")] public string CommandName { get; private set; } = commandName;
 
-		[JsonProperty("message")]
-		public string Message { get; private set; }
-		
-		#endregion
+    [JsonProperty("message")] public string Message { get; private set; } = message;
 
-		#region Methods: Public
+    #endregion
 
-		public override string ToString(){
-			return Json.FormatJsonString(Json.Serialize(this), Formatting.Indented);
-		} 
-		
+    #region Methods: Public
 
-		#endregion
-	}
+    public override string ToString() => Json.FormatJsonString(Json.Serialize(this), Formatting.Indented);
+
+    #endregion
 }

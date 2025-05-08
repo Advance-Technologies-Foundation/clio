@@ -1,37 +1,35 @@
-namespace Clio.Workspaces
+namespace Clio.Workspaces;
+
+using System;
+
+#region Class: SolutionProject
+
+public class SolutionProject
 {
-	using System;
+    #region Constructors: Public
 
-	#region Class: SolutionProject
+    public SolutionProject(string name, string path, Guid id, Guid uId)
+    {
+        Name = name;
+        Path = path;
+        Id = id;
+        UId = uId;
+    }
 
-	public class SolutionProject
-	{
+    public SolutionProject(string name, string path) : this(name, path, Guid.NewGuid(), Guid.NewGuid())
+    {
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public SolutionProject(string name, string path, Guid id, Guid uId) {
-			Name = name;
-			Path = path;
-			Id = id;
-			UId = uId;
-		}
+    #region Properties: Public
 
-		public SolutionProject(string name, string path) : this(name, path, Guid.NewGuid(), Guid.NewGuid()) {
-		}
+    public string Name { get; }
+    public string Path { get; }
+    public Guid Id { get; }
+    public Guid UId { get; }
 
-		#endregion
-
-		#region Properties: Public
-
-		public string Name { get; }
-		public string Path { get; }
-		public Guid Id { get; }
-		public Guid UId { get; }
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

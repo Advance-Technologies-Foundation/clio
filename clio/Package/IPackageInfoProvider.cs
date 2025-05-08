@@ -1,7 +1,6 @@
-﻿namespace Clio
+namespace Clio;
+
+public interface IPackageInfoProvider
 {
-	public interface IPackageInfoProvider
-	{
-		PackageInfo GetPackageInfo(string packagePath);
-	}
+    PackageInfo GetPackageInfo(string packagePath);
 }

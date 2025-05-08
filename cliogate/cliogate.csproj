@@ -26,33 +26,33 @@
   </PropertyGroup>
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
-    <Content Include="Files\tpl\*.*" />
-    <Content Include="Assemblies\**\*.*" />
-    <Content Include="Data\**\*.*" />
-    <Content Include="Resources\**\*.*" />
-    <Content Include="Schemas\**\*.*" />
-    <Content Include="SqlScripts\**\*.*" />
+    <Content Include="Files\tpl\*.*"/>
+    <Content Include="Assemblies\**\*.*"/>
+    <Content Include="Data\**\*.*"/>
+    <Content Include="Resources\**\*.*"/>
+    <Content Include="Schemas\**\*.*"/>
+    <Content Include="SqlScripts\**\*.*"/>
   </ItemGroup>
   <!-- ##BpmonlineSDKMarker## -->
   <ItemGroup>
-    <None Include="descriptor.json" />
+    <None Include="descriptor.json"/>
     <None Update="Files\data\product_info.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Compile Remove="Schemas\**\*.cs" />
+    <Compile Remove="Schemas\**\*.cs"/>
   </ItemGroup>
   <ItemGroup>
-    <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
+    <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml"/>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CreatioSDK" Version="8.0.3.1759" />
-    <PackageReference Include="ATF.Repository" Version="2.0.1.7" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="Npgsql" Version="7.0.6" />
-    <PackageReference Include="System.CodeDom" Version="5.0.0.0" />
+    <PackageReference Include="CreatioSDK" Version="8.0.3.1759"/>
+    <PackageReference Include="ATF.Repository" Version="2.0.1.7"/>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0"/>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1"/>
+    <PackageReference Include="Npgsql" Version="7.0.6"/>
+    <PackageReference Include="System.CodeDom" Version="5.0.0.0"/>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="NLogExt">
@@ -62,7 +62,7 @@
   <Choose>
     <When Condition="'$(TargetFramework)'=='netstandard2.0'">
       <ItemGroup>
-        <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0" />
+        <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0"/>
         <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
           <Private>False</Private>
         </PackageReference>
@@ -70,9 +70,9 @@
     </When>
     <When Condition="'$(TargetFramework)'=='net472'">
       <ItemGroup>
-        <Reference Include="System.ServiceModel" />
-        <Reference Include="System.ServiceModel.Activation" />
-        <Reference Include="System.ServiceModel.Web" />
+        <Reference Include="System.ServiceModel"/>
+        <Reference Include="System.ServiceModel.Activation"/>
+        <Reference Include="System.ServiceModel.Web"/>
       </ItemGroup>
     </When>
   </Choose>

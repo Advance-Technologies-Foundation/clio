@@ -1,63 +1,61 @@
-﻿namespace Clio.Package
+namespace Clio.Package;
+
+using Common;
+using WebApplication;
+
+#region Class: PackageInstaller
+
+public class PackageInstaller : BasePackageInstaller, IPackageInstaller
 {
-	using Clio.Common;
-	using Clio.WebApplication;
+    private readonly IApplicationLogProvider applicationLogProvider;
 
-	#region Class: PackageInstaller
+    #region Constructors: Public
 
-	public class PackageInstaller : BasePackageInstaller, IPackageInstaller
-	{
-		private readonly IApplicationLogProvider applicationLogProvider;
+    public PackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
+        IApplicationClientFactory applicationClientFactory, IApplication application,
+        IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
+        IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger,
+        IPackageLockManager packageLockManager)
+        : base(applicationLogProvider, environmentSettings, applicationClientFactory, application,
+            packageArchiver, scriptExecutor, serviceUrlBuilder, fileSystem, logger, packageLockManager)
+    {
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public PackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
-				IApplicationClientFactory applicationClientFactory, IApplication application,
-				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager)
-			: base(applicationLogProvider, environmentSettings, applicationClientFactory,  application,
-				 packageArchiver,  scriptExecutor, serviceUrlBuilder,  fileSystem,  logger, packageLockManager) {
-		}
+    #region Properties: Protected
 
-		#endregion
+    protected override string InstallUrl => @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
 
-		#region Properties: Protected
+    protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreateBackup";
 
-		protected override string InstallUrl => @"/ServiceModel/PackageInstallerService.svc/InstallPackage";
+    #endregion
 
-		protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreateBackup";
+    #region Methods: Protected
 
-		#endregion
+    protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions) =>
+        packageInstallOptions == null
+            ? $"\"{fileName}\""
+            : $" {{ \"zipPackageName\": \"{fileName}\", " +
+              "\"packageInstallOptions\": { " +
+              $"\"installSqlScript\": \"{packageInstallOptions.InstallSqlScript.ToString().ToLower()}\", " +
+              $"\"installPackageData\": \"{packageInstallOptions.InstallPackageData.ToString().ToLower()}\", " +
+              $"\"continueIfError\": \"{packageInstallOptions.ContinueIfError.ToString().ToLower()}\", " +
+              $"\"skipConstraints\": \"{packageInstallOptions.SkipConstraints.ToString().ToLower()}\", " +
+              $"\"skipValidateActions\": \"{packageInstallOptions.SkipValidateActions.ToString().ToLower()}\", " +
+              $"\"executeValidateActions\": \"{packageInstallOptions.ExecuteValidateActions.ToString().ToLower()}\", " +
+              $"\"isForceUpdateAllColumns\": \"{packageInstallOptions.IsForceUpdateAllColumns.ToString().ToLower()}\"  " +
+              " } }";
 
-		#region Methods: Protected
+    #endregion
 
-		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions) =>
-			packageInstallOptions == null
-				? $"\"{fileName}\""
-				: $" {{ \"zipPackageName\": \"{fileName}\", " +
-				  "\"packageInstallOptions\": { " +
-				  $"\"installSqlScript\": \"{packageInstallOptions.InstallSqlScript.ToString().ToLower()}\", " +
-				  $"\"installPackageData\": \"{packageInstallOptions.InstallPackageData.ToString().ToLower()}\", " +
-				  $"\"continueIfError\": \"{packageInstallOptions.ContinueIfError.ToString().ToLower()}\", " +
-				  $"\"skipConstraints\": \"{packageInstallOptions.SkipConstraints.ToString().ToLower()}\", " +
-				  $"\"skipValidateActions\": \"{packageInstallOptions.SkipValidateActions.ToString().ToLower()}\", " +
-				  $"\"executeValidateActions\": \"{packageInstallOptions.ExecuteValidateActions.ToString().ToLower()}\", " +
-				  $"\"isForceUpdateAllColumns\": \"{packageInstallOptions.IsForceUpdateAllColumns.ToString().ToLower()}\"  " +
-				  " } }";
+    #region Methods: Public
 
-		#endregion
+    public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
+        PackageInstallOptions packageInstallOptions = null, string reportPath = null) =>
+        InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
 
-		#region Methods: Public
-
-		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null, 
-				PackageInstallOptions packageInstallOptions = null, string reportPath = null)  {
-			return InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

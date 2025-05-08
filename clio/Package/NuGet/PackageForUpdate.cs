@@ -1,30 +1,25 @@
-﻿namespace Clio.Project.NuGet
+namespace Clio.Project.NuGet;
+
+#region Class: PackageForUpdate
+
+public class PackageForUpdate
 {
+    #region Constructors: Public
 
-	#region Class: PackageForUpdate
-	
-	public class PackageForUpdate
-	{
+    public PackageForUpdate(LastVersionNugetPackages lastVersionNugetPackages, PackageInfo applicationPackage)
+    {
+        LastVersionNugetPackages = lastVersionNugetPackages;
+        ApplicationPackage = applicationPackage;
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public PackageForUpdate(LastVersionNugetPackages lastVersionNugetPackages, PackageInfo applicationPackage) {
-			LastVersionNugetPackages = lastVersionNugetPackages;
-			ApplicationPackage = applicationPackage;
-		}
+    #region Properties: Public
 
-		#endregion
+    public LastVersionNugetPackages LastVersionNugetPackages { get; }
+    public PackageInfo ApplicationPackage { get; }
 
-		#region Properties: Public
-
-		public LastVersionNugetPackages LastVersionNugetPackages { get; }
-		public PackageInfo ApplicationPackage { get; }
-
-		#endregion
-
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

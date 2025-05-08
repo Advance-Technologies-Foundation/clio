@@ -1,17 +1,16 @@
-﻿namespace Clio.Project
+namespace Clio.Project;
+
+public interface ICreatioPkgProject
 {
-	public interface ICreatioPkgProject
-	{
-		CreatioPkgProject RefToBin();
+    CreatioPkgProject RefToBin();
 
-		CreatioPkgProject RefToCoreSrc();
+    CreatioPkgProject RefToCoreSrc();
 
-		CreatioPkgProject RefToCustomPath(string path);
+    CreatioPkgProject RefToCustomPath(string path);
 
-		CreatioPkgProject RefToUnitBin();
+    CreatioPkgProject RefToUnitBin();
 
-		CreatioPkgProject RefToUnitCoreSrc();
+    CreatioPkgProject RefToUnitCoreSrc();
 
-		void SaveChanges();
-	}
+    void SaveChanges();
 }

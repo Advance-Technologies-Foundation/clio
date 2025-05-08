@@ -5,9 +5,9 @@ secrets:
   credentials:
     p: Supervisor
     l: Supervisor
-  
+
   restart:
-    Environment : digitalads
+    Environment: digitalads
 
 settings:
   values: 'YAML/Script/additional_settings_sections.yaml'
@@ -18,38 +18,38 @@ settings:
     Name: CrtDigitalAdsApp
     DestinationPath: D:\CrtDigitalAdsApp
     UnZip: true
-    
+
 steps:
-- action: restart
-  description: restart application
-  options:
-    Environment: "{{secrets.restart.Environment}}"
-    Password: "{{secrets.credentials.p}}"
-    Login: "{{secrets.credentials.l}}"
+  - action: restart
+    description: restart application
+    options:
+      Environment: "{{secrets.restart.Environment}}"
+      Password: "{{secrets.credentials.p}}"
+      Login: "{{secrets.credentials.l}}"
 
-- action: flushdb
-  description: flush Redis database
-  options:
-    Environment: "{{settings.Environment}}"
+  - action: flushdb
+    description: flush Redis database
+    options:
+      Environment: "{{settings.Environment}}"
 
-- action: ver
-  description: get runtime version
-  options:
-    all: true
+  - action: ver
+    description: get runtime version
+    options:
+      all: true
 
-- action: download
-  description: download package from Creatio
-  options:
-    Name: "{{settings.download.Name}}"
-    Environment: "{{settings.Environment}}"
-    DestinationPath: "{{settings.download.DestinationPath}}"
-    UnZip: "{{settings.download.UnZip}}"
+  - action: download
+    description: download package from Creatio
+    options:
+      Name: "{{settings.download.Name}}"
+      Environment: "{{settings.Environment}}"
+      DestinationPath: "{{settings.download.DestinationPath}}"
+      UnZip: "{{settings.download.UnZip}}"
 
 
-- action: aaaaaa
-  description: download package from Creatio
-  options:
-    Name: "{{settings.download.Name}}"
-    Environment: "{{settings.Environment}}"
-    DestinationPath: "{{settings.download.DestinationPath}}"
-    UnZip: "{{settings.download.UnZip}}"
+  - action: aaaaaa
+    description: download package from Creatio
+    options:
+      Name: "{{settings.download.Name}}"
+      Environment: "{{settings.Environment}}"
+      DestinationPath: "{{settings.download.DestinationPath}}"
+      UnZip: "{{settings.download.UnZip}}"

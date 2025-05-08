@@ -1,53 +1,49 @@
 using System;
 
-namespace Clio.Workspaces
+namespace Clio.Workspaces;
+
+#region Interface: IWorkspacePathBuilder
+
+public interface IWorkspacePathBuilder
 {
+    #region Properties: Public
 
-	#region Interface: IWorkspacePathBuilder
+    string RootPath { get; set; }
+    bool IsWorkspace { get; }
+    string ClioDirectoryPath { get; }
+    string WorkspaceSettingsPath { get; }
+    string WorkspaceEnvironmentSettingsPath { get; }
+    string PackagesFolderPath { get; }
+    string ProjectsFolderPath { get; }
+    string ProjectsTestsFolderPath { get; }
 
-	public interface IWorkspacePathBuilder
-	{
+    string SolutionFolderPath { get; }
+    string SolutionPath { get; }
+    string NugetFolderPath { get; }
+    string TasksFolderPath { get; }
+    string ApplicationFolderPath { get; }
+    string CoreBinFolderPath { get; }
+    string LibFolderPath { get; }
+    string ConfigurationBinFolderPath { get; }
 
-		#region Properties: Public
-		
-		string RootPath { get; set; }
-		bool IsWorkspace { get; }
-		string ClioDirectoryPath { get; }
-		string WorkspaceSettingsPath { get; }
-		string WorkspaceEnvironmentSettingsPath { get; }
-		string PackagesFolderPath { get; }
-		string ProjectsFolderPath { get; }
-		string ProjectsTestsFolderPath { get; }
-		
-		string SolutionFolderPath { get; }
-		string SolutionPath { get; }
-		string NugetFolderPath { get; }
-		string TasksFolderPath { get; }
-		string ApplicationFolderPath { get; }
-		string CoreBinFolderPath { get; } 
-		string LibFolderPath { get; }
-		string ConfigurationBinFolderPath { get; }
+    #endregion
 
-		#endregion
+    #region Methods: Public
 
-		#region Methods: Public
+    string BuildPackagePath(string packageName);
 
-		string BuildPackagePath(string packageName);
-		
-		/// <summary>
-		/// Path to csproj file of package
-		/// </summary>
-		/// <param name="packageName"></param>
-		/// <returns></returns>
-		string BuildPackageProjectPath(string packageName);
-		string BuildFrameworkCreatioSdkPath(Version nugetVersion);
-		string BuildCoreCreatioSdkPath(Version nugetVersion);
-		string BuildRelativePathRegardingPackageProjectPath(string destinationPath);
+    /// <summary>
+    /// Path to csproj file of package
+    /// </summary>
+    /// <param name="packageName"></param>
+    /// <returns></returns>
+    string BuildPackageProjectPath(string packageName);
 
-		#endregion
+    string BuildFrameworkCreatioSdkPath(Version nugetVersion);
+    string BuildCoreCreatioSdkPath(Version nugetVersion);
+    string BuildRelativePathRegardingPackageProjectPath(string destinationPath);
 
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

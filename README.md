@@ -4,7 +4,9 @@
 
 Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
 
-Please give **[clio-explorer](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer)**, a Visual Studio code extension for **clio** a try! This extension provides user interface over clio commands.
+Please give *
+*[clio-explorer](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer)**, a
+Visual Studio code extension for **clio** a try! This extension provides user interface over clio commands.
 
 # Installation and features
 
@@ -34,13 +36,15 @@ or for all users:
 dotnet tool uninstall clio -g
 ```
 
-More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
+More information you can see
+in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
 
 ## Context menu
 
 ```
 clio register
 ```
+
 https://user-images.githubusercontent.com/26967647/169416137-351674ca-0bd2-44f1-83af-df4557bd02fd.mp4
 
 ```
@@ -57,7 +61,8 @@ clio unregister
 dotnet tool install clio
 ```
 
-More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
+More information you can see
+in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
 
 Execute command in terminal for success check
 
@@ -95,4 +100,5 @@ docker run -it --rm clio reg-web-app -help
 ```
 
 ## Commands Reference
+
 [Explore clio commands](clio/Commands.md)

@@ -5,8 +5,8 @@ namespace Clio.Package;
 /// <summary>
 /// Provides interface for package deactivation.
 /// </summary>
-public interface IPackageDeactivator {
-
+public interface IPackageDeactivator
+{
     #region Methods: Internal
 
     /// <summary>

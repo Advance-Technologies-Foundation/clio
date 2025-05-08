@@ -1,4 +1,4 @@
-﻿using NUnit.Framework;
+using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
@@ -7,6 +7,4 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class SetWebServiceUrlCommandTests : BaseCommandTests<SetWebServiceUrlOptions>
 {
-
-	
 }

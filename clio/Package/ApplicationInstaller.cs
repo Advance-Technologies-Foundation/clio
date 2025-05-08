@@ -1,75 +1,75 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Management.Automation;
 using ATF.Repository.Providers;
 using CreatioModel;
 
-namespace Clio.Package
+namespace Clio.Package;
+
+using Common;
+using WebApplication;
+
+public class ApplicationInstaller : BasePackageInstaller, IApplicationInstaller
 {
-	using Clio.Common;
-	using Clio.WebApplication;
+    #region Constructors: Public
 
-	public class ApplicationInstaller : BasePackageInstaller, IApplicationInstaller
-	{
+    public ApplicationInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
+        IApplicationClientFactory applicationClientFactory, IApplication application,
+        IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
+        IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger,
+        IPackageLockManager packageLockManager)
+        : base(applicationLogProvider, environmentSettings, applicationClientFactory, application,
+            packageArchiver, scriptExecutor, serviceUrlBuilder, fileSystem, logger, packageLockManager)
+    {
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public ApplicationInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
-			IApplicationClientFactory applicationClientFactory, IApplication application,
-			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager)
-			: base(applicationLogProvider, environmentSettings, applicationClientFactory, application,
-				packageArchiver, scriptExecutor, serviceUrlBuilder, fileSystem, logger, packageLockManager) { }
+    #region Properties: Protected
 
-		#endregion
+    protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreatePackageBackup";
 
-		#region Properties: Protected
+    protected override string InstallUrl => @"/ServiceModel/AppInstallerService.svc/InstallAppFromFile";
 
-		protected override string BackupUrl => @"/ServiceModel/PackageInstallerService.svc/CreatePackageBackup";
+    protected string UnInstallUrl => @"/ServiceModel/AppInstallerService.svc/UninstallApp";
 
-		protected override string InstallUrl => @"/ServiceModel/AppInstallerService.svc/InstallAppFromFile";
+    #endregion
 
-		protected string UnInstallUrl => @"/ServiceModel/AppInstallerService.svc/UninstallApp";
+    #region Methods: Private
 
-		#endregion
+    private bool InternalUnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings, object o,
+        string reportPath)
+    {
+        IApplicationClient client = _applicationClientFactory.CreateClient(environmentSettings);
+        string completeUrl = GetCompleteUrl(UnInstallUrl, environmentSettings);
+        _logger.WriteInfo($"Uninstalling {appInfo.Code}");
+        string result = client.ExecutePostRequest(completeUrl, "\"" + appInfo.Id + "\"");
+        _logger.WriteInfo($"Application {appInfo.Code} uninstalled");
+        return true;
+    }
 
-		#region Methods: Private
+    #endregion
 
-		private bool InternalUnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings, object o,
-			string reportPath){
-			IApplicationClient client = _applicationClientFactory.CreateClient(environmentSettings);
-			string completeUrl = GetCompleteUrl(UnInstallUrl, environmentSettings);
-			_logger.WriteInfo($"Uninstalling {appInfo.Code}");
-			string result = client.ExecutePostRequest(completeUrl, "\"" + appInfo.Id + "\"");
-			_logger.WriteInfo($"Application {appInfo.Code} uninstalled");
-			return true;
-		}
+    #region Methods: Protected
 
-		#endregion
+    protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions)
+    {
+        string code = _fileSystem.GetFileNameWithoutExtension(new FileInfo(fileName));
+        return
+            $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0}}";
+    }
 
-		#region Methods: Protected
+    #endregion
 
-		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions){
-			string code = _fileSystem.GetFileNameWithoutExtension(new FileInfo(fileName));
-			return
-				$"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0}}";
-		}
+    #region Methods: Public
 
-		#endregion
+    public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
+        string reportPath = null) =>
+        InternalInstall(packagePath, environmentSettings, null, reportPath);
 
-		#region Methods: Public
+    public bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
+        string reportPath = null) =>
+        InternalUnInstall(appInfo, environmentSettings, null, reportPath);
 
-		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null){
-			return InternalInstall(packagePath, environmentSettings, null, reportPath);
-		}
-
-		public bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
-			string reportPath = null){
-			return InternalUnInstall(appInfo, environmentSettings, null, reportPath);
-		}
-
-		#endregion
-
-	}
+    #endregion
 }

@@ -1,152 +1,160 @@
 using Clio.Workspaces;
 
-namespace Clio.Package
+namespace Clio.Package;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Common;
+using WebApplication;
+
+#region Class: PackageDownloader
+
+public class PackageDownloader : IPackageDownloader
 {
-	using System;
-	using System.Collections.Generic;
-	using System.IO;
-	using Clio.Common;
-	using Clio.WebApplication;
+    #region Fields: Private
 
-	#region Class: PackageDownloader
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly IApplicationClientFactory _applicationClientFactory;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly IApplicationDownloader _applicationDownloader;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly IApplicationPing _applicationPing;
+    private readonly IFileSystem _fileSystem;
+    private readonly ILogger _logger;
+    private string _reportPath;
 
-	public class PackageDownloader : IPackageDownloader
-	{
-		
+    #endregion
 
-		#region Fields: Private
+    #region Constructors: Public
 
-		private readonly EnvironmentSettings _environmentSettings;
-		private readonly IApplicationClientFactory _applicationClientFactory;
-		private readonly IPackageArchiver _packageArchiver;
-		private readonly IApplicationDownloader _applicationDownloader;
-		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-		private readonly IApplicationPing _applicationPing;
-		private readonly IFileSystem _fileSystem;
-		private readonly ILogger _logger;
-		private string _reportPath;
+    public PackageDownloader(EnvironmentSettings environmentSettings,
+        IApplicationClientFactory applicationClientFactory, IPackageArchiver packageArchiver,
+        IApplicationDownloader applicationDownloader, IServiceUrlBuilder serviceUrlBuilder,
+        IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
+        IFileSystem fileSystem, ILogger logger)
+    {
+        environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
+        packageArchiver.CheckArgumentNull(nameof(packageArchiver));
+        applicationDownloader.CheckArgumentNull(nameof(applicationDownloader));
+        serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
+        workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+        applicationPing.CheckArgumentNull(nameof(applicationPing));
+        fileSystem.CheckArgumentNull(nameof(fileSystem));
+        logger.CheckArgumentNull(nameof(logger));
+        _environmentSettings = environmentSettings;
+        _applicationClientFactory = applicationClientFactory;
+        _packageArchiver = packageArchiver;
+        _applicationDownloader = applicationDownloader;
+        _serviceUrlBuilder = serviceUrlBuilder;
+        _workingDirectoriesProvider = workingDirectoriesProvider;
+        _applicationPing = applicationPing;
+        _fileSystem = fileSystem;
+        _logger = logger;
+    }
 
-		#endregion
+    #endregion
 
-		#region Constructors: Public
+    #region Methods: Private
 
-		public PackageDownloader(EnvironmentSettings environmentSettings,
-				IApplicationClientFactory applicationClientFactory, IPackageArchiver packageArchiver,
-				IApplicationDownloader applicationDownloader, IServiceUrlBuilder serviceUrlBuilder,
-				IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
-				IFileSystem fileSystem, ILogger logger) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
-			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
-			applicationDownloader.CheckArgumentNull(nameof(applicationDownloader));
-			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
-			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
-			applicationPing.CheckArgumentNull(nameof(applicationPing));
-			fileSystem.CheckArgumentNull(nameof(fileSystem));
-			logger.CheckArgumentNull(nameof(logger));
-			_environmentSettings = environmentSettings;
-			_applicationClientFactory = applicationClientFactory;
-			_packageArchiver = packageArchiver;
-			_applicationDownloader = applicationDownloader;
-			_serviceUrlBuilder = serviceUrlBuilder;
-			_workingDirectoriesProvider = workingDirectoriesProvider;
-			_applicationPing = applicationPing;
-			_fileSystem = fileSystem;
-			_logger = logger;
-		}
+    private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
+        _serviceUrlBuilder.Build(knownRoute, environmentSettings);
 
-		#endregion
+    private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+        _applicationClientFactory.CreateClient(environmentSettings);
 
-		#region Methods: Private
+    private string GetSafePackageName(string packageName) => packageName
+        .Replace(" ", string.Empty)
+        .Replace(",", "\",\"");
 
-		private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
-			_serviceUrlBuilder.Build(knownRoute, environmentSettings);
+    private string GetPackageZipPath(string packageName, string destinationPath)
+    {
+        string safePackageName = GetSafePackageName(packageName);
+        return Path.Combine(destinationPath, $"{safePackageName}.zip");
+    }
 
-		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-			_applicationClientFactory.CreateClient(environmentSettings);
-
-		private string GetSafePackageName(string packageName) => packageName
-			.Replace(" ", string.Empty)
-			.Replace(",", "\",\"");
-
-		private string GetPackageZipPath(string packageName, string destinationPath) {
-			string safePackageName = GetSafePackageName(packageName);
-			return Path.Combine(destinationPath, $"{safePackageName}.zip");
-		}
-
-		private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
-				string destinationPath, bool throwOnError = false) {
-			string safePackageName = GetSafePackageName(packageName);
-			try {
-				_logger.WriteLine($"Start download packages ({safePackageName}).");
-				string requestData = $"[\"{safePackageName}\"]";
-				string packageZipPath = GetPackageZipPath(packageName, destinationPath);
-				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-				string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
-				applicationClient.Login();
-				applicationClient.DownloadFile(url, packageZipPath, requestData);
-				_logger.WriteLine($"Download packages ({safePackageName}) completed.");
-			} catch (Exception e) {
+    private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
+        string destinationPath, bool throwOnError = false)
+    {
+        string safePackageName = GetSafePackageName(packageName);
+        try
+        {
+            _logger.WriteLine($"Start download packages ({safePackageName}).");
+            string requestData = $"[\"{safePackageName}\"]";
+            string packageZipPath = GetPackageZipPath(packageName, destinationPath);
+            IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+            string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
+            applicationClient.Login();
+            applicationClient.DownloadFile(url, packageZipPath, requestData);
+            _logger.WriteLine($"Download packages ({safePackageName}) completed.");
+        }
+        catch (Exception e)
+        {
 #if DEBUG
-				_logger.WriteError(e.Message+"\r\n"+e.StackTrace);
+            _logger.WriteError(e.Message + "\r\n" + e.StackTrace);
 #endif
-				_logger.WriteLine($"Download packages ({safePackageName}) not completed.");
-				if(throwOnError) {
-					throw;
-				}
-				
-			}
-		}
+            _logger.WriteLine($"Download packages ({safePackageName}) not completed.");
+            if (throwOnError)
+            {
+                throw;
+            }
+        }
+    }
 
-		#endregion
+    #endregion
 
-		#region Methods: Public
+    #region Methods: Public
 
-		public void DownloadZipPackages(IEnumerable<string> packagesNames,
-				EnvironmentSettings environmentSettings = null, string destinationPath = null) {
-			environmentSettings ??= _environmentSettings;
-			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
-			foreach (string packageName in packagesNames) {
-				DownloadZipPackagesInternal(packageName, environmentSettings, destinationPath);
-			}
-		}
+    public void DownloadZipPackages(IEnumerable<string> packagesNames,
+        EnvironmentSettings environmentSettings = null, string destinationPath = null)
+    {
+        environmentSettings ??= _environmentSettings;
+        destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
+        foreach (string packageName in packagesNames)
+        {
+            DownloadZipPackagesInternal(packageName, environmentSettings, destinationPath);
+        }
+    }
 
-		public void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null,
-				string destinationPath = null) {
-			DownloadZipPackages(new [] { packageName }, environmentSettings, destinationPath);
-		}
+    public void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null) =>
+        DownloadZipPackages(new[] { packageName }, environmentSettings, destinationPath);
 
-		public void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
-				string destinationPath = null) {
-			environmentSettings ??= _environmentSettings;
-			if (!_applicationPing.Ping(environmentSettings)) {
-				return;
-			}
-			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
-			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-				foreach (string packageName in packagesNames) {
-					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory, true);
-				}
-				_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, true);
-				foreach (string packageName in packagesNames) {
-					string packageZipPath = GetPackageZipPath(packageName, tempDirectory);
-					_packageArchiver.UnZipPackages(packageZipPath, true, true, true, 
-						false, destinationPath);
-				}
-			});
-			_applicationDownloader.DownloadAutogeneratedPackages(packagesNames);
-		}
+    public void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null)
+    {
+        environmentSettings ??= _environmentSettings;
+        if (!_applicationPing.Ping(environmentSettings))
+        {
+            return;
+        }
 
-		public void DownloadPackage(string packageName, EnvironmentSettings environmentSettings = null,
-				string destinationPath = null) {
-			DownloadPackages(new [] { packageName }, environmentSettings, destinationPath);
-		}
+        destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
+        _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
+        {
+            foreach (string packageName in packagesNames)
+            {
+                DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory, true);
+            }
 
-		#endregion
+            _fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, true);
+            foreach (string packageName in packagesNames)
+            {
+                string packageZipPath = GetPackageZipPath(packageName, tempDirectory);
+                _packageArchiver.UnZipPackages(packageZipPath, true, true, true,
+                    false, destinationPath);
+            }
+        });
+        _applicationDownloader.DownloadAutogeneratedPackages(packagesNames);
+    }
 
-	}
+    public void DownloadPackage(string packageName, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null) =>
+        DownloadPackages(new[] { packageName }, environmentSettings, destinationPath);
 
-	#endregion
-
+    #endregion
 }
+
+#endregion

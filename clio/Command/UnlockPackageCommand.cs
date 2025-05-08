@@ -1,75 +1,71 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Clio.Command
+namespace Clio.Command;
+
+using System;
+using CommandLine;
+using Package;
+
+#region Class: UnlockPackageOptions
+
+[Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
+public class UnlockPackageOptions : EnvironmentOptions
 {
-	using System;
-	using CommandLine;
-	using Clio.Package;
+    #region Properties: Public
 
-	#region Class: UnlockPackageOptions
+    [Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
+    public string Name { get; set; }
 
-	[Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
-	public class UnlockPackageOptions : EnvironmentOptions
-	{
-
-		#region Properties: Public
-
-		[Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
-		public string Name { get; set; }
-
-		#endregion
-
-	}
-
-	#endregion
-
-	#region Class: UnlockPackageCommand
-
-	public class UnlockPackageCommand : Command<UnlockPackageOptions>
-	{
-
-		#region Fields: Private
-
-		private readonly IPackageLockManager _packageLockManager;
-
-		#endregion
-
-		#region Constructors: Public
-
-		public UnlockPackageCommand(IPackageLockManager packageLockManager) {
-			_packageLockManager = packageLockManager;
-		}
-
-		#endregion
-
-		#region Methods: Private
-
-		public IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
-			string.IsNullOrWhiteSpace(options.Name)
-				? Enumerable.Empty<string>()
-				: new[] { options.Name }; 
-
-		#endregion
-
-		#region Methods: Public
-
-		public override int Execute(UnlockPackageOptions options) {
-			try {
-				_packageLockManager.Unlock(GetPackagesNames(options));
-				Console.WriteLine();
-				Console.WriteLine("Done");
-				return 0;
-			} catch (Exception e) {
-				Console.WriteLine(e.Message);
-				return 1;
-			}
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion
+
+#region Class: UnlockPackageCommand
+
+public class UnlockPackageCommand : Command<UnlockPackageOptions>
+{
+    #region Fields: Private
+
+    private readonly IPackageLockManager _packageLockManager;
+
+    #endregion
+
+    #region Constructors: Public
+
+    public UnlockPackageCommand(IPackageLockManager packageLockManager) => _packageLockManager = packageLockManager;
+
+    #endregion
+
+    #region Methods: Private
+
+    public IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
+        string.IsNullOrWhiteSpace(options.Name)
+            ? Enumerable.Empty<string>()
+            : new[] { options.Name };
+
+    #endregion
+
+    #region Methods: Public
+
+    public override int Execute(UnlockPackageOptions options)
+    {
+        try
+        {
+            _packageLockManager.Unlock(GetPackagesNames(options));
+            Console.WriteLine();
+            Console.WriteLine("Done");
+            return 0;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e.Message);
+            return 1;
+        }
+    }
+
+    #endregion
+}
+
+#endregion

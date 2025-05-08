@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -19,274 +19,243 @@ namespace Clio.Tests.Command;
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 [Category("UnitTests")]
 [TestFixture]
-internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeDataProtectionCommandOptions> {
+internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeDataProtectionCommandOptions>
+{
+    #region Fields: Private
 
-	#region Fields: Private
+    private CustomizeDataProtectionCommand _sut;
+    private readonly ILogger _logger = Substitute.For<ILogger>();
+    private readonly IMediator _mediator = Substitute.For<IMediator>();
+    private readonly ISettingsRepository _settingsRepository = Substitute.For<ISettingsRepository>();
 
-	private CustomizeDataProtectionCommand _sut;
-	private readonly ILogger _logger = Substitute.For<ILogger>();
-	private readonly IMediator _mediator = Substitute.For<IMediator>();
-	private readonly ISettingsRepository _settingsRepository = Substitute.For<ISettingsRepository>();
+    #endregion
 
-	#endregion
+    #region Methods: Private
 
-	#region Methods: Private
+    private List<IISScannerHandler.RegisteredSite> MockRegisteredSites(Dictionary<string, string> envs, bool mockDir)
+    {
+        List<IISScannerHandler.RegisteredSite> sites = [];
+        foreach (KeyValuePair<string, string> keyValuePair in envs)
+        {
+            string sitePath = Path.Join("T:", keyValuePair.Key);
 
-	private List<IISScannerHandler.RegisteredSite> MockRegisteredSites(Dictionary<string, string> envs, bool mockDir){
-		List<IISScannerHandler.RegisteredSite> sites = [];
-		foreach (KeyValuePair<string, string> keyValuePair in envs) {
-			string sitePath = Path.Join("T:", keyValuePair.Key);
+            if (mockDir)
+            {
+                FileSystem.Directory.CreateDirectory(sitePath);
+            }
 
-			if (mockDir) {
-				FileSystem.Directory.CreateDirectory(sitePath);
-			}
-			IISScannerHandler.SiteBinding binding = new(keyValuePair.Key, "", "", sitePath);
-			List<Uri> uris = [new(keyValuePair.Value)];
-			IISScannerHandler.RegisteredSite site = new(binding, uris, IISScannerHandler.SiteType.Core);
-			sites.Add(site);
-		}
-		return sites;
-	}
+            IISScannerHandler.SiteBinding binding = new(keyValuePair.Key, "", "", sitePath);
+            List<Uri> uris = [new(keyValuePair.Value)];
+            IISScannerHandler.RegisteredSite site = new(binding, uris, IISScannerHandler.SiteType.Core);
+            sites.Add(site);
+        }
 
-	#endregion
+        return sites;
+    }
 
-	#region Methods: Protected
+    #endregion
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_logger);
-		containerBuilder.RegisterInstance(_mediator);
-		containerBuilder.RegisterInstance(_settingsRepository);
-	}
+    #region Methods: Protected
 
-	#endregion
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_logger);
+        containerBuilder.RegisterInstance(_mediator);
+        containerBuilder.RegisterInstance(_settingsRepository);
+    }
 
-	[Test]
-	public void Execute_Returns_EnvNotFound_WhenEnvDoesNotExist(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
-		_settingsRepository.FindEnvironment(envName)
-							.Returns((EnvironmentSettings)null);
+    #endregion
 
-		//Act
-		int result = _sut.Execute(options);
+    [Test]
+    public void Execute_Returns_EnvNotFound_WhenEnvDoesNotExist()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
+        _settingsRepository.FindEnvironment(envName)
+            .Returns((EnvironmentSettings)null);
 
-		//Assert
-		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Environment: {options.Environment} not found.");
-		_logger.ClearReceivedCalls();
-	}
+        //Act
+        int result = _sut.Execute(options);
 
-	[Test]
-	public void Execute_Returns_EnvNotFound_WhenEnvDoesNotHaveUri(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
+        //Assert
+        result.Should().Be(1);
+        _logger.Received(1).WriteError($"Environment: {options.Environment} not found.");
+        _logger.ClearReceivedCalls();
+    }
 
-		EnvironmentSettings envSettings = new() {
-			Uri = null
-		};
+    [Test]
+    public void Execute_Returns_EnvNotFound_WhenEnvDoesNotHaveUri()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-		_settingsRepository.FindEnvironment(envName).Returns(envSettings);
+        EnvironmentSettings envSettings = new() { Uri = null };
 
-		//Act
-		int result = _sut.Execute(options);
+        _settingsRepository.FindEnvironment(envName).Returns(envSettings);
 
-		//Assert
-		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Environment: {options.Environment} has an empty Uri.");
-		_logger.ClearReceivedCalls();
-	}
+        //Act
+        int result = _sut.Execute(options);
 
-	[Test]
-	public void Execute_Returns_EnvNotFound_WhenEnvUriNotValid(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
+        //Assert
+        result.Should().Be(1);
+        _logger.Received(1).WriteError($"Environment: {options.Environment} has an empty Uri.");
+        _logger.ClearReceivedCalls();
+    }
 
-		EnvironmentSettings envSettings = new() {
-			Uri = "some_invalid_uri"
-		};
+    [Test]
+    public void Execute_Returns_EnvNotFound_WhenEnvUriNotValid()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-		_settingsRepository.FindEnvironment(envName)
-							.Returns(envSettings);
+        EnvironmentSettings envSettings = new() { Uri = "some_invalid_uri" };
 
-		//Act
-		int result = _sut.Execute(options);
+        _settingsRepository.FindEnvironment(envName)
+            .Returns(envSettings);
 
-		//Assert
-		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Environment: {options.Environment} has an invalid Uri.");
-		_logger.ClearReceivedCalls();
-	}
+        //Act
+        int result = _sut.Execute(options);
 
-	[Test]
-	public void Execute_Returns_Error_DirectoryNotFound(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
+        //Assert
+        result.Should().Be(1);
+        _logger.Received(1).WriteError($"Environment: {options.Environment} has an invalid Uri.");
+        _logger.ClearReceivedCalls();
+    }
 
-		const string envUri = "http://localhost:40010";
-		EnvironmentSettings envSettings = new() {
-			Uri = envUri,
-			IsNetCore = true
-		};
+    [Test]
+    public void Execute_Returns_Error_DirectoryNotFound()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-		_settingsRepository.FindEnvironment(envName)
-							.Returns(envSettings);
+        const string envUri = "http://localhost:40010";
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
-		Dictionary<string, string> envs = new() {
-			{envName, envUri}
-		};
+        _settingsRepository.FindEnvironment(envName)
+            .Returns(envSettings);
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, false);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+        Dictionary<string, string> envs = new() { { envName, envUri } };
 
-		//Act
-		int result = _sut.Execute(options);
+        List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, false);
+        _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
 
-		//Assert
-		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Environment: {envUri}/, Directory T:\\{envName} does not exist.");
-		_logger.ClearReceivedCalls();
-	}
+        //Act
+        int result = _sut.Execute(options);
 
-	[Test]
-	public void Execute_Returns_Error_RegisteredSiteNotFound(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
+        //Assert
+        result.Should().Be(1);
+        _logger.Received(1).WriteError($"Environment: {envUri}/, Directory T:\\{envName} does not exist.");
+        _logger.ClearReceivedCalls();
+    }
 
-		const string envUri = "http://localhost:40010";
-		EnvironmentSettings envSettings = new() {
-			Uri = envUri,
-			IsNetCore = true
-		};
+    [Test]
+    public void Execute_Returns_Error_RegisteredSiteNotFound()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-		_settingsRepository.FindEnvironment(envName)
-							.Returns(envSettings);
+        const string envUri = "http://localhost:40010";
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
-		Dictionary<string, string> envs = new();
+        _settingsRepository.FindEnvironment(envName)
+            .Returns(envSettings);
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+        Dictionary<string, string> envs = new();
 
-		//Act
-		int result = _sut.Execute(options);
+        List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
+        _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
 
-		//Assert
-		result.Should().Be(1);
-		_logger.Received(1).WriteError("Did not find any registered sites");
-		_logger.ClearReceivedCalls();
-	}
+        //Act
+        int result = _sut.Execute(options);
 
-	[Test]
-	public void Execute_Returns_Error_WhenAppSettingsNotFound(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
+        //Assert
+        result.Should().Be(1);
+        _logger.Received(1).WriteError("Did not find any registered sites");
+        _logger.ClearReceivedCalls();
+    }
 
-		const string envUri = "http://localhost:40010";
-		EnvironmentSettings envSettings = new() {
-			Uri = envUri,
-			IsNetCore = true
-		};
+    [Test]
+    public void Execute_Returns_Error_WhenAppSettingsNotFound()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-		_settingsRepository.FindEnvironment(envName)
-							.Returns(envSettings);
+        const string envUri = "http://localhost:40010";
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
-		Dictionary<string, string> envs = new() {
-			{envName, envUri}
-		};
+        _settingsRepository.FindEnvironment(envName)
+            .Returns(envSettings);
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+        Dictionary<string, string> envs = new() { { envName, envUri } };
 
-		//Act
-		int result = _sut.Execute(options);
+        List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
+        _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
 
-		//Assert
-		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Did not find appsettings.json in T:\\{envName}");
-		_logger.ClearReceivedCalls();
-	}
+        //Act
+        int result = _sut.Execute(options);
 
-	[Test]
-	public void Execute_Returns_ReadsFile(){
-		//Arrange
-		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
-		CustomizeDataProtectionCommandOptions options = new() {
-			EnableDataProtection = true,
-			Environment = envName
-		};
+        //Assert
+        result.Should().Be(1);
+        _logger.Received(1).WriteError($"Did not find appsettings.json in T:\\{envName}");
+        _logger.ClearReceivedCalls();
+    }
 
-		const string envUri = "http://localhost:40010";
-		EnvironmentSettings envSettings = new() {
-			Uri = envUri,
-			IsNetCore = true
-		};
+    [Test]
+    public void Execute_Returns_ReadsFile()
+    {
+        //Arrange
+        const string envName = "test";
+        _sut = Container.Resolve<CustomizeDataProtectionCommand>();
+        CustomizeDataProtectionCommandOptions options = new() { EnableDataProtection = true, Environment = envName };
 
-		_settingsRepository.FindEnvironment(envName)
-							.Returns(envSettings);
+        const string envUri = "http://localhost:40010";
+        EnvironmentSettings envSettings = new() { Uri = envUri, IsNetCore = true };
 
-		Dictionary<string, string> envs = new() {
-			{envName, envUri}
-		};
+        _settingsRepository.FindEnvironment(envName)
+            .Returns(envSettings);
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+        Dictionary<string, string> envs = new() { { envName, envUri } };
 
-		FileSystem.MockExamplesFolder("Sites/N8_Site", $"T:\\{envName}");
+        List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
+        _mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
 
-		//Act
-		int result = _sut.Execute(options);
+        FileSystem.MockExamplesFolder("Sites/N8_Site", $"T:\\{envName}");
 
-		//Assert
-		result.Should().Be(0);
-		_logger.Received(1).WriteInfo("DONE");
-		_logger.ClearReceivedCalls();
+        //Act
+        int result = _sut.Execute(options);
 
-		FileSystem.File.Exists($"T:\\{envName}\\appsettings.json").Should().BeTrue();
-		string appSettingsContent = FileSystem.File.ReadAllText($"T:\\{envName}\\appsettings.json");
+        //Assert
+        result.Should().Be(0);
+        _logger.Received(1).WriteInfo("DONE");
+        _logger.ClearReceivedCalls();
 
-		JsonDocument doc = JsonDocument.Parse(appSettingsContent);
-		JsonElement prop = doc.RootElement.GetProperty("DataProtection").GetProperty("CustomizeDataProtection");
-		bool value = prop.GetBoolean();
-		value.Should().BeTrue();
-	}
+        FileSystem.File.Exists($"T:\\{envName}\\appsettings.json").Should().BeTrue();
+        string appSettingsContent = FileSystem.File.ReadAllText($"T:\\{envName}\\appsettings.json");
 
+        JsonDocument doc = JsonDocument.Parse(appSettingsContent);
+        JsonElement prop = doc.RootElement.GetProperty("DataProtection").GetProperty("CustomizeDataProtection");
+        bool value = prop.GetBoolean();
+        value.Should().BeTrue();
+    }
 }

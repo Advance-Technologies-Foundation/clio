@@ -1,69 +1,68 @@
-﻿namespace Clio.Project.NuGet
+namespace Clio.Project.NuGet;
+
+using System.Collections.Generic;
+using System.IO;
+using Common;
+using Package;
+
+#region Class: InstallNugetPackage
+
+public class InstallNugetPackage : IInstallNugetPackage
 {
-	using System.Collections.Generic;
-	using System.IO;
-	using Clio.Common;
-	using Clio.Package;
+    #region Fields: Private
 
-	#region Class: InstallNugetPackage
+    private readonly EnvironmentSettings _environmentSettings;
+    private readonly INuGetManager _nugetManager;
+    private readonly IPackageInstaller _packageInstaller;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
-	public class InstallNugetPackage : IInstallNugetPackage
-	{
+    #endregion
 
-		#region Fields: Private
+    #region Constructors: Public
 
-		private readonly EnvironmentSettings _environmentSettings;
-		private readonly INuGetManager _nugetManager;
-		private readonly IPackageInstaller _packageInstaller;
-		private readonly IPackageArchiver _packageArchiver;
-		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    public InstallNugetPackage(EnvironmentSettings environmentSettings, INuGetManager nugetManager,
+        IPackageInstaller packageInstaller, IPackageArchiver packageArchiver,
+        IWorkingDirectoriesProvider workingDirectoriesProvider)
+    {
+        environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        nugetManager.CheckArgumentNull(nameof(nugetManager));
+        packageInstaller.CheckArgumentNull(nameof(packageInstaller));
+        packageArchiver.CheckArgumentNull(nameof(packageArchiver));
+        workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+        _environmentSettings = environmentSettings;
+        _nugetManager = nugetManager;
+        _packageInstaller = packageInstaller;
+        _packageArchiver = packageArchiver;
+        _workingDirectoriesProvider = workingDirectoriesProvider;
+    }
 
-		#endregion
+    #endregion
 
-		#region Constructors: Public
+    #region Methods: Public
 
-		public InstallNugetPackage(EnvironmentSettings environmentSettings, INuGetManager nugetManager,
-				IPackageInstaller packageInstaller, IPackageArchiver packageArchiver, 
-				IWorkingDirectoriesProvider workingDirectoriesProvider) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			nugetManager.CheckArgumentNull(nameof(nugetManager));
-			packageInstaller.CheckArgumentNull(nameof(packageInstaller));
-			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
-			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
-			_environmentSettings = environmentSettings;
-			_nugetManager = nugetManager;
-			_packageInstaller = packageInstaller;
-			_packageArchiver = packageArchiver;
-			_workingDirectoriesProvider = workingDirectoriesProvider;
-		}
+    public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl) =>
+        _workingDirectoriesProvider.CreateTempDirectory(restoreTempDirectory =>
+        {
+            foreach (NugetPackageFullName nugetPackageFullName in nugetPackageFullNames)
+            {
+                _nugetManager.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, restoreTempDirectory, true);
+            }
 
-		#endregion
+            _workingDirectoriesProvider.CreateTempDirectory(zipTempDirectory =>
+            {
+                DirectoryInfo restoreTempDirectoryInfo = new(restoreTempDirectory);
+                string packagePath = Path.Combine(zipTempDirectory,
+                    _packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));
+                _packageArchiver.ZipPackages(restoreTempDirectory, packagePath, true);
+                _packageInstaller.Install(packagePath, _environmentSettings);
+            });
+        });
 
-		#region Methods: Public
+    public void Install(string packageName, string version, string nugetSourceUrl) =>
+        Install(new[] { new NugetPackageFullName(packageName, version) }, nugetSourceUrl);
 
-		public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl) {
-			_workingDirectoriesProvider.CreateTempDirectory(restoreTempDirectory => {
-				foreach (NugetPackageFullName nugetPackageFullName in nugetPackageFullNames) {
-					_nugetManager.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, restoreTempDirectory, true);
-				}
-				_workingDirectoriesProvider.CreateTempDirectory(zipTempDirectory => {
-					var restoreTempDirectoryInfo = new DirectoryInfo(restoreTempDirectory);
-					string packagePath = Path.Combine(zipTempDirectory, 
-						_packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));
-					_packageArchiver.ZipPackages(restoreTempDirectory, packagePath, true);
-					_packageInstaller.Install(packagePath, _environmentSettings);
-				});
-			});
-		}
-
-		public void Install(string packageName, string version, string nugetSourceUrl) {
-			Install(new [] { new NugetPackageFullName(packageName, version) } , nugetSourceUrl);
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

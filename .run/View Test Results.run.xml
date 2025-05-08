@@ -1,6 +1,8 @@
 ﻿<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="View Test Results" type="PowerShellRunType" factoryName="PowerShell" scriptUrl="$SolutionDir$clio.tests\view-test-results.ps1" workingDirectory="$SolutionDir$clio.tests" executablePath="C:\Program Files\PowerShell\7\pwsh.exe">
-    <envs />
-    <method v="2" />
+  <configuration default="false" name="View Test Results" type="PowerShellRunType" factoryName="PowerShell"
+                 scriptUrl="$SolutionDir$clio.tests\view-test-results.ps1" workingDirectory="$SolutionDir$clio.tests"
+                 executablePath="C:\Program Files\PowerShell\7\pwsh.exe">
+    <envs/>
+    <method v="2"/>
   </configuration>
 </component>

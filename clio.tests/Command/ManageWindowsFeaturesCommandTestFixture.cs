@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Management.Automation;
 using Autofac;
@@ -13,139 +13,159 @@ namespace Clio.Tests.Command;
 
 public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 {
+    private IWindowsFeatureManager _windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
+    private ManageWindowsFeaturesCommand _sut;
 
-	IWindowsFeatureManager _windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
-	ManageWindowsFeaturesCommand _sut;
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_windowsFeatureManager).As<IWindowsFeatureManager>();
-	}
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_windowsFeatureManager).As<IWindowsFeatureManager>();
+    }
 
-	public override void Setup(){
-		base.Setup();
-		_sut = Container.Resolve<ManageWindowsFeaturesCommand>();
-	}
+    public override void Setup()
+    {
+        base.Setup();
+        _sut = Container.Resolve<ManageWindowsFeaturesCommand>();
+    }
 
-	[TestCase("install")]
-	[TestCase("uninstall")]
-	public void InstallComponent_Calls_WindowsFeatureManager(string actionName){
+    [TestCase("install")]
+    [TestCase("uninstall")]
+    public void InstallComponent_Calls_WindowsFeatureManager(string actionName)
+    {
+        //Arrange
+        ManageWindowsFeaturesOptions options = new()
+        {
+            InstallMode = actionName == "install",
+            UnistallMode = actionName == "uninstall"
+        };
 
-		//Arrange
-		var options = new ManageWindowsFeaturesOptions {
-			InstallMode = actionName == "install",
-			UnistallMode = actionName == "uninstall"
-		};
+        //Act
+        int actual = _sut.Execute(options);
 
-		//Act
-		var actual = _sut.Execute(options);
+        //Assert
+        actual.Should().Be(0);
 
-		//Assert
-		actual.Should().Be(0);
-		
-		if(actionName == "install") {
-			_windowsFeatureManager.Received(1).InstallMissingFeatures();
-		}
-		if(actionName == "ininstall") {
-			_windowsFeatureManager.Received(1).UnInstallMissingFeatures();
-		}
-		
-		
-	}
+        if (actionName == "install")
+        {
+            _windowsFeatureManager.Received(1).InstallMissingFeatures();
+        }
 
-	[Test, Category("Unit")]
-	public void GetMissedComponents_ShouldInstallMissedComponents() {
-		// Arrange
-		var existingComponents = new List<WindowsFeature> {
-			new WindowsFeature { Name = "Feature3", Installed = false },
-			new WindowsFeature { Name = "Feature4", Installed = false }
-		};
+        if (actionName == "ininstall")
+        {
+            _windowsFeatureManager.Received(1).UnInstallMissingFeatures();
+        }
+    }
 
-		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
-		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
-		ILogger logger = Substitute.For<ILogger>();
-		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
-		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger) {
-			RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"],
-		};
+    [Test]
+    [Category("Unit")]
+    public void GetMissedComponents_ShouldInstallMissedComponents()
+    {
+        // Arrange
+        List<WindowsFeature> existingComponents = new()
+        {
+            new WindowsFeature { Name = "Feature3", Installed = false },
+            new WindowsFeature { Name = "Feature4", Installed = false }
+        };
 
-		// Act
-		var missingComponents = windowsFeatureManager.GetMissedComponents();
+        IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+        IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+        ILogger logger = Substitute.For<ILogger>();
+        windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+        WindowsFeatureManager windowsFeatureManager =
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            {
+                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
+            };
 
-		// Assert
-		missingComponents.Should().HaveCount(2);
-	}
+        // Act
+        List<WindowsFeature> missingComponents = windowsFeatureManager.GetMissedComponents();
 
-	[Test, Category("Unit")]
-	public void GetMissedComponents_CorrectWorking_IfAllFeatureExisting() {
-		// Arrange
-		var existingComponents = new List<WindowsFeature> {
-			new WindowsFeature { Name = "Feature1", Installed = true },
-			new WindowsFeature { Name = "Feature2", Installed = true }
-		};
+        // Assert
+        missingComponents.Should().HaveCount(2);
+    }
 
-		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
-		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
-		ILogger logger = Substitute.For<ILogger>();
-		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
-		windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
-		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger) {
-			RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"],
-		};
+    [Test]
+    [Category("Unit")]
+    public void GetMissedComponents_CorrectWorking_IfAllFeatureExisting()
+    {
+        // Arrange
+        List<WindowsFeature> existingComponents = new()
+        {
+            new WindowsFeature { Name = "Feature1", Installed = true },
+            new WindowsFeature { Name = "Feature2", Installed = true }
+        };
 
-		// Act
-		var missingComponents = windowsFeatureManager.GetMissedComponents();
+        IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+        IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+        ILogger logger = Substitute.For<ILogger>();
+        windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+        windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
+        WindowsFeatureManager windowsFeatureManager =
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            {
+                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
+            };
 
-		// Assert
-		missingComponents.Should().HaveCount(0);
-	}
+        // Act
+        List<WindowsFeature> missingComponents = windowsFeatureManager.GetMissedComponents();
 
-	[Test, Category("Unit")]
-	public void InstallMissingFeatures_NotThrow_IfAllFeatureExisting() {
-		// Arrange
-		var existingComponents = new List<WindowsFeature> {
-			new WindowsFeature { Name = "Feature1", Installed = true },
-			new WindowsFeature { Name = "Feature2", Installed = true }
-		};
+        // Assert
+        missingComponents.Should().HaveCount(0);
+    }
 
-		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
-		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
-		ILogger logger = Substitute.For<ILogger>();
-		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
-		windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
-		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger) {
-			RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"],
-		};
+    [Test]
+    [Category("Unit")]
+    public void InstallMissingFeatures_NotThrow_IfAllFeatureExisting()
+    {
+        // Arrange
+        List<WindowsFeature> existingComponents = new()
+        {
+            new WindowsFeature { Name = "Feature1", Installed = true },
+            new WindowsFeature { Name = "Feature2", Installed = true }
+        };
 
-		// Act
-		Action act = () =>  windowsFeatureManager.InstallMissingFeatures();
-		// Assert
-		act.Should().NotThrow();
+        IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+        IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+        ILogger logger = Substitute.For<ILogger>();
+        windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+        windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
+        WindowsFeatureManager windowsFeatureManager =
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            {
+                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
+            };
 
-	}
+        // Act
+        Action act = () => windowsFeatureManager.InstallMissingFeatures();
+        // Assert
+        act.Should().NotThrow();
+    }
 
-	[Test, Category("Unit")]
-	public void InstpallMissingFeatures_ThrowItemNotExistException_IfFeatureMissingOnServer() {
-		// Arrange
-		var existingComponents = new List<WindowsFeature> {
-			new WindowsFeature { Name = "Feature1", Installed = true },
-			new WindowsFeature { Name = "Feature2", Installed = true }
-		};
+    [Test]
+    [Category("Unit")]
+    public void InstpallMissingFeatures_ThrowItemNotExistException_IfFeatureMissingOnServer()
+    {
+        // Arrange
+        List<WindowsFeature> existingComponents = new()
+        {
+            new WindowsFeature { Name = "Feature1", Installed = true },
+            new WindowsFeature { Name = "Feature2", Installed = true }
+        };
 
-		IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
-		IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
-		ILogger logger = Substitute.For<ILogger>();
-		windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
-		windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
-		var windowsFeatureManager = new WindowsFeatureManager(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger) {
-			RequirmentNETFrameworkFeatures = ["Feature3"]
-		};
+        IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
+        IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
+        ILogger logger = Substitute.For<ILogger>();
+        windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
+        windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
+        WindowsFeatureManager windowsFeatureManager =
+            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            {
+                RequirmentNETFrameworkFeatures = ["Feature3"]
+            };
 
-		// Act
-		Action act = () => windowsFeatureManager.InstallMissingFeatures();
-		// Assert
-		act.Should().Throw<ItemNotFoundException>();
-
-	}
-
+        // Act
+        Action act = () => windowsFeatureManager.InstallMissingFeatures();
+        // Assert
+        act.Should().Throw<ItemNotFoundException>();
+    }
 }
-

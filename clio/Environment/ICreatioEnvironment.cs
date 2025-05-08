@@ -1,19 +1,18 @@
-﻿using System.IO;
+using System.IO;
 
-namespace Clio.UserEnvironment
+namespace Clio.UserEnvironment;
+
+internal interface IResult
 {
-	internal interface IResult
-	{
-		void ShowMessagesTo(TextWriter writer);
-		void AppendMessage(string message);
-	}
+    void ShowMessagesTo(TextWriter writer);
+    void AppendMessage(string message);
+}
 
-	internal interface ICreatioEnvironment
-	{
-		string GetRegisteredPath();
-		IResult UserRegisterPath(string path);
-		IResult MachineRegisterPath(string path);
+internal interface ICreatioEnvironment
+{
+    string GetRegisteredPath();
+    IResult UserRegisterPath(string path);
+    IResult MachineRegisterPath(string path);
 
-		string GetAssemblyFolderPath();
-	}
+    string GetAssemblyFolderPath();
 }

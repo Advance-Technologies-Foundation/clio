@@ -1,4 +1,4 @@
-﻿using Autofac;
+using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -9,26 +9,26 @@ namespace Clio.Tests.Command;
 
 public class WindowsFeatureManagerTestFixture : BaseClioModuleTests
 {
+    private IWindowsFeatureManager _sut;
+    private IWorkingDirectoriesProvider _workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 
-	IWindowsFeatureManager _sut;
-	IWorkingDirectoriesProvider _workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-	
-	public override void Setup(){
-		base.Setup();
-		_sut = Container.Resolve<IWindowsFeatureManager>();
-	}
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_workingDirectoriesProvider).As<IWorkingDirectoriesProvider>();
-		//containerBuilder.RegisterInstance<ConsoleProgressbar>();
-	}
+    public override void Setup()
+    {
+        base.Setup();
+        _sut = Container.Resolve<IWindowsFeatureManager>();
+    }
 
-	[Test]
-	public void BuildPrintString_AllignsItems(){
-		
-		var actual = _sut.GetActionMaxLength(["x","xx","xxx"]);
-		actual.Should().Be(3);
-	}
-	
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        base.AdditionalRegistrations(containerBuilder);
+        containerBuilder.RegisterInstance(_workingDirectoriesProvider).As<IWorkingDirectoriesProvider>();
+        //containerBuilder.RegisterInstance<ConsoleProgressbar>();
+    }
 
+    [Test]
+    public void BuildPrintString_AllignsItems()
+    {
+        int actual = _sut.GetActionMaxLength(["x", "xx", "xxx"]);
+        actual.Should().Be(3);
+    }
 }

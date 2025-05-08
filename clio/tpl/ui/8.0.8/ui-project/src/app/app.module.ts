@@ -1,7 +1,7 @@
 import {DoBootstrap, Injector, NgModule, ProviderToken} from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
+import {BrowserModule} from '@angular/platform-browser';
 import {bootstrapCrtModule, CrtModule} from '@creatio-devkit/common';
-import { DemoComponent } from './view-elements/demo/demo.component';
+import {DemoComponent} from './view-elements/demo/demo.component';
 import {createCustomElement} from "@angular/elements";
 
 @CrtModule({
@@ -16,7 +16,8 @@ import {createCustomElement} from "@angular/elements";
   providers: [],
 })
 export class AppModule implements DoBootstrap {
-  constructor(private _injector: Injector) {}
+  constructor(private _injector: Injector) {
+  }
 
   ngDoBootstrap(): void {
     /* Register InputComponent as an Angular Element. */

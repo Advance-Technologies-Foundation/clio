@@ -1,92 +1,106 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Terrasoft.Core.Entities;
 
-namespace cliogate.Files.cs
+namespace cliogate.Files.cs;
+
+public class EntitySchemaModelClassGenerator(EntitySchemaManager entitySchemaManager)
 {
-	public class EntitySchemaModelClassGenerator
-	{
+    public EntitySchemaManager entitySchemaManager = entitySchemaManager;
 
-		public EntitySchemaManager entitySchemaManager;
+    private readonly List<string> relatedSchemas = [];
 
-		private List<string> relatedSchemas = new List<string>();
-		
-		string tplFolder = Path.Combine(CreatioPathBuilder.GetPackageFilePath("cliogate"),"tpl"); 
-		
-		private string _lookupColumnTemplate;
-		private string lookupColumnTemplate { get => _lookupColumnTemplate ?? (_lookupColumnTemplate = File.ReadAllText($"{tplFolder}\\lookup-template.tpl")); }
+    private readonly string tplFolder = Path.Combine(CreatioPathBuilder.GetPackageFilePath("cliogate"), "tpl");
 
-		private string _valueColumnTemplate;
-		private string valueColumnTemplate { get => _valueColumnTemplate ?? (_valueColumnTemplate = File.ReadAllText($"{tplFolder}\\column-template.tpl")); }
+    private string _lookupColumnTemplate;
 
-		public EntitySchemaModelClassGenerator(EntitySchemaManager entitySchemaManager) {
-			this.entitySchemaManager = entitySchemaManager;
-		}
+    private string lookupColumnTemplate => _lookupColumnTemplate ??=
+                                               File.ReadAllText($"{tplFolder}\\lookup-template.tpl");
 
-		private void FindAllRelatedSchemas(string schemaName,  List<string> columns = null) {
-			if (!relatedSchemas.Contains(schemaName)) {
-				relatedSchemas.Add(schemaName);
-				var schema = entitySchemaManager.GetInstanceByName(schemaName);
-				foreach (var column in schema.Columns) {
-					if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {
-						continue;
-					}
-					if (columns.Count > 0 && !columns.Contains(column.Name)) {
-						continue;
-					}
-					if (column.IsLookupType) {
-						FindAllRelatedSchemas(column.ReferenceSchema.Name);
-					}
-				}
-			}
-		}
+    private string _valueColumnTemplate;
 
-		public Dictionary<string, string> Generate(string entitySchemaName, List<string> columns) {
-			FindAllRelatedSchemas(entitySchemaName, columns);
-			var result = new Dictionary<string, string>();
-			foreach (var schemaName in relatedSchemas) {
-				var schemaColumns = new List<string>();
-				if (schemaName == entitySchemaName) {
-					schemaColumns = columns;
-				}
-				result.Add(schemaName, GetSchemaClass(schemaName, schemaColumns));
-			}
-			return result;
-		}
+    private string valueColumnTemplate => _valueColumnTemplate ??=
+                                              File.ReadAllText($"{tplFolder}\\column-template.tpl");
 
-		private string GetSchemaClass(string entitySchemaName, List<string> columns) {
-			var schema = entitySchemaManager.GetInstanceByName(entitySchemaName);
-			string classTemplate = File.ReadAllText($"{tplFolder}\\class-template.tpl");
+    private void FindAllRelatedSchemas(string schemaName, List<string> columns = null)
+    {
+        if (!relatedSchemas.Contains(schemaName))
+        {
+            relatedSchemas.Add(schemaName);
+            EntitySchema? schema = entitySchemaManager.GetInstanceByName(schemaName);
+            foreach (EntitySchemaColumn? column in schema.Columns)
+            {
+                if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn)
+                {
+                    continue;
+                }
 
-			var columnsBuilder = new StringBuilder();
-			foreach (var column in schema.Columns) {
-				if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn) {
-					continue;
-				}
-				if (columns.Count > 0 && !columns.Contains(column.Name)) {
-					continue;
-				}
-				columnsBuilder.Append(GetColumnPart(column));
-				columnsBuilder.AppendLine();
-			}
-			return string.Format(classTemplate, entitySchemaName, columnsBuilder.ToString());
-		}
+                if (columns.Count > 0 && !columns.Contains(column.Name))
+                {
+                    continue;
+                }
 
-		private string GetColumnPart(EntitySchemaColumn column) {
-			return column.IsLookupType
-				? GetLookupColumnPart(column)
-				: GetValueColumnPart(column);
-		}
+                if (column.IsLookupType)
+                {
+                    FindAllRelatedSchemas(column.ReferenceSchema.Name);
+                }
+            }
+        }
+    }
 
-		private string GetLookupColumnPart(EntitySchemaColumn column) {
-			return string.Format(lookupColumnTemplate, column.Name, column.DataValueType.ValueType.Name, column.ReferenceSchema.Name);
-		}
+    public Dictionary<string, string> Generate(string entitySchemaName, List<string> columns)
+    {
+        FindAllRelatedSchemas(entitySchemaName, columns);
+        Dictionary<string, string> result = [];
+        foreach (string? schemaName in relatedSchemas)
+        {
+            List<string> schemaColumns = [];
+            if (schemaName == entitySchemaName)
+            {
+                schemaColumns = columns;
+            }
 
-		private string GetValueColumnPart(EntitySchemaColumn column) {
-			return string.Format(valueColumnTemplate, column.Name, column.DataValueType.ValueType.Name);
-		}
-	}
+            result.Add(schemaName, GetSchemaClass(schemaName, schemaColumns));
+        }
 
+        return result;
+    }
+
+    private string GetSchemaClass(string entitySchemaName, List<string> columns)
+    {
+        EntitySchema? schema = entitySchemaManager.GetInstanceByName(entitySchemaName);
+        string classTemplate = File.ReadAllText($"{tplFolder}\\class-template.tpl");
+
+        StringBuilder columnsBuilder = new();
+        foreach (EntitySchemaColumn? column in schema.Columns)
+        {
+            if (column.CreatedInSchemaUId != schema.UId && column != schema.PrimaryDisplayColumn)
+            {
+                continue;
+            }
+
+            if (columns.Count > 0 && !columns.Contains(column.Name))
+            {
+                continue;
+            }
+
+            columnsBuilder.Append(GetColumnPart(column));
+            columnsBuilder.AppendLine();
+        }
+
+        return string.Format(classTemplate, entitySchemaName, columnsBuilder.ToString());
+    }
+
+    private string GetColumnPart(EntitySchemaColumn column) =>
+        column.IsLookupType
+            ? GetLookupColumnPart(column)
+            : GetValueColumnPart(column);
+
+    private string GetLookupColumnPart(EntitySchemaColumn column) => string.Format(lookupColumnTemplate, column.Name,
+        column.DataValueType.ValueType.Name, column.ReferenceSchema.Name);
+
+    private string GetValueColumnPart(EntitySchemaColumn column) =>
+        string.Format(valueColumnTemplate, column.Name, column.DataValueType.ValueType.Name);
 }

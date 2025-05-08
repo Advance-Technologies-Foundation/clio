@@ -8,14 +8,12 @@ using Clio.Common.Responses;
 [DataContract]
 public class PackageActivationResponse : BaseResponse
 {
+    #region Properties: Public
 
-	#region Properties: Public
+    [DataMember(Name = "packagesActivationResults")]
+    public PackageActivationResultDto[] PackagesActivationResults { get; set; }
 
-	[DataMember(Name = "packagesActivationResults")]
-	public PackageActivationResultDto[] PackagesActivationResults { get; set; }
-
-	#endregion
-
+    #endregion
 }
 
 #endregion

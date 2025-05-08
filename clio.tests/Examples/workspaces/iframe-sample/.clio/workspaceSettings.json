@@ -1,6 +1,6 @@
 {
-  "Packages": [
-    "IFrameSample"
-  ],
-  "ApplicationVersion": "8.1.0"
+    "Packages": [
+        "IFrameSample"
+    ],
+    "ApplicationVersion": "8.1.0"
 }

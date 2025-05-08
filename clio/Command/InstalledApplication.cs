@@ -1,88 +1,80 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
 
-namespace Clio.Command
+namespace Clio.Command;
+
+public interface IInstalledApplication
 {
-	public interface IInstalledApplication
-	{
-		InstalledAppInfo GetInstalledAppInfo(string appCode);
-	}
+    InstalledAppInfo GetInstalledAppInfo(string appCode);
+}
 
+public class InstalledApplication : IInstalledApplication
+{
+    #region Fields: Private
 
-	public class InstalledApplication : IInstalledApplication
-	{
+    private readonly IDataProvider _provider;
 
-		#region Fields: Private
+    #endregion
 
-		private readonly IDataProvider _provider;
+    public InstalledApplication(IDataProvider provider) => _provider = provider;
 
-		#endregion
+    public InstalledAppInfo GetInstalledAppInfo(string appCode) =>
+        AppDataContextFactory.GetAppDataContext(_provider)
+            .Models<SysInstalledApp>()
+            .Where(m => m.Code == appCode)
+            .ToList()
+            .Select(m =>
+                new InstalledAppInfo(_provider)
+                {
+                    Id = m.Id,
+                    Code = m.Code,
+                    Name = m.Name,
+                    Description = m.Description,
+                    Version = m.Version
+                }
+            ).FirstOrDefault();
+}
 
-		public InstalledApplication(IDataProvider provider) {
-			_provider = provider;
-		}
+public class InstalledAppInfo
+{
+    #region Fields: Private
 
-		public InstalledAppInfo GetInstalledAppInfo(string appCode) {
-			return AppDataContextFactory.GetAppDataContext(_provider)
-			.Models<SysInstalledApp>()
-			.Where(m => m.Code == appCode)
-			.ToList()
-			.Select(m => 
-				 new InstalledAppInfo(_provider) {
-					Id = m.Id,
-					Code = m.Code,
-					Name = m.Name,
-					Description = m.Description,
-					Version = m.Version
-				}
-			).FirstOrDefault();
-		}
+    private readonly IDataProvider _provider;
 
-	}
+    #endregion
 
-	public class InstalledAppInfo
-	{
+    #region Constructors: Public
 
-		#region Fields: Private
+    public InstalledAppInfo(IDataProvider provider) => _provider = provider;
 
-		private readonly IDataProvider _provider;
+    #endregion
 
-		#endregion
+    public IEnumerable<string> GetPackages()
+    {
+        List<Guid> sysPackageIds = AppDataContextFactory.GetAppDataContext(_provider)
+            .Models<SysPackageInInstalledApp>()
+            .Where(m => m.SysInstalledAppId == Id)
+            .Select(m => m.SysPackageId)
+            .ToList();
+        foreach (Guid sysPackageId in sysPackageIds)
+        {
+            SysPackage? package = AppDataContextFactory.GetAppDataContext(_provider)
+                .GetModel<SysPackage>(sysPackageId);
+            yield return package.Name;
+        }
+    }
 
-		#region Constructors: Public
+    public Guid Id { get; set; }
 
-		public InstalledAppInfo(IDataProvider provider) {
-			_provider = provider;
-		}
+    public string Name { get; set; }
 
-		#endregion
+    public string Code { get; set; }
 
-		public IEnumerable<string> GetPackages() {
-			var sysPackageIds = AppDataContextFactory.GetAppDataContext(_provider)
-				.Models<SysPackageInInstalledApp>()
-				.Where(m => m.SysInstalledAppId == Id)
-				.Select(m => m.SysPackageId)
-				.ToList();
-			foreach (var sysPackageId in sysPackageIds) {
-				var package = AppDataContextFactory.GetAppDataContext(_provider)
-					.GetModel<SysPackage>(sysPackageId);
-				yield return package.Name;
-			}
-		}
+    public string Description { get; set; }
 
-		public Guid Id { get; set; }
-
-		public string Name { get; set; }
-
-		public string Code { get; set; }
-
-		public string Description { get; set; }
-
-		public string Version { get; set; }
-
-	}
+    public string Version { get; set; }
 }

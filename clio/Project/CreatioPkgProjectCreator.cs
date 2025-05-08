@@ -1,9 +1,6 @@
-﻿namespace Clio.Project
+namespace Clio.Project;
+
+public class CreatioPkgProjectCreator : ICreatioPkgProjectCreator
 {
-	public class CreatioPkgProjectCreator : ICreatioPkgProjectCreator
-	{
-		public ICreatioPkgProject CreateFromFile(string path) {
-			return CreatioPkgProject.LoadFromFile(path);
-		}
-	}
+    public ICreatioPkgProject CreateFromFile(string path) => CreatioPkgProject.LoadFromFile(path);
 }

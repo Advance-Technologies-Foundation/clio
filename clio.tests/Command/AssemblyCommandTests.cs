@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text.Json;
 using Autofac;
 using Clio.Command;
@@ -11,62 +11,67 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 {
+    #region Fields: Private
 
-	#region Fields: Private
+    private readonly IApplicationClient _applicationClientMock = Substitute.For<IApplicationClient>();
+    private readonly ILogger _loggerMock = Substitute.For<ILogger>();
 
-	private readonly IApplicationClient _applicationClientMock = Substitute.For<IApplicationClient>();
-	private readonly ILogger _loggerMock = Substitute.For<ILogger>();
+    #endregion
 
-	#endregion
+    #region Methods: Private
 
-	#region Methods: Private
+    private bool CheckRequest(string body, string executorType)
+    {
+        try
+        {
+            ExecuteScriptRequest reqObj = JsonSerializer.Deserialize<ExecuteScriptRequest>(body);
+            return reqObj.LibraryType == executorType && reqObj.Body.Length > 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
-	private bool CheckRequest(string body, string executorType){
-		try {
-			ExecuteScriptRequest reqObj = JsonSerializer.Deserialize<ExecuteScriptRequest>(body);
-			return reqObj.LibraryType == executorType && reqObj.Body.Length > 0;
-		} catch (Exception) {
-			return false;
-		}
-	}
+    #endregion
 
-	#endregion
+    #region Methods: Protected
 
-	#region Methods: Protected
+    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    {
+        containerBuilder.RegisterInstance(_applicationClientMock).As<IApplicationClient>();
+        containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
+        base.AdditionalRegistrations(containerBuilder);
+    }
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		containerBuilder.RegisterInstance(_applicationClientMock).As<IApplicationClient>();
-		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
-		base.AdditionalRegistrations(containerBuilder);
-	}
+    #endregion
 
-	#endregion
+    [Test]
+    [Category("Unit")]
+    public void Execute_ShouldWriteResponse_WhenItIsSuccessful()
+    {
+        // Arrange
+        AssemblyCommand command = Container.Resolve<AssemblyCommand>();
+        command.Logger = _loggerMock;
 
-	[Test]
-	[Category("Unit")]
-	public void Execute_ShouldWriteResponse_WhenItIsSuccessful(){
-		// Arrange
-		AssemblyCommand command = Container.Resolve<AssemblyCommand>();
-		command.Logger = _loggerMock;
+        string executorType = typeof(AssemblyCommand).FullName;
+        _applicationClientMock.ExecutePostRequest(
+                Arg.Is<string>(path => path.EndsWith("/IDE/ExecuteScript")),
+                Arg.Is<string>(request => CheckRequest(request, executorType)),
+                Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()
+            )
+            .Returns("responseFromServer");
 
-		string executorType = typeof(AssemblyCommand).FullName;
-		_applicationClientMock.ExecutePostRequest(
-				Arg.Is<string>(path => path.EndsWith("/IDE/ExecuteScript")),
-				Arg.Is<string>(request => CheckRequest(request, executorType)),
-				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()
-				)
-			.Returns("responseFromServer");
+        // Act
+        command.Execute(new ExecuteAssemblyOptions
+        {
+            ExecutorType = executorType,
+            Name = new Uri(typeof(AssemblyCommand).Assembly.Location).LocalPath,
+            WriteResponse = true
+        });
 
-		// Act
-		command.Execute(new ExecuteAssemblyOptions {
-			ExecutorType = executorType,
-			Name = new Uri(typeof(AssemblyCommand).Assembly.Location).LocalPath,
-			WriteResponse = true,
-		});
-
-		// Assert
-		_loggerMock.Received(1).WriteInfo("responseFromServer");
-		_loggerMock.ClearReceivedCalls();
-	}
-
+        // Assert
+        _loggerMock.Received(1).WriteInfo("responseFromServer");
+        _loggerMock.ClearReceivedCalls();
+    }
 }

@@ -7,35 +7,33 @@ namespace Clio.Package;
 /// <inheritdoc cref="IPackageDeactivator"/>
 internal class PackageDeactivator : BasePackageOperation, IPackageDeactivator
 {
-	#region Constructors: Public
+    #region Constructors: Public
 
-	public PackageDeactivator(IApplicationPackageListProvider applicationPackageListProvider,
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-		base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-	{
-	}
+    public PackageDeactivator(IApplicationPackageListProvider applicationPackageListProvider,
+        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
+        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
+    {
+    }
 
-	#endregion
+    #endregion
 
-	#region Methods: Protected
+    #region Methods: Protected
 
-	protected override string CreateRequestData<TRequest>(TRequest request)
-	{
-		return "\"" + request + "\"";
-	}
+    protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
 
-	#endregion
+    #endregion
 
-	#region Methods: Public
+    #region Methods: Public
 
-	/// <inheritdoc cref="IPackageDeactivator.Deactivate"/>
-	public void Deactivate(string packageName)
-	{
-		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		Guid packageUId = GetPackageUId(packageName);
-		BaseResponse deactivateResponse = SendRequest<Guid, BaseResponse>(PackageServiceUrl, "DeactivatePackage", packageUId);
-		ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
-	}
+    /// <inheritdoc cref="IPackageDeactivator.Deactivate"/>
+    public void Deactivate(string packageName)
+    {
+        packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+        Guid packageUId = GetPackageUId(packageName);
+        BaseResponse deactivateResponse =
+            SendRequest<Guid, BaseResponse>(PackageServiceUrl, "DeactivatePackage", packageUId);
+        ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
+    }
 
-	#endregion
+    #endregion
 }

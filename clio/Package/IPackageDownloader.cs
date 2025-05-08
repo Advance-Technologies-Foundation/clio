@@ -1,28 +1,26 @@
 using System.Collections.Generic;
 
-namespace Clio.Package
+namespace Clio.Package;
+
+#region Interface: IPackageDownloader
+
+public interface IPackageDownloader
 {
+    #region Methods: Public
 
-	#region Interface: IPackageDownloader
+    void DownloadZipPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null);
 
-	public interface IPackageDownloader
-	{
+    void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null);
 
-		#region Methods: Public
+    void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null);
 
-		void DownloadZipPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
-			string destinationPath = null);
-		void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null,
-			string destinationPath = null);
-		void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
-			string destinationPath = null); 
-		void DownloadPackage(string packageName, EnvironmentSettings environmentSettings  = null,
-			string destinationPath = null);
+    void DownloadPackage(string packageName, EnvironmentSettings environmentSettings = null,
+        string destinationPath = null);
 
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

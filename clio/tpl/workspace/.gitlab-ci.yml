@@ -1,9 +1,9 @@
 ﻿stages:
   - deploy
-    
+
 deploy:
   stage: deploy
-  dependencies: []
+  dependencies: [ ]
   tags:
     - clio
   only:

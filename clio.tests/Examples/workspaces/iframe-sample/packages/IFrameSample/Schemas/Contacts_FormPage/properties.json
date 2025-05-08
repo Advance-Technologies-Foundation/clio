@@ -1,7 +1,7 @@
 ﻿{
-  "Properties": {
-    "CreatedInVersion": "8.1.1.3492",
-    "Group": "Page",
-    "SchemaType": "AngularSchema"
-  }
+    "Properties": {
+        "CreatedInVersion": "8.1.1.3492",
+        "Group": "Page",
+        "SchemaType": "AngularSchema"
+    }
 }

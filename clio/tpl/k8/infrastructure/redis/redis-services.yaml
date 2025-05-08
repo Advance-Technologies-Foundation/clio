@@ -10,10 +10,10 @@ metadata:
 spec:
   selector:
     app: clio-redis
-  type: LoadBalancer 
+  type: LoadBalancer
   ports:
-  - port: 6379
-    targetPort: 6379
+    - port: 6379
+      targetPort: 6379
 
 
 ---
@@ -29,7 +29,7 @@ metadata:
 spec:
   selector:
     app: clio-redis
-  type: ClusterIP 
+  type: ClusterIP
   ports:
-  - port: 6379
-    targetPort: 6379
+    - port: 6379
+      targetPort: 6379

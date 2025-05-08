@@ -1,28 +1,25 @@
-namespace Clio.Common.Responses
+namespace Clio.Common.Responses;
+
+using System.Runtime.Serialization;
+
+#region Class: ValueResponse
+
+[DataContract]
+public class ValueResponse<TValue> : BaseResponse
 {
-	using System.Runtime.Serialization;
+    #region Constructors: Public
 
-	#region Class: ValueResponse
+    public ValueResponse()
+    {
+    }
 
-	[DataContract]
-	public class ValueResponse<TValue> : BaseResponse
-	{
+    #endregion
 
-		#region Constructors: Public
+    #region Properties: Public
 
-		public ValueResponse() { }
+    [DataMember(Name = "value")] public TValue Value { get; set; }
 
-		#endregion
-
-		#region Properties: Public
-
-		[DataMember(Name = "value")]
-		public TValue Value { get; set; }
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

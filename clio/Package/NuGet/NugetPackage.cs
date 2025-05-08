@@ -1,65 +1,65 @@
-﻿using System;
+using System;
 
-namespace Clio.Project.NuGet
+namespace Clio.Project.NuGet;
+
+#region Class: NugetPackage
+
+public class NugetPackage
 {
+    #region Constructors: Public
 
-	#region Class: NugetPackage
+    public NugetPackage(string name, PackageVersion version)
+    {
+        Name = name;
+        Version = version;
+    }
 
-	public class NugetPackage
-	{
+    #endregion
 
-		#region Constructors: Public
+    #region Properties: Public
 
-		public NugetPackage(string name, PackageVersion version) {
-			Name = name;
-			Version = version;
-		}
+    public string Name { get; }
+    public PackageVersion Version { get; }
 
-		#endregion
+    #endregion
 
-		#region Properties: Public
+    #region Methods: Public
 
-		public string Name { get; }
-		public PackageVersion Version { get; }
+    public override bool Equals(object nugetPackage) => Equals(nugetPackage as NugetPackage);
 
-		#endregion
+    public bool Equals(NugetPackage nugetPackage) =>
+        ReferenceEquals(nugetPackage, this) ||
+        (!ReferenceEquals(nugetPackage, null) &&
+         Name == nugetPackage.Name &&
+         Version == nugetPackage.Version);
 
-		#region Methods: Public
+    public override int GetHashCode()
+    {
+        string calculation = $"{Name}{Version}";
+        return calculation.GetHashCode();
+    }
 
-		public override bool Equals(Object nugetPackage) {
-			return Equals(nugetPackage as NugetPackage);
-		}
+    public static bool operator ==(NugetPackage nugetPackage1, NugetPackage nugetPackage2)
+    {
+        if (ReferenceEquals(nugetPackage1, null))
+        {
+            return ReferenceEquals(nugetPackage2, null);
+        }
 
-		public bool Equals(NugetPackage nugetPackage) {
-			return object.ReferenceEquals(nugetPackage, this) ||
-			       (!object.ReferenceEquals(nugetPackage, null) &&
-			        Name == nugetPackage.Name &&
-			        Version == nugetPackage.Version);
-		}
+        return nugetPackage1.Equals(nugetPackage2);
+    }
 
-		public override int GetHashCode() {
-			var calculation = $"{Name}{Version}";
-			return calculation.GetHashCode();
-		}
+    public static bool operator !=(NugetPackage nugetPackage1, NugetPackage nugetPackage2)
+    {
+        if (ReferenceEquals(nugetPackage1, null))
+        {
+            return ReferenceEquals(nugetPackage2, null);
+        }
 
-		public static bool operator ==(NugetPackage nugetPackage1, NugetPackage nugetPackage2) {
-			if (Object.ReferenceEquals(nugetPackage1, null)) {
-				return Object.ReferenceEquals(nugetPackage2, null);
-			}
-			return nugetPackage1.Equals(nugetPackage2);
-		}
+        return !nugetPackage1.Equals(nugetPackage2);
+    }
 
-		public static bool operator !=(NugetPackage nugetPackage1, NugetPackage nugetPackage2) {
-			if (Object.ReferenceEquals(nugetPackage1, null)) {
-				return Object.ReferenceEquals(nugetPackage2, null);
-			}
-			return !nugetPackage1.Equals(nugetPackage2);
-		}
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

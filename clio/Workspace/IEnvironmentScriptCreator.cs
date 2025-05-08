@@ -1,20 +1,16 @@
-namespace Clio.Workspaces
+namespace Clio.Workspaces;
+
+using System;
+
+#region Interface: IEnvironmentScriptCreator
+
+public interface IEnvironmentScriptCreator
 {
-	using System;
+    #region Methods: Public
 
-	#region Interface: IEnvironmentScriptCreator
+    void Create(Version nugetCreatioSdkVersion);
 
-	public interface IEnvironmentScriptCreator
-	{
-
-		#region Methods: Public
-
-		void Create(Version nugetCreatioSdkVersion);
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

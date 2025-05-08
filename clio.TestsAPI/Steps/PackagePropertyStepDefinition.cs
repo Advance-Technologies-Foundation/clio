@@ -1,30 +1,26 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Creatio.Client;
 using FluentAssertions;
 
 namespace clio.ApiTest.Steps;
 
 [Binding]
-public class PackagePropertyStepDefinition: BaseServiceStepDefinition<GetPackagesResponse>
+public class PackagePropertyStepDefinition(ICreatioClient creatioClient, AppSettings appSettings) : BaseServiceStepDefinition<GetPackagesResponse>(creatioClient,
+    appSettings)
 {
+    internal override string Route => "/ServiceModel/PackageService.svc/GetPackages";
 
-	internal override string Route => "/ServiceModel/PackageService.svc/GetPackages";
-
-	public PackagePropertyStepDefinition(ICreatioClient creatioClient, AppSettings appSettings) : base(creatioClient, appSettings) {
-	}
-
-	[Then(@"package ""(.*)"" has property ""(.*)"" with value ""(.*)""")]
-	public void ThenPackageHasPropertyWithValue(string packageName, string propertyName, string expectedPropertyValue){
+    [Then(@"package ""(.*)"" has property ""(.*)"" with value ""(.*)""")]
+    public void ThenPackageHasPropertyWithValue(string packageName, string propertyName, string expectedPropertyValue)
+    {
         GetPackagesResponse serviceResponse = GetServiceResopnse();
-        var package = serviceResponse
-			.packages
-			.FirstOrDefault(p=> p.name == packageName);
-		string actualPropertyValue = GeObjectPropertyValue(package, propertyName);
-		actualPropertyValue.Should().Be(expectedPropertyValue);
-	}
-
+        Packages? package = serviceResponse
+            .packages
+            .FirstOrDefault(p => p.name == packageName);
+        string actualPropertyValue = GeObjectPropertyValue(package, propertyName);
+        actualPropertyValue.Should().Be(expectedPropertyValue);
+    }
 }
-
 
 public record GetPackagesResponse(
     object errorInfo,
@@ -53,12 +49,3 @@ public record Packages(
     bool isChanged,
     bool isLocked
 );
-
-
-
-
-
-
-
-
-

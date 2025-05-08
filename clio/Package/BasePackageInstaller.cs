@@ -1,278 +1,321 @@
-﻿namespace Clio.Package
+namespace Clio.Package;
+
+using Common;
+using Clio.Common.Responses;
+using WebApplication;
+using Newtonsoft.Json;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using System.Threading;
+using System;
+using System.Linq;
+
+public abstract class BasePackageInstaller
 {
-	using Clio.Common;
-	using Clio.Common.Responses;
-	using Clio.WebApplication;
-	using Newtonsoft.Json;
-	using System.IO;
-	using System.Text;
-	using System.Threading.Tasks;
-	using System.Threading;
-	using System;
-	using System.Linq;
+    #region Constants: Private
 
-	public abstract class BasePackageInstaller {
+    private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
+    private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
+    private const string DefLogFileName = "cliolog.txt";
+    private readonly IApplicationLogProvider _applicationLogProvider;
 
-		#region Constants: Private
+    #endregion
 
-		private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
-		private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
-		private const string DefLogFileName = "cliolog.txt";
-		private readonly IApplicationLogProvider _applicationLogProvider;
+    #region Fields: Private
 
-		#endregion
+    private readonly EnvironmentSettings _environmentSettings;
+    protected readonly IApplicationClientFactory _applicationClientFactory;
+    private readonly IPackageArchiver _packageArchiver;
+    private readonly ISqlScriptExecutor _scriptExecutor;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly IPackageLockManager _packageLockManager;
+    protected readonly ILogger _logger;
+    private readonly IApplication _application;
+    private string _reportPath;
 
-		#region Fields: Private
+    #endregion
 
-		private readonly EnvironmentSettings _environmentSettings;
-		protected readonly IApplicationClientFactory _applicationClientFactory;
-		private readonly IPackageArchiver _packageArchiver;
-		private readonly ISqlScriptExecutor _scriptExecutor;
-		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private readonly IPackageLockManager _packageLockManager;
-		protected readonly ILogger _logger;
-		private readonly IApplication _application;
-		private string _reportPath;
+    #region Fields: Protected
 
-		#endregion
+    protected readonly IFileSystem _fileSystem;
 
-		#region Fields: Protected
+    #endregion
 
-		protected readonly IFileSystem _fileSystem;
+    #region Constructors: Public
 
-		#endregion
+    public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
+        IApplicationClientFactory applicationClientFactory, IApplication application,
+        IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
+        IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger,
+        IPackageLockManager packageLockManager)
+    {
+        environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
+        application.CheckArgumentNull(nameof(application));
+        packageArchiver.CheckArgumentNull(nameof(packageArchiver));
+        scriptExecutor.CheckArgumentNull(nameof(scriptExecutor));
+        serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
+        fileSystem.CheckArgumentNull(nameof(fileSystem));
+        logger.CheckArgumentNull(nameof(logger));
+        _applicationLogProvider = applicationLogProvider;
+        _environmentSettings = environmentSettings;
+        _applicationClientFactory = applicationClientFactory;
+        _application = application;
+        _packageArchiver = packageArchiver;
+        _scriptExecutor = scriptExecutor;
+        _serviceUrlBuilder = serviceUrlBuilder;
+        _fileSystem = fileSystem;
+        _logger = logger;
+        _packageLockManager = packageLockManager;
+    }
 
-		#region Constructors: Public
+    #endregion
 
-		public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
-			IApplicationClientFactory applicationClientFactory, IApplication application,
-			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
-			application.CheckArgumentNull(nameof(application));
-			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
-			scriptExecutor.CheckArgumentNull(nameof(scriptExecutor));
-			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
-			fileSystem.CheckArgumentNull(nameof(fileSystem));
-			logger.CheckArgumentNull(nameof(logger));
-			_applicationLogProvider = applicationLogProvider;
-			_environmentSettings = environmentSettings;
-			_applicationClientFactory = applicationClientFactory;
-			_application = application;
-			_packageArchiver = packageArchiver;
-			_scriptExecutor = scriptExecutor;
-			_serviceUrlBuilder = serviceUrlBuilder;
-			_fileSystem = fileSystem;
-			_logger = logger;
-			_packageLockManager = packageLockManager;
-		}
+    #region Properties: Protected
 
-		#endregion
+    protected abstract string InstallUrl { get; }
 
-		#region Properties: Protected
+    protected abstract string BackupUrl { get; }
+    public bool CheckLogsOnSuccessMessage => GlobalContext.FailOnError;
 
-		protected abstract string InstallUrl { get; }
+    #endregion
 
-		protected abstract string BackupUrl { get; }
-		public bool CheckLogsOnSuccessMessage {
-			get {
-				return GlobalContext.FailOnError;
-			}
-		}
+    #region Methods: Private
 
+    protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
+        _serviceUrlBuilder.Build(url, environmentSettings);
 
-		#endregion
+    private bool DeveloperModeEnabled(EnvironmentSettings environmentSettings) =>
+        environmentSettings.DeveloperModeEnabled.HasValue && environmentSettings.DeveloperModeEnabled.Value;
 
-		#region Methods: Private
+    private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+        _applicationClientFactory.CreateClient(environmentSettings);
 
-		protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
-			_serviceUrlBuilder.Build(url, environmentSettings);
+    private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings) =>
+        _packageLockManager.Unlock(Enumerable.Empty<string>());
 
-		private bool DeveloperModeEnabled(EnvironmentSettings environmentSettings) =>
-			environmentSettings.DeveloperModeEnabled.HasValue && environmentSettings.DeveloperModeEnabled.Value;
+    private void SaveLogFile(string logText, string reportPath)
+    {
+        if (reportPath != null && !string.IsNullOrWhiteSpace(logText))
+        {
+            if (_fileSystem.ExistsFile(reportPath))
+            {
+                _fileSystem.DeleteFile(reportPath);
+            }
+            else if (_fileSystem.ExistsDirectory(reportPath))
+            {
+                reportPath = Path.Combine(reportPath, DefLogFileName);
+            }
 
-		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-			_applicationClientFactory.CreateClient(environmentSettings);
+            _fileSystem.WriteAllTextToFile(reportPath, logText, Encoding.UTF8);
+        }
+    }
 
-		private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings) {
-			_packageLockManager.Unlock(Enumerable.Empty<string>());
-		}
+    private string UploadPackage(string filePath, EnvironmentSettings environmentSettings)
+    {
+        _logger.WriteLine("Uploading...");
+        FileInfo fileInfo = new(filePath);
+        string packageName = fileInfo.Name;
+        IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+        applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
+        _logger.WriteLine("Uploaded");
+        return packageName;
+    }
 
-		private void SaveLogFile(string logText, string reportPath) {
-			if (reportPath != null && !string.IsNullOrWhiteSpace(logText)) {
-				if (_fileSystem.ExistsFile(reportPath)) {
-					_fileSystem.DeleteFile(reportPath);
-				} else if (_fileSystem.ExistsDirectory(reportPath)) {
-					reportPath = Path.Combine(reportPath, DefLogFileName);
-				}
-				_fileSystem.WriteAllTextToFile(reportPath, logText, Encoding.UTF8);
-			}
-		}
+    private bool CreateBackupPackage(string packageCode, string filePath,
+        EnvironmentSettings environmentSettings)
+    {
+        try
+        {
+            _logger.WriteLine("Backup process...");
+            FileInfo fileInfo = new(filePath);
+            string zipPackageName = fileInfo.Name;
+            IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+            applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" +
+                    packageCode +
+                    "\",\"Code\":\"" + packageCode +
+                    "\",\"ZipPackageName\":\"" + zipPackageName +
+                    "\",\"LastUpdate\":0}")
+                ;
+            _logger.WriteLine("Backup completed");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
-		private string UploadPackage(string filePath, EnvironmentSettings environmentSettings) {
-			_logger.WriteLine("Uploading...");
-			FileInfo fileInfo = new FileInfo(filePath);
-			string packageName = fileInfo.Name;
-			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
-			_logger.WriteLine("Uploaded");
-			return packageName;
-		}
+    protected virtual string GetInstallLog(EnvironmentSettings environmentSettings) =>
+        _applicationLogProvider.GetInstallationLog(environmentSettings);
 
-		private bool CreateBackupPackage(string packageCode, string filePath,
-			EnvironmentSettings environmentSettings) {
-			try {
-				_logger.WriteLine("Backup process...");
-				FileInfo fileInfo = new FileInfo(filePath);
-				string zipPackageName = fileInfo.Name;
-				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-				applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" + packageCode +
-						"\",\"Code\":\"" + packageCode +
-						"\",\"ZipPackageName\":\"" + zipPackageName +
-						"\",\"LastUpdate\":0}")
-					;
-				_logger.WriteLine("Backup completed");
-				return true;
-			} catch {
-				return false;
-			}
-		}
+    private string GetLogDiff(string currentLog, string completeLog) =>
+        string.IsNullOrWhiteSpace(completeLog)
+            ? string.Empty
+            : completeLog.Length > currentLog.Length
+                ? completeLog.Substring(currentLog.Length)
+                : string.Empty;
 
-		protected virtual string GetInstallLog(EnvironmentSettings environmentSettings) {
-			return _applicationLogProvider.GetInstallationLog(environmentSettings);
-		}
+    private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings)
+    {
+        CancellationToken cancellationToken = (CancellationToken)cancellationTokenObject;
+        string currentLogContent = string.Empty;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                string completeLog = GetInstallLog(environmentSettings);
+                string output = GetLogDiff(currentLogContent, completeLog);
+                if (!string.IsNullOrWhiteSpace(output))
+                {
+                    _logger.Write(output);
+                    currentLogContent = completeLog;
+                    if (!string.IsNullOrWhiteSpace(_reportPath))
+                    {
+                        SaveLogFile(currentLogContent, _reportPath);
+                    }
+                }
 
-		private string GetLogDiff(string currentLog, string completeLog) {
-			return string.IsNullOrWhiteSpace(completeLog)
-				? string.Empty
-				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
-		}
+                Thread.Sleep(3000);
+            }
+            catch (Exception e)
+            {
+                _logger.WriteLine(e.ToString());
+            }
+        }
 
-		private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings) {
-			var cancellationToken = (CancellationToken)cancellationTokenObject;
-			var currentLogContent = string.Empty;
-			while (!cancellationToken.IsCancellationRequested) {
-				try {
-					var completeLog = GetInstallLog(environmentSettings);
-					var output = GetLogDiff(currentLogContent, completeLog);
-					if (!string.IsNullOrWhiteSpace(output)) {
-						_logger.Write(output);
-						currentLogContent = completeLog;
-						if (!string.IsNullOrWhiteSpace(_reportPath))
-							SaveLogFile(currentLogContent, _reportPath);
-					}
-					Thread.Sleep(3000);
-				} catch (System.Exception e) {
-					_logger.WriteLine(e.ToString());
-				}
-			}
-			return currentLogContent;
-		}
+        return currentLogContent;
+    }
 
-		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
+    protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
-		private string InstallPackageOnServer(string fileName, EnvironmentSettings environmentSettings,
-			PackageInstallOptions packageInstallOptions) {
-			string installUrl = packageInstallOptions == null
-				? InstallUrl
-				: InstallWithOptionsUrl;
-			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
-				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
-		}
+    private string InstallPackageOnServer(string fileName, EnvironmentSettings environmentSettings,
+        PackageInstallOptions packageInstallOptions)
+    {
+        string installUrl = packageInstallOptions == null
+            ? InstallUrl
+            : InstallWithOptionsUrl;
+        IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+        return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
+            GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
+    }
 
-		private (bool, string) InstallPackageOnServerWithLogListener(string fileName,
-			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
-			_logger.WriteLine($"Install {fileName} ...");
-			_logger.WriteLine("Installation log:");
-			var cancellationTokenSource = new CancellationTokenSource();
-			var log = string.Empty;
-			var task = Task.Factory.StartNew(
-				(cancellationToken) =>
-					log = ListenForLogs(cancellationToken, environmentSettings), cancellationTokenSource.Token);
-			string result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
-			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
-			cancellationTokenSource.Cancel();
-			task.Wait();
-			var completeInstallLog = GetInstallLog(environmentSettings);
-			bool successLog = true;
-			if (CheckLogsOnSuccessMessage) {
-				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
-			}
-			_logger.Write(GetLogDiff(log, completeInstallLog));
-			var success = (response != null && response.Success || response == null) && successLog;
-			return (success, completeInstallLog);
-		}
+    private (bool, string) InstallPackageOnServerWithLogListener(string fileName,
+        EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
+    {
+        _logger.WriteLine($"Install {fileName} ...");
+        _logger.WriteLine("Installation log:");
+        CancellationTokenSource cancellationTokenSource = new();
+        string log = string.Empty;
+        Task<string> task = Task.Factory.StartNew(
+            (cancellationToken) =>
+                log = ListenForLogs(cancellationToken, environmentSettings), cancellationTokenSource.Token);
+        string result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
+        BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
+        cancellationTokenSource.Cancel();
+        task.Wait();
+        string completeInstallLog = GetInstallLog(environmentSettings);
+        bool successLog = true;
+        if (CheckLogsOnSuccessMessage)
+        {
+            successLog = completeInstallLog.ToLower().Contains("application installed successfully");
+        }
 
-		private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
-			PackageInstallOptions packageInstallOptions) {
-			string packageName = UploadPackage(filePath, environmentSettings);
-			string packageCode = packageName.Split('.')[0];
-			_logger.WriteInfo($"{environmentSettings.Uri}");
-			if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
-				return (false, "Dont created backup.");
-			}
-			(bool success, string logText) =
-				InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);
-			if (DeveloperModeEnabled(environmentSettings)) {
-				UnlockMaintainerPackageInternal(environmentSettings);
-			}
-			if (DeveloperModeEnabled(environmentSettings) || environmentSettings.IsNetCore) {
-				try {
-					_application.Restart();
-				} catch (Exception ex) {
-					_logger.WriteLine($"Error while restarting application: {ex.Message}");
-				}
-			}
-			return (success, logText);
-		}
+        _logger.Write(GetLogDiff(log, completeInstallLog));
+        bool success = ((response != null && response.Success) || response == null) && successLog;
+        return (success, completeInstallLog);
+    }
 
-		private (bool, string) InstallPackageFromFolder(string packageFolderPath,
-			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions){
-			var packedFilePath = $"{packageFolderPath}.gz";
-			_packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
-			bool success = false;
-			string logText;
-			try {
-				(success, logText) = InstallPackedPackage(packedFilePath, environmentSettings, packageInstallOptions);
-			} finally {
-				_fileSystem.DeleteFile(packedFilePath);
-			}
-			return (success, logText);
-		}
+    private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
+        PackageInstallOptions packageInstallOptions)
+    {
+        string packageName = UploadPackage(filePath, environmentSettings);
+        string packageCode = packageName.Split('.')[0];
+        _logger.WriteInfo($"{environmentSettings.Uri}");
+        if (!CreateBackupPackage(packageCode, filePath, environmentSettings))
+        {
+            return (false, "Dont created backup.");
+        }
 
-		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath,
-			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
-			bool success = false;
-			string logText = null;
-			if (_fileSystem.ExistsFile(packagePackedFileOrFolderPath)) {
-				(success, logText) =
-					InstallPackedPackage(packagePackedFileOrFolderPath, environmentSettings, packageInstallOptions);
-			} else if (_fileSystem.ExistsDirectory(packagePackedFileOrFolderPath)) {
-				(success, logText) = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath,
-					environmentSettings, packageInstallOptions);
-			} else {
-				_logger.WriteLine($"Specified package not found by path {packagePackedFileOrFolderPath}");
-			}
-			return (success, logText);
-		}
+        (bool success, string logText) =
+            InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);
+        if (DeveloperModeEnabled(environmentSettings))
+        {
+            UnlockMaintainerPackageInternal(environmentSettings);
+        }
 
-		#endregion
+        if (DeveloperModeEnabled(environmentSettings) || environmentSettings.IsNetCore)
+        {
+            try
+            {
+                _application.Restart();
+            }
+            catch (Exception ex)
+            {
+                _logger.WriteLine($"Error while restarting application: {ex.Message}");
+            }
+        }
 
-		#region Methods: Protected
+        return (success, logText);
+    }
 
-		protected bool InternalInstall(string packagePath, EnvironmentSettings environmentSettings = null,
-			PackageInstallOptions packageInstallOptions = null, string reportPath = null){
-			environmentSettings ??= _environmentSettings;
-			packagePath = _fileSystem.GetCurrentDirectoryIfEmpty(packagePath);
-			_reportPath = reportPath;
-			(bool success, string logText) = InstallPackage(packagePath, environmentSettings, packageInstallOptions);
-			SaveLogFile(logText, reportPath);
-			return success;
-		}
+    private (bool, string) InstallPackageFromFolder(string packageFolderPath,
+        EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
+    {
+        string packedFilePath = $"{packageFolderPath}.gz";
+        _packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
+        bool success = false;
+        string logText;
+        try
+        {
+            (success, logText) = InstallPackedPackage(packedFilePath, environmentSettings, packageInstallOptions);
+        }
+        finally
+        {
+            _fileSystem.DeleteFile(packedFilePath);
+        }
 
-		#endregion
+        return (success, logText);
+    }
 
-	}
+    private (bool, string) InstallPackage(string packagePackedFileOrFolderPath,
+        EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
+    {
+        bool success = false;
+        string logText = null;
+        if (_fileSystem.ExistsFile(packagePackedFileOrFolderPath))
+        {
+            (success, logText) =
+                InstallPackedPackage(packagePackedFileOrFolderPath, environmentSettings, packageInstallOptions);
+        }
+        else if (_fileSystem.ExistsDirectory(packagePackedFileOrFolderPath))
+        {
+            (success, logText) = InstallPackageFromFolder(packagePackedFileOrFolderPath,
+                environmentSettings, packageInstallOptions);
+        }
+        else
+        {
+            _logger.WriteLine($"Specified package not found by path {packagePackedFileOrFolderPath}");
+        }
+
+        return (success, logText);
+    }
+
+    #endregion
+
+    #region Methods: Protected
+
+    protected bool InternalInstall(string packagePath, EnvironmentSettings environmentSettings = null,
+        PackageInstallOptions packageInstallOptions = null, string reportPath = null)
+    {
+        environmentSettings ??= _environmentSettings;
+        packagePath = _fileSystem.GetCurrentDirectoryIfEmpty(packagePath);
+        _reportPath = reportPath;
+        (bool success, string logText) = InstallPackage(packagePath, environmentSettings, packageInstallOptions);
+        SaveLogFile(logText, reportPath);
+        return success;
+    }
+
+    #endregion
 }

@@ -1,21 +1,17 @@
-﻿namespace Clio.Project.NuGet
+namespace Clio.Project.NuGet;
+
+using System.Collections.Generic;
+
+#region Interface: IInstallNugetPackage
+
+public interface IInstallNugetPackage
 {
-	using System.Collections.Generic;
+    #region Methods: Public
 
-	#region Interface: IInstallNugetPackage
+    void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl);
+    void Install(string packageName, string version, string nugetSourceUrl);
 
-	public interface IInstallNugetPackage
-	{
-
-		#region Methods: Public
-
-		void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl);
-		void Install(string packageName, string version, string nugetSourceUrl);
-
-		#endregion
-
-	}
-
-	#endregion
-
+    #endregion
 }
+
+#endregion

@@ -1,1 +1,1 @@
-﻿namespace Clio.Tests;
+namespace Clio.Tests;

@@ -1,19 +1,14 @@
-﻿namespace Clio.Command;
+namespace Clio.Command;
 
 public class WindowsFeature
 {
-	public string Name { get; set; }
+    public string Name { get; set; }
 
-	public string Caption { get; set; }
+    public string Caption { get; set; }
 
-	public string State { get {
-			return Installed ? "OK" : "Not installed";
-		}
-	}
+    public string State => Installed ? "OK" : "Not installed";
 
-	public bool Installed { get; set; }
+    public bool Installed { get; set; }
 
-	public override string ToString() {
-		return $"{State} : {Name}";
-	}
+    public override string ToString() => $"{State} : {Name}";
 }

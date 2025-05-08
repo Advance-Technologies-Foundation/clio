@@ -1,7 +1,6 @@
-﻿namespace Clio.Package
+namespace Clio.Package;
+
+public class PackageDescriptorDto
 {
-	public class PackageDescriptorDto
-	{
-		public PackageDescriptor Descriptor { get; set; }
-	}
+    public PackageDescriptor Descriptor { get; set; }
 }
