@@ -1,15 +1,14 @@
 using System;
 using System.Net.WebSockets;
+using System.Text.Json;
 using System.Threading;
+
 using Clio.Common;
 using CommandLine;
 using Creatio.Client.Dto;
-using System.Text.Json;
 using Terrasoft.Common;
 
 namespace Clio.Command;
-
-#region Class: ListenOptions
 
 [Verb("listen", HelpText = "Subscribe to a websocket")]
 public class ListenOptions : EnvironmentOptions
@@ -28,11 +27,7 @@ public class ListenOptions : EnvironmentOptions
     public bool Silent { get; set; }
 }
 
-#endregion
-
-#region Class: ListenCommand
-
-public class ListenCommand : Command<ListenOptions>
+public class ListenCommand : Command<ListenOptions>, IDisposable
 {
     private readonly IApplicationClient _applicationClient;
     private readonly ILogger _logger;
@@ -40,11 +35,9 @@ public class ListenCommand : Command<ListenOptions>
     private readonly IFileSystem _fileSystem;
     private const string StartLogBroadcast = "/rest/ATFLogService/StartLogBroadcast";
     private const string StopLogBroadcast = "/rest/ATFLogService/ResetConfiguration";
-    private string LogFilePath = string.Empty;
-    private bool Silent;
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
-
-    #region Constructors: Public
+    private string logFilePath = string.Empty;
+    private bool silent;
+    private readonly CancellationTokenSource _cancellationTokenSource = new ();
 
     public ListenCommand(IApplicationClient applicationClient, ILogger logger, EnvironmentSettings environmentSettings,
         IFileSystem fileSystem)
@@ -57,15 +50,11 @@ public class ListenCommand : Command<ListenOptions>
         _applicationClient.MessageReceived += OnMessageReceived;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(ListenOptions options)
     {
         CancellationToken token = _cancellationTokenSource.Token;
-        LogFilePath = options.FileName;
-        Silent = options.Silent;
+        logFilePath = options.FileName;
+        silent = options.Silent;
         _applicationClient.Listen(token);
         StartLogger(options);
         Console.ReadKey();
@@ -79,7 +68,7 @@ public class ListenCommand : Command<ListenOptions>
         string rootPath = _environmentSettings.IsNetCore ? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
         string requestUrl = rootPath + StartLogBroadcast;
         var payload = new { logLevelStr = options.LogLevel, bufferSize = 1, loggerPattern = options.LogPattern };
-        JsonSerializerOptions serializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        JsonSerializerOptions serializerOptions = new () { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         string payloadString = JsonSerializer.Serialize(payload, serializerOptions);
         _applicationClient.ExecutePostRequest(requestUrl, payloadString);
     }
@@ -99,31 +88,32 @@ public class ListenCommand : Command<ListenOptions>
                 HandleTelemetryServiceMessages(message);
                 break;
             default:
-                //_logger.WriteLine(message.Body);
+                // _logger.WriteLine(message.Body);
                 break;
         }
     }
 
     private void HandleTelemetryServiceMessages(WsMessage message)
     {
-        if (!Silent)
+        if (!silent)
         {
             _logger.WriteLine(message.Body);
         }
 
-        if (!LogFilePath.IsNullOrEmpty())
+        if (!logFilePath.IsNullOrEmpty())
         {
-            System.IO.File.AppendAllText(LogFilePath, Environment.NewLine + message.Body);
+            System.IO.File.AppendAllText(logFilePath, Environment.NewLine + message.Body);
         }
     }
 
     private void OnConnectionStateChanged(object sender, WebSocketState state) =>
         _logger.WriteLine($"Connection state changed to {state}");
 
-    #endregion
+    public void Dispose()
+    {
+        throw new NotImplementedException();
+    }
 }
-
-#endregion
 
 public record TelemetryMessage(LogPortion[] logPortion, int cpu, int ramMb);
 
@@ -133,5 +123,4 @@ public record LogPortion(
     object thread,
     string logger,
     string message,
-    object stackTrace
-);
+    object stackTrace);

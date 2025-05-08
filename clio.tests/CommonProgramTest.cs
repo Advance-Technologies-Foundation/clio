@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -16,8 +17,8 @@ internal class CommonProgramTest : BaseClioModuleTests
     [Test]
     public void ApplyManifestOptionsTest()
     {
-        EnvironmentOptions optionsFromFile = new() { Uri = "http://file" };
-        EnvironmentOptions optionsFromCommandLine = new() { Uri = "http://commandline" };
+        EnvironmentOptions optionsFromFile = new () { Uri = "http://file" };
+        EnvironmentOptions optionsFromCommandLine = new () { Uri = "http://commandline" };
         EnvironmentOptions resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
         resultOptions.Uri.Should().Be("http://commandline");
     }
@@ -25,7 +26,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     [Test]
     public void ApplyManifestOptionsOnlyFromFileTest()
     {
-        EnvironmentOptions optionsFromFile = new()
+        EnvironmentOptions optionsFromFile = new ()
         {
             Uri = "http://file",
             Login = "fileLogin",
@@ -35,7 +36,7 @@ internal class CommonProgramTest : BaseClioModuleTests
             ClientSecret = "fileClientSecret",
             AuthAppUri = "fileAuthAppUri"
         };
-        EnvironmentOptions optionsFromCommandLine = new();
+        EnvironmentOptions optionsFromCommandLine = new ();
         EnvironmentOptions resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
         optionsFromFile.Uri.Should().Be(resultOptions.Uri);
         optionsFromFile.Login.Should().Be(resultOptions.Login);
@@ -49,7 +50,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     [Test]
     public void ApplyEnvManifestOptionsTest()
     {
-        EnvironmentOptions optionsFromFile = new()
+        EnvironmentOptions optionsFromFile = new ()
         {
             Uri = "http://file",
             Login = "fileLogin",
@@ -59,7 +60,7 @@ internal class CommonProgramTest : BaseClioModuleTests
             ClientSecret = "fileClientSecret",
             AuthAppUri = "fileAuthAppUri"
         };
-        EnvironmentOptions optionsFromCommandLine = new() { Environment = "myEnv" };
+        EnvironmentOptions optionsFromCommandLine = new () { Environment = "myEnv" };
         EnvironmentOptions resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
         optionsFromCommandLine.Uri.Should().Be(resultOptions.Uri);
         optionsFromCommandLine.Login.Should().Be(resultOptions.Login);
@@ -73,7 +74,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void ApplyEnvManifestOptionsWhenOptionInFileNullTest()
     {
         EnvironmentOptions optionsFromFile = null;
-        EnvironmentOptions optionsFromCommandLine = new() { Environment = "myEnv" };
+        EnvironmentOptions optionsFromCommandLine = new () { Environment = "myEnv" };
         EnvironmentOptions resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
         optionsFromCommandLine.Uri.Should().Be(resultOptions.Uri);
         optionsFromCommandLine.Login.Should().Be(resultOptions.Login);
@@ -96,7 +97,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void ApplyEnvManifestOptionsWhenOptionInFileNullAndCommandLineIsEmpty()
     {
         EnvironmentOptions optionsFromFile = null;
-        EnvironmentOptions optionsFromCommandLine = new();
+        EnvironmentOptions optionsFromCommandLine = new ();
         EnvironmentOptions resultOptions = Program.CombinedOption(optionsFromFile, optionsFromCommandLine);
         optionsFromCommandLine.Uri.Should().Be(resultOptions.Uri);
         optionsFromCommandLine.Login.Should().Be(resultOptions.Login);
@@ -109,12 +110,12 @@ internal class CommonProgramTest : BaseClioModuleTests
     [Test]
     public void ReadEnvironmentOptionsFromManifestFile()
     {
-        FileSystem.MockExamplesFolder("deployments-manifest");
+        fileSystem.MockExamplesFolder("deployments-manifest");
         string manifestFileName = "full-creatio-config.yaml";
-        IEnvironmentManager environmentManager = Container.Resolve<IEnvironmentManager>();
+        IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
         string manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
         EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
-        FileSystem commonFileSystem = new(FileSystem);
+        FileSystem commonFileSystem = new (fileSystem);
         EnvironmentOptions environmentOptionsFromFile =
             Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
         envSettingsFromFile.Uri.Should().Be(environmentOptionsFromFile.Uri);
@@ -125,12 +126,12 @@ internal class CommonProgramTest : BaseClioModuleTests
     [Test]
     public void ReadEnvironmentOptionsFromOnlySettingsManifestFile()
     {
-        FileSystem.MockExamplesFolder("deployments-manifest");
+        fileSystem.MockExamplesFolder("deployments-manifest");
         string manifestFileName = "only-settings.yaml";
-        IEnvironmentManager environmentManager = Container.Resolve<IEnvironmentManager>();
+        IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
         string manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
-        EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
-        FileSystem commonFileSystem = new(FileSystem);
+        _ = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
+        FileSystem commonFileSystem = new (fileSystem);
         EnvironmentOptions environmnetOptionsFromFile =
             Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
         environmnetOptionsFromFile.Should().BeNull();
@@ -140,7 +141,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void IsCfgOpenCommand_WithCfgOpenArguments_ShouldBeTrue()
     {
         // Arrange
-        string[] args = new[] { "cfg", "open" };
+        string[] args =["cfg", "open"];
         Program.IsCfgOpenCommand = false; // Reset the value before the test
 
         // Act
@@ -154,7 +155,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void IsCfgOpenCommand_WithEmptyArguments_ShouldBeFalse()
     {
         // Arrange
-        string[] args = new string[0];
+        string[] args =[];
         Program.IsCfgOpenCommand = false; // Reset the value before the test
 
         // Act
@@ -168,7 +169,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void IsCfgOpenCommand_WithOnlyCfgArgument_ShouldBeFalse()
     {
         // Arrange
-        string[] args = new[] { "cfg" };
+        string[] args =["cfg"];
         Program.IsCfgOpenCommand = false; // Reset the value before the test
 
         // Act
@@ -182,7 +183,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void IsCfgOpenCommand_WithDifferentArguments_ShouldBeFalse()
     {
         // Arrange
-        string[] args = new[] { "other", "command" };
+        string[] args =["other", "command"];
         Program.IsCfgOpenCommand = false; // Reset the value before the test
 
         // Act
@@ -197,7 +198,7 @@ internal class CommonProgramTest : BaseClioModuleTests
     public void IsCfgOpenCommand_WithCfgAndDifferentSubcommand_ShouldBeFalse()
     {
         // Arrange
-        string[] args = new[] { "cfg", "other" };
+        string[] args =["cfg", "other"];
         Program.IsCfgOpenCommand = false; // Reset the value before the test
 
         // Act

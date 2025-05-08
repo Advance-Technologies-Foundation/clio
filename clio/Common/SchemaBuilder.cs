@@ -1,62 +1,34 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+
 using Clio.Package;
 
 namespace Clio.Common;
 
 public interface ISchemaBuilder
 {
-    #region Properties: Public
-
     List<string> SupportedMacroKeys { get; }
 
-    #endregion
-
-    #region Methods: Public
-
     void AddSchema(string schemaType, string schemaName, string packagePath);
-
-    #endregion
 }
 
-public class SchemaBuilder : ISchemaBuilder
+public class SchemaBuilder(IFileSystem fileSystem, ITemplateProvider templateProvider,
+    IPackageInfoProvider packageInfoProvider): ISchemaBuilder
 {
-    #region Fields: Private
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ITemplateProvider _templateProvider = templateProvider;
+    private readonly IPackageInfoProvider _packageInfoProvider = packageInfoProvider;
 
-    private readonly IFileSystem _fileSystem;
-    private readonly ITemplateProvider _templateProvider;
-    private readonly IPackageInfoProvider _packageInfoProvider;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public SchemaBuilder(IFileSystem fileSystem, ITemplateProvider templateProvider,
-        IPackageInfoProvider packageInfoProvider)
-    {
-        _fileSystem = fileSystem;
-        _templateProvider = templateProvider;
-        _packageInfoProvider = packageInfoProvider;
-    }
-
-    #endregion
-
-    #region Properties: Public
-
-    public List<string> SupportedMacroKeys { get; } = new()
-    {
+    public List<string> SupportedMacroKeys { get; } =
+    [
         "[SCHEMA_NAME]",
         "[MAINTAINER]",
         "[PACKAGE_NAME]",
         "[SCHEMA_UID]",
         "[DATETIME_NOW_TICK]",
         "[PACKAGE_UID]"
-    };
-
-    #endregion
-
-    #region Methods: Public
+    ];
 
     public void AddSchema(string schemaType, string schemaName, string packagePath)
     {
@@ -81,13 +53,13 @@ public class SchemaBuilder : ISchemaBuilder
 
         string modifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.UtcNow);
 
-        Dictionary<string, string> macrosValues = new()
+        Dictionary<string, string> macrosValues = new ()
         {
-            { "[SCHEMA_NAME]", schemaName }, //User input
-            { "[MAINTAINER]", maintainer }, //package maintainer otherwise Customer
-            { "[PACKAGE_NAME]", pkgInfo.Descriptor.Name }, //package name or from path
-            { "[SCHEMA_UID]", Guid.NewGuid().ToString() }, //Guid.NewGuid()
-            { "[DATETIME_NOW_TICK]", modifiedOnUtc }, //DateTime.Now.Ticks
+            { "[SCHEMA_NAME]", schemaName }, // User input
+            { "[MAINTAINER]", maintainer }, // package maintainer otherwise Customer
+            { "[PACKAGE_NAME]", pkgInfo.Descriptor.Name }, // package name or from path
+            { "[SCHEMA_UID]", Guid.NewGuid().ToString() }, // Guid.NewGuid()
+            { "[DATETIME_NOW_TICK]", modifiedOnUtc }, // DateTime.Now.Ticks
             { "[PACKAGE_UID]", pkgInfo.Descriptor.UId.ToString() } // UID from package descriptor
         };
         _templateProvider.CopyTemplateFolder(relativeTemplateResourceFolderPath, resourcesDir, macrosValues);
@@ -95,6 +67,4 @@ public class SchemaBuilder : ISchemaBuilder
         string relativeTemplateSchemaFolderPath = Path.Combine("schemas-template", schemaType, "Schema");
         _templateProvider.CopyTemplateFolder(relativeTemplateSchemaFolderPath, schemaDir, macrosValues);
     }
-
-    #endregion
 }

@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("generate-pkg-zip", Aliases = ["compress"], HelpText = "Prepare an archive of creatio package")]
+[Verb("generate-pkg-zip", Aliases =["compress"], HelpText = "Prepare an archive of creatio package")]
 public class GeneratePkgZipOptions
 {
     [Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
@@ -21,16 +22,10 @@ public class GeneratePkgZipOptions
     public bool SkipPdb { get; set; }
 }
 
-public class CompressPackageCommand : Command<GeneratePkgZipOptions>
+public class CompressPackageCommand(IPackageArchiver packageArchiver, ILogger logger): Command<GeneratePkgZipOptions>
 {
-    private readonly IPackageArchiver _packageArchiver;
-    private readonly ILogger _logger;
-
-    public CompressPackageCommand(IPackageArchiver packageArchiver, ILogger logger)
-    {
-        _packageArchiver = packageArchiver;
-        _logger = logger;
-    }
+    private readonly IPackageArchiver _packageArchiver = packageArchiver;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(GeneratePkgZipOptions options)
     {

@@ -25,14 +25,14 @@ internal class PingAppCommandTests : BaseClioModuleTests
     [TestCase(false)]
     public void PingAppCommandShouldBeUsesAllRetryOptions(bool isNetCore)
     {
-        //Arrange
-        EnvironmentSettings.IsNetCore = isNetCore;
-        FileSystem = CreateFs();
-        BindingsModule bindingModule = new(FileSystem);
-        Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
+        // Arrange
+        environmentSettings.IsNetCore = isNetCore;
+        fileSystem = CreateFs();
+        BindingsModule bindingModule = new (fileSystem);
+        container = bindingModule.Register(environmentSettings, AdditionalRegistrations);
 
-        PingAppCommand command = Container.Resolve<PingAppCommand>();
-        PingAppOptions options = new() { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
+        PingAppCommand command = container.Resolve<PingAppCommand>();
+        PingAppOptions options = new () { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
 
         // Act
         command.Execute(options);
@@ -56,18 +56,18 @@ internal class PingAppCommandTests : BaseClioModuleTests
     [TestCase(false)]
     public void PingAppCommandShouldBeUsesAllRetryOptionsOnNet6Environment(bool isNetCore)
     {
-        //Arrange
-        FileSystem = CreateFs();
-        BindingsModule bindingModule = new(FileSystem);
-        Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
-        PingAppCommand command = Container.Resolve<PingAppCommand>();
-        PingAppOptions options = new() { TimeOut = 1, RetryCount = 2, RetryDelay = 3, IsNetCore = isNetCore };
+        // Arrange
+        fileSystem = CreateFs();
+        BindingsModule bindingModule = new (fileSystem);
+        container = bindingModule.Register(environmentSettings, AdditionalRegistrations);
+        PingAppCommand command = container.Resolve<PingAppCommand>();
+        PingAppOptions options = new () { TimeOut = 1, RetryCount = 2, RetryDelay = 3, IsNetCore = isNetCore };
         command.EnvironmentSettings.IsNetCore = true;
 
         // Act
         command.Execute(options);
 
-        //Assert
+        // Assert
         if (isNetCore)
         {
         }

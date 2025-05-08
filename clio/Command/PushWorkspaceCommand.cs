@@ -1,15 +1,13 @@
-using Clio.Command.TIDE;
-
-namespace Clio.Command;
-
 using System;
 using System.Text.Json;
-using StartProcess;
-using Common;
-using Workspaces;
-using CommandLine;
 
-#region Class: PushWorkspaceCommandOptions
+using Clio.Command.TIDE;
+using CommandLine;
+using Common;
+using StartProcess;
+using Workspaces;
+
+namespace Clio.Command;
 
 [Verb("push-workspace", Aliases = new string[] { "pushw" }, HelpText = "Push workspace to selected environment")]
 public class PushWorkspaceCommandOptions : EnvironmentOptions
@@ -22,24 +20,14 @@ public class PushWorkspaceCommandOptions : EnvironmentOptions
     public string TideRepositoryId { get; set; }
 }
 
-#endregion
-
-#region Class: PushWorkspaceCommand
-
 public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
 {
-    #region Fields: Private
-
     private readonly IWorkspace _workspace;
-    private UnlockPackageCommand _unlockPackageCommand;
+    private readonly UnlockPackageCommand _unlockPackageCommand;
     public IApplicationClientFactory _applicationClientFactory;
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
     private readonly LinkWorkspaceWithTideRepositoryCommand _linkWorkspaceWithTideRepositoryCommand;
-
-    #endregion
-
-    #region Constructors: Public
 
     public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand,
         IApplicationClientFactory applicationClientFactory, EnvironmentSettings environmentSettings,
@@ -55,10 +43,6 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
         _linkWorkspaceWithTideRepositoryCommand = linkWorkspaceWithTideRepositoryCommand;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(PushWorkspaceCommandOptions options)
     {
         try
@@ -71,7 +55,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
             {
                 try
                 {
-                    LinkWorkspaceWithTideRepositoryOptions opt = new() { TideRepositoryId = options.TideRepositoryId };
+                    LinkWorkspaceWithTideRepositoryOptions opt = new () { TideRepositoryId = options.TideRepositoryId };
                     opt.CopyFromEnvironmentSettings(options);
                     _linkWorkspaceWithTideRepositoryCommand.Execute(opt);
                     CallbackInfo(options.CallbackProcess, "Application linked with repository");
@@ -83,7 +67,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
 
             if (options.NeedUnlockPackage)
             {
-                UnlockPackageOptions unlockPackageCommandOptions = new();
+                UnlockPackageOptions unlockPackageCommandOptions = new ();
                 unlockPackageCommandOptions.CopyFromEnvironmentSettings(options);
                 unlockPackageCommandOptions.Name = string.Join(',', _workspace.WorkspaceSettings.Packages);
                 Console.WriteLine("Unlock packages...");
@@ -109,7 +93,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
         {
             IApplicationClient applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
             string runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
-            ProcessStartArgs runProcessArgs = new()
+            ProcessStartArgs runProcessArgs = new ()
             {
                 SchemaName = callbackProcess,
                 Values =
@@ -125,8 +109,4 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>
             Console.WriteLine($"Run process id {response.ProcessId}");
         }
     }
-
-    #endregion
 }
-
-#endregion

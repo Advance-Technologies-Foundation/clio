@@ -4,18 +4,14 @@ using System.Text;
 
 namespace Clio.Common;
 
-#region Class: ProcessExecutor
-
 public class ProcessExecutor : IProcessExecutor
 {
-    #region Methods: Public
-
     public string Execute(string program, string command, bool waitForExit, string workingDirectory = null,
         bool showOutput = false)
     {
         program.CheckArgumentNullOrWhiteSpace(nameof(program));
         command.CheckArgumentNullOrWhiteSpace(nameof(command));
-        using Process process = new();
+        using Process process = new ();
         process.StartInfo = new ProcessStartInfo
         {
             FileName = program,
@@ -26,7 +22,7 @@ public class ProcessExecutor : IProcessExecutor
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         process.EnableRaisingEvents = waitForExit;
 
         if (showOutput)
@@ -73,8 +69,4 @@ public class ProcessExecutor : IProcessExecutor
 
         return sb.ToString();
     }
-
-    #endregion
 }
-
-#endregion

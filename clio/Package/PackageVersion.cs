@@ -1,20 +1,13 @@
 using System;
+
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
 
-#region Class: PackageVersion
-
 public class PackageVersion : ICloneable, IComparable
 {
-    #region Constants: Public
-
     public const string LastVersion = "*";
     private const string Stable = "rc";
-
-    #endregion
-
-    #region Constructors: Public
 
     public PackageVersion(PackageVersion packageVersion)
     {
@@ -28,28 +21,16 @@ public class PackageVersion : ICloneable, IComparable
         Suffix = versionSuffix;
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public bool IsStable => Suffix == Stable;
 
     public string Suffix { get; }
 
     public Version Version { get; }
 
-    #endregion
-
-    #region Methods: Private
-
     private int CompareSuffix(PackageVersion packageVersion) =>
         string.IsNullOrWhiteSpace(Suffix)
             ? 1
             : string.Compare(Suffix, packageVersion.Suffix, StringComparison.InvariantCulture);
-
-    #endregion
-
-    #region Methods: Public
 
     public static bool operator ==(PackageVersion v1, PackageVersion v2)
     {
@@ -69,7 +50,7 @@ public class PackageVersion : ICloneable, IComparable
 
     public static bool operator <(PackageVersion v1, PackageVersion v2)
     {
-        if ((object)v1 == null)
+        if (v1 is null)
         {
             throw new ArgumentNullException(nameof(v1));
         }
@@ -79,7 +60,7 @@ public class PackageVersion : ICloneable, IComparable
 
     public static bool operator <=(PackageVersion v1, PackageVersion v2)
     {
-        if ((object)v1 == null)
+        if (v1 is null)
         {
             throw new ArgumentNullException(nameof(v1));
         }
@@ -98,7 +79,7 @@ public class PackageVersion : ICloneable, IComparable
         string suffix = index > 0
             ? fullVersionDescription.Substring(index + 1, fullVersionDescription.Length - index - 1)
             : string.Empty;
-        Version version = new(versionDescription.Trim());
+        Version version = new (versionDescription.Trim());
         return new PackageVersion(version, suffix.Trim());
     }
 
@@ -138,12 +119,7 @@ public class PackageVersion : ICloneable, IComparable
             return 1;
         }
 
-        PackageVersion packageVersion = value as PackageVersion;
-        if (packageVersion == null)
-        {
-            throw new ArgumentException(nameof(value));
-        }
-
+        PackageVersion packageVersion = value as PackageVersion ?? throw new ArgumentException(nameof(value));
         return CompareTo(packageVersion);
     }
 
@@ -159,8 +135,4 @@ public class PackageVersion : ICloneable, IComparable
         (!ReferenceEquals(obj, null) &&
          Version == obj.Version &&
          Suffix == obj.Suffix);
-
-    #endregion
 }
-
-#endregion

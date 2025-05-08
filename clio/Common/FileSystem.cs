@@ -7,20 +7,16 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+
 using Ms = System.IO.Abstractions;
 
 namespace Clio.Common;
 
-#region Class: FileSystem
-
-public class FileSystem : IFileSystem
+public class FileSystem(Ms.IFileSystem msFileSystem): IFileSystem
 {
     internal static Encoding Utf8NoBom = new UTF8Encoding(false);
 
-    private readonly Ms.IFileSystem _msFileSystem;
-    public FileSystem(Ms.IFileSystem msFileSystem) => _msFileSystem = msFileSystem;
-
-    #region Methods: Public
+    private readonly Ms.IFileSystem _msFileSystem = msFileSystem;
 
     public byte[] ReadAllBytes(string filePath) => _msFileSystem.File.ReadAllBytes(filePath);
 
@@ -45,7 +41,6 @@ public class FileSystem : IFileSystem
     }
 
     public long GetFileSize(IFileInfo fileInfo) => fileInfo.Length;
-
 
     public IFileSystemInfo CreateSymLink(string path, string pathToTarget)
     {
@@ -111,11 +106,11 @@ public class FileSystem : IFileSystem
         }
 
         _msFileSystem.File.Delete(filePath);
-        //TODO: Discuss with P.Makarchuk
-        //why return type is bool when always true
+
+        // TODO: Discuss with P.Makarchuk
+        // why return type is bool when always true
         return true;
     }
-
 
     public bool DeleteFileIfExists(string filePath) =>
         _msFileSystem.File.Exists(filePath) && DeleteFile(filePath);
@@ -125,14 +120,15 @@ public class FileSystem : IFileSystem
     public string ExtractFileNameFromPath(string filePath)
     {
         filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-        FileInfo packageFileInfo = new(filePath);
+        FileInfo packageFileInfo = new (filePath);
         return GetFileNameWithoutExtension(packageFileInfo);
     }
 
     public string ExtractFileExtensionFromPath(string filePath)
     {
         filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-        //var fileInfo = new FileInfo(filePath);
+
+        // var fileInfo = new FileInfo(filePath);
         IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
         IFileInfo fileInfo = fileInfoFactory.New(filePath);
         return fileInfo.Extension;
@@ -147,7 +143,7 @@ public class FileSystem : IFileSystem
 
     public string[] GetFiles(string directoryPath)
     {
-        //TODO: Should probably be IEnumerable<string> instead of string[]
+        // TODO: Should probably be IEnumerable<string> instead of string[]
         directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
         return _msFileSystem.Directory.GetFiles(directoryPath);
     }
@@ -161,10 +157,10 @@ public class FileSystem : IFileSystem
     public FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption)
     {
         directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-        DirectoryInfo directoryInfo = new(directoryPath);
+        DirectoryInfo directoryInfo = new (directoryPath);
 
-        //TODO: Discuss with P.Makarchuk
-        //directoryInfo.GetFiles causes System.IO.DirectoryNotFoundException when Schemas does not exist 
+        // TODO: Discuss with P.Makarchuk
+        // directoryInfo.GetFiles causes System.IO.DirectoryNotFoundException when Schemas does not exist
         if (directoryInfo.Exists)
         {
             return directoryInfo.GetFiles(searchPattern, searchOption);
@@ -201,14 +197,14 @@ public class FileSystem : IFileSystem
 
         if (IsReadOnlyFile(filePath))
         {
-            _msFileSystem.File.SetAttributes(filePath,
+            _msFileSystem.File.SetAttributes(
+                filePath,
                 _msFileSystem.File.GetAttributes(filePath) & ~FileAttributes.ReadOnly);
         }
     }
 
     public string ReadAllText(string filePath) =>
         _msFileSystem.File.ReadAllText(filePath, Utf8NoBom);
-
 
     public void WriteAllTextToFile(string filePath, string contents) =>
         WriteAllTextToFile(filePath, contents, Utf8NoBom);
@@ -321,7 +317,7 @@ public class FileSystem : IFileSystem
     }
 
     /// <summary>
-    /// Checks if directory exists
+    /// Checks if directory exists.
     /// </summary>
     /// <param name="directoryPath"></param>
     /// <returns></returns>
@@ -424,8 +420,8 @@ public class FileSystem : IFileSystem
     }
 
     public bool CompareFiles(string first, string second) => CompareFiles(Algorithm.MD5, first, second);
-    public string[] GetDirectories() => GetDirectories(Directory.GetCurrentDirectory());
 
+    public string[] GetDirectories() => GetDirectories(Directory.GetCurrentDirectory());
 
     public bool CompareFiles(Algorithm algorithm, string first, string second)
     {
@@ -446,8 +442,4 @@ public class FileSystem : IFileSystem
         IFileInfo fileInfo = fileInfoFactory.New(filePath);
         return fileInfo;
     }
-
-    #endregion
 }
-
-#endregion

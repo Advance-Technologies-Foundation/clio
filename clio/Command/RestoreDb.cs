@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+
 using Clio.Common;
 using Clio.Common.db;
 using Clio.UserEnvironment;
@@ -8,42 +9,18 @@ using CommandLine;
 
 namespace Clio.Command;
 
-#region Class: RestoreDbCommandOptions
-
 [Verb("restore-db", Aliases = new string[] { "rdb" }, HelpText = "Restores database from backup file")]
 public class RestoreDbCommandOptions : EnvironmentOptions
 {
 }
 
-#endregion
-
-#region Class: RestoreDbCommand
-
-public class RestoreDbCommand : Command<RestoreDbCommandOptions>
+public class RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory,
+    ISettingsRepository settingsRepository): Command<RestoreDbCommandOptions>
 {
-    #region Fields: Private
-
-    private readonly ILogger _logger;
-    private readonly IFileSystem _fileSystem;
-    private readonly IDbClientFactory _dbClientFactory;
-    private readonly ISettingsRepository _settingsRepository;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory,
-        ISettingsRepository settingsRepository)
-    {
-        _logger = logger;
-        _fileSystem = fileSystem;
-        _dbClientFactory = dbClientFactory;
-        _settingsRepository = settingsRepository;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly ILogger _logger = logger;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly IDbClientFactory _dbClientFactory = dbClientFactory;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public override int Execute(RestoreDbCommandOptions options)
     {
@@ -102,11 +79,4 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
         _logger.WriteInfo($"Created database {dbName} from file {backUpFilePath}");
         return result;
     }
-
-    private int RestorePg(Uri uri, RestoreDbCommandOptions options) =>
-        throw new NotImplementedException("Not implemented yet;");
-
-    #endregion
 }
-
-#endregion

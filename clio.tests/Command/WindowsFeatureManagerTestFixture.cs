@@ -10,19 +10,20 @@ namespace Clio.Tests.Command;
 public class WindowsFeatureManagerTestFixture : BaseClioModuleTests
 {
     private IWindowsFeatureManager _sut;
-    private IWorkingDirectoriesProvider _workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 
     public override void Setup()
     {
         base.Setup();
-        _sut = Container.Resolve<IWindowsFeatureManager>();
+        _sut = container.Resolve<IWindowsFeatureManager>();
     }
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
         base.AdditionalRegistrations(containerBuilder);
         containerBuilder.RegisterInstance(_workingDirectoriesProvider).As<IWorkingDirectoriesProvider>();
-        //containerBuilder.RegisterInstance<ConsoleProgressbar>();
+
+        // containerBuilder.RegisterInstance<ConsoleProgressbar>();
     }
 
     [Test]

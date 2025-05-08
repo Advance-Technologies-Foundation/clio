@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
@@ -13,11 +14,9 @@ using MediatR;
 
 namespace Clio.Command;
 
-[Verb("link-from-repository", Aliases = ["l4r", "link4repo"], HelpText = "Link repository package(s) to environment.")]
+[Verb("link-from-repository", Aliases =["l4r", "link4repo"], HelpText = "Link repository package(s) to environment.")]
 public class Link4RepoOptions : EnvironmentOptions
 {
-    #region Properties: Public
-
     [Option("envPkgPath", Required = false,
         HelpText
             = @"Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\Terrasoft.Configuration\Pkg)",
@@ -30,14 +29,10 @@ public class Link4RepoOptions : EnvironmentOptions
     [Option("repoPath", Required = true,
         HelpText = "Path to package repository folder", Default = null)]
     public string RepoPath { get; set; }
-
-    #endregion
 }
 
 public class Link4RepoOptionsValidator : AbstractValidator<Link4RepoOptions>
 {
-    #region Constructors: Public
-
     public Link4RepoOptionsValidator() =>
         RuleFor(o => string.IsNullOrWhiteSpace(o.EnvPkgPath) && string.IsNullOrWhiteSpace(o.Environment))
             .Cascade(CascadeMode.Stop)
@@ -53,37 +48,16 @@ public class Link4RepoOptionsValidator : AbstractValidator<Link4RepoOptions>
                     });
                 }
             });
-
-    #endregion
 }
 
-public class Link4RepoCommand : Command<Link4RepoOptions>
+public class Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
+    IFileSystem fileSystem, IValidator<Link4RepoOptions> validator): Command<Link4RepoOptions>
 {
-    #region Fields: Private
-
-    private readonly ILogger _logger;
-    private readonly IMediator _mediator;
-    private readonly ISettingsRepository _settingsRepository;
-    private readonly IFileSystem _fileSystem;
-    private readonly IValidator<Link4RepoOptions> _validator;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
-        IFileSystem fileSystem, IValidator<Link4RepoOptions> validator)
-    {
-        _logger = logger;
-        _mediator = mediator;
-        _settingsRepository = settingsRepository;
-        _fileSystem = fileSystem;
-        _validator = validator;
-    }
-
-    #endregion
-
-    #region Properties: Private
+    private readonly ILogger _logger = logger;
+    private readonly IMediator _mediator = mediator;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly IValidator<Link4RepoOptions> _validator = validator;
 
     private IEnumerable<IISScannerHandler.RegisteredSite> AllSites { get; set; }
 
@@ -99,9 +73,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
     private Action<IEnumerable<IISScannerHandler.RegisteredSite>> OnAllSitesRequestCompleted =>
         sites => { AllSites = sites; };
 
-    #endregion
 
-    #region Methods: Private
 
     /// <summary>
     ///  Executes a mediator request to retrieve all registered sites.
@@ -118,7 +90,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
     /// </remarks>
     private void ExecuteMediatorRequest(Action<IEnumerable<IISScannerHandler.RegisteredSite>> callback)
     {
-        AllRegisteredSitesRequest request = new() { Callback = callback };
+        AllRegisteredSitesRequest request = new () { Callback = callback };
 
         Task.Run(async () => { await _mediator.Send(request); })
             .ConfigureAwait(false)
@@ -162,7 +134,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
     /// </returns>
     private int HandleLinkingByEnvName(string envName, string repoPath, string packages)
     {
-        ExecuteMediatorRequest(OnAllSitesRequestCompleted); //This fills AllSites property with all registered sites.
+        ExecuteMediatorRequest(OnAllSitesRequestCompleted); // This fills AllSites property with all registered sites.
         if (!_settingsRepository.IsEnvironmentExists(envName))
         {
             _logger.WriteError(
@@ -180,7 +152,8 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
 
         List<IISScannerHandler.RegisteredSite> sites = AllSites
             .Where(s => s.Uris.Any(iisRegisteredUrl =>
-                Uri.Compare(envUri,
+                Uri.Compare(
+                    envUri,
                     iisRegisteredUrl,
                     UriComponents.StrongAuthority,
                     UriFormat.SafeUnescaped,
@@ -190,7 +163,8 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
             IISScannerHandler.RegisteredSite site = sites[0];
             string tSitePath = site.siteType switch
             {
-                IISScannerHandler.SiteType.NetFramework => Path.Join(site.siteBinding.path,
+                IISScannerHandler.SiteType.NetFramework => Path.Join(
+                    site.siteBinding.path,
                     "Terrasoft.WebApp", "Terrasoft.Configuration", "Pkg"),
                 _ => Path.Join(site.siteBinding.path, "Terrasoft.Configuration", "Pkg")
             };
@@ -230,9 +204,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
         return 1;
     }
 
-    #endregion
 
-    #region Methods: Public
 
     /// <summary>
     ///  Executes the command to link repository packages to the environment.
@@ -276,6 +248,4 @@ public class Link4RepoCommand : Command<Link4RepoOptions>
             _ => 1
         };
     }
-
-    #endregion
 }

@@ -1,46 +1,29 @@
-using System.Globalization;
-using System.Text;
-
-namespace Clio.Package;
-
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
+
 using Common;
 using Workspaces;
 
-#region Interface: IUiProjectCreator
+namespace Clio.Package;
 
 public interface IUiProjectCreator
 {
-    #region Methods: Public
-
     void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty, string creatioVersion,
         Func<string, bool> enableDownloadPackage);
-
-    #endregion
 }
 
-#endregion
-
-#region Class: UiProjectCreator
-
-public class UiProjectCreator : IUiProjectCreator
+public partial class UiProjectCreator : IUiProjectCreator
 {
     // папа
 
-    #region Constants: Private
-
-    private const string packagesDirectoryName = "packages";
-    private const string projectsDirectoryName = "projects";
-
-    #endregion
-
-    #region Fields: Private
-
-    private static string[] _templateExtensions = new[] { ".json", ".js", ".ts", ".conf", ".config", ".scss", ".css" };
+    private const string PackagesDirectoryName = "packages";
+    private const string ProjectsDirectoryName = "projects";
+    private static readonly string[] _templateExtensions = [".json", ".js", ".ts", ".conf", ".config", ".scss", ".css"];
 
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IWorkspace _workspace;
@@ -51,10 +34,6 @@ public class UiProjectCreator : IUiProjectCreator
     private readonly ITemplateProvider _templateProvider;
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public UiProjectCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
         IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
@@ -81,25 +60,17 @@ public class UiProjectCreator : IUiProjectCreator
         _fileSystem = fileSystem;
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 
     private string PackagesPath =>
         IsWorkspace
             ? _workspacePathBuilder.PackagesFolderPath
-            : Path.Combine(_workingDirectoriesProvider.CurrentDirectory, packagesDirectoryName);
+            : Path.Combine(_workingDirectoriesProvider.CurrentDirectory, PackagesDirectoryName);
 
     private string ProjectsPath =>
         IsWorkspace
             ? _workspacePathBuilder.ProjectsFolderPath
-            : Path.Combine(_workingDirectoriesProvider.CurrentDirectory, projectsDirectoryName);
-
-    #endregion
-
-    #region Methods: Private
+            : Path.Combine(_workingDirectoriesProvider.CurrentDirectory, ProjectsDirectoryName);
 
     private void UpdateTemplateInfo(string projectPath, string projectName, string packageName,
         string vendorPrefix)
@@ -112,7 +83,8 @@ public class UiProjectCreator : IUiProjectCreator
             string tplContent = _fileSystem.ReadAllText(filePath);
             tplContent = tplContent.Replace("<%vendorPrefix%>", vendorPrefix, true, CultureInfo.InvariantCulture);
             tplContent = tplContent.Replace("<%projectName%>", projectName, true, CultureInfo.InvariantCulture);
-            tplContent = tplContent.Replace("<%distPath%>",
+            tplContent = tplContent.Replace(
+                "<%distPath%>",
                 $"{Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/", "js/", projectName)}", true,
                 CultureInfo.InvariantCulture);
             _fileSystem.WriteAllTextToFile(filePath, tplContent);
@@ -141,7 +113,7 @@ public class UiProjectCreator : IUiProjectCreator
 
     private void CheckCorrectProjectName(string projectName)
     {
-        Regex namePattern = new("^([0-9a-z_]+)$");
+        Regex namePattern = MyRegex();
         if (namePattern.IsMatch(projectName))
         {
             return;
@@ -165,10 +137,6 @@ public class UiProjectCreator : IUiProjectCreator
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
         string creatioVersion, Func<string, bool> enableDownloadPackage)
     {
@@ -188,7 +156,6 @@ public class UiProjectCreator : IUiProjectCreator
         CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
     }
 
-    #endregion
+    [GeneratedRegex("^([0-9a-z_]+)$")]
+    private static partial Regex MyRegex();
 }
-
-#endregion

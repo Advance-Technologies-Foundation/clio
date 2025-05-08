@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+
 using Clio.Common;
 using CommandLine;
 
@@ -13,8 +14,6 @@ namespace Clio.Command;
 [Verb("mock-dataFolderPath", Aliases = new[] { "dataFolderPath-mock" }, HelpText = "Setup mock data path")]
 public class MockDataCommandOptions : RemoteCommandOptions
 {
-    #region Properties: Public
-
     [Option('d', "data", Required = true, HelpText = "path to save data")]
     public string Data { get; internal set; }
 
@@ -23,19 +22,11 @@ public class MockDataCommandOptions : RemoteCommandOptions
 
     [Option('x', "exclude-models", Default = "VwSys", Required = false, HelpText = "Exclude models pattern")]
     public string ExcludeModel { get; internal set; }
-
-    #endregion
 }
 
 internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 {
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public MockDataCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
         IFileSystem fileSystem)
@@ -45,14 +36,10 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
         EnvironmentSettings = environmentSettings;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private string GetModelDataData(string findedModel)
     {
-        string ODataModelUrl = $"{RootPath}/odata/{findedModel}";
-        string x = ApplicationClient.ExecuteGetRequest(ODataModelUrl, 10_000, 3);
+        string oDataModelUrl = $"{RootPath}/odata/{findedModel}";
+        string x = ApplicationClient.ExecuteGetRequest(oDataModelUrl, 10_000, 3);
         return x;
     }
 
@@ -82,18 +69,13 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
                 {
                     Logger.WriteWarning($"Data for model {foundModel} not saved");
                 }
-            }
-        );
+            });
     }
-
-    #endregion
-
-    #region Methods: Internal
 
     internal List<string> FindModels(string models)
     {
-        List<string> schemaNames = new();
-        List<string> files = _fileSystem.GetFiles(models, "*.*", SearchOption.AllDirectories).ToList();
+        List<string> schemaNames = [];
+        List<string> files = [.. _fileSystem.GetFiles(models, "*.*", SearchOption.AllDirectories)];
         foreach (string file in files)
         {
             string fileContent = _fileSystem.ReadAllText(file);
@@ -103,17 +85,13 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
         return schemaNames.Distinct().ToList();
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public static List<string> ExtractSchemaNames(string sourceCode)
     {
-        List<string> schemaNames = new();
+        List<string> schemaNames = [];
         string pattern = @"\[Schema\(""([^""]+)""\)\]";
         MatchCollection matches = Regex.Matches(sourceCode, pattern);
 
-        foreach (Match match in matches)
+        foreach (Match match in matches.Cast<Match>())
         {
             if (match.Groups.Count > 1)
             {
@@ -125,14 +103,13 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
     }
 
     // public MockDataCommand(IFileSystem fileSystem, IApplicationClient applicationClient) {
-    // 	this._fileSystem = fileSystem;
-    // 	this.ApplicationClient = applicationClient;
+    //  this._fileSystem = fileSystem;
+    //  this.ApplicationClient = applicationClient;
     // }
 
     // public MockDataCommand(FileSystem clioFileSystem) {
-    // 	this._fileSystem = clioFileSystem;
+    //  this._fileSystem = clioFileSystem;
     // }
-
     public override int Execute(MockDataCommandOptions options)
     {
         try
@@ -152,6 +129,4 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
             return 1;
         }
     }
-
-    #endregion
 }

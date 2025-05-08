@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
@@ -18,7 +19,7 @@ public class CheckNugetUpdateOptions : EnvironmentOptions
 
 public class CheckNugetUpdateCommand : Command<CheckNugetUpdateOptions>
 {
-    private INuGetManager _nugetManager;
+    private readonly INuGetManager _nugetManager;
     private readonly ILogger _logger;
 
     public CheckNugetUpdateCommand(INuGetManager nugetManager, ILogger logger)

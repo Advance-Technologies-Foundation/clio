@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -20,66 +21,45 @@ namespace Clio.Requests;
 
 public class IISScannerRequest : IExternalLink
 {
-    #region Properties: Public
-
     public string Content { get; set; }
-
-    #endregion
 }
 
 internal class AllUnregisteredSitesRequest : IRequest
 {
-    #region Fields: Public
-
     public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
-
-    #endregion
 }
 
 internal class AllRegisteredSitesRequest : IRequest
 {
-    #region Fields: Public
-
     public Action<IEnumerable<IISScannerHandler.RegisteredSite>> Callback;
-
-    #endregion
 }
 
 internal class StopInstanceByNameRequest : IRequest
 {
-    #region Properties: Public
-
     public string SiteName { get; set; }
-
-    #endregion
 }
 
 internal class DeleteInstanceByNameRequest : IRequest
 {
-    #region Properties: Public
-
     public string SiteName { get; set; }
-
-    #endregion
 }
 
 /// <summary>
-///  Finds path to appSetting.json
+///  Finds path to appSetting.json.
 /// </summary>
 /// <remarks>
-///  Handles extenral link requests
+///  Handles extenral link requests.
 ///  <example>
 ///   <code>clio externalLink clio://IISScannerRequest</code>
 ///  </example>
 /// </remarks>
 /// <example>
 /// </example>
-internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
+internal class IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
+    PowerShellFactory powerShellFactory, ILogger logger): BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
     IRequestHandler<AllUnregisteredSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
     IRequestHandler<StopInstanceByNameRequest>, IRequestHandler<AllRegisteredSitesRequest>
 {
-    #region Enum: Internal
-
     internal enum SiteType
     {
         NetFramework,
@@ -87,12 +67,10 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
         NotCreatioSite
     }
 
-    #endregion
 
-    #region Fields: Private
 
     /// <summary>
-    ///  Finds Creatio Sites in IIS that are not registered with clio
+    ///  Finds Creatio Sites in IIS that are not registered with clio.
     /// </summary>
     private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> FindUnregisteredCreatioSites =
         settingsRepository =>
@@ -118,7 +96,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
         };
 
     /// <summary>
-    ///  Executes appcmd.exe with arguments and captures output
+    ///  Executes appcmd.exe with arguments and captures output.
     /// </summary>
     private static readonly Func<string, string> _appcmd = args =>
     {
@@ -148,9 +126,8 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
         _appcmd($"delete apppool /apppool.name:{name}");
     };
 
-
     /// <summary>
-    ///  Finds Creatio Sites in IIS that are not registered with clio
+    ///  Finds Creatio Sites in IIS that are not registered with clio.
     /// </summary>
     internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () =>
     {
@@ -163,7 +140,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
     };
 
     /// <summary>
-    ///  Finds Creatio Sites in IIS that are not registered with clio
+    ///  Finds Creatio Sites in IIS that are not registered with clio.
     /// </summary>
     internal static readonly Func<IEnumerable<RegisteredSite>> FindAllRegisteredCreatioSites = () =>
     {
@@ -176,7 +153,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
     };
 
     /// <summary>
-    ///  Gets data from appcmd.exe
+    ///  Gets data from appcmd.exe.
     /// </summary>
     private static readonly Func<IEnumerable<SiteBinding>> GetBindings = () =>
     {
@@ -186,30 +163,30 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
     };
 
     /// <summary>
-    ///  Splits IIS Binding into list
+    ///  Splits IIS Binding into list.
     /// </summary>
     private static readonly Func<string, List<string>> SplitBinding = binding =>
         binding.Contains(',') ? binding.Split(',').ToList() : [binding];
 
     /// <summary>
-    ///  Splits IIS Binding
+    ///  Splits IIS Binding.
     /// </summary>
     private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding =>
     {
         List<Uri> result = [];
 
-        //"http/*:7080:localhost,http/*:7080:kkrylovn
+        // "http/*:7080:localhost,http/*:7080:kkrylovn
         SplitBinding(binding).ForEach(item =>
         {
-            //http/*:7080:localhost
-            //http/*:80:
+            // http/*:7080:localhost
+            // http/*:80:
             string[] items = item.Split(':');
             if (items.Length >= 3)
             {
                 string hostName = string.IsNullOrEmpty(items[2]) ? "localhost" : items[2];
                 string port = items[1];
                 string other = items[0];
-                string protocol = other.Replace("/*", "");
+                string protocol = other.Replace("/*", string.Empty);
                 string url = $"{protocol}://{hostName}:{port}";
 
                 if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
@@ -222,17 +199,16 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
     };
 
     /// <summary>
-    ///  Converts XElement to Sitebinding
+    ///  Converts XElement to Sitebinding.
     /// </summary>
     private static readonly Func<XElement, SiteBinding> GetSiteBindingFromXmlElement = xmlElement => new SiteBinding(
         xmlElement.Attribute("SITE.NAME")?.Value,
         xmlElement.Attribute("state")?.Value,
         xmlElement.Attribute("bindings")?.Value,
-        _appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
-    );
+        _appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim());
 
     /// <summary>
-    ///  Detect Site Type
+    ///  Detect Site Type.
     /// </summary>
     private static readonly Func<string, SiteType> DetectSiteType = path =>
     {
@@ -252,21 +228,19 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
         return SiteType.NotCreatioSite;
     };
 
-    private readonly ISettingsRepository _settingsRepository;
-    private readonly RegAppCommand _regCommand;
-    private readonly PowerShellFactory _powerShellFactory;
-    private readonly ILogger _logger;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly RegAppCommand _regCommand = regCommand;
+    private readonly PowerShellFactory _powerShellFactory = powerShellFactory;
+    private readonly ILogger _logger = logger;
 
-    #endregion
 
-    #region Fields: Public
 
     /// <summary>
-    ///  Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
+    ///  Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host.
     /// </summary>
     public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> GetSites = psf =>
     {
-        Dictionary<string, Uri> result = new();
+        Dictionary<string, Uri> result = [];
 
         Collection<Site> sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
         Collection<WebApp> webApps = psf.GetInstance().AddCommand("Get-WebApplication").Invoke<WebApp>();
@@ -276,38 +250,21 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
             .ForEach(webApp =>
             {
                 ConsoleLogger.Instance.WriteInfo(webApp.SiteName);
-                (string Name, List<Uri> Uris) rootSite = sites.Where(site =>
+                (string name, List<Uri> uris) = sites.Where(site =>
                         site.Name == webApp.SiteName && site.Id == webApp.SiteId)
                     .Select(site => (site.Name, site.Uris)).FirstOrDefault();
 
                 string newPath = webApp.Path.Substring(0, webApp.Path.Length - 2);
                 Uri rootUri = psf.ComputerName == "localhost"
-                    ? rootSite.Uris.FirstOrDefault()
-                    : rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
+                    ? uris.FirstOrDefault()
+                    : uris.FirstOrDefault(u => u.Host != "localhost");
                 if (Uri.TryCreate(rootUri, newPath, out Uri value))
                 {
-                    result.Add(rootSite.Name + newPath, value);
+                    result.Add(name + newPath, value);
                 }
             });
         return result;
     };
-
-    #endregion
-
-    #region Constructors: Public
-
-    public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
-        PowerShellFactory powerShellFactory, ILogger logger)
-    {
-        _settingsRepository = settingsRepository;
-        _regCommand = regCommand;
-        _powerShellFactory = powerShellFactory;
-        _logger = logger;
-    }
-
-    #endregion
-
-    #region Methods: Public
 
     public async Task Handle(AllUnregisteredSitesRequest request, CancellationToken cancellationToken)
     {
@@ -343,10 +300,10 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
         string r = ClioParams?["return"];
         if (r == "remote")
         {
-            //clio://IISScannerRequest/?returnremote&host=localhost;
+            // clio://IISScannerRequest/?returnremote&host=localhost;
             string computerName = ClioParams?["host"];
 
-            //clio externalLink clio://IISScannerRequest/?return=remote&host=localhost&username=1234&password=5678;
+            // clio externalLink clio://IISScannerRequest/?return=remote&host=localhost&username=1234&password=5678;
             string userName = ClioParams?["username"];
             string password = ClioParams?["password"];
             _powerShellFactory.Initialize(userName, password, computerName);
@@ -358,7 +315,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
                 _logger.WriteInfo($"({i++}) {site.Key} - {site.Value}");
             });
 
-            //Here I would call regApp command but instead I will write total
+            // Here I would call regApp command but instead I will write total
             _logger.WriteInfo($"**** TOTAL: {i - 1} new sites ****");
         }
 
@@ -375,23 +332,22 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
         if (r == "registerAll")
         {
-            unregSites.ToList().ForEach(site =>
+            unregSites.ToList().ForEach((Action<UnregisteredSite>)(site =>
             {
                 _regCommand.Execute(new RegAppOptions
                 {
                     IsNetCore = site.siteType == SiteType.Core,
-                    Uri = site.Uris.FirstOrDefault().ToString(),
+                    Uri = Enumerable.FirstOrDefault<Uri>(site.Uris).ToString(),
                     EnvironmentName = site.siteBinding.name,
                     Login = "Supervisor",
                     Password = "Supervisor",
                     Maintainer = "Customer",
                     CheckLogin = false
                 });
-            });
+            }));
         }
     }
 
-    #endregion
 
     /// <summary>
     /// </summary>
@@ -409,21 +365,20 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
     {
     }
 
-    internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
+    internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> uris, SiteType siteType)
     {
     }
 
-    internal sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType)
+    internal sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> uris, SiteType siteType)
     {
     }
 }
 
 public record Site
 {
-    #region Fields: Private
 
     /// <summary>
-    ///  Converts PSObject to Site
+    ///  Converts PSObject to Site.
     /// </summary>
     private static readonly Func<PSObject, Site> _asSite = psObject =>
     {
@@ -439,7 +394,7 @@ public record Site
     };
 
     /// <summary>
-    ///  Splits IIS Binding
+    ///  Splits IIS Binding.
     /// </summary>
     private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding =>
     {
@@ -447,18 +402,18 @@ public record Site
 
         List<Uri> result = [];
 
-        //"http/*:7080:localhost,http/*:7080:kkrylovn
+        // "http/*:7080:localhost,http/*:7080:kkrylovn
         SplitBinding(binding).ForEach(item =>
         {
-            //http/*:7080:localhost
-            //http/*:80:
+            // http/*:7080:localhost
+            // http/*:80:
             string[] items = item.Split(':');
             if (items.Length >= 3)
             {
                 string hostName = string.IsNullOrEmpty(items[2]) ? "localhost" : items[2];
                 string port = items[1];
                 string other = items[0];
-                string protocol = other.Replace("/*", "");
+                string protocol = other.Replace("/*", string.Empty);
                 string url = $"{protocol}://{hostName}:{port}";
 
                 if (Uri.TryCreate(url, UriKind.Absolute, out Uri value))
@@ -471,62 +426,45 @@ public record Site
     };
 
     /// <summary>
-    ///  Splits IIS Binding into list
+    ///  Splits IIS Binding into list.
     /// </summary>
     private static readonly Func<string, List<string>> SplitBinding = binding =>
         binding.Contains(',') ? binding.Split(',').ToList() : [binding];
 
-    #endregion
-
-    #region Properties: Public
-
     public string Binding { get; private set; }
 
     /// <summary>
-    ///  IIS EnabledProtocols
+    ///  Gets or sets iIS EnabledProtocols.
     /// </summary>
     public string EnabledProtocols { get; set; }
 
     /// <summary>
-    ///  IIS Site Id
+    ///  Gets iIS Site Id.
     /// </summary>
     public long Id { get; private set; }
 
     /// <summary>
-    ///  IIS Site name
+    ///  Gets iIS Site name.
     /// </summary>
     public string Name { get; private set; }
 
     /// <summary>
-    ///  IIS physical path
+    ///  Gets iIS physical path.
     /// </summary>
     public string PhysicalPath { get; private set; }
 
     public List<Uri> Uris => ConvertBindingToUri(Binding);
 
-    #endregion
-
-    #region Methods: Public
-
     public static implicit operator Site(PSObject obj) => _asSite(obj);
-
-    #endregion
 }
 
-public record WebApp
+public partial record WebApp
 {
-    #region Constants: Private
-
     private const string Regex = "(@name=')(.*?)'\\sand\\s@id='(\\d*?)'";
-
-    #endregion
-
-    #region Fields: Private
-
     private static readonly Func<PSObject, WebApp> AsWebApp = psObject =>
     {
         string itemXPath = psObject.Properties["ItemXPath"]?.Value as string ?? string.Empty;
-        GroupCollection groups = System.Text.RegularExpressions.Regex.Match(itemXPath, Regex).Groups;
+        GroupCollection groups = MyRegex().Match(itemXPath).Groups;
 
         return new WebApp
         {
@@ -539,10 +477,6 @@ public record WebApp
             SiteId = long.TryParse(groups[3].Value?.Trim(), out long v) ? v : -1
         };
     };
-
-    #endregion
-
-    #region Properties: Public
 
     public string ElementTagName { get; private set; }
 
@@ -558,11 +492,8 @@ public record WebApp
 
     public string SiteName { get; private set; }
 
-    #endregion
-
-    #region Methods: Public
-
     public static implicit operator WebApp(PSObject obj) => AsWebApp(obj);
 
-    #endregion
+    [GeneratedRegex(Regex)]
+    private static partial Regex MyRegex();
 }

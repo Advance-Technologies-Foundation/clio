@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Common;
 using Clio.Project.NuGet;
 using CommandLine;
@@ -22,7 +23,7 @@ public class RestoreNugetPkgOptions : EnvironmentOptions
 
 public class RestoreNugetPackageCommand : Command<RestoreNugetPkgOptions>
 {
-    private INuGetManager _nugetManager;
+    private readonly INuGetManager _nugetManager;
     private readonly ILogger _logger;
 
     public RestoreNugetPackageCommand(INuGetManager nugetManager, ILogger logger)

@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -115,7 +116,8 @@ public class CreatioPkgProjectTests
     public void CreatioPkgProject_DetermineCurrentRef_LoadFromSdkFile()
     {
         CreatioPkgProject proj = CreatioPkgProject.LoadFromFile("SDKReferenceHint.xml");
-        //proj.CurrentRefType.Should().BeEquivalentTo(RefType.Sdk);
+
+        // proj.CurrentRefType.Should().BeEquivalentTo(RefType.Sdk);
         proj.CurrentRefType.Should().Be(RefType.Sdk);
     }
 
@@ -123,7 +125,8 @@ public class CreatioPkgProjectTests
     public void CreatioPkgProject_DetermineCurrentRef_LoadFromCoreSrcFile()
     {
         CreatioPkgProject proj = CreatioPkgProject.LoadFromFile("CoreSrcReferenceHint.xml");
-        //proj.CurrentRefType.Should().BeEquivalentTo(RefType.CoreSrc);
+
+        // proj.CurrentRefType.Should().BeEquivalentTo(RefType.CoreSrc);
         proj.CurrentRefType.Should().Be(RefType.CoreSrc);
     }
 
@@ -131,7 +134,8 @@ public class CreatioPkgProjectTests
     public void CreatioPkgProject_DetermineCurrentRef_LoadFromUnitCoreSrcFile()
     {
         CreatioPkgProject proj = CreatioPkgProject.LoadFromFile("UnitCoreSrcReferenceHint.xml");
-        //proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
+
+        // proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
         proj.CurrentRefType.Should().Be(RefType.UnitTest);
     }
 
@@ -139,7 +143,8 @@ public class CreatioPkgProjectTests
     public void CreatioPkgProject_DetermineCurrentRef_LoadFromUnitBinFile()
     {
         CreatioPkgProject proj = CreatioPkgProject.LoadFromFile("UnitBinReferenceHint.xml");
-        //proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
+
+        // proj.CurrentRefType.Should().BeEquivalentTo(RefType.UnitTest);
         proj.CurrentRefType.Should().Be(RefType.UnitTest);
     }
 
@@ -147,7 +152,8 @@ public class CreatioPkgProjectTests
     public void CreatioPkgProject_DetermineCurrentRef_LoadFromTsCoreBinPath()
     {
         CreatioPkgProject proj = CreatioPkgProject.LoadFromFile("TsCoreBinPathNet472ReferenceHint.xml");
-        //proj.CurrentRefType.Should().BeEquivalentTo(RefType.TsCoreBinPath);
+
+        // proj.CurrentRefType.Should().BeEquivalentTo(RefType.TsCoreBinPath);
         proj.CurrentRefType.Should().Be(RefType.TsCoreBinPath);
     }
 }

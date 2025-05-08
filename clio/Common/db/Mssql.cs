@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Microsoft.Data.SqlClient;
 using NRedisStack;
 
@@ -60,7 +61,7 @@ public class Mssql : IMssql
     {
         try
         {
-            using SqlConnection connection = new(_builder.ConnectionString);
+            using SqlConnection connection = new (_builder.ConnectionString);
             connection.Open();
 
             string ldf = $"{dbName}-{DateTime.Now:yyyy-MMM-dd-HHmmss}.ldf";
@@ -80,7 +81,7 @@ public class Mssql : IMssql
 			NOUNLOAD,  STATS = 5
 			";
 
-            SqlCommand cmd = new(sqlText, connection) { CommandTimeout = 600 };
+            SqlCommand cmd = new (sqlText, connection) { CommandTimeout = 600 };
             int result = cmd.ExecuteNonQuery();
             connection.Close();
             return true;
@@ -96,7 +97,7 @@ public class Mssql : IMssql
     {
         try
         {
-            using SqlConnection connection = new(_builder.ConnectionString);
+            using SqlConnection connection = new (_builder.ConnectionString);
             connection.Open();
 
             string sqlText = $@"
@@ -106,7 +107,7 @@ public class Mssql : IMssql
 				sys.databases WHERE name = '{dbName}'
 			";
 
-            SqlCommand cmd = new(sqlText, connection);
+            SqlCommand cmd = new (sqlText, connection);
             object? result = cmd.ExecuteScalar();
             connection.Close();
             return int.Parse(result.ToString()) == 1;
@@ -120,7 +121,7 @@ public class Mssql : IMssql
 
     public void RenameDb(string from, string to)
     {
-        using SqlConnection connection = new(_builder.ConnectionString);
+        using SqlConnection connection = new (_builder.ConnectionString);
         connection.Open();
         string sqlText = $"""
                           			USE master;
@@ -129,14 +130,14 @@ public class Mssql : IMssql
                           			ALTER DATABASE [{to}] SET MULTI_USER;
                           		
                           """;
-        SqlCommand cmd = new(sqlText, connection);
+        SqlCommand cmd = new (sqlText, connection);
         cmd.ExecuteNonQuery();
         connection.Close();
     }
 
     public void DropDb(string optionsDbName)
     {
-        using SqlConnection connection = new(_builder.ConnectionString);
+        using SqlConnection connection = new (_builder.ConnectionString);
         connection.Open();
         string sqlText = $"""
 
@@ -145,16 +146,9 @@ public class Mssql : IMssql
                           			DROP DATABASE [{optionsDbName}];
                           		
                           """;
-        SqlCommand cmd = new(sqlText, connection);
+        SqlCommand cmd = new (sqlText, connection);
         cmd.ExecuteNonQuery();
         connection.Close();
-    }
-
-    private DefaultPaths GetInstanceDefaultPaths(bool closeConnection)
-    {
-        using SqlConnection connection = new(_builder.ConnectionString);
-        connection.Open();
-        return GetInstanceDefaultPaths(connection, closeConnection);
     }
 
     private DefaultPaths GetInstanceDefaultPaths(SqlConnection connection, bool closeConnection)
@@ -167,7 +161,7 @@ public class Mssql : IMssql
                           			SERVERPROPERTY('InstanceDefaultLogPath') AS DefaultLogPath;
                           		
                           """;
-        SqlCommand cmd = new(sqlText, connection);
+        SqlCommand cmd = new (sqlText, connection);
         using SqlDataReader reader = cmd.ExecuteReader();
 
         string dataPath = string.Empty;

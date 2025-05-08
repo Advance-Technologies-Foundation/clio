@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Command.PackageCommand;
 using Clio.Common;
 using Clio.Package;
@@ -12,8 +13,6 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class ActivatePackageCommandTestCase
 {
-    #region Methods: Public
-
     [Test]
     [Category("Unit")]
     public void Execute_ActivatesPackage()
@@ -33,7 +32,7 @@ public class ActivatePackageCommandTestCase
             },
             new PackageActivationResultDto { PackageName = notActivatedPackage, Success = false }
         });
-        ActivatePackageCommand command = new(packageActivator, applicationClient, new EnvironmentSettings(), logger);
+        ActivatePackageCommand command = new (packageActivator, applicationClient, new EnvironmentSettings(), logger);
         command.Execute(new ActivatePkgOptions { PackageName = packageName }).Should().Be(0);
         logger.Received().WriteLine($"Start activation package: \"{packageName}\"");
         logger.Received().WriteLine($"Package \"{packageName}\" successfully activated.");
@@ -51,11 +50,9 @@ public class ActivatePackageCommandTestCase
         string packageName = "TestPackageName";
         string errorMessage = "SomeErrorMessage";
         packageActivator.When(activator => activator.Activate(packageName)).Throw(new Exception(errorMessage));
-        ActivatePackageCommand command = new(packageActivator, applicationClient, new EnvironmentSettings(), logger);
+        ActivatePackageCommand command = new (packageActivator, applicationClient, new EnvironmentSettings(), logger);
         command.Execute(new ActivatePkgOptions { PackageName = packageName }).Should().Be(1);
         logger.Received().WriteLine(errorMessage);
         logger.DidNotReceive().WriteLine($"Package \"{packageName}\" successfully activated.");
     }
-
-    #endregion
 }

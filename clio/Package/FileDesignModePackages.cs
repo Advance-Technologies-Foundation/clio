@@ -1,49 +1,28 @@
 using System.Threading;
 
-namespace Clio.Package;
-
-using Common;
 using Clio.Common.Responses;
+using Common;
 
-#region Interface: IPackagesToFileSystemLoader
+namespace Clio.Package;
 
 public interface IFileDesignModePackages
 {
-    #region Methods: Public
-
     void LoadPackagesToFileSystem();
 
     void LoadPackagesToDb();
-
-    #endregion
 }
-
-#endregion
-
-#region Class: PackagesToFileSystemLoader
 
 public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
 {
-    #region Consts: Private
+    private const int RetryRequestCount = 3;
 
-    private const int retryRequestCount = 3;
-
-    private const int delayBetweenRetryAttemptsSec = 1;
-
-    #endregion
-
-    #region Fields: Private
-
+    private const int DelayBetweenRetryAttemptsSec = 1;
     private readonly IApplicationClient _applicationClient;
     private readonly IJsonConverter _jsonConverter;
     private readonly ILogger _logger;
     private readonly string _loadPackagesToFileSystemUrl;
     private readonly string _loadPackagesToDbUrl;
     private readonly string _getIsFileDesignModeUrl;
-
-    #endregion
-
-    #region Constructors: Public
 
     public FileDesignModeFileDesignModePackages(IApplicationClient applicationClient, IJsonConverter jsonConverter,
         ILogger logger, IServiceUrlBuilder serviceUrlBuilder)
@@ -63,32 +42,24 @@ public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
             .Build("/ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode");
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private bool IsFileDesignModeUrl
     {
         get
         {
             string responseFormServer
                 = _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite,
-                    retryRequestCount, delayBetweenRetryAttemptsSec);
+                    RetryRequestCount, DelayBetweenRetryAttemptsSec);
             BoolResponse response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
             if (response.Success)
             {
                 return response.Value;
             }
 
-            ErrorInfo errorInfo = response.ErrorInfo;
+            _ = response.ErrorInfo;
             _logger.WriteLine($"Get file design mode ended with error: {GetErrorDetails(response.ErrorInfo)}");
             return false;
         }
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static string GetErrorDetails(ErrorInfo errorInfo) =>
         $"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
@@ -106,7 +77,7 @@ public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
 
         _logger.WriteLine($"Start load packages to {storageName} on a web application");
         string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty, Timeout.Infinite,
-            retryRequestCount, delayBetweenRetryAttemptsSec);
+            RetryRequestCount, DelayBetweenRetryAttemptsSec);
         BaseResponse response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
         if (response.Success)
         {
@@ -114,19 +85,11 @@ public class FileDesignModeFileDesignModePackages : IFileDesignModePackages
             return;
         }
 
-        ErrorInfo errorInfo = response.ErrorInfo;
+        _ = response.ErrorInfo;
         PrintErrorOperationMessage(storageName, GetErrorDetails(response.ErrorInfo));
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
 
     public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
-
-    #endregion
 }
-
-#endregion

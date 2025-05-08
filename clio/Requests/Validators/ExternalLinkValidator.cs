@@ -1,8 +1,9 @@
-using Clio.Command;
-using FluentValidation;
 using System;
 using System.Collections.Specialized;
 using System.Linq;
+
+using Clio.Command;
+using FluentValidation;
 
 namespace Clio.Requests.Validators;
 

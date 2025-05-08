@@ -6,9 +6,11 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Policy;
+
 using Clio.Common;
 using CommandLine;
 using DocumentFormat.OpenXml.Drawing;
+
 using Path = System.IO.Path;
 
 namespace Clio.Command;
@@ -42,11 +44,9 @@ public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>
     }
 }
 
-public class CreateInfrastructureCommand : Command<CreateInfrastructureOptions>
+public class CreateInfrastructureCommand(IFileSystem fileSystem): Command<CreateInfrastructureOptions>
 {
-    private readonly IFileSystem _fileSystem;
-
-    public CreateInfrastructureCommand(IFileSystem fileSystem) => _fileSystem = fileSystem;
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     public override int Execute(CreateInfrastructureOptions options)
     {
@@ -70,13 +70,15 @@ public class CreateInfrastructureCommand : Command<CreateInfrastructureOptions>
         Console.ForegroundColor = color;
         Console.WriteLine("Files Include:");
         Console.ForegroundColor = ConsoleColor.DarkYellow;
-        IList<string[]> table = new List<string[]>();
-        table.Add(new[] { "Application", "Version", "Available on" });
-        table.Add(new[] { "-------------------------", "------------------------", "------------" });
-        table.Add(new[] { "Postgres SQL Server", "latest", "Port: 5432" });
-        table.Add(new[] { "Microsoft SQL Server 2022", "latest developer edition", "Port: 1434" });
-        table.Add(new[] { "Redis Server", "latest", "Port: 6379" });
-        table.Add(new[] { "Email Listener", "1.0.10", "Port: 1090" });
+        IList<string[]> table = new List<string[]>
+        {
+            ["Application", "Version", "Available on"] , 
+            ["-------------------------", "------------------------", "------------"] , 
+            ["Postgres SQL Server", "latest", "Port: 5432"] , 
+            ["Microsoft SQL Server 2022", "latest developer edition", "Port: 1434"] , 
+            ["Redis Server", "latest", "Port: 6379"] , 
+            ["Email Listener", "1.0.10", "Port: 1090"]
+        };
 
         Console.Write(TextUtilities.ConvertTableToString(table));
         Console.WriteLine();

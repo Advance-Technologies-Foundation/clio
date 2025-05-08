@@ -1,4 +1,5 @@
 using System;
+
 using Clio.UserEnvironment;
 using CommandLine;
 
@@ -15,11 +16,9 @@ public class UnregAppOptions : EnvironmentOptions
     public bool UnregAll { get; set; }
 }
 
-public class UnregAppCommand : Command<UnregAppOptions>
+public class UnregAppCommand(ISettingsRepository settingsRepository): Command<UnregAppOptions>
 {
-    private readonly ISettingsRepository _settingsRepository;
-
-    public UnregAppCommand(ISettingsRepository settingsRepository) => _settingsRepository = settingsRepository;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public override int Execute(UnregAppOptions options)
     {

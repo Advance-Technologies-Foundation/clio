@@ -1,8 +1,6 @@
-namespace Clio.Package;
-
 using System.Runtime.Serialization;
 
-#region Enum: PackageType
+namespace Clio.Package;
 
 [DataContract]
 public enum PackageType
@@ -10,12 +8,12 @@ public enum PackageType
     /// <summary>
     /// Default package type
     /// </summary>
-    [EnumMember] General,
+    [EnumMember]
+    General,
 
     /// <summary>
     /// Package won't be compiled during installation and can be compiled without configuration build
     /// </summary>
-    [EnumMember] Assembly
+    [EnumMember]
+    Assembly
 }
-
-#endregion

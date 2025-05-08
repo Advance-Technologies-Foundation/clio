@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
+
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Autofac;
@@ -15,7 +16,7 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class ProgramTestCase : BaseClioModuleTests
 {
-    private IAppUpdater appUpdaterMock = Substitute.For<IAppUpdater>();
+    private readonly IAppUpdater appUpdaterMock = Substitute.For<IAppUpdater>();
 
     [TearDown]
     public void TearDown()
@@ -35,7 +36,7 @@ public class ProgramTestCase : BaseClioModuleTests
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
-        DataProviderMock dataProviderMock = new();
+        DataProviderMock dataProviderMock = new ();
         containerBuilder.RegisterInstance(dataProviderMock).As<IDataProvider>();
         containerBuilder.RegisterInstance(appUpdaterMock).As<IAppUpdater>();
     }
@@ -44,27 +45,27 @@ public class ProgramTestCase : BaseClioModuleTests
     [Category("Unit")]
     public void Resolve_DoesNotThrowException_WhenCommandDoesNotNeedEnvironment()
     {
-        CreateWorkspaceCommandOptions options = new();
+        CreateWorkspaceCommandOptions options = new ();
         bool logAndSettings = false;
-        Program.Container = Container;
+        Program.Container = container;
         string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
-        FileSystem.AddFile(filePath, new MockFileData(File
+        fileSystem.AddFile(filePath, new MockFileData(File
             .ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
-        SettingsRepository.FileSystem = FileSystem;
+        SettingsRepository.FileSystem = fileSystem;
         Program.Resolve<CreateWorkspaceCommand>(options, logAndSettings);
     }
 
     [Test]
     public void SkipAutoupdateIfUpdateDisable()
     {
-        Program.Container = Container;
+        Program.Container = container;
         Program.AppUpdater = Substitute.For<IAppUpdater>();
         string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
-        FileSystem.AddFile(filePath, new MockFileData(File
+        fileSystem.AddFile(filePath, new MockFileData(File
             .ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
-        SettingsRepository.FileSystem = FileSystem;
+        SettingsRepository.FileSystem = fileSystem;
         Program.AutoUpdate = false;
-        Program.ExecuteCommands(new string[] { "ver", "--clio" });
+        Program.ExecuteCommands(["ver", "--clio"]);
         Program.AppUpdater.Received(0).CheckUpdate();
     }
 }

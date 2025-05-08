@@ -1,10 +1,11 @@
-using Clio.Common;
-using CommandLine;
-using DocumentFormat.OpenXml.Wordprocessing;
 using System;
 using System.Net.Http;
 using System.Runtime.Intrinsics.Arm;
 using System.Security.Policy;
+
+using Clio.Common;
+using CommandLine;
+using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Clio.Command;
 
@@ -19,7 +20,7 @@ public class ShowPackageFileContentOptions : RemoteCommandOptions
     public string FilePath { get; internal set; }
 }
 
-internal class ShowPackageFileContentCommand : RemoteCommand<ShowPackageFileContentOptions>
+internal class ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings): RemoteCommand<ShowPackageFileContentOptions>(applicationClient, environmentSettings)
 {
     public override HttpMethod HttpMethod => HttpMethod.Get;
 
@@ -32,11 +33,6 @@ internal class ShowPackageFileContentCommand : RemoteCommand<ShowPackageFileCont
             : $"/rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName={_packageName}";
 
     public bool IsReadFile => !string.IsNullOrEmpty(_filePath);
-
-    public ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings)
-        : base(applicationClient, environmentSettings)
-    {
-    }
 
     public override int Execute(ShowPackageFileContentOptions options)
     {
@@ -62,7 +58,7 @@ internal class ShowPackageFileContentCommand : RemoteCommand<ShowPackageFileCont
     {
         Console.WriteLine();
         string trimmedResponse = response.Trim('[', ']');
-        string[] files = trimmedResponse.Split(new char[] { ',' });
+        string[] files = trimmedResponse.Split([',']);
         foreach (string item in files)
         {
             string prettyFilePath = item.Trim('"').Replace("\\\\", "\\").Replace("//", "/").Trim('\\');

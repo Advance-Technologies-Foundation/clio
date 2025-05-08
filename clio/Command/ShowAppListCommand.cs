@@ -1,4 +1,5 @@
 using System;
+
 using Clio.UserEnvironment;
 using CommandLine;
 
@@ -11,16 +12,13 @@ public class AppListOptions
     [Value(0, MetaName = "App name", Required = false, HelpText = "Name of application")]
     public string Name { get; set; }
 
-
     [Option('s', "short", Required = false, HelpText = "Show short list")]
     public bool ShowShort { get; set; }
 }
 
-public class ShowAppListCommand : Command<AppListOptions>
+public class ShowAppListCommand(ISettingsRepository settingsRepository): Command<AppListOptions>
 {
-    private readonly ISettingsRepository _settingsRepository;
-
-    public ShowAppListCommand(ISettingsRepository settingsRepository) => _settingsRepository = settingsRepository;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
 
     public override int Execute(AppListOptions options)
     {

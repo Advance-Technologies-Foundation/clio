@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.Common.db;
@@ -21,7 +22,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
     [Test]
     public void Test()
     {
-        //Arrange
+        // Arrange
         ILogger logger = Substitute.For<ILogger>();
         IFileSystem fileSystem = Substitute.For<IFileSystem>();
         IDbClientFactory dbClientFactory = Substitute.For<IDbClientFactory>();
@@ -41,7 +42,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
         const string host = "127.0.0.1";
         dbClientFactory.CreateMssql(host, port, username, password).Returns(mssql);
 
-        RestoreDbCommandOptions options = new()
+        RestoreDbCommandOptions options = new ()
         {
             Uri = $"mssql://{username}:{password}@{host}:{port}",
             BackUpFilePath = backUpFilePath,
@@ -54,15 +55,15 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
             DbName = options.DbName,
             BackupFilePath = options.BackUpFilePath
         });
-        RestoreDbCommand sut = new(logger, fileSystem, dbClientFactory, settingsRepository);
+        RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository);
 
-        StringReader input = new(newDbName);
+        StringReader input = new (newDbName);
         Console.SetIn(input);
 
-        //Act
+        // Act
         int actual = sut.Execute(options);
 
-        //Assert
+        // Assert
         actual.Should().Be(0);
     }
 }

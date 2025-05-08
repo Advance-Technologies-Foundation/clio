@@ -1,13 +1,13 @@
 using System;
 using System.IO;
+using System.Text.Json;
+
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
-
-using System.Text.Json;
-
-[Verb("execute-assembly-code",
+[Verb(
+    "execute-assembly-code",
     Aliases = new[] { "exec" },
     HelpText = "Execute an assembly code which implements the IExecutor interface",
     Hidden = true)]
@@ -26,17 +26,13 @@ public class ExecuteAssemblyOptions : RemoteCommandOptions
 internal class ExecuteScriptRequest
 {
     public byte[] Body { get; set; }
+
     public string LibraryType { get; set; }
 }
 
-internal class AssemblyCommand : RemoteCommand<ExecuteAssemblyOptions>
+internal class AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<ExecuteAssemblyOptions>(applicationClient, settings)
 {
     protected override string ServicePath => @"/IDE/ExecuteScript";
-
-    public AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
 
     protected override string GetRequestData(ExecuteAssemblyOptions options)
     {

@@ -6,11 +6,17 @@ namespace Clio;
 public interface IPackageArchiver
 {
     public bool IsZipArchive(string filePath);
+
     public bool IsGzArchive(string filePath);
+
     string GetPackedPackageFileName(string packageName);
+
     string GetPackedGroupPackagesFileName(string groupPackagesName);
+
     void CheckPackedPackageExistsAndNotEmpty(string packedPackagePath);
+
     IEnumerable<string> FindGzipPackedPackagesFiles(string searchDirectory);
+
     void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite = true);
 
     void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb,

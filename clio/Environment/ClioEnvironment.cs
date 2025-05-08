@@ -10,13 +10,14 @@ internal class CreatioEnvironment : ICreatioEnvironment
     private const string PathVariableName = "PATH";
 
     public static bool IsNetCore => Settings.IsNetCore;
-    public static string EnvironmentName { get; set; }
-    public static EnvironmentSettings Settings { get; set; }
 
+    public static string EnvironmentName { get; set; }
+
+    public static EnvironmentSettings Settings { get; set; }
 
     private IResult RegisterPath(string path, EnvironmentVariableTarget target)
     {
-        EnvironmentResult result = new();
+        EnvironmentResult result = new ();
         string pathValue = Environment.GetEnvironmentVariable(PathVariableName, target);
         if (string.IsNullOrEmpty(pathValue))
         {
@@ -38,7 +39,7 @@ internal class CreatioEnvironment : ICreatioEnvironment
 
     private IResult UnregisterPath(EnvironmentVariableTarget target)
     {
-        EnvironmentResult result = new();
+        EnvironmentResult result = new ();
         string pathValue = Environment.GetEnvironmentVariable(PathVariableName, target);
         string[] paths = pathValue.Split(Path.PathSeparator);
         string clioPath = string.Empty;
@@ -46,7 +47,7 @@ internal class CreatioEnvironment : ICreatioEnvironment
         {
             if (Directory.Exists(path))
             {
-                DirectoryInfo dir = new(path);
+                DirectoryInfo dir = new (path);
                 FileInfo[] files = dir.GetFiles("clio.cmd");
                 if (files.Length > 0)
                 {

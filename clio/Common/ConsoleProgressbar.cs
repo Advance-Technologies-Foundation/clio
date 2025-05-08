@@ -3,15 +3,18 @@ namespace Clio.Common;
 public interface IConsoleProgressbar
 {
     string GetBuatifyProgress(string actionName, int value);
+
     string GetBuatifyProgress(string actionName, int value, int total);
 
     int Scale { get; set; }
+
     int MaxActionNameLength { get; set; }
 }
 
 public class ConsoleProgressbar : IConsoleProgressbar
 {
     public int Scale { get; set; } = 10;
+
     public int MaxActionNameLength { get; set; }
 
     public ConsoleProgressbar()
@@ -36,7 +39,6 @@ public class ConsoleProgressbar : IConsoleProgressbar
         }
 
         string result = $"{actionName + padRight} [{valueString}] {value}%";
-
 
         return result;
     }

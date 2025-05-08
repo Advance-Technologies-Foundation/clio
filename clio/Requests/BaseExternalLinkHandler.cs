@@ -6,12 +6,12 @@ namespace Clio.Requests;
 internal class BaseExternalLinkHandler
 {
     /// <summary>
-    /// Request Uri
+    /// Request Uri.
     /// </summary>
     protected Uri _clioUri;
 
     /// <summary>
-    /// Collection of Query parameters
+    /// Gets collection of Query parameters.
     /// </summary>
     protected NameValueCollection ClioParams => System.Web.HttpUtility.ParseQueryString(_clioUri.Query);
 }

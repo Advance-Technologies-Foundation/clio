@@ -1,19 +1,15 @@
-using Clio.Workspaces;
-
-namespace Clio.Package;
-
 using System;
 using System.Collections.Generic;
 using System.IO;
+
+using Clio.Workspaces;
 using Common;
 using WebApplication;
 
-#region Class: PackageDownloader
+namespace Clio.Package;
 
 public class PackageDownloader : IPackageDownloader
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClientFactory _applicationClientFactory;
     private readonly IPackageArchiver _packageArchiver;
@@ -23,13 +19,9 @@ public class PackageDownloader : IPackageDownloader
     private readonly IApplicationPing _applicationPing;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
-    private string _reportPath;
 
-    #endregion
-
-    #region Constructors: Public
-
-    public PackageDownloader(EnvironmentSettings environmentSettings,
+    public PackageDownloader(
+        EnvironmentSettings environmentSettings,
         IApplicationClientFactory applicationClientFactory, IPackageArchiver packageArchiver,
         IApplicationDownloader applicationDownloader, IServiceUrlBuilder serviceUrlBuilder,
         IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
@@ -54,10 +46,6 @@ public class PackageDownloader : IPackageDownloader
         _fileSystem = fileSystem;
         _logger = logger;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
         _serviceUrlBuilder.Build(knownRoute, environmentSettings);
@@ -103,11 +91,8 @@ public class PackageDownloader : IPackageDownloader
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
-    public void DownloadZipPackages(IEnumerable<string> packagesNames,
+    public void DownloadZipPackages(
+        IEnumerable<string> packagesNames,
         EnvironmentSettings environmentSettings = null, string destinationPath = null)
     {
         environmentSettings ??= _environmentSettings;
@@ -153,8 +138,4 @@ public class PackageDownloader : IPackageDownloader
     public void DownloadPackage(string packageName, EnvironmentSettings environmentSettings = null,
         string destinationPath = null) =>
         DownloadPackages(new[] { packageName }, environmentSettings, destinationPath);
-
-    #endregion
 }
-
-#endregion

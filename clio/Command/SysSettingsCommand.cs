@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Common;
 using CommandLine;
 
@@ -21,27 +22,21 @@ public class SysSettingsOptions : EnvironmentOptions
     public bool IsGet { get; set; }
 }
 
-public class SysSettingsCommand : Command<SysSettingsOptions>
+public class SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IClioGateway clioGateway): Command<SysSettingsOptions>
 {
-    private readonly ISysSettingsManager _sysSettingsManager;
-    private readonly ILogger _logger;
-    private readonly IClioGateway _clioGateway;
-
-    public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IClioGateway clioGateway)
-    {
-        _sysSettingsManager = sysSettingsManager;
-        _logger = logger;
-        _clioGateway = clioGateway;
-    }
+    private readonly ISysSettingsManager _sysSettingsManager = sysSettingsManager;
+    private readonly ILogger _logger = logger;
+    private readonly IClioGateway _clioGateway = clioGateway;
 
     private void CreateSysSettingIfNotExists(SysSettingsOptions opts) =>
-        // SysSettingsManager.InsertSysSettingResponse result = 
-        // 	_sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type);
+
+        // SysSettingsManager.InsertSysSettingResponse result =
+        //  _sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type);
         _sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type);
 
     // string text = result switch {
-    // 	{ Success: true, Id: var id } when id != Guid.Empty => $"SysSettings with code: {opts.Code} created.",
-    // 	{ Success: false, Id: var id } when id == Guid.Empty => $"SysSettings with code: {opts.Code} already exists."
+    //  { Success: true, Id: var id } when id != Guid.Empty => $"SysSettings with code: {opts.Code} created.",
+    //  { Success: false, Id: var id } when id == Guid.Empty => $"SysSettings with code: {opts.Code} already exists."
     // };
     //  _logger.WriteInfo(text);
     public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null)

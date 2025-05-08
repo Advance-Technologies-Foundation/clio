@@ -1,10 +1,11 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 
 namespace Clio;
 
@@ -26,24 +27,17 @@ internal class CompressAppOptions
     public IEnumerable<string> RootPackageNames => StringParser.ParseArray(Packages);
 }
 
-internal class CompressAppCommand : Command<CompressAppOptions>
+internal class CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver packageArchiver,
+    IPackageUtilities packageUtilities): Command<CompressAppOptions>
 {
-    private IJsonConverter _jsonConverter;
-    private readonly IPackageArchiver _packageArchiver;
-    private readonly IPackageUtilities _packageUtilities;
-
-    public CompressAppCommand(IJsonConverter jsonConverter, IPackageArchiver packageArchiver,
-        IPackageUtilities packageUtilities)
-    {
-        _jsonConverter = jsonConverter;
-        _packageArchiver = packageArchiver;
-        _packageUtilities = packageUtilities;
-    }
+    private readonly IJsonConverter _jsonConverter = jsonConverter;
+    private readonly IPackageArchiver _packageArchiver = packageArchiver;
+    private readonly IPackageUtilities _packageUtilities = packageUtilities;
 
     public override int Execute(CompressAppOptions options)
     {
         FolderPackageRepository folderPackageRepository =
-            new(options.RepositoryFolderPath, _jsonConverter, _packageUtilities);
+            new (options.RepositoryFolderPath, _jsonConverter, _packageUtilities);
         IEnumerable<string> appPackageNames = folderPackageRepository.GetRelatedPackagesNames(options.RootPackageNames);
         string destinationPath = options.DestinationPath;
         if (!Directory.Exists(destinationPath))
@@ -54,7 +48,8 @@ internal class CompressAppCommand : Command<CompressAppOptions>
         foreach (string appPackageName in appPackageNames)
         {
             string packageContentFolderPath = folderPackageRepository.GetPackageContentFolderPath(appPackageName);
-            _packageArchiver.Pack(packageContentFolderPath,
+            _packageArchiver.Pack(
+                packageContentFolderPath,
                 Path.Combine(options.DestinationPath, $"{appPackageName}.gz"), options.SkipPdb);
         }
 
@@ -62,24 +57,16 @@ internal class CompressAppCommand : Command<CompressAppOptions>
     }
 }
 
-internal class FolderPackageRepository
+internal class FolderPackageRepository(string repositoryFolderPath, IJsonConverter jsonConverter,
+    IPackageUtilities packageUtilities)
 {
-    private readonly string _repositoryFolderPath;
-    private readonly IJsonConverter _jsonConverter;
-    private readonly IPackageUtilities _packageUtilities;
-
-    public FolderPackageRepository(string repositoryFolderPath, IJsonConverter jsonConverter,
-        IPackageUtilities packageUtilities)
-    {
-        _jsonConverter = jsonConverter;
-        _repositoryFolderPath = repositoryFolderPath;
-        _packageUtilities = packageUtilities;
-    }
-
+    private readonly string _repositoryFolderPath = repositoryFolderPath;
+    private readonly IJsonConverter _jsonConverter = jsonConverter;
+    private readonly IPackageUtilities _packageUtilities = packageUtilities;
 
     public IEnumerable<string> GetRelatedPackagesNames(IEnumerable<string> rootPackageNames)
     {
-        HashSet<string> relatedPackageDescriptors = new();
+        HashSet<string> relatedPackageDescriptors = [];
         Stack<PackageDescriptor> candidatePackages = GetStackPackageDescriptors(rootPackageNames);
         while (candidatePackages.Count > 0)
         {
@@ -101,7 +88,7 @@ internal class FolderPackageRepository
 
     private Stack<PackageDescriptor> GetStackPackageDescriptors(IEnumerable<string> packageNames)
     {
-        Stack<PackageDescriptor> processedPackages = new();
+        Stack<PackageDescriptor> processedPackages = new ();
         foreach (string packageName in packageNames)
         {
             PackageDescriptor packageDescriptor = GetPackageDescriptor(packageName);

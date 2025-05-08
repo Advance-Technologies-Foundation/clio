@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
@@ -31,7 +32,7 @@ public class NuspecFilesGenerator : INuspecFilesGenerator
 
     private string GetNuspecFilesSection(string packedPackagePath)
     {
-        FileInfo compressedPackageFileInfo = new(packedPackagePath);
+        FileInfo compressedPackageFileInfo = new (packedPackagePath);
         return FileRecordTemplate
             .Replace("$src$", packedPackagePath)
             .Replace("$target$", compressedPackageFileInfo.Name);
@@ -39,7 +40,7 @@ public class NuspecFilesGenerator : INuspecFilesGenerator
 
     private string GetNuspecDependenciesSection(IEnumerable<PackageDependency> dependencies)
     {
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         foreach (PackageDependency dependency in dependencies)
         {
             string dependencyVersion = DependencyVersionTemplate

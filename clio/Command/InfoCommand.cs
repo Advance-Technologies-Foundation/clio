@@ -1,7 +1,8 @@
-using Clio.Common;
-using CommandLine;
 using System;
 using System.Reflection;
+
+using Clio.Common;
+using CommandLine;
 
 namespace Clio.Command;
 
@@ -25,26 +26,24 @@ public class InfoCommandOptions
     public bool Runtime { get; set; }
 }
 
-public class InfoCommand : Command<InfoCommandOptions>
+public class InfoCommand(ILogger logger): Command<InfoCommandOptions>
 {
     private const string _gateVersion = "2.0.0.34";
-    private readonly ILogger _logger;
-
-    public InfoCommand(ILogger logger) => _logger = logger;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(InfoCommandOptions options)
     {
-        if (options is object && options.Clio)
+        if (options is not null && options.Clio)
         {
             _logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
             return 0;
         }
-        else if (options is object && options.Runtime)
+        else if (options is not null && options.Runtime)
         {
-            _logger.WriteInfo($"dotnet: {Environment.Version.ToString()}");
+            _logger.WriteInfo($"dotnet: {Environment.Version}");
             return 0;
         }
-        else if (options is object && options.Gate)
+        else if (options is not null && options.Gate)
         {
             _logger.WriteInfo($"gate:   {_gateVersion}");
             return 0;
@@ -54,12 +53,12 @@ public class InfoCommand : Command<InfoCommandOptions>
             _logger.WriteInfo(SettingsRepository.AppSettingsFile);
             return 0;
         }
-        else if ((options is object && options.All) ||
+        else if ((options is not null && options.All) ||
                  (!options.Runtime && !options.Gate && !options.Clio && !options.ShowSettingsFilePath))
         {
             _logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
             _logger.WriteInfo($"gate:   {_gateVersion}");
-            _logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
+            _logger.WriteInfo($"dotnet:   {Environment.Version}");
             _logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
             return 0;
         }

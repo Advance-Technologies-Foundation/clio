@@ -1,12 +1,10 @@
-using System.IO.Abstractions;
-
-namespace Clio.Common;
-
 using System;
 using System.IO;
+using System.IO.Abstractions;
+
 using Newtonsoft.Json;
 
-#region Class: JsonConverter
+namespace Clio.Common;
 
 public class JsonConverter : IJsonConverter
 {
@@ -18,8 +16,6 @@ public class JsonConverter : IJsonConverter
     {
     }
 
-    #region Methods: Public
-
     public string CorrectJson(string body)
     {
         body = body.Replace("\\\\r\\\\n", Environment.NewLine);
@@ -29,7 +25,7 @@ public class JsonConverter : IJsonConverter
         body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
         body = body.Replace("\\\"", "\"");
         body = body.Replace("\\\\", "\\");
-        body = body.Trim(new char[] { '\"' });
+        body = body.Trim(['\"']);
         return body;
     }
 
@@ -58,8 +54,4 @@ public class JsonConverter : IJsonConverter
     }
 
     public string SerializeObject<T>(T value) => JsonConvert.SerializeObject(value, Formatting.Indented);
-
-    #endregion
 }
-
-#endregion

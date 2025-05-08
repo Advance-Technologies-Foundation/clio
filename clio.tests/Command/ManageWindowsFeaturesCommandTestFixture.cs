@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Management.Automation;
+
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -13,7 +14,7 @@ namespace Clio.Tests.Command;
 
 public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 {
-    private IWindowsFeatureManager _windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
+    private readonly IWindowsFeatureManager _windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
     private ManageWindowsFeaturesCommand _sut;
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
@@ -25,24 +26,24 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
     public override void Setup()
     {
         base.Setup();
-        _sut = Container.Resolve<ManageWindowsFeaturesCommand>();
+        _sut = container.Resolve<ManageWindowsFeaturesCommand>();
     }
 
     [TestCase("install")]
     [TestCase("uninstall")]
     public void InstallComponent_Calls_WindowsFeatureManager(string actionName)
     {
-        //Arrange
-        ManageWindowsFeaturesOptions options = new()
+        // Arrange
+        ManageWindowsFeaturesOptions options = new ()
         {
             InstallMode = actionName == "install",
             UnistallMode = actionName == "uninstall"
         };
 
-        //Act
+        // Act
         int actual = _sut.Execute(options);
 
-        //Assert
+        // Assert
         actual.Should().Be(0);
 
         if (actionName == "install")
@@ -61,20 +62,20 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
     public void GetMissedComponents_ShouldInstallMissedComponents()
     {
         // Arrange
-        List<WindowsFeature> existingComponents = new()
-        {
+        List<WindowsFeature> existingComponents =
+        [
             new WindowsFeature { Name = "Feature3", Installed = false },
             new WindowsFeature { Name = "Feature4", Installed = false }
-        };
+        ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
         IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
         ILogger logger = Substitute.For<ILogger>();
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         WindowsFeatureManager windowsFeatureManager =
-            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
+                RequirmentNETFrameworkFeatures =["Feature1", "Feature2"]
             };
 
         // Act
@@ -89,11 +90,11 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
     public void GetMissedComponents_CorrectWorking_IfAllFeatureExisting()
     {
         // Arrange
-        List<WindowsFeature> existingComponents = new()
-        {
+        List<WindowsFeature> existingComponents =
+        [
             new WindowsFeature { Name = "Feature1", Installed = true },
             new WindowsFeature { Name = "Feature2", Installed = true }
-        };
+        ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
         IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
@@ -101,9 +102,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
         WindowsFeatureManager windowsFeatureManager =
-            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
+                RequirmentNETFrameworkFeatures =["Feature1", "Feature2"]
             };
 
         // Act
@@ -118,11 +119,11 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
     public void InstallMissingFeatures_NotThrow_IfAllFeatureExisting()
     {
         // Arrange
-        List<WindowsFeature> existingComponents = new()
-        {
+        List<WindowsFeature> existingComponents =
+        [
             new WindowsFeature { Name = "Feature1", Installed = true },
             new WindowsFeature { Name = "Feature2", Installed = true }
-        };
+        ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
         IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
@@ -130,13 +131,14 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
         WindowsFeatureManager windowsFeatureManager =
-            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures = ["Feature1", "Feature2"]
+                RequirmentNETFrameworkFeatures =["Feature1", "Feature2"]
             };
 
         // Act
         Action act = () => windowsFeatureManager.InstallMissingFeatures();
+
         // Assert
         act.Should().NotThrow();
     }
@@ -146,11 +148,11 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
     public void InstpallMissingFeatures_ThrowItemNotExistException_IfFeatureMissingOnServer()
     {
         // Arrange
-        List<WindowsFeature> existingComponents = new()
-        {
+        List<WindowsFeature> existingComponents =
+        [
             new WindowsFeature { Name = "Feature1", Installed = true },
             new WindowsFeature { Name = "Feature2", Installed = true }
-        };
+        ];
 
         IWorkingDirectoriesProvider wp = Substitute.For<IWorkingDirectoriesProvider>();
         IWindowsFeatureProvider windowsFeatureProvider = Substitute.For<IWindowsFeatureProvider>();
@@ -158,13 +160,14 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
         windowsFeatureProvider.GetWindowsFeatures().Returns(existingComponents);
         windowsFeatureProvider.GetActiveWindowsFeatures().Returns(["Feature1", "Feature2"]);
         WindowsFeatureManager windowsFeatureManager =
-            new(wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
+            new (wp, new ConsoleProgressbar(), windowsFeatureProvider, logger)
             {
-                RequirmentNETFrameworkFeatures = ["Feature3"]
+                RequirmentNETFrameworkFeatures =["Feature3"]
             };
 
         // Act
         Action act = () => windowsFeatureManager.InstallMissingFeatures();
+
         // Assert
         act.Should().Throw<ItemNotFoundException>();
     }

@@ -1,9 +1,9 @@
-namespace Clio.Command;
+using System;
 
 using CommandLine;
-using System;
 using Common;
 
+namespace Clio.Command;
 [Verb("link-to-repository", Aliases = new[] { "l2r", "link2repo" },
     HelpText = "Link environment package(s) to repository.")]
 internal class Link2RepoOptions
@@ -16,7 +16,7 @@ internal class Link2RepoOptions
         HelpText =
             "Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)",
         Default = null)]
-    public string envPkgPath { get; set; }
+    public string EnvPkgPath { get; set; }
 }
 
 internal class Link2RepoCommand : Command<Link2RepoOptions>
@@ -27,7 +27,7 @@ internal class Link2RepoCommand : Command<Link2RepoOptions>
         {
             if (OperationSystem.Current.IsWindows)
             {
-                RfsEnvironment.Link2Repo(options.envPkgPath, options.RepoPath);
+                RfsEnvironment.Link2Repo(options.EnvPkgPath, options.RepoPath);
                 Console.WriteLine("Done.");
                 return 0;
             }

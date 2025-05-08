@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Common.Responses;
 using Clio.Package;
 using NSubstitute;
@@ -9,16 +10,11 @@ namespace Clio.Tests.Package;
 [TestFixture]
 public class PackageMutatorTestCase : BasePackageOperationTestCase
 {
-    #region Fields: Private
-
     private PackageEditableMutator _packageEditableMutator;
 
-    #endregion
-
-    #region Methods: Private
-
     private void SetupSuccessfulPostRequest(string fullUrl, Guid packageUId) =>
-        ApplicationClient.ExecutePostRequest<BaseResponse>(fullUrl,
+        applicationClient.ExecutePostRequest<BaseResponse>(
+            fullUrl,
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = true });
 
@@ -26,19 +22,16 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
         SetupBuildUrl($"/ServiceModel/PackageService.svc/{methodName}", resultUrl);
 
     private void SetupUnsuccessfulPostRequest(Guid packageUId, string errorMessage) =>
-        ApplicationClient.ExecutePostRequest<BaseResponse>(Arg.Any<string>(),
+        applicationClient.ExecutePostRequest<BaseResponse>(
+            Arg.Any<string>(),
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage } });
-
-    #endregion
-
-    #region Methods: Public
 
     public override void Init()
     {
         base.Init();
-        _packageEditableMutator = new PackageEditableMutator(ApplicationPackageListProvider, ApplicationClient,
-            ServiceUrlBuilder);
+        _packageEditableMutator = new PackageEditableMutator(applicationPackageListProvider, applicationClient,
+            serviceUrlBuilder);
     }
 
     [Test]
@@ -50,8 +43,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
         SetupGetPackagesResponse(
             CreatePackageInfo("SomePackage"),
             CreatePackageInfo(packageName, packageUId),
-            CreatePackageInfo("SomePackage1")
-        );
+            CreatePackageInfo("SomePackage1"));
         const string fullUrl = "TestUrl";
         SetupPackagesServiceBuildUrl("StartPackageHotfix", fullUrl);
         SetupSuccessfulPostRequest(fullUrl, packageUId);
@@ -71,7 +63,8 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
     {
         const string packageName = "TestPackageName";
         SetupGetPackagesResponse(CreatePackageInfo("SomePackage"));
-        Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false),
+        Assert.Throws<Exception>(
+            () => _packageEditableMutator.SetPackageHotfix(packageName, false),
             $"Package with name {packageName} not found");
     }
 
@@ -96,8 +89,7 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
         SetupGetPackagesResponse(
             CreatePackageInfo("SomePackage"),
             CreatePackageInfo(packageName, packageUId),
-            CreatePackageInfo("SomePackage1")
-        );
+            CreatePackageInfo("SomePackage1"));
         const string fullUrl = "TestUrl";
         SetupPackagesServiceBuildUrl("FinishPackageHotfix", fullUrl);
         SetupSuccessfulPostRequest(fullUrl, packageUId);
@@ -117,7 +109,8 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
     {
         const string packageName = "TestPackageName";
         SetupGetPackagesResponse(CreatePackageInfo("SomePackage"));
-        Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false),
+        Assert.Throws<Exception>(
+            () => _packageEditableMutator.SetPackageHotfix(packageName, false),
             $"Package with name {packageName} not found");
     }
 
@@ -132,6 +125,4 @@ public class PackageMutatorTestCase : BasePackageOperationTestCase
         SetupUnsuccessfulPostRequest(packageUId, errorMessage);
         Assert.Throws<Exception>(() => _packageEditableMutator.SetPackageHotfix(packageName, false), errorMessage);
     }
-
-    #endregion
 }

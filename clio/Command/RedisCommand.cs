@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Common;
 using CommandLine;
 
@@ -9,12 +10,7 @@ public class ClearRedisOptions : RemoteCommandOptions
 {
 }
 
-public class RedisCommand : RemoteCommand<ClearRedisOptions>
+public class RedisCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<ClearRedisOptions>(applicationClient, settings)
 {
-    public RedisCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
-
     protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/ClearRedisDb";
 }

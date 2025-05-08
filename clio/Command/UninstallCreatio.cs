@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+
 using Clio.Common;
 using CommandLine;
 using FluentValidation;
@@ -9,8 +10,6 @@ namespace Clio.Command;
 
 public class UninstallCreatioCommandOptionsValidator : AbstractValidator<UninstallCreatioCommandOptions>
 {
-    #region Constructors: Public
-
     public UninstallCreatioCommandOptionsValidator(IFileSystem fileSystem)
     {
         RuleFor(o => string.IsNullOrWhiteSpace(o.PhysicalPath) && string.IsNullOrWhiteSpace(o.EnvironmentName))
@@ -91,44 +90,21 @@ public class UninstallCreatioCommandOptionsValidator : AbstractValidator<Uninsta
                 }
             });
     }
-
-    #endregion
 }
 
 [Verb("uninstall-creatio", Aliases = new[] { "uc" }, HelpText = "Uninstall local instance of creatio")]
 public class UninstallCreatioCommandOptions : EnvironmentNameOptions
 {
-    #region Properties: Public
-
     [Option('d', "physicalPath", Required = false, HelpText = "Path to applications")]
     public string PhysicalPath { get; set; }
-
-    #endregion
 }
 
-public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>
+public class UninstallCreatioCommand(IValidator<UninstallCreatioCommandOptions> validator,
+    ILogger logger, ICreatioUninstaller creatioUninstaller): Command<UninstallCreatioCommandOptions>
 {
-    #region Fields: Private
-
-    private readonly IValidator<UninstallCreatioCommandOptions> _validator;
-    private readonly ILogger _logger;
-    private readonly ICreatioUninstaller _creatioUninstaller;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public UninstallCreatioCommand(IValidator<UninstallCreatioCommandOptions> validator,
-        ILogger logger, ICreatioUninstaller creatioUninstaller)
-    {
-        _validator = validator;
-        _logger = logger;
-        _creatioUninstaller = creatioUninstaller;
-    }
-
-    #endregion
-
-    #region Methods: Private
+    private readonly IValidator<UninstallCreatioCommandOptions> _validator = validator;
+    private readonly ILogger _logger = logger;
+    private readonly ICreatioUninstaller _creatioUninstaller = creatioUninstaller;
 
     private int PrintDoneAndExit(UninstallCreatioCommandOptions options)
     {
@@ -151,10 +127,6 @@ public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>
         return 1;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(UninstallCreatioCommandOptions options)
     {
         ValidationResult validationResult = _validator.Validate(options);
@@ -168,13 +140,12 @@ public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>
             _ when options.PhysicalPath is not null => () => _creatioUninstaller.UninstallByPath(options.PhysicalPath),
             _ when options.EnvironmentName is not null => () =>
                 _creatioUninstaller.UninstallByEnvironmentName(options.EnvironmentName),
-            _ => throw new ArgumentOutOfRangeException(nameof(options),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(options),
                 "Either PhysicalPath or EnvironmentName must be provided")
         };
         act.Invoke();
 
         return PrintDoneAndExit(options);
     }
-
-    #endregion
 }

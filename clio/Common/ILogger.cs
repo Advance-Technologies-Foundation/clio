@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+
 using ConsoleTables;
 using FluentValidation.Results;
 
@@ -26,9 +27,8 @@ public interface ILogger
     /// <summary>
     /// Stops the logging thread.
     /// </summary>
-    /// <remarks>See <see cref="ConsoleLogger"/>> for details</remarks>
+    /// <remarks>See <see cref="ConsoleLogger"/>> for details.</remarks>
     public void Stop();
-
 
     void Write(string value);
 
@@ -40,17 +40,16 @@ public interface ILogger
     /// <summary>
     /// Writes an undecorated line to the log.
     /// </summary>
-    /// <remarks>See <see cref="ConsoleLogger"/> for details</remarks>
+    /// <remarks>See <see cref="ConsoleLogger"/> for details.</remarks>
     /// <param name="value">The string value to be written to the log.</param>
     void WriteLine(string value);
-
 
     /// <summary>
     /// Writes an line to the log.
     /// </summary>
     /// <remarks>
     /// Line is decorated with [WAR] - at the beginning of the line in yellow color
-    /// See <see cref="ConsoleLogger"/> for details
+    /// See <see cref="ConsoleLogger"/> for details.
     /// </remarks>
     /// <param name="value">The string value to be written to the log.</param>
     void WriteWarning(string value);
@@ -60,7 +59,7 @@ public interface ILogger
     /// </summary>
     /// <remarks>
     /// Line is decorated with [WAR] - at the beginning of the line in red color
-    /// See <see cref="ConsoleLogger"/> for details
+    /// See <see cref="ConsoleLogger"/> for details.
     /// </remarks>
     /// <param name="value">The string value to be written to the log.</param>
     void WriteError(string value);
@@ -70,7 +69,7 @@ public interface ILogger
     /// </summary>
     /// <remarks>
     /// Line is decorated with [WAR] - at the beginning of the line in green color
-    /// See <see cref="ConsoleLogger"/> for details
+    /// See <see cref="ConsoleLogger"/> for details.
     /// </remarks>
     /// <param name="value">The string value to be written to the log.</param>
     void WriteInfo(string value);
@@ -79,11 +78,10 @@ public interface ILogger
     /// Prints ConsoleTable to the log.
     /// </summary>
     /// <remarks>
-    /// See <see cref="ConsoleLogger"/> for details and <see cref="ConsoleTable"/> for details
+    /// See <see cref="ConsoleLogger"/> for details and <see cref="ConsoleTable"/> for details.
     /// </remarks>
     /// <param name="table">Table to be written to the log.</param>
     void PrintTable(ConsoleTable table);
-
 
     /// <summary>
     /// Prints a collection of validation errors to the log.

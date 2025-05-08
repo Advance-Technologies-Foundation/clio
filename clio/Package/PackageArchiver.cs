@@ -2,26 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using MicrosoftIO = System.IO.Abstractions;
 using System.IO.Compression;
 using System.Linq;
+
 using Clio.Common;
+
+using MicrosoftIO = System.IO.Abstractions;
 
 namespace Clio;
 
-#region Class: PackageArchiver
-
 public class PackageArchiver : IPackageArchiver
 {
-    #region Constants: Public
-
     public const string GzExtension = "gz";
     public const string ZipExtension = "zip";
-
-    #endregion
-
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
     private readonly IPackageUtilities _packageUtilities;
     private readonly ICompressionUtilities _compressionUtilities;
@@ -29,10 +22,6 @@ public class PackageArchiver : IPackageArchiver
     private readonly ILogger _logger;
     private readonly MicrosoftIO.IFileSystem _msFileSystem;
     private readonly IZipFile _zipFile;
-
-    #endregion
-
-    #region Constructors: Public
 
     public PackageArchiver(IPackageUtilities packageUtilities, ICompressionUtilities compressionUtilities,
         IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
@@ -51,10 +40,6 @@ public class PackageArchiver : IPackageArchiver
         _msFileSystem = msFileSystem;
         _zipFile = zipFile;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static void CheckPackArgument(string packagePath, string packedPackagePath)
     {
@@ -93,18 +78,17 @@ public class PackageArchiver : IPackageArchiver
         }
 
         List<string> filteredFiles = [];
-        Ignore.Ignore ignore = new();
+        Ignore.Ignore ignore = new ();
         ignore.OriginalRules.Clear();
         ignore.Add(_msFileSystem.File.ReadAllLines(wsIgnoreFile!.FullName));
         foreach (string item in filesArray)
         {
-            Uri fUri = new(item);
+            Uri fUri = new (item);
             if (!ignore.IsIgnored(fUri.ToString()))
             {
                 filteredFiles.Add(item);
             }
         }
-
 
         List<string> ignoreFiles = filesArray
             .Where(f => f.EndsWith(CreatioPackage.IgnoreFileName, StringComparison.InvariantCulture))
@@ -122,7 +106,7 @@ public class PackageArchiver : IPackageArchiver
 
             foreach (string item in filesToCheck)
             {
-                Uri fUri = new(item);
+                Uri fUri = new (item);
                 if (!ignore.IsIgnored(fUri.ToString()))
                 {
                     filteredFiles.Add(item);
@@ -133,8 +117,8 @@ public class PackageArchiver : IPackageArchiver
         return filteredFiles;
     }
 
-
-    private static void CheckZipPackagesArgument(string sourceGzipFilesFolderPaths,
+    private static void CheckZipPackagesArgument(
+        string sourceGzipFilesFolderPaths,
         string destinationArchiveFileName)
     {
         sourceGzipFilesFolderPaths.CheckArgumentNullOrWhiteSpace(nameof(sourceGzipFilesFolderPaths));
@@ -201,10 +185,6 @@ public class PackageArchiver : IPackageArchiver
         return overwrite;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public bool IsZipArchive(string filePath)
     {
         string fileExtension = _fileSystem.ExtractFileExtensionFromPath(filePath);
@@ -218,6 +198,7 @@ public class PackageArchiver : IPackageArchiver
     }
 
     public string GetPackedPackageFileName(string packageName) => $"{packageName}.{GzExtension}";
+
     public string GetPackedGroupPackagesFileName(string groupPackagesName) => $"{groupPackagesName}.{ZipExtension}";
 
     public void CheckPackedPackageExistsAndNotEmpty(string packedPackagePath)
@@ -326,8 +307,4 @@ public class PackageArchiver : IPackageArchiver
         CheckPackedPackageExistsAndNotEmpty(zipFilePath);
         _zipFile.ExtractToDirectory(zipFilePath, destinationPath ?? Environment.CurrentDirectory);
     }
-
-    #endregion
 }
-
-#endregion

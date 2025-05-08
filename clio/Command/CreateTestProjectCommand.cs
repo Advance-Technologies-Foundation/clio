@@ -1,84 +1,40 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
 using FluentValidation;
 using Terrasoft.Common;
 
-
 namespace Clio.Command;
-
-#region Class: CreateTestProjectOptions
 
 [Verb("new-test-project", Aliases = new[] { "create-test-project" },
     HelpText = "Add new test project")]
 public class CreateTestProjectOptions : EnvironmentOptions
 {
-    #region Properties: Public
-
     [Option("package", Required = false, HelpText = "Package name")]
     public string PackageName { get; set; }
-
-    #endregion
 }
-
-#endregion
-
-#region Class: CreateTestProjectOptionsValidator
 
 public class CreateTestProjectOptionsValidator : AbstractValidator<CreateTestProjectOptions>
 {
-    #region Constructors: Public
-
     public CreateTestProjectOptionsValidator() =>
         RuleFor(x => x.PackageName).NotEmpty().WithMessage("Project name is required.");
-
-    #endregion
 }
 
-#endregion
-
-#region Class: CreateUiProjectCommand
-
-internal class CreateTestProjectCommand
+internal class CreateTestProjectCommand(IValidator<CreateTestProjectOptions> optionsValidator, IWorkspace workspace,
+    IWorkspacePathBuilder workspacePathBuilder, IWorkingDirectoriesProvider workingDirectoriesProvider,
+    ITemplateProvider templateProvider, IFileSystem fileSystem)
 {
-    #region Constants: Private
-
     private const string TestsDirectoryName = "tests";
-
-    #endregion
-
-    #region Fields: Private
-
-    private readonly IValidator<CreateTestProjectOptions> _optionsValidator;
-    private readonly IWorkspace _workspace;
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-    private readonly ITemplateProvider _templateProvider;
-    private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public CreateTestProjectCommand(IValidator<CreateTestProjectOptions> optionsValidator, IWorkspace workspace,
-        IWorkspacePathBuilder workspacePathBuilder, IWorkingDirectoriesProvider workingDirectoriesProvider,
-        ITemplateProvider templateProvider, IFileSystem fileSystem
-    )
-    {
-        _optionsValidator = optionsValidator;
-        _workspace = workspace;
-        _workspacePathBuilder = workspacePathBuilder;
-        _workingDirectoriesProvider = workingDirectoriesProvider;
-        _templateProvider = templateProvider;
-        _fileSystem = fileSystem;
-    }
-
-    #endregion
-
-    #region Properties: Private
+    private readonly IValidator<CreateTestProjectOptions> _optionsValidator = optionsValidator;
+    private readonly IWorkspace _workspace = workspace;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
+    private readonly ITemplateProvider _templateProvider = templateProvider;
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 
@@ -86,10 +42,6 @@ internal class CreateTestProjectCommand
         IsWorkspace
             ? _workspacePathBuilder.ProjectsTestsFolderPath
             : Path.Combine(_workingDirectoriesProvider.CurrentDirectory, TestsDirectoryName);
-
-    #endregion
-
-    #region Methods: Public
 
     public int Execute(CreateTestProjectOptions options)
     {
@@ -147,8 +99,4 @@ internal class CreateTestProjectCommand
         string newContent = csprojContent.Replace(packageNameTemplate, packageName);
         _fileSystem.WriteAllTextToFile(csprojPath, newContent);
     }
-
-    #endregion
 }
-
-#endregion

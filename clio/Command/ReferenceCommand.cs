@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+
 using Clio.Project;
 using CommandLine;
 
@@ -22,18 +23,16 @@ public class ReferenceOptions
     public string ReferenceType { get; set; }
 }
 
-public class ReferenceCommand : Command<ReferenceOptions>
+public class ReferenceCommand(ICreatioPkgProjectCreator projectCreator): Command<ReferenceOptions>
 {
-    private readonly ICreatioPkgProjectCreator _projectCreator;
-
-    public ReferenceCommand(ICreatioPkgProjectCreator projectCreator) => _projectCreator = projectCreator;
+    private readonly ICreatioPkgProjectCreator _projectCreator = projectCreator;
 
     private static string CurrentProj =>
         new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
     public override int Execute(ReferenceOptions options)
     {
-        options.Path = options.Path ?? CurrentProj;
+        options.Path ??= CurrentProj;
         if (string.IsNullOrEmpty(options.Path))
         {
             throw new ArgumentNullException(nameof(options.Path));
@@ -47,27 +46,15 @@ public class ReferenceCommand : Command<ReferenceOptions>
         ICreatioPkgProject project = _projectCreator.CreateFromFile(options.Path);
         try
         {
-            switch (options.ReferenceType)
+            project = options.ReferenceType switch
             {
-                case "bin":
-                    project = project.RefToBin();
-                    break;
-                case "src":
-                    project = project.RefToCoreSrc();
-                    break;
-                case "custom":
-                    project = project.RefToCustomPath(options.RefPattern);
-                    break;
-                case "unit-bin":
-                    project = project.RefToUnitBin();
-                    break;
-                case "unit-src":
-                    project = project.RefToUnitCoreSrc();
-                    break;
-                default:
-                    throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
-            }
-
+                "bin" => project.RefToBin(),
+                "src" => project.RefToCoreSrc(),
+                "custom" => project.RefToCustomPath(options.RefPattern),
+                "unit-bin" => project.RefToUnitBin(),
+                "unit-src" => project.RefToUnitCoreSrc(),
+                _ => throw new NotSupportedException($"You use not supported option type {options.ReferenceType}"),
+            };
             project.SaveChanges();
             Console.WriteLine("Done");
             return 0;

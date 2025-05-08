@@ -1,4 +1,3 @@
-using Clio.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,12 +6,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
+using Clio.Common;
+
 namespace Clio.Project.NuGet;
 
-public class CreatioSdkOnline : ICreatioSdk
+public class CreatioSdkOnline(ILogger logger): ICreatioSdk
 {
     private List<Version> _versions = null;
-    private readonly ILogger logger;
+    private readonly ILogger logger = logger;
 
     private List<Version> Versions
     {
@@ -31,7 +32,7 @@ public class CreatioSdkOnline : ICreatioSdk
     {
         try
         {
-            HttpClient client = new() { BaseAddress = new Uri("https://api.nuget.org") };
+            HttpClient client = new () { BaseAddress = new Uri("https://api.nuget.org") };
 
             string json = default;
             Task.Run(async () =>
@@ -42,10 +43,7 @@ public class CreatioSdkOnline : ICreatioSdk
 
             Model? items = JsonSerializer.Deserialize<Model>(json);
             IEnumerable<string> _ver = items.TopItems.FirstOrDefault().Items.Select(i => i.CatalogEntry.Version);
-            if (_versions == null)
-            {
-                _versions = new List<Version>();
-            }
+            _versions ??=[];
 
             foreach (string item in _ver)
             {
@@ -58,12 +56,11 @@ public class CreatioSdkOnline : ICreatioSdk
         catch (Exception e)
         {
             logger.WriteError($"Error while getting Creatio SDK versions from NuGet: {e.Message}");
-            _versions = new List<Version>();
+            _versions = [];
         }
     }
 
     public Version LastVersion => Versions[0];
-    public CreatioSdkOnline(ILogger logger) => this.logger = logger;
 
     public Version FindLatestSdkVersion(Version applicationVersion) =>
         Versions.FirstOrDefault(v =>
@@ -74,20 +71,24 @@ public class CreatioSdkOnline : ICreatioSdk
 
 public class Model
 {
-    [JsonPropertyName("items")] public List<TopItems> TopItems { get; set; }
+    [JsonPropertyName("items")]
+    public List<TopItems> TopItems { get; set; }
 }
 
 public class TopItems
 {
-    [JsonPropertyName("items")] public List<InnerItems> Items { get; set; }
+    [JsonPropertyName("items")]
+    public List<InnerItems> Items { get; set; }
 }
 
 public class InnerItems
 {
-    [JsonPropertyName("catalogEntry")] public CatalogEntry CatalogEntry { get; set; }
+    [JsonPropertyName("catalogEntry")]
+    public CatalogEntry CatalogEntry { get; set; }
 }
 
 public class CatalogEntry
 {
-    [JsonPropertyName("version")] public string Version { get; set; }
+    [JsonPropertyName("version")]
+    public string Version { get; set; }
 }

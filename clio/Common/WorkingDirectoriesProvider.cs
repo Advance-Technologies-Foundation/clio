@@ -3,41 +3,19 @@ using System.IO;
 
 namespace Clio.Common;
 
-#region Class: WorkingDirectoriesProvider
-
-public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
+public class WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.IFileSystem fileSystem): IWorkingDirectoriesProvider
 {
-    #region Fields: Private
-
-    private readonly ILogger _logger;
-    private readonly System.IO.Abstractions.IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Fields: Public
-
+    private readonly ILogger _logger = logger;
+    private readonly System.IO.Abstractions.IFileSystem _fileSystem = fileSystem;
     public static string _executingDirectory;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public WorkingDirectoriesProvider(ILogger logger, System.IO.Abstractions.IFileSystem fileSystem)
-    {
-        _logger = logger;
-        _fileSystem = fileSystem;
-    }
-
-    #endregion
-
-    #region Properties: Public
 
     public string BaseTempDirectory
     {
         get
         {
             string tempDir = Environment.GetEnvironmentVariable("CLIO_WORKING_DIRECTORY");
-            string path = Path.Combine(string.IsNullOrEmpty(tempDir)
+            string path = Path.Combine(
+                string.IsNullOrEmpty(tempDir)
                 ? Path.GetTempPath()
                 : tempDir, "clio");
 
@@ -50,10 +28,6 @@ public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
     public string ExecutingDirectory => _executingDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
 
     public string TemplateDirectory => Path.Combine(ExecutingDirectory, "tpl");
-
-    #endregion
-
-    #region Methods: Public
 
     public string CreateTempDirectory()
     {
@@ -112,8 +86,4 @@ public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
         templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
         return Path.Combine(TemplateDirectory, $"{templateName}.tpl");
     }
-
-    #endregion
 }
-
-#endregion

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Management.Automation;
+
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -17,34 +18,22 @@ public class BaseAppCommandOptions : RemoteCommandOptions
     public string Name { get; set; }
 }
 
-public class BaseAppCommand<T> : RemoteCommand<T> where T : BaseAppCommandOptions
+public class BaseAppCommand<T>(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
+    IDataProvider dataProvider, ApplicationManager applicationManager): RemoteCommand<T>(applicationClient, environmentSettings)
+    where T : BaseAppCommandOptions
 {
-    private readonly IDataProvider _dataProvider;
-    protected readonly ApplicationManager _applicationManager;
-
-    public BaseAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
-        IDataProvider dataProvider, ApplicationManager applicationManager)
-        : base(applicationClient, environmentSettings)
-    {
-        _dataProvider = dataProvider;
-        _applicationManager = applicationManager;
-    }
+    private readonly IDataProvider _dataProvider = dataProvider;
+    protected readonly ApplicationManager _applicationManager = applicationManager;
 
     protected List<SysInstalledApp> GetApplicationList() =>
         AppDataContextFactory.GetAppDataContext(_dataProvider)
             .Models<SysInstalledApp>()
             .ToList();
 
-
     protected SysInstalledApp GetAppFromAppName(string name)
     {
         SysInstalledApp? app = GetApplicationList()
-            .FirstOrDefault(a => a.Name.ToUpper() == name.ToUpper() || a.Code.ToUpper() == name.ToUpper());
-        if (app == null)
-        {
-            throw new ItemNotFoundException($"Application with name '{name}' not found.");
-        }
-
+            .FirstOrDefault(a => a.Name.ToUpper() == name.ToUpper() || a.Code.ToUpper() == name.ToUpper()) ?? throw new ItemNotFoundException($"Application with name '{name}' not found.");
         return app;
     }
 

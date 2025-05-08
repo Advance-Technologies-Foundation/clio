@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Xml;
+
 using Clio.Workspaces;
 
 namespace Clio.Common.CsProjManager;
@@ -12,7 +13,6 @@ namespace Clio.Common.CsProjManager;
 /// </summary>
 public interface ICsprojFile
 {
-    #region Methods: Public
 
     /// <summary>
     ///     Initializes the .csproj file using a package name.
@@ -27,19 +27,13 @@ public interface ICsprojFile
     /// <param name="fileInfo">The file info object.</param>
     /// <returns>An initialized .csproj file.</returns>
     IInitializedCsprojFile Initialize(IFileInfo fileInfo);
-
-    #endregion
 }
 
 public interface IInitializedCsprojFile
 {
-    #region Properties: Public
-
     public string CsProjFileContent { get; }
 
-    #endregion
 
-    #region Methods: Public
 
     /// <summary>
     ///     Retrieves the package references from the .csproj file.
@@ -58,36 +52,14 @@ public interface IInitializedCsprojFile
     ///     version, hint path, specific version flag, and private flag.
     /// </remarks>
     public IEnumerable<Reference> GetPackageReferences();
-
-    #endregion
 }
 
-public class CsprojFile : ICsprojFile, IInitializedCsprojFile
+public class CsprojFile(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem): ICsprojFile, IInitializedCsprojFile
 {
-    #region Fields: Private
-
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public CsprojFile(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem)
-    {
-        _workspacePathBuilder = workspacePathBuilder;
-        _fileSystem = fileSystem;
-    }
-
-    #endregion
-
-    #region Properties: Public
+    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     public string CsProjFileContent { get; private set; }
-
-    #endregion
-
-    #region Methods: Public
 
     public IEnumerable<Reference> GetPackageReferences()
     {
@@ -96,7 +68,7 @@ public class CsprojFile : ICsprojFile, IInitializedCsprojFile
             return Array.Empty<Reference>();
         }
 
-        XmlDocument doc = new();
+        XmlDocument doc = new ();
         doc.LoadXml(CsProjFileContent);
         XmlNode rootNode = doc.DocumentElement;
 
@@ -108,13 +80,13 @@ public class CsprojFile : ICsprojFile, IInitializedCsprojFile
         return rootNode.ChildNodes.OfType<XmlElement>()
             .FirstOrDefault(x =>
                 x.Name == "ItemGroup" && x.Attributes.Count > 0 && x.Attributes[0].Name == "Label" &&
-                x.Attributes[0].Value == "Package References")!
+                x.Attributes[0].Value == "Package References") !
             .ChildNodes.OfType<XmlElement>().Where(x => x.Name == "Reference")
             .Where(i => i.Attributes.OfType<XmlAttribute>()
                 .Any(item => item.Name == "Include" && item.Value != "Terrasoft.Configuration"))
             .Select(i =>
             {
-                string packageName = i.Attributes["Include"]!.Value;
+                string packageName = i.Attributes["Include"] !.Value;
                 string version = i.ChildNodes.OfType<XmlElement>().FirstOrDefault(x => x.Name == "Version")?.InnerText;
                 string hintPath = i.ChildNodes.OfType<XmlElement>().FirstOrDefault(x => x.Name == "HintPath")
                     ?.InnerText;
@@ -122,7 +94,7 @@ public class CsprojFile : ICsprojFile, IInitializedCsprojFile
                     .FirstOrDefault(x => x.Name == "SpecificVersion")?.InnerText;
                 string @private = i.ChildNodes.OfType<XmlElement>().FirstOrDefault(x => x.Name == "Private")?.InnerText;
                 Version.TryParse(version, out Version ver);
-                Reference r = new(packageName, ver, hintPath ?? string.Empty,
+                Reference r = new (packageName, ver, hintPath ?? string.Empty,
                     bool.Parse(specificVersion ?? string.Empty), bool.Parse(@private ?? string.Empty));
                 return r;
             });
@@ -149,8 +121,6 @@ public class CsprojFile : ICsprojFile, IInitializedCsprojFile
 
         return this;
     }
-
-    #endregion
 }
 
-public record Reference(string PackageName, Version? Version, string HintPath, bool SpecificVersion, bool Private);
+public record Reference(string packageName, Version? version, string hintPath, bool specificVersion, bool @private);

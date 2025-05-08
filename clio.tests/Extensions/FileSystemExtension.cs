@@ -9,8 +9,6 @@ public static class FileSystemExtension
     public static string OriginFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
     public static string ExamplesFolderPath = Path.Combine(OriginFolderPath, "Examples");
 
-    #region Methods: Public
-
     internal static void MockExamplesFolder(this MockFileSystem mockFileSystem, string exampleFolderName,
         string destinationFolderName = null)
     {
@@ -29,7 +27,7 @@ public static class FileSystemExtension
 
         foreach (string exampleFile in exampleFiles)
         {
-            FileInfo fileInfo = new(exampleFile);
+            FileInfo fileInfo = new (exampleFile);
             string destinationFilePath = string.IsNullOrEmpty(destinationFolderName)
                 ? fileInfo.Name
                 : Path.Combine(destinationFolderName, fileInfo.Name);
@@ -66,7 +64,7 @@ public static class FileSystemExtension
         string[] exampleFiles = Directory.GetFiles(folderPath);
         foreach (string exampleFile in exampleFiles)
         {
-            FileInfo fileInfo = new(exampleFile);
+            FileInfo fileInfo = new (exampleFile);
             mockFileSystem.AddFile(fileInfo.FullName, new MockFileData(File.ReadAllBytes(fileInfo.FullName)));
         }
 
@@ -77,6 +75,4 @@ public static class FileSystemExtension
             MockFolderWithDir(mockFileSystem, subFolder);
         }
     }
-
-    #endregion
 }

@@ -1,8 +1,9 @@
-using MediatR;
 using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+
+using MediatR;
 
 namespace Clio.Requests;
 
@@ -12,10 +13,10 @@ public class OpenUrl : IExternalLink
 }
 
 /// <summary>
-/// Opens Url in default browser
+/// Opens Url in default browser.
 /// </summary>
 /// <remarks>
-/// Handles extenral link request
+/// Handles extenral link request.
 /// <example><code>clio externalLink clio://OpenUrl/?url=https%3A%2F%2Fgoogle.ca</code></example>
 /// </remarks>
 internal class OpenUrlHandler : BaseExternalLinkHandler, IRequestHandler<OpenUrl>

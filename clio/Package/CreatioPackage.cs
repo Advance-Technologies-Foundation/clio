@@ -1,7 +1,8 @@
-using Clio.Common;
-using Newtonsoft.Json;
 using System;
 using System.IO;
+
+using Clio.Common;
+using Newtonsoft.Json;
 
 namespace Clio;
 
@@ -16,25 +17,29 @@ public class CreatioPackage
     public const string PlaceholderFileName = "placeholder.txt";
     public const string IgnoreFileName = "clioignore";
 
-
     public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
+
     public static string PackageConfigTpl => $"tpl{Path.DirectorySeparatorChar}{PackageConfigName}.tpl";
+
     public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
 
     public static string IgnoreFileTpl =>
         $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
 
     private readonly string[] _pkgDirectories =
-    {
+    [
         "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs"
-    };
+    ];
 
     private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
-    private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
-    private string ProjectFileName => $"{PackageName}.{CsprojExtension}";
-    private string SolutionName => PackageName;
-    private string SolutionFileName => $"{SolutionName}.{SlnExtension}";
 
+    private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
+
+    private string ProjectFileName => $"{PackageName}.{CsprojExtension}";
+
+    private string SolutionName => PackageName;
+
+    private string SolutionFileName => $"{SolutionName}.{SlnExtension}";
 
     public string PackageName { get; }
 
@@ -65,11 +70,11 @@ public class CreatioPackage
 
     private static string ToJsonMsDate(DateTime date)
     {
-        JsonSerializerSettings microsoftDateFormatSettings = new()
+        JsonSerializerSettings microsoftDateFormatSettings = new ()
         {
             DateFormatHandling = DateFormatHandling.MicrosoftDateFormat
         };
-        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", "").Replace("\\", "");
+        return JsonConvert.SerializeObject(date, microsoftDateFormatSettings).Replace("\"", string.Empty).Replace("\\", string.Empty);
     }
 
     private string ReplaceMacro(string text) =>
@@ -195,7 +200,7 @@ public class CreatioPackage
     }
 
     public static CreatioPackage CreatePackage(string name, string maintainer) =>
-        new(name, maintainer) { ProjectId = Guid.NewGuid() };
+        new (name, maintainer) { ProjectId = Guid.NewGuid() };
 
     public void Create() => CreatePackageDirectories().CreatePackageFiles();
 

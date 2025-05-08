@@ -1,41 +1,32 @@
-namespace Clio.YAML;
-
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
 using OneOf;
 using OneOf.Types;
 using YamlDotNet.Serialization;
 
+namespace Clio.YAML;
 public interface IScenario
 {
-    #region Methods: Public
 
     /// <summary>
     /// Initializes scenario from YAML file.
     /// </summary>
     /// <param name="filename"></param>
     IExecutableScenario InitScript(string filename);
-
-    #endregion
 }
 
 public interface IExecutableScenario
 {
-    #region Methods: Public
-
     IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types);
-
-    #endregion
 
     internal List<Step> Steps { get; set; }
 }
 
 public class Scenario : IScenario, IExecutableScenario
 {
-    #region Fields: Private
-
     private static readonly Func<string, IReadOnlyDictionary<string, object>, OneOf<object, None>>
         GetOptionByKey = (key, section) =>
         {
@@ -47,14 +38,15 @@ public class Scenario : IScenario, IExecutableScenario
             string[] segments = key.Split('.');
             if (!segments.Any() || !section.ContainsKey(segments[0]))
             {
-                return new None();
+                return default(None);
             }
 
             return section[segments[0]] switch
             {
-                Dictionary<object, object> root => GetOptionByKey(string.Join('.', segments.AsSpan()[1..].ToArray()),
+                Dictionary<object, object> root => GetOptionByKey(
+                    string.Join('.', segments.AsSpan()[1..].ToArray()),
                     root.ToDictionary(t => t.Key.ToString(), t => t.Value)),
-                _ => new None()
+                _ => default(None)
             };
         };
 
@@ -63,18 +55,18 @@ public class Scenario : IScenario, IExecutableScenario
         {
             if (!File.Exists(fileName))
             {
-                return new Dictionary<object, object>();
+                return[];
             }
 
             using TextReader reader = new StreamReader(fileName);
             try
             {
-                return deserializer.Deserialize<Dictionary<object, object>>(reader) ?? new Dictionary<object, object>();
+                return deserializer.Deserialize<Dictionary<object, object>>(reader) ?? [];
             }
             catch (Exception)
             {
                 Console.WriteLine("Could not deserialize file: " + fileName);
-                return new Dictionary<object, object>();
+                return[];
             }
         };
 
@@ -84,7 +76,7 @@ public class Scenario : IScenario, IExecutableScenario
         {
             if (deserializedFileContent is null)
             {
-                return new Dictionary<string, object>();
+                return[];
             }
 
             IEnumerable<Dictionary<string, object>> collection = deserializedFileContent
@@ -100,13 +92,13 @@ public class Scenario : IScenario, IExecutableScenario
                 enumerable = collection as Dictionary<string, object>[] ?? collection.ToArray();
             return enumerable.Any()
                 ? GetAdditionalContent(enumerable.First(), sectionName, fileContentLoader)
-                : new Dictionary<string, object>();
+                : [];
         };
 
     private static readonly Func<List<object>, List<Step>>
         ParseSteps = rawList =>
         {
-            List<Step> resultList = new();
+            List<Step> resultList = [];
             rawList.ForEach(item =>
             {
                 if (item is Dictionary<object, object> dict && dict.Any())
@@ -119,7 +111,7 @@ public class Scenario : IScenario, IExecutableScenario
                             : string.Empty,
                         Options = dict.TryGetValue("options", out object options)
                             ? options as Dictionary<object, object>
-                            : new Dictionary<object, object>()
+                            : []
                     });
                 }
             });
@@ -150,7 +142,7 @@ public class Scenario : IScenario, IExecutableScenario
     private static readonly Func<Dictionary<string, object>, Dictionary<string, object>, Dictionary<string, object>>
         MergeDictionaries = (into, from) =>
         {
-            Dictionary<string, object> result = new();
+            Dictionary<string, object> result = [];
             into.Where(kvp => kvp.Key != "values")
                 .Select(kvp => kvp)
                 .ToList()
@@ -167,10 +159,6 @@ public class Scenario : IScenario, IExecutableScenario
     private readonly Func<string, OneOf<object, None>> _settingLookup;
     private readonly Func<string, OneOf<object, None>> _secretsLookup;
 
-    #endregion
-
-    #region Constructors: Public
-
     public Scenario(IDeserializer deserializer)
     {
         _initializedFileContentLoader = filename => FileContentLoader(filename, deserializer);
@@ -178,26 +166,17 @@ public class Scenario : IScenario, IExecutableScenario
         _secretsLookup = key => GetOptionByKey(key, Secrets);
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private IReadOnlyDictionary<string, object> Secrets { get; set; }
 
     private IReadOnlyDictionary<string, object> Settings { get; set; }
 
     public List<Step> Steps { get; set; }
 
-    #endregion
-
-    #region Methods: Private
-
     private void ReadFileContent(
         string fileName,
         Func<Dictionary<object, object>, string, Func<string, Dictionary<object, object>>, Dictionary<string, object>>
             sectionParser,
-        Func<string, Dictionary<object, object>> fileContentLoader
-    )
+        Func<string, Dictionary<object, object>> fileContentLoader)
     {
         Dictionary<object, object> deserializedContent = fileContentLoader(fileName);
 
@@ -206,12 +185,8 @@ public class Scenario : IScenario, IExecutableScenario
         Steps = sectionParser(deserializedContent, "steps", fileContentLoader)
             .TryGetValue("steps", out object stepsValue)
             ? ParseSteps(stepsValue as List<object>)
-            : new List<Step>();
+            : [];
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public IEnumerable<(object CommandOption, string StepDescription)> GetSteps(Type[] types) =>
         Steps
@@ -228,6 +203,4 @@ public class Scenario : IScenario, IExecutableScenario
         ReadFileContent(filename, GetSectionFromDeserializedContent, _initializedFileContentLoader);
         return this;
     }
-
-    #endregion
 }

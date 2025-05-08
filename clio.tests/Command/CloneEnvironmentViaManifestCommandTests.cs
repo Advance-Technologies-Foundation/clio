@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
+
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
@@ -40,13 +41,13 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         workingDirectoriesProvider.CreateTempDirectory().Returns(tempPath);
         environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest
         {
-            Packages = new List<CreatioManifestPackage> { new() { Name = "Package1" }, new() { Name = "Package2" } }
+            Packages =[new () { Name = "Package1" }, new () { Name = "Package2" }]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new() { Source = "sourceEnv", Target = "targetEnv" };
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new () { Source = "sourceEnv", Target = "targetEnv" };
 
         // Act
         cloneEnvironmentCommand.Execute(cloneEnvironmentCommandOptions);
@@ -56,7 +57,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         showDiffEnvironmentsCommand.Received(1)
             .Execute(Arg.Is<ShowDiffEnvironmentsOptions>(arg =>
                 IsEqualEnvironmentOptions(cloneEnvironmentCommandOptions, arg)
-                && arg.FileName == Path.Combine(tempPath,
+                && arg.FileName == Path.Combine(
+                    tempPath,
                     $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.yaml")));
 
         fileSystem.Received(1).CreateDirectory(Path.Combine(tempPath, "SourceZipPackages"));
@@ -69,12 +71,15 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
 
         string sourceGzPackages = Path.Combine(tempPath, "SourceGzPackages");
         fileSystem.Received(1).CreateDirectory(sourceGzPackages);
-        compressionUtilities.Received(1).Unzip(Path.Combine(tempPath, "SourceZipPackages", "Package1.zip"),
+        compressionUtilities.Received(1).Unzip(
+            Path.Combine(tempPath, "SourceZipPackages", "Package1.zip"),
             sourceGzPackages);
-        compressionUtilities.Received(1).Unzip(Path.Combine(tempPath, "SourceZipPackages", "Package2.zip"),
+        compressionUtilities.Received(1).Unzip(
+            Path.Combine(tempPath, "SourceZipPackages", "Package2.zip"),
             sourceGzPackages);
 
-        string commonPackagesZipPath = Path.Combine(tempPath,
+        string commonPackagesZipPath = Path.Combine(
+            tempPath,
             $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.zip");
         compressionUtilities.Received(1).Zip(sourceGzPackages, commonPackagesZipPath);
 
@@ -98,7 +103,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
     [TestCase("ATF, Creatio", "Creatio", 1, "Creatio", 1, "ATF", 1)]
     [TestCase("ATF, ,Creatio", "Creatio", 1, "Creatio", 1, "ATF", 1)]
     [TestCase(" ", "Creatio", 1, "Creatio", 1, "ATF", 1)]
-    public void CloneEnvironmentPackagesWithSpecifyMaintainerWithFeatureTest(string selectedMaintainer,
+    public void CloneEnvironmentPackagesWithSpecifyMaintainerWithFeatureTest(
+        string selectedMaintainer,
         string package1Maintainer, int package1WillBeInstall, string package2Maintainer, int package2WillBeInstall,
         string package3Maintainer, int package3WillBeInstall)
     {
@@ -118,18 +124,18 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         workingDirectoriesProvider.CreateTempDirectory().Returns(tempPath);
         environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest
         {
-            Packages = new List<CreatioManifestPackage>
-            {
-                new() { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
-                new() { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
-                new() { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
-            }
+            Packages =
+            [
+                new () { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
+                new () { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
+                new () { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
+            ]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
         {
             Source = "sourceEnv",
             Target = "targetEnv",
@@ -144,7 +150,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         showDiffEnvironmentsCommand.Received(1)
             .Execute(Arg.Is<ShowDiffEnvironmentsOptions>(arg =>
                 IsEqualEnvironmentOptions(cloneEnvironmentCommandOptions, arg)
-                && arg.FileName == Path.Combine(tempPath,
+                && arg.FileName == Path.Combine(
+                    tempPath,
                     $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.yaml")));
 
         fileSystem.Received(1).CreateDirectory(Path.Combine(tempPath, "SourceZipPackages"));
@@ -170,7 +177,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
             Path.Combine(tempPath, "SourceZipPackages", $"{package3Maintainer}Package3.zip"),
             sourceGzPackages);
 
-        string commonPackagesZipPath = Path.Combine(tempPath,
+        string commonPackagesZipPath = Path.Combine(
+            tempPath,
             $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.zip");
         compressionUtilities.Received(1).Zip(sourceGzPackages, commonPackagesZipPath);
 
@@ -190,7 +198,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
     [TestCase(", ,", "ATF", 1, "ATF", 1, "Customer", 1)]
     [TestCase("ATF1, ,Customer1", "ATF", 1, "ATF", 1, "Customer", 1)]
     [TestCase("ATF, ,Customer", "ATF", 0, "ATF", 0, "Customer", 0)]
-    public void CloneEnvironmentPackagesWithSpecifyExcludeMaintainerWithFeatureTest(string excludeMaintainer,
+    public void CloneEnvironmentPackagesWithSpecifyExcludeMaintainerWithFeatureTest(
+        string excludeMaintainer,
         string package1Maintainer, int package1WillBeInstall, string package2Maintainer, int package2WillBeInstall,
         string package3Maintainer, int package3WillBeInstall)
     {
@@ -210,18 +219,18 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         workingDirectoriesProvider.CreateTempDirectory().Returns(tempPath);
         environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest
         {
-            Packages = new List<CreatioManifestPackage>
-            {
-                new() { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
-                new() { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
-                new() { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
-            }
+            Packages =
+            [
+                new () { Name = package1Maintainer + "Package1", Maintainer = package1Maintainer },
+                new () { Name = package2Maintainer + "Package2", Maintainer = package2Maintainer },
+                new () { Name = package3Maintainer + "Package3", Maintainer = package3Maintainer }
+            ]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
 
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
         {
             Source = "sourceEnv",
             Target = "targetEnv",
@@ -236,7 +245,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         showDiffEnvironmentsCommand.Received(1)
             .Execute(Arg.Is<ShowDiffEnvironmentsOptions>(arg =>
                 IsEqualEnvironmentOptions(cloneEnvironmentCommandOptions, arg)
-                && arg.FileName == Path.Combine(tempPath,
+                && arg.FileName == Path.Combine(
+                    tempPath,
                     $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.yaml")));
 
         fileSystem.Received(1).CreateDirectory(Path.Combine(tempPath, "SourceZipPackages"));
@@ -262,7 +272,8 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
             Path.Combine(tempPath, "SourceZipPackages", $"{package3Maintainer}Package3.zip"),
             sourceGzPackages);
 
-        string commonPackagesZipPath = Path.Combine(tempPath,
+        string commonPackagesZipPath = Path.Combine(
+            tempPath,
             $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.zip");
         compressionUtilities.Received(1).Zip(sourceGzPackages, commonPackagesZipPath);
 
@@ -291,10 +302,10 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         IFileSystem fileSystem = Substitute.For<IFileSystem>();
         string tempPath = "TempPath";
         workingDirectoriesProvider.CreateTempDirectory().Returns(tempPath);
-        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
         {
             Source = "sourceEnv",
             Target = "targetEnv",
@@ -325,12 +336,12 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         workingDirectoriesProvider.CreateTempDirectory().Returns(workingDirectory);
         environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest
         {
-            Packages = new List<CreatioManifestPackage> { new() { Name = "Package1" }, new() { Name = "Package2" } }
+            Packages =[new () { Name = "Package1" }, new () { Name = "Package2" }]
         });
-        CloneEnvironmentCommand cloneEnvironmentCommand = new(showDiffEnvironmentsCommand,
+        CloneEnvironmentCommand cloneEnvironmentCommand = new (showDiffEnvironmentsCommand,
             applyEnvironmentManifestCommand, pullPkgCommand, pushPackageCommand, environmentManager, loggerMock,
             provider, compressionUtilities, workingDirectoriesProvider, fileSystem, null, pingAppCommand);
-        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new()
+        CloneEnvironmentOptions cloneEnvironmentCommandOptions = new ()
         {
             Source = "sourceEnv",
             Target = "targetEnv",
@@ -345,27 +356,33 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
         showDiffEnvironmentsCommand.Received(1)
             .Execute(Arg.Is<ShowDiffEnvironmentsOptions>(arg =>
                 IsEqualEnvironmentOptions(cloneEnvironmentCommandOptions, arg)
-                && arg.FileName == Path.Combine(workingDirectory,
+                && arg.FileName == Path.Combine(
+                    workingDirectory,
                     $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.yaml")));
 
         fileSystem.Received(1).CreateDirectory(Path.Combine(workingDirectory, "SourceZipPackages"));
         pullPkgCommand.Received(1)
             .Execute(Arg.Is<PullPkgOptions>(arg => arg.Name == "Package1"
-                                                   && arg.DestPath == Path.Combine(workingDirectory,
+                                                   && arg.DestPath == Path.Combine(
+                                                       workingDirectory,
                                                        "SourceZipPackages")));
         pullPkgCommand.Received(1)
             .Execute(Arg.Is<PullPkgOptions>(arg => arg.Name == "Package2"
-                                                   && arg.DestPath == Path.Combine(workingDirectory,
+                                                   && arg.DestPath == Path.Combine(
+                                                       workingDirectory,
                                                        "SourceZipPackages")));
 
         string sourceGzPackages = Path.Combine(workingDirectory, "SourceGzPackages");
         fileSystem.Received(1).CreateDirectory(sourceGzPackages);
-        compressionUtilities.Received(1).Unzip(Path.Combine(workingDirectory, "SourceZipPackages", "Package1.zip"),
+        compressionUtilities.Received(1).Unzip(
+            Path.Combine(workingDirectory, "SourceZipPackages", "Package1.zip"),
             sourceGzPackages);
-        compressionUtilities.Received(1).Unzip(Path.Combine(workingDirectory, "SourceZipPackages", "Package2.zip"),
+        compressionUtilities.Received(1).Unzip(
+            Path.Combine(workingDirectory, "SourceZipPackages", "Package2.zip"),
             sourceGzPackages);
 
-        string commonPackagesZipPath = Path.Combine(workingDirectory,
+        string commonPackagesZipPath = Path.Combine(
+            workingDirectory,
             $"from_{cloneEnvironmentCommandOptions.Source}_to_{cloneEnvironmentCommandOptions.Target}.zip");
         compressionUtilities.Received(1).Zip(sourceGzPackages, commonPackagesZipPath);
 
@@ -373,16 +390,14 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
             .Execute(Arg.Is<PushPkgOptions>(arg => arg.Environment == cloneEnvironmentCommandOptions.Target
                                                    && arg.Name == commonPackagesZipPath));
 
-        //pingAppCommand.Received(1)
-        //	.Execute(Arg.Is<PingAppOptions>(arg => arg.Environment == cloneEnvironmentCommandOptions.Target));
+        // pingAppCommand.Received(1)
+        //  .Execute(Arg.Is<PingAppOptions>(arg => arg.Environment == cloneEnvironmentCommandOptions.Target));
 
-        //applyEnvironmentManifestCommand.Received(1)
-        //	.Execute(Arg.Is<ApplyEnvironmentManifestOptions>(
-        //		arg => arg.Environment == cloneEnvironmentCommandOptions.Target));
-
+        // applyEnvironmentManifestCommand.Received(1)
+        //  .Execute(Arg.Is<ApplyEnvironmentManifestOptions>(
+        //      arg => arg.Environment == cloneEnvironmentCommandOptions.Target));
         workingDirectoriesProvider.DidNotReceive().DeleteDirectoryIfExists(Arg.Is(workingDirectory));
     }
-
 
     private bool IsEqualEnvironmentOptions(ShowDiffEnvironmentsOptions expected, ShowDiffEnvironmentsOptions actual) =>
         expected.Source == actual.Source && expected.Target == actual.Target;

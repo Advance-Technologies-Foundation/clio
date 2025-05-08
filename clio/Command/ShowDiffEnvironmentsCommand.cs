@@ -1,8 +1,3 @@
-using ATF.Repository.Providers;
-using ATF.Repository;
-using Clio.Common;
-using CommandLine;
-using CreatioModel;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -10,8 +5,14 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+
+using ATF.Repository;
+using ATF.Repository.Providers;
 using Autofac;
+using Clio.Common;
 using Clio.UserEnvironment;
+using CommandLine;
+using CreatioModel;
 using DocumentFormat.OpenXml.Drawing;
 using k8s.Models;
 using YamlDotNet.Serialization;
@@ -64,8 +65,11 @@ internal class ShowDiffEnvironmentsCommand : BaseDataContextCommand<ShowDiffEnvi
     }
 
     public string Target { get; private set; }
+
     public string Source { get; private set; }
+
     public string FileName { get; private set; }
+
     public bool Overwrite { get; private set; }
 
     public override int Execute(ShowDiffEnvironmentsOptions options)

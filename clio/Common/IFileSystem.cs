@@ -6,7 +6,6 @@ using System.Text.Unicode;
 
 namespace Clio.Common;
 
-#region Interface: IFileSystem
 
 /// <summary>
 /// The IFileSystem interface provides methods for interacting with the file system.
@@ -15,16 +14,16 @@ public interface IFileSystem
 {
     public FileSystemStream CreateFile(string filePath);
 
-    #region Methods: Public
 
     byte[] ReadAllBytes(string filePath);
+
     FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share);
+
     public IDirectoryInfo GetDirectoryInfo(string path);
 
-
     public long GetFileSize(string filePath);
-    long GetFileSize(IFileInfo fileInfo);
 
+    long GetFileSize(IFileInfo fileInfo);
 
     /// <summary>
     /// Creates a symbolic link at the specified path that points to the target path.
@@ -32,9 +31,9 @@ public interface IFileSystem
     /// <param name="path">The path where the symbolic link should be created.</param>
     /// <param name="pathToTarget">The path that the symbolic link should point to.</param>
     /// <returns>An object that represents the symbolic link.</returns>
-    /// <exception cref="System.ArgumentNullException">Thrown when the path or pathToTarget is null</exception>
+    /// <exception cref="System.ArgumentNullException">Thrown when the path or pathToTarget is null.</exception>
     /// <exception cref="System.ArgumentException">Thrown when – path or pathToTarget is empty. -or- path or pathToTarget contains invalid path characters.</exception>
-    /// <exception cref="System.IO.IOException"> A file or directory already exists in the location of path. -or- An I/O error occurred</exception>
+    /// <exception cref="System.IO.IOException"> A file or directory already exists in the location of path. -or- An I/O error occurred.</exception>
     IFileSystemInfo CreateSymLink(string path, string pathToTarget);
 
     /// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateSymbolicLink(string,string)"/>
@@ -109,17 +108,17 @@ public interface IFileSystem
     /// <exception cref="T:System.IO.DirectoryNotFoundException">The specified path is invalid, (for example, it is on an unmapped drive).</exception>
     /// <exception cref="T:System.IO.FileNotFoundException">The file cannot be found.</exception>
     /// <exception cref="T:System.UnauthorizedAccessException"><paramref name="filePath" /> specified a file that is read-only.
-    /// 
+    ///
     /// -or-
-    /// 
+    ///
     /// This operation is not supported on the current platform.
-    /// 
+    ///
     /// -or-
-    /// 
+    ///
     /// <paramref name="filePath" /> specified a directory.
-    /// 
+    ///
     /// -or-
-    /// 
+    ///
     /// The caller does not have the required permission.</exception>
     void ResetFileReadOnlyAttribute(string filePath);
 
@@ -127,7 +126,7 @@ public interface IFileSystem
     string ReadAllText(string filePath);
 
     /// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string)"/>
-    /// <remarks>Enforces UTF No BOM encoding</remarks>
+    /// <remarks>Enforces UTF No BOM encoding.</remarks>
     void WriteAllTextToFile(string filePath, string contents);
 
     /// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
@@ -182,18 +181,19 @@ public interface IFileSystem
     string ConvertToRelativePath(string path, string rootDirectoryPath);
 
     string NormalizeFilePathByPlatform(string filePath);
+
     string[] GetDirectories();
 
     /// <summary>
-    /// Computes hash string of a files
+    /// Computes hash string of a files.
     /// </summary>
-    /// <param name="algorithm">Algorithm to use</param>
-    /// <param name="fileName">Full file path</param>
+    /// <param name="algorithm">Algorithm to use.</param>
+    /// <param name="fileName">Full file path.</param>
     /// <returns></returns>
     string GetFileHash(FileSystem.Algorithm algorithm, string fileName);
 
     /// <summary>
-    /// Compares two files by their hashes, with a specific algorithm
+    /// Compares two files by their hashes, with a specific algorithm.
     /// </summary>
     /// <param name="algorithm"></param>
     /// <param name="first"></param>
@@ -202,18 +202,14 @@ public interface IFileSystem
     bool CompareFiles(FileSystem.Algorithm algorithm, string first, string second);
 
     /// <summary>
-    /// Compares two files by their hashes
+    /// Compares two files by their hashes.
     /// </summary>
-    /// <param name="fileName1">Full path to the first file</param>
-    /// <param name="fileName2">Full path to the second file</param>
-    /// <returns>Result of the comparison</returns>
-    /// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default</remarks>
-    /// <exception cref="FileNotFoundException">when either of the files is not found</exception>
+    /// <param name="fileName1">Full path to the first file.</param>
+    /// <param name="fileName2">Full path to the second file.</param>
+    /// <returns>Result of the comparison.</returns>
+    /// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default.</remarks>
+    /// <exception cref="FileNotFoundException">when either of the files is not found.</exception>
     bool CompareFiles(string fileName1, string fileName2);
 
     IFileInfo GetFilesInfos(string fileName);
-
-    #endregion
 }
-
-#endregion

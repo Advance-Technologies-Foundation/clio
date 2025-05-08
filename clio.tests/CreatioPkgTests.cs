@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+
 using FluentAssertions;
 using NUnit.Framework;
-using static Clio.Tests.AssertionExtensions;
-using File = System.IO.File;
 
+using static Clio.Tests.AssertionExtensions;
+
+using File = System.IO.File;
 
 namespace Clio.Tests;
 
@@ -16,11 +18,12 @@ public class CreatioPkgTests
     private const string ResultDir = "TestResult";
     private const string ExpectFilesDir = "samplefiles";
 
-    private static readonly DateTime TestCreatedOn = new(2018, 1, 1, 1, 12, 10, 200, DateTimeKind.Utc);
+    private static readonly DateTime TestCreatedOn = new (2018, 1, 1, 1, 12, 10, 200, DateTimeKind.Utc);
 
     private class CreatioPkgMock : CreatioPackage
     {
-        public CreatioPkgMock(bool setDirectory = true) : base(CreatioPkgTests.PackageName, CreatioPkgTests.Maintainer)
+        public CreatioPkgMock(bool setDirectory = true)
+            : base(CreatioPkgTests.PackageName, CreatioPkgTests.Maintainer)
         {
             ProjectId = Guid.Parse(PackageUId);
             CreatedOn = TestCreatedOn;
@@ -56,12 +59,13 @@ public class CreatioPkgTests
         TestName = "Check Correct ProjectFile")]
     [TestCase(CreatioPackage.PackageConfigName, CreatioPackage.PackageConfigName, "CreateNugetPackageConfig",
         TestName = "Check Correct PackageConfig")]
-    [TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName,
+    [TestCase(
+        CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName,
         CreatioPackage.AssemblyInfoName,
         "CreateAssemblyProps", TestName = "Check Correct AssemblyInfo file")]
     public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName)
     {
-        CreatioPkgMock pkg = new();
+        CreatioPkgMock pkg = new ();
         pkg.GetType().GetMethod(methodName).Invoke(pkg, null);
         string resultPath = Path.Combine(pkg.FullPath, resultFileName);
         string samplePath = Path.Combine(Environment.CurrentDirectory, ExpectFilesDir, sampleFileName);
@@ -116,7 +120,6 @@ public class CreatioPkgTests
         File(resultPath).Should().Exist();
         File.ReadAllText(resultPath).Should().BeEquivalentTo(File.ReadAllText(samplePath));
     }
-
 
     [OneTimeTearDown]
     public void TeardownOneTime()

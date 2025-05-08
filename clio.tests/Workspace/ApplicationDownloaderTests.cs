@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Autofac;
 using Clio.Common;
 using Clio.Common.CsProjManager;
@@ -15,8 +16,6 @@ namespace Clio.Tests.Workspace;
 [TestFixture(Category = "Unit")]
 public class ApplicationDownloaderTests : BaseClioModuleTests
 {
-    #region Fields: Private
-
     private readonly IDownloader _downloaderMock = Substitute.For<IDownloader>();
     private readonly IInitializedCsprojFile _initializedCsprojFile = Substitute.For<IInitializedCsprojFile>();
     private readonly ICsprojFile _csprojFileMock = Substitute.For<ICsprojFile>();
@@ -27,10 +26,6 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
                                                                          @"/$(StandalonePackageAssemblyPath)/"
                                                                          + packageName + ".dll";
 
-    #endregion
-
-    #region Methods: Protected
-
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
         containerBuilder.RegisterInstance(_csprojFileMock).As<ICsprojFile>();
@@ -38,21 +33,19 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
         containerBuilder.RegisterInstance(_clioGatewayMock).As<IClioGateway>();
     }
 
-    #endregion
-
     [Test]
     public void Download_Should_DownloadFiles()
     {
         // Arrange
         _csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-        IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+        IApplicationDownloader downloader = container.Resolve<IApplicationDownloader>();
         List<Reference> refs =
         [
-            new("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
+            new ("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
         ];
         _initializedCsprojFile.GetPackageReferences()
             .Returns(refs);
-        IServiceUrlBuilder serviceUrlBuilder = Container.Resolve<IServiceUrlBuilder>();
+        IServiceUrlBuilder serviceUrlBuilder = container.Resolve<IServiceUrlBuilder>();
         _clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
         _clioGatewayMock.IsCompatibleWith("2.0.0.0").Returns(true);
 
@@ -72,14 +65,14 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
     {
         // Arrange
         _csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-        IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+        IApplicationDownloader downloader = container.Resolve<IApplicationDownloader>();
         List<Reference> refs =
         [
-            new("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
+            new ("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
         ];
         _initializedCsprojFile.GetPackageReferences()
             .Returns(refs);
-        IServiceUrlBuilder serviceUrlBuilder = Container.Resolve<IServiceUrlBuilder>();
+        IServiceUrlBuilder serviceUrlBuilder = container.Resolve<IServiceUrlBuilder>();
         _clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(false);
 
         // Act
@@ -99,7 +92,7 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
     {
         // Arrange
         _csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-        IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+        IApplicationDownloader downloader = container.Resolve<IApplicationDownloader>();
         _initializedCsprojFile.GetPackageReferences().Returns([]);
         _clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
 
@@ -112,7 +105,6 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
             .DownloadPackageDll(Arg.Any<IEnumerable<DownloadInfo>>());
         _downloaderMock.ClearReceivedCalls();
     }
-
 
     private static bool EvalDownloadInfo(DownloadInfo downloadInfo, string packageName,
         IServiceUrlBuilder serviceUrlBuilder)

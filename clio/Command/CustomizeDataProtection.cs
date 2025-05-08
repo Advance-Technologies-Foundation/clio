@@ -6,60 +6,34 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using CommandLine;
 using ErrorOr;
 using MediatR;
+
 using Error = ErrorOr.Error;
 using FileSystem = Clio.Common.FileSystem;
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command;
 
-#region Class: CustomizeDataProtectionCommandOptions
-
-[Verb("CustomizeDataProtection", Aliases = ["cdp"], HelpText = "DESCRIBE COMMAND HERE")]
+[Verb("CustomizeDataProtection", Aliases =["cdp"], HelpText = "DESCRIBE COMMAND HERE")]
 public class CustomizeDataProtectionCommandOptions : EnvironmentOptions
 {
-    #region Properties: Public
-
     [Value(0, Required = true, HelpText = "Setting value to apply")]
     public bool EnableDataProtection { get; set; }
-
-    #endregion
 }
 
-#endregion
-
-#region Class: CustomizeDataProtectionCommand
-
-public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCommandOptions>
+public class CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
+    IFileSystem fileSystem): Command<CustomizeDataProtectionCommandOptions>
 {
-    #region Fields: Private
-
-    private readonly ILogger _logger;
-    private readonly IMediator _mediator;
-    private readonly ISettingsRepository _settingsRepository;
-    private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
-        IFileSystem fileSystem)
-    {
-        _logger = logger;
-        _mediator = mediator;
-        _settingsRepository = settingsRepository;
-        _fileSystem = fileSystem;
-    }
-
-    #endregion
-
-    #region Properties: Private
+    private readonly ILogger _logger = logger;
+    private readonly IMediator _mediator = mediator;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly IFileSystem _fileSystem = fileSystem;
 
     private IEnumerable<IISScannerHandler.RegisteredSite> AllSites { get; set; }
 
@@ -75,9 +49,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
     private Action<IEnumerable<IISScannerHandler.RegisteredSite>> OnAllSitesRequestCompleted =>
         sites => { AllSites = sites; };
 
-    #endregion
 
-    #region Methods: Private
 
     /// <summary>
     ///  Executes a mediator request to retrieve all registered sites.
@@ -94,14 +66,13 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
     /// </remarks>
     private void ExecuteMediatorRequest(Action<IEnumerable<IISScannerHandler.RegisteredSite>> callback)
     {
-        AllRegisteredSitesRequest request = new() { Callback = callback };
+        AllRegisteredSitesRequest request = new () { Callback = callback };
 
         Task.Run(async () => await _mediator.Send(request))
             .ConfigureAwait(false)
             .GetAwaiter()
             .GetResult();
     }
-
 
     /// <summary>
     ///  Retrieves the folder path for the specified environment name.
@@ -163,7 +134,8 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
     {
         List<IISScannerHandler.RegisteredSite> sites = AllSites
             .Where(s => s.Uris.Any(iisRegisteredUrl =>
-                Uri.Compare(envUri,
+                Uri.Compare(
+                    envUri,
                     iisRegisteredUrl,
                     UriComponents.StrongAuthority,
                     UriFormat.SafeUnescaped,
@@ -171,7 +143,8 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 
         if (sites.Count == 0)
         {
-            return Error.NotFound("001",
+            return Error.NotFound(
+                "001",
                 "Did not find any registered sites");
         }
 
@@ -183,7 +156,8 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
         }
 
         return Error
-            .NotFound("001",
+            .NotFound(
+                "001",
                 $"Environment: {envUri}, Directory {site?.siteBinding.path} does not exist.");
     }
 
@@ -241,12 +215,10 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
             FileAccess.Write, FileShare.ReadWrite);
         byte[] contentBytes = FileSystem.Utf8NoBom.GetBytes(newContent);
         stream.Write(contentBytes, 0, contentBytes.Length);
-        return new Success();
+        return default(Success);
     }
 
-    #endregion
 
-    #region Methods: Public
 
     /// <summary>
     ///  Executes the CustomizeDataProtection command.
@@ -297,8 +269,4 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
         _logger.WriteInfo("DONE");
         return 0;
     }
-
-    #endregion
 }
-
-#endregion

@@ -1,52 +1,36 @@
-namespace Clio.Common.Responses;
-
 using System;
 using System.Runtime.Serialization;
 
-#region Class: BaseResponse
+namespace Clio.Common.Responses;
 
 [Serializable]
 [DataContract]
 public class BaseResponse
 {
-    #region Constructors: Public
-
     public BaseResponse()
     {
     }
 
-    #endregion
+    [DataMember(Name = "success")]
+    public bool Success { get; set; }
 
-    #region Properties: Public
-
-    [DataMember(Name = "success")] public bool Success { get; set; }
-    [DataMember(Name = "errorInfo")] public ErrorInfo ErrorInfo { get; set; }
-
-    #endregion
+    [DataMember(Name = "errorInfo")]
+    public ErrorInfo ErrorInfo { get; set; }
 }
-
-#endregion
-
-#region Class: ErrorInfo
 
 [DataContract]
 public class ErrorInfo
 {
-    #region Constructors: Public
-
     public ErrorInfo()
     {
     }
 
-    #endregion
+    [DataMember(Name = "errorCode")]
+    public string ErrorCode { get; set; }
 
-    #region Properties: Public
+    [DataMember(Name = "message")]
+    public string Message { get; set; }
 
-    [DataMember(Name = "errorCode")] public string ErrorCode { get; set; }
-    [DataMember(Name = "message")] public string Message { get; set; }
-    [DataMember(Name = "stackTrace")] public string StackTrace { get; set; }
-
-    #endregion
+    [DataMember(Name = "stackTrace")]
+    public string StackTrace { get; set; }
 }
-
-#endregion

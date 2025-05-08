@@ -7,6 +7,7 @@ using System.Linq;
 using System.Management.Automation;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
@@ -14,6 +15,7 @@ using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using MediatR;
 using StackExchange.Redis;
+
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command.CreatioInstallCommand;
@@ -30,8 +32,6 @@ public interface ICreatioInstallerService
 
 public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInstallerService
 {
-    #region Fields: Private
-
     private static readonly Action<string, string, IProgress<double>> CopyFileWithProgress =
         (sourcePath, destinationPath, progress) =>
         {
@@ -39,13 +39,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             byte[] buffer = new byte[bufferSize];
             int bytesRead;
 
-            using FileStream sourceStream = new(sourcePath, FileMode.Open, FileAccess.Read);
+            using FileStream sourceStream = new (sourcePath, FileMode.Open, FileAccess.Read);
             long totalBytes = sourceStream.Length;
 
-            using FileStream destinationStream = new(destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
+            using FileStream destinationStream = new (destinationPath, FileMode.OpenOrCreate, FileAccess.Write);
             while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
             {
                 destinationStream.Write(buffer, 0, bytesRead);
+
                 // Report progress
                 double percentage = 100d * sourceStream.Position / totalBytes;
                 progress.Report(percentage);
@@ -54,24 +55,15 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
     private readonly string _iisRootFolder;
     private readonly IPackageArchiver _packageArchiver;
-    private readonly k8Commands _k8;
+    private readonly K8Commands _k8;
     private readonly IMediator _mediator;
     private readonly RegAppCommand _registerCommand;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
+    protected string productFolder;
+    protected string remoteArtefactServerPath;
 
-    #endregion
-
-    #region Fields: Protected
-
-    protected string ProductFolder;
-    protected string RemoteArtefactServerPath;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
+    public CreatioInstallerService(IPackageArchiver packageArchiver, K8Commands k8,
         IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
         IFileSystem fileSystem, ILogger logger)
     {
@@ -81,18 +73,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
         _registerCommand = registerCommand;
         _fileSystem = fileSystem;
         _iisRootFolder = settingsRepository.GetIISClioRootPath();
-        ProductFolder = settingsRepository.GetCreatioProductsFolder();
-        RemoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
+        productFolder = settingsRepository.GetCreatioProductsFolder();
+        remoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
         _logger = logger;
     }
 
     public CreatioInstallerService()
     {
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private int ExitWithErrorMessage(string message)
     {
@@ -138,11 +126,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             {
                 Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
             }
-            //Linux
+
+            // Linux
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 Process.Start("xdg-open", url);
             }
+
             // macOS
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
@@ -169,29 +159,29 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
     private string CopyZipLocal(string src)
     {
-        if (!Directory.Exists(ProductFolder))
+        if (!Directory.Exists(productFolder))
         {
-            Directory.CreateDirectory(ProductFolder);
+            Directory.CreateDirectory(productFolder);
         }
 
-        FileInfo srcInfo = new(src);
-        string dest = Path.Join(ProductFolder, srcInfo.Name);
+        FileInfo srcInfo = new (src);
+        string dest = Path.Join(productFolder, srcInfo.Name);
 
         if (File.Exists(dest))
         {
             return dest;
         }
 
-        _logger.WriteLine($"Detected network drive as source, copying to local folder {ProductFolder}");
+        _logger.WriteLine($"Detected network drive as source, copying to local folder {productFolder}");
         Console.Write("Copy Progress:    ");
-        Progress<double> progressReporter = new(progress =>
+        Progress<double> progressReporter = new (progress =>
         {
             string result = progress switch
             {
                 < 10 => progress.ToString("0").PadLeft(2) + " %",
                 < 100 => progress.ToString("0").PadLeft(1) + " %",
                 100 => "100 %",
-                _ => ""
+                _ => string.Empty
             };
             Console.CursorLeft = 15;
             Console.Write(result);
@@ -203,7 +193,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
     private async Task<int> CreateIISSite(DirectoryInfo unzippedDirectory, PfInstallerOptions options)
     {
         _logger.WriteInfo("[Create IIS Site] - Started");
-        CreateIISSiteRequest request = new()
+        CreateIISSiteRequest request = new ()
         {
             Arguments = new Dictionary<string, string>
             {
@@ -231,8 +221,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
     private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName)
     {
-        k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-        Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+        K8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+        Postgres postgres = new (csp.DbPort, csp.DbUsername, csp.DbPassword);
 
         bool exists = postgres.CheckTemplateExists(tmpDbName);
         if (exists)
@@ -243,12 +233,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
         FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
         _logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
-        _k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
+        _k8.CopyBackupFileToPod(K8Commands.PodType.Postgres, src.FullName, src.Name);
 
         postgres.CreateDb(tmpDbName);
         _k8.RestorePgDatabase(src.Name, tmpDbName);
         postgres.SetDatabaseAsTemplate(tmpDbName);
-        _k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
+        _k8.DeleteBackupImage(K8Commands.PodType.Postgres, src.Name);
         _logger.WriteInfo($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
     }
 
@@ -267,18 +257,18 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             $"{siteName}.bak");
         if (src.Length < int.MaxValue)
         {
-            _k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
+            _k8.CopyBackupFileToPod(K8Commands.PodType.Mssql, src.FullName, $"{siteName}.bak");
         }
         else
         {
-            //This is a hack, we have to fix Cp class to allow large files
+            // This is a hack, we have to fix Cp class to allow large files
             useFs = true;
             _logger.WriteWarning($"Copying large file to local directory {dest}");
             _fileSystem.CopyFile(src.FullName, dest, true);
         }
 
-        k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
-        Mssql mssql = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+        K8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
+        Mssql mssql = new (csp.DbPort, csp.DbUsername, csp.DbPassword);
 
         bool exists = mssql.CheckDbExists(siteName);
         if (!exists)
@@ -292,7 +282,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
         }
         else
         {
-            _k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
+            _k8.DeleteBackupImage(K8Commands.PodType.Mssql, $"{siteName}.bak");
         }
 
         return 0;
@@ -301,8 +291,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
     private int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName)
     {
         string tmpDbName = "template_" + unzippedDirectory.Name;
-        k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-        Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+        K8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+        Postgres postgres = new (csp.DbPort, csp.DbUsername, csp.DbPassword);
 
         CreatePgTemplate(unzippedDirectory, tmpDbName);
         postgres.CreateDbFromTemplate(tmpDbName, destDbName);
@@ -320,7 +310,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             return latestVersion;
         }
 
-        Version previousVersion = new(latestVersion.Major, latestVersion.Minor, latestVersion.Build,
+        Version previousVersion = new (latestVersion.Major, latestVersion.Minor, latestVersion.Build,
             latestVersion.Revision - 1);
         return GetLatestProductVersion(latestBranchPath, previousVersion, product, platform);
     }
@@ -336,7 +326,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
     {
         _logger.WriteInfo("[CheckUpdate connection string] - Started");
         InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
-        k8Commands.ConnectionStringParams csParam = dbType switch
+        K8Commands.ConnectionStringParams csParam = dbType switch
         {
             InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
             InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
@@ -386,18 +376,16 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
             ConfigureConnectionStringResponse
             {
                 Status: BaseHandlerResponse.CompletionStatus.Success
-            } result => ExitWithOkMessage(result.Description),
+            } 
+result => ExitWithOkMessage(result.Description),
             ConfigureConnectionStringResponse
             {
                 Status: BaseHandlerResponse.CompletionStatus.Failure
-            } result => ExitWithErrorMessage(result.Description),
+            } 
+result => ExitWithErrorMessage(result.Description),
             _ => ExitWithErrorMessage("Unknown error occured")
         };
     }
-
-    #endregion
-
-    #region Methods: Internal
 
     internal string GetBuildFilePathFromOptions(string remoteArtifactServerPath, string product,
         CreatioDBType creatioDBType, CreatioRuntimePlatform platform)
@@ -407,7 +395,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
         IDirectoryInfo latestBranchesDireInfo = _fileSystem.GetDirectoryInfo(latestBranchesBuildPath);
         IOrderedEnumerable<IDirectoryInfo> latestBranchSubdirectories = latestBranchesDireInfo.GetDirectories()
             .OrderByDescending(dir => dir.CreationTimeUtc);
-        List<IDirectoryInfo> revisionDirectories = new();
+        List<IDirectoryInfo> revisionDirectories = [];
         foreach (IDirectoryInfo subdir in latestBranchSubdirectories)
         {
             if (Version.TryParse(subdir.Name, out Version ver))
@@ -441,8 +429,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
     internal Version GetLatestVersion(string remoteArtifactServerPath)
     {
         string[] branches = _fileSystem.GetDirectories(remoteArtifactServerPath);
-        //var branches = Directory.GetDirectories(remoteArtifactServerPath);
-        List<Version> version = new();
+
+        // var branches = Directory.GetDirectories(remoteArtifactServerPath);
+        List<Version> version = [];
         foreach (string branch in branches)
         {
             string branchName = branch.Split('\\').Last();
@@ -454,10 +443,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
         return version.Max();
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(PfInstallerOptions options)
     {
@@ -542,7 +527,5 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
     public string GetBuildFilePathFromOptions(string product, CreatioDBType dBType,
         CreatioRuntimePlatform runtimePlatform) =>
-        GetBuildFilePathFromOptions(RemoteArtefactServerPath, product, dBType, runtimePlatform);
-
-    #endregion
+        GetBuildFilePathFromOptions(remoteArtefactServerPath, product, dBType, runtimePlatform);
 }

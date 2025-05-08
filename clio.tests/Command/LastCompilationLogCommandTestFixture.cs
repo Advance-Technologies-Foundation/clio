@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -12,18 +13,12 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompilationLogOptions>
+public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompilationLogOptions>, IDisposable
 {
-    #region Fields: Private
-
     private IApplicationClient _applicationClientMock;
     private StringWriter _textWriter;
     private StringBuilder _sb;
     private TextWriter _originalTextWriter;
-
-    #endregion
-
-    #region Methods: Protected
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -35,7 +30,6 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
         _originalTextWriter = Console.Out;
         Console.SetOut(_textWriter);
     }
-
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
@@ -61,70 +55,75 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
         base.Setup();
     }
 
-    #endregion
-
     [Test]
     public void Execute_ShouldReturnOne_WhenServiceThrowsException()
     {
-        //Arrange
+        // Arrange
         const string expectedErrorMessage = "error";
         _applicationClientMock.When(x => x.ExecuteGetRequest(Arg.Any<string>()))
             .Do(x => throw new Exception(expectedErrorMessage));
-        LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+        LastCompilationLogCommand command = container.Resolve<LastCompilationLogCommand>();
 
-        //Act
+        // Act
         int result = command.Execute(new LastCompilationLogOptions());
 
-        //Assert
+        // Assert
         result.Should().Be(1);
         Thread.Sleep(500);
         _textWriter.ToString().Should().Contain($"[ERR] - {expectedErrorMessage}{Environment.NewLine}");
     }
 
-    [TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json",
+    [TestCase(
+        "Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json",
         "Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
-    [TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json",
+    [TestCase(
+        "Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json",
         "Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
     public void Execute_ShouldReturnZero_WhenServiceReturnsResult(string input, string expectedOutput)
     {
-        //Arrange
+        // Arrange
         string desiredOutputContent = File.ReadAllText(expectedOutput);
         string inputContent = File.ReadAllText(input);
         _applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
             .Returns(inputContent);
 
-        LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+        LastCompilationLogCommand command = container.Resolve<LastCompilationLogCommand>();
 
-        //Act
+        // Act
         int result = command.Execute(new LastCompilationLogOptions());
 
-
-        //Assert
+        // Assert
         result.Should().Be(0);
         Thread.Sleep(500);
         _textWriter.ToString().TrimEnd().Should().Contain(desiredOutputContent);
     }
 
-    [TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json",
+    [TestCase(
+        "Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json",
         "Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
-    [TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json",
+    [TestCase(
+        "Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json",
         "Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
     public void Execute_ShouldReturnRawJson_WhenRawOptionUsed(string input, string expectedOutput)
     {
-        //Arrange
+        // Arrange
         string inputContent = File.ReadAllText(input);
         _applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
             .Returns(inputContent);
 
-        LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+        LastCompilationLogCommand command = container.Resolve<LastCompilationLogCommand>();
 
-        //Act
+        // Act
         int result = command.Execute(new LastCompilationLogOptions { IsRaw = true });
 
-
-        //Assert
+        // Assert
         result.Should().Be(0);
         Thread.Sleep(500);
         _textWriter.ToString().TrimEnd().Should().Be(inputContent);
+    }
+
+    public void Dispose()
+    {
+        throw new NotImplementedException();
     }
 }

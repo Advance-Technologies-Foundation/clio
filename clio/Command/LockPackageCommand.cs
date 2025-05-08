@@ -1,5 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+
+using Clio.Common;
+using Clio.Package;
+using CommandLine;
 
 namespace Clio.Command
 {
@@ -7,57 +12,22 @@ namespace Clio.Command
 
 namespace Clio.Command
 {
-    using System;
-    using CommandLine;
-    using Package;
-    using Common;
-
-    #region Class: LockPackageOptions
-
     [Verb("lock-package", Aliases = new string[] { "lp" }, HelpText = "Lock package")]
     public class LockPackageOptions : EnvironmentOptions
     {
-        #region Properties: Public
-
         [Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
         public string Name { get; set; }
-
-        #endregion
     }
 
-    #endregion
-
-    #region Class: LockPackageCommand
-
-    public class LockPackageCommand : Command<LockPackageOptions>
+    public class LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger): Command<LockPackageOptions>
     {
-        #region Fields: Private
-
-        private readonly IPackageLockManager _packageLockManager;
-        private readonly ILogger _logger;
-
-        #endregion
-
-        #region Constructors: Public
-
-        public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger)
-        {
-            _packageLockManager = packageLockManager;
-            _logger = logger;
-        }
-
-        #endregion
-
-        #region Methods: Private
+        private readonly IPackageLockManager _packageLockManager = packageLockManager;
+        private readonly ILogger _logger = logger;
 
         public IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
             string.IsNullOrWhiteSpace(options.Name)
                 ? Enumerable.Empty<string>()
                 : new[] { options.Name };
-
-        #endregion
-
-        #region Methods: Public
 
         public override int Execute(LockPackageOptions options)
         {
@@ -74,9 +44,5 @@ namespace Clio.Command
                 return 1;
             }
         }
-
-        #endregion
     }
-
-    #endregion
 }

@@ -2,16 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
 
-#region Class: NugetPackageRestorer
-
 public class NugetPackageRestorer : INugetPackageRestorer
 {
-    #region Fields: Private
-
     private const string NugetRestoreProjName = "NugetRestoreProj.csproj";
     private readonly IDotnetExecutor _dotnetExecutor;
     private readonly ITemplateProvider _templateProvider;
@@ -20,10 +17,6 @@ public class NugetPackageRestorer : INugetPackageRestorer
     private readonly IPackageArchiver _packageArchiver;
     private readonly ILogger _logger;
     private readonly INugetPackagesProvider _nugetPackagesProvider;
-
-    #endregion
-
-    #region Constructors: Public
 
     public NugetPackageRestorer(INugetPackagesProvider nugetPackagesProvider, IPackageArchiver packageArchiver,
         ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor,
@@ -44,10 +37,6 @@ public class NugetPackageRestorer : INugetPackageRestorer
         _fileSystem = fileSystem;
         _logger = logger;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static void CheckArguments(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl)
     {
@@ -114,10 +103,6 @@ public class NugetPackageRestorer : INugetPackageRestorer
         });
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void RestoreToNugetFileStorage(NugetPackageFullName nugetPackageFullName, string nugetSourceUrl,
         string destinationNupkgDirectory)
     {
@@ -144,8 +129,4 @@ public class NugetPackageRestorer : INugetPackageRestorer
                 _packageArchiver.Unpack(gzipPackedPackagesFiles, overwrite, false, destinationNupkgDirectory);
             });
     }
-
-    #endregion
 }
-
-#endregion

@@ -1,29 +1,22 @@
-namespace Clio.Package;
-
-using Common;
-using Clio.Common.Responses;
-using WebApplication;
-using Newtonsoft.Json;
-using System.IO;
-using System.Text;
-using System.Threading.Tasks;
-using System.Threading;
 using System;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
+using Clio.Common.Responses;
+using Common;
+using Newtonsoft.Json;
+using WebApplication;
+
+namespace Clio.Package;
 public abstract class BasePackageInstaller
 {
-    #region Constants: Private
-
     private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
     private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
     private const string DefLogFileName = "cliolog.txt";
     private readonly IApplicationLogProvider _applicationLogProvider;
-
-    #endregion
-
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     protected readonly IApplicationClientFactory _applicationClientFactory;
     private readonly IPackageArchiver _packageArchiver;
@@ -33,16 +26,7 @@ public abstract class BasePackageInstaller
     protected readonly ILogger _logger;
     private readonly IApplication _application;
     private string _reportPath;
-
-    #endregion
-
-    #region Fields: Protected
-
     protected readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
         IApplicationClientFactory applicationClientFactory, IApplication application,
@@ -70,18 +54,11 @@ public abstract class BasePackageInstaller
         _packageLockManager = packageLockManager;
     }
 
-    #endregion
-
-    #region Properties: Protected
-
     protected abstract string InstallUrl { get; }
 
     protected abstract string BackupUrl { get; }
+
     public bool CheckLogsOnSuccessMessage => GlobalContext.FailOnError;
-
-    #endregion
-
-    #region Methods: Private
 
     protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
         _serviceUrlBuilder.Build(url, environmentSettings);
@@ -115,7 +92,7 @@ public abstract class BasePackageInstaller
     private string UploadPackage(string filePath, EnvironmentSettings environmentSettings)
     {
         _logger.WriteLine("Uploading...");
-        FileInfo fileInfo = new(filePath);
+        FileInfo fileInfo = new (filePath);
         string packageName = fileInfo.Name;
         IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
         applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
@@ -129,7 +106,7 @@ public abstract class BasePackageInstaller
         try
         {
             _logger.WriteLine("Backup process...");
-            FileInfo fileInfo = new(filePath);
+            FileInfo fileInfo = new (filePath);
             string zipPackageName = fileInfo.Name;
             IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
             applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" +
@@ -197,16 +174,18 @@ public abstract class BasePackageInstaller
             ? InstallUrl
             : InstallWithOptionsUrl;
         IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-        return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
+        return applicationClient.ExecutePostRequest(
+            GetCompleteUrl(installUrl, environmentSettings),
             GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
     }
 
-    private (bool, string) InstallPackageOnServerWithLogListener(string fileName,
+    private (bool, string) InstallPackageOnServerWithLogListener(
+        string fileName,
         EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
     {
         _logger.WriteLine($"Install {fileName} ...");
         _logger.WriteLine("Installation log:");
-        CancellationTokenSource cancellationTokenSource = new();
+        CancellationTokenSource cancellationTokenSource = new ();
         string log = string.Empty;
         Task<string> task = Task.Factory.StartNew(
             (cancellationToken) =>
@@ -260,7 +239,8 @@ public abstract class BasePackageInstaller
         return (success, logText);
     }
 
-    private (bool, string) InstallPackageFromFolder(string packageFolderPath,
+    private (bool, string) InstallPackageFromFolder(
+        string packageFolderPath,
         EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
     {
         string packedFilePath = $"{packageFolderPath}.gz";
@@ -279,7 +259,8 @@ public abstract class BasePackageInstaller
         return (success, logText);
     }
 
-    private (bool, string) InstallPackage(string packagePackedFileOrFolderPath,
+    private (bool, string) InstallPackage(
+        string packagePackedFileOrFolderPath,
         EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions)
     {
         bool success = false;
@@ -291,7 +272,8 @@ public abstract class BasePackageInstaller
         }
         else if (_fileSystem.ExistsDirectory(packagePackedFileOrFolderPath))
         {
-            (success, logText) = InstallPackageFromFolder(packagePackedFileOrFolderPath,
+            (success, logText) = InstallPackageFromFolder(
+                packagePackedFileOrFolderPath,
                 environmentSettings, packageInstallOptions);
         }
         else
@@ -301,10 +283,6 @@ public abstract class BasePackageInstaller
 
         return (success, logText);
     }
-
-    #endregion
-
-    #region Methods: Protected
 
     protected bool InternalInstall(string packagePath, EnvironmentSettings environmentSettings = null,
         PackageInstallOptions packageInstallOptions = null, string reportPath = null)
@@ -316,6 +294,4 @@ public abstract class BasePackageInstaller
         SaveLogFile(logText, reportPath);
         return success;
     }
-
-    #endregion
 }

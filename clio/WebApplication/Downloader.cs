@@ -2,16 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+
 using Clio.Common;
 
 namespace Clio.WebApplication;
 
-#region Interface: IDownloader
-
 public interface IDownloader
 {
-    #region Methods: Public
-
     void Download(IEnumerable<DownloadInfo> downloadInfos);
 
     /// <summary>
@@ -21,22 +18,14 @@ public interface IDownloader
     /// <item>Terrasoft.Configuration\Pkg\PACKAGE_NAME\Files\Bin\</item>
     /// </list>
     /// </summary>
-    /// <param name="downloadInfos">Collection of download info objects</param>
-    /// <remarks>Uses POST rest/CreatioApiGateway/DownloadFile</remarks>
+    /// <param name="downloadInfos">Collection of download info objects.</param>
+    /// <remarks>Uses POST rest/CreatioApiGateway/DownloadFile.</remarks>
     /// <seealso cref="DownloadInfo" />
     void DownloadPackageDll(IEnumerable<DownloadInfo> downloadInfos);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: Downloader
 
 public class Downloader : IDownloader
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly ICompressionUtilities _compressionUtilities;
     private readonly IApplicationClientFactory _applicationClientFactory;
@@ -44,11 +33,8 @@ public class Downloader : IDownloader
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
 
-    #endregion
-
-    #region Constructors: Public
-
-    public Downloader(EnvironmentSettings environmentSettings,
+    public Downloader(
+        EnvironmentSettings environmentSettings,
         ICompressionUtilities compressionUtilities, IApplicationClientFactory applicationClientFactory,
         IServiceUrlBuilder serviceUrlBuilder, ITemplateProvider templateProvider,
         IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger)
@@ -69,15 +55,7 @@ public class Downloader : IDownloader
         _logger = logger;
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private Lazy<IApplicationClient> ApplicationClient { get; set; }
-
-    #endregion
-
-    #region Methods: Private
 
     private IApplicationClient CreateApplicationClient()
     {
@@ -101,7 +79,6 @@ public class Downloader : IDownloader
         _compressionUtilities.UnpackFromGZip(archiveFilePath, downloadInfo.DestinationPath);
         _fileSystem.DeleteFile(archiveFilePath);
     }
-
 
     internal void DownloadPackageDll(DownloadInfo downloadInfo, string tempDirectory)
     {
@@ -142,10 +119,6 @@ public class Downloader : IDownloader
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Download(IEnumerable<DownloadInfo> downloadInfos) =>
         _workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
         {
@@ -158,8 +131,4 @@ public class Downloader : IDownloader
         {
             Parallel.ForEach(downloadInfos, downloadInfo => DownloadPackageDll(downloadInfo, tempDirectory));
         });
-
-    #endregion
 }
-
-#endregion

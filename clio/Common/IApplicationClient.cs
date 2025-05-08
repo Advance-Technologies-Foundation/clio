@@ -1,9 +1,10 @@
-using Creatio.Client;
 using System;
 using System.Net.WebSockets;
 using System.Threading;
-using Creatio.Client.Dto;
+
 using Clio.Common.Responses;
+using Creatio.Client;
+using Creatio.Client.Dto;
 
 namespace Clio.Common;
 
@@ -19,37 +20,38 @@ public interface IApplicationClient
     void DownloadFile(string url, string filePath, string requestData);
 
     /// <summary>
-    /// Executes GET Request with retry
+    /// Executes GET Request with retry.
     /// </summary>
-    /// <param name="url">Request URL</param>
-    /// <param name="requestTimeout">Request Timeout</param>
-    /// <param name="retryCount">retry count</param>
-    /// <param name="delaySec">delay between retries in seconds</param>
-    /// <returns>Response</returns>
-    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
+    /// <param name="url">Request URL.</param>
+    /// <param name="requestTimeout">Request Timeout.</param>
+    /// <param name="retryCount">retry count.</param>
+    /// <param name="delaySec">delay between retries in seconds.</param>
+    /// <returns>Response.</returns>
+    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count.</exception>
     string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 
     /// <summary>
-    /// Executes POST Request with retry
+    /// Executes POST Request with retry.
     /// </summary>
-    /// <param name="url">Request URL</param>
-    /// <param name="requestData">Request Data</param>
-    /// <param name="requestTimeout">Request Timeout</param>
-    /// <param name="retryCount">retry count</param>
-    /// <param name="delaySec">delay between retries in seconds</param>
-    /// <returns>Response</returns>
-    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
+    /// <param name="url">Request URL.</param>
+    /// <param name="requestData">Request Data.</param>
+    /// <param name="requestTimeout">Request Timeout.</param>
+    /// <param name="retryCount">retry count.</param>
+    /// <param name="delaySec">delay between retries in seconds.</param>
+    /// <returns>Response.</returns>
+    /// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count.</exception>
     string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1,
         int delaySec = 1);
 
     void Login();
+
     string UploadFile(string url, string filePath);
+
     string UploadAlmFile(string url, string filePath);
 
     string UploadAlmFileByChunk(string url, string filePath);
 
     void Listen(CancellationToken cancellationToken);
-
 
     T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
         where T : BaseResponse, new();
@@ -67,10 +69,10 @@ public class CreatioClientAdapter : IApplicationClient
         _serviceUrlBuilder = serviceUrlBuilder;
     }
 
-    public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string AuthAppUrl,
+    public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string authAppUrl,
         bool isNetCore = false, ServiceUrlBuilder serviceUrlBuilder = null)
     {
-        _creatioClient = CreatioClient.CreateOAuth20Client(appUrl, AuthAppUrl, clientId, clientSecret, isNetCore);
+        _creatioClient = CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore);
         _serviceUrlBuilder = serviceUrlBuilder;
     }
 
@@ -130,11 +132,11 @@ public class CreatioClientAdapter : IApplicationClient
     /// <param name="requestData">Request data.</param>
     /// <param name="requestTimeout">Request timeout. Default: infinity period.</param>
     /// <typeparam name="T">Return value type.</typeparam>
-    /// <returns>Response.<see cref="T"/></returns>
+    /// <returns>Response.<see cref="T"/>.</returns>
     public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
         where T : BaseResponse, new()
     {
-        JsonConverter converter = new();
+        JsonConverter converter = new ();
         string response = _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
         return converter.DeserializeObject<T>(response);
     }

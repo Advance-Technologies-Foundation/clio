@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
+
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Common;
@@ -9,6 +10,7 @@ using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+
 using mockFs = System.IO.Abstractions;
 
 namespace Clio.Tests.Common;
@@ -17,31 +19,17 @@ namespace Clio.Tests.Common;
 [Category("UnitTests")]
 public class SysSettingsManagerTests
 {
-    #region Fields: Private
-
     private readonly IContainer _container;
     private readonly mockFs.IFileSystem _fileSystem = TestFileSystem.MockExamplesFolder("deployments-manifest");
 
-    #endregion
-
-    #region Constructors: Public
-
     public SysSettingsManagerTests()
     {
-        BindingsModule bm = new(_fileSystem);
+        BindingsModule bm = new (_fileSystem);
         _container = bm.Register(EnvironmentSettings);
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private static EnvironmentSettings EnvironmentSettings =>
-        new() { Uri = "https://localhost", Login = "Supervisor", Password = "Supervisor", IsNetCore = false };
-
-    #endregion
-
-    #region Method : GetSysSettingValueByCode
+        new () { Uri = "https://localhost", Login = "Supervisor", Password = "Supervisor", IsNetCore = false };
 
     [TestCase("true")]
     [TestCase("True")]
@@ -49,7 +37,7 @@ public class SysSettingsManagerTests
     [TestCase("False")]
     public void GetSysSettingValueByCode_Returns_CorrectBooleanValue(string value)
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         string sysSettingValue = value;
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -69,7 +57,8 @@ public class SysSettingsManagerTests
 
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -82,7 +71,7 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(sysSettingValue);
 
-        //Act
+        // Act
         bool actual = sut.GetSysSettingValueByCode<bool>(sysSettingCode);
 
         if (value.ToLower() == "true")
@@ -99,7 +88,7 @@ public class SysSettingsManagerTests
     [TestCase("10/29/2013 4:42:51 AM", "MM/dd/yyyy h:mm:ss tt")]
     public void GetSysSettingValueByCode_Returns_CorrectDateTimeValue(string dateValue, string format)
     {
-        //Arrange
+        // Arrange
         DateTime.TryParseExact(dateValue, format, CultureInfo.InvariantCulture, DateTimeStyles.None,
             out DateTime dtValue);
         string stringDateTimeValue = dtValue.ToString();
@@ -120,7 +109,8 @@ public class SysSettingsManagerTests
         };
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -133,10 +123,10 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(sysSettingValue);
 
-        //Act
+        // Act
         DateTime actual = sut.GetSysSettingValueByCode<DateTime>(sysSettingCode);
 
-        //Assert
+        // Assert
         actual.Should().Be(dtValue);
     }
 
@@ -144,7 +134,7 @@ public class SysSettingsManagerTests
     [TestCase("00000000-0000-0000-0000-000000000000")]
     public void GetSysSettingValueByCode_Returns_CorrectGuidValue(string value)
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         string sysSettingValue = value;
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -162,7 +152,8 @@ public class SysSettingsManagerTests
         };
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -175,10 +166,10 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(sysSettingValue);
 
-        //Act
+        // Act
         Guid actual = sut.GetSysSettingValueByCode<Guid>(sysSettingCode);
 
-        //Assert
+        // Assert
         Guid.TryParse(value, out Guid guidValue);
         actual.Should().Be(guidValue);
     }
@@ -193,7 +184,7 @@ public class SysSettingsManagerTests
     [TestCase("1,1234.00")]
     public void GetSysSettingValueByCode_Returns_CorrectDecimalValue(string value)
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         decimal sysSettingValue = decimal.Parse(value);
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -213,7 +204,8 @@ public class SysSettingsManagerTests
 
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -226,7 +218,7 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(sysSettingValue.ToString(CultureInfo.InvariantCulture));
 
-        //Act
+        // Act
         decimal actual = sut.GetSysSettingValueByCode<decimal>(sysSettingCode);
         actual.Should().BeOfType(typeof(decimal));
         actual.Should().Be(sysSettingValue);
@@ -239,9 +231,9 @@ public class SysSettingsManagerTests
     [TestCase("-1,230")]
     public void GetSysSettingValueByCode_Returns_CorrectIntValue(string value)
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
-        CultureInfo provider = new("en-US");
+        CultureInfo provider = new ("en-US");
         int sysSettingValue = (int)decimal.Parse(value, provider);
 
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -261,7 +253,8 @@ public class SysSettingsManagerTests
 
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -274,7 +267,7 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(value);
 
-        //Act
+        // Act
         int actual = sut.GetSysSettingValueByCode<int>(sysSettingCode);
         actual.Should().BeOfType(typeof(int));
         actual.Should().Be(sysSettingValue);
@@ -284,7 +277,7 @@ public class SysSettingsManagerTests
     [TestCase("1,230.5")]
     public void GetSysSettingValueByCode_Throws(string value)
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
         IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
@@ -303,7 +296,8 @@ public class SysSettingsManagerTests
 
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -316,7 +310,7 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(value);
 
-        //Act + Assert
+        // Act + Assert
         Action act = () => sut.GetSysSettingValueByCode<int>(sysSettingCode);
         act.Should()
             .Throw<InvalidCastException>()
@@ -326,7 +320,7 @@ public class SysSettingsManagerTests
     [Test]
     public void GetSysSettingValueByCode_Returns_Value()
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         const string sysSettingValue = "123";
 
@@ -339,7 +333,6 @@ public class SysSettingsManagerTests
         ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
             workingDirectoriesProvider, filesystem, logger);
 
-
         string segment = EnvironmentSettings.IsNetCore switch
         {
             true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
@@ -348,7 +341,8 @@ public class SysSettingsManagerTests
 
         string expectedUrl = EnvironmentSettings.Uri + segment;
         string expectedRequestData = JsonSerializer
-            .Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
+            .Serialize(
+                new SysSettingsManager.GetSettingRequestData(sysSettingCode),
                 new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -361,10 +355,10 @@ public class SysSettingsManagerTests
                 Arg.Is(expectedRequestData))
             .Returns(sysSettingValue);
 
-        //Act
+        // Act
         string actual = sut.GetSysSettingValueByCode(sysSettingCode);
 
-        //Assert
+        // Assert
         actual.Should().Be(sysSettingValue);
         applicationClient.Received(1)
             .ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>());
@@ -372,10 +366,6 @@ public class SysSettingsManagerTests
         applicationClient.Received(1)
             .ExecutePostRequest(Arg.Any<string>(), Arg.Is(expectedRequestData));
     }
-
-    #endregion
-
-    #region Method : InsertSysSetting
 
     [TestCase("Text")]
     [TestCase("ShortText")]
@@ -385,7 +375,7 @@ public class SysSettingsManagerTests
     [TestCase("MaxSizeText")]
     public void CreatioCanCreateSetting(string valueTypeName)
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
         IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
@@ -407,20 +397,19 @@ public class SysSettingsManagerTests
             .ExecutePostRequest(Arg.Is(expectedUrl), Arg.Is<string>(s => EvalValueTypeName(s, valueTypeName)))
             .Returns(
                 """
-                	{
-                		"id": "acf40078-ba48-4285-9f3b-44ebafa28cac",
-                		"rowsAffected": 1,
-                		"nextPrcElReady": false,
-                		"success": true
-                	}
-                """
-            );
+                    {
+                        "id": "acf40078-ba48-4285-9f3b-44ebafa28cac",
+                        "rowsAffected": 1,
+                        "nextPrcElReady": false,
+                        "success": true
+                    }
+                """);
 
-        //Act
+        // Act
         SysSettingsManager.InsertSysSettingResponse actual
             = sut.InsertSysSetting(sysSettingCode, sysSettingCode, valueTypeName);
 
-        //Assert
+        // Assert
         actual.Id.Should().Be("acf40078-ba48-4285-9f3b-44ebafa28cac");
     }
 
@@ -433,7 +422,7 @@ public class SysSettingsManagerTests
     [Test]
     public void CreatioCannotCanCreateSetting()
     {
-        //Arrange
+        // Arrange
         const string sysSettingCode = "nonExistingCode";
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
         IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
@@ -454,7 +443,7 @@ public class SysSettingsManagerTests
             .ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
             .Returns(
                 """
-                	{
+                    {
                                "responseStatus": {
                                  "ErrorCode": "DbOperationException",
                                  "Message": "Violation of PRIMARY KEY constraint 'PKO0XjBowul8kHVr5gXrx2yS4A0Lc'. Cannot insert duplicate key in object 'dbo.SysSettings'. The duplicate key value is (c7363e33-f8cc-4059-9761-a7c379088489).\r\nThe statement has been terminated.",
@@ -464,19 +453,16 @@ public class SysSettingsManagerTests
                                "nextPrcElReady": false,
                                "success": false
                              }
-                """
-            );
+                """);
 
-        //Act
+        // Act
         SysSettingsManager.InsertSysSettingResponse actual
             = sut.InsertSysSetting(sysSettingCode, sysSettingCode, "Text");
 
-        //Assert
+        // Assert
         actual.Id.Should().Be(Guid.Empty);
         actual.Success.Should().BeFalse();
         actual.ResponseStatus.ErrorCode.Should().Be("DbOperationException");
         actual.ResponseStatus.Message.Should().StartWith("Violation of PRIMARY KEY constraint");
     }
-
-    #endregion
 }

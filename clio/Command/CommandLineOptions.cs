@@ -1,7 +1,8 @@
-using CommandLine;
-using CommandLine.Text;
 using System;
 using System.Collections.Generic;
+
+using CommandLine;
+using CommandLine.Text;
 
 namespace Clio;
 
@@ -60,10 +61,8 @@ public class EnvironmentOptions
     [Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
     public string AuthAppUri { get; set; }
 
-
     [Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
     public bool IsSilent { get; set; }
-
 
     public bool? SafeValue
     {
@@ -149,12 +148,14 @@ public class EnvironmentOptions
         Maintainer = source.Maintainer;
         DevMode = source.DevMode;
         WorkspacePathes = source.WorkspacePathes;
+
         // Note: No need to copy DeveloperModeEnabled as it is derived from DevMode
         Safe = source.Safe;
         ClientId = source.ClientId;
         ClientSecret = source.ClientSecret;
         AuthAppUri = source.AuthAppUri;
         IsSilent = source.IsSilent;
+
         // Note: No need to copy SafeValue as it is derived from Safe
         RestartEnvironment = source.RestartEnvironment;
         DbServerUri = source.DbServerUri;
@@ -195,17 +196,14 @@ internal class ConvertOptions
         Default = false)]
     public bool ConvertSourceCode { get; set; }
 
-
     [Usage(ApplicationAlias = "clio")]
     public static IEnumerable<Example> Examples =>
         new List<Example>
         {
-            new("Convert existing packages",
-                new ConvertOptions { Path = "C:\\Pkg\\", Name = "MyApp,MyIntegration" }
-            ),
-            new("Convert all packages in folder",
-                new ConvertOptions { Path = "C:\\Pkg\\" }
-            )
+            new ("Convert existing packages",
+                new ConvertOptions { Path = "C:\\Pkg\\", Name = "MyApp,MyIntegration" }),
+            new ("Convert all packages in folder",
+                new ConvertOptions { Path = "C:\\Pkg\\" })
         };
 }
 
@@ -223,7 +221,6 @@ internal class ItemOptions : EnvironmentOptions
 
     [Value(1, MetaName = "Item name", Required = false, HelpText = "Item name")]
     public string ItemName { get; set; }
-
 
     [Option('d', "DestinationPath", Required = false, HelpText = "Path to source directory.", Default = null)]
     public string DestinationPath { get; set; }

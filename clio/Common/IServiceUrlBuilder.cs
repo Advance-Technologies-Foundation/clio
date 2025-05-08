@@ -2,8 +2,6 @@ namespace Clio.Common;
 
 public interface IServiceUrlBuilder
 {
-    #region Methods: Public
-
     string Build(string serviceEndpoint);
 
     string Build(ServiceUrlBuilder.KnownRoute knownRoute);
@@ -11,6 +9,4 @@ public interface IServiceUrlBuilder
     string Build(string serviceEndpoint, EnvironmentSettings environmentSettings);
 
     string Build(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings);
-
-    #endregion
 }

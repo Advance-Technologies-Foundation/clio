@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
@@ -26,31 +27,21 @@ using MediatR.Extensions.Autofac.DependencyInjection;
 using MediatR.Extensions.Autofac.DependencyInjection.Builder;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio;
 
-public class BindingsModule
+public class BindingsModule(IFileSystem fileSystem = null)
 {
-    #region Fields: Private
+    private readonly IFileSystem _fileSystem = fileSystem;
 
-    private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public BindingsModule(IFileSystem fileSystem = null) => _fileSystem = fileSystem;
-
-    #endregion
-
-    #region Methods: Public
-
-    public IContainer Register(EnvironmentSettings settings = null,
+    public IContainer Register(
+        EnvironmentSettings settings = null,
         Action<ContainerBuilder> additionalRegistrations = null)
     {
-        ContainerBuilder containerBuilder = new();
+        ContainerBuilder containerBuilder = new ();
 
         containerBuilder
             .RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
@@ -82,7 +73,7 @@ public class BindingsModule
             KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
             return new Kubernetes(config);
         }).As<IKubernetes>();
-        containerBuilder.RegisterType<k8Commands>();
+        containerBuilder.RegisterType<K8Commands>();
         containerBuilder.RegisterType<InstallerCommand>();
 
         if (_fileSystem is not null)
@@ -104,9 +95,6 @@ public class BindingsModule
             .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults |
                                             DefaultValuesHandling.OmitEmptyCollections)
             .Build();
-
-        #region Epiremental CreatioCLient
-
         if (settings is not null)
         {
             CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId)
@@ -118,8 +106,6 @@ public class BindingsModule
 
             containerBuilder.RegisterType<SysSettingsManager>();
         }
-
-        #endregion
 
         containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
         containerBuilder.RegisterInstance(serializer).As<ISerializer>();
@@ -201,12 +187,12 @@ public class BindingsModule
         containerBuilder.RegisterType<ConsoleProgressbar>();
         containerBuilder.RegisterType<ApplicationLogProvider>();
         containerBuilder.RegisterType<LastCompilationLogCommand>();
-        //containerBuilder.RegisterType<CreateEntityCommand>();
+
+        // containerBuilder.RegisterType<CreateEntityCommand>();
         containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
         containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
 
         containerBuilder.RegisterType<Link4RepoCommand>();
-
 
         MediatRConfiguration configuration = MediatRConfigurationBuilder
             .Create(typeof(BindingsModule).Assembly)
@@ -216,7 +202,7 @@ public class BindingsModule
 
         containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
 
-        //Validators
+        // Validators
         containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
         containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
         containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
@@ -251,6 +237,4 @@ public class BindingsModule
         additionalRegistrations?.Invoke(containerBuilder);
         return containerBuilder.Build();
     }
-
-    #endregion
 }

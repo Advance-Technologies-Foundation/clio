@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+
 using Clio.Common;
 using Clio.Utilities;
 using CommandLine;
@@ -19,7 +20,8 @@ public class OpenAppCommand : RemoteCommand<OpenAppOptions>
     {
     }
 
-    public OpenAppCommand(EnvironmentSettings environmentSettings) : base(environmentSettings)
+    public OpenAppCommand(EnvironmentSettings environmentSettings)
+        : base(environmentSettings)
     {
     }
 
@@ -27,20 +29,20 @@ public class OpenAppCommand : RemoteCommand<OpenAppOptions>
     {
         try
         {
-            SettingsRepository settings = new();
+            SettingsRepository settings = new ();
             EnvironmentSettings env = settings.GetEnvironment(options);
 
             if (string.IsNullOrEmpty(env.Uri))
             {
                 Logger.WriteError(
-                    $"Environment:{options.Environment ?? ""} has empty url. Use 'clio reg-web-app' command to configure it.");
+                    $"Environment:{options.Environment ?? string.Empty} has empty url. Use 'clio reg-web-app' command to configure it.");
                 return 1;
             }
 
             if (!Uri.TryCreate(env.Uri, UriKind.Absolute, out Uri _))
             {
                 Logger.WriteError(
-                    $"Environment:{options.Environment ?? ""} has incorrect url format. Actual Url: '{env.Uri}' " +
+                    $"Environment:{options.Environment ?? string.Empty} has incorrect url format. Actual Url: '{env.Uri}' " +
                     $"Use \r\n\r\n\tclio cfg -e {options.Environment} -u <correct-url-here>\r\n\r\n command to configure it.");
                 return 1;
             }

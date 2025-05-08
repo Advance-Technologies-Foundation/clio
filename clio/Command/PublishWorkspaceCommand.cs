@@ -1,11 +1,10 @@
-namespace Clio.Command;
-
 using System;
+
+using CommandLine;
 using Common;
 using Workspaces;
-using CommandLine;
 
-#region Class: PushWorkspaceCommandOptions
+namespace Clio.Command;
 
 [Verb("publish-app", Aliases = new string[] { "publishw", "publish-hub", "ph", "publish-workspace" },
     HelpText = "Publish workspace to zip file")]
@@ -31,29 +30,15 @@ public class PublishWorkspaceCommandOptions : EnvironmentOptions
     public string AppName { get; internal set; }
 }
 
-#endregion
-
-#region Class: PushWorkspaceCommand
-
 public class PublishWorkspaceCommand : Command<PublishWorkspaceCommandOptions>
 {
-    #region Fields: Private
-
     private readonly IWorkspace _workspace;
-
-    #endregion
-
-    #region Constructors: Public
 
     public PublishWorkspaceCommand(IWorkspace workspace)
     {
         workspace.CheckArgumentNull(nameof(workspace));
         _workspace = workspace;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(PublishWorkspaceCommandOptions options)
     {
@@ -70,8 +55,4 @@ public class PublishWorkspaceCommand : Command<PublishWorkspaceCommandOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

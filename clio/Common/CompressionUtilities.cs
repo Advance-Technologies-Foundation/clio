@@ -7,18 +7,10 @@ using System.Text;
 
 namespace Clio.Common;
 
-#region Class: CompressionUtilities
-
 public class CompressionUtilities : ICompressionUtilities
 {
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
     private readonly IZipFile _zipFile;
-
-    #endregion
-
-    #region Constructors: Public
 
     public CompressionUtilities(IFileSystem fileSystem, IZipFile zipFile)
     {
@@ -26,10 +18,6 @@ public class CompressionUtilities : ICompressionUtilities
         _fileSystem = fileSystem;
         _zipFile = zipFile;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static void WriteFileName(string relativeFilePath, GZipStream zipStream)
     {
@@ -71,7 +59,7 @@ public class CompressionUtilities : ICompressionUtilities
         SafeReadGZipStream(zipStream, bytes);
         int fileNameLength = BitConverter.ToInt32(bytes, 0);
         bytes = new byte[sizeof(char)];
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         for (int i = 0; i < fileNameLength; i++)
         {
             SafeReadGZipStream(zipStream, bytes);
@@ -155,16 +143,12 @@ public class CompressionUtilities : ICompressionUtilities
         return true;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void PackToGZip(IEnumerable<string> files, string rootDirectoryPath, string destinationPackagePath)
     {
         CheckPackToGZipArgument(files, rootDirectoryPath, destinationPackagePath);
         using Stream fileStream =
             _fileSystem.FileOpenStream(destinationPackagePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using GZipStream zipStream = new(fileStream, CompressionMode.Compress);
+        using GZipStream zipStream = new (fileStream, CompressionMode.Compress);
         foreach (string filePath in files)
         {
             PackToGZip(filePath, rootDirectoryPath, zipStream);
@@ -176,8 +160,8 @@ public class CompressionUtilities : ICompressionUtilities
         CheckUnpackFromGZipArgument(packedPackagePath, destinationPackageDirectory);
         using FileSystemStream fileStream =
             _fileSystem.FileOpenStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.None);
-        using GZipStream zipStream = new(fileStream, CompressionMode.Decompress, true);
-        MemoryStream newStream = new();
+        using GZipStream zipStream = new (fileStream, CompressionMode.Decompress, true);
+        MemoryStream newStream = new ();
         zipStream.CopyTo(newStream);
         newStream.Seek(0, SeekOrigin.Begin);
         while (UnpackFromGZip(destinationPackageDirectory, newStream))
@@ -190,11 +174,7 @@ public class CompressionUtilities : ICompressionUtilities
 
     public void Zip(string directoryPath, string zipFilePath) =>
         _zipFile.CreateFromDirectory(directoryPath, zipFilePath);
-
-    #endregion
 }
-
-#endregion
 
 public interface IZipFile
 {

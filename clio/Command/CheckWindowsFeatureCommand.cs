@@ -1,10 +1,11 @@
-using Clio.Common;
-using CommandLine;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management;
+
+using Clio.Common;
+using CommandLine;
 
 namespace Clio.Command;
 
@@ -14,16 +15,10 @@ public class CheckWindowsFeaturesOptions
 {
 }
 
-public class CheckWindowsFeaturesCommand : Command<CheckWindowsFeaturesOptions>
+public class CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger): Command<CheckWindowsFeaturesOptions>
 {
-    private IWindowsFeatureManager _windowsFeatureManager;
-    private readonly ILogger _logger;
-
-    public CheckWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger)
-    {
-        _windowsFeatureManager = windowsFeatureManager;
-        _logger = logger;
-    }
+    private readonly IWindowsFeatureManager _windowsFeatureManager = windowsFeatureManager;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(CheckWindowsFeaturesOptions options)
     {
@@ -37,7 +32,7 @@ public class CheckWindowsFeaturesCommand : Command<CheckWindowsFeaturesOptions>
             _logger.WriteInfo($"{item}");
         }
 
-        _logger.WriteLine("");
+        _logger.WriteLine(string.Empty);
         if (missedComponents.Count > 0)
         {
             _logger.WriteInfo("Windows has missed components:");

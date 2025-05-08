@@ -1,10 +1,9 @@
-namespace Clio.Tests.Command;
-
 using Clio.Command;
 using Clio.Common;
 using NSubstitute;
 using NUnit.Framework;
 
+namespace Clio.Tests.Command;
 [TestFixture]
 public class RedisCommandTestCase
 {
@@ -12,17 +11,17 @@ public class RedisCommandTestCase
     [Category("Unit")]
     public void ClearRedisDb_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework()
     {
-        //Arrange
+        // Arrange
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
         string testUri = "TestUri";
-        EnvironmentSettings settings = new() { Uri = testUri, IsNetCore = false };
-        RedisCommand redisCommand = new(applicationClient, settings);
-        ClearRedisOptions clearRedisOptions = new();
+        EnvironmentSettings settings = new () { Uri = testUri, IsNetCore = false };
+        RedisCommand redisCommand = new (applicationClient, settings);
+        ClearRedisOptions clearRedisOptions = new ();
 
-        //Act
+        // Act
         redisCommand.Execute(clearRedisOptions);
 
-        //Assert
+        // Assert
         applicationClient.Received(1).ExecutePostRequest(
             testUri + "/0/ServiceModel/AppInstallerService.svc/ClearRedisDb",
             "{}", 100_000, 3, 1);
@@ -32,17 +31,17 @@ public class RedisCommandTestCase
     [Category("Unit")]
     public void ClearRedisDb_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetCore()
     {
-        //Arrange
+        // Arrange
         IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
         string testUri = "TestUri";
-        EnvironmentSettings settings = new() { Uri = testUri, IsNetCore = true };
-        RedisCommand redisCommand = new(applicationClient, settings);
-        ClearRedisOptions clearRedisOptions = new();
+        EnvironmentSettings settings = new () { Uri = testUri, IsNetCore = true };
+        RedisCommand redisCommand = new (applicationClient, settings);
+        ClearRedisOptions clearRedisOptions = new ();
 
-        //Act
+        // Act
         redisCommand.Execute(clearRedisOptions);
 
-        //Assert
+        // Assert
         applicationClient.Received(1).ExecutePostRequest(
             testUri + "/ServiceModel/AppInstallerService.svc/ClearRedisDb",
             "{}", 100_000, 3, 1);

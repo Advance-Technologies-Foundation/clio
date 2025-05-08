@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.Workspaces;
@@ -12,8 +13,6 @@ namespace Clio.Tests.Command;
 [Category("Unit")]
 public class SwitchNugetToDllTests
 {
-    #region Fields: Private
-
     private static readonly Action<bool, IWorkspace> SetWorkspace =
         (value, ws) => ws.IsWorkspace.Returns(value);
 
@@ -25,21 +24,17 @@ public class SwitchNugetToDllTests
     private readonly ILogger _logger = Substitute.For<ILogger>();
     private readonly INugetMaterializer _nugetMaterializer = Substitute.For<INugetMaterializer>();
 
-    #endregion
-
-    #region Methods: Public
-
     [TestCase(0)]
     [TestCase(1)]
     public void Command_ShouldReturn_ResultOfMaterialization(int expectedResult)
     {
-        //Arrange
+        // Arrange
         const string packageName = "test-package";
         const string csProjFilePath = packageName + ".csproj";
 
         _toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
             _nugetMaterializer);
-        SwitchNugetToDllOptions toDllOptions = new() { PackageName = packageName };
+        SwitchNugetToDllOptions toDllOptions = new () { PackageName = packageName };
         SetWorkspace(true, _workspace);
 
         _fileSystem.ExistsFile(csProjFilePath).Returns(true);
@@ -50,25 +45,23 @@ public class SwitchNugetToDllTests
 
         _nugetMaterializer.Materialize(Arg.Is(packageName)).Returns(expectedResult);
 
-        //Act
+        // Act
         int actual = _toDllCommand.Execute(toDllOptions);
 
-        //Assert
+        // Assert
         actual.Should().Be(expectedResult);
     }
-
-    #endregion
 
     [Test]
     public void Command_ShouldExit_WhenNoCSProjectFound()
     {
-        //Arrange
+        // Arrange
         const string packageName = "test-package";
         const string csProjFilePath = packageName + ".csproj";
 
         _toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
             _nugetMaterializer);
-        SwitchNugetToDllOptions toDllOptions = new() { PackageName = packageName };
+        SwitchNugetToDllOptions toDllOptions = new () { PackageName = packageName };
         SetWorkspace(true, _workspace);
 
         _fileSystem.ExistsFile(csProjFilePath).Returns(false);
@@ -78,10 +71,10 @@ public class SwitchNugetToDllTests
 
         _workspace.WorkspaceSettings.Returns(new WorkspaceSettings { Packages = new[] { "test-package" } });
 
-        //Act
+        // Act
         int actual = _toDllCommand.Execute(toDllOptions);
 
-        //Assert
+        // Assert
         actual.Should().Be(1);
         _logger.Received(1).WriteLine($"{toDllOptions.PackageName} does not contain C# projects... exiting");
     }
@@ -96,16 +89,16 @@ public class SwitchNugetToDllTests
     [Test]
     public void Command_ShouldNotExecute_OutsideWorkspace()
     {
-        //Arrange
+        // Arrange
         _toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
             _nugetMaterializer);
-        SwitchNugetToDllOptions toDllOptions = new() { PackageName = "test-package" };
+        SwitchNugetToDllOptions toDllOptions = new () { PackageName = "test-package" };
         SetWorkspace(false, _workspace);
 
-        //Act
+        // Act
         int actual = _toDllCommand.Execute(toDllOptions);
 
-        //Assert
+        // Assert
         _logger.Received(1).WriteLine("This command cannot be run outside of a workspace");
         actual.Should().Be(1);
     }

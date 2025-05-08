@@ -1,47 +1,33 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
 
 namespace Clio.Command;
 
-#region Class: PkgListOptions
-
 [Verb("get-pkg-list", Aliases = new[] { "packages" }, HelpText = "Get environments packages")]
 public class PkgListOptions : EnvironmentNameOptions
 {
-    #region Properties: Public
-
     [Option('f', "Filter", Required = false, HelpText = "Contains name filter",
         Default = null)]
     public string SearchPattern { get; set; } = string.Empty;
 
     [Option('j', "Json", Required = false, Default = false, HelpText = "Returns response in json format")]
     public bool? Json { get; set; }
-
-    #endregion
 }
-
-#endregion
-
-#region Class: GetPkgListCommand
 
 public class GetPkgListCommand : Command<PkgListOptions>
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationPackageListProvider _applicationPackageListProvider;
     private readonly IJsonResponseFormater _jsonResponseFormater;
     private readonly ILogger _logger;
 
-    #endregion
-
-    #region Constructors: Public
-
-    public GetPkgListCommand(EnvironmentSettings environmentSettings,
+    public GetPkgListCommand(
+        EnvironmentSettings environmentSettings,
         IApplicationPackageListProvider applicationPackageListProvider,
         IJsonResponseFormater jsonResponseFormater,
         ILogger logger)
@@ -55,10 +41,6 @@ public class GetPkgListCommand : Command<PkgListOptions>
         _logger = logger;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private static string[] CreateRow(string nameColumn, string versionColumn, string maintainerColumn) =>
         new[] { nameColumn, versionColumn, maintainerColumn };
 
@@ -66,9 +48,11 @@ public class GetPkgListCommand : Command<PkgListOptions>
 
     private void PrintPackageList(IEnumerable<PackageInfo> packages)
     {
-        IList<string[]> table = new List<string[]>();
-        table.Add(CreateRow("Name", "Version", "Maintainer"));
-        table.Add(CreateEmptyRow());
+        IList<string[]> table = new List<string[]>
+        {
+            CreateRow("Name", "Version", "Maintainer"),
+            CreateEmptyRow()
+        };
         foreach (PackageInfo pkg in packages)
         {
             table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer));
@@ -79,7 +63,8 @@ public class GetPkgListCommand : Command<PkgListOptions>
         _logger.WriteLine();
     }
 
-    private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages,
+    private static IEnumerable<PackageInfo> FilterPackages(
+        IEnumerable<PackageInfo> packages,
         string searchPattern) =>
         packages
             .Where(p => p.Descriptor.Name.ToLower().Contains(searchPattern.ToLower()))
@@ -115,10 +100,6 @@ public class GetPkgListCommand : Command<PkgListOptions>
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(PkgListOptions options)
     {
         try
@@ -134,8 +115,4 @@ public class GetPkgListCommand : Command<PkgListOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

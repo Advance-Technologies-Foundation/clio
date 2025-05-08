@@ -4,6 +4,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
@@ -35,7 +36,7 @@ internal class ShowDiffEnvironmentsCommandTests : BaseCommandTests<ShowDiffEnvir
     public void MergeManifest_FindPackages(string sourceManifestFileName, string targetManifestFileName,
         string diffManifestFileName)
     {
-        ILogger loggerMock = Substitute.For<ILogger>();
+        _ = Substitute.For<ILogger>();
         IContainer container = GetContainer();
         IEnvironmentManager environmentManager = container.Resolve<IEnvironmentManager>();
         EnvironmentManifest sourceManifest = environmentManager.LoadEnvironmentManifestFromFile(sourceManifestFileName);
@@ -46,6 +47,5 @@ internal class ShowDiffEnvironmentsCommandTests : BaseCommandTests<ShowDiffEnvir
         expectedDiffManifest.Should().BeEquivalentTo(actualDiffManifest);
     }
 
-
-    private IContainer GetContainer() => MockDataContainer.GetContainer(FileSystem);
+    private IContainer GetContainer() => MockDataContainer.GetContainer(fileSystem);
 }

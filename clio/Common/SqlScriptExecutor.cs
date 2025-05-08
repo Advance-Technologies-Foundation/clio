@@ -1,4 +1,5 @@
 using System;
+
 using Newtonsoft.Json;
 
 namespace Clio.Common;
@@ -16,7 +17,7 @@ public class SqlScriptExecutor : ISqlScriptExecutor
         body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
         body = body.Replace("\\\"", "\"");
         body = body.Replace("\\\\", "\\");
-        body = body.Trim(new char[] { '\"' });
+        body = body.Trim(['\"']);
         return body;
     }
 
@@ -27,7 +28,8 @@ public class SqlScriptExecutor : ISqlScriptExecutor
         string endpointUri = settings.IsNetCore
             ? settings.Uri + ExecuteSqlScriptUrl
             : settings.Uri + "/0" + ExecuteSqlScriptUrl;
-        string responseFormServer = applicationClient.ExecutePostRequest(endpointUri,
+        string responseFormServer = applicationClient.ExecutePostRequest(
+            endpointUri,
             serializedRequestPayload);
         return CorrectJson(responseFormServer);
     }

@@ -1,24 +1,21 @@
-using CommandLine;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-
-namespace Clio.Command;
-
-using Common;
-using Requests;
-using UserEnvironment;
-using FluentValidation;
-using FluentValidation.Results;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Xml;
 
+using CommandLine;
+using Common;
+using FluentValidation;
+using FluentValidation.Results;
+using Requests;
+using UserEnvironment;
+
+namespace Clio.Command;
 public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOptions>
 {
-    #region Constructors: Public
-
     public SetFsmConfigOptionsValidator() =>
         RuleFor(o => o.EnvironmentName == o.PhysicalPath).Cascade(CascadeMode.Stop)
             .Custom((value, context) =>
@@ -52,37 +49,25 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
                     });
                 }
             });
-
-    #endregion
 }
 
 [Verb("set-fsm-config", Aliases = new[] { "fsmc", "sfsmc" },
     HelpText = "Set file system mode properties in config file")]
 public class SetFsmConfigOptions : EnvironmentNameOptions
 {
-    #region Properties: Public
-
     [Option("physicalPath", Required = false, HelpText = "Path to applications")]
     public string PhysicalPath { get; set; }
 
     [Value(0, MetaName = "IsFsm", Required = true, HelpText = "on or off", Default = "on")]
     public string IsFsm { get; set; }
-
-    #endregion
 }
 
 public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 {
-    #region Fields: Private
-
     private readonly IValidator<SetFsmConfigOptions> _validator;
     private readonly ISettingsRepository _settingsRepository;
     private readonly IList<string[]> _changedValuesTable;
-    private string WebConfigFileName = "Web.config";
-
-    #endregion
-
-    #region Constructors: Public
+    private string webConfigFileName = "Web.config";
 
     public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository)
     {
@@ -94,10 +79,6 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
         };
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private static void PrintErrors(IEnumerable<ValidationFailure> errors) =>
         errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
             .ToList().ForEach(e =>
@@ -105,10 +86,6 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
                 Console.WriteLine(
                     $"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}");
             });
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(SetFsmConfigOptions options)
     {
@@ -121,19 +98,20 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
         _ = _settingsRepository.GetEnvironment(options).IsNetCore switch
         {
-            true => WebConfigFileName = "Terrasoft.WebHost.dll.config",
-            _ => WebConfigFileName = "Web.config"
+            true => webConfigFileName = "Terrasoft.WebHost.dll.config",
+            _ => webConfigFileName = "Web.config"
         };
 
-
         string webConfigPath = string.IsNullOrWhiteSpace(options.PhysicalPath)
-            ? Path.Join(GetWebConfigPathFromEnvName(options.Environment),
-                WebConfigFileName) //Searches IIS registered sites
-            : Path.Join(options.PhysicalPath, WebConfigFileName);
+            ? Path.Join(
+                GetWebConfigPathFromEnvName(options.Environment),
+                webConfigFileName) // Searches IIS registered sites
+            : Path.Join(options.PhysicalPath, webConfigFileName);
         if (File.Exists(webConfigPath))
         {
-            ModifyWebConfigFile(webConfigPath,
-                options.IsFsm.ToLower(CultureInfo.InvariantCulture) == "on"); //Happy path
+            ModifyWebConfigFile(
+                webConfigPath,
+                options.IsFsm.ToLower(CultureInfo.InvariantCulture) == "on"); // Happy path
             return 0;
         }
 
@@ -167,7 +145,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
     private int ModifyWebConfigFile(string webConfigPath, bool isFsm)
     {
         string webConfigContent = File.ReadAllText(webConfigPath);
-        XmlDocument doc = new();
+        XmlDocument doc = new ();
         doc.LoadXml(webConfigContent);
         XmlNode root = doc.DocumentElement;
         XmlNode fileDesignModeNode = root
@@ -176,7 +154,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
         string fileDesignModeNodeOldValue = fileDesignModeNode.Attributes["enabled"].Value;
         string fileDesignModeNodeNewValue = isFsm.ToString().ToLower();
         fileDesignModeNode.Attributes["enabled"].Value = fileDesignModeNodeNewValue;
-        _changedValuesTable.Add(new[] { "fileDesignMode", fileDesignModeNodeOldValue, fileDesignModeNodeNewValue });
+        _changedValuesTable.Add(["fileDesignMode", fileDesignModeNodeOldValue, fileDesignModeNodeNewValue]);
         XmlNodeList cNodes = root.SelectSingleNode("descendant::appSettings").ChildNodes;
         foreach (XmlNode cNode in cNodes)
         {
@@ -185,10 +163,10 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
                 string useStaticFileContentOldValue = cNode.Attributes["value"].Value;
                 string useStaticFileContentNewValue = (!isFsm).ToString().ToLower();
                 cNode.Attributes["value"].Value = useStaticFileContentNewValue;
-                _changedValuesTable.Add(new[]
-                {
+                _changedValuesTable.Add(
+                [
                     "UseStaticFileContent", useStaticFileContentOldValue, useStaticFileContentNewValue
-                });
+                ]);
             }
         }
 
@@ -196,6 +174,4 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
         Console.WriteLine(TextUtilities.ConvertTableToString(_changedValuesTable));
         return 0;
     }
-
-    #endregion
 }

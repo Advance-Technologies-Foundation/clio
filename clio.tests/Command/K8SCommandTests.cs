@@ -1,11 +1,11 @@
 using System;
+
 using Autofac;
 using Clio.Common.K8;
 using FluentAssertions;
 using k8s;
 using k8s.Exceptions;
 using NUnit.Framework;
-
 
 namespace Clio.Tests.Command;
 
@@ -24,7 +24,7 @@ internal class K8SCommandTests : BaseClioModuleTests
     [Test]
     public void CreateK8SCommand_shouldthrowexception_ifKubernetesCannotBeRecognized()
     {
-        Action act = () => Container.Resolve<k8Commands>();
+        Action act = () => container.Resolve<K8Commands>();
         act.Should().Throw<Exception>().WithInnerException<KubeConfigException>()
             .Which.Message.Should().BeEquivalentTo("Kubernetes cannot be recognized.");
     }

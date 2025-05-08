@@ -1,4 +1,5 @@
 using System.IO;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -19,8 +20,8 @@ public class NewPkgCommandTestCase
         settingsRepository.GetEnvironment().Returns(new EnvironmentSettings { Maintainer = "TestMaintainer" });
         Command<ReferenceOptions> referenceCommand = Substitute.For<Command<ReferenceOptions>>();
         ILogger logger = Substitute.For<ILogger>();
-        NewPkgCommand command = new(settingsRepository, referenceCommand, logger);
-        NewPkgOptions options = new() { Name = "Test" };
+        NewPkgCommand command = new (settingsRepository, referenceCommand, logger);
+        NewPkgOptions options = new () { Name = "Test" };
         command.Execute(options);
         Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), options.Name)).Should().BeTrue();
     }
@@ -33,8 +34,8 @@ public class NewPkgCommandTestCase
         settingsRepository.GetEnvironment().Returns(new EnvironmentSettings { Maintainer = "TestMaintainer" });
         Command<ReferenceOptions> referenceCommand = Substitute.For<Command<ReferenceOptions>>();
         ILogger logger = Substitute.For<ILogger>();
-        NewPkgCommand command = new(settingsRepository, referenceCommand, logger);
-        NewPkgOptions options = new() { Name = "Test", Rebase = "src" };
+        NewPkgCommand command = new (settingsRepository, referenceCommand, logger);
+        NewPkgOptions options = new () { Name = "Test", Rebase = "src" };
         command.Execute(options);
         referenceCommand.Received(1).Execute(Arg.Is<ReferenceOptions>(e => e.ReferenceType == options.Rebase));
     }

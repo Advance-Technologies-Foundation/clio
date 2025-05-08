@@ -1,20 +1,13 @@
-namespace Clio.Workspaces;
-
 using System.Collections.Generic;
 using System.Text;
+
 using Common;
 
-#region Class: SolutionCreator
+namespace Clio.Workspaces;
 
 public class SolutionCreator : ISolutionCreator
 {
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public SolutionCreator(IFileSystem fileSystem)
     {
@@ -22,13 +15,9 @@ public class SolutionCreator : ISolutionCreator
         _fileSystem = fileSystem;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects)
     {
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         sb.AppendLine("Microsoft Visual Studio Solution File, Format Version 12.00");
         foreach (SolutionProject sp in solutionProjects)
         {
@@ -55,17 +44,9 @@ public class SolutionCreator : ISolutionCreator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects)
     {
         string solutionContent = BuildSolutionContent(solutionProjects);
         _fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
     }
-
-    #endregion
 }
-
-#endregion

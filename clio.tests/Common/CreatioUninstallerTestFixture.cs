@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
+
 using Autofac;
 using Clio.Common;
 using Clio.Common.db;
@@ -12,22 +13,16 @@ using Clio.UserEnvironment;
 using MediatR;
 using NSubstitute;
 using NUnit.Framework;
+
 using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
 
 public class CreatioUninstallerTestFixture : BaseClioModuleTests
 {
-    #region Constants: Private
-
     private const string ConnectionStringsFileName = "ConnectionStrings.config";
     private const string EnvironmentName = "work";
     private const string InstalledCreatioPath = @"C:\inetpub\wwwroot\work";
-
-    #endregion
-
-    #region Fields: Private
-
     private readonly ISettingsRepository _settingsRepositoryMock = Substitute.For<ISettingsRepository>();
     private ICreatioUninstaller _sut;
     private readonly IMediator _mediatorMock = Substitute.For<IMediator>();
@@ -35,10 +30,6 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     private readonly Ik8Commands _k8CommandsMock = Substitute.For<Ik8Commands>();
     private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
     private readonly IPostgres _postgresMock = Substitute.For<IPostgres>();
-
-    #endregion
-
-    #region Properties: Private
 
     private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> MockMediator =>
         allSitesMock =>
@@ -49,17 +40,12 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
                     {
                         AllUnregisteredSitesRequest allUnregisteredSitesRequest = i[0] as AllUnregisteredSitesRequest;
                         allUnregisteredSitesRequest?.Callback.Invoke(allSitesMock);
-                    }
-                );
+                    });
         };
-
-    #endregion
-
-    #region Methods: Private
 
     private void MockNoSitesFound()
     {
-        IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock = [];
+        IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock =[];
         MockMediator(allSitesMock);
     }
 
@@ -67,22 +53,18 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     {
         IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock =
         [
-            new(
-                new IISScannerHandler.SiteBinding(siteName, "Started", "", InstalledCreatioPath),
+            new (
+                new IISScannerHandler.SiteBinding(siteName, "Started", string.Empty, InstalledCreatioPath),
                 [
-                    string.IsNullOrWhiteSpace(url) ? new Uri(EnvironmentSettings.Uri) : new Uri(url)
+                    string.IsNullOrWhiteSpace(url) ? new Uri(environmentSettings.Uri) : new Uri(url)
                 ],
                 IISScannerHandler.SiteType.NetFramework)
         ];
         MockMediator(allSitesMock);
     }
 
-    #endregion
-
-    #region Methods: Protected
-
-    private readonly k8Commands.ConnectionStringParams _cnpMs = new(0, 0, 0, 0, "", "");
-    private readonly k8Commands.ConnectionStringParams _cnpPg = new(0, 0, 0, 0, "", "");
+    private readonly K8Commands.ConnectionStringParams _cnpMs = new (0, 0, 0, 0, string.Empty, string.Empty);
+    private readonly K8Commands.ConnectionStringParams _cnpPg = new (0, 0, 0, 0, string.Empty, string.Empty);
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
@@ -95,62 +77,56 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
         containerBuilder.RegisterInstance(_postgresMock).As<IPostgres>();
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override void Setup()
     {
-        EnvironmentSettings =
-            new EnvironmentSettings { Uri = "http://kkrylovn.tscrm.com:40090", Login = "", Password = "" };
+        environmentSettings =
+            new EnvironmentSettings { Uri = "http://kkrylovn.tscrm.com:40090", Login = string.Empty, Password = string.Empty };
         base.Setup();
-        _settingsRepositoryMock.GetEnvironment(EnvironmentName).Returns(EnvironmentSettings);
+        _settingsRepositoryMock.GetEnvironment(EnvironmentName).Returns(environmentSettings);
 
         _k8CommandsMock.GetMssqlConnectionString().Returns(_cnpMs);
         _k8CommandsMock.GetPostgresConnectionString().Returns(_cnpPg);
 
-        _sut = Container.Resolve<ICreatioUninstaller>();
-        FileSystem.AddDirectory(InstalledCreatioPath);
+        _sut = container.Resolve<ICreatioUninstaller>();
+        fileSystem.AddDirectory(InstalledCreatioPath);
     }
-
-    #endregion
 
     [Test]
     public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundByUrl()
     {
-        //Arrange
+        // Arrange
         MockStartedSite("https://google.ca", "fake");
 
-        //Act
+        // Act
         _sut.UninstallByEnvironmentName(EnvironmentName);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteWarning($"Could not find IIS by environment name: {EnvironmentName}");
     }
 
     [Test]
     public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundInIIS()
     {
-        //Arrange
+        // Arrange
         MockNoSitesFound();
 
-        //Act
+        // Act
         _sut.UninstallByEnvironmentName(EnvironmentName);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteWarning("IIS does not have any sites. Nothing to uninstall.");
     }
 
     [Test]
     public void UninstallByEnvironmentName_FindsDirPath()
     {
-        //Arrange
+        // Arrange
         MockStartedSite();
 
-        //Act
+        // Act
         _sut.UninstallByEnvironmentName(EnvironmentName);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteInfo($"Uninstalling Creatio from directory: {InstalledCreatioPath}");
     }
 
@@ -158,19 +134,19 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     [TestCase("ConnectionStrings_MS")]
     public void UninstallByPath_DropsDb(string fileName)
     {
-        //Arrange
+        // Arrange
         MockStartedSite();
         _loggerMock.ClearReceivedCalls();
         string csPath = Path.Join(InstalledCreatioPath, ConnectionStringsFileName);
         string csContent = File.ReadAllText($"Examples/CreatioInstalledDir/{fileName}.config");
-        FileSystem.AddFile(csPath, new MockFileData(csContent));
+        fileSystem.AddFile(csPath, new MockFileData(csContent));
         string dbType = fileName == "ConnectionStrings_PG" ? "PostgreSql" : "MsSql";
         const string dbNameInFile = "dbname";
 
-        //Act
+        // Act
         _sut.UninstallByPath(InstalledCreatioPath);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteInfo($"Found db: dbname, Server: {dbType}");
 
         if (fileName == "ConnectionStrings_PG")
@@ -192,45 +168,46 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
     [TestCase("ConnectionStrings_MS")]
     public void UninstallByPath_Returns_When_ConnectionString_Invalid(string fileName)
     {
-        //Arrange
+        // Arrange
         _loggerMock.ClearReceivedCalls();
         string csPath = Path.Join(InstalledCreatioPath, ConnectionStringsFileName);
         string csContent = File.ReadAllText($"Examples/CreatioInstalledDir/{fileName}.config");
-        FileSystem.AddFile(csPath, new MockFileData(csContent));
+        fileSystem.AddFile(csPath, new MockFileData(csContent));
         string dbType = fileName == "ConnectionStrings_PG" ? "PostgreSql" : "MsSql";
 
-        //Act
+        // Act
         _sut.UninstallByPath(InstalledCreatioPath);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteInfo($"Found db: dbname, Server: {dbType}");
     }
 
     [Test]
     public void UninstallByPath_Returns_When_ConnectionString_NotExist()
     {
-        //Arrange
+        // Arrange
         _loggerMock.ClearReceivedCalls();
-        //MockStartedSite();
 
-        //Act
+        // MockStartedSite();
+
+        // Act
         _sut.UninstallByPath(InstalledCreatioPath);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteWarning($"ConnectionStrings file not found in: {InstalledCreatioPath}");
     }
 
     [Test]
     public void UninstallByPath_Returns_When_DirectoryDoesNotExist()
     {
-        //Arrange
+        // Arrange
         _loggerMock.ClearReceivedCalls();
         const string creatioDirectoryPath = @"C:\random_dir";
 
-        //Act
+        // Act
         _sut.UninstallByPath(creatioDirectoryPath);
 
-        //Assert
+        // Assert
         _loggerMock.Received(1).WriteWarning($"Directory {creatioDirectoryPath} does not exist.");
     }
 }

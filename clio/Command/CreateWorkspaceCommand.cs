@@ -1,39 +1,23 @@
-using System.Linq;
-
-namespace Clio.Command;
-
 using System;
 using System.Collections.Generic;
+using System.Linq;
+
+using CommandLine;
 using Common;
 using Workspaces;
-using CommandLine;
 
-#region Class: CreateWorkspaceCommandOptions
+namespace Clio.Command;
 
 [Verb("create-workspace", Aliases = new string[] { "createw" }, HelpText = "Create open project cmd file")]
 public class CreateWorkspaceCommandOptions : WorkspaceOptions
 {
-    #region Properties: Public
-
     internal override bool RequiredEnvironment => false;
-
-    #endregion
 }
-
-#endregion
-
-#region Class: CreateWorkspaceCommand
 
 public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>
 {
-    #region Fields: Private
-
     private readonly IWorkspace _workspace;
     private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
 
     public CreateWorkspaceCommand(IWorkspace workspace, ILogger logger)
     {
@@ -41,14 +25,6 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>
         _workspace = workspace;
         _logger = logger;
     }
-
-    #endregion
-
-    #region Property: Private
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(CreateWorkspaceCommandOptions options)
     {
@@ -88,8 +64,4 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

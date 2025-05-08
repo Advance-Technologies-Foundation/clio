@@ -8,13 +8,8 @@ public class RestartOptions : RemoteCommandOptions
 {
 }
 
-public class RestartCommand : RemoteCommand<RestartOptions>
+public class RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<RestartOptions>(applicationClient, settings)
 {
-    public RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
-
     protected override string ServicePath => EnvironmentSettings.IsNetCore
         ? @"/ServiceModel/AppInstallerService.svc/RestartApp"
         : @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";

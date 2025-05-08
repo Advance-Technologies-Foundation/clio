@@ -4,22 +4,22 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Xml.Linq;
+
 using Clio.Workspaces;
 
 namespace Clio.Common;
 
 /// <summary>
-/// Build .props file for the main csproj file of a package 
+/// Build .props file for the main csproj file of a package.
 /// </summary>
 public interface IPropsBuilder
 {
-    #region Methods: Public
 
     /// <summary>
     /// Builds props files for the project and copies all dlls from
-    /// nuget/bin folder to the package Libs folder
+    /// nuget/bin folder to the package Libs folder.
     /// </summary>
-    /// <param name="packageName">Package name to convert</param>
+    /// <param name="packageName">Package name to convert.</param>
     /// <remarks>
     /// It add Libs folder with the following structure : <br/>
     /// 📦Files                                <br/>
@@ -27,17 +27,13 @@ public interface IPropsBuilder
     /// ┃ ┣ 📂net472                           <br/>
     /// ┃ ┗ 📂netstandard                      <br/>
     /// ┣ 📜PKG_NAME-net472.nuget.props        <br/>
-    /// ┣ 📜PKG_NAME-netstandard.nuget.props   <br/>
+    /// ┣ 📜PKG_NAME-netstandard.nuget.props.   <br/>
     /// </remarks>
     void Build(string packageName);
-
-    #endregion
 }
 
-public class PropsBuilder : IPropsBuilder
+public class PropsBuilder(IFileSystem fileSystem, ILogger logger, IWorkspacePathBuilder workspacePathBuilder): IPropsBuilder
 {
-    #region Enum: Private
-
     private enum ItemType
     {
         NugetFolder,
@@ -52,41 +48,17 @@ public class PropsBuilder : IPropsBuilder
 
     private enum Moniker
     {
-        net472,
-        netstandard
+        Net472,
+        Netstandard
     }
-
-    #endregion
-
-    #region Constants: Private
 
     private const string IncludeTag = "Include";
     private const string ProjExtension = ".csproj";
     private const string PropsExtension = ".props";
     private const string ReferenceTag = "Reference";
-
-    #endregion
-
-    #region Fields: Private
-
-    private readonly IFileSystem _fileSystem;
-    private readonly ILogger _logger;
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public PropsBuilder(IFileSystem fileSystem, ILogger logger, IWorkspacePathBuilder workspacePathBuilder)
-    {
-        _fileSystem = fileSystem;
-        _logger = logger;
-        _workspacePathBuilder = workspacePathBuilder;
-    }
-
-    #endregion
-
-    #region Methods: Private
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
 
     private void BuildNet472Props(string packageName)
     {
@@ -95,7 +67,7 @@ public class PropsBuilder : IPropsBuilder
             .GetFiles(net472BinDir, "*.dll", SearchOption.TopDirectoryOnly)
             .Where(f => !f.EndsWith(packageName + ".dll"));
 
-        string net472PropsContent = Process(net472Files, packageName, Moniker.net472);
+        string net472PropsContent = Process(net472Files, packageName, Moniker.Net472);
         string net472PropsFilePath = GetPathTo(ItemType.Net472PropsFilePath, packageName);
 
         _logger.WriteLine("Saving props file to " + net472PropsFilePath);
@@ -109,7 +81,7 @@ public class PropsBuilder : IPropsBuilder
             .GetFiles(netStdBinDir, "*.dll", SearchOption.TopDirectoryOnly)
             .Where(f => !f.EndsWith(packageName + ".dll"));
 
-        string netStdPropsContent = Process(netStdFiles, packageName, Moniker.netstandard);
+        string netStdPropsContent = Process(netStdFiles, packageName, Moniker.Netstandard);
         string netStdPropsFilePath = GetPathTo(ItemType.NetStdPropsFilePath, packageName);
 
         _logger.WriteLine("Saving props file to " + netStdPropsFilePath);
@@ -122,15 +94,18 @@ public class PropsBuilder : IPropsBuilder
         {
             ItemType.NugetFolder => FilePathGetter(_workspacePathBuilder.NugetFolderPath),
             ItemType.PackageFolder => FilePathGetter(_workspacePathBuilder.PackagesFolderPath),
-            ItemType.Net472BinDir => FolderPathGetter(_workspacePathBuilder.NugetFolderPath, Moniker.net472),
-            ItemType.NetStdBinDir => FolderPathGetter(_workspacePathBuilder.NugetFolderPath, Moniker.netstandard),
-            ItemType.Net472PropsFilePath => PackageFolderPathGetter(_workspacePathBuilder.PackagesFolderPath,
-                Moniker.net472),
-            ItemType.NetStdPropsFilePath => PackageFolderPathGetter(_workspacePathBuilder.PackagesFolderPath,
-                Moniker.netstandard),
-            ItemType.Net472PackageLibsPath => PackageLibsPath(_workspacePathBuilder.PackagesFolderPath, Moniker.net472),
-            ItemType.NetStdPackageLibsPath => PackageLibsPath(_workspacePathBuilder.PackagesFolderPath,
-                Moniker.netstandard),
+            ItemType.Net472BinDir => FolderPathGetter(_workspacePathBuilder.NugetFolderPath, Moniker.Net472),
+            ItemType.NetStdBinDir => FolderPathGetter(_workspacePathBuilder.NugetFolderPath, Moniker.Netstandard),
+            ItemType.Net472PropsFilePath => PackageFolderPathGetter(
+                _workspacePathBuilder.PackagesFolderPath,
+                Moniker.Net472),
+            ItemType.NetStdPropsFilePath => PackageFolderPathGetter(
+                _workspacePathBuilder.PackagesFolderPath,
+                Moniker.Netstandard),
+            ItemType.Net472PackageLibsPath => PackageLibsPath(_workspacePathBuilder.PackagesFolderPath, Moniker.Net472),
+            ItemType.NetStdPackageLibsPath => PackageLibsPath(
+                _workspacePathBuilder.PackagesFolderPath,
+                Moniker.Netstandard),
             _ => throw new ArgumentOutOfRangeException(nameof(itemType), itemType, null)
         };
 
@@ -167,7 +142,7 @@ public class PropsBuilder : IPropsBuilder
         string xmlContent = _fileSystem.ReadAllText(csprojPath);
         XDocument csproj = XDocument.Parse(xmlContent);
 
-        string tplFileName = moniker == Moniker.net472 ? "propItem-net472.xml.tpl" : "propItem-netstandard.xml.tpl";
+        string tplFileName = moniker == Moniker.Net472 ? "propItem-net472.xml.tpl" : "propItem-netstandard.xml.tpl";
         string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", tplFileName);
         string templateContent = _fileSystem.ReadAllText(templatePath);
 
@@ -177,8 +152,8 @@ public class PropsBuilder : IPropsBuilder
 
         string destinationFolder = moniker switch
         {
-            Moniker.net472 => GetPathTo(ItemType.Net472PackageLibsPath, packageName),
-            Moniker.netstandard => GetPathTo(ItemType.NetStdPackageLibsPath, packageName),
+            Moniker.Net472 => GetPathTo(ItemType.Net472PackageLibsPath, packageName),
+            Moniker.Netstandard => GetPathTo(ItemType.NetStdPackageLibsPath, packageName),
             _ => throw new ArgumentOutOfRangeException(nameof(moniker), moniker, null)
         };
         _fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationFolder, true);
@@ -191,8 +166,8 @@ public class PropsBuilder : IPropsBuilder
 
             if (isReferenced)
             {
-                //When dll is referenced in csproj file
-                //we don't need to add it to props file
+                // When dll is referenced in csproj file
+                // we don't need to add it to props file
                 continue;
             }
 
@@ -201,8 +176,8 @@ public class PropsBuilder : IPropsBuilder
 
             string binFolder = moniker switch
             {
-                Moniker.net472 => GetPathTo(ItemType.Net472BinDir, packageName),
-                Moniker.netstandard => GetPathTo(ItemType.NetStdBinDir, packageName),
+                Moniker.Net472 => GetPathTo(ItemType.Net472BinDir, packageName),
+                Moniker.Netstandard => GetPathTo(ItemType.NetStdBinDir, packageName),
                 _ => throw new ArgumentOutOfRangeException(nameof(moniker), moniker, null)
             };
             string fullDllPath = Path.Combine(binFolder, dll);
@@ -213,15 +188,9 @@ public class PropsBuilder : IPropsBuilder
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Build(string packageName)
     {
         BuildNet472Props(packageName);
         BuildNetStdProps(packageName);
     }
-
-    #endregion
 }

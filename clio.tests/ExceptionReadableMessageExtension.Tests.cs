@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Autofac.Core;
 using FluentAssertions;
 using NUnit.Framework;
@@ -13,7 +14,7 @@ public class ExceptionReadableMessageExtensionTestCase
     [Test]
     public void GetReadableMessageException_PrintsCorrectMessage_WhenFileNotFoundException()
     {
-        FileNotFoundException exception = new("FileMessage", "FileName");
+        FileNotFoundException exception = new ("FileMessage", "FileName");
         string messageResult = exception.GetReadableMessageException();
         messageResult.Should().Be($"{exception.Message}{exception.FileName}");
     }
@@ -21,7 +22,7 @@ public class ExceptionReadableMessageExtensionTestCase
     [Test]
     public void GetReadableMessageException_PrintsCorrectMessage_WhenFileNotFoundExceptionAndSetsDebug()
     {
-        FileNotFoundException exception = new("FileMessage", "FileName");
+        FileNotFoundException exception = new ("FileMessage", "FileName");
         string messageResult = exception.GetReadableMessageException(true);
         messageResult.Should().Be(exception.ToString());
     }
@@ -29,7 +30,7 @@ public class ExceptionReadableMessageExtensionTestCase
     [Test]
     public void GetReadableMessageException_PrintsCorrectMessage_WhenException()
     {
-        Exception exception = new("Message");
+        Exception exception = new ("Message");
         string messageResult = exception.GetReadableMessageException();
         messageResult.Should().Be($"{exception.Message}");
     }
@@ -37,7 +38,7 @@ public class ExceptionReadableMessageExtensionTestCase
     [Test]
     public void GetReadableMessageException_PrintsCorrectMessage_WhenExceptionAndSetsDebug()
     {
-        Exception exception = new("Message");
+        Exception exception = new ("Message");
         string messageResult = exception.GetReadableMessageException(true);
         messageResult.Should().Be(exception.ToString());
     }
@@ -45,8 +46,8 @@ public class ExceptionReadableMessageExtensionTestCase
     [Test]
     public void GetReadableMessageException_PrintsCorrectMessage_WhenDependencyResolutionException()
     {
-        Exception innerException = new("InnerMessage");
-        DependencyResolutionException exception = new("Message", innerException);
+        Exception innerException = new ("InnerMessage");
+        DependencyResolutionException exception = new ("Message", innerException);
         string messageResult = exception.GetReadableMessageException();
         messageResult.Should().Be($"{innerException.Message}");
     }
@@ -55,7 +56,7 @@ public class ExceptionReadableMessageExtensionTestCase
     public void
         GetReadableMessageException_PrintsCorrectMessage_WhenDependencyResolutionExceptionWithoutInnerException()
     {
-        DependencyResolutionException exception = new("Message");
+        DependencyResolutionException exception = new ("Message");
         string messageResult = exception.GetReadableMessageException();
         messageResult.Should().Be($"{exception.Message}");
     }
@@ -63,8 +64,8 @@ public class ExceptionReadableMessageExtensionTestCase
     [Test]
     public void GetReadableMessageException_PrintsCorrectMessage_WhenDependencyResolutionExceptionAndSetsDebug()
     {
-        Exception innerException = new("InnerMessage");
-        DependencyResolutionException exception = new("Message", innerException);
+        Exception innerException = new ("InnerMessage");
+        DependencyResolutionException exception = new ("Message", innerException);
         string messageResult = exception.GetReadableMessageException(true);
         messageResult.Should().Be(exception.ToString());
     }

@@ -6,6 +6,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+
 using Autofac;
 using Clio.Common.CsProjManager;
 using Clio.Tests.Command;
@@ -18,28 +19,18 @@ namespace Clio.Tests.Common.CsProjManager;
 [TestFixture(Category = "Unit")]
 public class CsprojFileTests : BaseClioModuleTests
 {
-    #region Fields: Private
-
     private readonly Func<string, Task<byte[]>> _getFileContentAsync = async path =>
         await File.ReadAllBytesAsync(path);
 
     private ICsprojFile _csprojFile;
     private IWorkspacePathBuilder _workspacePathBuilder;
 
-    #endregion
-
-    #region Methods: Public
-
     public override void Setup()
     {
         base.Setup();
-        _csprojFile = Container.Resolve<ICsprojFile>();
-        _workspacePathBuilder = Container.Resolve<IWorkspacePathBuilder>();
+        _csprojFile = container.Resolve<ICsprojFile>();
+        _workspacePathBuilder = container.Resolve<IWorkspacePathBuilder>();
     }
-
-    #endregion
-
-    #region MethodTests: Initialize
 
     [Test]
     public async Task Initialize_WithFileInfo_ShouldReturnInitializedCsprojFile()
@@ -49,8 +40,8 @@ public class CsprojFileTests : BaseClioModuleTests
         string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 
         byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-        FileSystem.AddFile(csProjPath, new MockFileData(content));
-        IFileInfo fileInfo = new MockFileInfo(FileSystem, csProjPath);
+        fileSystem.AddFile(csProjPath, new MockFileData(content));
+        IFileInfo fileInfo = new MockFileInfo(fileSystem, csProjPath);
 
         // Act
         IInitializedCsprojFile result = _csprojFile.Initialize(fileInfo);
@@ -68,7 +59,7 @@ public class CsprojFileTests : BaseClioModuleTests
         string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 
         byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-        FileSystem.AddFile(csProjPath, new MockFileData(content));
+        fileSystem.AddFile(csProjPath, new MockFileData(content));
 
         // Act
         IInitializedCsprojFile result = _csprojFile.Initialize(packageName);
@@ -91,11 +82,6 @@ public class CsprojFileTests : BaseClioModuleTests
         actual.Should().NotBeNull();
     }
 
-    #endregion
-
-
-    #region MethodTests : FindPackage References
-
     [TestCase("MrktHootsuiteApp")]
     [TestCase("CbyWhatsappApp")]
     public async Task GetPackageReferences_ShouldReturnPackageReferences(string packageName)
@@ -103,7 +89,7 @@ public class CsprojFileTests : BaseClioModuleTests
         // Arrange
         string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
         byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-        FileSystem.AddFile(csProjPath, new MockFileData(content));
+        fileSystem.AddFile(csProjPath, new MockFileData(content));
         IInitializedCsprojFile initializedCsProj = _csprojFile.Initialize(packageName);
 
         // Act
@@ -125,7 +111,7 @@ public class CsprojFileTests : BaseClioModuleTests
         // Arrange
         string csProjPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
         byte[] content = await _getFileContentAsync($"Examples/CsProjFiles/{packageName}.csproj");
-        FileSystem.AddFile(csProjPath, new MockFileData(content));
+        fileSystem.AddFile(csProjPath, new MockFileData(content));
         IInitializedCsprojFile initializedCsProj = _csprojFile.Initialize(packageName);
 
         // Act
@@ -134,6 +120,4 @@ public class CsprojFileTests : BaseClioModuleTests
         // Assert
         refs.Any(r => r.PackageName == "Terrasoft.Configuration").Should().BeFalse();
     }
-
-    #endregion
 }

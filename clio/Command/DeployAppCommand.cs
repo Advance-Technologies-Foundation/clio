@@ -1,4 +1,5 @@
 using System;
+
 using ATF.Repository.Providers;
 using Clio.Command.PackageCommand;
 using Clio.Common;
@@ -20,14 +21,11 @@ internal class DeployAppOptions : BaseAppCommandOptions
     public string DestinationEnvironment { get; set; }
 }
 
-internal class DeployAppCommand : BaseAppCommand<DeployAppOptions>
+internal class DeployAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
+    IDataProvider dataProvider, ApplicationManager applicationManager): BaseAppCommand<DeployAppOptions>(applicationClient,
+    environmentSettings, dataProvider, applicationManager)
 {
-    private ApplicationManager _applicationManager;
-
-    public DeployAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
-        IDataProvider dataProvider, ApplicationManager applicationManager) : base(applicationClient,
-        environmentSettings, dataProvider, applicationManager) =>
-        _applicationManager = applicationManager;
+    private readonly ApplicationManager _applicationManager = applicationManager;
 
     protected override void ExecuteRemoteCommand(DeployAppOptions options)
     {

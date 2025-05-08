@@ -1,8 +1,6 @@
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 
-namespace Clio.Tests.Command;
-
-using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Common;
@@ -12,19 +10,14 @@ using NSubstitute;
 using NUnit.Framework;
 using YamlDotNet.Serialization;
 
+namespace Clio.Tests.Command;
 [TestFixture(Author = "Kirill Krylov", Category = "YAML")]
 public class ScenarioRunnerCommandTests
 {
-    #region Fields: Private
-
     private readonly ScenarioRunnerCommand _sut;
     private readonly IDeserializer _deserializer = new DeserializerBuilder().Build();
-    private readonly List<object> _receivedOptions = new();
+    private readonly List<object> _receivedOptions =[];
     private readonly MockFileSystem _mockFs;
-
-    #endregion
-
-    #region Constructors: Public
 
     public ScenarioRunnerCommandTests()
     {
@@ -44,20 +37,18 @@ public class ScenarioRunnerCommandTests
         };
     }
 
-    #endregion
-
     [Test]
     public void Executes_Handles_CorrectFile()
     {
         // Arrange
         const string fileName = @"YAML/Script/three_sections.yaml";
-        ScenarioRunnerOptions options = new() { FileName = fileName };
+        ScenarioRunnerOptions options = new () { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
         _sut.Execute(options);
 
-        //Assert
+        // Assert
         _receivedOptions.Should().HaveCount(4);
         _receivedOptions[0].Should().BeOfType<RestartOptions>();
         RestartOptions restartOption = _receivedOptions[0] as RestartOptions;
@@ -81,19 +72,18 @@ public class ScenarioRunnerCommandTests
         pullPkgOptions.Unzip.Should().BeTrue();
     }
 
-
     [Test]
     public void RegWebAppCommand_Handles()
     {
         // Arrange
         const string fileName = @"YAML/Script/reg_web_app_example.yaml";
-        ScenarioRunnerOptions options = new() { FileName = fileName };
+        ScenarioRunnerOptions options = new () { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
         _sut.Execute(options);
 
-        //Assert
+        // Assert
         _receivedOptions.Should().HaveCount(2);
         _receivedOptions[0].Should().BeOfType<RegAppOptions>();
         RegAppOptions regAppOptions = _receivedOptions[0] as RegAppOptions;
@@ -108,13 +98,13 @@ public class ScenarioRunnerCommandTests
     {
         // Arrange
         const string fileName = @"YAML/Script/emptyFile.yaml";
-        ScenarioRunnerOptions options = new() { FileName = fileName };
+        ScenarioRunnerOptions options = new () { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
         _sut.Execute(options);
 
-        //Assert
+        // Assert
         _receivedOptions.Should().BeEmpty();
     }
 
@@ -123,13 +113,13 @@ public class ScenarioRunnerCommandTests
     {
         // Arrange
         const string fileName = @"YAML/Script/non_existant.yaml";
-        ScenarioRunnerOptions options = new() { FileName = fileName };
+        ScenarioRunnerOptions options = new () { FileName = fileName };
         _receivedOptions.Clear();
 
         // Act
         _sut.Execute(options);
 
-        //Assert
+        // Assert
         _receivedOptions.Should().BeEmpty();
     }
 }

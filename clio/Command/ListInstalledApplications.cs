@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -10,7 +11,8 @@ using CreatioModel;
 
 namespace Clio.Command;
 
-[Verb("get-app-list",
+[Verb(
+    "get-app-list",
     Aliases = new[] { "lia", "list-apps", "apps", "app-list", "apps-list", "list - installed - applications" },
     HelpText = "List installed apps")]
 public class ListInstalledAppsOptions : EnvironmentOptions
@@ -21,11 +23,10 @@ public class ListInstalledAppsOptions : EnvironmentOptions
 
 public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledAppsOptions>
 {
-    public ListInstalledAppsCommand(IDataProvider provider, ILogger logger) : base(provider, logger)
+    public ListInstalledAppsCommand(IDataProvider provider, ILogger logger)
+        : base(provider, logger)
     {
     }
-
-    #region Constructors: Public
 
     public ListInstalledAppsCommand(IDataProvider provider, ILogger logger, IApplicationClient applicationClient,
         EnvironmentSettings environmentSettings)
@@ -33,20 +34,18 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
     {
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(ListInstalledAppsOptions options)
     {
-        ConsoleTable table = new();
+        ConsoleTable table = new ();
         table.Columns.Add(nameof(SysInstalledApp.Name));
         table.Columns.Add(nameof(SysInstalledApp.Code));
         table.Columns.Add(nameof(SysInstalledApp.Version));
 
-        List<SysInstalledApp> applications = AppDataContextFactory.GetAppDataContext(_provider)
-            .Models<SysInstalledApp>()
-            .ToList();
+        List<SysInstalledApp> applications =
+        [
+            .. AppDataContextFactory.GetAppDataContext(_provider)
+                        .Models<SysInstalledApp>(),
+        ];
 
         if (!options.JsonFormat)
         {
@@ -60,6 +59,4 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
 
         return 0;
     }
-
-    #endregion
 }

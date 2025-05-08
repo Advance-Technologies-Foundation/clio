@@ -4,12 +4,8 @@ using System.Text;
 
 namespace Clio.Common;
 
-#region Class: TextUtilities
-
 public class TextUtilities
 {
-    #region Methods: Public
-
     public static string ConvertTableToString(IEnumerable<string[]> table, int distanceBetweenColumns = 5,
         char paddingChar = ' ', string beginPadding = "")
     {
@@ -25,7 +21,7 @@ public class TextUtilities
             columnMaxValueLength[i] = table.Max(p => p[i].Length);
         }
 
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         foreach (string[] selectedPackage in table)
         {
             sb.Append(beginPadding);
@@ -40,8 +36,4 @@ public class TextUtilities
 
         return sb.ToString();
     }
-
-    #endregion
 }
-
-#endregion

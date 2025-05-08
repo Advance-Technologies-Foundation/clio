@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -11,7 +12,7 @@ namespace Clio.Tests.Command;
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 internal class UninstallCreatioCommandTests : BaseCommandTests<UninstallCreatioCommandOptions>
 {
-    private ICreatioUninstaller _creatioUninstaller = Substitute.For<ICreatioUninstaller>();
+    private readonly ICreatioUninstaller _creatioUninstaller = Substitute.For<ICreatioUninstaller>();
 
     protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
     {
@@ -24,32 +25,32 @@ internal class UninstallCreatioCommandTests : BaseCommandTests<UninstallCreatioC
     public override void Setup()
     {
         base.Setup();
-        _sut = Container.Resolve<UninstallCreatioCommand>();
+        _sut = container.Resolve<UninstallCreatioCommand>();
     }
 
     [Test]
     public void Execute_ShouldEarlyReturn_WhenValidationFails()
     {
-        //Arrange
-        UninstallCreatioCommandOptions options = new();
+        // Arrange
+        UninstallCreatioCommandOptions options = new ();
 
-        //Act
+        // Act
         int exitCode = _sut.Execute(options);
 
-        //Assert
+        // Assert
         exitCode.Should().Be(1);
     }
 
     [Test]
     public void Execute_ShouldReturn_When_EnvironmentNameValidationPasses()
     {
-        //Arrange
-        UninstallCreatioCommandOptions options = new() { EnvironmentName = "some" };
+        // Arrange
+        UninstallCreatioCommandOptions options = new () { EnvironmentName = "some" };
 
-        //Act
+        // Act
         int exitCode = _sut.Execute(options);
 
-        //Assert
+        // Assert
         exitCode.Should().Be(0);
         _creatioUninstaller.Received(1).UninstallByEnvironmentName(options.EnvironmentName);
     }
@@ -57,14 +58,15 @@ internal class UninstallCreatioCommandTests : BaseCommandTests<UninstallCreatioC
     [Test]
     public void Execute_ShouldReturn_When_PhysicalPathValidationPasses()
     {
-        //Arrange
+        // Arrange
         const string directoryPath = @"C:\some_creatio_folder";
-        UninstallCreatioCommandOptions options = new() { PhysicalPath = directoryPath };
-        FileSystem.AddDirectory(directoryPath);
-        //Act
+        UninstallCreatioCommandOptions options = new () { PhysicalPath = directoryPath };
+        fileSystem.AddDirectory(directoryPath);
+
+        // Act
         int exitCode = _sut.Execute(options);
 
-        //Assert
+        // Assert
         exitCode.Should().Be(0);
         _creatioUninstaller.Received(1).UninstallByPath(options.PhysicalPath);
     }

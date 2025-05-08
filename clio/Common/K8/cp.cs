@@ -4,23 +4,20 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
 using ICSharpCode.SharpZipLib.Tar;
 using k8s;
 using k8s.Models;
 
 namespace Clio.Common.K8;
 
-internal class Cp
+internal class Cp(IKubernetes client)
 {
-    private readonly IKubernetes _client;
-
-    public Cp(IKubernetes client) => _client = client;
-
+    private readonly IKubernetes _client = client;
 
     public async Task Copy(V1Pod destPod, string k8Namespace, string containerName, string sourceFilePath,
         string destinationFilePath) => await CopyFileToPodAsync(destPod.Metadata.Name, k8Namespace, containerName,
         sourceFilePath, destinationFilePath);
-
 
     private void ValidatePathParameters(string sourcePath, string destinationPath)
     {
@@ -42,15 +39,15 @@ internal class Cp
         ValidatePathParameters(sourceFilePath, destinationFilePath);
 
         // The callback which processes the standard input, standard output and standard error of exec method
-        ExecAsyncCallback handler = new(async (stdIn, stdOut, stdError) =>
+        ExecAsyncCallback handler = new (async (stdIn, stdOut, stdError) =>
         {
-            FileInfo fileInfo = new(destinationFilePath);
+            FileInfo fileInfo = new (destinationFilePath);
             try
             {
-                using (MemoryStream memoryStream = new())
+                using (MemoryStream memoryStream = new ())
                 {
                     using (FileStream inputFileStream = File.OpenRead(sourceFilePath))
-                    using (TarOutputStream tarOutputStream = new(memoryStream, Encoding.Default))
+                    using (TarOutputStream tarOutputStream = new (memoryStream, Encoding.Default))
                     {
                         tarOutputStream.IsStreamOwner = false;
 
@@ -75,7 +72,7 @@ internal class Cp
                 throw new IOException($"Copy command failed: {ex.Message}");
             }
 
-            using StreamReader streamReader = new(stdError);
+            using StreamReader streamReader = new (stdError);
             while (streamReader.EndOfStream == false)
             {
                 string error = await streamReader.ReadToEndAsync();
@@ -94,7 +91,6 @@ internal class Cp
             handler,
             cancellationToken);
     }
-
 
     private static string GetFolderName(string filePath)
     {

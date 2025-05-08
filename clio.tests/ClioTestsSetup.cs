@@ -5,7 +5,7 @@ namespace Clio.Tests;
 
 public static class ClioTestsSetup
 {
-    private static readonly ServiceCollection Services = new();
+    private static readonly ServiceCollection Services = new ();
     private static IServiceScope _scope;
 
     private static IServiceScope Init()

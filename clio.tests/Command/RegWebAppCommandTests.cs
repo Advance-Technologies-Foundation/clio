@@ -21,15 +21,15 @@ public class RegAppCommandTests : BaseClioModuleTests
     [Test]
     public void RegAppCommandTests_ActivateFromDI_ShouldReturnInstance()
     {
-        RegAppCommand? command = Container.Resolve<RegAppCommand>();
+        RegAppCommand? command = container.Resolve<RegAppCommand>();
         Assert.That(command != null);
     }
 
     [Test]
     public void RegAppCommand_ShouldNotThrowException_WithCfgOpenParaameters()
     {
-        RegAppCommand command = Container.Resolve<RegAppCommand>();
-        RegAppOptions openCfgOpts = new() { EnvironmentName = "open" };
+        RegAppCommand command = container.Resolve<RegAppCommand>();
+        RegAppOptions openCfgOpts = new () { EnvironmentName = "open" };
         Assert.DoesNotThrow(() => command.Execute(openCfgOpts));
         _settingsRepository.Received(1).OpenFile();
     }

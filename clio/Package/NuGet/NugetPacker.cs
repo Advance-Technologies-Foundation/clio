@@ -1,26 +1,19 @@
 using System;
 using System.IO;
 using System.Linq;
+
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
 
-#region Class: NugetPacker
-
 public class NugetPacker : INugetPacker
 {
-    #region Fields: Private
-
     private const string NugetPackProjName = "NugetPackProj.csproj";
     private readonly IDotnetExecutor _dotnetExecutor;
     private readonly ITemplateProvider _templateProvider;
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
 
     public NugetPacker(ITemplateProvider templateProvider, IDotnetExecutor dotnetExecutor,
         IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger)
@@ -36,10 +29,6 @@ public class NugetPacker : INugetPacker
         _fileSystem = fileSystem;
         _logger = logger;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static void CheckArguments(string nuspecFilePath, string destinationNupkgDirectory)
     {
@@ -70,10 +59,6 @@ public class NugetPacker : INugetPacker
         _fileSystem.DeleteDirectoryIfExists(netstandard20);
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public string GetNupkgFileName(PackageInfo pkgInfo) =>
         $"{pkgInfo.Descriptor.Name}.{pkgInfo.Descriptor.PackageVersion}.{NugetConstants.NupkgExtension}";
 
@@ -89,8 +74,4 @@ public class NugetPacker : INugetPacker
             _logger.WriteLine(packResult);
         });
     }
-
-    #endregion
 }
-
-#endregion

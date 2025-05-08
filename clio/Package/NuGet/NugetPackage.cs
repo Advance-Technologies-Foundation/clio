@@ -2,28 +2,11 @@ using System;
 
 namespace Clio.Project.NuGet;
 
-#region Class: NugetPackage
-
-public class NugetPackage
+public class NugetPackage(string name, PackageVersion version)
 {
-    #region Constructors: Public
+    public string Name { get; } = name;
 
-    public NugetPackage(string name, PackageVersion version)
-    {
-        Name = name;
-        Version = version;
-    }
-
-    #endregion
-
-    #region Properties: Public
-
-    public string Name { get; }
-    public PackageVersion Version { get; }
-
-    #endregion
-
-    #region Methods: Public
+    public PackageVersion Version { get; } = version;
 
     public override bool Equals(object nugetPackage) => Equals(nugetPackage as NugetPackage);
 
@@ -58,8 +41,4 @@ public class NugetPackage
 
         return !nugetPackage1.Equals(nugetPackage2);
     }
-
-    #endregion
 }
-
-#endregion

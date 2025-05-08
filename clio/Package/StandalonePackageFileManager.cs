@@ -1,37 +1,25 @@
-namespace Clio.Package;
-
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
 using Common;
 
-#region Interface: IStandalonePackageFileManager
+namespace Clio.Package;
 
 public interface IStandalonePackageFileManager
 {
-    #region Methods: Public
-
     string BuildFilesPath(string packagesPath, string packageName);
+
     string BuildStandaloneProjectPath(string packagesPath, string packageName);
+
     IEnumerable<StandalonePackageProject> FindStandalonePackageProjects(string packagesPath);
+
     IEnumerable<string> FindStandalonePackagesNames(string packagesPath);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: StandalonePackageFileManager
 
 public class StandalonePackageFileManager : IStandalonePackageFileManager
 {
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public StandalonePackageFileManager(IFileSystem fileSystem)
     {
@@ -39,21 +27,13 @@ public class StandalonePackageFileManager : IStandalonePackageFileManager
         _fileSystem = fileSystem;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private static IEnumerable<string> GetPackagesNames(string packagesPath)
     {
-        DirectoryInfo packagesDirectoryInfo = new(packagesPath);
+        DirectoryInfo packagesDirectoryInfo = new (packagesPath);
         return packagesDirectoryInfo
             .GetDirectories("*.*", SearchOption.TopDirectoryOnly)
             .Select(packageDirectoryInfo => packageDirectoryInfo.Name);
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public string BuildFilesPath(string packagesPath, string packageName) =>
         Path.Combine(packagesPath, packageName, "Files");
@@ -73,7 +53,7 @@ public class StandalonePackageFileManager : IStandalonePackageFileManager
                 continue;
             }
 
-            StandalonePackageProject standalonePackageProject = new(packageName, standaloneProjectPath);
+            StandalonePackageProject standalonePackageProject = new (packageName, standaloneProjectPath);
             projects.Add(standalonePackageProject);
         }
 
@@ -83,8 +63,4 @@ public class StandalonePackageFileManager : IStandalonePackageFileManager
     public IEnumerable<string> FindStandalonePackagesNames(string packagesPath) =>
         FindStandalonePackageProjects(packagesPath)
             .Select(pkgProj => pkgProj.PackageName);
-
-    #endregion
 }
-
-#endregion

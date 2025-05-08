@@ -1,12 +1,11 @@
 using System;
 using System.IO;
+
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
 
 namespace Clio.Command.PackageCommand;
-
-#region Class: SetPackageVersionOptions
 
 [Verb("set-pkg-version", Aliases = new string[] { "pkgversion" }, HelpText = "Set package version")]
 public class SetPackageVersionOptions
@@ -18,29 +17,15 @@ public class SetPackageVersionOptions
     public string PackageVersion { get; set; }
 }
 
-#endregion
-
-#region Class: SetPackageVersionCommand
-
 public class SetPackageVersionCommand : Command<SetPackageVersionOptions>
 {
-    #region Fields: Public
-
     protected readonly IJsonConverter _jsonConverter;
-
-    #endregion
-
-    #region Constructors: Public
 
     public SetPackageVersionCommand(IJsonConverter jsonConverter)
     {
         jsonConverter.CheckArgumentNull(nameof(jsonConverter));
         _jsonConverter = jsonConverter;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(SetPackageVersionOptions options)
     {
@@ -60,8 +45,4 @@ public class SetPackageVersionCommand : Command<SetPackageVersionOptions>
 
         return 0;
     }
-
-    #endregion
 }
-
-#endregion

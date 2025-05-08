@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Json;
 using System.Text;
+
 using Clio.ComposableApplication;
 using CommandLine;
 using Terrasoft.Common;
@@ -26,12 +27,9 @@ internal class SetApplicationVersionOption
     public string PackageFolderPath { get; internal set; }
 }
 
-internal class SetApplicationVersionCommand : Command<SetApplicationVersionOption>
+internal class SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager): Command<SetApplicationVersionOption>
 {
-    private readonly IComposableApplicationManager _composableApplicationManager;
-
-    public SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager) =>
-        _composableApplicationManager = composableApplicationManager;
+    private readonly IComposableApplicationManager _composableApplicationManager = composableApplicationManager;
 
     public override int Execute(SetApplicationVersionOption options)
     {

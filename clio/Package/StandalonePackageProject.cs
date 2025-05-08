@@ -1,25 +1,8 @@
 namespace Clio.Package;
 
-#region Class: StandalonePackageProject
-
-public class StandalonePackageProject
+public class StandalonePackageProject(string packageName, string path)
 {
-    #region Constructors: Public
+    public string PackageName { get; } = packageName;
 
-    public StandalonePackageProject(string packageName, string path)
-    {
-        PackageName = packageName;
-        Path = path;
-    }
-
-    #endregion
-
-    #region Properties: Public
-
-    public string PackageName { get; }
-    public string Path { get; }
-
-    #endregion
+    public string Path { get; } = path;
 }
-
-#endregion

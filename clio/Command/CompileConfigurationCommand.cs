@@ -1,11 +1,10 @@
 using System;
 using System.Threading;
+
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
-
-#region Class: CompileConfigurationOptions
 
 [Verb("compile-configuration", Aliases = new[] { "compile-remote" },
     HelpText = "Compile configuration for selected environment")]
@@ -17,41 +16,18 @@ public class CompileConfigurationOptions : RemoteCommandOptions
     protected override int DefaultTimeout => Timeout.Infinite;
 }
 
-#endregion
-
-#region Interface: CompileConfigurationCommand
-
 public interface ICompileConfigurationCommand
 {
     int Execute(CompileConfigurationOptions options);
 }
 
-#endregion
-
-#region Class: CompileConfigurationCommand
-
-public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions>, ICompileConfigurationCommand
+public class CompileConfigurationCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<CompileConfigurationOptions>(applicationClient, settings), ICompileConfigurationCommand
 {
-    #region Constants: Private
-
-    private static string CompileUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Build";
-    private static string CompileAllUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Rebuild";
-
-    #endregion
-
+    private static readonly string CompileUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Build";
+    private static readonly string CompileAllUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Rebuild";
     private bool _compileAll;
 
-    #region Constructors: Public
-
-    public CompileConfigurationCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
-
-    #endregion
-
     protected override string ServicePath => _compileAll ? CompileAllUrl : CompileUrl;
-
 
     public override int Execute(CompileConfigurationOptions options)
     {
@@ -59,5 +35,3 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
         return base.Execute(options);
     }
 }
-
-#endregion

@@ -1,19 +1,12 @@
-namespace Clio.Package.Responses;
-
 using System.Runtime.Serialization;
+
 using Clio.Common.Responses;
 
-#region Class: PackageActivationResponse
+namespace Clio.Package.Responses;
 
 [DataContract]
 public class PackageActivationResponse : BaseResponse
 {
-    #region Properties: Public
-
     [DataMember(Name = "packagesActivationResults")]
     public PackageActivationResultDto[] PackagesActivationResults { get; set; }
-
-    #endregion
 }
-
-#endregion

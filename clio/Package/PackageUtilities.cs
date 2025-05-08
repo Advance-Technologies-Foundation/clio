@@ -5,30 +5,18 @@ using System.Linq;
 
 namespace Clio.Common;
 
-#region Class: PackageUtilities
-
 public class PackageUtilities : IPackageUtilities
 {
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
 
     private static readonly IEnumerable<string> PackageElementNames =
         new[] { "Assemblies", "Bin", "Data", "Files", "Resources", "Schemas", "SqlScripts" };
-
-    #endregion
-
-    #region Constructors: Public
 
     public PackageUtilities(IFileSystem fileSystem)
     {
         fileSystem.CheckArgumentNull(nameof(fileSystem));
         _fileSystem = fileSystem;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private void CopyPackageElement(string sourcePath, string destinationPath, string name)
     {
@@ -39,10 +27,6 @@ public class PackageUtilities : IPackageUtilities
             _fileSystem.CopyDirectory(fromAssembliesPath, toAssembliesPath, true);
         }
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public void CopyPackageElements(string sourcePath, string destinationPath, bool overwrite)
     {
@@ -55,7 +39,8 @@ public class PackageUtilities : IPackageUtilities
             CopyPackageElement(packageContentPath, destinationPath, packageElementName);
         }
 
-        _fileSystem.CopyFile(Path.Combine(packageContentPath, "descriptor.json"),
+        _fileSystem.CopyFile(
+            Path.Combine(packageContentPath, "descriptor.json"),
             Path.Combine(destinationPath, "descriptor.json"), overwrite);
     }
 
@@ -87,8 +72,4 @@ public class PackageUtilities : IPackageUtilities
 
     public static string BuildPackageDescriptorPath(string packagePath) =>
         Path.Combine(packagePath, CreatioPackage.DescriptorName);
-
-    #endregion
 }
-
-#endregion

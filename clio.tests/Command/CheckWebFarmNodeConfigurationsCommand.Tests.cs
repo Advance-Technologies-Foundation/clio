@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;
@@ -11,8 +12,6 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 {
-    #region Methods: Protected
-
     protected override MockFileSystem CreateFs()
     {
         MockFileSystem mockFS = base.CreateFs();
@@ -23,18 +22,16 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
         return mockFS;
     }
 
-    #endregion
-
     [Test]
     [Category("Unit")]
     public void Execute_CheckTwoNodes_IfNotChanges()
     {
         ILogger logger = Substitute.For<ILogger>();
-        FileSystem clioFileSystem = new(FileSystem);
-        DirectoryComparer directoryComparer = new(clioFileSystem, logger);
-        CheckWebFarmNodeConfigurationsCommand command = new(logger, clioFileSystem, directoryComparer);
+        FileSystem clioFileSystem = new (fileSystem);
+        DirectoryComparer directoryComparer = new (clioFileSystem, logger);
+        CheckWebFarmNodeConfigurationsCommand command = new (logger, clioFileSystem, directoryComparer);
         CheckWebFarmNodeConfigurationsOptions options =
-            new() { Paths = "T:\\Node1-Main,T:\\Node3-Correct,T:\\Node4-Correct" };
+            new () { Paths = "T:\\Node1-Main,T:\\Node3-Correct,T:\\Node4-Correct" };
         int result = command.Execute(options);
         result.Should().Be(0);
     }
@@ -44,11 +41,11 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
     public void Execute_CheckTwoNodes_IfNodesChanged()
     {
         ILogger logger = Substitute.For<ILogger>();
-        FileSystem clioFileSystem = new(FileSystem);
-        DirectoryComparer directoryComparer = new(clioFileSystem, logger);
-        CheckWebFarmNodeConfigurationsCommand command = new(logger, clioFileSystem, directoryComparer);
+        FileSystem clioFileSystem = new (fileSystem);
+        DirectoryComparer directoryComparer = new (clioFileSystem, logger);
+        CheckWebFarmNodeConfigurationsCommand command = new (logger, clioFileSystem, directoryComparer);
         CheckWebFarmNodeConfigurationsOptions options =
-            new() { Paths = "T:\\Node1-Main,T:\\Node2-Incorrect" };
+            new () { Paths = "T:\\Node1-Main,T:\\Node2-Incorrect" };
         int result = command.Execute(options);
         result.Should().Be(1);
     }
@@ -58,8 +55,8 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
     public void CompareDirectories_CorrectReturn_IfNotChanges()
     {
         ILogger logger = Substitute.For<ILogger>();
-        FileSystem clioFileSystem = new(FileSystem);
-        DirectoryComparer directoryComparer = new(clioFileSystem, logger);
+        FileSystem clioFileSystem = new (fileSystem);
+        DirectoryComparer directoryComparer = new (clioFileSystem, logger);
         directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node3-Correct").Should().BeEmpty();
     }
 
@@ -68,8 +65,8 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
     public void CompareDirectories_CorrectReturn_IfNodesChanged()
     {
         ILogger logger = Substitute.For<ILogger>();
-        FileSystem clioFileSystem = new(FileSystem);
-        DirectoryComparer directoryComparer = new(clioFileSystem, logger);
+        FileSystem clioFileSystem = new (fileSystem);
+        DirectoryComparer directoryComparer = new (clioFileSystem, logger);
         directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node2-Incorrect").Should().HaveCount(5);
     }
 }

@@ -1,21 +1,17 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 
-namespace Clio.Workspaces;
-
-using System;
-using System.IO;
 using Command;
 using Common;
 using ComposableApplication;
 using UserEnvironment;
 
-#region Class: Workspace
+namespace Clio.Workspaces;
 
 public class Workspace : IWorkspace
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
 
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
@@ -24,18 +20,14 @@ public class Workspace : IWorkspace
     private readonly IWorkspaceInstaller _workspaceInstaller;
     private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
     private readonly IJsonConverter _jsonConverter;
-    private IComposableApplicationManager _composableApplicationManager;
-
-    #endregion
-
-    #region Constructors: Public
+    private readonly IComposableApplicationManager _composableApplicationManager;
 
     public Workspace(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
         IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
         IWorkspaceInstaller workspaceInstaller, IWorkspaceSolutionCreator workspaceSolutionCreator,
         IJsonConverter jsonConverter, IComposableApplicationManager composableApplicationManager)
     {
-        //environmentSettings.CheckArgumentNull(nameof(environmentSettings));
+        // environmentSettings.CheckArgumentNull(nameof(environmentSettings));
         workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
         workspaceCreator.CheckArgumentNull(nameof(workspaceCreator));
         workspaceRestorer.CheckArgumentNull(nameof(workspaceRestorer));
@@ -53,25 +45,15 @@ public class Workspace : IWorkspace
         ResetLazyWorkspaceSettings();
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private string WorkspaceSettingsPath => _workspacePathBuilder.WorkspaceSettingsPath;
 
     private string WorkspaceEnvironmentSettingsPath => _workspacePathBuilder.WorkspaceEnvironmentSettingsPath;
 
-    #endregion
-
-    #region Properties: Public
-
     private Lazy<WorkspaceSettings> _workspaceSettings;
+
     public WorkspaceSettings WorkspaceSettings => _workspaceSettings.Value;
+
     public bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
-
-    #endregion
-
-    #region Methods: Private
 
     private void ResetLazyWorkspaceSettings() =>
         _workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
@@ -79,12 +61,7 @@ public class Workspace : IWorkspace
     private WorkspaceSettings ReadWorkspaceSettings() =>
         _jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath);
 
-    private WorkspaceEnvironmentSettings ReadWorkspaceEnvironmentSettings() =>
-        _jsonConverter.DeserializeObjectFromFile<WorkspaceEnvironmentSettings>(WorkspaceEnvironmentSettingsPath);
 
-    #endregion
-
-    #region Methods: Public
 
     public void SaveWorkspaceEnvironment(string environmentName) =>
         _workspaceCreator.SaveWorkspaceEnvironmentSettings(environmentName);
@@ -125,14 +102,13 @@ public class Workspace : IWorkspace
     public void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile) =>
         _workspaceInstaller.Publish(WorkspaceSettings.Packages, zipFileName, destionationFolderPath, overrideFile);
 
-
     public string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion,
         string branch = null)
     {
         bool hasBranch = !string.IsNullOrEmpty(branch);
         string? branchFolderName = hasBranch ? GetSanitizeFileNameFromString(branch) : null;
         _workspacePathBuilder.RootPath = workspacePath;
-        string packagesFolderPath = _workspacePathBuilder.PackagesFolderPath;
+        _ = _workspacePathBuilder.PackagesFolderPath;
         _composableApplicationManager.TrySetVersion(workspacePath, appVersion);
         string zipFileName = $"{appName}_{appVersion}";
         if (hasBranch)
@@ -147,13 +123,9 @@ public class Workspace : IWorkspace
         return _workspaceInstaller.PublishToFolder(workspacePath, sanitizeFileName, destinationFolderPath, false);
     }
 
-    #endregion
-
     public static string GetSanitizeFileNameFromString(string fileName) =>
         string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
 
     public string GetWorkspaceApplicationCode() =>
         _composableApplicationManager.GetCode(_workspacePathBuilder.PackagesFolderPath);
 }
-
-#endregion

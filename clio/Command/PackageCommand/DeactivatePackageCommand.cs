@@ -1,11 +1,11 @@
 using System;
+
 using Clio.Common;
 using Clio.Package;
 
-namespace Clio.Command.PackageCommand;
-
 using CommandLine;
 
+namespace Clio.Command.PackageCommand;
 [Verb("deactivate-pkg", Aliases = new[] { "dpkg", "deactivate-package", "disable-package" },
     HelpText = "Deactivate package from a web application. Will be available in 8.1.2")]
 internal class DeactivatePkgOptions : RemoteCommandOptions
@@ -14,22 +14,10 @@ internal class DeactivatePkgOptions : RemoteCommandOptions
     public string PackageName { get; set; }
 }
 
-#region Class: DeactivatePackageCommand
-
-internal class DeactivatePackageCommand : RemoteCommand<DeactivatePkgOptions>
+internal class DeactivatePackageCommand(IPackageDeactivator packageDeactivator, IApplicationClient applicationClient,
+    EnvironmentSettings environmentSettings): RemoteCommand<DeactivatePkgOptions>(applicationClient, environmentSettings)
 {
-    private readonly IPackageDeactivator _packageDeactivator;
-
-    #region Constructors: Public
-
-    public DeactivatePackageCommand(IPackageDeactivator packageDeactivator, IApplicationClient applicationClient,
-        EnvironmentSettings environmentSettings)
-        : base(applicationClient, environmentSettings) =>
-        _packageDeactivator = packageDeactivator;
-
-    #endregion
-
-    #region Methods: Public
+    private readonly IPackageDeactivator _packageDeactivator = packageDeactivator;
 
     public override int Execute(DeactivatePkgOptions options)
     {
@@ -47,8 +35,4 @@ internal class DeactivatePackageCommand : RemoteCommand<DeactivatePkgOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

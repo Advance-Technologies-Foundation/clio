@@ -5,27 +5,20 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+
 using ConsoleTables;
 using FluentValidation.Results;
 
 namespace Clio.Common;
 
-#region Class: ConsoleLogger
 
 /// <inheritdoc cref="ILogger"/>
 public class ConsoleLogger : ILogger, IDisposable
 {
-    #region Fields: Private
-
-    private TextWriter _logFileWriter;
     private ILogStreamer _creatioLogStreamer;
-    private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
-    private readonly ConcurrentQueue<LogMessage> _logQueue = new();
+    private static readonly Lazy<ILogger> Lazy = new (() => new ConsoleLogger());
+    private readonly ConcurrentQueue<LogMessage> _logQueue = new ();
     private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
-
-    #endregion
-
-    #region Constructors: Private
 
     private ConsoleLogger()
     {
@@ -33,25 +26,13 @@ public class ConsoleLogger : ILogger, IDisposable
         Console.OutputEncoding = System.Text.Encoding.UTF8;
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private bool AddTimeStampToOutput => Program.AddTimeStampToOutput;
 
     private CancellationToken CancellationToken { get; set; }
 
-    private CancellationTokenSource CancellationTokenSource { get; } = new();
-
-    #endregion
-
-    #region Properties: Public
+    private CancellationTokenSource CancellationTokenSource { get; } = new ();
 
     public static ILogger Instance => Lazy.Value;
-
-    #endregion
-
-    #region Methods: Private
 
     private void FlushQueue()
     {
@@ -73,7 +54,6 @@ public class ConsoleLogger : ILogger, IDisposable
             }
         }
     }
-
 
     private void PrintInternal()
     {
@@ -103,7 +83,7 @@ public class ConsoleLogger : ILogger, IDisposable
         Console.Write(linePrefix);
         Console.ForegroundColor = _defaultConsoleColor;
         Console.WriteLine(value);
-        _logFileWriter?.WriteLine($"{linePrefix}{value}");
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
     }
 
     private string GetTimeStamp() => AddTimeStampToOutput ? DateTime.Now.ToString("HH:mm:ss") + " " : string.Empty;
@@ -115,7 +95,7 @@ public class ConsoleLogger : ILogger, IDisposable
         Console.Write(linePrefix);
         Console.ForegroundColor = _defaultConsoleColor;
         Console.WriteLine(value);
-        _logFileWriter?.WriteLine($"{linePrefix}{value}");
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
         _creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
     }
 
@@ -123,7 +103,7 @@ public class ConsoleLogger : ILogger, IDisposable
     {
         Console.WriteLine(value);
         string linePrefix = GetLinePrefix();
-        _logFileWriter?.WriteLine($"{linePrefix}{value}");
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
         _creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
     }
 
@@ -134,7 +114,7 @@ public class ConsoleLogger : ILogger, IDisposable
         Console.Write(linePrefix);
         Console.ForegroundColor = _defaultConsoleColor;
         Console.WriteLine(value);
-        _logFileWriter?.WriteLine($"{linePrefix}{value}");
+        LogFileWriter?.WriteLine($"{linePrefix}{value}");
         _creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
     }
 
@@ -145,10 +125,6 @@ public class ConsoleLogger : ILogger, IDisposable
             ? string.Empty
             : $"{prefix} - ";
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) =>
         errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
@@ -161,11 +137,7 @@ public class ConsoleLogger : ILogger, IDisposable
 
     private string LogFileName { get; set; }
 
-    public TextWriter LogFileWriter
-    {
-        get => _logFileWriter;
-        internal set => _logFileWriter = value;
-    }
+    public TextWriter LogFileWriter { get; internal set; }
 
     public void PrintTable(ConsoleTable table) => _logQueue.Enqueue(new TableMessage(table));
 
@@ -183,7 +155,7 @@ public class ConsoleLogger : ILogger, IDisposable
 
         if (!string.IsNullOrEmpty(logFileName))
         {
-            _logFileWriter = new StreamWriter(logFileName, true) { AutoFlush = true };
+            LogFileWriter = new StreamWriter(logFileName, true) { AutoFlush = true };
         }
 
         _printThread = new Thread(PrintInternal);
@@ -212,14 +184,14 @@ public class ConsoleLogger : ILogger, IDisposable
     /// <summary>
     /// Stops the logging process.
     /// This method signals the cancellation token to stop the logging thread.
-    /// </summary>	
+    /// </summary>
     public void Stop()
     {
         CancellationTokenSource.Cancel();
         CancellationToken = CancellationTokenSource.Token;
         _isStarted = false;
         _printThread.Join();
-        _logFileWriter?.Close();
+        LogFileWriter?.Close();
     }
 
     public void Write(string value)
@@ -235,7 +207,7 @@ public class ConsoleLogger : ILogger, IDisposable
     /// <summary>
     /// Enqueues an error message to the log queue.
     /// </summary>
-    /// <param name="value">String value to be printed to the log</param>
+    /// <param name="value">String value to be printed to the log.</param>
     public void WriteError(string value)
     {
         if (CancellationToken.IsCancellationRequested)
@@ -249,7 +221,7 @@ public class ConsoleLogger : ILogger, IDisposable
     /// <summary>
     /// Enqueues an error message to the log queue.
     /// </summary>
-    /// <param name="value">String value to be printed to the log</param>
+    /// <param name="value">String value to be printed to the log.</param>
     public void WriteInfo(string value)
     {
         if (CancellationToken.IsCancellationRequested)
@@ -276,7 +248,7 @@ public class ConsoleLogger : ILogger, IDisposable
     /// <summary>
     /// Enqueues an error message to the log queue.
     /// </summary>
-    /// <param name="value">String value to be printed to the log</param>
+    /// <param name="value">String value to be printed to the log.</param>
     public void WriteLine(string value)
     {
         if (CancellationToken.IsCancellationRequested)
@@ -290,7 +262,7 @@ public class ConsoleLogger : ILogger, IDisposable
     /// <summary>
     /// Enqueues an error message to the log queue.
     /// </summary>
-    /// <param name="value">String value to be printed to the log</param>
+    /// <param name="value">String value to be printed to the log.</param>
     public void WriteWarning(string value)
     {
         if (CancellationToken.IsCancellationRequested)
@@ -306,14 +278,10 @@ public class ConsoleLogger : ILogger, IDisposable
     /// </summary>
     public void Dispose()
     {
-        _logFileWriter?.Dispose();
-        _logFileWriter = null;
+        LogFileWriter?.Dispose();
+        LogFileWriter = null;
     }
-
-    #endregion
 }
-
-#endregion
 
 public enum LogDecoratorType
 {
@@ -324,109 +292,36 @@ public enum LogDecoratorType
     Table
 }
 
-internal class InfoMessage : LogMessage
+internal class InfoMessage(string value): LogMessage(value)
 {
-    #region Constructors: Public
-
-    public InfoMessage(string value)
-        : base(value)
-    {
-    }
-
-    #endregion
-
-    #region Properties: Public
-
     public override LogDecoratorType LogDecoratorType => LogDecoratorType.Info;
-
-    #endregion
 }
 
-internal class ErrorMessage : LogMessage
+internal class ErrorMessage(string value): LogMessage(value)
 {
-    #region Constructors: Public
-
-    public ErrorMessage(string value)
-        : base(value)
-    {
-    }
-
-    #endregion
-
-    #region Properties: Public
-
     public override LogDecoratorType LogDecoratorType => LogDecoratorType.Error;
-
-    #endregion
 }
 
-internal class WarningMessage : LogMessage
+internal class WarningMessage(string value): LogMessage(value)
 {
-    #region Constructors: Public
-
-    public WarningMessage(string value)
-        : base(value)
-    {
-    }
-
-    #endregion
-
-    #region Properties: Public
-
     public override LogDecoratorType LogDecoratorType => LogDecoratorType.Warning;
-
-    #endregion
 }
 
-internal class UndecoratedMessage : LogMessage
+internal class UndecoratedMessage(string value): LogMessage(value)
 {
-    #region Constructors: Public
-
-    public UndecoratedMessage(string value)
-        : base(value)
-    {
-    }
-
-    #endregion
-
-    #region Properties: Public
-
     public override LogDecoratorType LogDecoratorType => LogDecoratorType.None;
-
-    #endregion
 }
 
-internal class TableMessage : LogMessage
+internal class TableMessage(ConsoleTable value): LogMessage(value)
 {
-    #region Constructors: Public
-
-    public TableMessage(ConsoleTable value)
-        : base(value)
-    {
-    }
-
-    #endregion
-
-    #region Properties: Public
-
     public override LogDecoratorType LogDecoratorType => LogDecoratorType.Table;
-
-    #endregion
 }
 
 internal abstract class LogMessage
 {
-    #region Constructors: Protected
-
     protected LogMessage(object value) => Value = value;
-
-    #endregion
-
-    #region Properties: Public
 
     public abstract LogDecoratorType LogDecoratorType { get; }
 
     public object Value { get; set; }
-
-    #endregion
 }

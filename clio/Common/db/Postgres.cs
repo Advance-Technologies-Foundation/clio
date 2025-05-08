@@ -1,4 +1,5 @@
 using System;
+
 using Npgsql;
 
 namespace Clio.Common.db;
@@ -6,10 +7,15 @@ namespace Clio.Common.db;
 public interface IPostgres
 {
     void Init(string host, int port, string username, string password);
+
     bool CreateDbFromTemplate(string templateName, string dbName);
+
     bool CreateDb(string dbName);
+
     bool SetDatabaseAsTemplate(string dbName);
+
     bool CheckTemplateExists(string templateName);
+
     bool DropDb(string dbName);
 }
 

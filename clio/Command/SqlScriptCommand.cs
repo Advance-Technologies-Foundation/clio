@@ -1,6 +1,7 @@
 using System;
 using System.Data;
 using System.IO;
+
 using Clio.Common;
 using CommandLine;
 using ConsoleTables;
@@ -31,14 +32,10 @@ public class ExecuteSqlScriptOptions : RemoteCommandOptions
     public bool IsSilent { get; set; }
 }
 
-public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
+public class SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+    ISqlScriptExecutor sqlScriptExecutor): RemoteCommand<ExecuteSqlScriptOptions>(applicationClient, settings)
 {
-    private readonly ISqlScriptExecutor _sqlScriptExecutor;
-
-    public SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-        ISqlScriptExecutor sqlScriptExecutor)
-        : base(applicationClient, settings) =>
-        _sqlScriptExecutor = sqlScriptExecutor;
+    private readonly ISqlScriptExecutor _sqlScriptExecutor = sqlScriptExecutor;
 
     private static string GetSqlScriptResult(string serverResponse, string viewType, string filePath)
     {
@@ -86,7 +83,7 @@ public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
 
     private static ConsoleTable CreateConsoleTable(DataTable dataTable)
     {
-        ConsoleTable table = new();
+        ConsoleTable table = new ();
         foreach (object? column in dataTable.Columns)
         {
             table.AddColumn(new[] { column.ToString() });
@@ -102,7 +99,7 @@ public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
 
     private static void SaveDataTableToCsv(DataTable dataTable, string filePath, string delimiter = ";")
     {
-        using (StreamWriter sw = new(filePath))
+        using (StreamWriter sw = new (filePath))
         {
             for (int i = 0; i < dataTable.Columns.Count; i++)
             {
@@ -132,7 +129,8 @@ public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
 
     private static void SaveDataTableToXlsx(DataTable dataTable, string filePath)
     {
-        using (SpreadsheetDocument spreadsheetDocument = SpreadsheetDocument.Create(filePath,
+        using (SpreadsheetDocument spreadsheetDocument = SpreadsheetDocument.Create(
+            filePath,
                    SpreadsheetDocumentType.Workbook))
         {
             WorkbookPart workbookPart = spreadsheetDocument.AddWorkbookPart();
@@ -142,7 +140,7 @@ public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
             Sheets sheets = spreadsheetDocument.WorkbookPart.Workbook.AppendChild(new Sheets());
             string sheetName = "Sheet1";
             uint sheetId = 1;
-            Sheet sheet = new()
+            Sheet sheet = new ()
             {
                 Id = spreadsheetDocument.WorkbookPart.GetIdOfPart(worksheetPart),
                 SheetId = sheetId,
@@ -150,24 +148,28 @@ public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
             };
             sheets.Append(sheet);
             SheetData sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
-            Row headerRow = new();
+            Row headerRow = new ();
             foreach (DataColumn column in dataTable.Columns)
             {
-                Cell cell = new();
-                cell.DataType = CellValues.String;
-                cell.CellValue = new CellValue(column.ColumnName);
+                Cell cell = new ()
+                {
+                    DataType = CellValues.String,
+                    CellValue = new CellValue(column.ColumnName)
+                };
                 headerRow.AppendChild(cell);
             }
 
             sheetData.AppendChild(headerRow);
             foreach (DataRow row in dataTable.Rows)
             {
-                Row dataRow = new();
+                Row dataRow = new ();
                 foreach (object? item in row.ItemArray)
                 {
-                    Cell cell = new();
-                    cell.DataType = CellValues.String;
-                    cell.CellValue = new CellValue(item.ToString());
+                    Cell cell = new ()
+                    {
+                        DataType = CellValues.String,
+                        CellValue = new CellValue(item.ToString())
+                    };
                     dataRow.AppendChild(cell);
                 }
 

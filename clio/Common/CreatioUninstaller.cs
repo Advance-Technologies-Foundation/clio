@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml;
+
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Requests;
@@ -17,7 +18,6 @@ namespace Clio.Common;
 
 public interface ICreatioUninstaller
 {
-    #region Methods: Public
 
     /// <summary>
     ///     Uninstalls Creatio by the specified environment name.
@@ -40,11 +40,11 @@ public interface ICreatioUninstaller
     public void UninstallByEnvironmentName(string environmentName);
 
     /// <summary>
-    ///     Uninstalls Creatio by the specified directory path
+    ///     Uninstalls Creatio by the specified directory path.
     /// </summary>
     /// <param name="creatioDirectoryPath">
     ///     Path to a directory where creatio is installed.
-    ///     Example: C:\inetpub\wwwroot\site_one
+    ///     Example: C:\inetpub\wwwroot\site_one.
     /// </param>
     /// <remarks>
     ///     <list type="number">
@@ -59,23 +59,20 @@ public interface ICreatioUninstaller
     /// </remarks>
     /// <seealso cref="UninstallByPath" />
     public void UninstallByPath(string creatioDirectoryPath);
-
-    #endregion
 }
 
-public class CreatioUninstaller : ICreatioUninstaller
+public partial class CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
+    IMediator mediator, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres): ICreatioUninstaller
 {
-    #region Fields: Private
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly IMediator _mediator = mediator;
+    private readonly ILogger _logger = logger;
+    private readonly Ik8Commands _k8Commands = k8Commands;
+    private readonly IMssql _mssql = mssql;
+    private readonly IPostgres _postgres = postgres;
 
-    private readonly IFileSystem _fileSystem;
-    private readonly ISettingsRepository _settingsRepository;
-    private readonly IMediator _mediator;
-    private readonly ILogger _logger;
-    private readonly Ik8Commands _k8Commands;
-    private readonly IMssql _mssql;
-    private readonly IPostgres _postgres;
-
-    private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IPostgres> _dropPgDbByName
+    private readonly Action<string, K8Commands.ConnectionStringParams, ILogger, IPostgres> _dropPgDbByName
         = (dbName, cn, logger, db) =>
         {
             db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
@@ -83,7 +80,7 @@ public class CreatioUninstaller : ICreatioUninstaller
             logger.WriteInfo($"Postgres DB: {dbName} dropped");
         };
 
-    private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
+    private readonly Action<string, K8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
         = (dbName, cn, logger, db) =>
         {
             db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
@@ -91,38 +88,14 @@ public class CreatioUninstaller : ICreatioUninstaller
             logger.WriteInfo($"MsSQL DB: {dbName} dropped");
         };
 
-    #endregion
-
-    #region Constructors: Public
-
-    public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
-        IMediator mediator, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres)
-    {
-        _fileSystem = fileSystem;
-        _settingsRepository = settingsRepository;
-        _mediator = mediator;
-        _logger = logger;
-        _k8Commands = k8Commands;
-        _mssql = mssql;
-        _postgres = postgres;
-    }
-
-    #endregion
-
-    #region Properties: Private
-
     private IEnumerable<IISScannerHandler.UnregisteredSite> AllSites { get; set; }
 
     private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> OnAllSitesRequestCompleted =>
         sites => { AllSites = sites; };
 
-    #endregion
-
-    #region Methods: Private
-
     private static OneOf<DbInfo, Error> GetDbInfoFromXmlContent(string csContent)
     {
-        XmlDocument doc = new();
+        XmlDocument doc = new ();
         doc.LoadXml(csContent);
 
         const string mssqlMarker = "Data Source=";
@@ -145,14 +118,14 @@ public class CreatioUninstaller : ICreatioUninstaller
                                 if (connectionString.Contains(psqlMarker))
                                 {
                                     const string pattern = @"Database=([^;]+)";
-                                    Match match = Regex.Match(connectionString, pattern);
+                                    Match match = MyRegex().Match(connectionString);
                                     if (match.Success)
                                     {
                                         string dbName = match.Groups[1].Value;
                                         return new DbInfo(dbName, "PostgreSql");
                                     }
 
-                                    return new Error();
+                                    return default(Error);
                                 }
 
                                 if (connectionString.Contains(mssqlMarker))
@@ -165,7 +138,7 @@ public class CreatioUninstaller : ICreatioUninstaller
                                         return new DbInfo(dbName, "MsSql");
                                     }
 
-                                    return new Error();
+                                    return default(Error);
                                 }
                             }
                         }
@@ -174,7 +147,7 @@ public class CreatioUninstaller : ICreatioUninstaller
             }
         }
 
-        return new Error();
+        return default(Error);
     }
 
     private OneOf<DbInfo, Error> GetDbInfoFromConnectionStringsFile(string creatioDirectoryPath)
@@ -185,7 +158,7 @@ public class CreatioUninstaller : ICreatioUninstaller
         if (!csExists)
         {
             _logger.WriteWarning($"ConnectionStrings file not found in: {creatioDirectoryPath}");
-            return new Error();
+            return default(Error);
         }
 
         string csPath = Path.Join(creatioDirectoryPath, connectionStringsFileName);
@@ -193,23 +166,19 @@ public class CreatioUninstaller : ICreatioUninstaller
         if (string.IsNullOrWhiteSpace(csContent))
         {
             _logger.WriteWarning($"Could not read ConnectionStrings file from : {creatioDirectoryPath}");
-            return new Error();
+            return default(Error);
         }
 
         return GetDbInfoFromXmlContent(csContent);
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void UninstallByEnvironmentName(string environmentName)
     {
-        AllUnregisteredSitesRequest request = new() { Callback = OnAllSitesRequestCompleted };
+        AllUnregisteredSitesRequest request = new () { Callback = OnAllSitesRequestCompleted };
         _mediator.Send(request);
 
         EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentName);
-        Uri envUri = new(settings.Uri);
+        Uri envUri = new (settings.Uri);
 
         if (!AllSites.Any())
         {
@@ -237,7 +206,7 @@ public class CreatioUninstaller : ICreatioUninstaller
     {
         if (AllSites is null)
         {
-            AllUnregisteredSitesRequest request = new() { Callback = OnAllSitesRequestCompleted };
+            AllUnregisteredSitesRequest request = new () { Callback = OnAllSitesRequestCompleted };
             _mediator.Send(request);
         }
 
@@ -245,7 +214,7 @@ public class CreatioUninstaller : ICreatioUninstaller
             AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
         if (site is not null)
         {
-            StopInstanceByNameRequest removeRequest = new() { SiteName = site.siteBinding.name };
+            StopInstanceByNameRequest removeRequest = new () { SiteName = site.siteBinding.name };
             _mediator.Send(removeRequest);
             _logger.WriteInfo($"IIS Stopped: {removeRequest.SiteName}");
         }
@@ -259,7 +228,7 @@ public class CreatioUninstaller : ICreatioUninstaller
     {
         if (AllSites is null)
         {
-            AllUnregisteredSitesRequest request = new() { Callback = OnAllSitesRequestCompleted };
+            AllUnregisteredSitesRequest request = new () { Callback = OnAllSitesRequestCompleted };
             _mediator.Send(request);
         }
 
@@ -267,7 +236,7 @@ public class CreatioUninstaller : ICreatioUninstaller
             AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
         if (site is not null)
         {
-            DeleteInstanceByNameRequest removeRequest = new() { SiteName = site.siteBinding.name };
+            DeleteInstanceByNameRequest removeRequest = new () { SiteName = site.siteBinding.name };
             _mediator.Send(removeRequest);
             _logger.WriteInfo($"IIS Removed: {removeRequest.SiteName}");
         }
@@ -276,7 +245,6 @@ public class CreatioUninstaller : ICreatioUninstaller
             _logger.WriteWarning($"IIS NOT Removed: {creatioDirectoryPath}");
         }
     }
-
 
     public void UninstallByPath(string creatioDirectoryPath)
     {
@@ -298,7 +266,7 @@ public class CreatioUninstaller : ICreatioUninstaller
         DbInfo info = dbInfo.Value as DbInfo;
         _logger.WriteInfo($"Found db: {info!.DbName}, Server: {info!.DbType}");
 
-        k8Commands.ConnectionStringParams cn = info.DbType switch
+        K8Commands.ConnectionStringParams cn = info.DbType switch
         {
             "MsSql" => _k8Commands.GetMssqlConnectionString(),
             "PostgreSql" => _k8Commands.GetPostgresConnectionString(),
@@ -318,7 +286,8 @@ public class CreatioUninstaller : ICreatioUninstaller
         _logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
     }
 
-    #endregion
+    private record DbInfo(string dbName, string dbType);
 
-    private record DbInfo(string DbName, string DbType);
+    [GeneratedRegex("Database=([^;]+)")]
+    private static partial Regex MyRegex();
 }

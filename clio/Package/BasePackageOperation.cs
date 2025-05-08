@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+
 using Clio.Common;
 using Clio.Common.Responses;
 
@@ -13,7 +14,8 @@ internal abstract class BasePackageOperation
 
     protected const string PackageServiceUrl = "PackageService.svc";
 
-    protected BasePackageOperation(IApplicationPackageListProvider applicationPackageListProvider,
+    protected BasePackageOperation(
+        IApplicationPackageListProvider applicationPackageListProvider,
         IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
     {
         _applicationPackageListProvider = applicationPackageListProvider;
@@ -35,12 +37,7 @@ internal abstract class BasePackageOperation
     {
         PackageInfo packageInfo =
             _applicationPackageListProvider.GetPackages("{}")
-                .FirstOrDefault(package => package.Descriptor.Name == packageName);
-        if (packageInfo is null)
-        {
-            throw new Exception($"Package with name {packageName} not found");
-        }
-
+                .FirstOrDefault(package => package.Descriptor.Name == packageName) ?? throw new Exception($"Package with name {packageName} not found");
         return packageInfo.Descriptor.UId;
     }
 

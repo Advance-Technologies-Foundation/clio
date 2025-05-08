@@ -1,6 +1,7 @@
+using System.Collections.Generic;
+
 using MediatR;
 using OneOf;
-using System.Collections.Generic;
 
 namespace Clio.Common.ScenarioHandlers;
 

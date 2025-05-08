@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
@@ -12,15 +13,9 @@ public interface IInstalledApplication
     InstalledAppInfo GetInstalledAppInfo(string appCode);
 }
 
-public class InstalledApplication : IInstalledApplication
+public class InstalledApplication(IDataProvider provider): IInstalledApplication
 {
-    #region Fields: Private
-
-    private readonly IDataProvider _provider;
-
-    #endregion
-
-    public InstalledApplication(IDataProvider provider) => _provider = provider;
+    private readonly IDataProvider _provider = provider;
 
     public InstalledAppInfo GetInstalledAppInfo(string appCode) =>
         AppDataContextFactory.GetAppDataContext(_provider)
@@ -35,31 +30,22 @@ public class InstalledApplication : IInstalledApplication
                     Name = m.Name,
                     Description = m.Description,
                     Version = m.Version
-                }
-            ).FirstOrDefault();
+                }).FirstOrDefault();
 }
 
-public class InstalledAppInfo
+public class InstalledAppInfo(IDataProvider provider)
 {
-    #region Fields: Private
-
-    private readonly IDataProvider _provider;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public InstalledAppInfo(IDataProvider provider) => _provider = provider;
-
-    #endregion
+    private readonly IDataProvider _provider = provider;
 
     public IEnumerable<string> GetPackages()
     {
-        List<Guid> sysPackageIds = AppDataContextFactory.GetAppDataContext(_provider)
-            .Models<SysPackageInInstalledApp>()
-            .Where(m => m.SysInstalledAppId == Id)
-            .Select(m => m.SysPackageId)
-            .ToList();
+        List<Guid> sysPackageIds =
+        [
+            .. AppDataContextFactory.GetAppDataContext(_provider)
+                        .Models<SysPackageInInstalledApp>()
+                        .Where(m => m.SysInstalledAppId == Id)
+                        .Select(m => m.SysPackageId),
+        ];
         foreach (Guid sysPackageId in sysPackageIds)
         {
             SysPackage? package = AppDataContextFactory.GetAppDataContext(_provider)

@@ -4,11 +4,13 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text;
+
 using Clio.Common;
 using FluentAssertions;
 using FluentAssertions.Specialized;
 using NSubstitute;
 using NUnit.Framework;
+
 using Ms = System.IO.Abstractions;
 
 namespace Clio.Tests.Common;
@@ -20,7 +22,7 @@ public class FileSystemTests
     private readonly Ms.IFileSystem _msFileSystem;
     private readonly Ms.IFileSystem _mockFileSystem;
 
-    private readonly Dictionary<string, MockFileData> _mockFileData = new()
+    private readonly Dictionary<string, MockFileData> _mockFileData = new ()
     {
         { "first.cs", "some cs content" },
         { "second.cs", "other content" },
@@ -33,8 +35,6 @@ public class FileSystemTests
         _msFileSystem = new Ms.FileSystem();
         _mockFileSystem = new MockFileSystem(_mockFileData);
     }
-
-    #region HashFile
 
     [TestCase("first.cs", "_first.cs", FileSystem.Algorithm.SHA1)]
     [TestCase("first.cs", "_first.cs", FileSystem.Algorithm.SHA256)]
@@ -77,31 +77,27 @@ public class FileSystemTests
     [TestCase("samplefiles/sample.txt", FileSystem.Algorithm.MD5)]
     public void ComputesCorrectHash(string sampleFile, FileSystem.Algorithm algorithm)
     {
-        //Arrange
-        string psHash = new ProcessExecutor().Execute("pwsh.exe",
-            $"-c \"Get-FileHash {sampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
+        // Arrange
+        string psHash = new ProcessExecutor().Execute(
+            "pwsh.exe",
+            $"-c \"Get-FileHash {sampleFile} -Algorithm {algorithm} | Select-Object -ExpandProperty Hash\"",
             true, null, true);
 
-        //Assert
+        // Assert
         new FileSystem(_msFileSystem).GetFileHash(algorithm, sampleFile).Should().Be(psHash);
     }
-
 
     [Test]
     public void GetFileHash_ThrowsException_WhenFileDoesNotExist()
     {
-        //Arrange
+        // Arrange
         const FileSystem.Algorithm algorithm = FileSystem.Algorithm.SHA1;
         const string nonExistentFile = "AssemblyInfo.css";
 
-        //Assert
+        // Assert
         Assert.Throws<FileNotFoundException>(() =>
             new FileSystem(_mockFileSystem).GetFileHash(algorithm, nonExistentFile));
     }
-
-    #endregion
-
-    #region SymLink
 
     [Test]
     public void CreateFileSymLink_CreatesSymbolicLink_WhenPathAndTargetPathAreValid()
@@ -128,7 +124,8 @@ public class FileSystemTests
         const string path = "path/to/nonexistent/link";
         const string targetPath = "path/to/target";
         Ms.IFileSystem fs = new MockFileSystem(_mockFileData);
-        //fs.Directory.CreateDirectory(targetPath);
+
+        // fs.Directory.CreateDirectory(targetPath);
 
         // Act & Assert
         Action act = () => new FileSystem(fs).CreateFileSymLink(path, targetPath);
@@ -145,6 +142,7 @@ public class FileSystemTests
         const string targetPath = "path/to/nonexistent/target";
         Ms.IFileSystem fs = new MockFileSystem(_mockFileData);
         fs.Directory.CreateDirectory(path);
+
         // Act & Assert
         Action act = () => new FileSystem(fs).CreateFileSymLink(path, targetPath);
         act.Invoking(a => a()).Should()
@@ -176,7 +174,7 @@ public class FileSystemTests
         // Arrange
         const string path = "path2/to/nonexistent/link";
         const string targetPath = "path2/to/target";
-        Dictionary<string, MockFileData> mfd = new();
+        Dictionary<string, MockFileData> mfd =[];
         Ms.IFileSystem fs = new MockFileSystem(mfd);
         fs.Directory.CreateDirectory(path);
         fs.Directory.CreateDirectory(targetPath);
@@ -188,71 +186,61 @@ public class FileSystemTests
             .WithMessage($"The file 'path' already exists.");
     }
 
-    #endregion
-
-    #region ExtractFileNameFromPath
-
     [Test]
     public void ExtractFileNameFromPath_ReturnsFileName_WhenPathIsValid()
     {
-        //Arrange
+        // Arrange
         const string fileName = "file.cs";
         const string expected = "file";
-        MockFileSystem mockFs = new();
+        MockFileSystem mockFs = new ();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", fileName));
 
-        //Act
+        // Act
         string actual = new FileSystem(mockFs)
             .ExtractFileNameFromPath(Path.Join("path", "to", expected));
 
-        //Assert
+        // Assert
         actual.Should().Be(expected);
     }
-
-    #endregion
-
-    #region ExtractFileExtensionFromPath
 
     [Test]
     public void ExtractFileExtensionFromPath_ReturnsFileExtension_WhenPathIsValid()
     {
-        //Arrange
+        // Arrange
         const string fileName = "file.cs";
         const string expected = ".cs";
-        MockFileSystem mockFs = new();
+        MockFileSystem mockFs = new ();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", fileName));
 
-        //Act
+        // Act
         string actual = new FileSystem(mockFs)
             .ExtractFileExtensionFromPath(Path.Join("path", "to", fileName));
 
-        //Assert
+        // Assert
         actual.Should().Be(expected);
     }
-
-    #endregion
-
-    #region GetFiles
 
     [Test]
     public void GetFiles_ReturnsFiles_WhenDirectoryIsValid()
     {
-        //Arrange
-        MockFileSystem mockFs = new();
+        // Arrange
+        MockFileSystem mockFs = new ();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", "first.cs"));
         mockFs.File.Create(Path.Join("path", "to", "second.cs"));
         mockFs.File.Create(Path.Join("path", "to", "third.cs"));
 
         const string directoryPath = "path/to";
-        //Act
+
+        // Act
         string[] actual = new FileSystem(mockFs)
             .GetFiles(directoryPath);
 
         Ms.IDriveInfo drive = mockFs.DriveInfo.GetDrives().FirstOrDefault();
-        //Assert
+
+        // Assert
         actual.Should().BeEquivalentTo(new[]
         {
             Path.Join(drive!.Name, "path", "to", "first.cs"), Path.Join(drive.Name, "path", "to", "second.cs"),
@@ -263,49 +251,48 @@ public class FileSystemTests
     [Test]
     public void GetFiles_WithPattern_ReturnsFiles_WhenDirectoryIsValid()
     {
-        //Arrange
-        MockFileSystem mockFs = new();
+        // Arrange
+        MockFileSystem mockFs = new ();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", "first.cs"));
         mockFs.File.Create(Path.Join("path", "to", "second.cs"));
         mockFs.File.Create(Path.Join("path", "to", "third.cs"));
 
         const string directoryPath = "path/to";
-        //Act
+
+        // Act
         string[] actual = new FileSystem(mockFs)
             .GetFiles(directoryPath, "*.txt", SearchOption.AllDirectories);
 
-        //Assert
+        // Assert
         actual.Should().BeEmpty();
     }
 
     [Test]
     public void GetFiles_WithPattern2_ReturnsFiles_WhenDirectoryIsValid()
     {
-        //Arrange
-        MockFileSystem mockFs = new();
+        // Arrange
+        MockFileSystem mockFs = new ();
         mockFs.Directory.CreateDirectory(Path.Join("path", "to"));
         mockFs.File.Create(Path.Join("path", "to", "first.cs"));
         mockFs.File.Create(Path.Join("path", "to", "second.cs"));
         mockFs.File.Create(Path.Join("path", "to", "third.cs"));
 
         const string directoryPath = "path/to";
-        //Act
+
+        // Act
         string[] actual = new FileSystem(mockFs)
             .GetFiles(directoryPath, "*.cs", SearchOption.AllDirectories);
 
         Ms.IDriveInfo drive = mockFs.DriveInfo.GetDrives().FirstOrDefault();
-        //Assert
+
+        // Assert
         actual.Should().BeEquivalentTo(new[]
         {
             Path.Join(drive!.Name, "path", "to", "first.cs"), Path.Join(drive.Name, "path", "to", "second.cs"),
             Path.Join(drive.Name, "path", "to", "third.cs")
         });
     }
-
-    #endregion
-
-    #region CheckOrDeleteExistsFile
 
     [Test]
     public void CheckOrDeleteExistsFile_Returns_WhenFileDoesNotExist()
@@ -322,26 +309,26 @@ public class FileSystemTests
     [Test]
     public void CheckOrDeleteExistsFile_DeletesFile()
     {
-        //Arrange
+        // Arrange
         const string fileName = "first.cs";
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         fs.File.Exists(Arg.Is(fileName)).Returns(true);
 
-        //Act
+        // Act
         new FileSystem(fs)
             .CheckOrDeleteExistsFile("first.cs", true);
 
-        //Assert
+        // Assert
         fs.File.Received(1).Delete(fileName);
 
-        //Once in DeleteFile, amd once in CheckOrDeleteExistsFile
+        // Once in DeleteFile, amd once in CheckOrDeleteExistsFile
         fs.File.Received(2).Exists(fileName);
     }
 
     [Test]
     public void CheckOrDeleteExistsFile_ThrowsException_WhenFileExists()
     {
-        //Arrange
+        // Arrange
         const string fileName = "first.cs";
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         fs.File.Exists(Arg.Is(fileName)).Returns(true);
@@ -349,22 +336,17 @@ public class FileSystemTests
         Action act = () => new FileSystem(fs)
             .CheckOrDeleteExistsFile(fileName, false);
 
-        //Assert
-
+        // Assert
         ExceptionAssertions<Exception> ex = act.Should().Throw<Exception>();
         ex.WithMessage($"The file {fileName} already exist");
 
         fs.File.Received(1).Exists(fileName);
     }
 
-    #endregion
-
-    #region CopyFiles
-
     [Test]
     public void CopyFiles_Throws_When_FilesPathsEmpty()
     {
-        //Arrange
+        // Arrange
         const string destinationDirectory = "/dest";
         const bool overwrite = true;
         Ms.IFileSystem mockFs = Substitute.For<Ms.IFileSystem>();
@@ -372,7 +354,7 @@ public class FileSystemTests
         Action act = () => new FileSystem(mockFs)
             .CopyFiles(null, destinationDirectory, overwrite);
 
-        //Act && Assert
+        // Act && Assert
         act.Should().Throw<Exception>()
             .WithMessage("Value cannot be null. (Parameter 'filesPaths')");
     }
@@ -380,8 +362,8 @@ public class FileSystemTests
     [Test]
     public void CopyFiles_Throws_When_DestinationDirectoryEmpty()
     {
-        //Arrange
-        List<string> filesPaths = new() { "file1.txt", "file2.txt", "file3.txt" };
+        // Arrange
+        List<string> filesPaths =["file1.txt", "file2.txt", "file3.txt"];
         const string destinationDirectory = null;
         const bool overwrite = true;
         Ms.IFileSystem mockFs = Substitute.For<Ms.IFileSystem>();
@@ -389,7 +371,7 @@ public class FileSystemTests
         Action act = () => new FileSystem(mockFs)
             .CopyFiles(filesPaths, destinationDirectory, overwrite);
 
-        //Act && Assert
+        // Act && Assert
         act.Should().Throw<Exception>()
             .WithMessage("Value cannot be null. (Parameter 'destinationDirectory')");
     }
@@ -397,7 +379,7 @@ public class FileSystemTests
     [Test]
     public void CopyFiles_CopiesEveryFile()
     {
-        //Arrange
+        // Arrange
         const string destinationDirectory = "dest";
         const bool overwrite = true;
         Ms.IFileInfoFactory mockFileInfoFactory = Substitute.For<Ms.IFileInfoFactory>();
@@ -411,7 +393,7 @@ public class FileSystemTests
 
         foreach (string filesPath in mockFileDataAccessor.AllFiles)
         {
-            MockFileInfo mfi = new(mockFileDataAccessor, filesPath);
+            MockFileInfo mfi = new (mockFileDataAccessor, filesPath);
             mockFileInfoFactory.New(filesPath).Returns(mfi);
         }
 
@@ -428,10 +410,6 @@ public class FileSystemTests
         }
     }
 
-    #endregion
-
-    #region MoveFile
-
     [TestCase("from.txt", "to.txt")]
     public void MoveFile_Calls_Move(string sourceFileName, string destinationFileName)
     {
@@ -445,21 +423,17 @@ public class FileSystemTests
         fs.File.Received(1).Move(sourceFileName, destinationFileName);
     }
 
-    #endregion
-
-    #region ResetFileReadOnlyAttribute
-
     [TestCase(FileAttributes.ReadOnly)]
     [TestCase(FileAttributes.ReadOnly | FileAttributes.Hidden)]
     [TestCase(FileAttributes.ReadOnly | FileAttributes.Encrypted)]
     [TestCase(FileAttributes.ReadOnly | FileAttributes.Compressed)]
     public void ResetFileReadOnlyAttribute_UnsetsReadOnlyAttribute_WhenFileIsReadonly(FileAttributes attributes)
     {
-        //Arrange
+        // Arrange
         const string fileName = "readonly.cs";
         _mockFileData[fileName].Attributes = attributes;
 
-        //Act
+        // Act
         new FileSystem(_mockFileSystem).ResetFileReadOnlyAttribute(fileName);
         FileAttributes actual = _mockFileData[fileName].Attributes;
 
@@ -472,11 +446,11 @@ public class FileSystemTests
     [TestCase(FileAttributes.Compressed | FileAttributes.Encrypted | FileAttributes.Archive)]
     public void ResetFileReadOnlyAttribute_DoesNotModifyAttributes_WhenFileIsNotReadonly(FileAttributes attributes)
     {
-        //Arrange
+        // Arrange
         const string fileName = "first.cs";
         _mockFileData[fileName].Attributes = attributes;
 
-        //Act
+        // Act
         new FileSystem(_mockFileSystem).ResetFileReadOnlyAttribute(fileName);
         FileAttributes actual = _mockFileData[fileName].Attributes;
 
@@ -487,83 +461,71 @@ public class FileSystemTests
     [Test]
     public void ResetFileReadOnlyAttribute_DoesNothing_WhenFileDoesNotExist()
     {
-        //Arrange
+        // Arrange
         const string filePath = "first.cs";
         Ms.IFileSystem mockFs = Substitute.For<Ms.IFileSystem>();
         mockFs.File.Exists(filePath).Returns(false);
 
-        //Act
+        // Act
         new FileSystem(mockFs).ResetFileReadOnlyAttribute(filePath);
 
-        //Assert
+        // Assert
         mockFs.File.Received(1).Exists(filePath);
     }
-
-    #endregion
-
-    #region ReadAllText
 
     [Test]
     public void ReadAllText_Calls_ReadAllText()
     {
-        //Arrange
+        // Arrange
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         const string fileName = "first.cs";
 
-        //Act
+        // Act
         new FileSystem(fs)
             .ReadAllText(fileName);
 
-        //Assert
+        // Assert
         fs.File.Received(1).ReadAllText(fileName, FileSystem.Utf8NoBom);
     }
-
-    #endregion
-
-    #region WriteAllTextToFile
 
     [Test]
     public void WriteAllTextToFile_Calls_WriteAllTextToFile()
     {
-        //Arrange
+        // Arrange
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         const string fileName = "first.cs";
         const string content = "some content";
 
-        //Act
+        // Act
         new FileSystem(fs)
             .WriteAllTextToFile(fileName, content);
 
-        //Assert
+        // Assert
         fs.File.Received(1).WriteAllText(fileName, content, FileSystem.Utf8NoBom);
     }
-
-    #endregion
-
-    #region ClearOrCreateDirectory
 
     [Test]
     public void ClearOrCreateDirectory_CreatesDirectory_WhenDirectoryDoesNotExist()
     {
-        //Arrange
+        // Arrange
         const string directoryPath = "path/to";
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         fs.Directory.Exists(directoryPath).Returns(false);
 
-        //Act
+        // Act
         new FileSystem(fs)
             .ClearOrCreateDirectory(directoryPath);
 
-        //Assert
+        // Assert
         fs.Directory.Received(1).CreateDirectory(directoryPath);
     }
 
     [Test]
     public void ClearOrCreateDirectory_ClearsDirectory_WhenDirectoryExist()
     {
-        //Arrange
+        // Arrange
         const string directoryPath = "path_to";
-        Dictionary<string, MockFileData> mockFileData = new()
+        Dictionary<string, MockFileData> mockFileData = new ()
         {
             { "first.cs", "some cs content" }, { "second.cs", "other content" }, { "readonly.cs", "some content" }
         };
@@ -571,27 +533,23 @@ public class FileSystemTests
         Ms.IDirectoryInfo targetDir = fs.Directory.CreateDirectory(directoryPath);
         fs.File.Create(Path.Join(directoryPath, "file.txt"));
 
-        //Act
+        // Act
         targetDir.GetFiles().Should().NotBeEmpty();
 
         new FileSystem(fs)
             .ClearOrCreateDirectory(directoryPath);
 
-        //Assert
+        // Assert
         targetDir.GetFiles().Should().BeEmpty();
     }
-
-    #endregion
-
-    #region ClearDirectory
 
     [Test]
     public void ClearDirectory_ClearsDirectory()
     {
-        //Arrange
+        // Arrange
         const string directoryName = "dir";
         const string subDirectoryName = "subDir";
-        Dictionary<string, MockFileData> mockFileData = new()
+        Dictionary<string, MockFileData> mockFileData = new ()
         {
             { "first.cs", "some cs content" }, { "second.cs", "other content" }, { "readonly.cs", "some content" }
         };
@@ -600,32 +558,28 @@ public class FileSystemTests
         Ms.IDirectoryInfo subDir = targetDir.CreateSubdirectory(subDirectoryName);
         fs.File.Create(Path.Join(subDir.FullName, "file.txt"));
 
-        //Act
+        // Act
         subDir.GetFiles().Should().NotBeEmpty();
 
-        FileSystem sut = new(fs);
+        FileSystem sut = new (fs);
         sut.ClearDirectory(subDir.FullName);
 
-        //Assert
+        // Assert
         subDir.GetFiles().Should().BeEmpty();
 
-        //Act
+        // Act
         sut.ClearDirectory(targetDir.FullName);
         targetDir.GetFiles().Should().BeEmpty();
         targetDir.GetDirectories().Should().BeEmpty();
     }
 
-    #endregion
-
-    #region CopyDirectory
-
     [Test]
     public void CopyDirectory_CopiesDirectory()
     {
-        //Arrange
+        // Arrange
         const string directoryName = "dir";
         const string subDirectoryName = "subDir";
-        Dictionary<string, MockFileData> mockFileData = new();
+        Dictionary<string, MockFileData> mockFileData =[];
         Ms.IFileSystem fs = new MockFileSystem(mockFileData);
 
         Ms.IDirectoryInfo targetDir = fs.Directory.CreateDirectory(directoryName);
@@ -633,10 +587,10 @@ public class FileSystemTests
 
         fs.File.Create(Path.Join(targetDir.FullName, "file.txt"));
         fs.File.Create(Path.Join(subDir.FullName, "file.txt"));
-        FileSystem sut = new(fs);
+        FileSystem sut = new (fs);
         Ms.IDriveInfo cDrive = fs.DriveInfo.GetDrives().First();
 
-        //Act
+        // Act
         sut.CopyDirectory(targetDir.FullName, "newDir", true);
 
         // Assert
@@ -648,32 +602,25 @@ public class FileSystemTests
         copiedFiles.First().Should().Be(Path.Join(cDrive.Name, newDir[0], "file.txt"));
     }
 
-    #endregion
-
-    #region CreateDirectory
-
     [Test]
     public void CreateDirectory_Calls_CreateDirectory()
     {
-        //Arrange
-        MockFileSystem fs = new();
+        // Arrange
+        MockFileSystem fs = new ();
         Ms.IDriveInfo cDrive = fs.DriveInfo.GetDrives().First();
 
-        //Act
+        // Act
         Ms.IDirectoryInfo newDirInfo = new FileSystem(fs).CreateDirectory(Path.Join(cDrive.Name, "newDir"));
 
-        //Assert
+        // Assert
         string[] dirs = fs.Directory.GetDirectories(cDrive.Name);
         dirs.Where(d => d == Path.Join(cDrive.Name, "newDir")).Should().NotBeEmpty();
     }
 
-    #endregion
-
-    #region DeleteFile
-
     [Test]
     public void DeleteFile_Returns_False_WhenFileDoesNotExist() =>
-        //This tests nothing
+
+        // This tests nothing
         new FileSystem(_mockFileSystem)
             .DeleteFile("first._cs").Should().BeTrue();
 
@@ -681,27 +628,27 @@ public class FileSystemTests
     [TestCase(null)]
     public void DeleteFile_Throws_When_FilePathNullOrEmpty(string filePath)
     {
-        //Arrange
+        // Arrange
         Action act = () => new FileSystem(_mockFileSystem)
             .DeleteFile(filePath);
 
-        //Act && Assert
+        // Act && Assert
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Test]
     public void DeleteFile_Calls_Delete_WhenFileIsNotReadonly()
     {
-        //Arrange
+        // Arrange
         const string fileName = "readonly.cs";
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         fs.File.Exists(fileName).Returns(true);
         fs.File.GetAttributes(fileName).Returns(FileAttributes.Normal);
 
-        //Act
+        // Act
         bool actual = new FileSystem(fs).DeleteFile(fileName);
 
-        //Assert
+        // Assert
         actual.Should().BeTrue();
         fs.File.Received(1).Delete(fileName);
     }
@@ -709,38 +656,34 @@ public class FileSystemTests
     [Test]
     public void DeleteFile_ResetsReadonlyAttribute_And_Calls_Delete_WhenFileIsReadonly()
     {
-        //Arrange
+        // Arrange
         const string fileName = "readonly.cs";
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         fs.File.Exists(fileName).Returns(true);
         fs.File.GetAttributes(fileName).Returns(FileAttributes.ReadOnly);
 
-        //Act
+        // Act
         bool actual = new FileSystem(fs).DeleteFile(fileName);
 
-        //Assert
+        // Assert
         actual.Should().BeTrue();
         fs.File.Received(1).Delete(fileName);
 
         // TODO: DeleteFile checks is file exists 3 times,
         // 1: IsReadOnlyFile
-        // 2: ResetFileReadOnlyAttribute 
+        // 2: ResetFileReadOnlyAttribute
         // 3: ResetFileReadOnlyAttribute -> IsReadOnlyFile
         // Should we consider passing state/context around ?
         fs.File.Received(3).Exists(fileName);
         fs.File.Received(1).SetAttributes(fileName, Arg.Any<FileAttributes>());
     }
 
-    #endregion
-
-    #region DeleteFileIfExists
-
     [Test]
     public void DeleteFileIfExists_CallsDelete_WhenFileExists()
     {
         const string fileName = "mockFile.cs";
         _mockFileData.Add(fileName, new MockFileData("some content"));
-        MockFileSystem fs = new(_mockFileData);
+        MockFileSystem fs = new (_mockFileData);
         new FileSystem(fs).DeleteFileIfExists(fileName);
         _mockFileSystem.File.Exists(fileName).Should().BeFalse();
     }
@@ -748,21 +691,17 @@ public class FileSystemTests
     [Test]
     public void DeleteFileIfExists_returns_WhenFileDoesNotExists()
     {
-        //Arrange
+        // Arrange
         const string fileName = "mockFile.cs";
         Ms.IFileSystem fs = Substitute.For<Ms.IFileSystem>();
         fs.File.Exists(fileName).Returns(false);
 
-        //Act
+        // Act
         new FileSystem(fs).DeleteFileIfExists(fileName);
 
-        //Assert
+        // Assert
         fs.File.Received(1).Exists(fileName);
     }
-
-    #endregion
-
-    #region ExistsFile
 
     [Test]
     public void Exists_Returns_True_WhenFileExists() =>
@@ -774,10 +713,6 @@ public class FileSystemTests
         new FileSystem(_mockFileSystem)
             .ExistsFile("first._cs").Should().BeFalse();
 
-    #endregion
-
-    #region IsReadonlyFile
-
     [TestCase(FileAttributes.ReadOnly)]
     [TestCase(FileAttributes.ReadOnly | FileAttributes.Hidden)]
     [TestCase(FileAttributes.ReadOnly | FileAttributes.Encrypted)]
@@ -785,20 +720,18 @@ public class FileSystemTests
     [TestCase(FileAttributes.Directory)]
     public void IsReadonlyFile_ReturnsTrue_When_FileIsReadonly(FileAttributes attributes)
     {
-        //Arrange
+        // Arrange
         const string fileName = "readonly.cs";
         _mockFileData[fileName].Attributes = attributes;
 
-        //Act
+        // Act
         bool actual = new FileSystem(_mockFileSystem).IsReadOnlyFile(fileName);
 
-        //Assert
+        // Assert
         _ = (attributes & FileAttributes.ReadOnly) switch
         {
             0 => actual.Should().BeFalse(),
             _ => actual.Should().BeTrue()
         };
     }
-
-    #endregion
 }

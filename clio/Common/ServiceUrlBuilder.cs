@@ -3,12 +3,8 @@ using System.Collections.Generic;
 
 namespace Clio.Common;
 
-#region Class: ServiceUrlBuilder
-
 public class ServiceUrlBuilder : IServiceUrlBuilder
 {
-    #region Enum: Public
-
     public enum KnownRoute
     {
         /// <summary>
@@ -30,7 +26,6 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
         ///     DataService Delete Query
         /// </summary>
         Delete = 4,
-
 
         GetBusinessRules = 5,
 
@@ -59,16 +54,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
         SendEventToUI = 17
     }
 
-    #endregion
-
-    #region Constants: Private
-
     private const string WebAppAlias = "0/";
-
-    #endregion
-
-    #region Fields: Private
-
     public static IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string>
     {
         { KnownRoute.Select, "DataService/json/SyncReply/SelectQuery" },
@@ -94,26 +80,19 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 
     private EnvironmentSettings _environmentSettings;
 
-    #endregion
-
-    #region Constructors: Public
-
     public ServiceUrlBuilder(EnvironmentSettings environmentSettings)
     {
         environmentSettings.CheckArgumentNull(nameof(environmentSettings));
         _environmentSettings = environmentSettings;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private string CreateUrl(string route)
     {
         bool isBase = Uri.TryCreate(_environmentSettings.Uri, UriKind.Absolute, out Uri baseUri);
         if (!isBase)
         {
-            throw new ArgumentException("Misconfigured Url, check settings and try again ",
+            throw new ArgumentException(
+                "Misconfigured Url, check settings and try again ",
                 nameof(_environmentSettings.Uri));
         }
 
@@ -126,10 +105,6 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
             _ => $"{baseUri}/{route}"
         };
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public string Build(string serviceEndpoint) =>
         _environmentSettings.IsNetCore switch
@@ -154,8 +129,4 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 
     public string Build(KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
         Build(KnownRoutes[knownRoute], environmentSettings);
-
-    #endregion
 }
-
-#endregion

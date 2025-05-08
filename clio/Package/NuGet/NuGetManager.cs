@@ -3,17 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+
 using Clio.Common;
 using Clio.Package;
 
 namespace Clio.Project.NuGet;
 
-#region Class: NuGetManager
-
 public class NuGetManager : INuGetManager
 {
-    #region Fields: Private
-
     private readonly INuspecFilesGenerator _nuspecFilesGenerator;
     private readonly INugetPacker _nugetPacker;
     private readonly INugetPackageRestorer _nugetPackageRestorer;
@@ -30,10 +27,6 @@ public class NuGetManager : INuGetManager
         nameof(PackageInfo.Descriptor.Name), nameof(PackageInfo.Descriptor.Maintainer),
         nameof(PackageInfo.Descriptor.PackageVersion)
     };
-
-    #endregion
-
-    #region Constructors: Public
 
     public NuGetManager(INuspecFilesGenerator nuspecFilesGenerator, INugetPacker nugetPacker,
         INugetPackageRestorer nugetPackageRestorer, INugetPackagesProvider nugetPackagesProvider,
@@ -64,10 +57,6 @@ public class NuGetManager : INuGetManager
         _logger = logger;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private static void CheckPackArguments(string packagePath, IEnumerable<PackageDependency> dependencies)
     {
         packagePath.CheckArgumentNullOrWhiteSpace(nameof(packagePath));
@@ -81,7 +70,8 @@ public class NuGetManager : INuGetManager
         nugetSourceUrl.CheckArgumentNullOrWhiteSpace(nameof(nugetSourceUrl));
     }
 
-    private void CheckDependencies(IEnumerable<PackageDependency> dependencies,
+    private void CheckDependencies(
+        IEnumerable<PackageDependency> dependencies,
         IEnumerable<PackageDependency> packageDependencies)
     {
         StringBuilder sb = null;
@@ -133,24 +123,17 @@ public class NuGetManager : INuGetManager
             return dependency;
         });
 
-    private static IEnumerable<string> GetApplicationPackagesNamesInNuget(
-        IEnumerable<PackageInfo> applicationPackages, IEnumerable<NugetPackage> nugetPackages)
-    {
-        IEnumerable<string> applicationPackagesNames =
-            applicationPackages.Select(pkg => pkg.Descriptor.Name);
-        IEnumerable<string> nugetPackagesNames = nugetPackages.Select(pkg => pkg.Name);
-        return applicationPackagesNames.Intersect(nugetPackagesNames);
-    }
-
-    private IEnumerable<PackageForUpdate> GetPackagesForUpdate(IEnumerable<PackageInfo> applicationPackages,
+    private IEnumerable<PackageForUpdate> GetPackagesForUpdate(
+        IEnumerable<PackageInfo> applicationPackages,
         IEnumerable<LastVersionNugetPackages> appPackagesNamesInNuget)
     {
-        List<PackageForUpdate> packagesForUpdate = new();
+        List<PackageForUpdate> packagesForUpdate = [];
         foreach (LastVersionNugetPackages lastVersionNugetPackages in appPackagesNamesInNuget)
         {
             PackageInfo package = applicationPackages
                 .First(pkg => pkg.Descriptor.Name == lastVersionNugetPackages.Name);
-            if (!PackageVersion.TryParseVersion(package.Descriptor.PackageVersion,
+            if (!PackageVersion.TryParseVersion(
+                package.Descriptor.PackageVersion,
                     out PackageVersion packageVersion))
             {
                 continue;
@@ -165,10 +148,6 @@ public class NuGetManager : INuGetManager
         return packagesForUpdate;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Pack(string packagePath, IEnumerable<PackageDependency> dependencies, bool skipPdb,
         string destinationNupkgDirectory)
     {
@@ -179,9 +158,11 @@ public class NuGetManager : INuGetManager
         IEnumerable<PackageDependency> packagesDependencies =
             SetEmptyUIdDependencies(packageInfo.Descriptor.DependsOn);
         CheckDependencies(dependencies, packagesDependencies);
-        string packedPackagePath = Path.Combine(destinationNupkgDirectory,
+        string packedPackagePath = Path.Combine(
+            destinationNupkgDirectory,
             _packageArchiver.GetPackedPackageFileName(packageInfo.Descriptor.Name));
-        string nuspecFilePath = Path.Combine(destinationNupkgDirectory,
+        string nuspecFilePath = Path.Combine(
+            destinationNupkgDirectory,
             _nuspecFilesGenerator.GetNuspecFileName(packageInfo));
         try
         {
@@ -234,8 +215,4 @@ public class NuGetManager : INuGetManager
             _nugetPackagesProvider.GetLastVersionPackages(appPackagesNames, nugetSourceUrl);
         return GetPackagesForUpdate(applicationPackages, appPackagesNamesInNuget);
     }
-
-    #endregion
 }
-
-#endregion

@@ -4,6 +4,7 @@ using System.Diagnostics.Contracts;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
+
 using Clio.Project.NuGet;
 using Clio.Workspaces;
 
@@ -11,54 +12,29 @@ namespace Clio.Common;
 
 public interface INugetMaterializer
 {
-    #region Methods: Public
-
     public int Materialize(string packageName);
-
-    #endregion
 }
 
-public class NugetMaterializer : INugetMaterializer
+public class NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem,
+    ILogger logger, IProcessExecutor processExecutor, IPropsBuilder propsBuilder): INugetMaterializer
 {
-    #region Constants: Private
-
     private const string Tag = "PackageReference";
-
-    #endregion
-
-    #region Fields: Private
-
-    private readonly IWorkspacePathBuilder _workspacePathBuilder;
-    private readonly IFileSystem _fileSystem;
-    private readonly ILogger _logger;
-    private readonly IProcessExecutor _processExecutor;
-    private readonly IPropsBuilder _propsBuilder;
+    private readonly IWorkspacePathBuilder _workspacePathBuilder = workspacePathBuilder;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
+    private readonly IProcessExecutor _processExecutor = processExecutor;
+    private readonly IPropsBuilder _propsBuilder = propsBuilder;
     private string _csprojPath;
     private XDocument _csproj;
 
-    #endregion
 
-    #region Constructors: Public
 
-    public NugetMaterializer(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem,
-        ILogger logger, IProcessExecutor processExecutor, IPropsBuilder propsBuilder)
-    {
-        _workspacePathBuilder = workspacePathBuilder;
-        _fileSystem = fileSystem;
-        _logger = logger;
-        _processExecutor = processExecutor;
-        _propsBuilder = propsBuilder;
-    }
-
-    #endregion
-
-    #region Methods: Private
 
     /// <summary>
-    /// Adds PackageReference to the Nuget project
+    /// Adds PackageReference to the Nuget project.
     /// </summary>
-    /// <param name="packageName">Package to add to</param>
-    /// <param name="xElements">Collection of NugetPackages to add</param>
+    /// <param name="packageName">Package to add to.</param>
+    /// <param name="xElements">Collection of NugetPackages to add.</param>
     private void AddNugetReferences(string packageName, IEnumerable<XElement> xElements)
     {
         IEnumerable<NugetPackage> refs = GetNugetReferences(xElements);
@@ -68,8 +44,7 @@ public class NugetMaterializer : INugetMaterializer
                 "dotnet",
                 $"add package {nugetPackage.Name} -v {nugetPackage.Version}",
                 true,
-                Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName)
-            );
+                Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName));
         }
     }
 
@@ -80,18 +55,17 @@ public class NugetMaterializer : INugetMaterializer
     /// ┃ ┃ ┣ 📂net472 <br/>
     /// ┃ ┃ ┗ 📂netstandard <br/>
     /// ┃ ┣ 📂obj <br/>
-    /// ┃ ┃ ┣ 📂Release <br/>
+    /// ┃ ┃ ┣ 📂Release. <br/>
     /// </summary>
-    /// <param name="packageName">Name of the package to build</param>
+    /// <param name="packageName">Name of the package to build.</param>
     private void BuildNugetProject(string packageName) =>
         _processExecutor.Execute(
             "dotnet",
             $"build {packageName}.csproj -c Release --no-incremental",
             true,
-            Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName)
-        );
+            Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName));
 
-    //TODO: Should we Delete obj folder or leave it alone?
+    // TODO: Should we Delete obj folder or leave it alone?
     private void CreateNugetProjectIfNotExists(string packageName)
     {
         string nugetProjectFolderPath = Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName);
@@ -139,8 +113,8 @@ public class NugetMaterializer : INugetMaterializer
                 continue;
             }
 
-            PackageVersion packageVersion = new(parsedVersion, string.Empty);
-            NugetPackage item = new(name, packageVersion);
+            PackageVersion packageVersion = new (parsedVersion, string.Empty);
+            NugetPackage item = new (name, packageVersion);
             list.Add(item);
         }
 
@@ -162,16 +136,16 @@ public class NugetMaterializer : INugetMaterializer
     {
         bool needsBackUp = false;
 
-        //comment out PackageReference from the main csproj file
+        // comment out PackageReference from the main csproj file
         foreach (XElement element in xElements)
         {
             needsBackUp = true;
-            XComment comment = new(element.ToString());
+            XComment comment = new (element.ToString());
             element.ReplaceWith(comment);
         }
 
-        //Look in csproj for the following line
-        //<Import Condition="'$(TargetFramework)' == 'net472'" Project="MrktApolloApp-net472.nuget.props" />
+        // Look in csproj for the following line
+        // <Import Condition="'$(TargetFramework)' == 'net472'" Project="MrktApolloApp-net472.nuget.props" />
         IEnumerable<XElement> importElementsNet472 = _csproj.Descendants("Import")
             .Where(e =>
                 e.Attribute("Project")?.Value == $"{packageName}-net472.nuget.props"
@@ -179,12 +153,12 @@ public class NugetMaterializer : INugetMaterializer
 
         if (!importElementsNet472.Any())
         {
-            XElement importElementNet472 = new("Import");
+            XElement importElementNet472 = new ("Import");
             importElementNet472.SetAttributeValue("Condition", "'$(TargetFramework)' == 'net472'");
             importElementNet472.SetAttributeValue("Project", $"{packageName}-net472.nuget.props");
 
-            //This will not be null, since csproj MUST have Project element
-            _csproj.Element("Project")!.Add(importElementNet472);
+            // This will not be null, since csproj MUST have Project element
+            _csproj.Element("Project") !.Add(importElementNet472);
             needsBackUp = true;
         }
         else
@@ -193,8 +167,8 @@ public class NugetMaterializer : INugetMaterializer
                 $"Could not add {packageName}-net472.nuget.props import to the {_csprojPath} file. Import already exists");
         }
 
-        //Look in csproj for the following line
-        //<Import Condition="'$(TargetFramework)' == 'netstandard2.0'" Project="MrktApolloApp-netstandard.nuget.props" />
+        // Look in csproj for the following line
+        // <Import Condition="'$(TargetFramework)' == 'netstandard2.0'" Project="MrktApolloApp-netstandard.nuget.props" />
         IEnumerable<XElement> importElementsNetStandard = _csproj.Descendants("Import")
             .Where(e =>
                 e.Attribute("Project")?.Value == $"{packageName}-netstandard.nuget.props"
@@ -202,12 +176,12 @@ public class NugetMaterializer : INugetMaterializer
 
         if (!importElementsNetStandard.Any())
         {
-            XElement importElementNetStandard = new("Import");
+            XElement importElementNetStandard = new ("Import");
             importElementNetStandard.SetAttributeValue("Condition", "'$(TargetFramework)' == 'netstandard2.0'");
             importElementNetStandard.SetAttributeValue("Project", $"{packageName}-netstandard.nuget.props");
 
-            //This will not be null, since csproj MUST have Project element
-            _csproj.Element("Project")!.Add(importElementNetStandard);
+            // This will not be null, since csproj MUST have Project element
+            _csproj.Element("Project") !.Add(importElementNetStandard);
             needsBackUp = true;
         }
         else
@@ -225,10 +199,6 @@ public class NugetMaterializer : INugetMaterializer
         _fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
         _csproj.Save(_csprojPath);
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public int Materialize(string packageName)
     {
@@ -249,6 +219,4 @@ public class NugetMaterializer : INugetMaterializer
         UpdateCsProjFile(packageName, xElements);
         return 0;
     }
-
-    #endregion
 }

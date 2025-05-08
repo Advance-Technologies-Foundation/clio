@@ -1,18 +1,11 @@
-namespace Clio.Workspaces;
-
 using System;
+
 using Command;
 
-#region Interface: IWorkspaceRestorer
+namespace Clio.Workspaces;
 
 public interface IWorkspaceRestorer
 {
-    #region Methods: Public
-
     void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
         WorkspaceOptions restoreWorkspaceOptions);
-
-    #endregion
 }
-
-#endregion

@@ -1,14 +1,13 @@
+using System.Net.Security;
+
 using Clio.Common;
 using CommandLine;
-using System.Net.Security;
 
 namespace Clio.Command;
 
 [Verb("add-schema", Aliases = new string[] { }, HelpText = "Add schema to package")]
 public class AddSchemaOptions
 {
-    #region Properties: Public
-
     [Option('p', "package", Required = true, HelpText = "Package path or name")]
     public string Package { get; set; }
 
@@ -17,30 +16,12 @@ public class AddSchemaOptions
 
     [Option('t', "type", Required = true, HelpText = "Schema type")]
     public string SchemaType { get; set; }
-
-    #endregion
 }
 
-public class AddSchemaCommand : Command<AddSchemaOptions>
+public class AddSchemaCommand(ISchemaBuilder schemaBuilder, ILogger logger): Command<AddSchemaOptions>
 {
-    #region Fields: Private
-
-    private readonly ISchemaBuilder _schemaBuilder;
-    private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public AddSchemaCommand(ISchemaBuilder schemaBuilder, ILogger logger)
-    {
-        _schemaBuilder = schemaBuilder;
-        _logger = logger;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly ISchemaBuilder _schemaBuilder = schemaBuilder;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(AddSchemaOptions options)
     {
@@ -48,6 +29,4 @@ public class AddSchemaCommand : Command<AddSchemaOptions>
         _logger.WriteInfo("Done");
         return 0;
     }
-
-    #endregion
 }

@@ -314,7 +314,13 @@ public class CreatioApiGateway : BaseService
         {
             ignoreDirectoriesName =
             [
-                "AppTemplates", "conf", "Packages", "Resources", "runtimes", "Terrasoft.Configuration", "WebFarm",
+                "AppTemplates",
+                "conf",
+                "Packages",
+                "Resources",
+                "runtimes",
+                "Terrasoft.Configuration",
+                "WebFarm",
                 "WorkspaceConsole"
             ];
             rootRelativePath = string.Empty;
@@ -744,7 +750,15 @@ public class PackageExplorer
     {
         string[] invalidArgs =
         [
-            "%2e%2e%2f", "%2e%2e/", "..%2f", "%2e%2e%5c", "2e%2e\\", "..%5c", "%252e%252e%255c", "..%255c", "../",
+            "%2e%2e%2f",
+            "%2e%2e/",
+            "..%2f",
+            "%2e%2e%5c",
+            "2e%2e\\",
+            "..%5c",
+            "%252e%252e%255c",
+            "..%255c",
+            "../",
             "..\\"
         ];
         foreach (string invalidArg in invalidArgs)

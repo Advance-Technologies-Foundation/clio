@@ -1,36 +1,31 @@
-using Clio.Dto;
-using Creatio.Client;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+
 using Clio.Common;
+using Clio.Dto;
+using Creatio.Client;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Clio;
 
-internal class ModelBuilder
+internal class ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts,
+    IWorkingDirectoriesProvider workingDirectoriesProvider)
 {
-    private readonly CreatioClient _creatioClient;
-    private readonly string _appUrl;
-    private readonly ItemOptions _opts;
-    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+    private readonly CreatioClient _creatioClient = creatioClient;
+    private readonly string _appUrl = appUrl;
+    private readonly ItemOptions _opts = opts;
+    private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
 
     private string EntitySchemaManagerRequestUrl => _appUrl + @"/DataService/json/SyncReply/EntitySchemaManagerRequest";
-    private string RuntimeEntitySchemaRequestUrl => _appUrl + @"/DataService/json/SyncReply/RuntimeEntitySchemaRequest";
-    private readonly Dictionary<string, Schema> _schemas = new();
 
-    public ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts,
-        IWorkingDirectoriesProvider workingDirectoriesProvider)
-    {
-        _creatioClient = creatioClient;
-        _appUrl = appUrl;
-        _opts = opts;
-        _workingDirectoriesProvider = workingDirectoriesProvider;
-    }
+    private string RuntimeEntitySchemaRequestUrl => _appUrl + @"/DataService/json/SyncReply/RuntimeEntitySchemaRequest";
+
+    private readonly Dictionary<string, Schema> _schemas = [];
 
     public void GetModels()
     {
@@ -44,7 +39,7 @@ internal class ModelBuilder
         }
 
         Console.WriteLine($"Models will be generated in directory: {_opts.DestinationPath}");
-        DirectoryInfo di = new(_opts.DestinationPath);
+        DirectoryInfo di = new (_opts.DestinationPath);
         if (!di.Exists)
         {
             di.Create();
@@ -65,7 +60,7 @@ internal class ModelBuilder
     {
         string? responseJson = _creatioClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
 
-        JsonSerializerSettings settings = new() { NullValueHandling = NullValueHandling.Ignore };
+        JsonSerializerSettings settings = new () { NullValueHandling = NullValueHandling.Ignore };
 
         EntitySchemaResponse col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson, settings);
         foreach (EntitySchema item in col.Collection.Where(item => !_schemas.ContainsKey(item.Name)))
@@ -83,12 +78,12 @@ internal class ModelBuilder
         JToken? items = jt.SelectToken("$.schema.columns.Items");
 
         schema.Value.Description = jt.SelectToken($"$.schema.description.{_opts.Culture}")?.ToString();
-        Dictionary<string, Column> dict = new();
+        _ = new Dictionary<string, Column>();
         Dictionary<Guid, JObject>? columns = items.ToObject<Dictionary<Guid, JObject>>();
 
         foreach (KeyValuePair<Guid, JObject> item in columns)
         {
-            Column col = new()
+            Column col = new ()
             {
                 Name = (string)item.Value.GetValue("name"),
                 DataValueType = (int)item.Value.GetValue("dataValueType")
@@ -105,7 +100,7 @@ internal class ModelBuilder
 
     private string CreateClassFileText(KeyValuePair<string, Schema> schema)
     {
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         sb.AppendLine(@"#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
             .AppendLine()
             .AppendLine("using System;")
@@ -119,7 +114,7 @@ internal class ModelBuilder
 
         if (!string.IsNullOrEmpty(schema.Value.Description))
         {
-            List<string> commentLines = schema.Value.Description.Split("\n").ToList();
+            List<string> commentLines = [.. schema.Value.Description.Split("\n")];
 
             sb.Append("\t").AppendLine("/// <summary>");
             commentLines.ForEach(l => sb.Append("\t").Append("/// ").AppendLine(l));
@@ -194,19 +189,21 @@ internal class ModelBuilder
             11 => nameof(Guid),
             12 => "bool",
             13 => "byte[]",
-            //case 14: return nameof(byte[]); what is IMAGE
-            //CUSTOM_OBJECT	15
-            //IMAGELOOKUP	16
-            //COLLECTION	17
-            //COLOR	18
-            //LOCALIZABLE_STRING	19
-            //ENTITY	20
-            //ENTITY_COLLECTION	21
-            //ENTITY_COLUMN_MAPPING_COLLECTION	22
+
+            // case 14: return nameof(byte[]); what is IMAGE
+            // CUSTOM_OBJECT 15
+            // IMAGELOOKUP   16
+            // COLLECTION    17
+            // COLOR 18
+            // LOCALIZABLE_STRING    19
+            // ENTITY    20
+            // ENTITY_COLLECTION 21
+            // ENTITY_COLUMN_MAPPING_COLLECTION  22
             23 => nameof(String),
             24 => nameof(String),
-            //case 25: return nameof(String); FILE	25
-            //MAPPING	26
+
+            // case 25: return nameof(String); FILE  25
+            // MAPPING   26
             27 => "string",
             28 => "string",
             29 => "string",
@@ -215,13 +212,15 @@ internal class ModelBuilder
             32 => "decimal",
             33 => "decimal",
             34 => "decimal",
-            //LOCALIZABLE_PARAMETER_VALUES_LIST	35
-            //METADATA_TEXT	36
-            //STAGE_INDICATOR	37
-            //OBJECT_LIST	38
-            //COMPOSITE_OBJECT_LIST	39
+
+            // LOCALIZABLE_PARAMETER_VALUES_LIST 35
+            // METADATA_TEXT 36
+            // STAGE_INDICATOR   37
+            // OBJECT_LIST   38
+            // COMPOSITE_OBJECT_LIST 39
             40 => "decimal",
-            //FILE_LOCATOR	41
+
+            // FILE_LOCATOR  41
             42 => "string",
             _ => "string"
         };
@@ -230,15 +229,21 @@ internal class ModelBuilder
 public class Column
 {
     public string Name { get; set; }
+
     public int DataValueType { get; set; }
+
     public string ReferenceSchemaName { get; set; }
+
     public string Description { get; set; }
 }
 
 public class Schema
 {
-    public Schema() => Columns = new Dictionary<string, Column>();
+    public Schema() => Columns = [];
+
     public string Name { get; set; }
+
     public string Description { get; set; }
+
     public Dictionary<string, Column> Columns { get; set; }
 }

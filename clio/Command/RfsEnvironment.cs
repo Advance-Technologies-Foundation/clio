@@ -1,8 +1,9 @@
-using Clio.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
+using Clio.Common;
 
 namespace Clio.Command;
 
@@ -45,7 +46,7 @@ internal class RfsEnvironment
                 Console.WriteLine($"Package '{environmentPackageName}' found in repository.");
                 environmentPackageFolder.Delete(true);
                 string repositoryPackageFolderPath = repositoryPackageFolder.FullName;
-                PackageUtilities packageUtilities = new(new FileSystem(new System.IO.Abstractions.FileSystem()));
+                PackageUtilities packageUtilities = new (new FileSystem(new System.IO.Abstractions.FileSystem()));
                 string packageContentFolderPath =
                     packageUtilities.GetPackageContentFolderPath(repositoryPackageFolderPath);
                 FileSystem.CreateLink(packageContentFolderPath, repositoryPackageFolderPath);
@@ -78,7 +79,7 @@ internal class RfsEnvironment
         List<DirectoryInfo> environmentPackageFolders = ReadCreatioPackages(environmentPackagePath).ToList();
         IEnumerable<DirectoryInfo> repositoryPackageFolders = ReadCreatioWorkspacePakages(repositoryPath);
         IEnumerable<string> repositoryPackageNames = repositoryPackageFolders.Select(s => s.Name);
-        List<string> missingPackages = new();
+        List<string> missingPackages = [];
         foreach (string packageName in packageNames)
         {
             if (!repositoryPackageNames.Contains(packageName))
@@ -110,7 +111,7 @@ internal class RfsEnvironment
 
             DirectoryInfo? repositoryPackageFolder =
                 repositoryPackageFolders.FirstOrDefault(s => s.Name == packageName);
-            PackageUtilities packageUtilities = new(new FileSystem(new System.IO.Abstractions.FileSystem()));
+            PackageUtilities packageUtilities = new (new FileSystem(new System.IO.Abstractions.FileSystem()));
             string repositoryPackageContentFolderPath =
                 packageUtilities.GetPackageContentFolderPath(repositoryPackageFolder.FullName);
             FileSystem.CreateLink(environmentPackageDirectoryPath, repositoryPackageContentFolderPath);

@@ -20,7 +20,7 @@ public class ApplicationClientFactory : IApplicationClientFactory
 
     public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings)
     {
-        ServiceUrlBuilder serviceUrlBuilder = new(settings);
+        ServiceUrlBuilder serviceUrlBuilder = new (settings);
         if (string.IsNullOrEmpty(settings.ClientId))
         {
             return new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,

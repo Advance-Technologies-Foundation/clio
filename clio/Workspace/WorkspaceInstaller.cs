@@ -1,45 +1,28 @@
 using System;
-using Clio.Utilities;
-
-namespace Clio.Workspaces;
-
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
+using Clio.Utilities;
 using Common;
 using Package;
 using Terrasoft.Core;
 
-#region Interface: IWorkspaceInstaller
+namespace Clio.Workspaces;
 
 public interface IWorkspaceInstaller
 {
-    #region Methods: Public
-
     void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
 
     void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
     string PublishToFolder(string zipFileName, string destinationFolderPath, string destinationFolderPath1, bool v);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: WorkspaceInstaller
 
 public class WorkspaceInstaller : IWorkspaceInstaller
 {
-    #region Constants: Private
-
     private const string CreatioPackagesZipName = "CreatioPackages";
     private const string ResetSchemaChangeStateServicePath = @"/rest/CreatioApiGateway/ResetSchemaChangeState";
-
-    #endregion
-
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
     private readonly IApplicationClientFactory _applicationClientFactory;
@@ -52,10 +35,6 @@ public class WorkspaceInstaller : IWorkspaceInstaller
     private readonly IFileSystem _fileSystem;
     private readonly IOSPlatformChecker _osPlatformChecker;
     private readonly Lazy<IApplicationClient> _applicationClientLazy;
-
-    #endregion
-
-    #region Constructors: Public
 
     public WorkspaceInstaller(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
         IApplicationClientFactory applicationClientFactory, IPackageInstaller packageInstaller,
@@ -89,22 +68,15 @@ public class WorkspaceInstaller : IWorkspaceInstaller
         _applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
     }
 
-    #endregion
-
-    #region Properties: Private
-
     private IApplicationClient ApplicationClient => _applicationClientLazy.Value;
 
     private string ResetSchemaChangeStateServiceUrl => _serviceUrlBuilder.Build(ResetSchemaChangeStateServicePath);
 
-    #endregion
-
-    #region Methods: Private
-
     private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
 
     private void ResetSchemaChangeStateServiceUrlByPackage(string packageName) =>
-        ApplicationClient.ExecutePostRequest(ResetSchemaChangeStateServiceUrl,
+        ApplicationClient.ExecutePostRequest(
+            ResetSchemaChangeStateServiceUrl,
             "{\"packageName\":\"" + packageName + "\"}");
 
     private void PackPackage(string packageName, string rootPackedPackagePath)
@@ -124,7 +96,8 @@ public class WorkspaceInstaller : IWorkspaceInstaller
     private string ZipPackages(string creatioPackagesZipName, string tempDirectory, string rootPackedPackagePath)
     {
         string applicationZip = Path.Combine(tempDirectory, $"{creatioPackagesZipName}.zip");
-        _packageArchiver.ZipPackages(rootPackedPackagePath,
+        _packageArchiver.ZipPackages(
+            rootPackedPackagePath,
             applicationZip, true);
         return applicationZip;
     }
@@ -143,10 +116,6 @@ public class WorkspaceInstaller : IWorkspaceInstaller
             .FindStandalonePackagesNames(_workspacePathBuilder.PackagesFolderPath);
         _packageBuilder.Build(standalonePackagesNames);
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null)
     {
@@ -197,7 +166,8 @@ public class WorkspaceInstaller : IWorkspaceInstaller
             foreach (string packageName in packages)
             {
                 PackPackage(packageName, rootPackedPackagePath);
-                //ResetSchemaChangeStateServiceUrl(packageName);
+
+                // ResetSchemaChangeStateServiceUrl(packageName);
             }
 
             string applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
@@ -208,8 +178,4 @@ public class WorkspaceInstaller : IWorkspaceInstaller
         });
         return resultApplicationFilePath;
     }
-
-    #endregion
 }
-
-#endregion

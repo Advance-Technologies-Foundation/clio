@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+
 using MediatR;
 using OneOf;
 
@@ -19,17 +20,11 @@ public class RestoreBdResponse : BaseHandlerResponse
 
 internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf<BaseHandlerResponse, HandlerError>>
 {
-    #region Properties: Public
-
     public Dictionary<string, string> Arguments { get; set; }
-
-    #endregion
-
-    #region Methods: Private
 
     private void ConnectToSQl(string connectionString)
     {
-        using SqlConnection connection = new(connectionString);
+        using SqlConnection connection = new (connectionString);
         connection.Open();
         RestoreDbFromFile(connection);
         CreateDbUser(connection);
@@ -43,7 +38,7 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 
         string dbBackUpFileFolderPath = Path.Join(backUpSrc, "db");
         string[] files = Directory.GetFiles(dbBackUpFileFolderPath);
-        FileInfo src = new(files.FirstOrDefault());
+        FileInfo src = new (files.FirstOrDefault());
         string backupFileName = Path.Join(backupFolderPath, src.Name);
         src.CopyTo(backupFileName, true);
     }
@@ -62,7 +57,7 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
                 End
             ";
 
-        SqlCommand sqlCommand = new(query, connection);
+        SqlCommand sqlCommand = new (query, connection);
         sqlCommand.ExecuteNonQuery();
     }
 
@@ -74,7 +69,7 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
                 CREATE USER [{dbUserName}] FOR LOGIN [{dbUserName}];
                 ALTER ROLE [db_owner] ADD MEMBER [{dbUserName}];
                 ";
-        SqlCommand sqlCommand = new(query, connection);
+        SqlCommand sqlCommand = new (query, connection);
         sqlCommand.ExecuteNonQuery();
     }
 
@@ -87,7 +82,7 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 
         string dbBackUpFileFolderPath = Path.Join(backUpSrc, "db");
         string[] files = Directory.GetFiles(dbBackUpFileFolderPath);
-        FileInfo ffi = new(files.FirstOrDefault());
+        FileInfo ffi = new (files.FirstOrDefault());
         string backupFileName = Path.Join(backupFolderPath, ffi.Name);
 
         string mdf = Path.Join(dataFolderPath, dbName + ".mdf");
@@ -101,15 +96,12 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
                 NOUNLOAD,  STATS = 5
             ";
 
-        SqlCommand sqlCommand = new(query, connection);
+        SqlCommand sqlCommand = new (query, connection);
         sqlCommand.ExecuteNonQuery();
     }
 
-    #endregion
-
-    #region Methods: Public
-
-    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(RestoreBdRequest request,
+    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(
+        RestoreBdRequest request,
         CancellationToken cancellationToken)
     {
         Arguments = request.Arguments;
@@ -119,6 +111,4 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 
         return new RestoreBdResponse { Status = BaseHandlerResponse.CompletionStatus.Success };
     }
-
-    #endregion
 }

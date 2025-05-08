@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading;
+
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Common;
@@ -14,10 +15,8 @@ namespace Clio.Tests.Command;
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 [Category("UnitTests")]
 [TestFixture]
-internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>
+internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>, IDisposable
 {
-    #region Setup/Teardown
-
     [SetUp]
     public override void Setup()
     {
@@ -25,10 +24,6 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>
         _textWriter.Flush();
         _sut = new FeatureCommand(_applicationClientMock, _envSettingsMock, _dataProviderMock, _serviceUrlBuilderMock);
     }
-
-    #endregion
-
-    #region Fields: Private
 
     private FeatureCommand _sut;
     private EnvironmentSettings _envSettingsMock;
@@ -38,10 +33,6 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>
     private StringWriter _textWriter;
     private StringBuilder _sb;
     private TextWriter _originalTextWriter;
-
-    #endregion
-
-    #region Methods: Public
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -69,13 +60,11 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>
         _textWriter.Dispose();
     }
 
-    #endregion
-
     [Description("Should clear cache for the given feature name and log the result")]
     [TestCase("ActivateAdvancedModeForOriginalSchemas")]
     public void Execute_ShouldClearCacheAndLogResult(string featureName)
     {
-        //Arrange
+        // Arrange
         string base64FeatureName = Convert.ToBase64String(Encoding.UTF8.GetBytes(featureName));
         string knownUrl = $"http://localhost/0/rest/FeatureService/ClearFeaturesCacheForAllUsers/{base64FeatureName}";
 
@@ -85,11 +74,16 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions>
         _serviceUrlBuilderMock.Build(ServiceUrlBuilder.KnownRoute.ClearFeaturesCacheForAllUsers)
             .Returns("http://localhost/0/rest/FeatureService/ClearFeaturesCacheForAllUsers");
 
-        //Act
+        // Act
         _sut.ClearCache("ActivateAdvancedModeForOriginalSchemas");
-        Thread.Sleep(300); //Logger need 300ms to flush its cache, thus we sleep
+        Thread.Sleep(300); // Logger need 300ms to flush its cache, thus we sleep
 
-        //Assert
+        // Assert
         _textWriter.ToString().Should().Contain($"[INF] - {responseBody}\r\n");
+    }
+
+    public void Dispose()
+    {
+        throw new NotImplementedException();
     }
 }

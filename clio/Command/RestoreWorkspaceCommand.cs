@@ -1,12 +1,11 @@
-namespace Clio.Command;
-
 using System;
 using System.IO;
+
+using CommandLine;
 using Common;
 using Workspaces;
-using CommandLine;
 
-#region Class: RestoreWorkspaceOptions
+namespace Clio.Command;
 
 public class WorkspaceOptions : EnvironmentOptions
 {
@@ -19,7 +18,6 @@ public class WorkspaceOptions : EnvironmentOptions
     [Option("IsNugetRestore", Required = false, HelpText = "True if you need to restore nugget package SDK",
         Default = true)]
     public bool? IsNugetRestore { get; set; }
-
 
     [Option("IsCreateSolution", Required = false, HelpText = "True if you need to create the Solution", Default = true)]
     public bool? IsCreateSolution { get; set; }
@@ -34,22 +32,12 @@ public class RestoreWorkspaceOptions : WorkspaceOptions
 {
 }
 
-#endregion
-
-#region Class: RestoreWorkspaceCommand
-
 public class RestoreWorkspaceCommand : Command<RestoreWorkspaceOptions>
 {
-    #region Fields: Private
-
     private readonly IWorkspace _workspace;
     private readonly ILogger _logger;
     private readonly CreateWorkspaceCommand _createWorkspaceCommand;
     private readonly IClioGateway _clioGateway;
-
-    #endregion
-
-    #region Constructors: Public
 
     public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger, CreateWorkspaceCommand createWorkspaceCommand,
         IClioGateway clioGateway)
@@ -60,10 +48,6 @@ public class RestoreWorkspaceCommand : Command<RestoreWorkspaceOptions>
         _createWorkspaceCommand = createWorkspaceCommand;
         _clioGateway = clioGateway;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(RestoreWorkspaceOptions options)
     {
@@ -86,7 +70,7 @@ public class RestoreWorkspaceCommand : Command<RestoreWorkspaceOptions>
     }
 
     private CreateWorkspaceCommandOptions CloneFromRestoreOptions(RestoreWorkspaceOptions options) =>
-        new()
+        new ()
         {
             IsNugetRestore = options.IsNugetRestore,
             IsCreateSolution = options.IsCreateSolution,
@@ -115,8 +99,4 @@ public class RestoreWorkspaceCommand : Command<RestoreWorkspaceOptions>
             Force = options.Force,
             CallbackProcess = options.CallbackProcess
         };
-
-    #endregion
 }
-
-#endregion

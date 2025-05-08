@@ -1,14 +1,8 @@
-namespace Clio.Command.PackageCommand;
-
 using Common;
 
-public class DeletePackageCommand : RemoteCommand<DeletePkgOptions>
+namespace Clio.Command.PackageCommand;
+public class DeletePackageCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<DeletePkgOptions>(applicationClient, settings)
 {
-    public DeletePackageCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
-
     protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/DeletePackage";
 
     protected override string GetRequestData(DeletePkgOptions options) => "\"" + options.Name + "\"";

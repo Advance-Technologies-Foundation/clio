@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+
 using Clio.Command;
 using Clio.Requests.Validators;
 using FluentAssertions;
@@ -19,12 +20,14 @@ public class ExternalLinkOptionsValidatorTestCase
     [Test]
     [Category("Unit")]
     [TestCase("clio://IISScannerRequest/?return=count")]
-    //[TestCase("clio://IISScanner/?return=details")]
+
+    // [TestCase("clio://IISScanner/?return=details")]
     public void ExternalLinkOptionsValidator_ShouldValidate_As_Valid(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
-        //Act
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeTrue();
     }
@@ -39,8 +42,8 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase("clio://  /?return=count")]
     public void ExternalLinkOptionsValidator_ShouldValidate_As_InValid_NotAUri(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
         var expected = new
         {
             ErrorCode = "10",
@@ -48,16 +51,16 @@ public class ExternalLinkOptionsValidatorTestCase
             Severity = Severity.Error,
             AttemptedValue = content
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
         validationResults.Errors.Should().HaveCount(1);
-        validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
-        validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
-        validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
-        validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+        validationResults.Errors.FirstOrDefault() !.Severity.Should().Be(expected.Severity);
+        validationResults.Errors.FirstOrDefault() !.ErrorMessage.Should().Be(expected.ErrorMessage);
+        validationResults.Errors.FirstOrDefault() !.ErrorCode.Should().Be(expected.ErrorCode);
+        validationResults.Errors.FirstOrDefault() !.AttemptedValue.Should().Be(expected.AttemptedValue);
     }
-
 
     [Test]
     [Category("Unit")]
@@ -66,13 +69,13 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase(null)]
     public void ExternalLinkValidator_ShouldValidate_As_InValid_EmptyContent(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
-        //Act
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
     }
-
 
     [Test]
     [Category("Unit")]
@@ -82,9 +85,8 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase("cli://")]
     public void ExternalLinkValidator_ShouldValidate_As_InValid_WhenDoesNotStartWithClio(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
-
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
 
         var expected = new
         {
@@ -93,16 +95,16 @@ public class ExternalLinkOptionsValidatorTestCase
             Severity = Severity.Error,
             AttemptedValue = content
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
         validationResults.Errors.Should().HaveCount(1);
-        validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
-        validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
-        validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
-        validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+        validationResults.Errors.FirstOrDefault() !.Severity.Should().Be(expected.Severity);
+        validationResults.Errors.FirstOrDefault() !.ErrorMessage.Should().Be(expected.ErrorMessage);
+        validationResults.Errors.FirstOrDefault() !.ErrorCode.Should().Be(expected.ErrorCode);
+        validationResults.Errors.FirstOrDefault() !.AttemptedValue.Should().Be(expected.AttemptedValue);
     }
-
 
     [Test]
     [Category("Unit")]
@@ -110,8 +112,8 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase("clio://345634/?return=count")]
     public void ExternalLinkValidator_ShouldValidate_As_InValid_WhenCommandNotFound(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
 
         Uri.TryCreate(content, UriKind.Absolute, out Uri _uriFromString);
         string commandName = _uriFromString?.Host;
@@ -122,16 +124,16 @@ public class ExternalLinkOptionsValidatorTestCase
             Severity = Severity.Error,
             AttemptedValue = commandName
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
         validationResults.Errors.Should().HaveCount(1);
-        validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
-        validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
-        validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
-        validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+        validationResults.Errors.FirstOrDefault() !.Severity.Should().Be(expected.Severity);
+        validationResults.Errors.FirstOrDefault() !.ErrorMessage.Should().Be(expected.ErrorMessage);
+        validationResults.Errors.FirstOrDefault() !.ErrorCode.Should().Be(expected.ErrorCode);
+        validationResults.Errors.FirstOrDefault() !.AttemptedValue.Should().Be(expected.AttemptedValue);
     }
-
 
     [Test]
     [Category("Unit")]
@@ -140,23 +142,23 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase("clio://OpenUrl/?return=count")]
     public void ExternalLinkValidator_ShouldValidate_As_Valid_WhenCommandFound(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
 
         Uri.TryCreate(content, UriKind.Absolute, out Uri _uriFromString);
         string commandName = _uriFromString?.Host;
-        var expected = new
+        _ = new
         {
             ErrorCode = "50",
             ErrorMessage = $"Command <{commandName}> not found",
             Severity = Severity.Error,
             AttemptedValue = commandName
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeTrue();
     }
-
 
     [Test]
     [Category("Unit")]
@@ -164,11 +166,11 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase("clio://IISScannerRequest/?=count", " ", "count")]
     public void ExternalLinlValidator_ShouldValidate_As_InValid_QueryIsWrong(string content, string key, string val)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
 
         Uri.TryCreate(content, UriKind.Absolute, out Uri _uriFromString);
-        string commandName = _uriFromString?.Host;
+        _ = _uriFromString?.Host;
         var expected = new
         {
             ErrorCode = "50",
@@ -176,15 +178,16 @@ public class ExternalLinkOptionsValidatorTestCase
             Severity = Severity.Error,
             AttemptedValue = _uriFromString
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
         validationResults.Errors.Should().HaveCount(1);
-        validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
-        validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should()
+        validationResults.Errors.FirstOrDefault() !.Severity.Should().Be(expected.Severity);
+        validationResults.Errors.FirstOrDefault() !.ErrorMessage.Should()
             .StartWith("Query not in correct format key is");
-        validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
-        validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+        validationResults.Errors.FirstOrDefault() !.ErrorCode.Should().Be(expected.ErrorCode);
+        validationResults.Errors.FirstOrDefault() !.AttemptedValue.Should().Be(expected.AttemptedValue);
     }
 
     [Test]
@@ -195,13 +198,13 @@ public class ExternalLinkOptionsValidatorTestCase
     [TestCase("clio://IISScannerRequest/?return=count&a=b&c=d&c=d,d")]
     public void ExternalLinlValidator_ShouldValidate_As_Valid_QueryIsCorrect(string content)
     {
-        //Arange 
-        ExternalLinkOptions request = new() { Content = content };
+        // Arange
+        ExternalLinkOptions request = new () { Content = content };
 
-        //Act
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
 
-        //Assert
+        // Assert
         validationResults.IsValid.Should().BeTrue();
     }
 }

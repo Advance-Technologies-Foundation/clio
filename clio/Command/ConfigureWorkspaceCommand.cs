@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
@@ -7,10 +12,6 @@ using CommandLine;
 using DocumentFormat.OpenXml.Wordprocessing;
 using FluentValidation;
 using Microsoft.CodeAnalysis;
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 
 namespace Clio.Command;
 
@@ -36,14 +37,8 @@ public class ConfigureWorkspaceOptions : EnvironmentOptions
 
 public class ConfigureWorkspaceCommand : Command<ConfigureWorkspaceOptions>
 {
-    #region Fields: Private
-
     private readonly IWorkspace _workspace;
     private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
 
     public ConfigureWorkspaceCommand(IWorkspace workspace, ILogger logger)
     {
@@ -51,8 +46,6 @@ public class ConfigureWorkspaceCommand : Command<ConfigureWorkspaceOptions>
         _workspace = workspace;
         _logger = logger;
     }
-
-    #endregion
 
     public override int Execute(ConfigureWorkspaceOptions options)
     {

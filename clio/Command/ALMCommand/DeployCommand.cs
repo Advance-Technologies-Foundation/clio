@@ -1,15 +1,14 @@
-namespace Clio.Command;
-
 using System;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
-using Common;
+
 using CommandLine;
+using Common;
 using Newtonsoft.Json.Linq;
 
-#region Class: DeployCommandOptions
+namespace Clio.Command;
 
 [Verb("alm-deploy", Aliases = new string[] { "deploy" }, HelpText = "Install package to selected environment")]
 public class DeployCommandOptions : RemoteCommandOptions
@@ -24,20 +23,10 @@ public class DeployCommandOptions : RemoteCommandOptions
     public bool NonUseSsp { get; set; }
 }
 
-#endregion
-
-#region Class: DeployCommand
-
 public class DeployCommand : RemoteCommand<DeployCommandOptions>
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClient _applicationClient;
-
-    #endregion
-
-    #region Constructors: Public
 
     public DeployCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
         : base(applicationClient, settings)
@@ -47,10 +36,6 @@ public class DeployCommand : RemoteCommand<DeployCommandOptions>
         _environmentSettings = settings;
         _applicationClient = applicationClient;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(DeployCommandOptions options)
     {
@@ -98,7 +83,7 @@ public class DeployCommand : RemoteCommand<DeployCommandOptions>
 
     private bool UploadFile(string uploadLicenseUrl, string filePath, Guid fileId)
     {
-        FileInfo fi = new(filePath);
+        FileInfo fi = new (filePath);
         string uploadLicenseEnpointUrl = _environmentSettings.Uri + uploadLicenseUrl
                                                                   + "?fileName=" + fi.Name + "&totalFileLength=" +
                                                                   fi.Length + "&fileId=" + fileId;
@@ -124,8 +109,4 @@ public class DeployCommand : RemoteCommand<DeployCommandOptions>
     }
 
     private static Guid GetFileId() => Guid.NewGuid();
-
-    #endregion
 }
-
-#endregion

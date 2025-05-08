@@ -1,16 +1,12 @@
-namespace Clio.Command;
-
-using Common;
 using CommandLine;
+using Common;
 
-#region Class: RestoreFromPackageBackupOptions
+namespace Clio.Command;
 
 [Verb("restore-configuration", Aliases = new string[] { "restore", "rc" },
     HelpText = "Restore configuration from last backup")]
 public class RestoreFromPackageBackupOptions : RemoteCommandOptions
 {
-    #region Properties: Public
-
     [Option('d', "skip-rollback-data", Required = false,
         HelpText = "Skip rollback data", Default = false)]
     public bool InstallPackageData { get; set; }
@@ -18,21 +14,10 @@ public class RestoreFromPackageBackupOptions : RemoteCommandOptions
     [Option('f', "force", Required = false,
         HelpText = "Restore configuration without sql backward compatibility check", Default = false)]
     public bool IgnoreSqlScriptBackwardCompatibilityCheck { get; set; }
-
-    #endregion
 }
 
-#endregion
-
-#region Class: RestoreFromPackageBackupCommand
-
-internal class RestoreFromPackageBackupCommand : RemoteCommand<RestoreFromPackageBackupOptions>
+internal class RestoreFromPackageBackupCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<RestoreFromPackageBackupOptions>(applicationClient, settings)
 {
-    public RestoreFromPackageBackupCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
-
     protected override string ServicePath => @"/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup";
 
     protected override string GetRequestData(RestoreFromPackageBackupOptions options) =>
@@ -40,5 +25,3 @@ internal class RestoreFromPackageBackupCommand : RemoteCommand<RestoreFromPackag
         ", \"ignoreSqlScriptBackwardCompatibilityCheck\": " +
         options.IgnoreSqlScriptBackwardCompatibilityCheck.ToString().ToLower() + "}";
 }
-
-#endregion

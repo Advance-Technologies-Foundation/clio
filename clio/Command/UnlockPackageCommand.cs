@@ -1,53 +1,27 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Clio.Command;
-
-using System;
 using CommandLine;
 using Package;
 
-#region Class: UnlockPackageOptions
+namespace Clio.Command;
 
 [Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
 public class UnlockPackageOptions : EnvironmentOptions
 {
-    #region Properties: Public
-
     [Value(0, MetaName = "Name", Required = false, HelpText = "Package name")]
     public string Name { get; set; }
-
-    #endregion
 }
 
-#endregion
-
-#region Class: UnlockPackageCommand
-
-public class UnlockPackageCommand : Command<UnlockPackageOptions>
+public class UnlockPackageCommand(IPackageLockManager packageLockManager): Command<UnlockPackageOptions>
 {
-    #region Fields: Private
-
-    private readonly IPackageLockManager _packageLockManager;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public UnlockPackageCommand(IPackageLockManager packageLockManager) => _packageLockManager = packageLockManager;
-
-    #endregion
-
-    #region Methods: Private
+    private readonly IPackageLockManager _packageLockManager = packageLockManager;
 
     public IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
         string.IsNullOrWhiteSpace(options.Name)
             ? Enumerable.Empty<string>()
             : new[] { options.Name };
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(UnlockPackageOptions options)
     {
@@ -64,8 +38,4 @@ public class UnlockPackageCommand : Command<UnlockPackageOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

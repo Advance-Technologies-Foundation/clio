@@ -5,18 +5,10 @@ using System.Linq;
 
 namespace Clio.Common;
 
-#region Class: TemplateProvider
-
 public class TemplateProvider : ITemplateProvider
 {
-    #region Fields: Private
-
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Constructors: Public
 
     public TemplateProvider(IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem)
     {
@@ -24,20 +16,6 @@ public class TemplateProvider : ITemplateProvider
         fileSystem.CheckArgumentNull(nameof(fileSystem));
         _workingDirectoriesProvider = workingDirectoriesProvider;
         _fileSystem = fileSystem;
-    }
-
-    #endregion
-
-    #region Methods: Private
-
-    private void DeletePlaceholder(string directoryPath)
-    {
-        string[] placeholderPaths = _fileSystem
-            .GetFiles(directoryPath, "placeholder.txt", SearchOption.AllDirectories);
-        foreach (string placeholderPath in placeholderPaths)
-        {
-            _fileSystem.DeleteFile(placeholderPath);
-        }
     }
 
     private string GetCompatibleVersionTemplatePath(string templateName, string creatioVersion = "",
@@ -53,7 +31,7 @@ public class TemplateProvider : ITemplateProvider
         string rootPath = _workingDirectoriesProvider.GetTemplateFolderPath(root);
         DirectoryInfo[] versions = new DirectoryInfo(rootPath).GetDirectories();
 
-        List<Version> availableVersions = new();
+        List<Version> availableVersions = [];
         foreach (DirectoryInfo item in versions)
         {
             if (Version.TryParse(item.Name, out Version version))
@@ -63,13 +41,9 @@ public class TemplateProvider : ITemplateProvider
         }
 
         availableVersions.Sort();
-        Version compatibleVersion = availableVersions.FindLast(v => v <= new Version(creatioVersion));
-        if (compatibleVersion is null)
-        {
-            throw new ArgumentException($"Minimum compatible version is {availableVersions.First().ToString()}",
+        Version compatibleVersion = availableVersions.FindLast(v => v <= new Version(creatioVersion)) ?? throw new ArgumentException(
+            $"Minimum compatible version is {availableVersions.First()}",
                 "version");
-        }
-
         return Path.Combine(rootPath, compatibleVersion.ToString(), groupExists ? templateName : string.Empty);
     }
 
@@ -82,10 +56,6 @@ public class TemplateProvider : ITemplateProvider
 
         return content;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public void CopyTemplateFolder(string templateFolderName, string destinationPath, string creatioVersion = "",
         string group = "", bool overrideFolder = true)
@@ -135,8 +105,4 @@ public class TemplateProvider : ITemplateProvider
         string templateFolder = _workingDirectoriesProvider.GetTemplateFolderPath(templateCode);
         return _fileSystem.GetDirectories(templateFolder);
     }
-
-    #endregion
 }
-
-#endregion

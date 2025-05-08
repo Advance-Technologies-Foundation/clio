@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+
 using Autofac;
 using Clio.Common;
 using Clio.Utilities;
@@ -24,18 +25,18 @@ internal class WikiHelpViewer : CustomHelpViewer
             string[] x = line.Split(':');
             if (x.Length == 2)
             {
-                WikiAncors[x[0]] = x[1].Split(',').Select(x => x).ToList();
+                wikiAncors[x[0]] = x[1].Split(',').Select(x => x).ToList();
             }
         }
     }
 
-    private Dictionary<string, List<string>> WikiAncors = new();
+    private readonly Dictionary<string, List<string>> wikiAncors = [];
 
     private string GetWikiAnchor(string commandName)
     {
-        foreach (string anchor in WikiAncors.Keys)
+        foreach (string anchor in wikiAncors.Keys)
         {
-            if (WikiAncors[anchor].Contains(commandName))
+            if (wikiAncors[anchor].Contains(commandName))
             {
                 return anchor;
             }
@@ -44,7 +45,7 @@ internal class WikiHelpViewer : CustomHelpViewer
         return commandName;
     }
 
-    private string baseUrl = "https://github.com/Advance-Technologies-Foundation/clio/blob/master/clio/Commands.md";
+    private readonly string baseUrl = "https://github.com/Advance-Technologies-Foundation/clio/blob/master/clio/Commands.md";
 
     private string GetCommandHelpUrl(string commandName)
     {

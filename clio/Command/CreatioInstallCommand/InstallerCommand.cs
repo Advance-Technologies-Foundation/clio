@@ -1,15 +1,14 @@
 using System;
 using System.Collections.Generic;
+
 using CommandLine;
 
 namespace Clio.Command.CreatioInstallCommand;
 
-[Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creation"], HelpText = "Deploy Creatio from zip file")]
+[Verb("deploy-creatio", Aliases =["dc", "ic", "install-creation"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
-    #region Fields: Private
-
-    private readonly Dictionary<string, string> _productList = new()
+    private readonly Dictionary<string, string> _productList = new ()
     {
         { "s", "Studio" },
         { "semse", "SalesEnterprise_Marketing_ServiceEnterprise" },
@@ -18,10 +17,6 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
     private CreatioDBType _dbType;
     private CreatioRuntimePlatform _platform;
-
-    #endregion
-
-    #region Properties: Internal
 
     internal CreatioDBType DBType
     {
@@ -61,10 +56,6 @@ public class PfInstallerOptions : EnvironmentNameOptions
         set => _platform = value;
     }
 
-    #endregion
-
-    #region Properties: Public
-
     [Option("db", Required = false, HelpText = "DB type: pg|mssql")]
     public string DB { get; set; }
 
@@ -96,26 +87,11 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
     [Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
     public string ZipFile { get; set; }
-
-    #endregion
 }
 
-public class InstallerCommand : Command<PfInstallerOptions>
+public class InstallerCommand(ICreatioInstallerService creatioInstallerService): Command<PfInstallerOptions>
 {
-    #region Fields: Private
-
-    private readonly ICreatioInstallerService _creatioInstallerService;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public InstallerCommand(ICreatioInstallerService creatioInstallerService) =>
-        _creatioInstallerService = creatioInstallerService;
-
-    #endregion
-
-    #region Methods: Public
+    private readonly ICreatioInstallerService _creatioInstallerService = creatioInstallerService;
 
     public override int Execute(PfInstallerOptions options)
     {
@@ -129,6 +105,4 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
         return result;
     }
-
-    #endregion
 }

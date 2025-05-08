@@ -4,19 +4,19 @@ namespace Clio.Package;
 
 public class PackageInstallOptions
 {
-    #region Properties: Public
-
     public bool InstallSqlScript { get; set; } = true;
+
     public bool InstallPackageData { get; set; } = true;
+
     public bool ContinueIfError { get; set; } = true;
+
     public bool SkipConstraints { get; set; } = false;
+
     public bool SkipValidateActions { get; set; } = false;
+
     public bool ExecuteValidateActions { get; set; } = false;
+
     public bool IsForceUpdateAllColumns { get; set; } = false;
-
-    #endregion
-
-    #region Methods: Public
 
     public int CompareTo(object value)
     {
@@ -25,12 +25,7 @@ public class PackageInstallOptions
             return 1;
         }
 
-        PackageInstallOptions packageVersion = value as PackageInstallOptions;
-        if (packageVersion == null)
-        {
-            throw new ArgumentException(nameof(value));
-        }
-
+        PackageInstallOptions packageVersion = value as PackageInstallOptions ?? throw new ArgumentException(nameof(value));
         return CompareTo(packageVersion);
     }
 
@@ -49,9 +44,6 @@ public class PackageInstallOptions
     public static bool operator ==(PackageInstallOptions v1, PackageInstallOptions v2) =>
         v1?.Equals(v2) ?? ReferenceEquals(v2, null);
 
-
     public static bool operator !=(PackageInstallOptions v1, PackageInstallOptions v2) =>
         !(v1 == v2);
-
-    #endregion
 }

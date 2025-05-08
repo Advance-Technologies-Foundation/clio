@@ -1,8 +1,9 @@
-using FluentValidation;
 using System;
 using System.Collections.Specialized;
 using System.Globalization;
 using System.Runtime.InteropServices;
+
+using FluentValidation;
 
 namespace Clio.Requests.Validators;
 
@@ -46,7 +47,7 @@ internal class ISSScannerValidator : AbstractValidator<IISScannerRequest>
 
             string returnType = nvc["return"].ToLower(CultureInfo.InvariantCulture);
 
-            string[] allowedValues = new[] { "count", "details", "registerall", "remote" };
+            string[] allowedValues = ["count", "details", "registerall", "remote"];
             if (Array.IndexOf(allowedValues, returnType) < 0)
             {
                 context.AddFailure(new FluentValidation.Results.ValidationFailure

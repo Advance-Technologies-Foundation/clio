@@ -2,12 +2,8 @@ using System;
 
 namespace Clio.Project.NuGet;
 
-#region Struct: NugetPackageFullName
-
 public struct NugetPackageFullName
 {
-    #region Constructors: Public
-
     public NugetPackageFullName(string fullNamesDescription)
     {
         string[] fullNameItems = fullNamesDescription
@@ -33,16 +29,9 @@ public struct NugetPackageFullName
             : version;
     }
 
-    #endregion
-
-    #region Properties: Public
-
     public string Version { get; set; }
+
     public string Name { get; set; }
-
-    #endregion
-
-    #region Methods: Public
 
     public static bool operator ==(NugetPackageFullName packageFullName1, NugetPackageFullName packageFullName2) =>
         packageFullName1.Equals(packageFullName2);
@@ -52,9 +41,9 @@ public struct NugetPackageFullName
 
     public static implicit operator string(NugetPackageFullName packageFullName) => packageFullName.ToString();
 
-    public bool Equals(NugetPackageFullName packageFullName) => Equals(packageFullName, this);
+    public readonly bool Equals(NugetPackageFullName packageFullName) => Equals(packageFullName, this);
 
-    public override bool Equals(object obj)
+    public override readonly bool Equals(object obj)
     {
         if (obj == null || GetType() != obj.GetType())
         {
@@ -68,9 +57,5 @@ public struct NugetPackageFullName
 
     public override int GetHashCode() => ToString().GetHashCode();
 
-    public override string ToString() => $"{Name}:{Version}";
-
-    #endregion
+    public override readonly string ToString() => $"{Name}:{Version}";
 }
-
-#endregion

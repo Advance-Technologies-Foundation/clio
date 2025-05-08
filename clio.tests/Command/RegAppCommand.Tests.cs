@@ -9,11 +9,7 @@ namespace Clio.Tests.Command;
 [TestFixture]
 public class RegAppCommandTestCase
 {
-    #region Fields: Private
-
     private readonly ILogger _loggerMock = Substitute.For<ILogger>();
-
-    #endregion
 
     [Test]
     [Category("Unit")]
@@ -22,12 +18,12 @@ public class RegAppCommandTestCase
         IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
         ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 
-        RegAppCommand command = new(settingsRepository, clientFactory, null, _loggerMock);
+        RegAppCommand command = new (settingsRepository, clientFactory, null, _loggerMock);
         string name = "Test";
         string login = "TestLogin";
         string password = "TestPassword";
         string uri = "http://testuri.org";
-        RegAppOptions options = new()
+        RegAppOptions options = new ()
         {
             EnvironmentName = name,
             Login = login,
@@ -49,9 +45,9 @@ public class RegAppCommandTestCase
         string name = "Test";
         ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
         settingsRepository.IsEnvironmentExists(name).Returns(true);
-        RegAppOptions options = new() { ActiveEnvironment = name, EnvironmentName = name };
+        RegAppOptions options = new () { ActiveEnvironment = name, EnvironmentName = name };
         IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
-        RegAppCommand command = new(settingsRepository, clientFactory, null, _loggerMock);
+        RegAppCommand command = new (settingsRepository, clientFactory, null, _loggerMock);
         command.Execute(options);
         settingsRepository.Received(1).SetActiveEnvironment(name);
     }
@@ -63,9 +59,9 @@ public class RegAppCommandTestCase
         string name = "Test";
         ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
         settingsRepository.IsEnvironmentExists(name).Returns(false);
-        RegAppOptions options = new() { ActiveEnvironment = name };
+        RegAppOptions options = new () { ActiveEnvironment = name };
         IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
-        RegAppCommand command = new(settingsRepository, clientFactory, null, _loggerMock);
+        RegAppCommand command = new (settingsRepository, clientFactory, null, _loggerMock);
         command.Execute(options);
         settingsRepository.Received(0).SetActiveEnvironment(name);
     }

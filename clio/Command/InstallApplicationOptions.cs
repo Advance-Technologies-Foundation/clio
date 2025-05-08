@@ -1,11 +1,10 @@
-namespace Clio.Command;
-
 using System;
+
+using CommandLine;
 using Common;
 using Package;
-using CommandLine;
 
-#region class: InstallOptions
+namespace Clio.Command;
 
 public class InstallOptions : EnvironmentOptions
 {
@@ -16,34 +15,21 @@ public class InstallOptions : EnvironmentOptions
     public string ReportPath { get; set; }
 }
 
-#endregion
-
-#region Class: InstallApplicationOptions
-
 [Verb("install-application", Aliases = new string[] { "install-app", "push-app" },
     HelpText = "Install application on a web application")]
 public class InstallApplicationOptions : InstallOptions
 {
 }
 
-#endregion
-
-#region Class: PushPackageCommand
-
 public class InstallApplicationCommand : Command<InstallApplicationOptions>
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationInstaller _applicationInstaller;
     private readonly IMarketplace _marketplace;
-    private readonly PackageInstallOptions _packageInstallOptionsDefault = new();
+    private readonly PackageInstallOptions _packageInstallOptionsDefault = new ();
 
-    #endregion
-
-    #region Constructors: Public
-
-    public InstallApplicationCommand(EnvironmentSettings environmentSettings,
+    public InstallApplicationCommand(
+        EnvironmentSettings environmentSettings,
         IApplicationInstaller applicationInstaller, IMarketplace marketplace)
     {
         environmentSettings.CheckArgumentNull(nameof(environmentSettings));
@@ -52,22 +38,6 @@ public class InstallApplicationCommand : Command<InstallApplicationOptions>
         _applicationInstaller = applicationInstaller;
         _marketplace = marketplace;
     }
-
-    #endregion
-
-    #region Methods: Private
-
-    private PackageInstallOptions ExtractPackageInstallOptions(InstallApplicationOptions options)
-    {
-        PackageInstallOptions packageInstallOptions = new();
-        return packageInstallOptions == _packageInstallOptionsDefault
-            ? null
-            : packageInstallOptions;
-    }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(InstallApplicationOptions options)
     {
@@ -86,8 +56,4 @@ public class InstallApplicationCommand : Command<InstallApplicationOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

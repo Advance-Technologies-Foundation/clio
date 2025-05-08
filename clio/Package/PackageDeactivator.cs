@@ -1,29 +1,17 @@
 using System;
+
 using Clio.Common;
 using Clio.Common.Responses;
 
 namespace Clio.Package;
 
 /// <inheritdoc cref="IPackageDeactivator"/>
-internal class PackageDeactivator : BasePackageOperation, IPackageDeactivator
+internal class PackageDeactivator(IApplicationPackageListProvider applicationPackageListProvider,
+    IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder): BasePackageOperation(applicationPackageListProvider, applicationClient, serviceUrlBuilder), IPackageDeactivator
 {
-    #region Constructors: Public
-
-    public PackageDeactivator(IApplicationPackageListProvider applicationPackageListProvider,
-        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-    {
-    }
-
-    #endregion
-
-    #region Methods: Protected
-
     protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
 
-    #endregion
 
-    #region Methods: Public
 
     /// <inheritdoc cref="IPackageDeactivator.Deactivate"/>
     public void Deactivate(string packageName)
@@ -34,6 +22,4 @@ internal class PackageDeactivator : BasePackageOperation, IPackageDeactivator
             SendRequest<Guid, BaseResponse>(PackageServiceUrl, "DeactivatePackage", packageUId);
         ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
     }
-
-    #endregion
 }

@@ -1,21 +1,18 @@
-namespace Clio.Command;
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+
+using CommandLine;
 using Common;
 using Package;
 using WebApplication;
-using CommandLine;
 
-#region Class: PushPkgOptions
+namespace Clio.Command;
 
 [Verb("push-pkg", Aliases = new string[] { "install", "push" }, HelpText = "Install package on a web application")]
 public class PushPkgOptions : InstallOptions
 {
-    #region Properties: Public
-
     [Option("InstallSqlScript", Required = false, HelpText = "Install sql script")]
     public bool? InstallSqlScript { get; set; }
 
@@ -42,27 +39,15 @@ public class PushPkgOptions : InstallOptions
 
     [Option("force-compilation", Required = false, HelpText = "Runs compilation after install package")]
     public bool ForceCompilation { get; set; }
-
-    #endregion
 }
-
-#endregion
-
-#region Class: PushPackageCommand
 
 public class PushPackageCommand : Command<PushPkgOptions>
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IPackageInstaller _packageInstaller;
     private readonly IMarketplace _marketplace;
     private readonly ICompileConfigurationCommand _compileConfigurationCommand;
-    private readonly PackageInstallOptions _packageInstallOptionsDefault = new();
-
-    #endregion
-
-    #region Constructors: Public
+    private readonly PackageInstallOptions _packageInstallOptionsDefault = new ();
 
     public PushPackageCommand()
     {
@@ -80,13 +65,9 @@ public class PushPackageCommand : Command<PushPkgOptions>
         _compileConfigurationCommand = compileConfigurationCommand;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private PackageInstallOptions ExtractPackageInstallOptions(PushPkgOptions options)
     {
-        PackageInstallOptions packageInstallOptions = new()
+        PackageInstallOptions packageInstallOptions = new ()
         {
             InstallSqlScript = options.InstallSqlScript ?? true,
             InstallPackageData = options.InstallPackageData ?? true,
@@ -101,9 +82,7 @@ public class PushPackageCommand : Command<PushPkgOptions>
             : packageInstallOptions;
     }
 
-    #endregion
 
-    #region Methods: Public
 
     /// <summary>
     /// Executes the push package command with the specified options.
@@ -122,16 +101,16 @@ public class PushPackageCommand : Command<PushPkgOptions>
         {
             if (options.MarketplaceIds != null && options.MarketplaceIds.Any())
             {
-                foreach (int MarketplaceId in options.MarketplaceIds)
+                foreach (int marketplaceId in options.MarketplaceIds)
                 {
                     string fullPath = string.Empty;
-                    Task.Run(async () => { fullPath = await _marketplace.GetFileByIdAsync(MarketplaceId); }).Wait();
+                    Task.Run(async () => { fullPath = await _marketplace.GetFileByIdAsync(marketplaceId); }).Wait();
 
                     bool _loopSuccess = _packageInstaller.Install(fullPath, _environmentSettings,
                         packageInstallOptions, options.ReportPath);
                     Console.WriteLine(_loopSuccess
-                        ? $"Done installing app by id: {MarketplaceId}"
-                        : $"Error installing app by id: {MarketplaceId}");
+                        ? $"Done installing app by id: {marketplaceId}"
+                        : $"Error installing app by id: {marketplaceId}");
                 }
 
                 success = true;
@@ -159,7 +138,7 @@ public class PushPackageCommand : Command<PushPkgOptions>
     }
 
     private CompileConfigurationOptions CreateFromPushPkgOptions(EnvironmentOptions options) =>
-        new()
+        new ()
         {
             Environment = options.Environment,
             Login = options.Login,
@@ -167,33 +146,14 @@ public class PushPackageCommand : Command<PushPkgOptions>
             Uri = options.Uri,
             All = true
         };
-
-    #endregion
 }
 
-#endregion
-
-#region Class: InstallGatePkgCommand
-
-public class InstallGatePkgCommand : PushPackageCommand
+public class InstallGatePkgCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
+    IMarketplace marketplace, ICompileConfigurationCommand compileConfigurationCommand, IApplication applicatom,
+    ILogger logger): PushPackageCommand(environmentSettings, packageInstaller, marketplace, compileConfigurationCommand)
 {
-    private IApplication _application;
-    private ILogger _logger;
-
-    #region Constructors: Public
-
-    public InstallGatePkgCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
-        IMarketplace marketplace, ICompileConfigurationCommand compileConfigurationCommand, IApplication applicatom,
-        ILogger logger)
-        : base(environmentSettings, packageInstaller, marketplace, compileConfigurationCommand)
-    {
-        _application = applicatom;
-        _logger = logger;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly IApplication _application = applicatom;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(PushPkgOptions options)
     {
@@ -205,8 +165,4 @@ public class InstallGatePkgCommand : PushPackageCommand
 
         return result;
     }
-
-    #endregion
 }
-
-#endregion

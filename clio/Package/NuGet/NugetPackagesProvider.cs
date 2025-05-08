@@ -6,23 +6,16 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+
 using Clio.Common;
 using Newtonsoft.Json.Linq;
 
 namespace Clio.Project.NuGet;
 
-#region Class: NugetPackagesProvider
-
-public class NugetPackagesProvider : INugetPackagesProvider
+public partial class NugetPackagesProvider : INugetPackagesProvider
 {
-    #region Fields: Private
-
     private static readonly Regex _nugetPackageRegex =
-        new("^\\(Id='(?<Id>.*)',Version='(?<Version>.*)'\\)", RegexOptions.Compiled);
-
-    #endregion
-
-    #region Methods: Private
+        MyRegex();
 
     private static NugetPackage ConvertToNugetPackage(string xmlBase, string nugetPackageDescription)
     {
@@ -33,22 +26,9 @@ public class NugetPackagesProvider : INugetPackagesProvider
             throw new InvalidOperationException($"Wrong NuGet package id: '{nugetPackageInfo}'");
         }
 
-        return new NugetPackage(nugetPackageMatch.Groups["Id"].Value,
+        return new NugetPackage(
+            nugetPackageMatch.Groups["Id"].Value,
             PackageVersion.ParseVersion(nugetPackageMatch.Groups["Version"].Value));
-    }
-
-    private static IEnumerable<NugetPackage> DeserializeNugetPackagesXml(string nugetPackagesXml)
-    {
-        XElement rootNode = XElement.Parse(nugetPackagesXml);
-        string xmlBase = rootNode
-            .Attributes()
-            .FirstOrDefault(att => att.Name.LocalName == "base")?.Value
-            .Trim('/');
-        return rootNode
-            .Elements()
-            .Where(el => el.Name.LocalName == "entry")
-            .Select(el => el.Elements().FirstOrDefault(e => e.Name.LocalName == "id"))
-            .Select(el => ConvertToNugetPackage(xmlBase, el?.Value));
     }
 
     private LastVersionNugetPackages FindLastVersionNugetPackages(AllVersionsNugetPackages packages) =>
@@ -56,7 +36,8 @@ public class NugetPackagesProvider : INugetPackagesProvider
             ? new LastVersionNugetPackages(packages.Name, packages.Last, packages.Stable)
             : null;
 
-    private async Task<AllVersionsNugetPackages> FindAllVersionsNugetPackages(string packageName,
+    private async Task<AllVersionsNugetPackages> FindAllVersionsNugetPackages(
+        string packageName,
         string nugetSourceUrl)
     {
         List<string> allVersionsNugetPackage = await GetPackageVersionsAsync(packageName, nugetSourceUrl);
@@ -71,9 +52,9 @@ public class NugetPackagesProvider : INugetPackagesProvider
     {
         nugetServer = string.IsNullOrEmpty(nugetServer) ? "https://api.nuget.org" : nugetServer;
         string nugetApiUrl = $"{nugetServer}/v3-flatcontainer/{packageName.ToLower()}/index.json";
-        List<string> versions = new();
+        List<string> versions = [];
 
-        using (HttpClient client = new())
+        using (HttpClient client = new ())
         {
             try
             {
@@ -108,11 +89,8 @@ public class NugetPackagesProvider : INugetPackagesProvider
         return versions;
     }
 
-    #endregion
-
-    #region Methods: Public
-
-    public IEnumerable<LastVersionNugetPackages> GetLastVersionPackages(IEnumerable<string> packagesNames,
+    public IEnumerable<LastVersionNugetPackages> GetLastVersionPackages(
+        IEnumerable<string> packagesNames,
         string nugetSourceUrl)
     {
         packagesNames.CheckArgumentNull(nameof(packagesNames));
@@ -132,7 +110,6 @@ public class NugetPackagesProvider : INugetPackagesProvider
             .FirstOrDefault();
     }
 
-    #endregion
+    [GeneratedRegex("^\\(Id='(?<Id>.*)',Version='(?<Version>.*)'\\)", RegexOptions.Compiled)]
+    private static partial Regex MyRegex();
 }
-
-#endregion

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Clio.Common;
 using Clio.Workspaces;
 using NSubstitute;
@@ -33,8 +34,6 @@ public class PropsBuilder_Tests
 			</ItemGroup>
 		</Project>";
 
-    #region Setup/Teardown
-
     [SetUp]
     public void SetUp()
     {
@@ -50,61 +49,50 @@ public class PropsBuilder_Tests
         _sut = new PropsBuilder(_fileSystem, _logger, _workspacePathBuilder);
     }
 
-    #endregion
-
-    #region Fields: Private
-
     private PropsBuilder _sut;
     private IFileSystem _fileSystem;
     private ILogger _logger;
     private IWorkspacePathBuilder _workspacePathBuilder;
 
-    #endregion
-
     [Test]
     public void Test1()
     {
-        //Arrange
-        string[] files = new[]
-        {
+        // Arrange
+        string[] files =
+        [
             "ATF.Repository.dll", "Castle.Core.dll", $"{PackageName}.dll", "Terrasoft.Common.dll"
-        };
+        ];
         _fileSystem.GetFiles(
             Arg.Is(ExpectedPath("net472")),
             Arg.Is("*.dll"),
-            Arg.Is(SearchOption.TopDirectoryOnly)
-        ).Returns(files);
+            Arg.Is(SearchOption.TopDirectoryOnly)).Returns(files);
         _fileSystem.GetFiles(
             Arg.Is(ExpectedPath("netstandard")),
             Arg.Is("*.dll"),
-            Arg.Is(SearchOption.TopDirectoryOnly)
-        ).Returns(files);
+            Arg.Is(SearchOption.TopDirectoryOnly)).Returns(files);
 
         _fileSystem
             .ReadAllText(Arg.Is<string>(s => !string.IsNullOrEmpty(s)))
             .Returns(MockCsProjWithNugetContent());
 
-        //Act
+        // Act
         _sut.Build(PackageName);
 
-        //Assert
+        // Assert
         _fileSystem.Received(1).GetFiles(
             Arg.Is(ExpectedPath("net472")),
             Arg.Is("*.dll"),
-            Arg.Is(SearchOption.TopDirectoryOnly)
-        );
+            Arg.Is(SearchOption.TopDirectoryOnly));
 
         _fileSystem.Received(1).GetFiles(
             Arg.Is(ExpectedPath("netstandard")),
             Arg.Is("*.dll"),
-            Arg.Is(SearchOption.TopDirectoryOnly)
-        );
+            Arg.Is(SearchOption.TopDirectoryOnly));
 
         return;
 
-
-        //rootPath\.nuget\testPackage\bin\net472
-        string ExpectedPath(string moniker)
+        // rootPath\.nuget\testPackage\bin\net472
+        static string ExpectedPath(string moniker)
         {
             return Path.Combine(RootPath, NugetFolderPath, PackageName, "bin", moniker);
         }

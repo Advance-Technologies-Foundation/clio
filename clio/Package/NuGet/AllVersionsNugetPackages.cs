@@ -1,23 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Clio.Common;
 
 namespace Clio.Project.NuGet;
 
-#region Class: AllVersionsNugetPackages
-
 public class AllVersionsNugetPackages
 {
-    #region Fields: Private
-
     private readonly Lazy<IEnumerable<NugetPackage>> _orderingPackagesLazy;
     private readonly Lazy<NugetPackage> _lastVersionNugetPackageLazy;
     private readonly Lazy<NugetPackage> _lastStableVersionNugetPackageLazy;
-
-    #endregion
-
-    #region Constructors: Public
 
     public AllVersionsNugetPackages(string name, IEnumerable<NugetPackage> packages)
     {
@@ -30,24 +23,15 @@ public class AllVersionsNugetPackages
         _lastStableVersionNugetPackageLazy = new Lazy<NugetPackage>(GetLastStableVersionNugetPackage);
     }
 
-    #endregion
-
-    #region Properties: Private
-
     public IEnumerable<NugetPackage> OrderingPackages => _orderingPackagesLazy.Value;
 
-    #endregion
-
-    #region Properties: Public
-
     public string Name { get; }
+
     public IEnumerable<NugetPackage> Packages { get; }
+
     public NugetPackage Last => _lastVersionNugetPackageLazy.Value;
+
     public NugetPackage Stable => _lastStableVersionNugetPackageLazy.Value;
-
-    #endregion
-
-    #region Methods: Private
 
     private IEnumerable<NugetPackage> GetOrderingPackages() =>
         Packages
@@ -58,8 +42,4 @@ public class AllVersionsNugetPackages
 
     private NugetPackage GetLastStableVersionNugetPackage() =>
         OrderingPackages.FirstOrDefault(pkg => pkg.Version.IsStable);
-
-    #endregion
 }
-
-#endregion

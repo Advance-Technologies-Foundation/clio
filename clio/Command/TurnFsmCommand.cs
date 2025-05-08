@@ -1,45 +1,26 @@
 using System;
 using System.Threading;
-using CommandLine;
 
-namespace Clio.Command;
+using CommandLine;
 
 using Common;
 
+namespace Clio.Command;
 [Verb("turn-fsm", Aliases = new[] { "tfsm", "fsm" }, HelpText = "Turn file system mode on or off for an environment")]
 public class TurnFsmCommandOptions : SetFsmConfigOptions
 {
 }
 
-public class TurnFsmCommand : Command<TurnFsmCommandOptions>
+public class TurnFsmCommand(SetFsmConfigCommand setFsmConfigCommand,
+    LoadPackagesToFileSystemCommand loadPackagesToFileSystemCommand,
+    LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient,
+    EnvironmentSettings environmentSettings): Command<TurnFsmCommandOptions>
 {
-    #region Fields: Private
-
-    private readonly SetFsmConfigCommand _setFsmConfigCommand;
-    private readonly LoadPackagesToFileSystemCommand _loadPackagesToFileSystemCommand;
-    private readonly LoadPackagesToDbCommand _loadPackagesToDbCommand;
-    private readonly IApplicationClient _applicationClient;
-    private readonly EnvironmentSettings _environmentSettings;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public TurnFsmCommand(SetFsmConfigCommand setFsmConfigCommand,
-        LoadPackagesToFileSystemCommand loadPackagesToFileSystemCommand,
-        LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient,
-        EnvironmentSettings environmentSettings)
-    {
-        _setFsmConfigCommand = setFsmConfigCommand;
-        _loadPackagesToFileSystemCommand = loadPackagesToFileSystemCommand;
-        _loadPackagesToDbCommand = loadPackagesToDbCommand;
-        _applicationClient = applicationClient;
-        _environmentSettings = environmentSettings;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly SetFsmConfigCommand _setFsmConfigCommand = setFsmConfigCommand;
+    private readonly LoadPackagesToFileSystemCommand _loadPackagesToFileSystemCommand = loadPackagesToFileSystemCommand;
+    private readonly LoadPackagesToDbCommand _loadPackagesToDbCommand = loadPackagesToDbCommand;
+    private readonly IApplicationClient _applicationClient = applicationClient;
+    private readonly EnvironmentSettings _environmentSettings = environmentSettings;
 
     public override int Execute(TurnFsmCommandOptions options)
     {
@@ -50,7 +31,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
                 options.IsNetCore = _environmentSettings.IsNetCore;
                 if (options.IsNetCore == true)
                 {
-                    RestartOptions opt = new()
+                    RestartOptions opt = new ()
                     {
                         Environment = options.Environment,
                         Uri = options.Uri,
@@ -58,7 +39,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
                         Password = options.Password,
                         IsNetCore = options.IsNetCore
                     };
-                    RestartCommand restartCommand = new(_applicationClient, _environmentSettings);
+                    RestartCommand restartCommand = new (_applicationClient, _environmentSettings);
                     restartCommand.Execute(opt);
                     Thread.Sleep(TimeSpan.FromSeconds(3));
                     _applicationClient.Login();
@@ -77,6 +58,4 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 
         return 1;
     }
-
-    #endregion
 }

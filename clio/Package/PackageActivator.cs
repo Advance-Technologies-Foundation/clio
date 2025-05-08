@@ -1,28 +1,14 @@
 using System.Collections.Generic;
+
 using Clio.Common;
 using Clio.Package.Responses;
 
 namespace Clio.Package;
 
-internal class PackageActivator : BasePackageOperation, IPackageActivator
+internal class PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
+    IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder): BasePackageOperation(applicationPackageListProvider, applicationClient, serviceUrlBuilder), IPackageActivator
 {
-    #region Constructors: Public
-
-    public PackageActivator(IApplicationPackageListProvider applicationPackageListProvider,
-        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-    {
-    }
-
-    #endregion
-
-    #region Methods: Protected
-
     protected override string CreateRequestData<TRequest>(TRequest request) => "\"" + request + "\"";
-
-    #endregion
-
-    #region Methods: Public
 
     public IEnumerable<PackageActivationResultDto> Activate(string packageName)
     {
@@ -32,6 +18,4 @@ internal class PackageActivator : BasePackageOperation, IPackageActivator
         ThrowsErrorIfUnsuccessfulResponseReceived(activationResponse);
         return activationResponse.PackagesActivationResults;
     }
-
-    #endregion
 }

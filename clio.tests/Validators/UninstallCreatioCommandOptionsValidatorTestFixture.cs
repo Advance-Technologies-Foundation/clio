@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Autofac;
 using Clio.Command;
 using Clio.Tests.Command;
@@ -19,7 +20,7 @@ public class UninstallCreatioCommandOptionsValidatorTestFixture : BaseClioModule
     public override void Setup()
     {
         base.Setup();
-        _sut = Container.Resolve<UninstallCreatioCommandOptionsValidator>();
+        _sut = container.Resolve<UninstallCreatioCommandOptionsValidator>();
     }
 
     public static IEnumerable<TestCaseData> EnvironmentNameIsEmptyTestCases
@@ -126,39 +127,39 @@ public class UninstallCreatioCommandOptionsValidatorTestFixture : BaseClioModule
     [TestCaseSource(nameof(EnvironmentNameIsEmptyTestCases))]
     public void Validate_ShouldReturnError(Tuple<UninstallCreatioCommandOptions, ValidationFailure> testCase)
     {
-        //Act
+        // Act
         ValidationResult validationResult = _sut.Validate(testCase.Item1);
 
-        //Assert
+        // Assert
         validationResult.Errors.First().Should().BeEquivalentTo(testCase.Item2);
     }
 
     [Test]
     public void Validate_ShouldNotReturnError_When_EnvNotEmpty()
     {
-        //Arrange
-        UninstallCreatioCommandOptions opts = new() { EnvironmentName = "some_env" };
+        // Arrange
+        UninstallCreatioCommandOptions opts = new () { EnvironmentName = "some_env" };
 
-        //Act
+        // Act
         ValidationResult validationResult = _sut.Validate(opts);
 
-        //Assert
+        // Assert
         validationResult.Errors.Should().HaveCount(0);
     }
 
     [Test]
     public void Validate_ShouldNotReturnError_When_PhysicalPathValid()
     {
-        //Arrange
+        // Arrange
         const string dirName = @"C:\inetpup\wwwroot\";
-        FileSystem.AddDirectory(dirName);
+        fileSystem.AddDirectory(dirName);
 
-        UninstallCreatioCommandOptions opts = new() { PhysicalPath = dirName };
+        UninstallCreatioCommandOptions opts = new () { PhysicalPath = dirName };
 
-        //Act
+        // Act
         ValidationResult validationResult = _sut.Validate(opts);
 
-        //Assert
+        // Assert
         validationResult.Errors.Should().HaveCount(0);
     }
 }

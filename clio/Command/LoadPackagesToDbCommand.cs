@@ -1,11 +1,10 @@
-namespace Clio.Command;
-
 using System;
+
+using CommandLine;
 using Common;
 using Package;
-using CommandLine;
 
-#region Class: LoadPackagesToDbOptions
+namespace Clio.Command;
 
 [Verb("pkg-to-db", Aliases = new string[] { "todb", "2db" },
     HelpText = "Load packages to database on a web application")]
@@ -13,20 +12,10 @@ public class LoadPackagesToDbOptions : EnvironmentOptions
 {
 }
 
-#endregion
-
-#region Class: LoadPackagesToDbCommand
-
 public class LoadPackagesToDbCommand : Command<EnvironmentOptions>
 {
-    #region Fields: Private
-
     private readonly IFileDesignModePackages _fileDesignModePackages;
     private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
 
     public LoadPackagesToDbCommand(IFileDesignModePackages fileDesignModePackages, ILogger logger)
     {
@@ -34,10 +23,6 @@ public class LoadPackagesToDbCommand : Command<EnvironmentOptions>
         _fileDesignModePackages = fileDesignModePackages;
         _logger = logger;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(EnvironmentOptions options)
     {
@@ -53,8 +38,4 @@ public class LoadPackagesToDbCommand : Command<EnvironmentOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

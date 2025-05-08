@@ -1,7 +1,8 @@
-using Clio.Common;
-using CommandLine;
 using System;
+
+using Clio.Common;
 using Clio.Project.NuGet;
+using CommandLine;
 
 namespace Clio.Command;
 
@@ -21,7 +22,7 @@ public class PushNuGetPkgsOptions : EnvironmentOptions
 
 public class PushNuGetPackagesCommand : Command<PushNuGetPkgsOptions>
 {
-    private INuGetManager _nugetManager;
+    private readonly INuGetManager _nugetManager;
 
     public PushNuGetPackagesCommand(INuGetManager nugetManager)
     {

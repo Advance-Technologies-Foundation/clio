@@ -1,8 +1,9 @@
-using Clio.Project;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
+
+using Clio.Project;
 
 namespace Clio;
 
@@ -20,7 +21,6 @@ public class CreatioPkgProject : ICreatioPkgProject
     private const string SdkSearchPattern = "BpmonlineSDK";
     private const string UnitTestSearchPattern = "UnitTest";
     private const string TsCoreBinPathSearchPattern = "$(TsCoreBinPath)";
-
 
     private string _activeHint;
 
@@ -48,7 +48,7 @@ public class CreatioPkgProject : ICreatioPkgProject
 
     public XNamespace Namespace { get; }
 
-    public static CreatioPkgProject LoadFromFile(string path) => new(path);
+    public static CreatioPkgProject LoadFromFile(string path) => new (path);
 
     public CreatioPkgProject()
     {
@@ -130,24 +130,19 @@ public class CreatioPkgProject : ICreatioPkgProject
 
     private string GetSearchPattern(RefType type)
     {
-        switch (type)
+        return type switch
         {
-            case RefType.Sdk:
-                return SdkSearchPattern;
-            case RefType.CoreSrc:
-                return PathToCoreDebug;
-            case RefType.UnitTest:
-                return UnitTestSearchPattern;
-            case RefType.TsCoreBinPath:
-                return TsCoreBinPathSearchPattern;
-            default:
-                return "undefined";
-        }
+            RefType.Sdk => SdkSearchPattern,
+            RefType.CoreSrc => PathToCoreDebug,
+            RefType.UnitTest => UnitTestSearchPattern,
+            RefType.TsCoreBinPath => TsCoreBinPathSearchPattern,
+            _ => "undefined",
+        };
     }
 
     private void ChangeReference()
     {
-        List<XElement> refElements = new();
+        List<XElement> refElements = [];
         RecurseSearchItemGroup(Document, ref refElements);
         refElements.ForEach(ChangeHint);
     }

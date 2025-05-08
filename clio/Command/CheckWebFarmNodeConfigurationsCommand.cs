@@ -1,13 +1,15 @@
-using Clio.Common;
-using CommandLine;
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Threading;
+using System.Threading.Tasks;
+
+using Clio.Common;
+using CommandLine;
+
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command;
@@ -20,22 +22,15 @@ public class CheckWebFarmNodeConfigurationsOptions
     public string Paths { get; set; }
 
     [Option('d', "detail", Required = false, HelpText = "Short information", Default = false)]
-    public bool detailMode { get; set; }
+    public bool DetailMode { get; set; }
 }
 
-public class CheckWebFarmNodeConfigurationsCommand : Command<CheckWebFarmNodeConfigurationsOptions>
+public class CheckWebFarmNodeConfigurationsCommand(ILogger logger, IFileSystem fileSystem,
+    IDirectoryComparer directoryComparer): Command<CheckWebFarmNodeConfigurationsOptions>
 {
-    private readonly ILogger _logger;
-    private readonly IFileSystem _fileSystem;
-    private readonly IDirectoryComparer _directoryComparer;
-
-    public CheckWebFarmNodeConfigurationsCommand(ILogger logger, IFileSystem fileSystem,
-        IDirectoryComparer directoryComparer)
-    {
-        _logger = logger;
-        _fileSystem = fileSystem;
-        _directoryComparer = directoryComparer;
-    }
+    private readonly ILogger _logger = logger;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly IDirectoryComparer _directoryComparer = directoryComparer;
 
     public override int Execute(CheckWebFarmNodeConfigurationsOptions options)
     {
@@ -76,7 +71,7 @@ public class CheckWebFarmNodeConfigurationsCommand : Command<CheckWebFarmNodeCon
             else
             {
                 _logger.WriteError("Result: The directories are not identical.");
-                if (!options.detailMode)
+                if (!options.DetailMode)
                 {
                     _logger.WriteError($"Difference count: {differences.Count}");
                 }
@@ -97,25 +92,19 @@ public class CheckWebFarmNodeConfigurationsCommand : Command<CheckWebFarmNodeCon
     }
 }
 
-public class DirectoryComparer : IDirectoryComparer
+public class DirectoryComparer(IFileSystem fileSystem, ILogger logger): IDirectoryComparer
 {
-    private readonly IFileSystem _fileSystem;
-    private readonly ILogger _logger;
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly ILogger _logger = logger;
     private int processedFolders;
     private int trackedFolderCount;
 
-    public DirectoryComparer(IFileSystem fileSystem, ILogger logger)
-    {
-        _fileSystem = fileSystem;
-        _logger = logger;
-    }
-
     public List<string> CompareDirectories(string path1, string path2)
     {
-        ConcurrentBag<string> dirs1 = new();
-        ConcurrentBag<string> dirs2 = new();
-        ConcurrentBag<string> files1 = new();
-        ConcurrentBag<string> files2 = new();
+        ConcurrentBag<string> dirs1 = [];
+        ConcurrentBag<string> dirs2 = [];
+        ConcurrentBag<string> files1 = [];
+        ConcurrentBag<string> files2 = [];
         if (!_fileSystem.ExistsDirectory(path1) || !_fileSystem.ExistsDirectory(path2))
         {
             throw new ArgumentException("One or both paths do not exist.");
@@ -123,16 +112,15 @@ public class DirectoryComparer : IDirectoryComparer
 
         Parallel.Invoke(
             () => ProcessPath(path1, dirs1, files1),
-            () => ProcessPath(path2, dirs2, files2)
-        );
+            () => ProcessPath(path2, dirs2, files2));
         files1 = new ConcurrentBag<string>(files1.Select(f =>
             f.Substring(path1.Length).TrimStart(Path.DirectorySeparatorChar)));
         files2 = new ConcurrentBag<string>(files2.Select(f =>
             f.Substring(path2.Length).TrimStart(Path.DirectorySeparatorChar)));
         int totalFiles1 = files1.Count, totalFiles2 = files2.Count;
         int processedFiles = 0;
-        ConcurrentBag<string> commonFiles = new(files1.Intersect(files2));
-        ConcurrentBag<string> differenceInCommonFiles = new();
+        ConcurrentBag<string> commonFiles = new (files1.Intersect(files2));
+        ConcurrentBag<string> differenceInCommonFiles = [];
         _logger.WriteLine($"Found {commonFiles.Count} common files.");
         _logger.WriteLine($"Processing common files:");
         int trackedFilesPercentage = 0;
@@ -182,7 +170,6 @@ public class DirectoryComparer : IDirectoryComparer
         else
         {
             return _fileSystem.CompareFiles(v1, v2);
-            ;
         }
     }
 

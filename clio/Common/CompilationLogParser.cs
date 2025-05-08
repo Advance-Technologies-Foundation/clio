@@ -16,8 +16,6 @@ public interface ICompilationLogParser
 
 public class CompilationLogParser : ICompilationLogParser
 {
-    #region Methods: Public
-
     public string ParseCreatioCompilationLog(string jsonInput)
     {
         CreatioCompilationLogResponse errors = JsonSerializer.Deserialize<CreatioCompilationLogResponse>(jsonInput);
@@ -29,8 +27,6 @@ public class CompilationLogParser : ICompilationLogParser
             = $"------- Finished building project: Succeeded: {errors.success}. Errors: {errors.errors.Length}.";
         return (string.Join("\r\n", errorMessages) + "\r\n" + resultMessage).Trim();
     }
-
-    #endregion
 }
 
 public record CreatioCompilationLogResponse(

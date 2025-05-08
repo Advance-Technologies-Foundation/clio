@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
+
 using Clio.Common;
 using Clio.Package;
 using Clio.Package.Responses;
 
-namespace Clio.Command.PackageCommand;
-
 using CommandLine;
 
+namespace Clio.Command.PackageCommand;
 [Verb("activate-pkg", Aliases = new[] { "apkg", "activate-package", "enable-package" },
     HelpText = "Activate package in a web application. Will be available in 8.1.2")]
 internal class ActivatePkgOptions : RemoteCommandOptions
@@ -16,26 +16,11 @@ internal class ActivatePkgOptions : RemoteCommandOptions
     public string PackageName { get; init; }
 }
 
-#region Class: ActivatePackageCommand
-
-internal class ActivatePackageCommand : RemoteCommand<ActivatePkgOptions>
+internal class ActivatePackageCommand(IPackageActivator packageActivator, IApplicationClient applicationClient,
+    EnvironmentSettings environmentSettings, ILogger logger): RemoteCommand<ActivatePkgOptions>(applicationClient, environmentSettings)
 {
-    private readonly IPackageActivator _packageActivator;
-    private readonly ILogger _logger;
-
-    #region Constructors: Public
-
-    public ActivatePackageCommand(IPackageActivator packageActivator, IApplicationClient applicationClient,
-        EnvironmentSettings environmentSettings, ILogger logger)
-        : base(applicationClient, environmentSettings)
-    {
-        _packageActivator = packageActivator;
-        _logger = logger;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly IPackageActivator _packageActivator = packageActivator;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(ActivatePkgOptions options)
     {
@@ -65,8 +50,4 @@ internal class ActivatePackageCommand : RemoteCommand<ActivatePkgOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

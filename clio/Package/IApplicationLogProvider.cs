@@ -1,5 +1,6 @@
-using Clio.Common;
 using System;
+
+using Clio.Common;
 
 namespace Clio.Package;
 
@@ -8,22 +9,16 @@ public interface IApplicationLogProvider
     string GetInstallationLog(EnvironmentSettings environmentSettings);
 }
 
-public class ApplicationLogProvider : IApplicationLogProvider
+public class ApplicationLogProvider(IApplicationClientFactory applicationClientFactory,
+    IServiceUrlBuilder serviceUrlBuilder): IApplicationLogProvider
 {
     private const string InstallLogUrl = @"/ServiceModel/PackageInstallerService.svc/GetLogFile";
 
     protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
         _serviceUrlBuilder.Build(url, environmentSettings);
 
-    public ApplicationLogProvider(IApplicationClientFactory applicationClientFactory,
-        IServiceUrlBuilder serviceUrlBuilder)
-    {
-        _applicationClientFactory = applicationClientFactory;
-        _serviceUrlBuilder = serviceUrlBuilder;
-    }
-
-    private IApplicationClientFactory _applicationClientFactory;
-    private IServiceUrlBuilder _serviceUrlBuilder;
+    private readonly IApplicationClientFactory _applicationClientFactory = applicationClientFactory;
+    private readonly IServiceUrlBuilder _serviceUrlBuilder = serviceUrlBuilder;
 
     private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
         _applicationClientFactory.CreateClient(environmentSettings);

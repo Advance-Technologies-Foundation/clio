@@ -1,29 +1,14 @@
 namespace Clio.Project.NuGet;
 
-#region Class: LastVersionNugetPackages
-
-public class LastVersionNugetPackages
+public class LastVersionNugetPackages(string name, NugetPackage last, NugetPackage stable)
 {
-    #region Constructors: Public
+    public string Name { get; } = name;
 
-    public LastVersionNugetPackages(string name, NugetPackage last, NugetPackage stable)
-    {
-        Name = name;
-        Last = last;
-        Stable = stable;
-    }
+    public NugetPackage Last { get; } = last;
 
-    #endregion
+    public NugetPackage Stable { get; } = stable;
 
-    #region Properties: Public
-
-    public string Name { get; }
-    public NugetPackage Last { get; }
-    public NugetPackage Stable { get; }
     public bool LastIsStable => Last == Stable;
+
     public bool StableIsNotExists => Stable == null;
-
-    #endregion
 }
-
-#endregion

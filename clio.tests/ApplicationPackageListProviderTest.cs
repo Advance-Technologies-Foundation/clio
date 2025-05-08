@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+
 using Autofac;
 using Clio.Common;
 using Clio.Package;
@@ -68,14 +69,14 @@ internal class ApplicationPackageListProviderTest : BaseClioModuleTests
         3)]
     public void CreatePackageInfo_ReturnCorrectPackagesIfResponseCorrect(string responseData, int packageCount)
     {
-        //Arrange
-        IJsonConverter jsonConverter = Container.Resolve<IJsonConverter>();
-        ApplicationPackageListProvider provider = new(jsonConverter);
+        // Arrange
+        IJsonConverter jsonConverter = container.Resolve<IJsonConverter>();
+        ApplicationPackageListProvider provider = new (jsonConverter);
 
-        //Act
+        // Act
         IEnumerable<PackageInfo> result = provider.ParsePackageInfoResponse(responseData);
 
-        //Assert
+        // Assert
         result.Should().HaveCount(packageCount);
     }
 
@@ -83,12 +84,12 @@ internal class ApplicationPackageListProviderTest : BaseClioModuleTests
     [TestCase("{}")]
     public void CreatePackageInfo_ThrowExceptionIfResponseIsIncorrect(string responseData)
     {
-        //Arrange
-        IJsonConverter jsonConverter = Container.Resolve<IJsonConverter>();
-        ApplicationPackageListProvider provider = new(jsonConverter);
+        // Arrange
+        IJsonConverter jsonConverter = container.Resolve<IJsonConverter>();
+        ApplicationPackageListProvider provider = new (jsonConverter);
         Action act = () => provider.ParsePackageInfoResponse(responseData);
 
-        //Act, Assert
+        // Act, Assert
         act.Should().Throw<Exception>();
     }
 }

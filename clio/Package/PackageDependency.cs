@@ -2,30 +2,13 @@ using Clio.Project.NuGet;
 
 namespace Clio;
 
-#region Struct: NugetPackageFullName
-
-public struct PackageDependency
+public struct PackageDependency(string name, string packageVersion, string uid = null)
 {
-    #region Constructors: Public
+    public string UId { get; set; } = uid ?? string.Empty;
 
-    public PackageDependency(string name, string packageVersion, string uid = null)
-    {
-        Name = name;
-        PackageVersion = packageVersion;
-        UId = uid ?? string.Empty;
-    }
+    public string PackageVersion { get; set; } = packageVersion;
 
-    #endregion
-
-    #region Properties: Public
-
-    public string UId { get; set; }
-    public string PackageVersion { get; set; }
-    public string Name { get; set; }
-
-    #endregion
-
-    #region Methods: Public
+    public string Name { get; set; } = name;
 
     public static bool operator ==(PackageDependency packageDependency1, PackageDependency packageDependency2) =>
         packageDependency1.Equals(packageDependency2);
@@ -33,9 +16,9 @@ public struct PackageDependency
     public static bool operator !=(PackageDependency packageDependency1, PackageDependency packageDependency2) =>
         !packageDependency1.Equals(packageDependency2);
 
-    public bool Equals(PackageDependency packageDependency) => Equals(packageDependency, this);
+    public readonly bool Equals(PackageDependency packageDependency) => Equals(packageDependency, this);
 
-    public override bool Equals(object obj)
+    public override readonly bool Equals(object obj)
     {
         if (obj == null || GetType() != obj.GetType())
         {
@@ -50,9 +33,5 @@ public struct PackageDependency
 
     public override int GetHashCode() => ToString().GetHashCode();
 
-    public override string ToString() => $"{Name}:{PackageVersion}(UId='{UId}')";
-
-    #endregion
+    public override readonly string ToString() => $"{Name}:{PackageVersion}(UId='{UId}')";
 }
-
-#endregion

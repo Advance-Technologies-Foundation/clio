@@ -5,32 +5,28 @@ using System.IO.Abstractions;
 using System.Json;
 using System.Linq;
 using System.Text;
+
 using Clio.Common;
 using Clio.Package;
 using FluentValidation;
 using FluentValidation.Results;
 using Newtonsoft.Json;
+
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.ComposableApplication;
 
 public class SetIconParameters
 {
-    #region Properties: Public
-
     public string AppName { get; set; }
 
     public string IconPath { get; set; }
 
     public string AppPath { get; set; }
-
-    #endregion
 }
 
 public class SetIconParametersValidator : AbstractValidator<SetIconParameters>
 {
-    #region Constructors: Public
-
     public SetIconParametersValidator(IFileSystem fileSystem)
     {
         RuleFor(x => x.AppPath)
@@ -38,7 +34,6 @@ public class SetIconParametersValidator : AbstractValidator<SetIconParameters>
             .NotEmpty().WithMessage("App path is required.")
             .Must(path => fileSystem.Directory.Exists(path) || fileSystem.File.Exists(path))
             .WithMessage(x => $"Path '{x.AppPath}' must exist as a directory or a file.");
-
 
         RuleFor(x => x.IconPath)
             .Cascade(CascadeMode.Stop)
@@ -53,39 +48,19 @@ public class SetIconParametersValidator : AbstractValidator<SetIconParameters>
             .When(x => fileSystem.Directory.Exists(x.AppPath))
             .WithMessage("App name is required when AppPath is a directory.");
     }
-
-    #endregion
 }
 
-public class ComposableApplicationManager : IComposableApplicationManager
+public class ComposableApplicationManager(IFileSystem fileSystem, IValidator<SetIconParameters> validator,
+    IPackageArchiver archiver, IWorkingDirectoriesProvider directoriesProvider): IComposableApplicationManager
 {
-    #region Fields: Private
-
-    private readonly IFileSystem _fileSystem;
-    private readonly IValidator<SetIconParameters> _validator;
-    private readonly IPackageArchiver _archiver;
-    private readonly IWorkingDirectoriesProvider _directoriesProvider;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public ComposableApplicationManager(IFileSystem fileSystem, IValidator<SetIconParameters> validator,
-        IPackageArchiver archiver, IWorkingDirectoriesProvider directoriesProvider)
-    {
-        _fileSystem = fileSystem;
-        _validator = validator;
-        _archiver = archiver;
-        _directoriesProvider = directoriesProvider;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly IFileSystem _fileSystem = fileSystem;
+    private readonly IValidator<SetIconParameters> _validator = validator;
+    private readonly IPackageArchiver _archiver = archiver;
+    private readonly IWorkingDirectoriesProvider _directoriesProvider = directoriesProvider;
 
     public void SetIcon(string appPath, string iconPath, string appName)
     {
-        SetIconParameters parameters = new() { AppPath = appPath, IconPath = iconPath, AppName = appName };
+        SetIconParameters parameters = new () { AppPath = appPath, IconPath = iconPath, AppName = appName };
 
         ValidationResult validationResult = _validator.Validate(parameters);
         if (!validationResult.IsValid)
@@ -142,7 +117,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 
         if (matchingFiles.Count > 1)
         {
-            StringBuilder exceptionMessage = new("More than one app-descriptor.json file found with the same Code:\n");
+            StringBuilder exceptionMessage = new ("More than one app-descriptor.json file found with the same Code:\n");
             foreach (var file in matchingFiles)
             {
                 exceptionMessage.AppendLine(file.File);
@@ -181,7 +156,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
                 string actualCode = JsonValue.Parse(_fileSystem.File.ReadAllText(descriptor))["Code"].ToString();
                 if (code != actualCode && code != string.Empty)
                 {
-                    StringBuilder exceptionMessage = new();
+                    StringBuilder exceptionMessage = new ();
                     exceptionMessage.AppendLine("Find more than one applications: ");
                     foreach (string path in appDescriptorPaths)
                     {
@@ -196,7 +171,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 
             if (string.IsNullOrEmpty(packageName))
             {
-                StringBuilder exceptionMessage = new();
+                StringBuilder exceptionMessage = new ();
                 exceptionMessage.AppendLine(
                     $"Find more than one descriptors for application {code}. Specify package name.");
                 foreach (string path in appDescriptorPaths)
@@ -245,7 +220,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
         }
         else
         {
-            StringBuilder exceptionMessage = new();
+            StringBuilder exceptionMessage = new ();
             exceptionMessage.AppendLine("Find more than one applications: ");
             foreach (string path in appDescriptorPaths)
             {
@@ -257,13 +232,10 @@ public class ComposableApplicationManager : IComposableApplicationManager
 
         throw new NotImplementedException();
     }
-
-    #endregion
 }
 
 public interface IComposableApplicationManager
 {
-    #region Methods: Public
 
     /// <summary>
     ///  Sets the icon for the specified application by updating the app-descriptor.json file.
@@ -278,6 +250,4 @@ public interface IComposableApplicationManager
     public bool TrySetVersion(string workspacePath, string appVersion);
 
     public string GetCode(string workspacePath);
-
-    #endregion
 }

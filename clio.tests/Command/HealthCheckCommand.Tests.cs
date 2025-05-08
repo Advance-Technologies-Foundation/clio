@@ -1,6 +1,5 @@
-namespace Clio.Tests.Command;
-
 using System.Threading;
+
 using Autofac;
 using Clio.Command;
 using Clio.Common;
@@ -8,6 +7,7 @@ using NSubstitute;
 using NUnit.Framework;
 using Query;
 
+namespace Clio.Tests.Command;
 [TestFixture]
 public class HealthCheckCommandTestCase
 {
@@ -32,7 +32,6 @@ public class HealthCheckCommandTestCase
         _options = Substitute.For<HealthCheckOptions>();
     }
 
-
     [Test]
     [Category("Unit")]
     public void HealthCheckCommand_FormsCorrectApplicationRequest_WhenWebHostIsTrue()
@@ -42,7 +41,6 @@ public class HealthCheckCommandTestCase
         _applicationClient.Received(1).ExecuteGetRequest(
             _environmentSettings.Uri + "/0/api/HealthCheck/Ping", Timeout.Infinite);
     }
-
 
     [Test]
     [Category("Unit")]
@@ -58,7 +56,7 @@ public class HealthCheckCommandTestCase
     [Category("Unit")]
     public void HealthCheckCommand_IsRegistered()
     {
-        BindingsModule bs = new();
+        BindingsModule bs = new ();
         IContainer container = bs.Register(_environmentSettings);
         HealthCheckCommand command = container.Resolve<HealthCheckCommand>();
         Assert.That(command, Is.Not.Null);

@@ -1,10 +1,12 @@
 #pragma warning disable CS8618, // Non-nullable field is uninitialized.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
+
 using ATF.Repository;
 using ATF.Repository.Attributes;
-using System.Diagnostics.CodeAnalysis;
 using YamlDotNet.Serialization;
+
 using Guid = System.Guid;
 
 namespace CreatioModel;
@@ -25,8 +27,8 @@ public class SysInstalledApp : BaseModel
     [SchemaProperty("Aliases")]
     public string[] Aliases { get; set; }
 
-
-    [SchemaProperty("Description")] public string Description { get; set; }
+    [SchemaProperty("Description")]
+    public string Description { get; set; }
 
     private string _version;
 
@@ -38,22 +40,23 @@ public class SysInstalledApp : BaseModel
         set => _version = value;
     }
 
-
     public override string ToString() => $"\"Id: {Id}, Name: {Name}, Code: {Code}\"";
 
-    [YamlMember(Alias = "apphub")] public string AppHubName { get; set; }
-
+    [YamlMember(Alias = "apphub")]
+    public string AppHubName { get; set; }
 
     public string ZipFileName { get; internal set; }
 
-    [YamlMember(Alias = "branch")] public string Branch { get; set; }
+    [YamlMember(Alias = "branch")]
+    public string Branch { get; set; }
 }
 
 [ExcludeFromCodeCoverage]
 [Schema("Contact")]
 public class Contact : BaseModel
 {
-    [SchemaProperty("Name")] public string Name { get; set; }
+    [SchemaProperty("Name")]
+    public string Name { get; set; }
 }
 
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.

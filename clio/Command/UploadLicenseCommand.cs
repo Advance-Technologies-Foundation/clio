@@ -1,12 +1,11 @@
-namespace Clio.Command;
-
 using System;
+
+using CommandLine;
 using Common;
 using WebApplication;
 using Workspaces;
-using CommandLine;
 
-#region Class: UploadLicenseCommandOptions
+namespace Clio.Command;
 
 [Verb("upload-license", Aliases = new string[] { "license", "loadlicense", "load-license" },
     HelpText = "Load license to selected environment")]
@@ -16,29 +15,15 @@ public class UploadLicenseCommandOptions : EnvironmentOptions
     public string FilePath { get; set; }
 }
 
-#endregion
-
-#region Class: UploadLicenseCommand
-
 public class UploadLicenseCommand : Command<UploadLicenseCommandOptions>
 {
-    #region Fields: Private
-
     private readonly IApplication _application;
-
-    #endregion
-
-    #region Constructors: Public
 
     public UploadLicenseCommand(IApplication application)
     {
         application.CheckArgumentNull(nameof(application));
         _application = application;
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public override int Execute(UploadLicenseCommandOptions options)
     {
@@ -54,8 +39,4 @@ public class UploadLicenseCommand : Command<UploadLicenseCommandOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

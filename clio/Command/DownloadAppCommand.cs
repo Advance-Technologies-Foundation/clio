@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+
 using ATF.Repository.Providers;
 using Clio.Command.PackageCommand;
 using Clio.Common;
@@ -15,16 +16,11 @@ public class DownloadAppOptions : BaseAppCommandOptions
     public string FilePath { get; set; }
 }
 
-public class DownloadAppCommand : BaseAppCommand<DownloadAppOptions>
+public class DownloadAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
+    IDataProvider dataProvider,
+    ApplicationManager applicationManager): BaseAppCommand<DownloadAppOptions>(applicationClient, environmentSettings, dataProvider, applicationManager)
 {
     protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/ExportApp";
-
-    public DownloadAppCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
-        IDataProvider dataProvider,
-        ApplicationManager applicationManager)
-        : base(applicationClient, environmentSettings, dataProvider, applicationManager)
-    {
-    }
 
     protected override void ExecuteRemoteCommand(DownloadAppOptions options)
     {

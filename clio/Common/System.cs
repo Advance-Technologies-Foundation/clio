@@ -6,7 +6,7 @@ namespace Clio.Common;
 
 internal class OperationSystem
 {
-    internal static OperationSystem Current => new();
+    internal static OperationSystem Current => new ();
 
     internal bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
@@ -15,7 +15,7 @@ internal class OperationSystem
         try
         {
             WindowsIdentity identity = WindowsIdentity.GetCurrent();
-            WindowsPrincipal principal = new(identity);
+            WindowsPrincipal principal = new (identity);
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
         catch (UnauthorizedAccessException)

@@ -1,15 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
 using Clio.Package;
 using Clio.Project.NuGet;
+
 using Version = System.Version;
 
 namespace Clio.Common;
 
 public interface IClioGateway
 {
-    #region Methods: Public
 
     /// <summary>
     /// Retrieves the installed version of the package.
@@ -24,7 +25,6 @@ public interface IClioGateway
     /// <returns>true if the specified version is compatible; otherwise, false.</returns>
     bool IsCompatibleWith(string version);
 
-    #endregion
 
     /// <summary>
     /// Checks if the specified version is compatible with the installed package version.
@@ -34,22 +34,9 @@ public interface IClioGateway
     void CheckCompatibleVersion(string version);
 }
 
-public class ClioGateway : IClioGateway
+public class ClioGateway(IApplicationPackageListProvider applicationPackageListProvider): IClioGateway
 {
-    #region Fields: Private
-
-    private readonly IApplicationPackageListProvider _applicationPackageListProvider;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public ClioGateway(IApplicationPackageListProvider applicationPackageListProvider) =>
-        _applicationPackageListProvider = applicationPackageListProvider;
-
-    #endregion
-
-    #region Methods: Public
+    private readonly IApplicationPackageListProvider _applicationPackageListProvider = applicationPackageListProvider;
 
     public PackageVersion GetInstalledVersion()
     {
@@ -84,6 +71,4 @@ public class ClioGateway : IClioGateway
                 $"To use this command, you need to install the cliogate package version {version} or higher.");
         }
     }
-
-    #endregion
 }

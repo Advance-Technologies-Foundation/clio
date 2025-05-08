@@ -1,28 +1,16 @@
 using System;
+
 using Clio.Common;
 using Clio.Common.Responses;
 
 namespace Clio.Package;
 
-internal class PackageEditableMutator : BasePackageOperation, IPackageEditableMutator
+internal class PackageEditableMutator(IApplicationPackageListProvider applicationPackageListProvider,
+    IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder): BasePackageOperation(applicationPackageListProvider, applicationClient, serviceUrlBuilder), IPackageEditableMutator
 {
-    #region Constructors: Public
-
-    public PackageEditableMutator(IApplicationPackageListProvider applicationPackageListProvider,
-        IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) :
-        base(applicationPackageListProvider, applicationClient, serviceUrlBuilder)
-    {
-    }
-
-    #endregion
-
-    #region Methods: Protected
-
     protected override string CreateRequestData<TRequest>(TRequest request) => "{\"uId\": \"" + request + "\"}";
 
-    #endregion
 
-    #region Methods: Public
 
     /// <inheritdoc cref="IPackageEditableMutator.SetPackageHotfix"/>
     public void SetPackageHotfix(string packageName, bool state)
@@ -42,6 +30,4 @@ internal class PackageEditableMutator : BasePackageOperation, IPackageEditableMu
             ThrowsErrorIfUnsuccessfulResponseReceived(deactivateResponse);
         }
     }
-
-    #endregion
 }

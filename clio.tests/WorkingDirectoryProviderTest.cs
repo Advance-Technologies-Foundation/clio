@@ -3,10 +3,12 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading.Tasks;
+
 using Castle.Core.Logging;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
+
 using ConsoleLogger = Clio.Common.ConsoleLogger;
 using ILogger = Clio.Common.ILogger;
 
@@ -20,7 +22,7 @@ internal class WorkingDirectoryProviderTest
     {
         // Arrange
         ILogger logger = ConsoleLogger.Instance;
-        WorkingDirectoriesProvider provider = new(logger, new MockFileSystem());
+        WorkingDirectoriesProvider provider = new (logger, new MockFileSystem());
         string templateName = "TestTemplate";
         string expectedPath = Path.Combine(provider.TemplateDirectory, $"{templateName}.tpl");
 
@@ -36,8 +38,8 @@ internal class WorkingDirectoryProviderTest
     {
         // Arrange
         ILogger logger = ConsoleLogger.Instance;
-        WorkingDirectoriesProvider provider = new(logger, new MockFileSystem());
-        ConcurrentBag<string> paths = new();
+        WorkingDirectoriesProvider provider = new (logger, new MockFileSystem());
+        ConcurrentBag<string> paths =[];
 
         // Act
         int repeatCount = 100;

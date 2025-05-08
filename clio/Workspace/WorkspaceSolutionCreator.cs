@@ -1,36 +1,21 @@
-namespace Clio.Workspaces;
-
 using System.Collections.Generic;
 using System.IO;
+
 using Common;
 using Package;
 
-#region Interface: IWorkspaceSolutionCreator
+namespace Clio.Workspaces;
 
 public interface IWorkspaceSolutionCreator
 {
-    #region Methods: Public
-
     void Create();
-
-    #endregion
 }
-
-#endregion
-
-#region Class: WorkspaceSolutionCreator
 
 public class WorkspaceSolutionCreator : IWorkspaceSolutionCreator
 {
-    #region Fields: Private
-
     private readonly IWorkspacePathBuilder _workspacePathBuilder;
     private readonly ISolutionCreator _solutionCreator;
     private readonly IStandalonePackageFileManager _standalonePackageFileManager;
-
-    #endregion
-
-    #region Constructors: Public
 
     public WorkspaceSolutionCreator(IWorkspacePathBuilder workspacePathBuilder, ISolutionCreator solutionCreator,
         IStandalonePackageFileManager standalonePackageFileManager)
@@ -43,10 +28,6 @@ public class WorkspaceSolutionCreator : IWorkspaceSolutionCreator
         _standalonePackageFileManager = standalonePackageFileManager;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private IEnumerable<SolutionProject> FindSolutionProjects()
     {
         IList<SolutionProject> solutionProjects = new List<SolutionProject>();
@@ -57,24 +38,16 @@ public class WorkspaceSolutionCreator : IWorkspaceSolutionCreator
         {
             string relativeStandaloneProjectPath =
                 Path.GetRelativePath(solutionFolderPath, standalonePackageProject.Path);
-            SolutionProject solutionProject = new(standalonePackageProject.PackageName, relativeStandaloneProjectPath);
+            SolutionProject solutionProject = new (standalonePackageProject.PackageName, relativeStandaloneProjectPath);
             solutionProjects.Add(solutionProject);
         }
 
         return solutionProjects;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Create()
     {
         IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects();
         _solutionCreator.Create(_workspacePathBuilder.SolutionPath, solutionProjects);
     }
-
-    #endregion
 }
-
-#endregion

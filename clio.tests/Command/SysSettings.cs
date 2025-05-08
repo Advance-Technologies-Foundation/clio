@@ -19,20 +19,20 @@ internal class SysSettingsCommandTests : BaseCommandTests<SysSettingsOptions>
     [Test]
     public void GetSysSettingByCode_Prints_CorrectValue_WhenClioGateIsInstalled()
     {
-        //Arrange
-        SysSettingsOptions options = new() { IsGet = true, Code = "whatever" };
+        // Arrange
+        SysSettingsOptions options = new () { IsGet = true, Code = "whatever" };
 
         _clioGatewayMock.IsCompatibleWith(Arg.Any<string>()).Returns(true);
 
         const string mockValue = "this is sys setting value";
         _sysSettingsManager.GetSysSettingValueByCode(options.Code).Returns(mockValue);
 
-        SysSettingsCommand sut = new(_sysSettingsManager, _logger, _clioGatewayMock);
+        SysSettingsCommand sut = new (_sysSettingsManager, _logger, _clioGatewayMock);
 
-        //Act
+        // Act
         int actual = sut.Execute(options);
 
-        //Assert
+        // Assert
         string expectedLogMessage = $"SysSettings {options.Code} : {mockValue}";
         _logger.Received(1).WriteInfo(expectedLogMessage);
         actual.Should().Be(0);
@@ -41,20 +41,20 @@ internal class SysSettingsCommandTests : BaseCommandTests<SysSettingsOptions>
     [Test]
     public void GetSysSettingByCode_Prints_ErrorWhenClioGateNotInstalled()
     {
-        //Arrange
-        SysSettingsOptions options = new() { IsGet = true, Code = "whatever" };
+        // Arrange
+        SysSettingsOptions options = new () { IsGet = true, Code = "whatever" };
 
         _clioGatewayMock.IsCompatibleWith(Arg.Any<string>()).Returns(false);
 
         const string mockValue = "this is sys setting value";
         _sysSettingsManager.GetSysSettingValueByCode(options.Code).Returns(mockValue);
 
-        SysSettingsCommand sut = new(_sysSettingsManager, _logger, _clioGatewayMock);
+        SysSettingsCommand sut = new (_sysSettingsManager, _logger, _clioGatewayMock);
 
-        //Act
+        // Act
         int actual = sut.Execute(options);
 
-        //Assert
+        // Assert
         const string expectedInfoLogMessage = $"To install cliogate use the following command: clio install-gate";
         _logger.Received(1).WriteInfo(expectedInfoLogMessage);
 

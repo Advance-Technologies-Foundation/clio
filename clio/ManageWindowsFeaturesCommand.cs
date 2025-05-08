@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+
 using Clio.Command;
 using Clio.Common;
 using CommandLine;
@@ -10,8 +11,6 @@ namespace Clio;
     HelpText = "Install windows features required for Creatio")]
 internal class ManageWindowsFeaturesOptions
 {
-    #region Properties: Public
-
     [Option('c', "Check", Required = false, HelpText = "Check required feature states")]
     public bool CheckMode { get; set; }
 
@@ -20,30 +19,12 @@ internal class ManageWindowsFeaturesOptions
 
     [Option('u', "Uninstall", Required = false, HelpText = "Uninstall required features")]
     public bool UnistallMode { get; set; }
-
-    #endregion
 }
 
-internal class ManageWindowsFeaturesCommand : Command<ManageWindowsFeaturesOptions>
+internal class ManageWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger): Command<ManageWindowsFeaturesOptions>
 {
-    #region Fields: Private
-
-    private readonly IWindowsFeatureManager _windowsFeatureManager;
-    private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public ManageWindowsFeaturesCommand(IWindowsFeatureManager windowsFeatureManager, ILogger logger)
-    {
-        _windowsFeatureManager = windowsFeatureManager;
-        _logger = logger;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly IWindowsFeatureManager _windowsFeatureManager = windowsFeatureManager;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(ManageWindowsFeaturesOptions options)
     {
@@ -105,6 +86,4 @@ internal class ManageWindowsFeaturesCommand : Command<ManageWindowsFeaturesOptio
         _windowsFeatureManager.UnInstallMissingFeatures();
         _logger.WriteInfo("Done");
     }
-
-    #endregion
 }

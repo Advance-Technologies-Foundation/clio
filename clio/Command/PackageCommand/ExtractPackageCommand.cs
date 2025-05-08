@@ -1,41 +1,26 @@
 using System;
 using System.IO;
+
 using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command.PackageCommand;
 
-#region Class: UnzipPkgOptions
-
-[Verb("extract-pkg-zip", Aliases = ["extract", "unzip"], HelpText = "Prepare an archive of creatio package")]
+[Verb("extract-pkg-zip", Aliases =["extract", "unzip"], HelpText = "Prepare an archive of creatio package")]
 public class UnzipPkgOptions
 {
-    #region Properties: Public
-
     [Option('d', "DestinationPath", Required = false, HelpText = "Destination path for package folder")]
     public string DestinationPath { get; set; }
 
     [Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
     public string Name { get; set; }
-
-    #endregion
 }
-
-#endregion
-
-#region Class: ExtractPackageCommand
 
 public class ExtractPackageCommand : Command<UnzipPkgOptions>
 {
-    #region Fields: Private
-
     private readonly IPackageArchiver _packageArchiver;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
 
     public ExtractPackageCommand(IPackageArchiver packageArchiver, IFileSystem fileSystem, ILogger logger)
     {
@@ -46,17 +31,13 @@ public class ExtractPackageCommand : Command<UnzipPkgOptions>
         _logger = logger;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private static bool CheckDirectory(string dir, out FileInfo[] files)
     {
         bool result = false;
         files = null;
         if (Directory.Exists(dir))
         {
-            DirectoryInfo directoryInfo = new(dir);
+            DirectoryInfo directoryInfo = new (dir);
             files = directoryInfo.GetFiles("*.gz");
             result = files.Length > 0;
         }
@@ -93,16 +74,11 @@ public class ExtractPackageCommand : Command<UnzipPkgOptions>
         _logger.WriteInfo($"Unzip package ({packageName}) completed.");
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(UnzipPkgOptions options)
     {
         try
         {
-            FileInfo[] pkgFiles;
-            if (CheckDirectory(options.Name, out pkgFiles))
+            if (CheckDirectory(options.Name, out FileInfo[] pkgFiles))
             {
                 foreach (FileInfo item in pkgFiles)
                 {
@@ -123,8 +99,4 @@ public class ExtractPackageCommand : Command<UnzipPkgOptions>
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

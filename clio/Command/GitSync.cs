@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+
 using Clio.Common;
 using CommandLine;
 
@@ -12,18 +13,11 @@ public class GitSyncOptions : EnvironmentNameOptions
     public string Direction { get; set; }
 }
 
-public class GitSyncCommand : Command<GitSyncOptions>
+public class GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger): Command<GitSyncOptions>
 {
-    private readonly EnvironmentSettings _settings;
-    private readonly IProcessExecutor _processExecutor;
-    private readonly ILogger _logger;
-
-    public GitSyncCommand(EnvironmentSettings settings, IProcessExecutor processExecutor, ILogger logger)
-    {
-        _settings = settings;
-        _processExecutor = processExecutor;
-        _logger = logger;
-    }
+    private readonly EnvironmentSettings _settings = settings;
+    private readonly IProcessExecutor _processExecutor = processExecutor;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(GitSyncOptions options)
     {
@@ -35,7 +29,8 @@ public class GitSyncCommand : Command<GitSyncOptions>
 
         string batPath = Path.Join(_settings.WorkspacePathes, "tasks", $"{fileName}.{ext}");
 
-        string result = _processExecutor.Execute(batPath,
+        string result = _processExecutor.Execute(
+            batPath,
             options.Environment, true, _settings.WorkspacePathes, true);
 
         _logger.WriteInfo(result);

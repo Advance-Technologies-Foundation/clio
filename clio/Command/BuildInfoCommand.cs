@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Command;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
@@ -12,28 +13,15 @@ public class BuildInfoOptions : PfInstallerOptions
 {
 }
 
-public class BuildInfoCommand
+public class BuildInfoCommand(ISettingsRepository settingsRepository, ICreatioInstallerService creatioInstallerService,
+    ILogger logger)
 {
-    private readonly ICreatioInstallerService _creatioInstallerService;
-    private readonly ILogger _logger;
+    private readonly ICreatioInstallerService _creatioInstallerService = creatioInstallerService;
+    private readonly ILogger _logger = logger;
 
-    public string RemoteArtefactServerPath { get; set; }
-    public string ProductFolder { get; set; }
+    public string RemoteArtefactServerPath { get; set; } = settingsRepository.GetRemoteArtefactServerPath();
 
-    #region Constructors: Public
-
-    public BuildInfoCommand(ISettingsRepository settingsRepository, ICreatioInstallerService creatioInstallerService,
-        ILogger logger)
-    {
-        _creatioInstallerService = creatioInstallerService;
-        _logger = logger;
-        RemoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
-        ProductFolder = settingsRepository.GetCreatioProductsFolder();
-    }
-
-    #endregion
-
-    #region Methods: Public
+    public string ProductFolder { get; set; } = settingsRepository.GetCreatioProductsFolder();
 
     public int Execute(BuildInfoOptions options)
     {
@@ -43,6 +31,4 @@ public class BuildInfoCommand
         _logger.WriteInfo(buildPath);
         return 0;
     }
-
-    #endregion
 }

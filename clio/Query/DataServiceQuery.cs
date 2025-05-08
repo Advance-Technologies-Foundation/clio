@@ -4,11 +4,13 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text.RegularExpressions;
+
 using Clio.Command;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Query;
@@ -16,8 +18,6 @@ namespace Clio.Query;
 [Verb("call-service", Aliases = new[] { "cs" }, HelpText = "Call Service Request")]
 public class CallServiceCommandOptions : RemoteCommandOptions
 {
-    #region Properties: Public
-
     [Option('m', "method", Required = false, HelpText = "Result file", Separator = ';')]
     public string HttpMethodName { get; set; }
 
@@ -34,50 +34,25 @@ public class CallServiceCommandOptions : RemoteCommandOptions
 
     [Option('v', "variables", Required = false, HelpText = "Result file", Separator = ';')]
     public IEnumerable<string> Variables { get; set; }
-
-    #endregion
 }
 
 [Verb("dataservice", Aliases = new[] { "ds" }, HelpText = "DataService Request")]
 public class DataServiceQueryOptions : CallServiceCommandOptions
 {
-    #region Properties: Public
-
     [Option('t', "type", Required = true, HelpText = "Operation type", Separator = ' ')]
     public string OperationType { get; set; }
-
-    #endregion
 }
 
-public class CallServiceCommand : BaseServiceCommand<CallServiceCommandOptions>
+public class CallServiceCommand(IApplicationClient applicationClient,
+    EnvironmentSettings settings,
+    IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem): BaseServiceCommand<CallServiceCommandOptions>(applicationClient, settings, serviceUrlBuilder, fileSystem)
 {
-    #region Constructors: Public
-
-    public CallServiceCommand(IApplicationClient applicationClient,
-        EnvironmentSettings settings,
-        IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem)
-        : base(applicationClient, settings, serviceUrlBuilder, fileSystem)
-    {
-    }
-
-    #endregion
 }
 
-public class DataServiceQuery : BaseServiceCommand<DataServiceQueryOptions>
+public class DataServiceQuery(IApplicationClient applicationClient,
+    EnvironmentSettings settings,
+    IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem): BaseServiceCommand<DataServiceQueryOptions>(applicationClient, settings, serviceUrlBuilder, fileSystem)
 {
-    #region Constructors: Public
-
-    public DataServiceQuery(IApplicationClient applicationClient,
-        EnvironmentSettings settings,
-        IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem)
-        : base(applicationClient, settings, serviceUrlBuilder, fileSystem)
-    {
-    }
-
-    #endregion
-
-    #region Methods: Protected
-
     protected override string BuildUrl(DataServiceQueryOptions options) =>
         options.OperationType.ToUpperInvariant() switch
         {
@@ -87,29 +62,18 @@ public class DataServiceQuery : BaseServiceCommand<DataServiceQueryOptions>
             "DELETE" => ServiceUrlBuilderInstance.Build(ServiceUrlBuilder.KnownRoute.Delete),
             _ => throw new Exception("Unknown operation type")
         };
-
-    #endregion
 }
 
-public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallServiceCommandOptions
+public abstract class BaseServiceCommand<T> : RemoteCommand<T>
+    where T : CallServiceCommandOptions
 {
-    #region Fields: Private
-
     private readonly IFileSystem _fileSystem;
-
-    #endregion
-
-    #region Fields: Protected
-
     protected readonly IServiceUrlBuilder ServiceUrlBuilderInstance;
 
     public bool IsSilent { get; private set; }
 
-    #endregion
-
-    #region Constructors: Protected
-
-    protected BaseServiceCommand(IApplicationClient applicationClient,
+    protected BaseServiceCommand(
+        IApplicationClient applicationClient,
         EnvironmentSettings settings,
         IServiceUrlBuilder serviceUrlBuilderInstance, IFileSystem fileSystem)
         : base(applicationClient, settings)
@@ -117,10 +81,6 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
         ServiceUrlBuilderInstance = serviceUrlBuilderInstance;
         _fileSystem = fileSystem;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static string BeautifyJsonIfPossible(string input)
     {
@@ -145,7 +105,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
         foreach (string variable in variables)
         {
             string pattern = "{{" + variable.Split('=')[0] + "}}";
-            Regex regex = new(pattern);
+            Regex regex = new (pattern);
             Match match = regex.Match(json);
             if (match.Success)
             {
@@ -155,10 +115,6 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
         return json;
     }
-
-    #endregion
-
-    #region Methods: Protected
 
     protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(options.ServicePath);
 
@@ -199,10 +155,6 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
         return _fileSystem.ReadAllText(requestFileName);
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public override int Execute(T options)
     {
         IsSilent = options.IsSilent;
@@ -225,6 +177,4 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
         return 0;
     }
-
-    #endregion
 }

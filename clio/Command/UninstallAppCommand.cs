@@ -9,15 +9,9 @@ public class UninstallAppOptions : BaseAppCommandOptions
 {
 }
 
-public class UninstallAppCommand : BaseAppCommand<UninstallAppOptions>
+public class UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+    IDataProvider dataProvider, ApplicationManager applicationManager): BaseAppCommand<UninstallAppOptions>(applicationClient, settings, dataProvider, applicationManager)
 {
-    public UninstallAppCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-        IDataProvider dataProvider, ApplicationManager applicationManager)
-        : base(applicationClient, settings, dataProvider, applicationManager)
-    {
-    }
-
-
     protected override string ServicePath => @"/ServiceModel/AppInstallerService.svc/UninstallApp";
 
     protected override void ExecuteRemoteCommand(UninstallAppOptions options)

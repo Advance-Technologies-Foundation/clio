@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Common.Responses;
 using Clio.Package;
 using NSubstitute;
@@ -9,19 +10,13 @@ namespace Clio.Tests.Package;
 [TestFixture]
 public class PackageDeactivatorTestCase : BasePackageOperationTestCase
 {
-    #region Properties: Private
-
     private PackageDeactivator _packageDeactivator;
-
-    #endregion
-
-    #region Methods: Public
 
     public override void Init()
     {
         base.Init();
-        _packageDeactivator = new PackageDeactivator(ApplicationPackageListProvider, ApplicationClient,
-            ServiceUrlBuilder);
+        _packageDeactivator = new PackageDeactivator(applicationPackageListProvider, applicationClient,
+            serviceUrlBuilder);
     }
 
     [Test]
@@ -33,11 +28,11 @@ public class PackageDeactivatorTestCase : BasePackageOperationTestCase
         SetupGetPackagesResponse(
             CreatePackageInfo("SomePackage"),
             CreatePackageInfo(packageName, packageUId),
-            CreatePackageInfo("SomePackage1")
-        );
+            CreatePackageInfo("SomePackage1"));
         const string fullUrl = "TestUrl";
         SetupBuildUrl("/ServiceModel/PackageService.svc/DeactivatePackage", fullUrl);
-        ApplicationClient.ExecutePostRequest<BaseResponse>(fullUrl,
+        applicationClient.ExecutePostRequest<BaseResponse>(
+            fullUrl,
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = true });
         Assert.DoesNotThrow(() => _packageDeactivator.Deactivate(packageName));
@@ -58,12 +53,11 @@ public class PackageDeactivatorTestCase : BasePackageOperationTestCase
         Guid packageUId = Guid.NewGuid();
         const string errorMessage = "Some error";
         SetupGetPackagesResponse(CreatePackageInfo(packageName, packageUId));
-        ApplicationClient.ExecutePostRequest<BaseResponse>(Arg.Any<string>(),
+        applicationClient.ExecutePostRequest<BaseResponse>(
+            Arg.Any<string>(),
                 Arg.Is<string>(data => data.Contains(packageUId.ToString())))
             .Returns(new BaseResponse { Success = false, ErrorInfo = new ErrorInfo { Message = errorMessage } });
 
         Assert.Throws<Exception>(() => _packageDeactivator.Deactivate(packageName), errorMessage);
     }
-
-    #endregion
 }

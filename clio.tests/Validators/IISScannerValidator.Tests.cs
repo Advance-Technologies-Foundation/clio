@@ -1,4 +1,5 @@
 using System.Linq;
+
 using Clio.Requests;
 using Clio.Requests.Validators;
 using FluentAssertions;
@@ -21,9 +22,10 @@ public class IISScannerRequestValidatorTestCase
     [TestCase("clio://IISScannerRequest/?return=details")]
     public void ISSScannerValidator_ShouldValidate_As_Valid(string content)
     {
-        //Arange 
-        IISScannerRequest request = new() { Content = content };
-        //Act
+        // Arange
+        IISScannerRequest request = new () { Content = content };
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeTrue();
     }
@@ -34,9 +36,8 @@ public class IISScannerRequestValidatorTestCase
     [TestCase("clio://IISScannerRequest/?returnnn=a1")]
     public void ISSScannerValidator_ShouldValidate_As_InValid_When_ReturnIsMissing(string content)
     {
-        //Arange 
-        IISScannerRequest request = new() { Content = content };
-
+        // Arange
+        IISScannerRequest request = new () { Content = content };
 
         var expected = new
         {
@@ -45,14 +46,15 @@ public class IISScannerRequestValidatorTestCase
             Severity = Severity.Error,
             AttemptedValue = content
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
         validationResults.Errors.Should().HaveCount(1);
-        validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
-        validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
-        validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
-        validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+        validationResults.Errors.FirstOrDefault() !.Severity.Should().Be(expected.Severity);
+        validationResults.Errors.FirstOrDefault() !.ErrorMessage.Should().Be(expected.ErrorMessage);
+        validationResults.Errors.FirstOrDefault() !.ErrorCode.Should().Be(expected.ErrorCode);
+        validationResults.Errors.FirstOrDefault() !.AttemptedValue.Should().Be(expected.AttemptedValue);
     }
 
     [Test]
@@ -62,10 +64,10 @@ public class IISScannerRequestValidatorTestCase
     [TestCase("clio://IISScannerRequest/?return=g")]
     public void ISSScannerValidator_ShouldValidate_As_InValid_WhenReturnParam_Is_Incorrect(string content)
     {
-        //Arange 
-        IISScannerRequest request = new() { Content = content };
+        // Arange
+        IISScannerRequest request = new () { Content = content };
 
-        string[] allowedValues = new[] { "count", "details", "registerall", "remote" };
+        string[] allowedValues =["count", "details", "registerall", "remote"];
         var expected = new
         {
             ErrorCode = "ARG002",
@@ -73,13 +75,14 @@ public class IISScannerRequestValidatorTestCase
             Severity = Severity.Error,
             AttemptedValue = content
         };
-        //Act
+
+        // Act
         ValidationResult? validationResults = _sut.Validate(request);
         validationResults.IsValid.Should().BeFalse();
         validationResults.Errors.Should().HaveCount(1);
-        validationResults.Errors.FirstOrDefault()!.Severity.Should().Be(expected.Severity);
-        validationResults.Errors.FirstOrDefault()!.ErrorMessage.Should().Be(expected.ErrorMessage);
-        validationResults.Errors.FirstOrDefault()!.ErrorCode.Should().Be(expected.ErrorCode);
-        validationResults.Errors.FirstOrDefault()!.AttemptedValue.Should().Be(expected.AttemptedValue);
+        validationResults.Errors.FirstOrDefault() !.Severity.Should().Be(expected.Severity);
+        validationResults.Errors.FirstOrDefault() !.ErrorMessage.Should().Be(expected.ErrorMessage);
+        validationResults.Errors.FirstOrDefault() !.ErrorCode.Should().Be(expected.ErrorCode);
+        validationResults.Errors.FirstOrDefault() !.AttemptedValue.Should().Be(expected.AttemptedValue);
     }
 }

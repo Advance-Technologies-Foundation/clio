@@ -1,39 +1,25 @@
-namespace Clio.Package;
-
 using System.Collections.Generic;
+
 using Common;
 
-#region Interface: IPackageBuilder
+namespace Clio.Package;
 
 public interface IPackageBuilder
 {
-    #region Methods: Public
-
     void Build(IEnumerable<string> packagesNames);
 
     void Rebuild(IEnumerable<string> packagesNames);
-
-    #endregion
 }
-
-#endregion
-
-#region Class: PackageBuilder
 
 public class PackageBuilder : IPackageBuilder
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly IApplicationClientFactory _applicationClientFactory;
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
     private readonly ILogger _logger;
 
-    #endregion
-
-    #region Constructors: Public
-
-    public PackageBuilder(EnvironmentSettings environmentSettings,
+    public PackageBuilder(
+        EnvironmentSettings environmentSettings,
         IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder, ILogger logger)
     {
         environmentSettings.CheckArgumentNull(nameof(environmentSettings));
@@ -45,10 +31,6 @@ public class PackageBuilder : IPackageBuilder
         _serviceUrlBuilder = serviceUrlBuilder;
         _logger = logger;
     }
-
-    #endregion
-
-    #region Methods: Private
 
     private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
 
@@ -78,15 +60,7 @@ public class PackageBuilder : IPackageBuilder
         }
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
 
     public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
-
-    #endregion
 }
-
-#endregion

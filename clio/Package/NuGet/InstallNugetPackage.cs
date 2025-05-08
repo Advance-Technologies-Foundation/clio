@@ -1,25 +1,18 @@
-namespace Clio.Project.NuGet;
-
 using System.Collections.Generic;
 using System.IO;
+
 using Common;
 using Package;
 
-#region Class: InstallNugetPackage
+namespace Clio.Project.NuGet;
 
 public class InstallNugetPackage : IInstallNugetPackage
 {
-    #region Fields: Private
-
     private readonly EnvironmentSettings _environmentSettings;
     private readonly INuGetManager _nugetManager;
     private readonly IPackageInstaller _packageInstaller;
     private readonly IPackageArchiver _packageArchiver;
     private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
-
-    #endregion
-
-    #region Constructors: Public
 
     public InstallNugetPackage(EnvironmentSettings environmentSettings, INuGetManager nugetManager,
         IPackageInstaller packageInstaller, IPackageArchiver packageArchiver,
@@ -37,10 +30,6 @@ public class InstallNugetPackage : IInstallNugetPackage
         _workingDirectoriesProvider = workingDirectoriesProvider;
     }
 
-    #endregion
-
-    #region Methods: Public
-
     public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl) =>
         _workingDirectoriesProvider.CreateTempDirectory(restoreTempDirectory =>
         {
@@ -51,8 +40,9 @@ public class InstallNugetPackage : IInstallNugetPackage
 
             _workingDirectoriesProvider.CreateTempDirectory(zipTempDirectory =>
             {
-                DirectoryInfo restoreTempDirectoryInfo = new(restoreTempDirectory);
-                string packagePath = Path.Combine(zipTempDirectory,
+                DirectoryInfo restoreTempDirectoryInfo = new (restoreTempDirectory);
+                string packagePath = Path.Combine(
+                    zipTempDirectory,
                     _packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));
                 _packageArchiver.ZipPackages(restoreTempDirectory, packagePath, true);
                 _packageInstaller.Install(packagePath, _environmentSettings);
@@ -61,8 +51,4 @@ public class InstallNugetPackage : IInstallNugetPackage
 
     public void Install(string packageName, string version, string nugetSourceUrl) =>
         Install(new[] { new NugetPackageFullName(packageName, version) }, nugetSourceUrl);
-
-    #endregion
 }
-
-#endregion

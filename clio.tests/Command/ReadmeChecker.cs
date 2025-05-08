@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
 using Castle.Core.Internal;
 using CommandLine;
 
@@ -16,16 +17,17 @@ public class ReadmeChecker
 
     private readonly Func<string, string> _convertCommandNameToSection = (commandName) =>
     {
-        List<string> commandWords = commandName
-            .Replace("-", " ")
-            .Split(' ')
-            .ToList();
+        List<string> commandWords =
+        [
+            .. commandName
+                        .Replace("-", " ")
+                        .Split(' '),
+        ];
         string expectedSectionName = "## " + string.Join(' ', commandWords);
         return expectedSectionName;
     };
 
     private readonly IList<string> _namesToCheck = new List<string>();
-
 
     /// <summary>
     /// Determines whether the specified command option type is represented in the README file.
@@ -66,12 +68,13 @@ public class ReadmeChecker
             .IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
-    private void PopulateListToCheck(Type T)
+    private void PopulateListToCheck(Type t)
     {
-        string commandVerbName = T.GetAttribute<VerbAttribute>().Name;
-        List<string> aliases = T.GetAttribute<VerbAttribute>().Aliases?.ToList() ?? [];
+        string commandVerbName = t.GetAttribute<VerbAttribute>().Name;
+        List<string> aliases = t.GetAttribute<VerbAttribute>().Aliases?.ToList() ??[];
         aliases.Add(commandVerbName);
-        //Add Verb
+
+        // Add Verb
         foreach (string alias in aliases)
         {
             _namesToCheck.Add(_convertCommandNameToSection(alias));

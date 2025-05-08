@@ -1,4 +1,5 @@
 using System;
+
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -7,14 +8,10 @@ using FluentValidation.Results;
 
 namespace Clio.Command;
 
-#region Class: CreateUiProjectOptions
-
 [Verb("new-ui-project", Aliases = new[] { "create-ui-project", "new-ui", "createup", "uiproject", "ui" },
     HelpText = "Add new UI project")]
 public class CreateUiProjectOptions : EnvironmentOptions
 {
-    #region Properties: Public
-
     [Option("version", Required = false, Default = "",
         HelpText = "Creatio version")]
     public string CreatioVersion { get; set; }
@@ -33,18 +30,10 @@ public class CreateUiProjectOptions : EnvironmentOptions
     [Option('v', "vendor-prefix", Required = true,
         HelpText = "Vendor prefix")]
     public string VendorPrefix { get; set; }
-
-    #endregion
 }
-
-#endregion
-
-#region Class: CreateUiProjectOptionsValidator
 
 public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProjectOptions>
 {
-    #region Constructors: Public
-
     public CreateUiProjectOptionsValidator()
     {
         RuleFor(x => x.ProjectName).NotEmpty().WithMessage("Project name is required.");
@@ -55,27 +44,16 @@ public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProject
                 "See more: https://academy.creatio.com/docs/developer/front_end_development_freedom_ui/remote_module/implement_a_remote_module/overview");
         RuleFor(x => x.PackageName).NotEmpty().WithMessage("Package name is required.");
     }
-
-    #endregion
 }
-
-#endregion
-
-#region Class: CreateUiProjectCommand
 
 internal class CreateUiProjectCommand
 {
-    #region Fields: Private
-
     private readonly IUiProjectCreator _uiProjectCreator;
     private readonly IValidator<CreateUiProjectOptions> _optionsValidator;
     private readonly ILogger _logger;
 
-    #endregion
-
-    #region Constructors: Public
-
-    public CreateUiProjectCommand(IUiProjectCreator uiProjectCreator,
+    public CreateUiProjectCommand(
+        IUiProjectCreator uiProjectCreator,
         IValidator<CreateUiProjectOptions> optionsValidator, ILogger logger)
     {
         uiProjectCreator.CheckArgumentNull(nameof(uiProjectCreator));
@@ -85,10 +63,6 @@ internal class CreateUiProjectCommand
         _logger = logger;
     }
 
-    #endregion
-
-    #region Methods: Private
-
     private bool EnableDownloadPackage(string packageName)
     {
         _logger.WriteInfo($"Do you wont download package [{packageName}] ? (y/n):");
@@ -96,14 +70,11 @@ internal class CreateUiProjectCommand
         do
         {
             result = Console.ReadLine()?.Trim().ToLower();
-        } while (result != "y" && result != "n");
+        }
+        while (result != "y" && result != "n");
 
         return result == "y";
     }
-
-    #endregion
-
-    #region Methods: Public
 
     public int Execute(CreateUiProjectOptions options)
     {
@@ -131,8 +102,4 @@ internal class CreateUiProjectCommand
             return 1;
         }
     }
-
-    #endregion
 }
-
-#endregion

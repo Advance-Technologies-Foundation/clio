@@ -1,28 +1,22 @@
-using CreatioModel;
 using System;
 using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+
 using Clio.CreatioModel;
-using YamlDotNet.Serialization;
 using Clio.Workspaces;
+using CreatioModel;
+using YamlDotNet.Serialization;
 
 namespace Clio.Command;
 
-public class EnvironmentManager : IEnvironmentManager
+public class EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer): IEnvironmentManager
 {
-    private IFileSystem fileSystem;
-    private IDeserializer yamlDesirializer;
-    private readonly ISerializer serializer;
-
-    public EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer)
-    {
-        this.fileSystem = fileSystem;
-        yamlDesirializer = deserializer;
-        this.serializer = serializer;
-    }
+    private readonly IFileSystem fileSystem = fileSystem;
+    private readonly IDeserializer yamlDesirializer = deserializer;
+    private readonly ISerializer serializer = serializer;
 
     public int ApplyManifest(string manifestFilePath) => throw new NotImplementedException();
 
@@ -30,7 +24,7 @@ public class EnvironmentManager : IEnvironmentManager
     {
         List<SysInstalledApp> applications = GetApplicationsFromManifest(manifestFilePath);
         IEnumerable<AppHubInfo> appHubs = GetAppHubsFromManifest(manifestFilePath);
-        List<SysInstalledApp> appsFromAppHub = new();
+        List<SysInstalledApp> appsFromAppHub = [];
         foreach (SysInstalledApp app in applications)
         {
             foreach (AppHubInfo app_hub in appHubs)
@@ -53,7 +47,8 @@ public class EnvironmentManager : IEnvironmentManager
                                 _ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(
                                     Workspace.GetSanitizeFileNameFromString(alias), app.Version,
                                     Workspace.GetSanitizeFileNameFromString(app.Branch)),
-                                _ => app_hub.GetAppZipFileName(Workspace.GetSanitizeFileNameFromString(alias),
+                                _ => app_hub.GetAppZipFileName(
+                                    Workspace.GetSanitizeFileNameFromString(alias),
                                     app.Version)
                             };
                             if (fileSystem.File.Exists(aliasFileName))
@@ -73,7 +68,6 @@ public class EnvironmentManager : IEnvironmentManager
         return appsFromAppHub;
     }
 
-
     private IEnumerable<AppHubInfo> GetAppHubsFromManifest(string manifestFilePath)
     {
         EnvironmentManifest envManiifest = LoadEnvironmentManifestFromFile(manifestFilePath);
@@ -89,8 +83,7 @@ public class EnvironmentManager : IEnvironmentManager
         string pattern = @"^\s*- code:\s*[""]?\s*[""]?\s*$";
         int[] lineNumbers = FindMatchingLines(lines, pattern);
 
-
-        StringBuilder sb = new();
+        StringBuilder sb = new ();
         bool hasError = false;
         if (lineNumbers.Any())
         {
@@ -130,7 +123,6 @@ public class EnvironmentManager : IEnvironmentManager
         return envManifest.EnvironmentSettings;
     }
 
-
     public IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath)
     {
         string manifest = fileSystem.File.ReadAllText(manifestFilePath);
@@ -138,10 +130,9 @@ public class EnvironmentManager : IEnvironmentManager
         return envManifest.Features;
     }
 
-
     private static int[] FindMatchingLines(string[] lines, string pattern)
     {
-        List<int> matchingLineNumbers = new();
+        List<int> matchingLineNumbers = [];
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -151,9 +142,8 @@ public class EnvironmentManager : IEnvironmentManager
             }
         }
 
-        return matchingLineNumbers.ToArray();
+        return[.. matchingLineNumbers];
     }
-
 
     public IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath) =>
         LoadEnvironmentManifestFromFile(manifestFilePath).Settings;
@@ -161,7 +151,7 @@ public class EnvironmentManager : IEnvironmentManager
     public IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath) =>
         LoadEnvironmentManifestFromFile(manifestFilePath).WebServices;
 
-    List<CreatioManifestPackage> IEnvironmentManager.GetPackagesGromManifest(string manifestFileName) =>
+    public List<CreatioManifestPackage> GetPackagesGromManifest(string manifestFileName) =>
         LoadEnvironmentManifestFromFile(manifestFileName).Packages;
 
     public void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false)
@@ -177,20 +167,20 @@ public class EnvironmentManager : IEnvironmentManager
 
     public EnvironmentManifest GetDiffManifest(EnvironmentManifest sourceManifest, EnvironmentManifest targetManifest)
     {
-        EnvironmentManifest diffManifest = new();
-
-        diffManifest.Packages = sourceManifest.Packages
+        EnvironmentManifest diffManifest = new ()
+        {
+            Packages = sourceManifest.Packages
             .Where(p => !targetManifest.Packages.Any(sp => sp.Name == p.Name))
-            .ToList();
+            .ToList(),
 
-        diffManifest.Settings = sourceManifest.Settings
+            Settings = sourceManifest.Settings
             .Where(p => !targetManifest.Settings.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
-            .ToList();
+            .ToList(),
 
-        diffManifest.Features = sourceManifest.Features
+            Features = sourceManifest.Features
             .Where(p => !targetManifest.Features.Any(sp => sp.Code == p.Code && sp.Value == p.Value))
-            .ToList();
-
+            .ToList()
+        };
 
         return diffManifest;
     }
@@ -201,45 +191,59 @@ public interface IEnvironmentManager
     List<SysInstalledApp> GetApplicationsFromManifest(string manifestFilePath);
 
     EnvironmentManifest LoadEnvironmentManifestFromFile(string manifestFilePath);
+
     int ApplyManifest(string manifestFilePath);
 
     List<SysInstalledApp> FindApplicationsInAppHub(string manifestFilePath);
+
     EnvironmentSettings GetEnvironmentFromManifest(string manifestFilePath);
 
     IEnumerable<Feature> GetFeaturesFromManifest(string manifestFilePath);
+
     IEnumerable<CreatioManifestSetting> GetSettingsFromManifest(string manifestFilePath);
+
     IEnumerable<CreatioManifestWebService> GetWebServicesFromManifest(string manifestFilePath);
+
     List<CreatioManifestPackage> GetPackagesGromManifest(string manifestFileName);
+
     void SaveManifestToFile(string manifestFileName, EnvironmentManifest envManifest, bool overwrite = false);
+
     EnvironmentManifest GetDiffManifest(EnvironmentManifest sourceManifest, EnvironmentManifest targetManifest);
 }
 
 public class CreatioManifestSetting
 {
-    [YamlMember(Alias = "code")] public string Code { get; set; }
+    [YamlMember(Alias = "code")]
+    public string Code { get; set; }
 
-    [YamlMember(Alias = "value")] public string Value { get; set; }
+    [YamlMember(Alias = "value")]
+    public string Value { get; set; }
 
-    [YamlMember(Alias = "users_values")] public Dictionary<string, string> UserValues { get; set; } = new();
+    [YamlMember(Alias = "users_values")]
+    public Dictionary<string, string> UserValues { get; set; } = [];
 
     internal bool HasValue() => !string.IsNullOrEmpty(Value) && Value != "undefined";
 }
 
 public class CreatioManifestWebService
 {
-    [YamlMember(Alias = "url")] public string Url { get; set; }
+    [YamlMember(Alias = "url")]
+    public string Url { get; set; }
 
-    [YamlMember(Alias = "name")] public string Name { get; set; }
+    [YamlMember(Alias = "name")]
+    public string Name { get; set; }
 }
 
 public class Feature
 {
-    [YamlMember(Alias = "code")] public string Code { get; set; }
+    [YamlMember(Alias = "code")]
+    public string Code { get; set; }
 
-    [YamlMember(Alias = "value")] public bool Value { get; set; }
+    [YamlMember(Alias = "value")]
+    public bool Value { get; set; }
 
-
-    [YamlMember(Alias = "users_values")] public Dictionary<string, bool> UserValues { get; set; } = new();
+    [YamlMember(Alias = "users_values")]
+    public Dictionary<string, bool> UserValues { get; set; } = [];
 }
 
 public class CreatioManifestPackage
@@ -254,7 +258,7 @@ public class CreatioManifestPackage
     public string Maintainer { get; set; }
 
     [YamlMember(Alias = "schemas", Order = 4)]
-    public List<CreatioManifestPackageSchema> Schemas { get; set; } = new();
+    public List<CreatioManifestPackageSchema> Schemas { get; set; } = [];
 }
 
 public class CreatioManifestPackageSchema

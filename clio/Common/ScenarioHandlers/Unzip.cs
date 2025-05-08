@@ -1,12 +1,13 @@
-using DocumentFormat.OpenXml.Drawing.Wordprocessing;
-using FluentValidation;
-using MediatR;
-using OneOf;
 using System;
 using System.IO;
 using System.IO.Compression;
 using System.Threading;
 using System.Threading.Tasks;
+
+using DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using FluentValidation;
+using MediatR;
+using OneOf;
 
 namespace Clio.Common.ScenarioHandlers;
 
@@ -59,11 +60,12 @@ internal class UnzipRequestHandler : IRequestHandler<UnzipRequest, OneOf<BaseHan
 
     public UnzipRequestHandler()
     {
-        _sequence = new[] { '/', '-', '\\', '|' };
+        _sequence = ['/', '-', '\\', '|'];
         _counter = 0;
     }
 
-    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UnzipRequest request,
+    public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(
+        UnzipRequest request,
         CancellationToken cancellationToken)
     {
         string zipFileName = request.Arguments["from"];
@@ -103,8 +105,8 @@ internal class UnzipRequestHandler : IRequestHandler<UnzipRequest, OneOf<BaseHan
             _counter = 0;
         }
 
-        (int Left, int Top) position = Console.GetCursorPosition();
+        (int left, int top) = Console.GetCursorPosition();
         Console.Write(_sequence[_counter]);
-        Console.SetCursorPosition(position.Left, position.Top);
+        Console.SetCursorPosition(left, top);
     }
 }

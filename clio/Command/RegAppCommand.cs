@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
@@ -11,11 +12,9 @@ using FluentValidation;
 
 namespace Clio.Command;
 
-[Verb("reg-web-app", Aliases = ["reg", "cfg"], HelpText = "Configure a web application settings")]
+[Verb("reg-web-app", Aliases =["reg", "cfg"], HelpText = "Configure a web application settings")]
 public class RegAppOptions : EnvironmentNameOptions
 {
-    #region Properties: Public
-
     [Option('a', "ActiveEnvironment", Required = false, HelpText = "Set as default web application")]
     public string ActiveEnvironment { get; set; }
 
@@ -27,35 +26,15 @@ public class RegAppOptions : EnvironmentNameOptions
 
     [Option("host", Required = false, HelpText = "Computer name where IIS is hosted")]
     public string Host { get; set; }
-
-    #endregion
 }
 
-public class RegAppCommand : Command<RegAppOptions>
+public class RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory,
+    IPowerShellFactory powerShellFactory, ILogger logger): Command<RegAppOptions>
 {
-    #region Fields: Private
-
-    private readonly ISettingsRepository _settingsRepository;
-    private readonly IApplicationClientFactory _applicationClientFactory;
-    private readonly IPowerShellFactory _powerShellFactory;
-    private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory,
-        IPowerShellFactory powerShellFactory, ILogger logger)
-    {
-        _settingsRepository = settingsRepository;
-        _applicationClientFactory = applicationClientFactory;
-        _powerShellFactory = powerShellFactory;
-        _logger = logger;
-    }
-
-    #endregion
-
-    #region Methods: Public
+    private readonly ISettingsRepository _settingsRepository = settingsRepository;
+    private readonly IApplicationClientFactory _applicationClientFactory = applicationClientFactory;
+    private readonly IPowerShellFactory _powerShellFactory = powerShellFactory;
+    private readonly ILogger _logger = logger;
 
     public override int Execute(RegAppOptions options)
     {
@@ -68,7 +47,8 @@ public class RegAppCommand : Command<RegAppOptions>
 
                 sites.ToList().ForEach(site =>
                 {
-                    _settingsRepository.ConfigureEnvironment(site.Key,
+                    _settingsRepository.ConfigureEnvironment(
+                        site.Key,
                         new EnvironmentSettings
                         {
                             Login = "Supervisor",
@@ -90,7 +70,7 @@ public class RegAppCommand : Command<RegAppOptions>
                 return 0;
             }
 
-            EnvironmentSettings environment = new()
+            EnvironmentSettings environment = new ()
             {
                 Login = options.Login,
                 Password = options.Password,
@@ -146,31 +126,17 @@ public class RegAppCommand : Command<RegAppOptions>
             return 1;
         }
     }
-
-    #endregion
 }
 
-[Verb("open-settings", Aliases = ["conf", "configuration", "settings", "os"],
+[Verb("open-settings", Aliases =["conf", "configuration", "settings", "os"],
     HelpText = "Open configuration file")]
 public class OpenCfgOptions
 {
 }
 
-public class OpenCfgCommand : Command<OpenCfgOptions>
+public class OpenCfgCommand(ILogger logger): Command<OpenCfgOptions>
 {
-    #region Fields: Private
-
-    private readonly ILogger _logger;
-
-    #endregion
-
-    #region Constructors: Public
-
-    public OpenCfgCommand(ILogger logger) => _logger = logger;
-
-    #endregion
-
-    #region Methods: Public
+    private readonly ILogger _logger = logger;
 
     public override int Execute(OpenCfgOptions options)
     {
@@ -185,6 +151,4 @@ public class OpenCfgCommand : Command<OpenCfgOptions>
             return 1;
         }
     }
-
-    #endregion
 }

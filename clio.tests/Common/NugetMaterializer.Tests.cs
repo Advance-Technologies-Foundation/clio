@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+
 using Clio.Common;
 using Clio.Workspaces;
 using FluentAssertions;
@@ -12,8 +13,6 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 public class NugetMaterializerTests
 {
-    #region Setup/Teardown
-
     [SetUp]
     public void Setup()
     {
@@ -24,18 +23,9 @@ public class NugetMaterializerTests
         _sut = new NugetMaterializer(_workspacePathBuilder, _fileSystem, _logger, _processExecutor, _propsBuilder);
     }
 
-    #endregion
-
-    #region Constants: Private
-
     private const string CsprojFileName = "test-package" + ".csproj";
     private const string PackageName = "test-package";
     private const string RootPath = "root-path";
-
-    #endregion
-
-    #region Fields: Private
-
     private static readonly Func<string> MockEmptyXmlContent = () => string.Empty;
 
     private static readonly Func<string> MockCsProjWithoutNugetContent = () => @"
@@ -68,17 +58,11 @@ public class NugetMaterializerTests
     private NugetMaterializer _sut;
     private IPropsBuilder _propsBuilder;
 
-    #endregion
-
-    #region Constructors: Public
-
     public NugetMaterializerTests()
     {
         _workspacePathBuilder.BuildPackageProjectPath(Arg.Is(PackageName)).Returns(CsprojFileName);
         _workspacePathBuilder.RootPath.Returns(RootPath);
     }
-
-    #endregion
 
     [Test]
     public void Materializer_ExistsWithMessage_When_CsprojIsBroken()
@@ -87,10 +71,10 @@ public class NugetMaterializerTests
         _fileSystem.ReadAllText(CsprojFileName)
             .Returns(MockCsProjBroken());
 
-        //Act
+        // Act
         _sut.Materialize(PackageName);
 
-        //Assert
+        // Assert
         _logger.Received(1)
             .WriteWarning($"Could not find any PackageReference references in the {CsprojFileName} file");
 
@@ -106,10 +90,10 @@ public class NugetMaterializerTests
         _fileSystem.ReadAllText(CsprojFileName)
             .Returns(MockCsProjWithoutNugetContent());
 
-        //Act
+        // Act
         _sut.Materialize(PackageName);
 
-        //Assert
+        // Assert
         _logger.Received(1)
             .WriteWarning($"Could not find any PackageReference references in the {CsprojFileName} file");
         _propsBuilder.Received(0).Build(PackageName);
@@ -128,10 +112,10 @@ public class NugetMaterializerTests
             .ReadAllText(Arg.Is<string>(s => s.EndsWith("NugetProject.csproj.tpl")))
             .Returns("tpl content");
 
-        //Act
+        // Act
         int actual = _sut.Materialize(PackageName);
 
-        //Assert
+        // Assert
         _fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
         _fileSystem.Received(1).ReadAllText(Arg.Is<string>(s => s.EndsWith("NugetProject.csproj.tpl")));
         _fileSystem.Received(1).ExistsFile(nugetCsprojPath);
@@ -145,8 +129,7 @@ public class NugetMaterializerTests
                 Arg.Is(command),
                 Arg.Is(true),
                 Arg.Is(nugetProjectFolderPath),
-                Arg.Is(false)
-            );
+                Arg.Is(false));
         }
 
         _processExecutor.Received(1).Execute(
@@ -154,8 +137,7 @@ public class NugetMaterializerTests
             Arg.Is($"build {PackageName}.csproj -c Release --no-incremental"),
             Arg.Is(true),
             Arg.Is(nugetProjectFolderPath),
-            Arg.Is(false)
-        );
+            Arg.Is(false));
 
         _propsBuilder.Received(1).Build(PackageName);
         actual.Should().Be(0);
@@ -171,10 +153,10 @@ public class NugetMaterializerTests
         string nugetCsprojPath = Path.Combine(nugetProjectFolderPath, $"{PackageName}.csproj");
         _fileSystem.ExistsFile(nugetCsprojPath).Returns(true);
 
-        //Act
+        // Act
         int actual = _sut.Materialize(PackageName);
 
-        //Assert
+        // Assert
         _fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
         _fileSystem.Received(1).ExistsFile(nugetCsprojPath);
 
@@ -186,8 +168,7 @@ public class NugetMaterializerTests
                 Arg.Is(command),
                 Arg.Is(true),
                 Arg.Is(nugetProjectFolderPath),
-                Arg.Is(false)
-            );
+                Arg.Is(false));
         }
 
         actual.Should().Be(0);
@@ -201,10 +182,10 @@ public class NugetMaterializerTests
         _fileSystem.ReadAllText(CsprojFileName)
             .Returns(MockEmptyXmlContent());
 
-        //Act
+        // Act
         int actual = _sut.Materialize(PackageName);
 
-        //Assert
+        // Assert
         _logger.Received(1)
             .WriteError($"{CsprojFileName} file is empty");
         actual.Should().Be(1);

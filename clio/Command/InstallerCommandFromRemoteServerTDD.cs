@@ -1,18 +1,17 @@
-using Clio.Package;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+
 using Clio.Command.CreatioInstallCommand;
+using Clio.Package;
 
 namespace Clio.Command
 {
-    internal class InstallerCommandFromRemoteServerTDD
+    internal class InstallerCommandFromRemoteServerTDD(InstallerCommand command)
     {
-        private InstallerCommand _command;
-
-        public InstallerCommandFromRemoteServerTDD(InstallerCommand command) => _command = command;
+        private readonly InstallerCommand _command = command;
 
         public void Do() =>
             _command.Execute(new PfInstallerOptions
@@ -54,7 +53,7 @@ namespace Clio
         public static string ToRuntimePlatformString(this CreatioRuntimePlatform runtimePlatform) =>
             runtimePlatform switch
             {
-                CreatioRuntimePlatform.NETFramework => "",
+                CreatioRuntimePlatform.NETFramework => string.Empty,
                 CreatioRuntimePlatform.NET6 => "Net6",
                 _ => throw new NotImplementedException()
             };

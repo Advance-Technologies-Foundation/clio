@@ -1,13 +1,13 @@
-namespace Clio;
-
-using Common;
-using Models;
-using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
+using Common;
+using Models;
+using Newtonsoft.Json;
+
+namespace Clio;
 public interface IMarketplace
 {
     Task<string> GetFileByIdAsync(int id);
@@ -28,7 +28,7 @@ public class Marketplace : IMarketplace, IDisposable
 
     private async Task GetMrkModelById(int id)
     {
-        Uri relativeUri = new($"marketplace/install?appId=com-{id}", UriKind.Relative);
+        Uri relativeUri = new ($"marketplace/install?appId=com-{id}", UriKind.Relative);
         string resposne = await _httpClient.GetStringAsync(relativeUri);
         _model = JsonConvert.DeserializeObject<MarketplaceApplicationModel>(resposne);
     }
@@ -43,7 +43,7 @@ public class Marketplace : IMarketplace, IDisposable
         Console.WriteLine(fullpath);
         byte[] bites = await _httpClient.GetByteArrayAsync(_model.FileLink.PathAndQuery);
 
-        using FileStream fs = new(fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using FileStream fs = new (fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
         await fs.WriteAsync(bites);
         return fullpath;
     }

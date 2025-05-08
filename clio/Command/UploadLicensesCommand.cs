@@ -1,17 +1,12 @@
-namespace Clio.Command.PackageCommand;
-
 using System;
 using System.IO;
 using System.Text.Json;
+
 using Common;
 
-public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>
+namespace Clio.Command.PackageCommand;
+public class UploadLicensesCommand(IApplicationClient applicationClient, EnvironmentSettings settings): RemoteCommand<UploadLicensesOptions>(applicationClient, settings)
 {
-    public UploadLicensesCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-        : base(applicationClient, settings)
-    {
-    }
-
     protected override string ServicePath => @"/ServiceModel/LicenseService.svc/UploadLicenses";
 
     protected override string GetRequestData(UploadLicensesOptions options)
@@ -51,9 +46,6 @@ public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>
     }
 }
 
-public class LicenseInstallationException : Exception
+public class LicenseInstallationException(string message): Exception(message)
 {
-    public LicenseInstallationException(string message) : base(message)
-    {
-    }
 }
