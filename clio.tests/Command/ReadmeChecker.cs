@@ -12,8 +12,8 @@ public class ReadmeChecker
 
     #region Constants: Private
 
-    private const string ReadmeFilePath = @"..\..\..\..\clio\Commands.md";
-    private const string WikiAnchorsFilePath = @"..\..\..\..\clio\Wiki\WikiAnchors.txt";
+    private const string ReadmeFilePath = @"../../../../clio/Commands.md";
+    private const string WikiAnchorsFilePath = @"../../../../clio/Wiki/WikiAnchors.txt";
 
     #endregion
 
@@ -25,9 +25,9 @@ public class ReadmeChecker
     private readonly Func<string, string> _convertCommandNameToSection = commandName =>
     {
         List<string> commandWords = commandName
-                                    .Replace("-", " ")
-                                    .Split(' ')
-                                    .ToList();
+            .Replace("-", " ")
+            .Split(' ')
+            .ToList();
         string expectedSectionName = "## " + string.Join(' ', commandWords);
         return expectedSectionName;
     };
@@ -48,6 +48,7 @@ public class ReadmeChecker
         {
             _namesToCheck.Add(_convertCommandNameToSection(alias));
         }
+
         foreach (string anchorLine in _wikiAnchorsContent)
         {
             string[] commandName = anchorLine.Split(':');
@@ -60,6 +61,7 @@ public class ReadmeChecker
                     {
                         _namesToCheck.Add(possibleSectionName);
                     }
+
                     string mayBeSectionNae = _convertCommandNameToSection(possibleSectionName);
                     if (!_namesToCheck.Contains(mayBeSectionNae))
                     {
@@ -100,9 +102,9 @@ public class ReadmeChecker
     {
         // Check if the type has the VerbAttribute and is hidden
         bool isCommandHidden = commandOptionType
-                               .GetCustomAttributes(typeof(VerbAttribute), true)
-                               .OfType<VerbAttribute>()
-                               .Any(attr => attr.Hidden);
+            .GetCustomAttributes(typeof(VerbAttribute), true)
+            .OfType<VerbAttribute>()
+            .Any(attr => attr.Hidden);
 
         if (isCommandHidden)
         {
