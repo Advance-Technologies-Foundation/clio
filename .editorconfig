@@ -27,6 +27,12 @@ csharp_new_line_before_members_in_object_initializers = true
 csharp_new_line_before_members_in_anonymous_types = true
 csharp_new_line_between_query_expression_clauses = true
 
+# Dictionary formatting
+csharp_new_line_before_members_in_collection_initializers = true
+csharp_prefer_simple_collection_initializer = true:suggestion
+csharp_preferred_collection_initializer_style = each_on_newline:suggestion
+csharp_preferred_dictionary_accessor_style = bracket:suggestion
+
 # Indentation preferences
 csharp_indent_block_contents = true
 csharp_indent_braces = false
