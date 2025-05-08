@@ -431,6 +431,7 @@
 
   <ItemGroup>
     <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
+    <AdditionalFiles Include="..\stylecop.json" Link="stylecop.json" />
     <Content Include="reg\clio_context_menu_win.reg">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -849,6 +850,10 @@
     <PackageReference Include="KubernetesClient" Version="16.0.2" />
     <PackageReference Include="MediatR" Version="12.4.1" />
     <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="12.2.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.13.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Microsoft.Dism" Version="3.3.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.1" />
@@ -862,6 +867,10 @@
     <PackageReference Include="Npgsql" Version="9.0.2" />
     <PackageReference Include="NRedisStack" Version="0.13.1" />
     <PackageReference Include="OneOf" Version="3.0.271" />
+    <PackageReference Include="StyleCop.Analyzers" Version="1.1.118">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="System.IO.Abstractions" Version="21.2.1" />
     <PackageReference Include="System.Json" Version="4.8.0" />
 	<PackageReference Include="Ignore" Version="0.2.1" />
