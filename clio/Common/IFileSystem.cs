@@ -17,6 +17,14 @@ namespace Clio.Common
 
 		#region Methods: Public
 
+		/// <summary>
+		/// Retrieves the hash of a directory using the specified algorithm.
+		/// </summary>
+		/// <param name="directoryPath">The path of the directory to hash.</param>
+		/// <param name="algorithm">The hashing algorithm to use. Defaults to SHA256.</param>
+		/// <returns>A string representing the hash of the directory.</returns>
+		public string GetDirectoryHash(string directoryPath, FileSystem.Algorithm algorithm = FileSystem.Algorithm.SHA256);
+			
 		byte[] ReadAllBytes(string filePath);
 		FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share);
 		public IDirectoryInfo GetDirectoryInfo(string path);

@@ -140,7 +140,8 @@ internal class Program {
 		typeof(InstallTideCommandOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
-		typeof(CustomizeDataProtectionCommandOptions)
+		typeof(CustomizeDataProtectionCommandOptions),
+		typeof(GetAppHashCommandOptions),
 	};
 
 	internal static bool IsCfgOpenCommand;
@@ -258,6 +259,8 @@ internal class Program {
 					LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts)
 						.Execute(opts),
 					CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts)
+						.Execute(opts),
+					GetAppHashCommandOptions opts => Resolve<GetAppHashCommand>(opts)
 						.Execute(opts),
 					var _ => 1
 				};
