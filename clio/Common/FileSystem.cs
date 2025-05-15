@@ -378,6 +378,52 @@ public class FileSystem : IFileSystem
 		return fileInfo;
 	}
 
+	public string GetDirectoryHash(string directoryPath, Algorithm algorithm = Algorithm.SHA256) {
+		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+		
+		if (!_msFileSystem.Directory.Exists(directoryPath)) {
+			throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
+		}
+		
+		// Get all files in directory and subdirectories
+		var files = _msFileSystem.Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories)
+			.OrderBy(f => f) // Sort for consistent hashing regardless of directory enumeration order
+			.ToList();
+		
+		if (files.Count == 0) {
+			return string.Empty;
+		}
+		
+		// Create the appropriate hash algorithm
+		HashAlgorithm hashAlgorithm = algorithm switch {
+			Algorithm.SHA1 => SHA1.Create(),
+			Algorithm.SHA256 => SHA256.Create(),
+			Algorithm.SHA384 => SHA384.Create(),
+			Algorithm.SHA512 => SHA512.Create(),
+			Algorithm.MD5 => MD5.Create(),
+			var _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, null)
+		};
+
+		using HashAlgorithm algorithm1 = hashAlgorithm;
+		using var ms = new MemoryStream();
+		foreach (var file in files) {
+			// Calculate file hash
+			string fileHash = GetFileHash(algorithm, file);
+				
+			// Get relative path to include directory structure in the hash
+			string relativePath = ConvertToRelativePath(file, directoryPath);
+				
+			// Combine file path and hash in a deterministic way
+			byte[] fileData = Encoding.UTF8.GetBytes($"{relativePath}:{fileHash}");
+			ms.Write(fileData, 0, fileData.Length);
+		}
+			
+		// Reset stream position and calculate final hash
+		ms.Position = 0;
+		byte[] directoryHash = hashAlgorithm.ComputeHash(ms);
+		return BitConverter.ToString(directoryHash).Replace("-", string.Empty);
+	}
+
 	#endregion
 
 }

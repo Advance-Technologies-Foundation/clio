@@ -784,5 +784,152 @@ public class FileSystemTests
 
 	#endregion
 
+	#region GetDirectoryHash
+	
+	[Test]
+	public void GetDirectoryHash_ThrowsException_WhenDirectoryDoesNotExist() {
+		// Arrange
+		const string nonExistentDirectory = "nonexistent/directory";
+		
+		// Act & Assert
+		Assert.Throws<DirectoryNotFoundException>(() => 
+			new FileSystem(_mockFileSystem).GetDirectoryHash(nonExistentDirectory, FileSystem.Algorithm.SHA256));
+	}
+	
+	[Test]
+	public void GetDirectoryHash_ReturnsEmptyString_WhenDirectoryIsEmpty() {
+		// Arrange
+		const string emptyDirectory = "empty/directory";
+		var fs = new MockFileSystem();
+		fs.Directory.CreateDirectory(emptyDirectory);
+		
+		// Act
+		string hash = new FileSystem(fs).GetDirectoryHash(emptyDirectory, FileSystem.Algorithm.SHA256);
+		
+		// Assert
+		hash.Should().BeEmpty();
+	}
+	
+	[Test]
+	public void GetDirectoryHash_ReturnsSameHash_ForIdenticalDirectories() {
+		// Arrange
+		var fs = new MockFileSystem();
+		
+		// Create two identical directories with the same files
+		fs.Directory.CreateDirectory("dir1/subdir");
+		fs.Directory.CreateDirectory("dir2/subdir");
+		
+		fs.File.WriteAllText("dir1/file1.txt", "content1");
+		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		fs.File.WriteAllText("dir1/subdir/file3.txt", "content3");
+		
+		fs.File.WriteAllText("dir2/file1.txt", "content1");
+		fs.File.WriteAllText("dir2/file2.txt", "content2");
+		fs.File.WriteAllText("dir2/subdir/file3.txt", "content3");
+		
+		var fileSystem = new FileSystem(fs);
+		
+		// Act
+		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		
+		// Assert
+		hash1.Should().NotBeEmpty();
+		hash1.Should().Be(hash2);
+	}
+	
+	[Test]
+	public void GetDirectoryHash_ReturnsDifferentHash_WhenFileContentsChange() {
+		// Arrange
+		var fs = new MockFileSystem();
+		
+		// Create directory structure
+		fs.Directory.CreateDirectory("dir1");
+		fs.File.WriteAllText("dir1/file1.txt", "content1");
+		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		
+		fs.Directory.CreateDirectory("dir2");
+		fs.File.WriteAllText("dir2/file1.txt", "content1");
+		fs.File.WriteAllText("dir2/file2.txt", "changed content"); // Different content
+		
+		var fileSystem = new FileSystem(fs);
+		
+		// Act
+		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		
+		// Assert
+		hash1.Should().NotBe(hash2);
+	}
+	
+	[Test]
+	public void GetDirectoryHash_ReturnsDifferentHash_WhenFilePathsChange() {
+		// Arrange
+		var fs = new MockFileSystem();
+		
+		// Create directory structure
+		fs.Directory.CreateDirectory("dir1");
+		fs.File.WriteAllText("dir1/file1.txt", "content1");
+		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		
+		fs.Directory.CreateDirectory("dir2");
+		fs.File.WriteAllText("dir2/file1.txt", "content1");
+		fs.File.WriteAllText("dir2/different_name.txt", "content2"); // Same content, different name
+		
+		var fileSystem = new FileSystem(fs);
+		
+		// Act
+		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		
+		// Assert
+		hash1.Should().NotBe(hash2);
+	}
+	
+	[Test]
+	public void GetDirectoryHash_ReturnsDifferentHash_WhenFilePathsChanges() {
+		// Arrange
+		var fs = new MockFileSystem();
+		
+		// Create directory structure
+		fs.Directory.CreateDirectory("dir1");
+		fs.File.WriteAllText("dir1/file1.txt", "content1");
+		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		
+		fs.Directory.CreateDirectory("dir2");
+		fs.Directory.CreateDirectory("dir2/subdir");
+		fs.File.WriteAllText("dir2/file1.txt", "content1");
+		fs.File.WriteAllText("dir2/subdir/file2.txt", "content2"); // Same content, different name
+		
+		var fileSystem = new FileSystem(fs);
+		
+		// Act
+		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		
+		// Assert
+		hash1.Should().NotBe(hash2);
+	}
+	
+	[TestCase(FileSystem.Algorithm.SHA1)]
+	[TestCase(FileSystem.Algorithm.SHA256)]
+	[TestCase(FileSystem.Algorithm.SHA384)]
+	[TestCase(FileSystem.Algorithm.SHA512)]
+	[TestCase(FileSystem.Algorithm.MD5)]
+	public void GetDirectoryHash_WorksWithAllAlgorithms(FileSystem.Algorithm algorithm) {
+		// Arrange
+		var fs = new MockFileSystem();
+		fs.Directory.CreateDirectory("dir");
+		fs.File.WriteAllText("dir/file1.txt", "content1");
+		fs.File.WriteAllText("dir/file2.txt", "content2");
+		
+		// Act
+		string hash = new FileSystem(fs).GetDirectoryHash(@"C:\dir", algorithm);
+		
+		// Assert
+		hash.Should().NotBeEmpty();
+	}
+	
+	#endregion
 	
 }
