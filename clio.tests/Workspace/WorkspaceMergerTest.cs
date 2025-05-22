@@ -1,307 +1,243 @@
-using Autofac;
+using System;
+using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Common;
 using Clio.Package;
-using Clio.Utilities;
 using Clio.Workspaces;
 using FluentAssertions;
-using Moq;
 using NSubstitute;
 using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Abstractions;
-using System.IO.Abstractions.TestingHelpers;
-using System.Linq;
 
-namespace Clio.Tests.Workspace
-{
-    [TestFixture]
-    internal class WorkspaceMergerTest
-    {
-        #region Fields: Private
+namespace Clio.Tests.Workspace;
 
-        private Mock<IWorkspacePathBuilder> _workspacePathBuilderMock;
-        private Mock<IPackageArchiver> _packageArchiverMock;
-        private Mock<IPackageInstaller> _packageInstallerMock;
-        private Mock<IWorkingDirectoriesProvider> _workingDirectoriesProviderMock;
-        private MockFileSystem _fileSystemMock;
-        private Mock<ILogger> _loggerMock;
-        private EnvironmentSettings _testEnvironmentSettings;
-        private WorkspaceMerger _workspaceMerger;
+[TestFixture]
+internal class WorkspaceMergerTest {
 
-        #endregion
+	#region Setup/Teardown
 
-        #region Methods: Private
+	#region SetUp and TearDown
 
-        private void SetupDefaultMocks()
-        {
-            _workspacePathBuilderMock = new Mock<IWorkspacePathBuilder>();
-            _packageArchiverMock = new Mock<IPackageArchiver>();
-            _packageInstallerMock = new Mock<IPackageInstaller>();
-            _workingDirectoriesProviderMock = new Mock<IWorkingDirectoriesProvider>();
-            _fileSystemMock = new MockFileSystem();
-            _loggerMock = new Mock<ILogger>();
+	[SetUp]
+	public void SetUp() {
+		SetupDefaultMocks();
+	}
 
-            _testEnvironmentSettings = new EnvironmentSettings
-            {
-                Uri = "https://test-environment.creatio.com/",
-                Login = "Supervisor",
-                Password = "Supervisor",
-                IsNetCore = true
-            };
+	#endregion
 
-            // Setup workspace paths
-            string[] workspacePaths = new[] { "/path/to/workspace1", "/path/to/workspace2" };
-            foreach (string workspacePath in workspacePaths)
-            {
-                string packagesPath = Path.Combine(workspacePath, "packages");
-                _fileSystemMock.AddDirectory(workspacePath);
-                _fileSystemMock.AddDirectory(packagesPath);
+	#endregion
 
-                // Add sample packages to each workspace
-                _fileSystemMock.AddDirectory(Path.Combine(packagesPath, "Package1"));
-                _fileSystemMock.AddDirectory(Path.Combine(packagesPath, "Package2"));
-                // Add a unique package to the second workspace
-                if (workspacePath.EndsWith("workspace2"))
-                {
-                    _fileSystemMock.AddDirectory(Path.Combine(packagesPath, "UniquePackage"));
-                }
-            }
+	#region Fields: Private
 
-            // Setup workspace path builder behavior
-            _workspacePathBuilderMock.Setup(w => w.PackagesFolderPath).Returns("/path/to/packages");
+	private IWorkspacePathBuilder _workspacePathBuilder;
+	private IPackageArchiver _packageArchiver;
+	private IPackageInstaller _packageInstaller;
+	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private MockFileSystem _fileSystem;
+	private IFileSystem _clioFileSystemMock;
+	private ILogger _logger;
+	private EnvironmentSettings _testEnvironmentSettings;
+	private WorkspaceMerger _workspaceMerger;
 
-            // Setup working directories provider to execute action with a temp directory
-            _workingDirectoriesProviderMock
-                .Setup(w => w.CreateTempDirectory(It.IsAny<Action<string>>()))
-                .Callback<Action<string>>(action => action("/temp"));
+	#endregion
 
-            _workspaceMerger = new WorkspaceMerger(
-                _testEnvironmentSettings,
-                _workspacePathBuilderMock.Object,
-                _packageArchiverMock.Object,
-                _packageInstallerMock.Object,
-                _workingDirectoriesProviderMock.Object,
-                _fileSystemMock,
-                _loggerMock.Object
-            );
-        }
+	#region Methods: Private
 
-        #endregion
+	private void SetupDefaultMocks() {
+		_workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		_packageArchiver = Substitute.For<IPackageArchiver>();
+		_packageInstaller = Substitute.For<IPackageInstaller>();
+		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		_fileSystem = new MockFileSystem();
+		_clioFileSystemMock = new FileSystem(_fileSystem);
+		_logger = Substitute.For<ILogger>();
 
-        #region SetUp and TearDown
+		_testEnvironmentSettings = new EnvironmentSettings {
+			Uri = "https://test-environment.creatio.com/",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = true
+		};
 
-        [SetUp]
-        public void SetUp()
-        {
-            SetupDefaultMocks();
-        }
+		// Setup workspace path builder behavior
+		_workspacePathBuilder.PackagesFolderPath.Returns("/path/to/packages");
 
-        #endregion
+		// Setup working directories provider to execute action with a temp directory
+		_workingDirectoriesProvider
+			.When(w => w.CreateTempDirectory(Arg.Any<Action<string>>()))
+			.Do(callInfo => {
+				Action<string> action = callInfo.ArgAt<Action<string>>(0);
+				action("/temp");
+			});
 
-        #region Test Methods
+		_workspaceMerger = new WorkspaceMerger(_testEnvironmentSettings,
+			_workspacePathBuilder,
+			_packageArchiver,
+			_packageInstaller,
+			_workingDirectoriesProvider,
+			_clioFileSystemMock,
+			_logger);
+	}
 
-        [Test]
-        public void MergeAndInstall_WithValidWorkspaces_ShouldCallPackageInstallerWithMergedZip()
-        {
-            // Arrange
-            string[] workspacePaths = new[] { "/path/to/workspace1", "/path/to/workspace2" };
-            string tempDir = "/temp";
-            string rootPackedDir = Path.Combine(tempDir, "MergedCreatioPackages");
-            string resultZipPath = Path.Combine(tempDir, "MergedCreatioPackages.zip");
+	#endregion
 
-            _workspacePathBuilderMock.SetupSequence(w => w.RootPath)
-                .Returns(workspacePaths[0])
-                .Returns(workspacePaths[1]);
+	#region Test Methods
 
-            _workspacePathBuilderMock.SetupSequence(w => w.PackagesFolderPath)
-                .Returns(Path.Combine(workspacePaths[0], "packages"))
-                .Returns(Path.Combine(workspacePaths[1], "packages"));
+	[Test]
+	public void MergeAndInstall_WithValidWorkspaces_ShouldCallPackageInstallerWithMergedZip() {
+		// Arrange
+		string[] workspacePaths = ["/path/to/workspace1", "/path/to/workspace2"];
+		const string tempDir = "/temp";
+		string resultZipPath = Path.Combine(tempDir, "MergedCreatioPackages.zip");
 
-            // Setup filesystem directory existence check
-            foreach (string workspacePath in workspacePaths)
-            {
-                string packagesPath = Path.Combine(workspacePath, "packages");
-                _fileSystemMock.AddDirectory(workspacePath);
-                _fileSystemMock.AddDirectory(packagesPath);
-            }
+		// Setup sequence of RootPath calls
+		_workspacePathBuilder.RootPath.Returns(workspacePaths[0], workspacePaths[1]);
 
-            _fileSystemMock.AddDirectory(tempDir);
-            _fileSystemMock.AddFile(resultZipPath, new MockFileData("test zip content"));
+		// Setup sequence of PackagesFolderPath calls
+		_workspacePathBuilder.PackagesFolderPath
+							.Returns(Path.Combine(workspacePaths[0], "packages"),
+								Path.Combine(workspacePaths[1], "packages"));
 
-            // Setup GetDirectories to return package directories
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[0], "packages", "Package1"));
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[0], "packages", "Package2"));
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[1], "packages", "Package3"));
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[1], "packages", "Package4"));
+		foreach (string workspacePath in workspacePaths) {
+			string packagesPath = Path.Combine(workspacePath, "packages");
+			_fileSystem.Directory.CreateDirectory(workspacePath);
+			_fileSystem.Directory.CreateDirectory(packagesPath);
 
-            _packageArchiverMock.Setup(p => p.ZipPackages(rootPackedDir, resultZipPath, true))
-                .Returns(resultZipPath);
+			for (int i = 1; i <= 4; i++) {
+				string packageDir = Path.Combine(packagesPath, $"testpkg_{i}");
+				_fileSystem.Directory.CreateDirectory(packageDir);
+			}
+		}
 
-            // Act
-            _workspaceMerger.MergeAndInstall(workspacePaths);
+		// Act
+		_workspaceMerger.MergeAndInstall(workspacePaths);
 
-            // Assert
-            _packageInstallerMock.Verify(p => p.Install(resultZipPath, _testEnvironmentSettings), Times.Once);
-            _loggerMock.Verify(l => l.WriteInfo(It.IsAny<string>()), Times.AtLeast(3));
-        }
+		// Assert
+		_packageInstaller.Received(1).Install(resultZipPath, _testEnvironmentSettings);
+	}
 
-        [Test]
-        public void MergeAndInstall_WithDuplicatePackages_ShouldSkipDuplicates()
-        {
-            // Arrange
-            string[] workspacePaths = new[] { "/path/to/workspace1", "/path/to/workspace2" };
-            string tempDir = "/temp";
-            string rootPackedDir = Path.Combine(tempDir, "MergedCreatioPackages");
-            string resultZipPath = Path.Combine(tempDir, "MergedCreatioPackages.zip");
+	[Test]
+	public void MergeAndInstall_WithDuplicatePackages_ShouldSkipDuplicates() {
+		// Arrange
+		string[] workspacePaths = ["/path/to/workspace1", "/path/to/workspace2"];
+		foreach (string workspacePath in workspacePaths) {
+			string packagesPath = Path.Combine(workspacePath, "packages");
+			_fileSystem.Directory.CreateDirectory(workspacePath);
+			_fileSystem.Directory.CreateDirectory(packagesPath);
+		}
 
-            _workspacePathBuilderMock.SetupSequence(w => w.RootPath)
-                .Returns(workspacePaths[0])
-                .Returns(workspacePaths[1]);
+		_workspacePathBuilder.RootPath
+							.Returns(workspacePaths[0], workspacePaths[1]);
 
-            _workspacePathBuilderMock.SetupSequence(w => w.PackagesFolderPath)
-                .Returns(Path.Combine(workspacePaths[0], "packages"))
-                .Returns(Path.Combine(workspacePaths[1], "packages"));
+		_workspacePathBuilder.PackagesFolderPath
+							.Returns(Path.Combine(workspacePaths[0], "packages"),
+								Path.Combine(workspacePaths[1], "packages"));
 
-            // Setup filesystem
-            foreach (string workspacePath in workspacePaths)
-            {
-                string packagesPath = Path.Combine(workspacePath, "packages");
-                _fileSystemMock.AddDirectory(workspacePath);
-                _fileSystemMock.AddDirectory(packagesPath);
-            }
+		// Set up common and unique package directories
+		const string commonDir = "Common";
+		const string unique1Dir = "Unique1";
+		const string unique2Dir = "Unique2";
 
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[0], "packages", "Common"));
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[0], "packages", "Unique1"));
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[1], "packages", "Common"));
-            _fileSystemMock.AddDirectory(Path.Combine(workspacePaths[1], "packages", "Unique2"));
+		_fileSystem.Directory.CreateDirectory(Path.Combine(workspacePaths[0], "packages", commonDir));
+		_fileSystem.Directory.CreateDirectory(Path.Combine(workspacePaths[0], "packages", unique1Dir));
+		_fileSystem.Directory.CreateDirectory(Path.Combine(workspacePaths[1], "packages", commonDir));
+		_fileSystem.Directory.CreateDirectory(Path.Combine(workspacePaths[1], "packages", unique2Dir));
 
-            _fileSystemMock.AddDirectory(tempDir);
-            _fileSystemMock.AddFile(resultZipPath, new MockFileData("test zip content"));
+		// Act
+		_workspaceMerger.MergeAndInstall(workspacePaths);
 
-            _packageArchiverMock.Setup(p => p.ZipPackages(rootPackedDir, resultZipPath, true))
-                .Returns(resultZipPath);
+		// Assert
+		// Verify that Pack is called exactly 3 times - once for each unique package
+		_packageArchiver.Received(3).Pack(Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Is<bool>(x => x == true),
+			Arg.Is<bool>(x => x == true));
 
-            // Act
-            _workspaceMerger.MergeAndInstall(workspacePaths);
+		// Verify warning for duplicate package was logged
+		_logger.Received(1).WriteWarning(Arg.Is<string>(s => s.Contains("already processed")));
+	}
 
-            // Assert
-            // Verify that Pack is called exactly 3 times - once for each unique package
-            _packageArchiverMock.Verify(
-                p => p.Pack(It.IsAny<string>(), It.IsAny<string>(), true, true),
-                Times.Exactly(3)
-            );
+	[Test]
+	public void MergeToZip_WithValidWorkspaces_ReturnsCorrectZipPath() {
+		// Arrange
+		string[] workspacePaths = ["/path/to/workspace1", "/path/to/workspace2"];
+		const string outputPath = "/output";
+		const string zipFileName = "TestMergedPackages";
+		string expectedResultPath = Path.Combine(outputPath, $"{zipFileName}.zip");
 
-            // Verify warning for duplicate package was logged
-            _loggerMock.Verify(
-                l => l.WriteWarning(It.Is<string>(s => s.Contains("already processed"))),
-                Times.Once
-            );
-        }
+		_workspacePathBuilder.RootPath
+							.Returns(workspacePaths[0], workspacePaths[1]);
 
-        [Test]
-        public void MergeToZip_WithValidWorkspaces_ReturnsCorrectZipPath()
-        {
-            // Arrange
-            string[] workspacePaths = new[] { "/path/to/workspace1", "/path/to/workspace2" };
-            string outputPath = "/output";
-            string zipFileName = "TestMergedPackages";
-            string tempDir = "/temp";
-            string rootPackedDir = Path.Combine(tempDir, zipFileName);
-            string tempZipPath = Path.Combine(tempDir, $"{zipFileName}.zip");
-            string expectedResultPath = Path.Combine(outputPath, $"{zipFileName}.zip");
+		_workspacePathBuilder.PackagesFolderPath
+							.Returns(Path.Combine(workspacePaths[0], "packages"),
+								Path.Combine(workspacePaths[1], "packages"));
 
-            _workspacePathBuilderMock.SetupSequence(w => w.RootPath)
-                .Returns(workspacePaths[0])
-                .Returns(workspacePaths[1]);
+		// Setup filesystem
+		foreach (string workspacePath in workspacePaths) {
+			string packagesPath = Path.Combine(workspacePath, "packages");
+			_fileSystem.Directory.CreateDirectory(workspacePath);
+			_fileSystem.Directory.CreateDirectory(packagesPath);
 
-            _workspacePathBuilderMock.SetupSequence(w => w.PackagesFolderPath)
-                .Returns(Path.Combine(workspacePaths[0], "packages"))
-                .Returns(Path.Combine(workspacePaths[1], "packages"));
+			// Add test package to each workspace
+			string packageDir = Path.Combine(packagesPath, "TestPackage");
+			_fileSystem.Directory.CreateDirectory(packageDir);
+		}
 
-            // Setup filesystem
-            foreach (string workspacePath in workspacePaths)
-            {
-                string packagesPath = Path.Combine(workspacePath, "packages");
-                _fileSystemMock.AddDirectory(workspacePath);
-                _fileSystemMock.AddDirectory(packagesPath);
-                _fileSystemMock.AddDirectory(Path.Combine(packagesPath, "TestPackage"));
-            }
+		// Act
+		_packageArchiver.When(w => w.ZipPackages(Arg.Any<string>(), Arg.Any<string>(), true))
+						.Do(callInfo => { _clioFileSystemMock.CreateFile(callInfo.ArgAt<string>(1)); });
+		string result = _workspaceMerger.MergeToZip(workspacePaths, outputPath, zipFileName);
 
-            _fileSystemMock.AddDirectory(tempDir);
-            _fileSystemMock.AddDirectory(outputPath);
-            _fileSystemMock.AddFile(tempZipPath, new MockFileData("test zip content"));
+		// Assert
+		result.Should().Be(expectedResultPath);
+		_fileSystem.File.Exists(expectedResultPath);
+	}
 
-            _packageArchiverMock.Setup(p => p.ZipPackages(rootPackedDir, tempZipPath, true))
-                .Returns(tempZipPath);
+	[Test]
+	public void MergeAndInstall_WithNoWorkspacePaths_ThrowsArgumentException() {
+		// Arrange
+		string[] emptyWorkspacePaths = Array.Empty<string>();
 
-            // Act
-            string result = _workspaceMerger.MergeToZip(workspacePaths, outputPath, zipFileName);
+		// Act & Assert
+		Assert.Throws<ArgumentException>(() =>
+			_workspaceMerger.MergeAndInstall(emptyWorkspacePaths));
+	}
 
-            // Assert
-            result.Should().Be(expectedResultPath);
-            _fileSystemMock.FileExists(expectedResultPath).Should().BeTrue();
-        }
+	[Test]
+	public void MergeAndInstall_WithNonExistingWorkspace_ThrowsDirectoryNotFoundException() {
+		// Arrange
+		string[] workspacePaths = new[] {"/path/to/nonexistent"};
 
-        [Test]
-        public void MergeAndInstall_WithNoWorkspacePaths_ThrowsArgumentException()
-        {
-            // Arrange
-            string[] emptyWorkspacePaths = Array.Empty<string>();
+		// Act & Assert
+		Action act = () => _workspaceMerger.MergeAndInstall(workspacePaths);
+		act.Should().Throw<DirectoryNotFoundException>();
+	}
 
-            // Act & Assert
-            Assert.Throws<ArgumentException>(() =>
-                _workspaceMerger.MergeAndInstall(emptyWorkspacePaths)
-            );
-        }
+	[Test]
+	public void MergeToZip_WithNoPackagesFound_ThrowsInvalidOperationException() {
+		// Arrange
+		string[] workspacePaths = ["/path/to/workspace1", "/path/to/workspace2"];
+		const string outputPath = "/output";
+		const string zipFileName = "TestMergedPackages";
 
-        [Test]
-        public void MergeAndInstall_WithNonExistingWorkspace_ThrowsDirectoryNotFoundException()
-        {
-            // Arrange
-            string[] workspacePaths = new[] { "/path/to/nonexistent" };
+		_workspacePathBuilder.RootPath
+							.Returns(workspacePaths[0], workspacePaths[1]);
 
-            // Act & Assert
-            Assert.Throws<DirectoryNotFoundException>(() =>
-                _workspaceMerger.MergeAndInstall(workspacePaths)
-            );
-        }
+		_workspacePathBuilder.PackagesFolderPath
+							.Returns(Path.Combine(workspacePaths[0], "packages"),
+								Path.Combine(workspacePaths[1], "packages"));
 
-        [Test]
-        public void MergeToZip_WithNoPackagesFound_ThrowsInvalidOperationException()
-        {
-            // Arrange
-            string[] workspacePaths = new[] { "/path/to/workspace1", "/path/to/workspace2" };
-            string outputPath = "/output";
-            string zipFileName = "TestMergedPackages";
+		// Setup filesystem with empty packages directories
+		foreach (string workspacePath in workspacePaths) {
+			string packagesPath = Path.Combine(workspacePath, "packages");
+			_fileSystem.Directory.CreateDirectory(workspacePath);
+			_fileSystem.Directory.CreateDirectory(packagesPath);
+		}
 
-            _workspacePathBuilderMock.SetupSequence(w => w.RootPath)
-                .Returns(workspacePaths[0])
-                .Returns(workspacePaths[1]);
+		// Act & Assert
+		Action act = () => _workspaceMerger.MergeToZip(workspacePaths, outputPath, zipFileName);
+		act.Should().Throw<InvalidOperationException>();
+	}
 
-            _workspacePathBuilderMock.SetupSequence(w => w.PackagesFolderPath)
-                .Returns(Path.Combine(workspacePaths[0], "packages"))
-                .Returns(Path.Combine(workspacePaths[1], "packages"));
+	#endregion
 
-            // Setup filesystem with empty packages directories
-            foreach (string workspacePath in workspacePaths)
-            {
-                string packagesPath = Path.Combine(workspacePath, "packages");
-                _fileSystemMock.AddDirectory(workspacePath);
-                _fileSystemMock.AddDirectory(packagesPath);
-                // No package directories added
-            }
-
-            _fileSystemMock.AddDirectory("/output");
-            _fileSystemMock.AddDirectory("/temp");
-
-            // Act & Assert
-            Assert.Throws<InvalidOperationException>(() =>
-                _workspaceMerger.MergeToZip(workspacePaths, outputPath, zipFileName)
-            );
-        }
-
-        #endregion
-    }
 }

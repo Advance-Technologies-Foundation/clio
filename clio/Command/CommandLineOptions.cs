@@ -203,12 +203,12 @@ namespace Clio
 			};
 	}
 
-	[Verb("install-gate", Aliases = new string[] { "update-gate", "gate", "installgate" }, HelpText = "Install clio api gateway to application")]
+	[Verb("install-gate", Aliases = ["update-gate", "gate", "installgate"], HelpText = "Install clio api gateway to application")]
 	internal class InstallGateOptions : EnvironmentNameOptions
 	{
 	}
 
-	[Verb("add-item", Aliases = new string[] { "create" }, HelpText = "Create item in project")]
+	[Verb("add-item", Aliases = ["create"], HelpText = "Create item in project")]
 	internal class ItemOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Item type", Required = true, HelpText = "Item type")]

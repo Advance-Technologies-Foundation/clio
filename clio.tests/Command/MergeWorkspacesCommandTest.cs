@@ -2,7 +2,8 @@ using Clio.Command;
 using Clio.Common;
 using Clio.Workspaces;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -15,8 +16,8 @@ namespace Clio.Tests.Command
     {
         #region Fields: Private
 
-        private Mock<IWorkspaceMerger> _workspaceMergerMock;
-        private Mock<ILogger> _loggerMock;
+        private IWorkspaceMerger _workspaceMerger;
+        private ILogger _logger;
         private MergeWorkspacesCommand _command;
         private string _testOutputPath;
         private string _testZipFileName;
@@ -28,9 +29,9 @@ namespace Clio.Tests.Command
         [SetUp]
         public void SetUp()
         {
-            _workspaceMergerMock = new Mock<IWorkspaceMerger>();
-            _loggerMock = new Mock<ILogger>();
-            _command = new MergeWorkspacesCommand(_workspaceMergerMock.Object, _loggerMock.Object);
+            _workspaceMerger = Substitute.For<IWorkspaceMerger>();
+            _logger = Substitute.For<ILogger>();
+            _command = new MergeWorkspacesCommand(_workspaceMerger, _logger);
             _testOutputPath = Path.Combine(Path.GetTempPath(), "test-output");
             _testZipFileName = "TestMergedPackages";
             
@@ -88,12 +89,9 @@ namespace Clio.Tests.Command
 
             // Assert
             result.Should().Be(0);
-            _workspaceMergerMock.Verify(
-                m => m.MergeAndInstall(
-                    It.Is<string[]>(paths => paths.Length == 2),
-                    _testZipFileName
-                ),
-                Times.Once
+            _workspaceMerger.Received(1).MergeAndInstall(
+                Arg.Is<string[]>(paths => paths.Length == 2),
+                _testZipFileName
             );
         }
 
@@ -110,11 +108,11 @@ namespace Clio.Tests.Command
             };
 
             string expectedZipPath = Path.Combine(_testOutputPath, $"{_testZipFileName}.zip");
-            _workspaceMergerMock.Setup(m => m.MergeToZip(
-                It.Is<string[]>(paths => paths.Length == 2),
+            _workspaceMerger.MergeToZip(
+                Arg.Is<string[]>(paths => paths.Length == 2),
                 _testOutputPath,
                 _testZipFileName
-            )).Returns(expectedZipPath);
+            ).Returns(expectedZipPath);
 
             // Mock needed directories
             foreach (string path in options.WorkspacePaths)
@@ -130,22 +128,16 @@ namespace Clio.Tests.Command
 
             // Assert
             result.Should().Be(0);
-            _workspaceMergerMock.Verify(
-                m => m.MergeToZip(
-                    It.Is<string[]>(paths => paths.Length == 2),
-                    _testOutputPath,
-                    _testZipFileName
-                ),
-                Times.Once
+            _workspaceMerger.Received(1).MergeToZip(
+                Arg.Is<string[]>(paths => paths.Length == 2),
+                _testOutputPath,
+                _testZipFileName
             );
             
             // Should also call MergeAndInstall when install is true
-            _workspaceMergerMock.Verify(
-                m => m.MergeAndInstall(
-                    It.Is<string[]>(paths => paths.Length == 2),
-                    _testZipFileName
-                ),
-                Times.Once
+            _workspaceMerger.Received(1).MergeAndInstall(
+                Arg.Is<string[]>(paths => paths.Length == 2),
+                _testZipFileName
             );
         }
 
@@ -162,11 +154,11 @@ namespace Clio.Tests.Command
             };
 
             string expectedZipPath = Path.Combine(_testOutputPath, $"{_testZipFileName}.zip");
-            _workspaceMergerMock.Setup(m => m.MergeToZip(
-                It.Is<string[]>(paths => paths.Length == 2),
+            _workspaceMerger.MergeToZip(
+                Arg.Is<string[]>(paths => paths.Length == 2),
                 _testOutputPath,
                 _testZipFileName
-            )).Returns(expectedZipPath);
+            ).Returns(expectedZipPath);
 
             // Mock needed directories
             foreach (string path in options.WorkspacePaths)
@@ -182,22 +174,16 @@ namespace Clio.Tests.Command
 
             // Assert
             result.Should().Be(0);
-            _workspaceMergerMock.Verify(
-                m => m.MergeToZip(
-                    It.Is<string[]>(paths => paths.Length == 2),
-                    _testOutputPath,
-                    _testZipFileName
-                ),
-                Times.Once
+            _workspaceMerger.Received(1).MergeToZip(
+                Arg.Is<string[]>(paths => paths.Length == 2),
+                _testOutputPath,
+                _testZipFileName
             );
             
             // MergeAndInstall should not be called
-            _workspaceMergerMock.Verify(
-                m => m.MergeAndInstall(
-                    It.IsAny<string[]>(),
-                    It.IsAny<string>()
-                ),
-                Times.Never
+            _workspaceMerger.DidNotReceive().MergeAndInstall(
+                Arg.Any<string[]>(),
+                Arg.Any<string>()
             );
         }
 
@@ -229,28 +215,19 @@ namespace Clio.Tests.Command
             result.Should().Be(0);
             
             // Neither method should be called
-            _workspaceMergerMock.Verify(
-                m => m.MergeToZip(
-                    It.IsAny<string[]>(),
-                    It.IsAny<string>(),
-                    It.IsAny<string>()
-                ),
-                Times.Never
+            _workspaceMerger.DidNotReceive().MergeToZip(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>()
             );
             
-            _workspaceMergerMock.Verify(
-                m => m.MergeAndInstall(
-                    It.IsAny<string[]>(),
-                    It.IsAny<string>()
-                ),
-                Times.Never
+            _workspaceMerger.DidNotReceive().MergeAndInstall(
+                Arg.Any<string[]>(),
+                Arg.Any<string>()
             );
             
             // Should log a warning
-            _loggerMock.Verify(
-                l => l.WriteWarning(It.Is<string>(s => s.Contains("No action was performed"))),
-                Times.Once
-            );
+            _logger.Received(1).WriteWarning(Arg.Is<string>(s => s.Contains("No action was performed")));
         }
 
         [Test]
@@ -269,10 +246,7 @@ namespace Clio.Tests.Command
 
             // Assert
             result.Should().Be(1);
-            _loggerMock.Verify(
-                l => l.WriteError(It.Is<string>(s => s.Contains("not found"))),
-                Times.Once
-            );
+            _logger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("not found")));
         }
 
         [Test]
@@ -296,20 +270,16 @@ namespace Clio.Tests.Command
             }
 
             // Setup merger to throw exception
-            _workspaceMergerMock.Setup(m => m.MergeAndInstall(
-                It.IsAny<string[]>(),
-                It.IsAny<string>()
-            )).Throws(new InvalidOperationException("Test error"));
+    _workspaceMerger
+        .When(x => x.MergeAndInstall(Arg.Any<string[]>(), Arg.Any<string>()))
+        .Do(x => throw new InvalidOperationException("Test error"));
 
             // Act
             int result = _command.Execute(options);
 
             // Assert
             result.Should().Be(1);
-            _loggerMock.Verify(
-                l => l.WriteError("Test error"),
-                Times.Once
-            );
+            _logger.Received(1).WriteError("Test error");
         }
 
         #endregion

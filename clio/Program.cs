@@ -142,6 +142,7 @@ internal class Program {
 		typeof(CheckWebFarmNodeConfigurationsOptions),
 		typeof(CustomizeDataProtectionCommandOptions),
 		typeof(GetAppHashCommandOptions),
+		typeof(MergeWorkspacesCommandOptions)
 	};
 
 	internal static bool IsCfgOpenCommand;
@@ -261,6 +262,8 @@ internal class Program {
 					CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts)
 						.Execute(opts),
 					GetAppHashCommandOptions opts => Resolve<GetAppHashCommand>(opts)
+						.Execute(opts),
+					MergeWorkspacesCommandOptions opts => Resolve<MergeWorkspacesCommand>(opts)
 						.Execute(opts),
 					var _ => 1
 				};

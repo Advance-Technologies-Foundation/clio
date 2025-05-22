@@ -10,7 +10,7 @@ namespace Clio.Command
 {
 	#region Class: MergeWorkspacesCommandOptions
 
-	[Verb("merge-workspaces", Aliases = new string[] { "mergew" }, 
+	[Verb("merge-workspaces", Aliases = ["mergew"], 
 		HelpText = "Merge packages from multiple workspaces and install them to the environment")]
 	public class MergeWorkspacesCommandOptions : EnvironmentOptions
 	{

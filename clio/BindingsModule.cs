@@ -18,6 +18,7 @@ using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.Utilities;
+using Clio.Workspaces;
 using Clio.YAML;
 using Creatio.Client;
 using k8s;
