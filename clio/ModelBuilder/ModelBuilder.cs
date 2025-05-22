@@ -83,8 +83,16 @@ namespace Clio
 			JToken jt = JToken.Parse(definition);
 			var items = jt.SelectToken("$.schema.columns.Items");
 
+			if(items == null)
+			{
+				Console.WriteLine($"Schema {schema.Key} not found");
+				return;
+			}
+			
 			schema.Value.Description = jt.SelectToken($"$.schema.description.{_opts.Culture}")?.ToString();
 			Dictionary<string, Column> dict = new Dictionary<string, Column>();
+			
+			
 			var columns = items.ToObject<Dictionary<Guid, JObject>>();
 
 			foreach (var item in columns)
