@@ -39,6 +39,8 @@ internal class WorkspaceTest
 		return workspace;
 	}
 
+	
+	
 	[Test]
 	public void PublishWorkspaceTest() {
 		// Arrange
