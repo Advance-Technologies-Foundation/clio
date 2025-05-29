@@ -37,13 +37,14 @@ public class ListInstalledAppsCommand : BaseDataContextCommand<ListInstalledApps
 		table.Columns.Add(nameof(SysInstalledApp.Name));
 		table.Columns.Add(nameof(SysInstalledApp.Code));
 		table.Columns.Add(nameof(SysInstalledApp.Version));
-        
-        var applications = AppDataContextFactory.GetAppDataContext(_provider)
-			.Models<SysInstalledApp>()
-			.ToList();
+		table.Columns.Add(nameof(SysInstalledApp.Description));
+		
+		List<SysInstalledApp> applications = AppDataContextFactory.GetAppDataContext(_provider)
+																.Models<SysInstalledApp>()
+																.ToList();
 
         if (!options.JsonFormat) {
-			applications.ForEach(m => { table.AddRow(m.Name, m.Code, m.Version); });
+			applications.ForEach(m => { table.AddRow(m.Name, m.Code, m.Version, m.Description); });
 			_logger.PrintTable(table);
 		} else {
 			_logger.Write(JsonSerializer.Serialize(applications, new JsonSerializerOptions {

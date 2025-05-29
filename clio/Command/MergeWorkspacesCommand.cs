@@ -64,7 +64,9 @@ namespace Clio.Command
 			{
 				_logger.WriteInfo("Merging workspaces...");
 				
-				string[] workspacePaths = options.WorkspacePaths.ToArray();
+				string[] workspacePaths = options.WorkspacePaths
+												.Where(i=> !string.IsNullOrWhiteSpace(i))
+												.ToArray();
 				
 				// Verify all workspace paths exist
 				foreach (string workspacePath in workspacePaths)
