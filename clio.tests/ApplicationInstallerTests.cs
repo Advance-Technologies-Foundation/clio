@@ -1,6 +1,5 @@
 ﻿using Clio.Common;
 using Clio.Package;
-using Clio.Requests;
 using Clio.Tests.Command;
 using Clio.WebApplication;
 using FluentAssertions;
@@ -17,8 +16,9 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 	public void RestartApplicationAfterInstallPackageInNet6() {
 		string packagePath = "T:\\TestClioPackage.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
-		EnvironmentSettings environmentSettings = new EnvironmentSettings();
-		environmentSettings.IsNetCore = true;
+		EnvironmentSettings environmentSettings = new () {
+			IsNetCore = true
+		};
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		var application = Substitute.For<IApplication>();
 		var packageArchiver = Substitute.For<IPackageArchiver>();
@@ -48,8 +48,9 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 	public void RestartApplicationAfterInstallFolderInNet6() {
 		string packageFolderPath = "T:\\TestClioPackageFolder";
 		FileSystem.AddDirectory(packageFolderPath);
-		EnvironmentSettings environmentSettings = new EnvironmentSettings();
-		environmentSettings.IsNetCore = true;
+		EnvironmentSettings environmentSettings = new() {
+			IsNetCore = true
+		};
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		var application = Substitute.For<IApplication>();
 		var packageArchiver = Substitute.For<IPackageArchiver>();

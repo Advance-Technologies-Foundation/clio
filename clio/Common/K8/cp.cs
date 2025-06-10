@@ -10,96 +10,100 @@ using k8s.Models;
 
 namespace Clio.Common.K8;
 
-internal class Cp
-    {
+internal class Cp {
 
-        private readonly IKubernetes _client;
+	#region Fields: Private
 
-        public Cp(IKubernetes client) {
-            _client = client;
-        }
-        
-        
-        public async Task Copy(V1Pod destPod, string k8Namespace, string containerName, string sourceFilePath, string destinationFilePath ) {
-            await CopyFileToPodAsync(destPod.Metadata.Name, k8Namespace, containerName, sourceFilePath, destinationFilePath);
-        }
+	private readonly IKubernetes _client;
 
+	#endregion
 
-        private void ValidatePathParameters(string sourcePath, string destinationPath)
-        {
-            if (string.IsNullOrWhiteSpace(sourcePath))
-            {
-                throw new ArgumentException($"{nameof(sourcePath)} cannot be null or whitespace");
-            }
+	#region Constructors: Public
 
-            if (string.IsNullOrWhiteSpace(destinationPath))
-            {
-                throw new ArgumentException($"{nameof(destinationPath)} cannot be null or whitespace");
-            }
+	public Cp(IKubernetes client) {
+		_client = client;
+	}
 
-        }
+	#endregion
 
-        public async Task<int> CopyFileToPodAsync(string name, string @namespace, string container, string sourceFilePath, string destinationFilePath, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            // All other parameters are being validated by MuxedStreamNamespacedPodExecAsync called by NamespacedPodExecAsync
-            ValidatePathParameters(sourceFilePath, destinationFilePath);
+	#region Methods: Private
 
-            // The callback which processes the standard input, standard output and standard error of exec method
-            var handler = new ExecAsyncCallback(async (stdIn, stdOut, stdError) =>
-            {
-                var fileInfo = new FileInfo(destinationFilePath);
-                try
-                {
-                    using (var inputFileStream = File.OpenRead(sourceFilePath))
-                    using (var tarOutputStream = new TarOutputStream(stdIn, Encoding.Default))
-                    {
-                        tarOutputStream.IsStreamOwner = false;
+	private static string GetFolderName(string filePath) {
+		string folderName = Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? ".";
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			return folderName?.Replace('\\', '/');
+		}
+		return folderName;
+	}
 
-                        var fileSize = inputFileStream.Length;
-                        var entry = TarEntry.CreateTarEntry(fileInfo.Name);
+	private void ValidatePathParameters(string sourcePath, string destinationPath) {
+		if (string.IsNullOrWhiteSpace(sourcePath)) {
+			throw new ArgumentException($"{nameof(sourcePath)} cannot be null or whitespace");
+		}
 
-                        entry.Size = fileSize;
+		if (string.IsNullOrWhiteSpace(destinationPath)) {
+			throw new ArgumentException($"{nameof(destinationPath)} cannot be null or whitespace");
+		}
+	}
 
-                        tarOutputStream.PutNextEntry(entry);
-                        await inputFileStream.CopyToAsync(tarOutputStream, 81920, cancellationToken);
-                        tarOutputStream.CloseEntry();
-                        tarOutputStream.Flush();
-                    }
+	#endregion
 
-                    await stdIn.FlushAsync();
-                }
-                catch (Exception ex)
-                {
-                    throw new IOException($"Copy command failed: {ex.Message}");
-                }
+	#region Methods: Public
 
-                using StreamReader streamReader = new StreamReader(stdError);
-                while (streamReader.EndOfStream == false)
-                {
-                    string error = await streamReader.ReadToEndAsync();
-                    throw new IOException($"Copy command failed: {error}");
-                }
-            });
+	public async Task CopyAsync(V1Pod destPod, string k8Namespace, string containerName, string sourceFilePath,
+		string destinationFilePath) {
+		await CopyFileToPodAsync(destPod.Metadata.Name, k8Namespace, containerName, sourceFilePath, destinationFilePath);
+	}
 
-            string destinationFolder = GetFolderName(destinationFilePath);
+	public async Task<int> CopyFileToPodAsync(string name, string @namespace, string container, string sourceFilePath,
+		string destinationFilePath, CancellationToken cancellationToken = default) {
+		// All other parameters are being validated by MuxedStreamNamespacedPodExecAsync called by NamespacedPodExecAsync
+		ValidatePathParameters(sourceFilePath, destinationFilePath);
 
-            return await _client.NamespacedPodExecAsync(
-                name,
-                @namespace,
-                container,
-                new string[] { "sh", "-c", $"tar xmf - -C {destinationFolder}" },
-                false,
-                handler,
-                cancellationToken);
-        }
+		// The callback which processes the standard input, standard output and standard error of exec method
+		ExecAsyncCallback handler = async (stdIn, _, stdError) => {
+			FileInfo fileInfo = new(destinationFilePath);
+			try {
+				await using (FileStream inputFileStream = File.OpenRead(sourceFilePath)) {
+					await using (TarOutputStream tarOutputStream = new(stdIn, Encoding.Default)) {
+						tarOutputStream.IsStreamOwner = false;
 
+						long fileSize = inputFileStream.Length;
+						TarEntry entry = TarEntry.CreateTarEntry(fileInfo.Name);
 
-        private static string GetFolderName(string filePath)
-        {
-            string folderName = Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? ".";
-            if(RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-                return folderName?.Replace('\\', '/');
-            }
-            return folderName;
-        }
-    }
+						entry.Size = fileSize;
+
+						await tarOutputStream.PutNextEntryAsync(entry,CancellationToken.None);
+						await inputFileStream.CopyToAsync(tarOutputStream, 81920, cancellationToken);
+						await tarOutputStream.CloseEntryAsync(CancellationToken.None);
+						await tarOutputStream.FlushAsync(CancellationToken.None);
+					}
+				}
+
+				await stdIn.FlushAsync(CancellationToken.None);
+			}
+			catch (Exception ex) {
+				throw new IOException($"Copy command failed: {ex.Message}");
+			}
+
+			using StreamReader streamReader = new(stdError);
+			while (streamReader.EndOfStream == false) {
+				string error = await streamReader.ReadToEndAsync(CancellationToken.None);
+				throw new IOException($"Copy command failed: {error}");
+			}
+		};
+
+		string destinationFolder = GetFolderName(destinationFilePath);
+
+		return await _client.NamespacedPodExecAsync(name,
+			@namespace,
+			container,
+			["sh", "-c", $"tar xmf - -C {destinationFolder}"],
+			false,
+			handler,
+			cancellationToken);
+	}
+
+	#endregion
+
+}

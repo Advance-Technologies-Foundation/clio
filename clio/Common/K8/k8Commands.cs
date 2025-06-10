@@ -187,7 +187,7 @@ public class k8Commands : Ik8Commands
 		V1Pod pod = GetPodByLabel(currentPod.PodLabel);
 		string fullDestFilePath = GetBackupFullDestPath(currentPod, pod, destFileName);
 		Cp cp = new(_client);
-		cp.Copy(pod, K8NNameSpace, currentPod.ContainerName, src, $"{fullDestFilePath}").GetAwaiter().GetResult();
+		cp.CopyAsync(pod, K8NNameSpace, currentPod.ContainerName, src, $"{fullDestFilePath}").GetAwaiter().GetResult();
 	}
 
 	public string DeleteBackupImage(PodType podType, string fileName) {
