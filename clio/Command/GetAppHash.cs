@@ -8,7 +8,12 @@ namespace Clio.Command;
 #region Class: GetAppHashCommandOptions
 
 [Verb("get-app-hash", Aliases = [], HelpText = "Calculate hash for the app")]
-public class GetAppHashCommandOptions { }
+public class GetAppHashCommandOptions {
+
+	[Value(0, MetaName = "Directory", Required = false, HelpText = "Directory to calculate hash for")]
+	public string Directory { get; set; }
+
+}
 
 #endregion
 
@@ -33,7 +38,13 @@ public class GetAppHashCommand : Command<GetAppHashCommandOptions> {
 	#region Methods: Public
 
 	public override int Execute(GetAppHashCommandOptions options) {
-		string hash = _fileSystem.GetDirectoryHash(_workingDirectoriesProvider.CurrentDirectory);
+		
+		string directory  = _workingDirectoriesProvider.CurrentDirectory;
+		if(!string.IsNullOrWhiteSpace(options.Directory) && _fileSystem.ExistsDirectory(options.Directory)) {
+			directory = options.Directory;
+		}
+		
+		string hash = _fileSystem.GetDirectoryHash(directory);
 		_logger.Write(hash);
 		return 0;
 	}

@@ -171,6 +171,11 @@ namespace Clio.Common
 
 		void DeleteDirectoryIfExists(string directoryPath);
 
+		/// <summary>
+		/// Checks if directory exists
+		/// </summary>
+		/// <param name="directoryPath"></param>
+		/// <returns></returns>
 		bool ExistsDirectory(string directoryPath);
 
 		string GetCurrentDirectoryIfEmpty(string directoryPath);
