@@ -11,9 +11,11 @@ using Clio.ComposableApplication;
 using Clio.Package;
 using Clio.Tests.Command;
 using Clio.Tests.Extensions;
+using Common.Logging;
 using FluentAssertions;
 using FluentValidation;
 using Newtonsoft.Json;
+using NSubstitute;
 using NUnit.Framework;
 using FileSystem = System.IO.Abstractions.FileSystem;
 using IZipFile = Clio.Common.IZipFile;
@@ -43,10 +45,11 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests
 
 	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
+		var logger = Substitute.For<ILogger>();
 		//containerBuilder.RegisterType<ZipFileMockWrapper>().As<IZipFile>();
 		containerBuilder
 			.RegisterInstance(
-				new ZipFileMockWrapper(FileSystem, new WorkingDirectoriesProvider(null, new FileSystem())))
+				new ZipFileMockWrapper(FileSystem, new WorkingDirectoriesProvider(logger, new FileSystem())))
 			.As<IZipFile>();
 	}
 
