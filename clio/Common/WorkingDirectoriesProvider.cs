@@ -62,7 +62,11 @@ public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
 	}
 
 	public void CreateTempDirectory(Action<string> onCreated){
+		
+		_logger.WriteInfo("Creating temporary directory...");
 		string tempDirectoryPath = CreateTempDirectory();
+		_logger.WriteInfo($"Created temporary directory {tempDirectoryPath}");
+		
 		try {
 			onCreated(tempDirectoryPath);
 		} finally {
@@ -83,6 +87,7 @@ public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
 		path.CheckArgumentNull(nameof(path));
 		if (_fileSystem.Directory.Exists(path)) {
 			_fileSystem.Directory.Delete(path, true);
+			_logger.WriteInfo($"Deleted temporary directory {path}");
 		}
 	}
 

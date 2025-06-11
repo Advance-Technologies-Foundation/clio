@@ -67,6 +67,13 @@ namespace Clio.Command
 				string[] workspacePaths = options.WorkspacePaths
 												.Where(i=> !string.IsNullOrWhiteSpace(i))
 												.ToArray();
+			
+				_logger.WriteInfo($"Found {workspacePaths.Length} workspaces to merge.");
+				foreach (string workspacePath in workspacePaths)
+				{
+					_logger.WriteInfo($"Workspace: {workspacePath}");
+				}
+				
 				
 				// Verify all workspace paths exist
 				foreach (string workspacePath in workspacePaths)
@@ -99,6 +106,7 @@ namespace Clio.Command
 				}
 				else if (options.Install)
 				{
+					_logger.WriteInfo("Starting MergeAndInstall ...");
 					// Just install without saving
 					_workspaceMerger.MergeAndInstall(workspacePaths, options.ZipFileName);
 					_logger.WriteInfo($"Packages from {workspacePaths.Length} workspaces were successfully merged and installed.");
