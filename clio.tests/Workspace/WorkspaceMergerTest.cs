@@ -112,7 +112,43 @@ internal class WorkspaceMergerTest {
 		_workspaceMerger.MergeAndInstall(workspacePaths);
 
 		// Assert
-		_packageInstaller.Received(1).Install(resultZipPath, _testEnvironmentSettings);
+		_packageInstaller.Received(1).Install(resultZipPath, _testEnvironmentSettings, null);
+	}
+
+	[Test]
+	public void MergeAndInstall_WithSkipBackup_ShouldPassOptionToPackageInstaller() {
+		// Arrange
+		string[] workspacePaths = ["/path/to/workspace1", "/path/to/workspace2"];
+		const string tempDir = "/temp";
+		string resultZipPath = Path.Combine(tempDir, "MergedCreatioPackages.zip");
+
+		// Setup sequence of RootPath calls
+		_workspacePathBuilder.RootPath.Returns(workspacePaths[0], workspacePaths[1]);
+
+		// Setup sequence of PackagesFolderPath calls
+		_workspacePathBuilder.PackagesFolderPath
+							.Returns(Path.Combine(workspacePaths[0], "packages"),
+								Path.Combine(workspacePaths[1], "packages"));
+
+		foreach (string workspacePath in workspacePaths) {
+			string packagesPath = Path.Combine(workspacePath, "packages");
+			_fileSystem.Directory.CreateDirectory(workspacePath);
+			_fileSystem.Directory.CreateDirectory(packagesPath);
+
+			for (int i = 1; i <= 4; i++) {
+				string packageDir = Path.Combine(packagesPath, $"testpkg_{i}");
+				_fileSystem.Directory.CreateDirectory(packageDir);
+			}
+		}
+
+		// Act
+		_workspaceMerger.MergeAndInstall(workspacePaths, skipBackup: true);
+
+		// Assert
+		_packageInstaller.Received(1).Install(
+			Arg.Is<string>(s => s == resultZipPath),
+			Arg.Is<EnvironmentSettings>(e => e == _testEnvironmentSettings),
+			Arg.Is<PackageInstallOptions>(o => o != null && o.SkipBackup == true));
 	}
 
 	[Test]
@@ -154,6 +190,12 @@ internal class WorkspaceMergerTest {
 
 		// Verify warning for duplicate package was logged
 		_logger.Received(1).WriteWarning(Arg.Is<string>(s => s.Contains("already processed")));
+		
+		// Verify package installer is called with null options
+		_packageInstaller.Received(1).Install(
+			Arg.Any<string>(), 
+			_testEnvironmentSettings, 
+			null);
 	}
 
 	[Test]

@@ -30,7 +30,6 @@
 		#endregion
 
 		#region Methods: Protected
-
 		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions) =>
 			packageInstallOptions == null
 				? $"\"{fileName}\""
@@ -42,7 +41,8 @@
 				  $"\"skipConstraints\": \"{packageInstallOptions.SkipConstraints.ToString().ToLower()}\", " +
 				  $"\"skipValidateActions\": \"{packageInstallOptions.SkipValidateActions.ToString().ToLower()}\", " +
 				  $"\"executeValidateActions\": \"{packageInstallOptions.ExecuteValidateActions.ToString().ToLower()}\", " +
-				  $"\"isForceUpdateAllColumns\": \"{packageInstallOptions.IsForceUpdateAllColumns.ToString().ToLower()}\"  " +
+				  $"\"isForceUpdateAllColumns\": \"{packageInstallOptions.IsForceUpdateAllColumns.ToString().ToLower()}\", " +
+				  $"\"skipBackup\": \"{packageInstallOptions.SkipBackup.ToString().ToLower()}\"  " +
 				  " } }";
 
 		#endregion

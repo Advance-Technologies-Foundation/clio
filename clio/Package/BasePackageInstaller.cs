@@ -210,8 +210,12 @@
 			string packageName = UploadPackage(filePath, environmentSettings);
 			string packageCode = packageName.Split('.')[0];
 			_logger.WriteInfo($"{environmentSettings.Uri}");
-			if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
-				return (false, "Dont created backup.");
+			if (packageInstallOptions?.SkipBackup != true) {
+				if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
+					return (false, "Dont created backup.");
+				}
+			} else {
+				_logger.WriteLine("Backup skipped as requested");
 			}
 			(bool success, string logText) =
 				InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);

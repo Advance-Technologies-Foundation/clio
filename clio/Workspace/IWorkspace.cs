@@ -18,7 +18,7 @@ namespace Clio.Workspaces
 		void SaveWorkspaceSettings();
 		void Create(string environmentName, bool isAddedPackageNames = false);
 		void Restore(WorkspaceOptions restoreWorkspaceOptions);
-		void Install(string creatioPackagesZipName = null);
+		void Install(string creatioPackagesZipName = null, bool skipBackup = false);
 		void AddPackageIfNeeded(string packageName);
 		void SaveWorkspaceEnvironment(string environmentName);
 		void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile);

@@ -17,7 +17,7 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
+		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null, PackageInstallOptions packageInstallOptions = null);
 
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
@@ -128,8 +128,8 @@ namespace Clio.Workspaces
 			return applicationZip;
 		}
 
-		private void InstallApplication(string applicationZip){
-			_packageInstaller.Install(applicationZip, _environmentSettings);
+		private void InstallApplication(string applicationZip, PackageInstallOptions packageInstallOptions = null){
+			_packageInstaller.Install(applicationZip, _environmentSettings, packageInstallOptions);
 		}
 
 		private void BuildStandalonePackagesIfNeeded(){
@@ -145,7 +145,7 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null){
+		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null, PackageInstallOptions packageInstallOptions = null){
 			creatioPackagesZipName ??= CreatioPackagesZipName;
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				var rootPackedPackagePath =
@@ -155,7 +155,7 @@ namespace Clio.Workspaces
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
-				InstallApplication(applicationZip);
+				InstallApplication(applicationZip, packageInstallOptions);
 				BuildStandalonePackagesIfNeeded();
 			});
 		}

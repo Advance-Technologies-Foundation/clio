@@ -1,4 +1,5 @@
 using System.Threading;
+using Clio.Package;
 
 namespace Clio.Workspaces
 {
@@ -104,8 +105,10 @@ namespace Clio.Workspaces
 			_workspaceRestorer.Restore(WorkspaceSettings, _environmentSettings, restoreWorkspaceOptions);
 		}
 
-		public void Install(string creatioPackagesZipName = null) =>
-			_workspaceInstaller.Install(WorkspaceSettings.Packages, creatioPackagesZipName);
+		public void Install(string creatioPackagesZipName = null, bool skipBackup = false) {
+			PackageInstallOptions options = skipBackup ? new PackageInstallOptions { SkipBackup = true } : null;
+			_workspaceInstaller.Install(WorkspaceSettings.Packages, creatioPackagesZipName, options);
+		}
 
 		public void AddPackageIfNeeded(string packageName) {
 			if (!IsWorkspace) {

@@ -19,6 +19,9 @@ namespace Clio.Command
 		
 		[Option("TideRepositoryId", Required = false, HelpText = "Update TIde repository by id", Hidden = true)]
 		public string TideRepositoryId { get; set; }
+		
+		[Option("skip-backup", Required = false, Default = false, HelpText = "Skip creating backup when installing packages")]
+		public bool SkipBackup { get; set; }
 	}
 
 	#endregion
@@ -62,7 +65,7 @@ namespace Clio.Command
 			try {
 				Console.WriteLine("Push workspace...");
 				CallbackInfo(options.CallbackProcess, "Push workspace...");
-				_workspace.Install();
+				_workspace.Install(null, options.SkipBackup);
 				
 				if (!string.IsNullOrEmpty(options.TideRepositoryId)) {
 

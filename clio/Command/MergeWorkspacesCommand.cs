@@ -29,6 +29,10 @@ namespace Clio.Command
 		[Option("install", Required = false, Default = true,
 			HelpText = "Whether to install the merged packages into Creatio")]
 		public bool Install { get; set; }
+		
+		[Option("skip-backup", Required = false, Default = false, 
+			HelpText = "Skip creating backup when installing packages")]
+		public bool SkipBackup { get; set; }
 	}
 
 	#endregion
@@ -100,14 +104,14 @@ namespace Clio.Command
 					if (options.Install)
 					{
 						_logger.WriteInfo("Installing the merged packages...");
-						_workspaceMerger.MergeAndInstall(workspacePaths, options.ZipFileName);
+						_workspaceMerger.MergeAndInstall(workspacePaths, options.ZipFileName, options.SkipBackup);
 					}
 				}
 				else if (options.Install)
 				{
 					_logger.WriteInfo("Starting MergeAndInstall ...");
 					// Just install without saving
-					_workspaceMerger.MergeAndInstall(workspacePaths, options.ZipFileName);
+					_workspaceMerger.MergeAndInstall(workspacePaths, options.ZipFileName, options.SkipBackup);
 					_logger.WriteInfo($"Packages from {workspacePaths.Length} workspaces were successfully merged and installed.");
 				}
 				else
