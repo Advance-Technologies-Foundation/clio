@@ -30,7 +30,8 @@
 	[Verb("install-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
 	public class InstallApplicationOptions : InstallOptions
 	{
-
+		[Option("skip-backup", Required = false, Default = false, HelpText = "Skip creating backup when installing application")]
+		public bool SkipBackup { get; set; }
 	}
 
 	#endregion
@@ -59,8 +60,10 @@
 
 		#region Methods: Private
 		private PackageInstallOptions ExtractPackageInstallOptions(InstallApplicationOptions options) {
-			var packageInstallOptions = new PackageInstallOptions();
-			return packageInstallOptions == _packageInstallOptionsDefault
+			var packageInstallOptions = new PackageInstallOptions {
+				SkipBackup = options.SkipBackup
+			};
+			return packageInstallOptions == _packageInstallOptionsDefault && !options.SkipBackup
 				? null
 				: packageInstallOptions;
 		}
@@ -71,8 +74,9 @@
 		public override int Execute(InstallApplicationOptions options) {
 			bool success = false;
 			try {
-				success = _applicationInstaller.Install(options.Name, _environmentSettings,
-					options.ReportPath);
+				PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
+				success = _applicationInstaller.Install(options.Name, _environmentSettings, 
+					packageInstallOptions, options.ReportPath);
 				
 				Console.WriteLine(success ? "Done" : "Error");
 				return success ? 0 : 1;

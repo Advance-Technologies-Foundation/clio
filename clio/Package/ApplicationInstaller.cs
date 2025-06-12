@@ -60,8 +60,8 @@ namespace Clio.Package
 		#region Methods: Public
 
 		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null){
-			return InternalInstall(packagePath, environmentSettings, null, reportPath);
+			PackageInstallOptions packageInstallOptions = null, string reportPath = null){
+			return InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
 		}
 
 		public bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
