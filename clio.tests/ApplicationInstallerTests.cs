@@ -39,7 +39,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			logger,
 			packageLockManager
 		);
-		applicationInstaller.Install(packagePath, environmentSettings);
+		applicationInstaller.Install(packagePath, environmentSettings, null);
 		application.Received(1).Restart();
 	}
 
@@ -74,7 +74,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			logger,
 			packageLockManager
 		);
-		applicationInstaller.Install(packageFolderPath, environmentSettings);
+		applicationInstaller.Install(packageFolderPath, environmentSettings, null);
 		application.Received(1).Restart();
 	}
 
@@ -110,7 +110,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			packageLockManager
 		);
 		Assert.DoesNotThrow(
-			() => applicationInstaller.Install(packageFolderPath, environmentSettings)
+			() => applicationInstaller.Install(packageFolderPath, environmentSettings, null)
 		);
 
 	}
@@ -148,7 +148,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			packageLockManager
 		);
 		GlobalContext.FailOnError = true;
-		bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
+		bool result = applicationInstaller.Install(packageFolderPath, environmentSettings, null);
 		result.Should().BeFalse();
 	}
 

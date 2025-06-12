@@ -17,7 +17,8 @@ namespace Clio.Workspaces
 		/// </summary>
 		/// <param name="workspacePaths">Array of paths to workspace folders.</param>
 		/// <param name="zipFileName">Optional name for the resulting ZIP file. Default is "MergedCreatioPackages".</param>
-		void MergeAndInstall(string[] workspacePaths, string zipFileName = "MergedCreatioPackages");
+		/// <param name="skipBackup">Whether to skip creating backup when installing packages.</param>
+		void MergeAndInstall(string[] workspacePaths, string zipFileName = "MergedCreatioPackages", bool skipBackup = false);
 
 		/// <summary>
 		/// Merges packages from multiple workspaces into a single ZIP file.
@@ -134,10 +135,11 @@ namespace Clio.Workspaces
 			return applicationZip;
 		}
 
-		private void InstallApplication(string applicationZip)
+		private void InstallApplication(string applicationZip, bool skipBackup = false)
 		{
 			_logger.WriteInfo($"Installing application from {applicationZip}");
-			_packageInstaller.Install(applicationZip, _environmentSettings);
+			PackageInstallOptions options = skipBackup ? new PackageInstallOptions { SkipBackup = true } : null;
+			_packageInstaller.Install(applicationZip, _environmentSettings, options);
 		}
 
 		#endregion
@@ -149,7 +151,8 @@ namespace Clio.Workspaces
 		/// </summary>
 		/// <param name="workspacePaths">Array of paths to workspace folders.</param>
 		/// <param name="zipFileName">Optional name for the resulting ZIP file. Default is "MergedCreatioPackages".</param>
-		public void MergeAndInstall(string[] workspacePaths, string zipFileName = MergedPackagesZipName)
+		/// <param name="skipBackup">Whether to skip creating backup when installing packages.</param>
+		public void MergeAndInstall(string[] workspacePaths, string zipFileName = MergedPackagesZipName, bool skipBackup = false)
 		{
 			if (workspacePaths == null || workspacePaths.Length == 0)
 			{
@@ -183,7 +186,7 @@ namespace Clio.Workspaces
 				
 				_logger.WriteInfo($"Total unique packages gathered: {processedPackages.Count}");
 				var applicationZip = ZipPackages(tempDirectory, rootPackedPackagePath, zipFileName);
-				InstallApplication(applicationZip);
+				InstallApplication(applicationZip, skipBackup);
 				_logger.WriteInfo("Installation completed successfully.");
 			});
 		}

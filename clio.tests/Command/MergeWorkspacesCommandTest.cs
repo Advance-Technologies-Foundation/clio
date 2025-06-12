@@ -64,6 +64,40 @@ namespace Clio.Tests.Command
         #region Test Methods
 
         [Test]
+        public void Execute_WithSkipBackup_ShouldCallMergeAndInstallWithSkipBackupOption()
+        {
+            // Arrange
+            var options = new MergeWorkspacesCommandOptions
+            {
+                WorkspacePaths = new[] { "./workspace1", "./workspace3" },
+                ZipFileName = _testZipFileName,
+                Install = true,
+                OutputPath = "",
+                SkipBackup = true
+            };
+
+            // Mock needed directories
+            foreach (string path in options.WorkspacePaths)
+            {
+                if (!Directory.Exists(path))
+                {
+                    Directory.CreateDirectory(path);
+                }
+            }
+
+            // Act
+            int result = _command.Execute(options);
+
+            // Assert
+            result.Should().Be(0);
+            _workspaceMerger.Received(1).MergeAndInstall(
+                Arg.Is<string[]>(paths => paths.Length == 2),
+                _testZipFileName,
+                true
+            );
+        }
+
+        [Test]
         public void Execute_WithValidWorkspacesAndInstall_ShouldCallMergeAndInstall()
         {
             // Arrange
@@ -91,7 +125,8 @@ namespace Clio.Tests.Command
             result.Should().Be(0);
             _workspaceMerger.Received(1).MergeAndInstall(
                 Arg.Is<string[]>(paths => paths.Length == 2),
-                _testZipFileName
+                _testZipFileName,
+                false
             );
         }
 
@@ -137,7 +172,8 @@ namespace Clio.Tests.Command
             // Should also call MergeAndInstall when install is true
             _workspaceMerger.Received(1).MergeAndInstall(
                 Arg.Is<string[]>(paths => paths.Length == 2),
-                _testZipFileName
+                _testZipFileName,
+                false
             );
         }
 
