@@ -629,7 +629,7 @@ clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrat
 ### Update existing settings
 
 ```bash
-clio reg-web-app <ENVIRONMENT_NAME> -u administrator -p password
+clio reg-web-app <ENVIRONMENT_NAME> -l administrator -p password
 ```
 
 ### Set the active environment
