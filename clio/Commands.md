@@ -785,6 +785,10 @@ Push code to an environment via command, then work with it from Creatio
 clio push-workspace -e demo
 ```
 
+Options:
+- `--unlock` (optional): Unlock workspace package after installing workspace to the environment.
+- `--use-application-installer` (optional): Use application installation flow instead of package installation flow.
+
 **IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install additional system package **cliogate** to you environment.
 
 ```bash
