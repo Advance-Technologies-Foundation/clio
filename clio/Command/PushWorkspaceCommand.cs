@@ -6,6 +6,7 @@ namespace Clio.Command
 	using System.Text.Json;
 	using Clio.Command.StartProcess;
 	using Clio.Common;
+	using Clio.Package;
 	using Clio.Workspaces;
 	using CommandLine;
 
@@ -19,6 +20,10 @@ namespace Clio.Command
 		
 		[Option("TideRepositoryId", Required = false, HelpText = "Update TIde repository by id", Hidden = true)]
 		public string TideRepositoryId { get; set; }
+		
+		[Option("use-application-installer", Required = false, 
+			HelpText = "Use ApplicationInstaller instead of PackageInstaller for installation")]
+		public bool UseApplicationInstaller { get; set; }
 	}
 
 	#endregion
@@ -62,7 +67,7 @@ namespace Clio.Command
 			try {
 				Console.WriteLine("Push workspace...");
 				CallbackInfo(options.CallbackProcess, "Push workspace...");
-				_workspace.Install();
+				_workspace.Install(useApplicationInstaller: options.UseApplicationInstaller);
 				
 				if (!string.IsNullOrEmpty(options.TideRepositoryId)) {
 

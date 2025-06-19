@@ -17,7 +17,7 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null);
+		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null, bool useApplicationInstaller = false);
 
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
@@ -47,6 +47,7 @@ namespace Clio.Workspaces
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IApplicationClientFactory _applicationClientFactory;
 		private readonly IPackageInstaller _packageInstaller;
+		private readonly IApplicationInstaller _applicationInstaller;
 		private readonly IPackageArchiver _packageArchiver;
 		private readonly IPackageBuilder _packageBuilder;
 		private readonly IStandalonePackageFileManager _standalonePackageFileManager;
@@ -54,6 +55,7 @@ namespace Clio.Workspaces
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
 		private readonly IOSPlatformChecker _osPlatformChecker;
+		private readonly ILogger _logger;
 		private readonly Lazy<IApplicationClient> _applicationClientLazy;
 
 		#endregion
@@ -65,7 +67,7 @@ namespace Clio.Workspaces
 			IPackageArchiver packageArchiver, IPackageBuilder packageBuilder,
 			IStandalonePackageFileManager standalonePackageFileManager, IServiceUrlBuilder serviceUrlBuilder,
 			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
-			IOSPlatformChecker osPlatformChecker){
+			IOSPlatformChecker osPlatformChecker, ILogger logger, IApplicationInstaller applicationInstaller = null){
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
@@ -77,10 +79,12 @@ namespace Clio.Workspaces
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			osPlatformChecker.CheckArgumentNull(nameof(osPlatformChecker));
+			// applicationInstaller может быть null
 			_environmentSettings = environmentSettings;
 			_workspacePathBuilder = workspacePathBuilder;
 			_applicationClientFactory = applicationClientFactory;
 			_packageInstaller = packageInstaller;
+			_applicationInstaller = applicationInstaller;
 			_packageArchiver = packageArchiver;
 			_packageBuilder = packageBuilder;
 			_standalonePackageFileManager = standalonePackageFileManager;
@@ -88,6 +92,7 @@ namespace Clio.Workspaces
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_osPlatformChecker = osPlatformChecker;
+			_logger = logger;
 			_applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
 		}
 
@@ -128,8 +133,14 @@ namespace Clio.Workspaces
 			return applicationZip;
 		}
 
-		private void InstallApplication(string applicationZip){
-			_packageInstaller.Install(applicationZip, _environmentSettings);
+		private void InstallApplication(string applicationZip, bool useApplicationInstaller = false){
+			if (useApplicationInstaller && _applicationInstaller != null) {
+				_logger.WriteInfo($"Installing workspace packages using ApplicationInstaller...");
+				_applicationInstaller.Install(applicationZip, _environmentSettings);
+				_logger.WriteInfo("Installation completed successfully.");
+			} else {
+				_packageInstaller.Install(applicationZip, _environmentSettings);
+			}
 		}
 
 		private void BuildStandalonePackagesIfNeeded(){
@@ -145,8 +156,14 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null){
+		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null, bool useApplicationInstaller = false){
 			creatioPackagesZipName ??= CreatioPackagesZipName;
+			
+			if (useApplicationInstaller && _applicationInstaller == null) {
+				_logger.WriteWarning("ApplicationInstaller is not available. Falling back to PackageInstaller.");
+				useApplicationInstaller = false;
+			}
+			
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				var rootPackedPackagePath =
 					CreateRootPackedPackageDirectory(creatioPackagesZipName, tempDirectory);
@@ -155,7 +172,7 @@ namespace Clio.Workspaces
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
-				InstallApplication(applicationZip);
+				InstallApplication(applicationZip, useApplicationInstaller);
 				BuildStandalonePackagesIfNeeded();
 			});
 		}
@@ -195,6 +212,8 @@ namespace Clio.Workspaces
 			});
 			return resultApplicationFilePath;
 		}
+		
+
 
 		#endregion
 

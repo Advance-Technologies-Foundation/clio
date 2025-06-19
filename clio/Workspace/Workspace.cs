@@ -7,6 +7,7 @@ namespace Clio.Workspaces
 	using Clio.Command;
 	using Clio.Common;
 	using Clio.ComposableApplication;
+	using Clio.Package;
 	using Clio.UserEnvironment;
 
 
@@ -104,8 +105,11 @@ namespace Clio.Workspaces
 			_workspaceRestorer.Restore(WorkspaceSettings, _environmentSettings, restoreWorkspaceOptions);
 		}
 
-		public void Install(string creatioPackagesZipName = null) =>
-			_workspaceInstaller.Install(WorkspaceSettings.Packages, creatioPackagesZipName);
+		public void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false) =>
+			_workspaceInstaller.Install(WorkspaceSettings.Packages, creatioPackagesZipName, useApplicationInstaller);
+			
+		public void InstallUsingApplicationInstaller(string creatioPackagesZipName = null) =>
+			Install(creatioPackagesZipName, true);
 
 		public void AddPackageIfNeeded(string packageName) {
 			if (!IsWorkspace) {
