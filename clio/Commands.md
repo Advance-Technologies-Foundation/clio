@@ -400,7 +400,7 @@ clio install-nuget-pkg <PACKAGE_NAME_1>[:<PACKAGE_VERSION_1>][,<PACKAGE_NAME_2>[
 
 or you can install several NuGet packages of last versions:
 
-```
+``
 clio install-nuget-pkg <PACKAGE_NAME_1>[,<PACKAGE_NAME_2>,...]> [--Source <URL_NUGET_REPOSITORY>]
 ```
 
@@ -430,7 +430,8 @@ Default value of 'Source' argument: https://www.nuget.org/api/v2
   - [Set system setting](#set-syssetting)
   - [Get system setting](#get-syssetting) 
   - [Features](#set-feature)
-  - [Set base web wervice url](#set-webservice-url)
+  - [Set base web service url](#set-webservice-url)
+  - [Get base web service url](#get-webservice-url)
 
 ## download-app
 
@@ -603,6 +604,22 @@ clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
 
 ```
 
+## get-webservice-url
+
+To get the base URL of existing web services in an environment, use the following command:
+
+```bash
+clio get-webservice-url -e <ENVIRONMENT_NAME>
+```
+
+To get the base URL of a specific web service:
+
+```bash
+clio get-webservice-url <WEB_SERVICE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+Aliases: `gwu`
+
 
 # Environment settings
   - [Create/Update an environment](#reg-web-app)
@@ -732,6 +749,10 @@ clio cdp false -e <ENVIRONMENT_NAME>
   - [Restore workspace](#restore-workspace)
   - [Push code to an environment](#push-workspace)
   - [Build workspace](#build-workspace)
+  - [Configure workspace](#configure-workspace)
+  - [Publish workspace](#publish-workspace)
+  - [Merge workspaces](#merge-workspaces)
+  - [Configure workspace](#configure-workspace)
 
 ## Workspaces
 
@@ -800,6 +821,56 @@ clio install-gate -e demo
 clio build-workspace
 ```
 
+## configure-workspace
+
+To configure workspace settings, such as adding packages and saving environment settings, use the following command:
+
+```bash
+clio cfgw --Packages <PACKAGE_NAME_1>,<PACKAGE_NAME_2>,... -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `--Packages` (optional): Comma-separated list of package names to add to the workspace
+
+Aliases: `cfgw`
+
+## merge-workspaces
+
+To merge packages from multiple workspaces and optionally install them to the environment, use the following command:
+
+```bash
+# Merge and install packages to the environment
+clio merge-workspaces --workspaces <WORKSPACE_PATH_1>,<WORKSPACE_PATH_2> -e <ENVIRONMENT_NAME>
+
+# Merge and save packages as a ZIP file
+clio merge-workspaces --workspaces <WORKSPACE_PATH_1>,<WORKSPACE_PATH_2> --output <OUTPUT_PATH> --name <ZIP_FILE_NAME>
+```
+
+Options:
+- `--workspaces` (required): Comma-separated list of workspace paths to merge
+- `--output` (optional): Path where to save the merged ZIP file. If not specified, ZIP will not be saved
+- `--name` (optional, default: "MergedCreatioPackages"): Name for the resulting ZIP file (without .zip extension)
+- `--install` (optional, default: true): Whether to install the merged packages into Creatio
+
+Aliases: `mergew`
+
+## publish-workspace
+
+To publish a workspace to a ZIP file in an application hub, use the following command:
+
+```bash
+clio publish-workspace --app-name <APP_NAME> --app-version <VERSION> --app-hub <APP_HUB_PATH> --repo-path <WORKSPACE_PATH> -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `-a`, `--app-name` (required): Application name
+- `-v`, `--app-version` (required): Application version
+- `-h`, `--app-hub` (required): Path to application hub
+- `-r`, `--repo-path` (required): Path to application workspace folder
+- `-b`, `--branch` (optional): Branch name
+
+Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
+
 # Development
   - [Convert package](#convert)
   - [Execute assembly](#execute-assembly-code)
@@ -812,6 +883,12 @@ clio build-workspace
   - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
   - [Link Workspace to File Design Mode](#link-from-repository)
   - [Mock data for Unit Tests](#mock-data)
+  - [Calculate App Hash](#get-app-hash)
+  - [Link workspace with T.I.D.E. repository](#link-workspace-with-tide-repository)
+  - [Synchronize environment with Git](#git-sync)
+  - [Get product build info](#get-build-info)
+  - [Show package file content](#show-package-file-content)
+  - [Listen to logs](#listen)
 
 ## convert
 Convert package to project.
@@ -1032,6 +1109,93 @@ To mock data for unit tests with using [ATF].[Repository] use the following comm
 clio mock-data --models D:\Projects\MyProject --data D:\Projects\MyProject\Tests\TestsData  -e MyDevCreatio
 
 ```
+
+## get-app-hash
+
+Calculate a hash value for an application or directory. This is useful for checking if a directory content has changed.
+
+```bash
+# Calculate hash for the current directory
+clio get-app-hash
+
+# Calculate hash for a specific directory
+clio get-app-hash <DIRECTORY_PATH>
+```
+
+## link-workspace-with-tide-repository
+
+To link a workspace with a T.I.D.E. (Terribly Isolated Development Environment) repository, use the following command:
+
+```bash
+clio linkw --repository-id <TIDE_REPOSITORY_ID> -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `-r`, `--repository-id` (required): T.I.D.E repository ID
+
+Aliases: `linkw`
+
+## git-sync
+
+To synchronize your environment with a Git repository, use the following command:
+
+```bash
+clio git-sync --Direction <SYNC_DIRECTION> -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `--Direction` (required): Sets sync direction, can be "git-to-env" or "env-to-git"
+
+Aliases: `sync`
+
+The command executes tasks from the workspace's tasks directory, either `git-to-env.cmd`/`.sh` or `env-to-git.cmd`/`.sh` depending on the direction specified.
+
+## get-build-info
+
+To get information about a Creatio product build based on specified parameters, use the following command:
+
+```bash
+clio get-build-info --Product <PRODUCT> --DBType <DATABASE_TYPE> --RuntimePlatform <NET_PLATFORM>
+```
+
+Options:
+- `--Product`: Product name (e.g., studio, commerce, sales)
+- `--DBType`: Database type (MSSQL or PostgreSQL)
+- `--RuntimePlatform`: .NET platform (Net6 or Framework)
+
+Aliases: `buildinfo`, `bi`
+
+## show-package-file-content
+
+To show file content or directory structure from a package in the Creatio environment, use the following commands:
+
+```bash
+# Show package files structure
+clio show-files --package <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+
+# Show specific file content
+clio show-files --package <PACKAGE_NAME> --file <FILE_PATH> -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `--package` (required): Package name
+- `--file` (optional): File path within the package
+
+Aliases: `show-files`, `files`
+
+## listen
+
+To subscribe to a WebSocket and get real-time logs from a Creatio environment, use the following command:
+
+```bash
+clio listen -e <ENVIRONMENT_NAME> --loglevel <LOG_LEVEL> --logPattern <PATTERN> --FileName <FILE_PATH>
+```
+
+Options:
+- `--loglevel` (optional, default: "All"): Log level (ALL, Debug, Error, Fatal, Info, Trace, Warn)
+- `--logPattern` (optional): Log pattern (i.e. ExceptNoisyLoggers)
+- `--FileName` (optional): File path to save logs into
+- `--Silent` (optional, default: false): Disable messages in console
 
 # Using for CI/CD systems
 
@@ -1315,7 +1479,7 @@ The connection string will be generated based on your existing cluster configura
 
 
 ### Database Restoration
-Initially, the backup file will be copied to a folder that is accessible by the database server.
+Initially, the backup file will be copied to a folder that is accessible to the database server.
 Scripts suitable for both Microsoft SQL and Postgres deployment within a Kubernetes cluster are provided.
 Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and 
 copy files as needed.
@@ -1370,7 +1534,7 @@ You can also specify `DbName` and `BackupFilePath` properties to simplify comman
 ```
 
 ```bash
-clio resrore-db -e <ENVIRONMENT_NAME>
+clio restore-db -e <ENVIRONMENT_NAME>
 ```
 
 ## Uninstall Creatio
