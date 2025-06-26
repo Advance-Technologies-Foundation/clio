@@ -163,9 +163,7 @@
 							SaveLogFile(currentLogContent, _reportPath);
 					}
 					Thread.Sleep(3000);
-				} catch (System.Exception e) {
-					_logger.WriteLine(e.ToString());
-				}
+				} catch {}
 			}
 			return currentLogContent;
 		}
