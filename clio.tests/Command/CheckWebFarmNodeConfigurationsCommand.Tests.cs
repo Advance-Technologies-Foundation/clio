@@ -16,13 +16,14 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 	#region Methods: Protected
 
 	protected override MockFileSystem CreateFs() {
-		MockFileSystem mockFS = base.CreateFs();
-		mockFS.MockExamplesFolder("WebFarm/Node1-Main", @"T:\Node1-Main");
-		mockFS.MockExamplesFolder("WebFarm/Node3-Correct", @"T:\Node3-Correct");
-		mockFS.MockExamplesFolder("WebFarm/Node3-Correct", @"T:\Node4-Correct");
-		mockFS.MockExamplesFolder("WebFarm/Node2-Incorrect", @"T:\Node2-Incorrect");
-		return mockFS;
-	}
+               MockFileSystem mockFS = base.CreateFs();
+               string root = Path.Combine(Path.GetTempPath(), "webfarm");
+               mockFS.MockExamplesFolder("WebFarm/Node1-Main", Path.Combine(root, "Node1-Main"));
+               mockFS.MockExamplesFolder("WebFarm/Node3-Correct", Path.Combine(root, "Node3-Correct"));
+               mockFS.MockExamplesFolder("WebFarm/Node3-Correct", Path.Combine(root, "Node4-Correct"));
+               mockFS.MockExamplesFolder("WebFarm/Node2-Incorrect", Path.Combine(root, "Node2-Incorrect"));
+               return mockFS;
+       }
 
 	#endregion
 
@@ -33,10 +34,14 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 		DirectoryComparer directoryComparer = new DirectoryComparer(clioFileSystem, logger);
 		CheckWebFarmNodeConfigurationsCommand command =
 			new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
-		CheckWebFarmNodeConfigurationsOptions options =
-			new CheckWebFarmNodeConfigurationsOptions {
-				Paths = "T:\\Node1-Main,T:\\Node3-Correct,T:\\Node4-Correct"
-			};
+               string root = Path.Combine(Path.GetTempPath(), "webfarm");
+               CheckWebFarmNodeConfigurationsOptions options =
+                       new CheckWebFarmNodeConfigurationsOptions {
+                               Paths = string.Join(',',
+                                       Path.Combine(root, "Node1-Main"),
+                                       Path.Combine(root, "Node3-Correct"),
+                                       Path.Combine(root, "Node4-Correct"))
+                       };
 		int result = command.Execute(options);
 		result.Should().Be(0);
 	}
@@ -48,10 +53,13 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 		DirectoryComparer directoryComparer = new DirectoryComparer(clioFileSystem, logger);
 		CheckWebFarmNodeConfigurationsCommand command =
 			new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
-		CheckWebFarmNodeConfigurationsOptions options =
-			new CheckWebFarmNodeConfigurationsOptions {
-				Paths = "T:\\Node1-Main,T:\\Node2-Incorrect"
-			};
+               string root = Path.Combine(Path.GetTempPath(), "webfarm");
+               CheckWebFarmNodeConfigurationsOptions options =
+                       new CheckWebFarmNodeConfigurationsOptions {
+                               Paths = string.Join(',',
+                                       Path.Combine(root, "Node1-Main"),
+                                       Path.Combine(root, "Node2-Incorrect"))
+                       };
 		int result = command.Execute(options);
 		result.Should().Be(1);
 	}
@@ -61,7 +69,8 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 		ILogger logger = Substitute.For<ILogger>();
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		var directoryComparer = new DirectoryComparer(clioFileSystem, logger);
-		directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node3-Correct").Should().BeEmpty();
+               string root = Path.Combine(Path.GetTempPath(), "webfarm");
+               directoryComparer.CompareDirectories(Path.Combine(root, "Node1-Main"), Path.Combine(root, "Node3-Correct")).Should().BeEmpty();
 	}
 
 	[Test, Category("Unit")]
@@ -69,7 +78,8 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 		ILogger logger = Substitute.For<ILogger>();
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		var directoryComparer = new DirectoryComparer(clioFileSystem, logger);
-		directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node2-Incorrect").Should().HaveCount(5);
+               string root = Path.Combine(Path.GetTempPath(), "webfarm");
+               directoryComparer.CompareDirectories(Path.Combine(root, "Node1-Main"), Path.Combine(root, "Node2-Incorrect")).Should().HaveCount(5);
 	}
 
 }

@@ -44,7 +44,7 @@ internal class WorkspaceTest
 	[Test]
 	public void PublishWorkspaceTest() {
 		// Arrange
-		string appStorePath = @"C:\Temp\clioAppStore";
+               string appStorePath = Path.Combine(Path.GetTempPath(), "clioAppStore");
 		string appName = "iframe-sample";
 		string appVersion = "1.0.0";
 		string fileName = $"{appName}_{appVersion}.zip";
@@ -75,7 +75,7 @@ internal class WorkspaceTest
 	[TestCase("feature/rnd-2035")]
 	public void PublishWorkspaceWithBranchTest(string branch) {
 		// Arrange
-		string appStorePath = @"C:\Temp\clioAppStore";
+               string appStorePath = Path.Combine(Path.GetTempPath(), "clioAppStore");
 		string appName = "iframe-sample";
 		string appVersion = "1.0.0";
 		string expectedFileName = Clio.Workspaces.Workspace.GetSanitizeFileNameFromString($"{appName}_{branch}_{appVersion}.zip");

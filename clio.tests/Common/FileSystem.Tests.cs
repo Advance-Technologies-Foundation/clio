@@ -830,8 +830,8 @@ public class FileSystemTests
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+               string hash1 = fileSystem.GetDirectoryHash("dir1", FileSystem.Algorithm.SHA256);
+               string hash2 = fileSystem.GetDirectoryHash("dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBeEmpty();
@@ -855,8 +855,8 @@ public class FileSystemTests
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+               string hash1 = fileSystem.GetDirectoryHash("dir1", FileSystem.Algorithm.SHA256);
+               string hash2 = fileSystem.GetDirectoryHash("dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBe(hash2);
@@ -879,8 +879,8 @@ public class FileSystemTests
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+               string hash1 = fileSystem.GetDirectoryHash("dir1", FileSystem.Algorithm.SHA256);
+               string hash2 = fileSystem.GetDirectoryHash("dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBe(hash2);
@@ -904,8 +904,8 @@ public class FileSystemTests
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+               string hash1 = fileSystem.GetDirectoryHash("dir1", FileSystem.Algorithm.SHA256);
+               string hash2 = fileSystem.GetDirectoryHash("dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBe(hash2);
@@ -924,7 +924,7 @@ public class FileSystemTests
 		fs.File.WriteAllText("dir/file2.txt", "content2");
 		
 		// Act
-		string hash = new FileSystem(fs).GetDirectoryHash(@"C:\dir", algorithm);
+               string hash = new FileSystem(fs).GetDirectoryHash("dir", algorithm);
 		
 		// Assert
 		hash.Should().NotBeEmpty();

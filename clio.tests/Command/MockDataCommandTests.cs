@@ -18,9 +18,10 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 	#region Methods: Protected
 
 	protected override MockFileSystem CreateFs(){
-		MockFileSystem mockFS = base.CreateFs();
-		mockFS.MockExamplesFolder("MockDataProjects", @"T:\MockDataProjects");
-		return mockFS;
+               MockFileSystem mockFS = base.CreateFs();
+               string root = Path.Combine(Path.GetTempPath(), "MockDataProjects");
+               mockFS.MockExamplesFolder("MockDataProjects", root);
+               return mockFS;
 	}
 
 	#endregion
@@ -30,10 +31,11 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		// Arrange
 		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
-		MockDataCommandOptions options = new MockDataCommandOptions {
-			Models = @"T:\MockDataProjects",
-			Data = @"T:\MockDataProjects\Tests\MockData"
-		};
+               string root = Path.Combine(Path.GetTempPath(), "MockDataProjects");
+               MockDataCommandOptions options = new MockDataCommandOptions {
+                       Models = root,
+                       Data = Path.Combine(root, "Tests", "MockData")
+               };
 		command.Execute(options);
 		FileSystem.Directory.Exists(options.Models).Should().BeTrue();
 		FileSystem.Directory.Exists(options.Data).Should().BeTrue();
@@ -44,10 +46,11 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		// Arrange
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
-		MockDataCommandOptions options = new MockDataCommandOptions {
-			Models = @"T:/MockDataProjects",
-			Data = @"T:/MockDataProjects/Tests/MockData"
-		};
+               string root = Path.Combine(Path.GetTempPath(), "MockDataProjects");
+               MockDataCommandOptions options = new MockDataCommandOptions {
+                       Models = root.Replace(Path.DirectorySeparatorChar, '/'),
+                       Data = Path.Combine(root, "Tests", "MockData").Replace(Path.DirectorySeparatorChar, '/')
+               };
 		List<string> models = command.FindModels(options.Models);
 		models.Count.Should().Be(3);
 		models.Should().Contain("Contact");
@@ -59,12 +62,13 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		// Arrange
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		IApplicationClient mockCreatioClient = Substitute.For<IApplicationClient>();
-		string contactExpectedContent
-			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Contact.json"));
-		string orderExpectedContent
-			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Order.json"));
-		string accountExpectedContent
-			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Account.json"));
+               string root = Path.Combine(Path.GetTempPath(), "MockDataProjects");
+               string contactExpectedContent
+                       = clioFileSystem.ReadAllText(Path.Combine(root, "Expected", "Contact.json"));
+               string orderExpectedContent
+                       = clioFileSystem.ReadAllText(Path.Combine(root, "Expected", "Order.json"));
+               string accountExpectedContent
+                       = clioFileSystem.ReadAllText(Path.Combine(root, "Expected", "Account.json"));
 		mockCreatioClient
 			.ExecuteGetRequest(Arg.Is<string>(s => s.EndsWith("Contact")), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>()).Returns(contactExpectedContent);
@@ -75,10 +79,10 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 			.ExecuteGetRequest(Arg.Is<string>(s => s.EndsWith("Account")), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>()).Returns(accountExpectedContent);
 		MockDataCommand command = new MockDataCommand(mockCreatioClient, new EnvironmentSettings(), clioFileSystem);
-		MockDataCommandOptions options = new MockDataCommandOptions {
-			Models = @"T:\MockDataProjects",
-			Data = @"T:\MockDataProjects\Tests\MockData"
-		};
+               MockDataCommandOptions options = new MockDataCommandOptions {
+                       Models = root,
+                       Data = Path.Combine(root, "Tests", "MockData")
+               };
 		//Act
 		command.Execute(options);
 
@@ -88,8 +92,8 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		dataFiles.Count().Should().Be(models.Count);
 		foreach (string dataFile in dataFiles) {
 			string model = Path.GetFileNameWithoutExtension(dataFile);
-			string expectedContent
-				= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", $"{model}.json"));
+                       string expectedContent
+                               = clioFileSystem.ReadAllText(Path.Combine(root, "Expected", $"{model}.json"));
 			string actualContent = clioFileSystem.ReadAllText(dataFile);
 			actualContent.Should().Be(expectedContent);
 		}
