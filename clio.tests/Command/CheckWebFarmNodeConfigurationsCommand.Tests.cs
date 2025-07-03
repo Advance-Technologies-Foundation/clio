@@ -17,10 +17,10 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 
 	protected override MockFileSystem CreateFs() {
 		MockFileSystem mockFS = base.CreateFs();
-		mockFS.MockExamplesFolder("WebFarm/Node1-Main", @"T:\Node1-Main");
-		mockFS.MockExamplesFolder("WebFarm/Node3-Correct", @"T:\Node3-Correct");
-		mockFS.MockExamplesFolder("WebFarm/Node3-Correct", @"T:\Node4-Correct");
-		mockFS.MockExamplesFolder("WebFarm/Node2-Incorrect", @"T:\Node2-Incorrect");
+		mockFS.MockExamplesFolder("WebFarm/Node1-Main", GetPlatformPath("T", "Node1-Main"));
+		mockFS.MockExamplesFolder("WebFarm/Node3-Correct", GetPlatformPath("T", "Node3-Correct"));
+		mockFS.MockExamplesFolder("WebFarm/Node3-Correct", GetPlatformPath("T", "Node4-Correct"));
+		mockFS.MockExamplesFolder("WebFarm/Node2-Incorrect", GetPlatformPath("T", "Node2-Incorrect"));
 		return mockFS;
 	}
 
@@ -35,7 +35,11 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 			new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
 		CheckWebFarmNodeConfigurationsOptions options =
 			new CheckWebFarmNodeConfigurationsOptions {
-				Paths = "T:\\Node1-Main,T:\\Node3-Correct,T:\\Node4-Correct"
+				Paths = string.Join(",",
+					GetPlatformPath("T", "Node1-Main"),
+					GetPlatformPath("T", "Node3-Correct"),
+					GetPlatformPath("T", "Node4-Correct")
+				)
 			};
 		int result = command.Execute(options);
 		result.Should().Be(0);
@@ -50,7 +54,10 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 			new CheckWebFarmNodeConfigurationsCommand(logger, clioFileSystem, directoryComparer);
 		CheckWebFarmNodeConfigurationsOptions options =
 			new CheckWebFarmNodeConfigurationsOptions {
-				Paths = "T:\\Node1-Main,T:\\Node2-Incorrect"
+				Paths = string.Join(",",
+					GetPlatformPath("T", "Node1-Main"),
+					GetPlatformPath("T", "Node2-Incorrect")
+				)
 			};
 		int result = command.Execute(options);
 		result.Should().Be(1);
@@ -61,7 +68,9 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 		ILogger logger = Substitute.For<ILogger>();
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		var directoryComparer = new DirectoryComparer(clioFileSystem, logger);
-		directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node3-Correct").Should().BeEmpty();
+		string node1Main = GetPlatformPath("T", "Node1-Main");
+		string node3Correct = GetPlatformPath("T", "Node3-Correct");
+		directoryComparer.CompareDirectories(node1Main, node3Correct).Should().BeEmpty();
 	}
 
 	[Test, Category("Unit")]
@@ -69,7 +78,17 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 		ILogger logger = Substitute.For<ILogger>();
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		var directoryComparer = new DirectoryComparer(clioFileSystem, logger);
-		directoryComparer.CompareDirectories("T:\\Node1-Main", "T:\\Node2-Incorrect").Should().HaveCount(5);
+		string node1Main = GetPlatformPath("T", "Node1-Main");
+		string node2Incorrect = GetPlatformPath("T", "Node2-Incorrect");
+		directoryComparer.CompareDirectories(node1Main, node2Incorrect).Should().HaveCount(5);
+	}
+
+	private static string GetPlatformPath(string disk, string folder) {
+		if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
+			return $"{disk}:\\{folder}";
+		} else {
+			return $"/{disk}/{folder}";
+		}
 	}
 
 }

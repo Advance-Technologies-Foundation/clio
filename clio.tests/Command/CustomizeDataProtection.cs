@@ -32,10 +32,18 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 	#region Methods: Private
 
+	private static string GetPlatformPath(string disk, string folder) {
+		if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
+			return $"{disk}:\\{folder}";
+		} else {
+			return $"/{disk}/{folder}";
+		}
+	}
+
 	private List<IISScannerHandler.RegisteredSite> MockRegisteredSites(Dictionary<string, string> envs, bool mockDir){
 		List<IISScannerHandler.RegisteredSite> sites = [];
 		foreach (KeyValuePair<string, string> keyValuePair in envs) {
-			string sitePath = Path.Join("T:", keyValuePair.Key);
+			string sitePath = GetPlatformPath("T", keyValuePair.Key);
 
 			if (mockDir) {
 				FileSystem.Directory.CreateDirectory(sitePath);
@@ -166,7 +174,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 		//Assert
 		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Environment: {envUri}/, Directory T:\\{envName} does not exist.");
+		_logger.Received(1).WriteError($"Environment: {envUri}/, Directory {GetPlatformPath("T", envName)} does not exist.");
 		_logger.ClearReceivedCalls();
 	}
 
@@ -238,7 +246,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 		//Assert
 		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Did not find appsettings.json in T:\\{envName}");
+		_logger.Received(1).WriteError($"Did not find appsettings.json in {GetPlatformPath("T", envName)}");
 		_logger.ClearReceivedCalls();
 	}
 
@@ -270,7 +278,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 				.Returns(Task.CompletedTask)
 				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
 
-		FileSystem.MockExamplesFolder("Sites/N8_Site", $"T:\\{envName}");
+		FileSystem.MockExamplesFolder("Sites/N8_Site", GetPlatformPath("T", envName));
 
 		//Act
 		int result = _sut.Execute(options);
@@ -280,8 +288,8 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		_logger.Received(1).WriteInfo("DONE");
 		_logger.ClearReceivedCalls();
 
-		FileSystem.File.Exists($"T:\\{envName}\\appsettings.json").Should().BeTrue();
-		string appSettingsContent = FileSystem.File.ReadAllText($"T:\\{envName}\\appsettings.json");
+		FileSystem.File.Exists(Path.Combine(GetPlatformPath("T", envName), "appsettings.json")).Should().BeTrue();
+		string appSettingsContent = FileSystem.File.ReadAllText(Path.Combine(GetPlatformPath("T", envName), "appsettings.json"));
 
 		JsonDocument doc = JsonDocument.Parse(appSettingsContent);
 		JsonElement prop = doc.RootElement.GetProperty("DataProtection").GetProperty("CustomizeDataProtection");
