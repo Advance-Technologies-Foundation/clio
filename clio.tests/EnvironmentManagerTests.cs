@@ -25,8 +25,8 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 		mockFS.AddFile(GetPlatformPath(TestDrive, Path.Combine("MyAppHub", "cliogate", "master", "cliogate_master_2.1.1.zip")), "testbody");
 		mockFS.AddFile(GetPlatformPath(TestDrive, Path.Combine("MyAppHub", "cliogate-netcore", "master", "cliogate-netcore_master_2.0.2.zip")), "testbody");
-		mockFS.AddFile(GetPlatformPath(TestDrive, Path.Combine("MyAppHub", "cliogate-netcore", "master___", "cliogate-netcore_master____2.3.4.zip")), "testbody");
-		mockFS.AddFile(GetPlatformPath(TestDrive, Path.Combine("MyAppHub", "cliogate-netcore", "master_", "cliogate-netcore_master__2.4.6.zip")), "testbody");
+		mockFS.AddFile(GetPlatformPath(TestDrive, Path.Combine("MyAppHub", "cliogate-netcore", "dev1", "cliogate-netcore_dev1_2.3.4.zip")), "testbody");
+		mockFS.AddFile(GetPlatformPath(TestDrive, Path.Combine("MyAppHub", "cliogate-netcore", "dev2", "cliogate-netcore_dev2_2.4.6.zip")), "testbody");
 		return mockFS;
 
 	}
@@ -67,8 +67,8 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 				new []{
 					Path.Combine("/MyAppHub", "cliogate", "master", "cliogate_master_2.1.1.zip"),
 					Path.Combine("/MyAppHub", "cliogate-netcore", "master", "cliogate-netcore_master_2.0.2.zip"),
-					Path.Combine("/MyAppHub", "cliogate-netcore", "master___", "cliogate-netcore_master____2.3.4.zip"),
-					Path.Combine("/MyAppHub", "cliogate-netcore", "master_", "cliogate-netcore_master__2.4.6.zip")
+					Path.Combine("/MyAppHub", "cliogate-netcore", "dev1", "cliogate-netcore_dev1_2.3.4.zip"),
+					Path.Combine("/MyAppHub", "cliogate-netcore", "dev2", "cliogate-netcore_dev2_2.4.6.zip")
 				});
 		}
 	}

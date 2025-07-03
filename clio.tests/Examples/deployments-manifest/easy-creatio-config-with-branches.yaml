@@ -10,11 +10,11 @@ apps:
   - name: cliogate-netcore
     version: "2.3.4"
     apphub: MyAppHub
-    branch: master\|/
+    branch: dev1
   - name: cliogate-netcore
     version: "2.4.6"
     apphub: MyAppHub
-    branch: master<
+    branch: dev2
 
 app_hubs:
   - name: MyAppHub
