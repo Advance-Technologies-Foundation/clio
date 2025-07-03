@@ -40,8 +40,8 @@
 		[Option("id", Required = false, HelpText = "Marketplace application id")]
 		public IEnumerable<int> MarketplaceIds { get; set; }
 
-		[Option("force-compilation", Required = false, HelpText = "Runs compilation after install package")]
-		public bool ForceCompilation { get; set; }
+                [Option("force-compilation", Required = false, HelpText = "Runs compilation after install package", Default = true)]
+                public bool ForceCompilation { get; set; }
 
 		#endregion
 

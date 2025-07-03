@@ -27,6 +27,8 @@ OPTIONS
 
     --Maintainer            -m          Maintainer name
 
+    --force-compilation                 Runs compilation after install package. Enabled by default.
+
 EXAMPLE
     clio push-pkg <PACKAGE_NAME>
         install package from directory you can use the next command: for non 

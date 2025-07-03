@@ -167,6 +167,9 @@ for get installation log file specify report path parameter
 clio push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
+By default the command runs compilation after a successful installation.
+To skip compilation specify `--force-compilation false`.
+
 install one or more applications from marketplace.creatio.com
 
 ```
