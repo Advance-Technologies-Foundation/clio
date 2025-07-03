@@ -1,4 +1,5 @@
-﻿using System.IO.Abstractions.TestingHelpers;
+﻿using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;
@@ -85,9 +86,9 @@ public class CheckWebFarmNodeConfigurationsCommandTestCase : BaseClioModuleTests
 
 	private static string GetPlatformPath(string disk, string folder) {
 		if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
-			return $"{disk}:\\{folder}";
+			return Path.Combine($"{disk}:", folder);
 		} else {
-			return $"/{disk}/{folder}";
+			return Path.Combine(Path.DirectorySeparatorChar + disk, folder);
 		}
 	}
 
