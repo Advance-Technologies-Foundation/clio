@@ -40,10 +40,10 @@
 		[Option("id", Required = false, HelpText = "Marketplace application id")]
 		public IEnumerable<int> MarketplaceIds { get; set; }
 
-               [Option("force-compilation", Required = false,
-                       HelpText = "Runs compilation after installing the package (enabled by default)",
-                       Default = true)]
-               public bool ForceCompilation { get; set; }
+        [Option("force-compilation", Required = false,
+                HelpText = "Runs compilation after installing the package (enabled by default)",
+                Default = true)]
+               public bool? ForceCompilation { get; set; }
 
 		#endregion
 
@@ -136,7 +136,7 @@
 					success = _packageInstaller.Install(options.Name, _environmentSettings,
 						packageInstallOptions, options.ReportPath);
 				}
-				if (options.ForceCompilation && success) {
+				if (options.ForceCompilation ?? success) {
 					CompileConfigurationOptions compileOptions = CreateFromPushPkgOptions(options);
 					success &= _compileConfigurationCommand.Execute(compileOptions) == 0;
 				}
