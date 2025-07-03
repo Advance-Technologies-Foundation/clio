@@ -64,11 +64,14 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 		get
 		{
 			yield return new TestCaseData("easy-creatio-config-with-branches.yaml",
+				
+				
 				new []{
-					Path.Combine("/MyAppHub", "cliogate", "master", "cliogate_master_2.1.1.zip"),
-					Path.Combine("/MyAppHub", "cliogate-netcore", "master", "cliogate-netcore_master_2.0.2.zip"),
-					Path.Combine("/MyAppHub", "cliogate-netcore", "dev1", "cliogate-netcore_dev1_2.3.4.zip"),
-					Path.Combine("/MyAppHub", "cliogate-netcore", "dev2", "cliogate-netcore_dev2_2.4.6.zip")
+					Path.Combine($"{Path.DirectorySeparatorChar}MyAppHub", "cliogate", "master", "cliogate_master_2.1.1.zip"),
+					Path.Combine($"{Path.DirectorySeparatorChar}MyAppHub", "cliogate-netcore", "master", "cliogate-netcore_master_2.0.2.zip"),
+					Path.Combine($"{Path.DirectorySeparatorChar}MyAppHub", "cliogate-netcore", "master", "cliogate-netcore_master_2.0.2.zip"),
+					Path.Combine($"{Path.DirectorySeparatorChar}MyAppHub", "cliogate-netcore", "dev1", "cliogate-netcore_dev1_2.3.4.zip"),
+					Path.Combine($"{Path.DirectorySeparatorChar}MyAppHub", "cliogate-netcore", "dev2", "cliogate-netcore_dev2_2.4.6.zip")
 				});
 		}
 	}
