@@ -166,7 +166,8 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 		//Assert
 		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Environment: {envUri}/, Directory T:\\{envName} does not exist.");
+               string envDir = Path.Combine(Path.GetTempPath(), envName);
+               _logger.Received(1).WriteError($"Environment: {envUri}/, Directory {envDir} does not exist.");
 		_logger.ClearReceivedCalls();
 	}
 
@@ -238,7 +239,8 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 		//Assert
 		result.Should().Be(1);
-		_logger.Received(1).WriteError($"Did not find appsettings.json in T:\\{envName}");
+               string envDir = Path.Combine(Path.GetTempPath(), envName);
+               _logger.Received(1).WriteError($"Did not find appsettings.json in {envDir}");
 		_logger.ClearReceivedCalls();
 	}
 
@@ -270,7 +272,8 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 				.Returns(Task.CompletedTask)
 				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
 
-		FileSystem.MockExamplesFolder("Sites/N8_Site", $"T:\\{envName}");
+               string envDir = Path.Combine(Path.GetTempPath(), envName);
+               FileSystem.MockExamplesFolder("Sites/N8_Site", envDir);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -280,8 +283,9 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		_logger.Received(1).WriteInfo("DONE");
 		_logger.ClearReceivedCalls();
 
-		FileSystem.File.Exists($"T:\\{envName}\\appsettings.json").Should().BeTrue();
-		string appSettingsContent = FileSystem.File.ReadAllText($"T:\\{envName}\\appsettings.json");
+               string envDir = Path.Combine(Path.GetTempPath(), envName);
+               FileSystem.File.Exists(Path.Combine(envDir, "appsettings.json")).Should().BeTrue();
+               string appSettingsContent = FileSystem.File.ReadAllText(Path.Combine(envDir, "appsettings.json"));
 
 		JsonDocument doc = JsonDocument.Parse(appSettingsContent);
 		JsonElement prop = doc.RootElement.GetProperty("DataProtection").GetProperty("CustomizeDataProtection");

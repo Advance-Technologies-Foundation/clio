@@ -43,11 +43,11 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		const string mockFileContent = "file content";
-		string destinationPath = Path.Combine("T:\\DestFolder", archiveName);
+               string destinationPath = Path.Combine(Path.GetTempPath(), "DestFolder", archiveName);
 		const string requestData = "my request data";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, destinationPath, requestData);
 
-		string tempDir = Path.Combine("T:\\Clio", Guid.NewGuid().ToString());
+               string tempDir = Path.Combine(Path.GetTempPath(), "Clio", Guid.NewGuid().ToString());
 		string archiveFilePath = Path.Combine(tempDir, $"{downloadInfo.ArchiveName}");
 		_applicationClientMock
 			.When(c =>
@@ -77,7 +77,7 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
-		string tempDir = Path.Combine("C:\\", Guid.NewGuid().ToString());
+               string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		string destinationPath = Path.Combine(tempDir, archiveName);
 		_applicationClientMock
 			.When(c =>
@@ -136,7 +136,7 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
-		string tempDir = Path.Combine("C:\\", Guid.NewGuid().ToString());
+               string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
 		_applicationClientFactoryMock.CreateClient(Arg.Any<EnvironmentSettings>())
 			.Returns(_applicationClientMock);

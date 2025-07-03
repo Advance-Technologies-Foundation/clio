@@ -22,7 +22,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 	#region Fields: Private
 
-	private const string PackagesPath = @"T:\\";
+       private static readonly string PackagesPath = Path.Combine(Path.GetTempPath(), "packages");
 	private const string PackageNameOne = "TestPackageOne";
 	private const string PackageNameTwo = "TestPackageTwo";
 	private const string PackageNameThree = "TestPackageThree";

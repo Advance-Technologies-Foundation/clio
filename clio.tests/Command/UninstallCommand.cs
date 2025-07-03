@@ -56,9 +56,9 @@ internal class UninstallCreatioCommandTests : BaseCommandTests<UninstallCreatioC
 	public void Execute_ShouldReturn_When_PhysicalPathValidationPasses(){
 
 		//Arrange
-		const string directoryPath = @"C:\some_creatio_folder";
-		var options = new UninstallCreatioCommandOptions{PhysicalPath = directoryPath};
-		FileSystem.AddDirectory(directoryPath);
+               string directoryPath = Path.Combine(Path.GetTempPath(), "some_creatio_folder");
+               var options = new UninstallCreatioCommandOptions{PhysicalPath = directoryPath};
+               FileSystem.AddDirectory(directoryPath);
 		//Act
 		int exitCode  = _sut.Execute(options);
 

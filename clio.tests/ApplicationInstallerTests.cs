@@ -15,7 +15,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 {
 	[Test]
 	public void RestartApplicationAfterInstallPackageInNet6() {
-		string packagePath = "T:\\TestClioPackage.gz";
+               string packagePath = Path.Combine(Path.GetTempPath(), "TestClioPackage.gz");
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		environmentSettings.IsNetCore = true;
@@ -46,7 +46,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 
 	[Test]
 	public void RestartApplicationAfterInstallFolderInNet6() {
-		string packageFolderPath = "T:\\TestClioPackageFolder";
+               string packageFolderPath = Path.Combine(Path.GetTempPath(), "TestClioPackageFolder");
 		FileSystem.AddDirectory(packageFolderPath);
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		environmentSettings.IsNetCore = true;
@@ -80,7 +80,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 
 	[Test]
 	public void CatchRestartApplicationErrorAfterInstallFolderInNet6() {
-		string packageFolderPath = "T:\\TestClioPackageFolder";
+               string packageFolderPath = Path.Combine(Path.GetTempPath(), "TestClioPackageFolder");
 		FileSystem.AddDirectory(packageFolderPath);
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		environmentSettings.IsNetCore = true;
@@ -117,7 +117,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 
 	[Test]
 	public void ReturnErrorApplicationErrorAfterInstallFolderInNet6() {
-		string packageFolderPath = "T:\\TestClioPackageFolder";
+               string packageFolderPath = Path.Combine(Path.GetTempPath(), "TestClioPackageFolder");
 		FileSystem.AddDirectory(packageFolderPath);
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		environmentSettings.IsNetCore = true;
@@ -154,7 +154,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 
 	[Test]
 	public void ReturnSuccessIfApplicationLogContainsSuccessMessage() {
-		string packageFolderPath = "T:\\TestClioPackageFolder";
+               string packageFolderPath = Path.Combine(Path.GetTempPath(), "TestClioPackageFolder");
 		FileSystem.AddDirectory(packageFolderPath);
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		environmentSettings.IsNetCore = true;

@@ -23,7 +23,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	private const string ConnectionStringsFileName = "ConnectionStrings.config";
 	private const string EnvironmentName = "work";
-	private const string InstalledCreatioPath = @"C:\inetpub\wwwroot\work";
+       private static readonly string InstalledCreatioPath = Path.Combine(Path.GetTempPath(), "wwwroot", "work");
 
 	#endregion
 
@@ -213,7 +213,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	public void UninstallByPath_Returns_When_DirectoryDoesNotExist(){
 		//Arrange
 		_loggerMock.ClearReceivedCalls();
-		const string creatioDirectoryPath = @"C:\random_dir";
+               string creatioDirectoryPath = Path.Combine(Path.GetTempPath(), "random_dir");
 
 		//Act
 		_sut.UninstallByPath(creatioDirectoryPath);
