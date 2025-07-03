@@ -15,6 +15,7 @@ namespace Clio.Tests.WebApplication;
 [TestFixture(Category = "Unit")]
 public class DownloaderTests : BaseClioModuleTests
 {
+	private const string TestDrive = "T";
 
 	#region Fields: Private
 
@@ -34,6 +35,13 @@ public class DownloaderTests : BaseClioModuleTests
 		containerBuilder.RegisterInstance(_applicationClientFactoryMock).As<IApplicationClientFactory>();
 	}
 
+	protected override MockFileSystem CreateFs()
+	{
+		var mockFS = base.CreateFs();
+		mockFS.AddDrive(TestDrive, new MockDriveData());
+		return mockFS;
+	}
+
 	#endregion
 
 	[Test]
@@ -43,11 +51,11 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		const string mockFileContent = "file content";
-		string destinationPath = Path.Combine("T:\\DestFolder", archiveName);
+		string destinationPath = Path.Combine(GetPlatformPath(TestDrive, "DestFolder"), archiveName);
 		const string requestData = "my request data";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, destinationPath, requestData);
 
-		string tempDir = Path.Combine("T:\\Clio", Guid.NewGuid().ToString());
+		string tempDir = Path.Combine(GetPlatformPath(TestDrive, "Clio"), Guid.NewGuid().ToString());
 		string archiveFilePath = Path.Combine(tempDir, $"{downloadInfo.ArchiveName}");
 		_applicationClientMock
 			.When(c =>
@@ -77,7 +85,7 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
-		string tempDir = Path.Combine("C:\\", Guid.NewGuid().ToString());
+		string tempDir = Path.Combine(GetPlatformPath("C", ""), Guid.NewGuid().ToString());
 		string destinationPath = Path.Combine(tempDir, archiveName);
 		_applicationClientMock
 			.When(c =>
@@ -136,7 +144,7 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
-		string tempDir = Path.Combine("C:\\", Guid.NewGuid().ToString());
+		string tempDir = Path.Combine(GetPlatformPath("C", ""), Guid.NewGuid().ToString());
 
 		_applicationClientFactoryMock.CreateClient(Arg.Any<EnvironmentSettings>())
 			.Returns(_applicationClientMock);
@@ -174,4 +182,11 @@ public class DownloaderTests : BaseClioModuleTests
 		_loggerMock.ClearReceivedCalls();
 	}
 
+	private static string GetPlatformPath(string disk, string path) {
+		if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
+			return $"{disk}:\\{path}";
+		} else {
+			return $"/{disk}/{path}";
+		}
+	}
 }
