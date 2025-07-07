@@ -173,11 +173,23 @@ install one or more applications from marketplace.creatio.com
 clio push-pkg --id 22966 10096
 ```
 
+to fail installation if warnings are detected in logs (e.g., skipped schemas, failed data imports)
+
+```
+clio push-pkg <PACKAGE_NAME> --fail-on-warning
+```
+
 > [!IMPORTANT]
 > When you work with packages from Application Hub, you need use command push-app with same parameters like push-pkg. For example
 
 ```
 clio push-app C:\Packages\package.gz
+```
+
+for install-application command with failure on warnings
+
+```
+clio install-application <PACKAGE_NAME> --fail-on-warning
 ```
 
 ## compile-package

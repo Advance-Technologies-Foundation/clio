@@ -43,6 +43,9 @@
 		[Option("force-compilation", Required = false, HelpText = "Runs compilation after install package")]
 		public bool ForceCompilation { get; set; }
 
+		[Option("--fail-on-warning", Required = false, HelpText = "Return fail code on warnings (e.g., skipped or failed schemas/data during installation)")]
+		public bool? FailOnWarning { get; set; }
+
 		#endregion
 
 	}
@@ -88,7 +91,8 @@
 				SkipConstraints = options.SkipConstraints ?? false,
 				SkipValidateActions = options.SkipValidateActions ?? false,
 				ExecuteValidateActions = options.ExecuteValidateActions ?? false,
-				IsForceUpdateAllColumns = options.IsForceUpdateAllColumns ?? false
+				IsForceUpdateAllColumns = options.IsForceUpdateAllColumns ?? false,
+				FailOnWarning = options.FailOnWarning ?? false
 			};
 			return packageInstallOptions == _packageInstallOptionsDefault
 				? null

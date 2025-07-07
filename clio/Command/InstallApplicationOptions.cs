@@ -31,7 +31,7 @@
 	public class InstallApplicationOptions : InstallOptions
 	{
 		[Option("--fail-on-warning", Required = false, HelpText = "Return fail code on warnings (e.g., skipped or failed schemas/data during installation)")]
-		public bool FailOnWarning { get; set; }
+		public bool? FailOnWarning { get; set; }
 	}
 
 	#endregion
@@ -61,7 +61,7 @@
 		#region Methods: Private
 		private PackageInstallOptions ExtractPackageInstallOptions(InstallApplicationOptions options) {
 			var packageInstallOptions = new PackageInstallOptions {
-				FailOnWarning = options.FailOnWarning
+				FailOnWarning = options.FailOnWarning ?? false
 			};
 			return packageInstallOptions == _packageInstallOptionsDefault
 				? null
