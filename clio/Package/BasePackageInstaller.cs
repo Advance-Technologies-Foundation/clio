@@ -149,6 +149,28 @@
 				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
 		}
 
+		private bool CheckForWarningsInLog(string logText) {
+			if (string.IsNullOrWhiteSpace(logText)) {
+				return false;
+			}
+			
+			string lowerLog = logText.ToLower();
+			
+			// Check for various warning indicators in installation logs
+			string[] warningPatterns = {
+				"skipped",
+				"failed",
+				"warning",
+				"error",
+				"not installed",
+				"schema not found",
+				"data not imported",
+				"operation skipped"
+			};
+			
+			return warningPatterns.Any(pattern => lowerLog.Contains(pattern));
+		}
+
 		private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings) {
 			var cancellationToken = (CancellationToken)cancellationTokenObject;
 			var currentLogContent = string.Empty;
@@ -198,8 +220,18 @@
 			if (CheckLogsOnSuccessMessage) {
 				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
 			}
+			
+			// Check for warnings if FailOnWarning is enabled
+			bool hasWarnings = false;
+			if (packageInstallOptions?.FailOnWarning == true) {
+				hasWarnings = CheckForWarningsInLog(completeInstallLog);
+				if (hasWarnings) {
+					_logger.WriteLine("Installation completed with warnings. Installation failed due to FailOnWarning setting.");
+				}
+			}
+			
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			var success = (response != null && response.Success || response == null) && successLog;
+			var success = (response != null && response.Success || response == null) && successLog && !hasWarnings;
 			return (success, completeInstallLog);
 		}
 

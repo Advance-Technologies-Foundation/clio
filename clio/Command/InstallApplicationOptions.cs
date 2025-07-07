@@ -30,7 +30,8 @@
 	[Verb("install-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
 	public class InstallApplicationOptions : InstallOptions
 	{
-
+		[Option("--fail-on-warning", Required = false, HelpText = "Return fail code on warnings (e.g., skipped or failed schemas/data during installation)")]
+		public bool FailOnWarning { get; set; }
 	}
 
 	#endregion
@@ -59,7 +60,9 @@
 
 		#region Methods: Private
 		private PackageInstallOptions ExtractPackageInstallOptions(InstallApplicationOptions options) {
-			var packageInstallOptions = new PackageInstallOptions();
+			var packageInstallOptions = new PackageInstallOptions {
+				FailOnWarning = options.FailOnWarning
+			};
 			return packageInstallOptions == _packageInstallOptionsDefault
 				? null
 				: packageInstallOptions;
@@ -71,8 +74,9 @@
 		public override int Execute(InstallApplicationOptions options) {
 			bool success = false;
 			try {
-				success = _applicationInstaller.Install(options.Name, _environmentSettings,
-					options.ReportPath);
+				var packageInstallOptions = ExtractPackageInstallOptions(options);
+				success = _applicationInstaller.InstallWithOptions(options.Name, _environmentSettings,
+					options.ReportPath, packageInstallOptions);
 				
 				Console.WriteLine(success ? "Done" : "Error");
 				return success ? 0 : 1;
