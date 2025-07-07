@@ -44,20 +44,21 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 	}
 
 
-	[Test]
+	[Test, Description("This test checks that the InstallWithOptions method can be called with FailOnWarning set to true.")]
 	public void InstallWithOptionsCallsInstallWithOptionsWhenFailOnWarningIsTrue() {
+		//Arrange
 		string packagePath = "T:\\TestClioPackage.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
-		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var application = Substitute.For<IApplication>();
-		var packageArchiver = Substitute.For<IPackageArchiver>();
-		var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
-		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		var logger = Substitute.For<ILogger>();
-		var packageLockManager = Substitute.For<IPackageLockManager>();
-		var clioFileSystem = new FileSystem(FileSystem);
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IApplication application = Substitute.For<IApplication>();
+		IPackageArchiver packageArchiver = Substitute.For<IPackageArchiver>();
+		ISqlScriptExecutor scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IApplicationLogProvider applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+		ILogger logger = Substitute.For<ILogger>();
+		IPackageLockManager packageLockManager = Substitute.For<IPackageLockManager>();
+		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
 			applicationClientFactory,
@@ -69,12 +70,13 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			logger,
 			packageLockManager
 		);
+		PackageInstallOptions packageInstallOptions = new PackageInstallOptions { FailOnWarning = true };
 		
-		var packageInstallOptions = new PackageInstallOptions { FailOnWarning = true };
-		applicationInstaller.InstallWithOptions(packagePath, environmentSettings, null, packageInstallOptions);
+		//Act
+		Action act = () => applicationInstaller.InstallWithOptions(packagePath, environmentSettings, null, packageInstallOptions);
 		
-		// Test passes if no exception is thrown and method is accessible
-		Assert.Pass("InstallWithOptions method is accessible and can be called with FailOnWarning option");
+		//Assert
+		act.Should().NotThrow("InstallWithOptions method should be accessible and callable with FailOnWarning option");
 	}
 
 	[Test]
