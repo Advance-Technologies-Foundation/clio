@@ -5,7 +5,7 @@ using System.Reflection;
 
 namespace Clio.Command
 {
-	[Verb("info", Aliases = new string[] { "ver","get-version","i" }, HelpText = "Check for Creatio packages updates in NuGet")]
+	[Verb("info", Aliases = ["ver","get-version","i"], HelpText = "Check for Creatio packages updates in NuGet")]
 	public class InfoCommandOptions
 	{
 		[Option("all", Required = false, HelpText = "Get versions for all known components")]
@@ -41,7 +41,7 @@ namespace Clio.Command
 
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.34";
+		private const string _gateVersion = "2.0.0.35";
 		private readonly ILogger _logger;
 
 		public InfoCommand(ILogger logger)

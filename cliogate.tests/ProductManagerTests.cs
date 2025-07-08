@@ -95,5 +95,53 @@ namespace cliogate.tests
 			}
 			return result;
 		}
+	
+		[Test]
+		public void SplitRawData_ReturnsProduct_WithVersionFallback(){
+
+			//Arrange
+			CreatioPathBuilder.RootPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","..","..","..");
+			ProductManager sut = new ProductManager();
+
+			//Act - Test version 8.3.1 (should fallback to 8.2.3)
+			string actual = sut.FindProductNameByPackages(new []{"Studio"},new Version("8.3.1"), false);
+
+			//Assert
+			const string expected = "studio";
+			actual.Should().Be(expected);
+	
+		}
+
+		[Test]
+		public void SplitRawData_ReturnsProduct_WithMajorMinorFallback(){
+
+			//Arrange
+			CreatioPathBuilder.RootPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","..","..","..");
+			ProductManager sut = new ProductManager();
+
+			//Act - Test version 8.1.99 (should fallback to highest 8.1.x)
+			string actual = sut.FindProductNameByPackages(new []{"Studio"},new Version("8.1.99"), false);
+
+			//Assert
+			const string expected = "studio";
+			actual.Should().Be(expected);
+	
+		}
+
+		[Test]
+		public void SplitRawData_ReturnsUnknown_WhenNoCompatibleVersion(){
+
+			//Arrange
+			CreatioPathBuilder.RootPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","..","..","..");
+			ProductManager sut = new ProductManager();
+
+			//Act - Test version 9.0.0 (should return UNKNOWN)
+			string actual = sut.FindProductNameByPackages(new []{"Studio"},new Version("9.0.0"), false);
+
+			//Assert
+			const string expected = "UNKNOWN PRODUCT";
+			actual.Should().Be(expected);
+	
+		}
 	}
 }

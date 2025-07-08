@@ -51,26 +51,56 @@ namespace cliogate.Files.cs
 		}
 
 		public List<ProductInfo> GetProductInfoByVersion(Version coreVersion, bool isNetCore){
-			List<ProductInfo> productInfos = new List<ProductInfo>();
+			List<ProductInfo> allProducts = new List<ProductInfo>();
 			
-			
+			// Load all products first for fallback logic
 			foreach (string line in SplitRawData(isNetCore)) {
 				string[] lineItems = line.Split(new[] {'\t'}, StringSplitOptions.RemoveEmptyEntries);
 
-				if (lineItems.Length == 3 
-					&& Version.TryParse(lineItems[1], out Version productVersion) 
-					&& coreVersion.Major == productVersion.Major 
-					&& coreVersion.Minor == productVersion.Minor 
-					&& coreVersion.Build == productVersion.Build) {
+				if (lineItems.Length == 3 && Version.TryParse(lineItems[1], out Version productVersion)) {
 					ProductInfo product = new ProductInfo {
 						Name = lineItems[0],
 						Version = productVersion,
 						Packages = lineItems[2].Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries),
 					};
-					productInfos.Add(product);
+					allProducts.Add(product);
 				}
 			}
-			return productInfos;
+			
+			// Try exact match first (preserve existing behavior)
+			var exactMatches = allProducts.Where(p => 
+				coreVersion.Major == p.Version.Major 
+				&& coreVersion.Minor == p.Version.Minor 
+				&& coreVersion.Build == p.Version.Build).ToList();
+				
+			if (exactMatches.Any()) {
+				return exactMatches;
+			}
+			
+			// Fallback: Try same Major.Minor with highest Build
+			var majorMinorMatches = allProducts.Where(p => 
+				coreVersion.Major == p.Version.Major 
+				&& coreVersion.Minor == p.Version.Minor).ToList();
+				
+			if (majorMinorMatches.Any()) {
+				var highestBuild = majorMinorMatches.Max(p => p.Version.Build);
+				return majorMinorMatches.Where(p => p.Version.Build == highestBuild).ToList();
+			}
+			
+			// Fallback: Try same Major with highest Minor.Build
+			var majorMatches = allProducts.Where(p => 
+				coreVersion.Major == p.Version.Major).ToList();
+				
+			if (majorMatches.Any()) {
+				var highestVersion = majorMatches.OrderByDescending(p => p.Version).First().Version;
+				return majorMatches.Where(p => 
+					p.Version.Major == highestVersion.Major 
+					&& p.Version.Minor == highestVersion.Minor 
+					&& p.Version.Build == highestVersion.Build).ToList();
+			}
+			
+			// No compatible version found
+			return new List<ProductInfo>();
 		}
 
 		#endregion
