@@ -136,7 +136,7 @@ public class DownloaderTests : BaseClioModuleTests
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DownloadPackageDllFile);
 		const string archiveName = "MyPackage.dll";
 		DownloadInfo downloadInfo = new DownloadInfo(url, archiveName, "", "");
-		string tempDir = Path.Combine("C:\\", Guid.NewGuid().ToString());
+		string tempDir = Path.Combine("/temp", Guid.NewGuid().ToString());
 
 		_applicationClientFactoryMock.CreateClient(Arg.Any<EnvironmentSettings>())
 			.Returns(_applicationClientMock);

@@ -7,6 +7,9 @@ using FluentAssertions;
 
 namespace Clio.Tests.Validators;
 
+#if !WINDOWS
+[Ignore("Windows only test")]
+#endif
 public class IISScannerRequestValidatorTestCase {
 
 	private ISSScannerValidator _sut;

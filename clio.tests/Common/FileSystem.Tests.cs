@@ -942,12 +942,12 @@ public class FileSystemTests
 	public void GetDirectoryHash_WorksWithAllAlgorithms(FileSystem.Algorithm algorithm) {
 		// Arrange
 		var fs = new MockFileSystem();
-		fs.Directory.CreateDirectory("dir");
-		fs.File.WriteAllText("dir/file1.txt", "content1");
-		fs.File.WriteAllText("dir/file2.txt", "content2");
+		fs.Directory.CreateDirectory("/dir");
+		fs.File.WriteAllText("/dir/file1.txt", "content1");
+		fs.File.WriteAllText("/dir/file2.txt", "content2");
 		
 		// Act
-		string hash = new FileSystem(fs).GetDirectoryHash(@"C:\dir", algorithm);
+		string hash = new FileSystem(fs).GetDirectoryHash("/dir", algorithm);
 		
 		// Assert
 		hash.Should().NotBeEmpty();
