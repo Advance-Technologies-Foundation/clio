@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
@@ -19,6 +20,11 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 
 	protected override MockFileSystem CreateFs(){
 		MockFileSystem mockFS = base.CreateFs();
+		string mockDataPath = Environment.OSVersion.Platform == PlatformID.Win32NT
+			? @"T:\MockDataProjects"
+			: "/usr/MockDataProjects";
+		mockFS.MockExamplesFolder("MockDataProjects", mockDataPath);
+		
 		mockFS.MockExamplesFolder("MockDataProjects", @"T:\MockDataProjects");
 		return mockFS;
 	}
@@ -30,9 +36,14 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		// Arrange
 		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
-		MockDataCommandOptions options = new MockDataCommandOptions {
+		MockDataCommandOptions options = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			?new MockDataCommandOptions {
 			Models = @"T:\MockDataProjects",
 			Data = @"T:\MockDataProjects\Tests\MockData"
+		}
+		: new MockDataCommandOptions {
+			Models = "/usr/MockDataProjects",
+			Data = "/usr/MockDataProjects/Tests/MockData"
 		};
 		command.Execute(options);
 		FileSystem.Directory.Exists(options.Models).Should().BeTrue();
@@ -44,10 +55,15 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		// Arrange
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
-		MockDataCommandOptions options = new MockDataCommandOptions {
-			Models = @"T:/MockDataProjects",
-			Data = @"T:/MockDataProjects/Tests/MockData"
-		};
+		MockDataCommandOptions options = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			?new MockDataCommandOptions {
+				Models = @"T:\MockDataProjects",
+				Data = @"T:\MockDataProjects\Tests\MockData"
+			}
+			: new MockDataCommandOptions {
+				Models = "/usr/MockDataProjects",
+				Data = "/usr/MockDataProjects/Tests/MockData"
+			};
 		List<string> models = command.FindModels(options.Models);
 		models.Count.Should().Be(3);
 		models.Should().Contain("Contact");
@@ -59,12 +75,16 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		// Arrange
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		IApplicationClient mockCreatioClient = Substitute.For<IApplicationClient>();
-		string contactExpectedContent
-			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Contact.json"));
-		string orderExpectedContent
-			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Order.json"));
-		string accountExpectedContent
-			= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Account.json"));
+		string contactExpectedContent = Environment.OSVersion.Platform == PlatformID.Win32NT
+			? clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Contact.json"))
+			: clioFileSystem.ReadAllText(Path.Combine("/usr/MockDataProjects", "Expected", "Contact.json"));
+		string orderExpectedContent = Environment.OSVersion.Platform == PlatformID.Win32NT
+			? clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Order.json"))
+			: clioFileSystem.ReadAllText(Path.Combine("/usr/MockDataProjects", "Expected", "Order.json"))
+			;
+		string accountExpectedContent = Environment.OSVersion.Platform == PlatformID.Win32NT
+			? clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", "Account.json"))
+			: clioFileSystem.ReadAllText(Path.Combine("/usr/MockDataProjects", "Expected", "Account.json"));
 		mockCreatioClient
 			.ExecuteGetRequest(Arg.Is<string>(s => s.EndsWith("Contact")), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>()).Returns(contactExpectedContent);
@@ -75,10 +95,17 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 			.ExecuteGetRequest(Arg.Is<string>(s => s.EndsWith("Account")), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>()).Returns(accountExpectedContent);
 		MockDataCommand command = new MockDataCommand(mockCreatioClient, new EnvironmentSettings(), clioFileSystem);
-		MockDataCommandOptions options = new MockDataCommandOptions {
-			Models = @"T:\MockDataProjects",
-			Data = @"T:\MockDataProjects\Tests\MockData"
-		};
+		
+		MockDataCommandOptions options = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			?new MockDataCommandOptions {
+				Models = @"T:\MockDataProjects",
+				Data = @"T:\MockDataProjects\Tests\MockData"
+			}
+			: new MockDataCommandOptions {
+				Models = "/usr/MockDataProjects",
+				Data = "/usr/MockDataProjects/Tests/MockData"
+			};
+		
 		//Act
 		command.Execute(options);
 
@@ -88,8 +115,9 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		dataFiles.Count().Should().Be(models.Count);
 		foreach (string dataFile in dataFiles) {
 			string model = Path.GetFileNameWithoutExtension(dataFile);
-			string expectedContent
-				= clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", $"{model}.json"));
+			string expectedContent = Environment.OSVersion.Platform == PlatformID.Win32NT
+				 ? clioFileSystem.ReadAllText(Path.Combine("T:/MockDataProjects", "Expected", $"{model}.json"))
+				 : clioFileSystem.ReadAllText(Path.Combine("/usr/MockDataProjects", "Expected", $"{model}.json"));
 			string actualContent = clioFileSystem.ReadAllText(dataFile);
 			actualContent.Should().Be(expectedContent);
 		}
