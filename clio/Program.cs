@@ -55,6 +55,7 @@ internal class Program {
 		typeof(SysSettingsOptions),
 		typeof(FeatureOptions),
 		typeof(PingAppOptions),
+		typeof(TelemetryOptions),
 		typeof(OpenAppOptions),
 		// Package development
 		typeof(PkgListOptions),
@@ -179,6 +180,7 @@ internal class Program {
 					FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
 					UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 					PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+					TelemetryOptions opts => CreateRemoteCommand<TelemetryCommand>(opts).Execute(opts),
 					OpenAppOptions opts => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),
 					PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					CompileOptions opts => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),

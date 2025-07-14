@@ -28,6 +28,7 @@
 	  <LangVersion>Latest</LangVersion>
     <UseAppHost>false</UseAppHost>
       <NoWarn>NU5119;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
+	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
