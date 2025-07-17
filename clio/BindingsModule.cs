@@ -166,6 +166,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<RestartCommand>();
 		containerBuilder.RegisterType<SetFsmConfigCommand>();
 		containerBuilder.RegisterType<TurnFsmCommand>();
+		containerBuilder.RegisterType<TurnFarmModeCommand>();
 		containerBuilder.RegisterType<ScenarioRunnerCommand>();
 		containerBuilder.RegisterType<CompressAppCommand>();
 		containerBuilder.RegisterType<Scenario>();
@@ -218,6 +219,7 @@ public class BindingsModule {
 		//Validators
 		containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
 		containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
+		containerBuilder.RegisterType<TurnFarmModeOptionsValidator>();
 		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
 		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
 
