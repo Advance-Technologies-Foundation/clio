@@ -13,7 +13,9 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 
 	#region Constants: Private
 
-	private const string PackagePath = "T:\\TestPackage";
+	private string PackagePath = Environment.OSVersion.Platform == PlatformID.Win32NT 
+		? "T:\\TestPackage" 
+		: "~/TestPackage";
 	private const string SchemaName = "MyService";
 	private const string SchemaType = "source-code";
 
@@ -73,30 +75,60 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	public override void Setup() {
 		base.Setup();
 		string tplFileContent = File.ReadAllText("tpl/schemas-template/source-code/Resources/resource.en-US.xml.tpl");
-		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Resources\\resource.en-US.xml.tpl",
-			new MockFileData(tplFileContent));
 
-		string csFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/[SCHEMA_NAME].cs.tpl");
-		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\[SCHEMA_NAME].cs.tpl",
-			new MockFileData(csFileContent));
+		if (Environment.OSVersion.Platform == PlatformID.Win32NT) {
+			
+			FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Resources\\resource.en-US.xml.tpl",
+				new MockFileData(tplFileContent));
 
-		string descriptorFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/descriptor.json.tpl");
-		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\descriptor.json.tpl",
-			new MockFileData(descriptorFileContent));
+			string csFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/[SCHEMA_NAME].cs.tpl");
+			FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\[SCHEMA_NAME].cs.tpl",
+				new MockFileData(csFileContent));
 
-		string metadataFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/metadata.json.tpl");
-		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\metadata.json.tpl",
-			new MockFileData(metadataFileContent));
+			string descriptorFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/descriptor.json.tpl");
+			FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\descriptor.json.tpl",
+				new MockFileData(descriptorFileContent));
 
-		string propertiesFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/properties.json.tpl");
-		FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\properties.json.tpl",
-			new MockFileData(propertiesFileContent));
+			string metadataFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/metadata.json.tpl");
+			FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\metadata.json.tpl",
+				new MockFileData(metadataFileContent));
 
-		string pkgDescriptorFileContent = File.ReadAllText("Examples/package/descriptor.json");
-		FileSystem.AddFile("T:\\TestPackage\\descriptor.json",
-			new MockFileData(pkgDescriptorFileContent));
+			string propertiesFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/properties.json.tpl");
+			FileSystem.AddFile("E:\\Clio\\tpl\\schemas-template\\source-code\\Schema\\properties.json.tpl",
+				new MockFileData(propertiesFileContent));
 
-		WorkingDirectoriesProvider._executingDirectory = "E:\\Clio";
+			string pkgDescriptorFileContent = File.ReadAllText("Examples/package/descriptor.json");
+			FileSystem.AddFile("T:\\TestPackage\\descriptor.json",
+				new MockFileData(pkgDescriptorFileContent));
+
+			WorkingDirectoriesProvider._executingDirectory = "E:\\Clio";
+		}
+		else {
+			FileSystem.AddFile("~/Clio/tpl/schemas-template/source-code/Resources/resource.en-US.xml.tpl",
+				new MockFileData(tplFileContent));
+
+			string csFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/[SCHEMA_NAME].cs.tpl");
+			FileSystem.AddFile("~/Clio/tpl/schemas-template/source-code/Schema/[SCHEMA_NAME].cs.tpl",
+				new MockFileData(csFileContent));
+
+			string descriptorFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/descriptor.json.tpl");
+			FileSystem.AddFile("~/Clio/tpl/schemas-template/source-code/Schema/descriptor.json.tpl",
+				new MockFileData(descriptorFileContent));
+
+			string metadataFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/metadata.json.tpl");
+			FileSystem.AddFile("~/Clio/tpl/schemas-template/source-code/Schema/metadata.json.tpl",
+				new MockFileData(metadataFileContent));
+
+			string propertiesFileContent = File.ReadAllText("tpl/schemas-template/source-code/Schema/properties.json.tpl");
+			FileSystem.AddFile("~/Clio/tpl/schemas-template/source-code/Schema/properties.json.tpl",
+				new MockFileData(propertiesFileContent));
+
+			string pkgDescriptorFileContent = File.ReadAllText("Examples/package/descriptor.json");
+			FileSystem.AddFile("~/TestPackage/descriptor.json",
+				new MockFileData(pkgDescriptorFileContent));
+
+			WorkingDirectoriesProvider._executingDirectory = "~/Clio";
+		}
 	}
 
 	[TearDown]

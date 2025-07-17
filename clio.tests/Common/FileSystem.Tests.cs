@@ -76,14 +76,33 @@ public class FileSystemTests
 	[TestCase("samplefiles/sample.txt", FileSystem.Algorithm.SHA384)]
 	[TestCase("samplefiles/sample.txt", FileSystem.Algorithm.SHA512)]
 	[TestCase("samplefiles/sample.txt", FileSystem.Algorithm.MD5)]
-	public void ComputesCorrectHash(string sampleFile, FileSystem.Algorithm algorithm){
-		//Arrange
-		string psHash = new ProcessExecutor().Execute("pwsh.exe",
-			$"-c \"Get-FileHash {sampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
-			true, null, true);
-
-		//Assert
-		new FileSystem(_msFileSystem).GetFileHash(algorithm, sampleFile).Should().Be(psHash);
+	public void ComputesCorrectHash(string sampleFile, FileSystem.Algorithm algorithm)
+	{
+		// Arrange
+		string psHash;
+		if (OperatingSystem.IsWindows())
+		{
+			psHash = new ProcessExecutor().Execute("pwsh.exe",
+				$"-c \"Get-FileHash {sampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
+				true, null, true);
+		}
+		else
+		{
+			string algo = algorithm.ToString().ToLowerInvariant();
+			string hashCmd = algo switch
+			{
+				"md5" => $"md5sum {sampleFile} | awk '{{print $1}}'",
+				"sha1" => $"sha1sum {sampleFile} | awk '{{print $1}}'",
+				"sha256" => $"sha256sum {sampleFile} | awk '{{print $1}}'",
+				"sha384" => $"sha384sum {sampleFile} | awk '{{print $1}}'",
+				"sha512" => $"sha512sum {sampleFile} | awk '{{print $1}}'",
+				_ => throw new NotSupportedException($"Algorithm {algorithm} not supported on this platform")
+			};
+			psHash = new ProcessExecutor().Execute("/bin/bash", $"-c \"{hashCmd}\"", true, null, true).Trim();
+		}
+	
+		// Assert
+		new FileSystem(_msFileSystem).GetFileHash(algorithm, sampleFile).ToUpper().Should().Be(psHash.ToUpper());
 	}
 	
 
@@ -816,26 +835,30 @@ public class FileSystemTests
 		var fs = new MockFileSystem();
 		
 		// Create two identical directories with the same files
-		fs.Directory.CreateDirectory("dir1/subdir");
-		fs.Directory.CreateDirectory("dir2/subdir");
+		fs.Directory.CreateDirectory("/dir1/subdir");
+		fs.Directory.CreateDirectory("/dir2/subdir");
 		
-		fs.File.WriteAllText("dir1/file1.txt", "content1");
-		fs.File.WriteAllText("dir1/file2.txt", "content2");
-		fs.File.WriteAllText("dir1/subdir/file3.txt", "content3");
-		
-		fs.File.WriteAllText("dir2/file1.txt", "content1");
-		fs.File.WriteAllText("dir2/file2.txt", "content2");
-		fs.File.WriteAllText("dir2/subdir/file3.txt", "content3");
+		fs.File.WriteAllText("/dir1/file1.txt", "content1");
+		fs.File.WriteAllText("/dir1/file2.txt", "content2");
+		fs.File.WriteAllText("/dir1/subdir/file3.txt", "content3");
+		                      
+		fs.File.WriteAllText("/dir2/file1.txt", "content1");
+		fs.File.WriteAllText("/dir2/file2.txt", "content2");
+		fs.File.WriteAllText("/dir2/subdir/file3.txt", "content3");
 		
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		string hash1 = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			? fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256) 
+			: fileSystem.GetDirectoryHash("/dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			? fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256) 
+			: fileSystem.GetDirectoryHash("/dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBeEmpty();
-		hash1.Should().Be(hash2);
+		hash1.Should().Be(hash2,"the same content should produce same hash");
 	}
 	
 	[Test]
@@ -919,12 +942,12 @@ public class FileSystemTests
 	public void GetDirectoryHash_WorksWithAllAlgorithms(FileSystem.Algorithm algorithm) {
 		// Arrange
 		var fs = new MockFileSystem();
-		fs.Directory.CreateDirectory("dir");
-		fs.File.WriteAllText("dir/file1.txt", "content1");
-		fs.File.WriteAllText("dir/file2.txt", "content2");
+		fs.Directory.CreateDirectory("/dir");
+		fs.File.WriteAllText("/dir/file1.txt", "content1");
+		fs.File.WriteAllText("/dir/file2.txt", "content2");
 		
 		// Act
-		string hash = new FileSystem(fs).GetDirectoryHash(@"C:\dir", algorithm);
+		string hash = new FileSystem(fs).GetDirectoryHash("/dir", algorithm);
 		
 		// Assert
 		hash.Should().NotBeEmpty();

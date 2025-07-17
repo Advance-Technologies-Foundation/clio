@@ -40,7 +40,10 @@ jobs:
           dotnet build-server shutdown;
 
       - name: Pack
-        run: dotnet pack .\clio\clio.csproj --configuration Release --output ./output
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          dotnet pack .\clio\clio.csproj --configuration Release --output ./output /p:AssemblyVersion=$tag /p:FileVersion=$tag /p:Version=$tag
+        shell: powershell
 
       - name: Publish to NuGet
         env:

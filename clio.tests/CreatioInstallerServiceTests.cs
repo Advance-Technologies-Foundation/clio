@@ -26,52 +26,56 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
 
 	#region Methods: Protected
 
-	protected override MockFileSystem CreateFs(){
+	protected override MockFileSystem CreateFs()
+	{
+
+		var separator = System.IO.Path.DirectorySeparatorChar;
+		
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
 			{
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.2\8.1.2.3888\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.1.2.3888_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.2", "8.1.2.3888", "BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU", "8.1.2.3888_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.2\8.1.2.3888\SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU\8.1.2.3888_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.2", "8.1.2.3888", "SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU", "8.1.2.3888_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.2\8.1.2.3888\Studio_Softkey_ENU\8.1.2.3888_Studio_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.2", "8.1.2.3888", "Studio_Softkey_ENU", "8.1.2.3888_Studio_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.0.0\8.0.0.0000\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.0.0.0000_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.0.0", "8.0.0.0000", "BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU", "8.0.0.0000_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.0.0\8.0.0.0000\SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU\8.0.0.0000_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.0.0", "8.0.0.0000", "SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU", "8.0.0.0000_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.0.0\8.0.0.0000\Studio_Softkey_ENU\8.0.0.0000_Studio_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.0.0", "8.0.0.0000", "Studio_Softkey_ENU", "8.0.0.0000_Studio_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.1.3.3992_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU", "8.1.3.3992_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU\8.1.3.3992_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU", "8.1.3.3992_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\Studio_Softkey_ENU\8.1.3.3992_Studio_Softkey_MSSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "Studio_Softkey_ENU", "8.1.3.3992_Studio_Softkey_MSSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.1.3.3992_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU", "8.1.3.3992_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\Studio_Softkey_ENU\8.1.3.3992_Studio_Softkey_PostgreSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "Studio_Softkey_ENU", "8.1.3.3992_Studio_Softkey_PostgreSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"D:\Projects\creatio_builds\8.1.1\8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip",
+				System.IO.Path.Combine(@"D:\Projects\creatio_builds", "8.1.1", "8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"D:\Projects\creatio_builds\8.1.1\8.1.1.1425_SalesEnterpriseNet6_Softkey_PostgreSQL_ENU.zip",
+				System.IO.Path.Combine(@"D:\Projects\creatio_builds", "8.1.1", "8.1.1.1425_SalesEnterpriseNet6_Softkey_PostgreSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3992\SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU\8.1.3.3992_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_PostgreSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "SalesEnterprise_Marketing_ServiceEnterprise_Softkey_ENU", "8.1.3.3992_SalesEnterprise_Marketing_ServiceEnterprise_Softkey_PostgreSQL_ENU.zip"),
 				new MockFileData("")
 			}, {
-				@"\\tscrm.com\dfs-ts\builds-7\8.1.3\8.1.3.3923\SalesEnterprise_Marketing_ServiceEnterpriseNet6_Softkey_ENU\8.1.3.3923_SalesEnterprise_Marketing_ServiceEnterpriseNet6_Softkey_PostgreSQL_ENU.zip",
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3923", "SalesEnterprise_Marketing_ServiceEnterpriseNet6_Softkey_ENU", "8.1.3.3923_SalesEnterprise_Marketing_ServiceEnterpriseNet6_Softkey_PostgreSQL_ENU.zip"),
 				new MockFileData("")
 			}
 		});
@@ -81,9 +85,16 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
 
 	#region Methods: Public
 
+	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+	{
+		base.AdditionalRegistrations(containerBuilder);
+		
+	}
+
 	public override void Setup(){
 		base.Setup();
 		_creatioInstallerService = Container.Resolve<CreatioInstallerService>();
+		
 	}
 
 	#endregion
@@ -103,7 +114,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
 		//Assert
 		filePath.Should()
 			.Be(
-				@$"{RemoteArtifactServerPath}\8.1.3\8.1.3.3992\BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU\8.1.3.3992_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip");
+				System.IO.Path.Combine(RemoteArtifactServerPath, "8.1.3", "8.1.3.3992", "BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU", "8.1.3.3992_BankSales_BankCustomerJourney_Lending_Marketing_Softkey_MSSQL_ENU.zip"));
 	}
 
 	[Test]

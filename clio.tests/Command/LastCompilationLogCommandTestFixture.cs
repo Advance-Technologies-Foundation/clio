@@ -91,11 +91,13 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions());
 		
-		
+		string NormalizeLineEndings(string text) =>
+		    text.Replace("\r\n", "\n").Replace("\r", "\n");
 		//Assert
 		result.Should().Be(0);
 		Thread.Sleep(500);
-		_textWriter.ToString().TrimEnd().Should().Contain(desiredOutputContent);
+		NormalizeLineEndings(_textWriter.ToString()).TrimEnd().Should().Contain(NormalizeLineEndings(desiredOutputContent));
+		//_textWriter.ToString().TrimEnd().Should().Contain(desiredOutputContent);
 	}
 	
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]

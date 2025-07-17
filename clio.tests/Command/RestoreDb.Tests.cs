@@ -27,7 +27,9 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		IDbClientFactory dbClientFactory = Substitute.For<IDbClientFactory>();
 		IMssql mssql = Substitute.For<IMssql>();
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		const string backUpFilePath = @"D:\Projects\CreatioProductBuild\8.1.2.2482_Studio_Softkey_MSSQL_ENU\db\BPMonline812Studio.bak";
+		string backUpFilePath = Environment.OSVersion.Platform == PlatformID.Win32NT
+			? @"D:\Projects\CreatioProductBuild\8.1.2.2482_Studio_Softkey_MSSQL_ENU\db\BPMonline812Studio.bak"
+			: @"~/creatio/8.1.2.2482_Studio_Softkey_MSSQL_ENU/db/BPMonline812Studio.bak";
 		const string existingDbName = "db-that-exists";
 		const string newDbName = "new-db-name";
 		mssql.CreateDb(newDbName, "BPMonline812Studio.bak").Returns(true);

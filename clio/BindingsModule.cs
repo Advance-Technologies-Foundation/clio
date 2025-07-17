@@ -50,8 +50,7 @@ public class BindingsModule {
 
 	#region Methods: Public
 
-	public IContainer Register(EnvironmentSettings settings = null,
-		Action<ContainerBuilder> additionalRegistrations = null){
+	public IContainer Register(EnvironmentSettings settings = null, Action<ContainerBuilder> additionalRegistrations = null){
 		ContainerBuilder containerBuilder = new();
 
 		containerBuilder

@@ -86,7 +86,7 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 		Thread.Sleep(300); //Logger need 300ms to flush its cache, thus we sleep
 
 		//Assert
-		_textWriter.ToString().Should().Contain($"[INF] - {responseBody}\r\n");
+		_textWriter.ToString().Should().Contain($"[INF] - {responseBody}");
 	}
 
 }
