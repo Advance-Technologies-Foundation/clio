@@ -14,6 +14,9 @@ namespace Clio.Package
 		bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
 			string reportPath = null);
 
+		bool InstallWithOptions(string packagePath, EnvironmentSettings environmentSettings = null,
+			string reportPath = null, PackageInstallOptions packageInstallOptions = null);
+
 		bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
 			string reportPath = null);
 
