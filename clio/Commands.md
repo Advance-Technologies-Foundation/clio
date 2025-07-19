@@ -1571,7 +1571,6 @@ Specify a physical path to configure file system mode:
 clio set-fsm-config --physicalPath "C:\\inetpub\\wwwroot\\MyApp" off
 ```
 
-
 ## Turn File-System Mode On/Off
 
 The `turn-fsm` command is used to toggle the file system mode (FSM) on or off for a Creatio environment. When FSM is turned on, it configures the environment and loads packages to the file system. When FSM is turned off, it loads packages to the database and then configures the environment.
