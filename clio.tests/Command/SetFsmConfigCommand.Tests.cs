@@ -67,7 +67,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	#endregion
 
 	
-#if WINDOWS	
+
 	
 	/// <summary>
 	///  Verifies that the command works with environment name when physical path is not provided.
@@ -76,6 +76,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command attempts to resolve environment path when physical path is not provided.")]
 	public void Execute_AttemptsToResolveEnvironmentPath_WhenPhysicalPathNotProvided() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
 		_validator.Validate(options).Returns(new ValidationResult());
@@ -96,6 +100,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command uses the provided physical path directly, bypassing environment resolution.")]
 	public void Execute_BypassesEnvironmentResolution_WhenPhysicalPathProvided() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
@@ -131,6 +139,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Ensures that Execute resolves the correct IIS site path when a matching site is found.")]
 	public void Execute_ResolvesCorrectIISSitePath_WhenMatchingSiteIsFound() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		const string environmentName = "test-env";
 		const string expectedPath = @"C:\inetpub\wwwroot\TestSite";
@@ -164,6 +176,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command returns an error when the config file does not exist.")]
 	public void Execute_ReturnsError_WhenConfigDoesNotExist() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
@@ -190,6 +206,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command returns an error when validation fails.")]
 	public void Execute_ReturnsError_WhenValidationFails() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		SetFsmConfigOptions options = new() {IsFsm = "on"};
 		_validator.Validate(options).Returns(new ValidationResult(new List<ValidationFailure> {
@@ -211,6 +231,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Ensures the command updates the config file correctly for Linux paths when validation passes.")]
 	public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_LinuxPath() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
@@ -254,6 +278,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Ensures the command updates the config file correctly for Windows paths when validation passes.")]
 	public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_WindowsPath() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
@@ -291,6 +319,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command throws an exception when environment URI is null or empty.")]
 	public void Execute_ThrowsException_WhenEnvironmentUriIsEmpty() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
 		_validator.Validate(options).Returns(new ValidationResult());
@@ -312,6 +344,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command throws an exception when environment URI is null.")]
 	public void Execute_ThrowsException_WhenEnvironmentUriIsNull() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
 		_validator.Validate(options).Returns(new ValidationResult());
@@ -333,6 +369,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Ensures that Execute throws an exception when no IIS sites match the environment URI.")]
 	public void Execute_ThrowsException_WhenNoIISSitesMatchEnvironmentUri() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
@@ -362,6 +402,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command throws an exception when no matching site is found for the environment.")]
 	public void Execute_ThrowsException_WhenNoMatchingSiteFound() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
 		// Arrange
 		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
 		_validator.Validate(options).Returns(new ValidationResult());
@@ -386,6 +430,11 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command uses the correct config file name for .NET Core environments.")]
 	public void Execute_UsesCorrectWebConfigFileName_ForNetCore() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
+		
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
@@ -416,13 +465,16 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		Directory.Delete(tempDir, true);
 	}
 	
-#else
-
+	
 	[Test]
 	[Category("Unit")]
 	[Description("Verifies that the command throws an exception on non-Windows OS.")]
-	public void Execute_Should_Throw()
-	{
+	public void Execute_Should_Throw_OnNonWindows() {
+		if(!OperatingSystem.IsWindows()) {
+			// This test is only relevant for Windows OS
+			return;
+		}
+		
 		// Arrange
 		SetFsmConfigOptions options = new() { IsFsm = "on" };
 		_validator.Validate(options).Returns(new ValidationResult());
@@ -433,5 +485,4 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 			.WithMessage("This command is only supported on Windows OS.");
 	}
 
-#endif
 }
