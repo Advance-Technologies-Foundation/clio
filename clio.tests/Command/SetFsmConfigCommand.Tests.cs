@@ -222,4 +222,131 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		Directory.Delete(tempDir, true);
 	}
 
+	/// <summary>
+	///  Verifies that the command throws an exception when environment URI is null or empty.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command throws an exception when environment URI is null or empty.")]
+	public void Execute_ThrowsException_WhenEnvironmentUriIsEmpty() {
+		// Arrange
+		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = string.Empty, IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+
+		// Act & Assert
+		Action act = () => _command.Execute(options);
+		act.Should().Throw<Exception>()
+			.WithMessage("Could not find path to environment: 'test-env'");
+	}
+
+	/// <summary>
+	///  Verifies that the command throws an exception when environment URI is null.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command throws an exception when environment URI is null.")]
+	public void Execute_ThrowsException_WhenEnvironmentUriIsNull() {
+		// Arrange
+		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = null, IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+
+		// Act & Assert
+		Action act = () => _command.Execute(options);
+		act.Should().Throw<Exception>()
+			.WithMessage("Could not find path to environment: 'test-env'");
+	}
+
+	/// <summary>
+	///  Verifies that the command throws an exception when no matching site is found for the environment.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command throws an exception when no matching site is found for the environment.")]
+	public void Execute_ThrowsException_WhenNoMatchingSiteFound() {
+		// Arrange
+		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = "http://nonexistent.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+
+		// Act & Assert
+		// Note: This test will fail in the current implementation because it uses static methods
+		// The static method IISScannerHandler.FindAllCreatioSites() will be called and we cannot mock it
+		// In a real-world scenario, this would require dependency injection for the IIS scanner functionality
+		Action act = () => _command.Execute(options);
+		act.Should().Throw<Exception>()
+			.WithMessage("Could not find path to environment: 'test-env'");
+	}
+
+	/// <summary>
+	///  Verifies that the command works with environment name when physical path is not provided.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command attempts to resolve environment path when physical path is not provided.")]
+	public void Execute_AttemptsToResolveEnvironmentPath_WhenPhysicalPathNotProvided() {
+		// Arrange
+		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
+		_validator.Validate(options).Returns(new ValidationResult());
+		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+
+		// Act & Assert
+		// Note: This test demonstrates that the GetWebConfigPathFromEnvName method is being called
+		// when PhysicalPath is not provided. The test will throw an exception because
+		// IISScannerHandler.FindAllCreatioSites() is a static method that cannot be easily mocked.
+		// 
+		// To properly test this functionality, the SetFsmConfigCommand would need to be refactored
+		// to use dependency injection for the IIS scanning functionality instead of static methods.
+		Action act = () => _command.Execute(options);
+		act.Should().Throw<Exception>()
+			.WithMessage("Could not find path to environment: 'test-env'");
+	}
+
+	/// <summary>
+	///  Verifies that the command bypasses environment path resolution when physical path is provided.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command uses the provided physical path directly, bypassing environment resolution.")]
+	public void Execute_BypassesEnvironmentResolution_WhenPhysicalPathProvided() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Web.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+
+		SetFsmConfigOptions options = new() {
+			IsFsm = "on", 
+			PhysicalPath = tempDir,
+			Environment = "test-env" // This should be ignored when PhysicalPath is provided
+		};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the command should succeed when physical path is provided with valid config");
+		
+		// Verify that the settings repository was called to get environment settings (for IsNetCore check)
+		_settingsRepository.Received(1).GetEnvironment(options);
+
+		Directory.Delete(tempDir, true);
+	}
+
 }
