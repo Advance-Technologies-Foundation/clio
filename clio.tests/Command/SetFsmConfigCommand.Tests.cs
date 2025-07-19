@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Xml;
 using Clio.Command;
+using Clio.Requests;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using FluentValidation;
@@ -66,6 +67,100 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	#endregion
 
 	/// <summary>
+	///  Verifies that the command works with environment name when physical path is not provided.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command attempts to resolve environment path when physical path is not provided.")]
+	public void Execute_AttemptsToResolveEnvironmentPath_WhenPhysicalPathNotProvided() {
+		// Arrange
+		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
+		_validator.Validate(options).Returns(new ValidationResult());
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+
+		// Act & Assert
+		// Note: This test demonstrates that the GetWebConfigPathFromEnvName method is being called
+		// when PhysicalPath is not provided. The test will throw an exception because
+		// IISScannerHandler.FindAllCreatioSites() is a static method that cannot be easily mocked.
+		// 
+		// To properly test this functionality, the SetFsmConfigCommand would need to be refactored
+		// to use dependency injection for the IIS scanning functionality instead of static methods.
+		Action act = () => _command.Execute(options);
+		act.Should().Throw<Exception>()
+			.WithMessage("Could not find path to environment: 'test-env'");
+	}
+
+	/// <summary>
+	///  Verifies that the command bypasses environment path resolution when physical path is provided.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command uses the provided physical path directly, bypassing environment resolution.")]
+	public void Execute_BypassesEnvironmentResolution_WhenPhysicalPathProvided() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Web.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+
+		SetFsmConfigOptions options = new() {
+			IsFsm = "on",
+			PhysicalPath = tempDir,
+			Environment = "test-env" // This should be ignored when PhysicalPath is provided
+		};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the command should succeed when physical path is provided with valid config");
+
+		// Verify that the settings repository was called to get environment settings (for IsNetCore check)
+		_settingsRepository.Received(1).GetEnvironment(options);
+
+		Directory.Delete(tempDir, true);
+	}
+
+	/// <summary>
+	///  Verifies that the Execute method resolves the correct IIS site path when a matching site is found.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Ensures that Execute resolves the correct IIS site path when a matching site is found.")]
+	public void Execute_ResolvesCorrectIISSitePath_WhenMatchingSiteIsFound() {
+		// Arrange
+		const string environmentName = "test-env";
+		const string expectedPath = @"C:\inetpub\wwwroot\TestSite";
+		SetFsmConfigOptions options = new() {
+			Environment = environmentName,
+			IsFsm = "on",
+			PhysicalPath = null
+		};
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(environmentName).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+		_settingsRepository.GetEnvironment(options).Returns(env);
+
+		IISScannerHandler.SiteBinding siteBindingMock = new("test-env", string.Empty, "", expectedPath);
+		List<Uri> urisMock = [new("https://test.com")];
+		IISScannerHandler.UnregisteredSite mockSite = new(siteBindingMock, urisMock, IISScannerHandler.SiteType.NetFramework);
+		IISScannerHandler.FindAllCreatioSites = () => new List<IISScannerHandler.UnregisteredSite> {mockSite};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because the web config file does not exist at the resolved path");
+	}
+
+	/// <summary>
 	///  Verifies that the command returns an error if the config file does not exist.
 	/// </summary>
 	[Test]
@@ -79,7 +174,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
 		_validator.Validate(options).Returns(new ValidationResult());
 
-		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
 		_settingsRepository.GetEnvironment(options).Returns(env);
 
 		// Act
@@ -115,7 +210,8 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	///  Verifies that the command updates the config file and returns success when validation passes and the config exists
 	///  (Linux path).
 	/// </summary>
-	[Test, Category("Unit")]
+	[Test]
+	[Category("Unit")]
 	[Description("Ensures the command updates the config file correctly for Linux paths when validation passes.")]
 	public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_LinuxPath() {
 		// Arrange
@@ -127,7 +223,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		SetFsmConfigOptions options = new() {IsFsm = "off", PhysicalPath = tempDir};
 		_validator.Validate(options).Returns(new ValidationResult());
 
-		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
 		_settingsRepository.GetEnvironment(options).Returns(env);
 
 		// Act
@@ -138,9 +234,14 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 		XmlDocument doc = new();
 		doc.Load(configPath);
-		string fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
-		string useStaticFileContent
-			= doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
+		string fileDesignMode = doc
+								.SelectSingleNode("//terrasoft/fileDesignMode")
+								.Attributes["enabled"]
+								.Value;
+		string useStaticFileContent = doc
+									.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']")
+									.Attributes["value"]
+									.Value;
 
 		fileDesignMode.Should().Be("false", "because IsFsm=off sets fileDesignMode enabled to false");
 		useStaticFileContent.Should().Be("true", "because IsFsm=off sets UseStaticFileContent to true");
@@ -152,7 +253,8 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	///  Verifies that the command updates the config file and returns success when validation passes and the config exists
 	///  (Windows path).
 	/// </summary>
-	[Test, Category("Unit")]
+	[Test]
+	[Category("Unit")]
 	[Description("Ensures the command updates the config file correctly for Windows paths when validation passes.")]
 	public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_WindowsPath() {
 		// Arrange
@@ -164,7 +266,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
 		_validator.Validate(options).Returns(new ValidationResult());
 
-		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
 		_settingsRepository.GetEnvironment(options).Returns(env);
 
 		// Act
@@ -172,43 +274,6 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 		// Assert
 		result.Should().Be(0, "because config exists and should be updated");
-
-		XmlDocument doc = new();
-		doc.Load(configPath);
-		string fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
-		string useStaticFileContent
-			= doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
-
-		fileDesignMode.Should().Be("true", "because IsFsm=on sets fileDesignMode enabled to true");
-		useStaticFileContent.Should().Be("false", "because IsFsm=on sets UseStaticFileContent to false");
-
-		Directory.Delete(tempDir, true);
-	}
-
-	/// <summary>
-	///  Verifies that the command uses the correct config file name for .NET Core environments.
-	/// </summary>
-	[Test]
-	[Category("Unit")]
-	[Description("Verifies that the command uses the correct config file name for .NET Core environments.")]
-	public void Execute_UsesCorrectWebConfigFileName_ForNetCore() {
-		// Arrange
-		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-		Directory.CreateDirectory(tempDir);
-		string configPath = Path.Combine(tempDir, "Terrasoft.WebHost.dll.config");
-		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
-
-		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
-		_validator.Validate(options).Returns(new ValidationResult());
-
-		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = true};
-		_settingsRepository.GetEnvironment(options).Returns(env);
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(0, "because .NET Core config exists and should be updated");
 
 		XmlDocument doc = new();
 		doc.Load(configPath);
@@ -265,6 +330,35 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	}
 
 	/// <summary>
+	///  Verifies that the Execute method throws an exception when no IIS sites match the environment URI.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Ensures that Execute throws an exception when no IIS sites match the environment URI.")]
+	public void Execute_ThrowsException_WhenNoIISSitesMatchEnvironmentUri() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+
+		SetFsmConfigOptions options = new() {IsFsm = "on", EnvironmentName = "test-env"};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
+
+		IISScannerHandler.FindAllCreatioSites = () => new List<IISScannerHandler.UnregisteredSite>();
+
+		// Act
+		Action act = () => _command.Execute(options);
+
+		// Assert
+		act.Should().Throw<Exception>()
+			.WithMessage($"Could not find path to environment: '{options.EnvironmentName}'",
+				"GetWebConfigPathFromEnvName should throw when no IIS sites found");
+	}
+
+	/// <summary>
 	///  Verifies that the command throws an exception when no matching site is found for the environment.
 	/// </summary>
 	[Test]
@@ -275,7 +369,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
 		_validator.Validate(options).Returns(new ValidationResult());
 
-		EnvironmentSettings env = new() {Uri = "http://nonexistent.com", IsNetCore = false};
+		EnvironmentSettings env = new() {Uri = "https://nonexistent.com", IsNetCore = false};
 		_settingsRepository.GetEnvironment(options).Returns(env);
 		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
 
@@ -289,62 +383,38 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	}
 
 	/// <summary>
-	///  Verifies that the command works with environment name when physical path is not provided.
+	///  Verifies that the command uses the correct config file name for .NET Core environments.
 	/// </summary>
 	[Test]
 	[Category("Unit")]
-	[Description("Verifies that the command attempts to resolve environment path when physical path is not provided.")]
-	public void Execute_AttemptsToResolveEnvironmentPath_WhenPhysicalPathNotProvided() {
-		// Arrange
-		SetFsmConfigOptions options = new() {IsFsm = "on", Environment = "test-env"};
-		_validator.Validate(options).Returns(new ValidationResult());
-		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
-		_settingsRepository.GetEnvironment(options).Returns(env);
-		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
-
-		// Act & Assert
-		// Note: This test demonstrates that the GetWebConfigPathFromEnvName method is being called
-		// when PhysicalPath is not provided. The test will throw an exception because
-		// IISScannerHandler.FindAllCreatioSites() is a static method that cannot be easily mocked.
-		// 
-		// To properly test this functionality, the SetFsmConfigCommand would need to be refactored
-		// to use dependency injection for the IIS scanning functionality instead of static methods.
-		Action act = () => _command.Execute(options);
-		act.Should().Throw<Exception>()
-			.WithMessage("Could not find path to environment: 'test-env'");
-	}
-
-	/// <summary>
-	///  Verifies that the command bypasses environment path resolution when physical path is provided.
-	/// </summary>
-	[Test]
-	[Category("Unit")]
-	[Description("Verifies that the command uses the provided physical path directly, bypassing environment resolution.")]
-	public void Execute_BypassesEnvironmentResolution_WhenPhysicalPathProvided() {
+	[Description("Verifies that the command uses the correct config file name for .NET Core environments.")]
+	public void Execute_UsesCorrectWebConfigFileName_ForNetCore() {
 		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
-		string configPath = Path.Combine(tempDir, "Web.config");
+		string configPath = Path.Combine(tempDir, "Terrasoft.WebHost.dll.config");
 		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
 
-		SetFsmConfigOptions options = new() {
-			IsFsm = "on", 
-			PhysicalPath = tempDir,
-			Environment = "test-env" // This should be ignored when PhysicalPath is provided
-		};
+		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
 		_validator.Validate(options).Returns(new ValidationResult());
 
-		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		EnvironmentSettings env = new() {Uri = "https://test.com", IsNetCore = true};
 		_settingsRepository.GetEnvironment(options).Returns(env);
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
-		result.Should().Be(0, "because the command should succeed when physical path is provided with valid config");
-		
-		// Verify that the settings repository was called to get environment settings (for IsNetCore check)
-		_settingsRepository.Received(1).GetEnvironment(options);
+		result.Should().Be(0, "because .NET Core config exists and should be updated");
+
+		XmlDocument doc = new();
+		doc.Load(configPath);
+		string fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
+		string useStaticFileContent
+			= doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
+
+		fileDesignMode.Should().Be("true", "because IsFsm=on sets fileDesignMode enabled to true");
+		useStaticFileContent.Should().Be("false", "because IsFsm=on sets UseStaticFileContent to false");
 
 		Directory.Delete(tempDir, true);
 	}

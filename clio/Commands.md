@@ -50,7 +50,6 @@ Where  `<COMMAND>` is clio command name, use [help](#help) to get list of availa
 - `--db-working-folder` (optional): Folder visible to DB server.
 - `--db-name` (optional): Desired database name.
 - `--force` (optional): Force restore.
-
 ## Item options
 
 - `-d`, `--DestinationPath` (optional): Path to the source directory. Default is `null`.
@@ -432,6 +431,7 @@ Default value of 'Source' argument: https://www.nuget.org/api/v2
 - [Features](#set-feature)
 - [Set base web service url](#set-webservice-url)
 - [Get base web service url](#get-webservice-url)
+- [Set FileSystemMode](#set-fsm-config)
 
 ## download-app
 
@@ -1543,4 +1543,56 @@ Uninstall Creatio from your local machine by executing the following command:
 
 ```bash
 clio uninstall-creatio -e <ENV_NAME>
+```
+
+## Set File-System Mode configuration
+
+The `set-fsm-config` command is used to configure the file system mode properties
+in the configuration file of a Creatio application.
+
+### Syntax
+```bash
+clio set-fsm-config [options]
+```
+
+### Options
+- `--physicalPath` (optional): Specifies the path to the application.
+- `--environmentName` (optional): Specifies the environment name.
+- `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Examples
+Enable file system mode for a specific environment:
+```bash
+clio set-fsm-config --environmentName MyEnvironment on
+```
+
+Specify a physical path to configure file system mode:
+```bash
+clio set-fsm-config --physicalPath "C:\\inetpub\\wwwroot\\MyApp" off
+```
+
+
+## Turn File-System Mode On/Off
+
+The `turn-fsm` command is used to toggle the file system mode (FSM) on or off for a Creatio environment. When FSM is turned on, it configures the environment and loads packages to the file system. When FSM is turned off, it loads packages to the database and then configures the environment.
+
+### Syntax
+```bash
+clio turn-fsm [options]
+```
+
+### Options
+- `--physicalPath` (optional): Specifies the path to the application.
+- `--environmentName` (optional): Specifies the environment name.
+- `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Examples
+Turn on file system mode for a specific environment:
+```bash
+clio turn-fsm --environmentName MyEnvironment on
+```
+
+Turn off file system mode for a specific environment:
+```bash
+clio turn-fsm --environmentName MyEnvironment off
 ```

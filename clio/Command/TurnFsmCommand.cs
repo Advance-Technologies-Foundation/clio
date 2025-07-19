@@ -6,7 +6,7 @@ namespace Clio.Command;
 
 using Clio.Common;
 
-[Verb("turn-fsm", Aliases = new[] {"tfsm", "fsm"}, HelpText = "Turn file system mode on or off for an environment")]
+[Verb("turn-fsm", Aliases = ["tfsm", "fsm"], HelpText = "Turn file system mode on or off for an environment")]
 public class TurnFsmCommandOptions : SetFsmConfigOptions
 { }
 
@@ -25,6 +25,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	private readonly LoadPackagesToDbCommand _loadPackagesToDbCommand;
 	private readonly IApplicationClient _applicationClient;
 	private readonly EnvironmentSettings _environmentSettings;
+	private readonly RestartCommand _restartCommand;
 
 	#endregion
 
@@ -36,17 +37,19 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	/// <param name="setFsmConfigCommand">Command to set file system mode configuration.</param>
 	/// <param name="loadPackagesToFileSystemCommand">Command to load packages to file system.</param>
 	/// <param name="loadPackagesToDbCommand">Command to load packages to database.</param>
-	/// <param name="applicationClient">Application client for environment operations.</param>
+	/// <param name="applicationClient"></param>
 	/// <param name="environmentSettings">Environment settings configuration.</param>
+	/// <param name="restartCommand"></param>
 	public TurnFsmCommand(SetFsmConfigCommand setFsmConfigCommand,
 		LoadPackagesToFileSystemCommand loadPackagesToFileSystemCommand,
-		LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient, 
-		EnvironmentSettings environmentSettings) {
+		LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient,
+		EnvironmentSettings environmentSettings, RestartCommand restartCommand) {
 		_setFsmConfigCommand = setFsmConfigCommand;
 		_loadPackagesToFileSystemCommand = loadPackagesToFileSystemCommand;
 		_loadPackagesToDbCommand = loadPackagesToDbCommand;
 		_applicationClient = applicationClient;
 		_environmentSettings = environmentSettings;
+		_restartCommand = restartCommand;
 	}
 
 	#endregion
@@ -63,15 +66,15 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 			if (_setFsmConfigCommand.Execute(options) == 0) {
 				options.IsNetCore = _environmentSettings.IsNetCore;
 				if (options.IsNetCore == true) {
-					var opt = new RestartOptions {
+					RestartOptions opt = new () {
 						Environment = options.Environment,
 						Uri = options.Uri,
 						Login = options.Login,
 						Password = options.Password,
 						IsNetCore = options.IsNetCore
 					};
-					var restartCommand = new RestartCommand(_applicationClient, _environmentSettings);
-					restartCommand.Execute(opt);
+					//RestartCommand restartCommand = new (_applicationClient, _environmentSettings);
+					_restartCommand.Execute(opt);
 					Thread.Sleep(TimeSpan.FromSeconds(3));
 					_applicationClient.Login();
 				}

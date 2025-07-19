@@ -144,7 +144,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	/// <summary>
 	///  Finds Creatio Sites in IIS that are not registered with clio
 	/// </summary>
-	internal static readonly Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () => {
+	internal static Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () => {
 		return GetBindings()
 			.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
 			.Select(site => new UnregisteredSite(

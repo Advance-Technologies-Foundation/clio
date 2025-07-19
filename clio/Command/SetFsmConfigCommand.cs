@@ -54,9 +54,8 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
 
 }
 
-[Verb("set-fsm-config", Aliases = new[] {"fsmc", "sfsmc"}, HelpText = "Set file system mode properties in config file")]
-public class SetFsmConfigOptions : EnvironmentNameOptions
-{
+[Verb("set-fsm-config", Aliases = ["fsmc", "sfsmc"], HelpText = "Set file system mode properties in config file")]
+public class SetFsmConfigOptions : EnvironmentNameOptions {
 
 	#region Properties: Public
 
@@ -78,8 +77,11 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
 	private readonly IValidator<SetFsmConfigOptions> _validator;
 	private readonly ISettingsRepository _settingsRepository;
-	private readonly IList<string[]> _changedValuesTable;
-	private string WebConfigFileName = "Web.config";
+	private readonly List<string[]> _changedValuesTable = [
+		["Key", "Old Value", "New Value"],
+		["--------------------", "---------", "---------"]
+	];
+	private string _webConfigFileName = "Web.config";
 	
 	#endregion
 
@@ -88,10 +90,6 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository) {
 		_validator = validator;
 		_settingsRepository = settingsRepository;
-		_changedValuesTable = new List<string[]> {
-			new [] {"Key", "Old Value", "New Value" },
-			new [] {"--------------------", "---------", "---------" }
-		};
 	}
 
 	#endregion
@@ -100,10 +98,8 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
 	private static void PrintErrors(IEnumerable<ValidationFailure> errors) {
 		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
-			.ToList().ForEach(e =>
-			{
-				Console.WriteLine($"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}");
-			});
+			.ToList().ForEach(e => Console
+				.WriteLine($"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}"));
 	}
 
 	#endregion
@@ -111,20 +107,20 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	#region Methods: Public
 	public override int Execute(SetFsmConfigOptions options) {
 		ValidationResult validationResult = _validator.Validate(options);
-		if (validationResult.Errors.Any()) {
+		if (validationResult.Errors.Count != 0) {
 			PrintErrors(validationResult.Errors);
 			return 1;
 		}
 		
 		_ = _settingsRepository.GetEnvironment(options).IsNetCore switch {
-			true => WebConfigFileName = "Terrasoft.WebHost.dll.config",
-			var _ => WebConfigFileName = "Web.config"
+			true => _webConfigFileName = "Terrasoft.WebHost.dll.config",
+			var _ => _webConfigFileName = "Web.config"
  		};
 		
 		
 		string webConfigPath = string.IsNullOrWhiteSpace(options.PhysicalPath) ? 
-			Path.Join(GetWebConfigPathFromEnvName(options.Environment), WebConfigFileName) //Searches IIS registered sites
-			: Path.Join(options.PhysicalPath, WebConfigFileName);
+			Path.Join(GetWebConfigPathFromEnvName(options.Environment), _webConfigFileName) //Searches IIS registered sites
+			: Path.Join(options.PhysicalPath, _webConfigFileName);
 		if (File.Exists(webConfigPath)) {
 			ModifyWebConfigFile(webConfigPath, options.IsFsm.ToLower(CultureInfo.InvariantCulture) == "on"); //Happy path
 			return 0;
@@ -167,7 +163,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 				string useStaticFileContentOldValue = cNode.Attributes["value"].Value;
 				string useStaticFileContentNewValue = (!isFsm).ToString().ToLower();
 				cNode.Attributes["value"].Value  = useStaticFileContentNewValue;
-				_changedValuesTable.Add(new [] {"UseStaticFileContent",useStaticFileContentOldValue,useStaticFileContentNewValue});
+				_changedValuesTable.Add(["UseStaticFileContent",useStaticFileContentOldValue,useStaticFileContentNewValue]);
 			}
 		}
 		doc.Save(webConfigPath);
