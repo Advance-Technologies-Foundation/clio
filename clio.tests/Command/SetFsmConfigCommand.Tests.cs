@@ -470,7 +470,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	[Category("Unit")]
 	[Description("Verifies that the command throws an exception on non-Windows OS.")]
 	public void Execute_Should_Throw_OnNonWindows() {
-		if(!OperatingSystem.IsWindows()) {
+		if(OperatingSystem.IsWindows()) {
 			// This test is only relevant for Windows OS
 			return;
 		}
