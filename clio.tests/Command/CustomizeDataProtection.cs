@@ -17,7 +17,6 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
 [TestFixture]
 internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeDataProtectionCommandOptions> {
 
@@ -70,6 +69,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	#endregion
 
 	[Test]
+	[Description("Ensures that the command returns EnvNotFound when the specified environment does not exist.")]
 	public void Execute_Returns_EnvNotFound_WhenEnvDoesNotExist(){
 		//Arrange
 		const string envName = "test";
@@ -91,6 +91,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	}
 
 	[Test]
+	[Description("Ensures that the command returns EnvNotFound when the specified environment does not have a URI.")]
 	public void Execute_Returns_EnvNotFound_WhenEnvDoesNotHaveUri(){
 		//Arrange
 		const string envName = "test";
@@ -110,12 +111,13 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		int result = _sut.Execute(options);
 
 		//Assert
-		result.Should().Be(1);
+		result.Should().Be(1, "error code when the environment does not have a URI");
 		_logger.Received(1).WriteError($"Environment: {options.Environment} has an empty Uri.");
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
+	[Description("Ensures that the command returns EnvNotFound when the specified environment has an invalid URI.")]
 	public void Execute_Returns_EnvNotFound_WhenEnvUriNotValid(){
 		//Arrange
 		const string envName = "test";
@@ -136,12 +138,13 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		int result = _sut.Execute(options);
 
 		//Assert
-		result.Should().Be(1);
+		result.Should().Be(1, "error code when the environment has an invalid URI");
 		_logger.Received(1).WriteError($"Environment: {options.Environment} has an invalid Uri.");
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
+	[Description("Ensures that the command returns an error when the directory for the specified environment is not found.")]
 	public void Execute_Returns_Error_DirectoryNotFound(){
 		//Arrange
 		const string envName = "test";
@@ -173,12 +176,13 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		int result = _sut.Execute(options);
 
 		//Assert
-		result.Should().Be(1);
+		result.Should().Be(1, "the directory for the specified environment does not exist");
 		_logger.Received(1).WriteError($"Environment: {envUri}/, Directory {GetPlatformPath("T", envName)} does not exist.");
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
+	[Description("Ensures that the command returns an error when no registered site is found for the specified environment.")]
 	public void Execute_Returns_Error_RegisteredSiteNotFound(){
 		//Arrange
 		const string envName = "test";
@@ -208,12 +212,13 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		int result = _sut.Execute(options);
 
 		//Assert
-		result.Should().Be(1);
+		result.Should().Be(1, "the command should return an error when no registered sites are found for the specified environment");
 		_logger.Received(1).WriteError("Did not find any registered sites");
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
+	[Description("Ensures that the command returns an error when the appsettings.json file is not found.")]
 	public void Execute_Returns_Error_WhenAppSettingsNotFound(){
 		//Arrange
 		const string envName = "test";
@@ -245,12 +250,13 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		int result = _sut.Execute(options);
 
 		//Assert
-		result.Should().Be(1);
+		result.Should().Be(1, "the command should return an error when the appsettings.json file is not found");
 		_logger.Received(1).WriteError($"Did not find appsettings.json in {GetPlatformPath("T", envName)}");
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
+	[Description("Ensures that the command reads the appsettings.json file and applies the data protection settings.")]
 	public void Execute_Returns_ReadsFile(){
 		//Arrange
 		const string envName = "test";
@@ -284,7 +290,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		int result = _sut.Execute(options);
 
 		//Assert
-		result.Should().Be(0);
+		result.Should().Be(0, "the command should successfully execute when the appsettings.json file is found and modified");
 		_logger.Received(1).WriteInfo("DONE");
 		_logger.ClearReceivedCalls();
 
