@@ -266,12 +266,14 @@ public class FileSystemTests
 		string[] actual = new FileSystem(mockFs)
 			.GetFiles(directoryPath);
 		
-		Ms.IDriveInfo drive = mockFs.DriveInfo.GetDrives().FirstOrDefault();
+		var drive = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			? mockFs.DriveInfo.GetDrives().FirstOrDefault()!.Name
+			: "/";
 		//Assert
 		actual.Should().BeEquivalentTo(new [] {
-			Path.Join(drive!.Name, "path","to","first.cs"),
-			Path.Join(drive.Name, "path","to","second.cs"),
-			Path.Join(drive.Name, "path","to","third.cs")
+			Path.Join(drive, "path","to","first.cs"),
+			Path.Join(drive, "path","to","second.cs"),
+			Path.Join(drive, "path","to","third.cs")
 		});
 	}
 
@@ -307,12 +309,14 @@ public class FileSystemTests
 		string[] actual = new FileSystem(mockFs)
 			.GetFiles(directoryPath,"*.cs", SearchOption.AllDirectories);
 		
-		Ms.IDriveInfo drive = mockFs.DriveInfo.GetDrives().FirstOrDefault();
+		var drive = Environment.OSVersion.Platform == PlatformID.Win32NT 
+			? mockFs.DriveInfo.GetDrives().FirstOrDefault()!.Name
+			: "/";
 		//Assert
 		actual.Should().BeEquivalentTo(new [] {
-			Path.Join(drive!.Name, "path","to","first.cs"),
-			Path.Join(drive.Name, "path","to","second.cs"),
-			Path.Join(drive.Name, "path","to","third.cs")
+			Path.Join(drive, "path","to","first.cs"),
+			Path.Join(drive, "path","to","second.cs"),
+			Path.Join(drive, "path","to","third.cs")
 		});
 	}
 	
@@ -624,31 +628,35 @@ public class FileSystemTests
 	#region CopyDirectory
 
 	[Test]
-	public void CopyDirectory_CopiesDirectory(){
+	[Description("Verifies that CopyDirectory copies all files and subdirectories to the target directory.")]
+	public void CopyDirectory_CopiesDirectory()
+	{
 		//Arrange
 		const string directoryName = "dir";
 		const string subDirectoryName = "subDir";
 		Dictionary<string, MockFileData> mockFileData = new();
 		Ms.IFileSystem fs = new MockFileSystem(mockFileData);
-		
 		var targetDir = fs.Directory.CreateDirectory(directoryName);
 		var subDir = targetDir.CreateSubdirectory(subDirectoryName);
-		
 		fs.File.Create(Path.Join(targetDir.FullName, "file.txt"));
 		fs.File.Create(Path.Join(subDir.FullName, "file.txt"));
 		FileSystem sut = new FileSystem(fs);
 		Ms.IDriveInfo cDrive = fs.DriveInfo.GetDrives().First();
-		
+
 		//Act
 		sut.CopyDirectory(targetDir.FullName, "newDir", true);
-		
+
 		// Assert
-		fs.Directory.Exists("newDir").Should().BeTrue();
+		fs.Directory.Exists("newDir").Should().BeTrue("because the directory should be copied");
 		string[] newDir = fs.Directory.GetDirectories("newDir");
-		newDir.Should().HaveCount(1);
+		newDir.Should().HaveCount(1, "because the subdirectory should be copied");
 		string[] copiedFiles = fs.Directory.GetFiles(newDir[0]);
-		copiedFiles.Should().HaveCount(1);
-		copiedFiles.First().Should().Be(Path.Join(cDrive.Name,newDir[0], "file.txt"));
+		copiedFiles.Should().HaveCount(1, "because the file in the subdirectory should be copied");
+		copiedFiles.First().Should().Be(
+			Environment.OSVersion.Platform == PlatformID.Win32NT
+				? Path.Join(cDrive.Name, newDir[0], "file.txt")
+				: Path.Join("/", newDir[0], "file.txt"),
+			"because the file should be copied to the new directory");
 	}
 
 	#endregion
@@ -857,7 +865,7 @@ public class FileSystemTests
 			: fileSystem.GetDirectoryHash("/dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
-		hash1.Should().NotBeEmpty();
+		hash1.Should().NotBeEmpty(because:"the directory is not empty");
 		hash1.Should().Be(hash2,"the same content should produce same hash");
 	}
 	
@@ -867,19 +875,19 @@ public class FileSystemTests
 		var fs = new MockFileSystem();
 		
 		// Create directory structure
-		fs.Directory.CreateDirectory("dir1");
-		fs.File.WriteAllText("dir1/file1.txt", "content1");
-		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		fs.Directory.CreateDirectory("/dir1");
+		fs.File.WriteAllText("/dir1/file1.txt", "content1");
+		fs.File.WriteAllText("/dir1/file2.txt", "content2");
 		
-		fs.Directory.CreateDirectory("dir2");
-		fs.File.WriteAllText("dir2/file1.txt", "content1");
-		fs.File.WriteAllText("dir2/file2.txt", "changed content"); // Different content
+		fs.Directory.CreateDirectory("/dir2");
+		fs.File.WriteAllText("/dir2/file1.txt", "content1");
+		fs.File.WriteAllText("/dir2/file2.txt", "changed content"); // Different content
 		
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		string hash1 = fileSystem.GetDirectoryHash(@"/dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash(@"/dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBe(hash2);
@@ -891,19 +899,19 @@ public class FileSystemTests
 		var fs = new MockFileSystem();
 		
 		// Create directory structure
-		fs.Directory.CreateDirectory("dir1");
-		fs.File.WriteAllText("dir1/file1.txt", "content1");
-		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		fs.Directory.CreateDirectory("/dir1");
+		fs.File.WriteAllText("/dir1/file1.txt", "content1");
+		fs.File.WriteAllText("/dir1/file2.txt", "content2");
 		
-		fs.Directory.CreateDirectory("dir2");
-		fs.File.WriteAllText("dir2/file1.txt", "content1");
-		fs.File.WriteAllText("dir2/different_name.txt", "content2"); // Same content, different name
+		fs.Directory.CreateDirectory("/dir2");
+		fs.File.WriteAllText("/dir2/file1.txt", "content1");
+		fs.File.WriteAllText("/dir2/different_name.txt", "content2"); // Same content, different name
 		
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		string hash1 = fileSystem.GetDirectoryHash("/dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash("/dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBe(hash2);
@@ -915,20 +923,20 @@ public class FileSystemTests
 		var fs = new MockFileSystem();
 		
 		// Create directory structure
-		fs.Directory.CreateDirectory("dir1");
-		fs.File.WriteAllText("dir1/file1.txt", "content1");
-		fs.File.WriteAllText("dir1/file2.txt", "content2");
+		fs.Directory.CreateDirectory("/dir1");
+		fs.File.WriteAllText("/dir1/file1.txt", "content1");
+		fs.File.WriteAllText("/dir1/file2.txt", "content2");
 		
-		fs.Directory.CreateDirectory("dir2");
-		fs.Directory.CreateDirectory("dir2/subdir");
-		fs.File.WriteAllText("dir2/file1.txt", "content1");
-		fs.File.WriteAllText("dir2/subdir/file2.txt", "content2"); // Same content, different name
+		fs.Directory.CreateDirectory("/dir2");
+		fs.Directory.CreateDirectory("/dir2/subdir");
+		fs.File.WriteAllText("/dir2/file1.txt", "content1");
+		fs.File.WriteAllText("/dir2/subdir/file2.txt", "content2"); // Same content, different name
 		
 		var fileSystem = new FileSystem(fs);
 		
 		// Act
-		string hash1 = fileSystem.GetDirectoryHash(@"C:\dir1", FileSystem.Algorithm.SHA256);
-		string hash2 = fileSystem.GetDirectoryHash(@"C:\dir2", FileSystem.Algorithm.SHA256);
+		string hash1 = fileSystem.GetDirectoryHash("/dir1", FileSystem.Algorithm.SHA256);
+		string hash2 = fileSystem.GetDirectoryHash("/dir2", FileSystem.Algorithm.SHA256);
 		
 		// Assert
 		hash1.Should().NotBe(hash2);

@@ -20,7 +20,7 @@ namespace Clio.Command;
 
 #region Class: CustomizeDataProtectionCommandOptions
 
-[Verb("CustomizeDataProtection", Aliases = ["cdp"], HelpText = "DESCRIBE COMMAND HERE")]
+[Verb("CustomizeDataProtection", Aliases = ["cdp"], HelpText = "Flips CustomizeDataProtection value in appsettings.json")]
 public class CustomizeDataProtectionCommandOptions : EnvironmentOptions {
 
 	#region Properties: Public

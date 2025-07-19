@@ -21,3 +21,5 @@ deploy-creatio:run-creatio-installation
 set-app-icon:set-application-icon
 last-compilation-log:get-last-compilation-log
 add-schema:add-schema
+set-fsm-config:Set File-System Mode configuration
+turn-fsm:Turn File-System Mode On/Off

@@ -137,7 +137,9 @@ namespace Clio
 		}
 
 		protected CreatioPackage CreateEmptyClass() {
-			var filePath = Path.Combine(FullPath, "Files\\cs", "EmptyClass.cs");
+			var csDirPath = Path.Combine(FullPath, "Files","cs");
+			Directory.CreateDirectory(csDirPath);
+			var filePath = Path.Combine(FullPath, "Files","cs", "EmptyClass.cs");
 			File.Create(filePath).Dispose();
 			return this;
 		}
