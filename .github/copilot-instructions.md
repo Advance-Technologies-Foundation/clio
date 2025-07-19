@@ -22,7 +22,12 @@
   ```
   result.Should().Be(0, "explain why the result should be 0");
   ```
-
+- Tests should be decorated with Description attribute, explaining what the test is doing.
+ ```csharp
+[Test]
+[Description("Descrites the tests purpose")]
+public void TestName()
+ ```
 
 
 ## Project structure
