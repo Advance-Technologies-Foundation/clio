@@ -10,6 +10,11 @@ using Clio.Common;
 public class TurnFsmCommandOptions : SetFsmConfigOptions
 { }
 
+/// <summary>
+/// Command to turn file system mode on or off for a Creatio environment.
+/// When turning FSM on, it configures the environment and loads packages to file system.
+/// When turning FSM off, it loads packages to database and then configures the environment.
+/// </summary>
 public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 {
 
@@ -25,9 +30,18 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 
 	#region Constructors: Public
 
+	/// <summary>
+	/// Initializes a new instance of the <see cref="TurnFsmCommand"/> class.
+	/// </summary>
+	/// <param name="setFsmConfigCommand">Command to set file system mode configuration.</param>
+	/// <param name="loadPackagesToFileSystemCommand">Command to load packages to file system.</param>
+	/// <param name="loadPackagesToDbCommand">Command to load packages to database.</param>
+	/// <param name="applicationClient">Application client for environment operations.</param>
+	/// <param name="environmentSettings">Environment settings configuration.</param>
 	public TurnFsmCommand(SetFsmConfigCommand setFsmConfigCommand,
 		LoadPackagesToFileSystemCommand loadPackagesToFileSystemCommand,
-		LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient, EnvironmentSettings environmentSettings){
+		LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient, 
+		EnvironmentSettings environmentSettings) {
 		_setFsmConfigCommand = setFsmConfigCommand;
 		_loadPackagesToFileSystemCommand = loadPackagesToFileSystemCommand;
 		_loadPackagesToDbCommand = loadPackagesToDbCommand;
@@ -39,13 +53,17 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 
 	#region Methods: Public
 
-	public override int Execute(TurnFsmCommandOptions options){
+	/// <summary>
+	/// Executes the file system mode toggle command.
+	/// </summary>
+	/// <param name="options">Command options containing FSM configuration.</param>
+	/// <returns>0 if successful, 1 if failed.</returns>
+	public override int Execute(TurnFsmCommandOptions options) {
 		if (options.IsFsm == "on") {
 			if (_setFsmConfigCommand.Execute(options) == 0) {
 				options.IsNetCore = _environmentSettings.IsNetCore;
-				if(options.IsNetCore == true) {
-					var opt = new RestartOptions
-					{
+				if (options.IsNetCore == true) {
+					var opt = new RestartOptions {
 						Environment = options.Environment,
 						Uri = options.Uri,
 						Login = options.Login,
