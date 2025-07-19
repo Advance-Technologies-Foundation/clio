@@ -371,10 +371,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	internal Version GetLatestVersion(string remoteArtifactServerPath){
 		string[] branches = _fileSystem.GetDirectories(remoteArtifactServerPath);
-		//var branches = Directory.GetDirectories(remoteArtifactServerPath);
 		List<Version> version = new List<Version>();
 		foreach (string branch in branches) {
-			string branchName = branch.Split('\\').Last();
+			string branchName = branch.Split(Path.DirectorySeparatorChar).Last();
 			if (Version.TryParse(branchName, out Version ver)) {
 				version.Add(ver);
 			}

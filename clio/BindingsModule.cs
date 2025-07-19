@@ -75,11 +75,13 @@ public class BindingsModule {
 			containerBuilder.RegisterInstance(settings);
 		}
 
-		containerBuilder.Register(provider => {
+		containerBuilder.Register(provider =>
+		{
 			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
 			return new Kubernetes(config);
 		}).As<IKubernetes>();
 		containerBuilder.RegisterType<k8Commands>();
+	
 		containerBuilder.RegisterType<InstallerCommand>();
 
 		if (_fileSystem is not null) {
