@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using Autofac;
 using Clio.Common;
 using Clio.ComposableApplication;
@@ -63,13 +64,8 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 
 	public override void Setup() {
 		base.Setup();
-		//FileSystem.MockExamplesFolder("workspaces", "T:\\workspaces");
 		FileSystem.MockExamplesFolder("workspaces", WorkspacesFolderPath);
-
-		//FileSystem.MockExamplesFolder("SVG_Icons", "T:\\SVG_Icons");
 		FileSystem.MockExamplesFolder("SVG_Icons", Path.Combine(_tempPath, "SVG_Icons"));
-
-		//FileSystem.MockExamplesFolder("AppZips", "T:\\AppZips");
 		FileSystem.MockExamplesFolder("AppZips", Path.Combine(_tempPath, "AppZips"));
 		_sut = Container.Resolve<IComposableApplicationManager>();
 	}
@@ -113,7 +109,6 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		string expectedFilePath
 			= Path.Combine(WorkspacesFolderPath, "ApolloAppWorkspace", "packages", "MrktApolloApp", "Files",
 				"app-descriptor.json");
-		//@"T:\workspaces\ApolloAppWorkspace\packages\MrktApolloApp\Files\app-descriptor.json";
 		const string appName = "MrktApolloApp";
 
 		// Act
@@ -127,7 +122,12 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		string iconFileName = Path.GetFileNameWithoutExtension(IconPath);
 		const string timestampPattern = @"\d{14}.svg$"; // Matches the datetime format "yyyyMMddHHmmss"
 		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
-		appDescriptor.Icon.Should().Be(PartnerSvgBase64);
+
+		var currentDir = Directory.GetCurrentDirectory();
+		var svgActualPath = Path.Combine(currentDir, "Examples", "SVG_Icons", "Partner.svg");
+		string actualBase64EncodedIcon = Convert.ToBase64String(File.ReadAllBytes(svgActualPath));
+		
+		appDescriptor.Icon.Should().Be(actualBase64EncodedIcon, because: "the icon in the descriptor should match the base64-encoded SVG file content");
 	}
 
 	[Test]
@@ -152,7 +152,12 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		string timestampPattern = @"\d{14}.svg$";
 		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}",
 			"because the icon name should follow the expected pattern");
-		appDescriptor.Icon.Should().Be(PartnerSvgBase64, "because the icon content should match the expected base64 string");
+		
+		var currentDir = Directory.GetCurrentDirectory();
+		var svgActualPath = Path.Combine(currentDir, "Examples", "SVG_Icons", "Partner.svg");
+		string actualBase64EncodedIcon = Convert.ToBase64String(File.ReadAllBytes(svgActualPath));
+		
+		appDescriptor.Icon.Should().Be(actualBase64EncodedIcon, "because the icon content should match the expected base64 string");
 	}
 
 	[Test]
@@ -278,6 +283,7 @@ public class ZipFileMockWrapper : IZipFile {
 	#region Methods: Public
 
 	public void CreateFromDirectory(string sourceDirectoryName, string destinationArchiveFileName) {
+		
 		List<string> allFiles = _fileSystem.Directory
 											.GetFiles(sourceDirectoryName, "*", SearchOption.AllDirectories)
 											.ToList();
@@ -285,8 +291,8 @@ public class ZipFileMockWrapper : IZipFile {
 		_workingDirectoriesProvider.CreateTempDirectory(tempDir => {
 			foreach (string file in allFiles) {
 				string relativePathFileName = file.Replace(sourceDirectoryName, string.Empty);
-				string realFsFileName = Path.Combine(tempDir, relativePathFileName.TrimStart('\\'));
-				Directory.CreateDirectory(Path.GetDirectoryName(realFsFileName));
+				string realFsFileName = Path.Join(tempDir, relativePathFileName.TrimStart('\\'));
+				var newDir = Directory.CreateDirectory(Path.GetDirectoryName(realFsFileName));
 				byte[] fakeFsBytes = _fileSystem.File.ReadAllBytes(file);
 				File.WriteAllBytes(realFsFileName, fakeFsBytes); //write to real FS
 			}
