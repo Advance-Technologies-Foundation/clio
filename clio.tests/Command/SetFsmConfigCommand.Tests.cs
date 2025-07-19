@@ -66,6 +66,9 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 	#endregion
 
+	
+#if WINDOWS	
+	
 	/// <summary>
 	///  Verifies that the command works with environment name when physical path is not provided.
 	/// </summary>
@@ -81,12 +84,6 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
 
 		// Act & Assert
-		// Note: This test demonstrates that the GetWebConfigPathFromEnvName method is being called
-		// when PhysicalPath is not provided. The test will throw an exception because
-		// IISScannerHandler.FindAllCreatioSites() is a static method that cannot be easily mocked.
-		// 
-		// To properly test this functionality, the SetFsmConfigCommand would need to be refactored
-		// to use dependency injection for the IIS scanning functionality instead of static methods.
 		Action act = () => _command.Execute(options);
 		act.Should().Throw<Exception>()
 			.WithMessage("Could not find path to environment: 'test-env'");
@@ -418,5 +415,23 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 		Directory.Delete(tempDir, true);
 	}
+	
+#else
 
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command throws an exception on non-Windows OS.")]
+	public void Execute_Should_Throw()
+	{
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "on" };
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		// Act & Assert
+		Action act = () => _command.Execute(options);
+		act.Should().Throw<Exception>()
+			.WithMessage("This command is only supported on Windows OS.");
+	}
+
+#endif
 }

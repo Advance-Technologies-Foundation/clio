@@ -62,15 +62,25 @@ public class CreatioPkgTests
 			System.IO.Directory.CreateDirectory(ResultDir);
 		}
 	}
-
+	
 	[Test, Category("Integration")]
 	[TestCase(CreatioPackage.DescriptorName, CreatioPackage.DescriptorName, "CreateDescriptor", TestName = "Check Correct Descriptor")]
 	[TestCase(PackageName + "." + CreatioPackage.CsprojExtension, "Proj.csproj", "CreateProjFile",
 		TestName = "Check Correct ProjectFile")]
 	[TestCase(CreatioPackage.PackageConfigName, CreatioPackage.PackageConfigName, "CreateNugetPackageConfig",
 		TestName = "Check Correct PackageConfig")]
-	[TestCase(CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, CreatioPackage.AssemblyInfoName,
+	
+#if WINDOWS	
+	[TestCase(
+		CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName, 
+		CreatioPackage.AssemblyInfoName,
 		"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo file")]
+# else
+	[TestCase(
+		CreatioPackage.PropertiesDirName + "/" + CreatioPackage.AssemblyInfoName,
+		CreatioPackage.AssemblyInfoName,
+		"CreateAssemblyProps", TestName = "Check Correct AssemblyInfo file")]
+#endif
 	public void CreatioPkg_Create_CheckCorrectFiles(string resultFileName, string sampleFileName, string methodName)
 	{
 		var pkg = new CreatioPkgMock();
@@ -92,21 +102,21 @@ public class CreatioPkgTests
 		File(Path.Combine(pkg.FullPath, CreatioPackage.DescriptorName)).Should().Exist();
 		File(Path.Combine(pkg.FullPath, PackageName + "." + CreatioPackage.CsprojExtension)).Should().Exist();
 		File(Path.Combine(pkg.FullPath, CreatioPackage.PackageConfigName)).Should().Exist();
-		File(Path.Combine(pkg.FullPath, CreatioPackage.PropertiesDirName + "\\" + CreatioPackage.AssemblyInfoName))
+		File(Path.Combine(pkg.FullPath, CreatioPackage.PropertiesDirName,CreatioPackage.AssemblyInfoName))
 			.Should().Exist();
-		File(Path.Combine(pkg.FullPath, "Files\\cs", "EmptyClass.cs")).Should().Exist();
-		File(Path.Combine(pkg.FullPath, "Assemblies" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
-		File(Path.Combine(pkg.FullPath, "Data" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
-		File(Path.Combine(pkg.FullPath, "Resources" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
-		File(Path.Combine(pkg.FullPath, "Schemas" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
-		File(Path.Combine(pkg.FullPath, "SqlScripts" + "\\" + CreatioPackage.PlaceholderFileName)).Should().Exist();
+		File(Path.Combine(pkg.FullPath, "Files","cs", "EmptyClass.cs")).Should().Exist();
+		File(Path.Combine(pkg.FullPath, "Assemblies",CreatioPackage.PlaceholderFileName)).Should().Exist();
+		File(Path.Combine(pkg.FullPath, "Data",CreatioPackage.PlaceholderFileName)).Should().Exist();
+		File(Path.Combine(pkg.FullPath, "Resources",CreatioPackage.PlaceholderFileName)).Should().Exist();
+		File(Path.Combine(pkg.FullPath, "Schemas",CreatioPackage.PlaceholderFileName)).Should().Exist();
+		File(Path.Combine(pkg.FullPath, "SqlScripts",CreatioPackage.PlaceholderFileName)).Should().Exist();
 		Directory(Path.Combine(pkg.FullPath, "Assemblies")).Should().Exist();
 		Directory(Path.Combine(pkg.FullPath, "Data")).Should().Exist();
 		Directory(Path.Combine(pkg.FullPath, "Resources")).Should().Exist();
 		Directory(Path.Combine(pkg.FullPath, "Schemas")).Should().Exist();
 		Directory(Path.Combine(pkg.FullPath, "SqlScripts")).Should().Exist();
 		Directory(Path.Combine(pkg.FullPath, "Files")).Should().Exist();
-		Directory(Path.Combine(pkg.FullPath, "Files\\cs")).Should().Exist();
+		Directory(Path.Combine(pkg.FullPath, "Files","cs")).Should().Exist();
 	}
 
 	[Test, Category("Integration")]

@@ -106,6 +106,12 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
 	#region Methods: Public
 	public override int Execute(SetFsmConfigOptions options) {
+
+		if (Environment.OSVersion.Platform != PlatformID.Win32NT) {
+			throw new Exception("This command is only supported on Windows OS.");
+		}
+		
+		
 		ValidationResult validationResult = _validator.Validate(options);
 		if (validationResult.Errors.Count != 0) {
 			PrintErrors(validationResult.Errors);
