@@ -3,6 +3,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
+[Category("CommandTests")]
 public abstract class BaseCommandTests<T> : BaseClioModuleTests
 {
 
