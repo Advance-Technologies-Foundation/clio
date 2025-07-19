@@ -241,10 +241,21 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 			"app-descriptor.json");
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("More than one app-descriptor.json file found with the same Code:\n" +
-				$"{pathV1}{Environment.NewLine}{pathV2}{Environment.NewLine}");
-	}
+            InvalidOperationException ex = act
+                    .Should()
+                    .Throw<InvalidOperationException>()
+                    .Which;
+
+            ex.Message.Should()
+                    .StartWith("More than one app-descriptor.json file found with the same Code:");
+
+            string[] lines = ex.Message
+                    .Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+            lines.Skip(1)
+                    .Should()
+                    .BeEquivalentTo(new[] { pathV1, pathV2 });
+        }
 
 	[Test]
 	public void SetIcon_ShouldThrow_When_PackagesFolderPathNonExistant() {
