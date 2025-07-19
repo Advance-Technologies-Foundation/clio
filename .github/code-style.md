@@ -5,17 +5,14 @@ This document outlines the accepted coding style for C# development at Creatio, 
 ---
 
 ## 1. **Indentation**
-- Use **tabs** for indentation, Tab size should be set to **4 spaces**
+- Use **tabs** for indentation
 - Do not mix tabs and spaces
 - Configure your IDE to show tabs as 4 spaces
 
 ```csharp
-public class Example
-{
-	public void Method()
-	{
-		if (condition)
-		{
+public class Example{
+	public void Method(){
+		if (condition){
 			DoSomething();
 		}
 	}
@@ -154,12 +151,12 @@ _log.Error(string.Format(new LocalizableString("Namespace", "Key"), arg1, arg2))
 ```
 - XML comments follow standard XML doc formatting (no TODO rule)
 
----
-
-## 12. **StyleCop & Linting**
-- Pre-commit hooks check formatting
-- Use StyleCop rules for additional guidance: https://creatio.atlassian.net/wiki/spaces/TER/pages/2321723046/StyleCop
-
----
+## 12. **Unit Tests**
+- Use `NUnit` for unit tests
+- Every test should have [Description] attribute, clearly explaining the test purpose
+- Assertions should be clear and descriptive, use because to explain the seertion
+```csharp
+expectedResult.Should().Be(actualResult, "because the method should return the expected result");
+``
 
 End of file.

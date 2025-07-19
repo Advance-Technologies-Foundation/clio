@@ -1,209 +1,225 @@
-﻿using Clio.UserEnvironment;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Xml;
 using Clio.Command;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using FluentValidation;
 using FluentValidation.Results;
 using NSubstitute;
 using NUnit.Framework;
-using System.Collections.Generic;
-using System.IO;
-using System;
-using System.Xml;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 
-namespace Clio.Tests.Command
-{
-    /// <summary>
-    /// Unit tests for <see cref="SetFsmConfigCommand"/>.
-    /// </summary>
-    [TestFixture]
-    public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions>
-    {
-        private IValidator<SetFsmConfigOptions> _validator;
-        private ISettingsRepository _settingsRepository;
-        private SetFsmConfigCommand _command;
+namespace Clio.Tests.Command;
 
-        /// <summary>
-        /// Testable version of SetFsmConfigCommand for mocking IIS site scanning.
-        /// </summary>
-        [SetUp]
-        public void Setup()
-        {
-            _validator = Substitute.For<IValidator<SetFsmConfigOptions>>();
-            _settingsRepository = Substitute.For<ISettingsRepository>();
-            _command = new SetFsmConfigCommand(_validator, _settingsRepository);
-        }
+/// <summary>
+///  Unit tests for <see cref="SetFsmConfigCommand" />.
+/// </summary>
+[TestFixture]
+public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
-        /// <summary>
-        /// Should return error when validation fails.
-        /// </summary>
-        [Test, Category("Unit")]
-        public void Execute_ReturnsError_WhenValidationFails()
-        {
-            // Arrange
-            var options = new SetFsmConfigOptions { IsFsm = "on" };
-            _validator.Validate(options).Returns(new ValidationResult(new List<ValidationFailure>
-            {
-                new ValidationFailure("IsFsm", "Error message")
-            }));
+	#region Setup/Teardown
 
-            // Act
-            var result = _command.Execute(options);
+	/// <summary>
+	///  Initializes the test setup.
+	/// </summary>
+	[SetUp]
+	public override void Setup() {
+		base.Setup();
+		_validator = Substitute.For<IValidator<SetFsmConfigOptions>>();
+		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_command = new SetFsmConfigCommand(_validator, _settingsRepository);
+	}
 
-            // Assert
-            result.Should().Be(1, "because validation failed");
-        }
+	#endregion
 
-        /// <summary>
-        /// Should update config file and return success when validation passes and config exists (Windows path).
-        /// </summary>
-        [Test, Category("Unit")]
-        public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_WindowsPath()
-        {
-            // Arrange
-            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
-            var configPath = Path.Combine(tempDir, "Web.config");
-            File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+	#region Fields: Private
 
-            var options = new SetFsmConfigOptions { IsFsm = "on", PhysicalPath = tempDir };
-            _validator.Validate(options).Returns(new ValidationResult());
+	private IValidator<SetFsmConfigOptions> _validator;
+	private ISettingsRepository _settingsRepository;
+	private SetFsmConfigCommand _command;
 
-            var env = new EnvironmentSettings { Uri = "http://test.com", IsNetCore = false };
-            _settingsRepository.GetEnvironment(options).Returns(env);
+	#endregion
 
-            // Act
-            var result = _command.Execute(options);
+	#region Methods: Private
 
-            // Assert
-            result.Should().Be(0, "because config exists and should be updated");
+	/// <summary>
+	///  Returns a sample web.config XML string.
+	/// </summary>
+	/// <param name="fileDesignModeEnabled">The value for the fileDesignMode enabled attribute.</param>
+	/// <param name="useStaticFileContent">The value for the UseStaticFileContent key.</param>
+	/// <returns>A sample web.config XML string.</returns>
+	private static string GetSampleWebConfig(string fileDesignModeEnabled, string useStaticFileContent) {
+		return $"""
+				<?xml version="1.0" encoding="utf-8"?>
+				<configuration>
+				  <terrasoft>
+					<fileDesignMode enabled="{fileDesignModeEnabled}" />
+				  </terrasoft>
+				  <appSettings>
+					<add key="UseStaticFileContent" value="{useStaticFileContent}" />
+				  </appSettings>
+				</configuration>
+				""";
+	}
 
-            var doc = new XmlDocument();
-            doc.Load(configPath);
-            var fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
-            var useStaticFileContent = doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
+	#endregion
 
-            fileDesignMode.Should().Be("true", "because IsFsm=on sets fileDesignMode enabled to true");
-            useStaticFileContent.Should().Be("false", "because IsFsm=on sets UseStaticFileContent to false");
+	/// <summary>
+	///  Verifies that the command returns an error if the config file does not exist.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command returns an error when the config file does not exist.")]
+	public void Execute_ReturnsError_WhenConfigDoesNotExist() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
 
-            Directory.Delete(tempDir, true);
-        }
+		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
+		_validator.Validate(options).Returns(new ValidationResult());
 
-        /// <summary>
-        /// Should update config file and return success when validation passes and config exists (Linux path).
-        /// </summary>
-        [Test, Category("Unit")]
-        public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_LinuxPath()
-        {
-            // Arrange
-            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
-            var configPath = Path.Combine(tempDir, "Web.config");
-            File.WriteAllText(configPath, GetSampleWebConfig("true", "false"));
+		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
 
-            var options = new SetFsmConfigOptions { IsFsm = "off", PhysicalPath = tempDir };
-            _validator.Validate(options).Returns(new ValidationResult());
+		// Act
+		int result = _command.Execute(options);
 
-            var env = new EnvironmentSettings { Uri = "http://test.com", IsNetCore = false };
-            _settingsRepository.GetEnvironment(options).Returns(env);
+		// Assert
+		result.Should().Be(1, "because config file does not exist");
 
-            // Act
-            var result = _command.Execute(options);
+		Directory.Delete(tempDir, true);
+	}
 
-            // Assert
-            result.Should().Be(0, "because config exists and should be updated");
+	/// <summary>
+	///  Verifies that the command returns an error when validation fails.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command returns an error when validation fails.")]
+	public void Execute_ReturnsError_WhenValidationFails() {
+		// Arrange
+		SetFsmConfigOptions options = new() {IsFsm = "on"};
+		_validator.Validate(options).Returns(new ValidationResult(new List<ValidationFailure> {
+			new("IsFsm", "Error message")
+		}));
 
-            var doc = new XmlDocument();
-            doc.Load(configPath);
-            var fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
-            var useStaticFileContent = doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
+		// Act
+		int result = _command.Execute(options);
 
-            fileDesignMode.Should().Be("false", "because IsFsm=off sets fileDesignMode enabled to false");
-            useStaticFileContent.Should().Be("true", "because IsFsm=off sets UseStaticFileContent to true");
+		// Assert
+		result.Should().Be(1, "because validation failed");
+	}
 
-            Directory.Delete(tempDir, true);
-        }
+	/// <summary>
+	///  Verifies that the command updates the config file and returns success when validation passes and the config exists
+	///  (Linux path).
+	/// </summary>
+	[Test, Category("Unit")]
+	[Description("Ensures the command updates the config file correctly for Linux paths when validation passes.")]
+	public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_LinuxPath() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Web.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("true", "false"));
 
-        /// <summary>
-        /// Should use correct config file name for .NET Core environments.
-        /// </summary>
-        [Test, Category("Unit")]
-        public void Execute_UsesCorrectWebConfigFileName_ForNetCore()
-        {
-            // Arrange
-            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
-            var configPath = Path.Combine(tempDir, "Terrasoft.WebHost.dll.config");
-            File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+		SetFsmConfigOptions options = new() {IsFsm = "off", PhysicalPath = tempDir};
+		_validator.Validate(options).Returns(new ValidationResult());
 
-            var options = new SetFsmConfigOptions { IsFsm = "on", PhysicalPath = tempDir };
-            _validator.Validate(options).Returns(new ValidationResult());
+		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
 
-            var env = new EnvironmentSettings { Uri = "http://test.com", IsNetCore = true };
-            _settingsRepository.GetEnvironment(options).Returns(env);
+		// Act
+		int result = _command.Execute(options);
 
-            // Act
-            var result = _command.Execute(options);
+		// Assert
+		result.Should().Be(0, "because config exists and should be updated");
 
-            // Assert
-            result.Should().Be(0, "because .NET Core config exists and should be updated");
+		XmlDocument doc = new();
+		doc.Load(configPath);
+		string fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
+		string useStaticFileContent
+			= doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
 
-            var doc = new XmlDocument();
-            doc.Load(configPath);
-            var fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
-            var useStaticFileContent = doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
+		fileDesignMode.Should().Be("false", "because IsFsm=off sets fileDesignMode enabled to false");
+		useStaticFileContent.Should().Be("true", "because IsFsm=off sets UseStaticFileContent to true");
 
-            fileDesignMode.Should().Be("true", "because IsFsm=on sets fileDesignMode enabled to true");
-            useStaticFileContent.Should().Be("false", "because IsFsm=on sets UseStaticFileContent to false");
+		Directory.Delete(tempDir, true);
+	}
 
-            Directory.Delete(tempDir, true);
-        }
+	/// <summary>
+	///  Verifies that the command updates the config file and returns success when validation passes and the config exists
+	///  (Windows path).
+	/// </summary>
+	[Test, Category("Unit")]
+	[Description("Ensures the command updates the config file correctly for Windows paths when validation passes.")]
+	public void Execute_ReturnsSuccess_WhenValidationPasses_AndConfigExists_WindowsPath() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Web.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
 
-        /// <summary>
-        /// Should return error if config file does not exist.
-        /// </summary>
-        [Test, Category("Unit")]
-        public void Execute_ReturnsError_WhenConfigDoesNotExist()
-        {
-            // Arrange
-            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
+		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
+		_validator.Validate(options).Returns(new ValidationResult());
 
-            var options = new SetFsmConfigOptions { IsFsm = "on", PhysicalPath = tempDir };
-            _validator.Validate(options).Returns(new ValidationResult());
+		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = false};
+		_settingsRepository.GetEnvironment(options).Returns(env);
 
-            var env = new EnvironmentSettings { Uri = "http://test.com", IsNetCore = false };
-            _settingsRepository.GetEnvironment(options).Returns(env);
+		// Act
+		int result = _command.Execute(options);
 
-            // Act
-            var result = _command.Execute(options);
+		// Assert
+		result.Should().Be(0, "because config exists and should be updated");
 
-            // Assert
-            result.Should().Be(1, "because config file does not exist");
+		XmlDocument doc = new();
+		doc.Load(configPath);
+		string fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
+		string useStaticFileContent
+			= doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
 
-            Directory.Delete(tempDir, true);
-        }
+		fileDesignMode.Should().Be("true", "because IsFsm=on sets fileDesignMode enabled to true");
+		useStaticFileContent.Should().Be("false", "because IsFsm=on sets UseStaticFileContent to false");
 
-        
-       
+		Directory.Delete(tempDir, true);
+	}
 
-        /// <summary>
-        /// Returns a sample web.config XML string.
-        /// </summary>
-        private static string GetSampleWebConfig(string fileDesignModeEnabled, string useStaticFileContent)
-        {
-            return $"""
-                    <?xml version="1.0" encoding="utf-8"?>
-                    <configuration>
-                      <terrasoft>
-                        <fileDesignMode enabled="{fileDesignModeEnabled}" />
-                      </terrasoft>
-                      <appSettings>
-                        <add key="UseStaticFileContent" value="{useStaticFileContent}" />
-                      </appSettings>
-                    </configuration>
-                    """;
-        }
-    }
+	/// <summary>
+	///  Verifies that the command uses the correct config file name for .NET Core environments.
+	/// </summary>
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that the command uses the correct config file name for .NET Core environments.")]
+	public void Execute_UsesCorrectWebConfigFileName_ForNetCore() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Terrasoft.WebHost.dll.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+
+		SetFsmConfigOptions options = new() {IsFsm = "on", PhysicalPath = tempDir};
+		_validator.Validate(options).Returns(new ValidationResult());
+
+		EnvironmentSettings env = new() {Uri = "http://test.com", IsNetCore = true};
+		_settingsRepository.GetEnvironment(options).Returns(env);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because .NET Core config exists and should be updated");
+
+		XmlDocument doc = new();
+		doc.Load(configPath);
+		string fileDesignMode = doc.SelectSingleNode("//terrasoft/fileDesignMode").Attributes["enabled"].Value;
+		string useStaticFileContent
+			= doc.SelectSingleNode("//appSettings/add[@key='UseStaticFileContent']").Attributes["value"].Value;
+
+		fileDesignMode.Should().Be("true", "because IsFsm=on sets fileDesignMode enabled to true");
+		useStaticFileContent.Should().Be("false", "because IsFsm=on sets UseStaticFileContent to false");
+
+		Directory.Delete(tempDir, true);
+	}
+
 }
