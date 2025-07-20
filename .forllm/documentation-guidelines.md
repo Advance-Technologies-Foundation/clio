@@ -71,37 +71,39 @@ Follow the command's logic to understand its behavior, especially if it has comp
 Each file must follow this structure:
 
 ```markdown
-# <verb>
-
-## Summary
-<Brief summary of the command>
-
-## Aliases
-- <alias1>
-- <alias2>
-
-## Options
-
-| Name        | Short | Type   | Required | Description                          | Default   |
-|-------------|-------|--------|----------|--------------------------------------|-----------|
-| --option    | -o    | string | Yes      | Description of the option            |           |
-| --timeout   | N/A   | int    | No       | Request timeout                      | 100000    |
-
-*Options from base classes must be included and marked as inherited if applicable.*
-
-## Examples
-
-Provide usage examples for the command. Use realistic scenarios that demonstrate how to use the command effectively.
-Provide several usage examples, including different options and combinations.
-```bash
-clio <verb> --option value --timeout 3000
+    # <verb>
+    
+    ## Summary
+    <Brief summary of the command>
+    
+    ## Description
+    <Explain what the command does in detail. Mention **important** behaviors, steps, or caveats.
+    Do not include implementation details, focus on user-facing behavior.>
+    
+    ## Aliases
+    - <alias1>
+    - <alias2>
+    
+    ## Options
+    
+    Clearly identify positional argument if any. Maintain tabluar format for options.
+    
+    | Name        | Short | Type   | Required | Description                          | Default   |
+    |-------------|-------|--------|----------|--------------------------------------|-----------|
+    | --option    | -o    | string | Yes      | Description of the option            |           |
+    | --timeout   | N/A   | int    | No       | Request timeout                      | 100000    |
+    
+    *Options from base classes must be included and marked as inherited if applicable.*
+    
+    ## Examples
+    
+    Provide usage examples for the command.
+    Use realistic scenarios that demonstrate how to use the command effectively.
+    Provide several usage examples, including different options and combinations.
+    ```bash
+    clio <verb> --option value --timeout 3000
+    ```
 ```
-
-## Description
-
-Explain what the command does in detail.
-Mention **important** behaviors, steps, or caveats.
-Do not include implementation details, focus on user-facing behavior.
 
 ## Validation Checklist
 
@@ -129,7 +131,6 @@ When generating command documentation, use the format above. Ensure accuracy in:
 - Option coverage (including inherited)
 - Realistic usage examples
 - Language clarity and consistency
-
-If any expected mapping, alias, or behavior is unclear from the source code, annotate that section with `TODO:` for human review.
+- If any expected mapping, alias, or behavior is unclear from the source code, annotate that section with `TODO:` for human review.
 
 

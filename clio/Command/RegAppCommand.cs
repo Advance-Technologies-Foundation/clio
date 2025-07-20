@@ -22,7 +22,7 @@ public class RegAppOptions : EnvironmentNameOptions {
 	[Option("checkLogin", Required = false, HelpText = "Try login after registration")]
 	public bool CheckLogin { get; set; }
 
-	[Option("add-from-iis", Required = false, HelpText = "Register all Creatios from IIS")]
+	[Option("add-from-iis", Required = false, HelpText = "Register all instances of Creatio from IIS")]
 	public bool FromIis { get; set; }
 
 	[Option("host", Required = false, HelpText = "Computer name where IIS is hosted")]
