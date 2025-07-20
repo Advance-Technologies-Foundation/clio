@@ -1,0 +1,14 @@
+items:
+- name: Application Management
+  items:
+  - name: Restart
+    href: restart-web-app.md
+  - name: Clear Redis
+    href: clear-redis-db.md
+  - name: Register Web Application
+    href: reg-web-app.md
+- name: Package Management
+- name: Environment Settings
+- name: Workspaces
+- name: Development
+- name: GitOps

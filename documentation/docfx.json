@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "build": {
+    "content": [
+      {
+        "files": [
+          "**/*.{md,yml}"
+        ],
+        "exclude": [
+          "_site/**"
+        ]
+      }
+    ],
+    "resource": [
+      {
+        "files": [
+          "images/**"
+        ]
+      }
+    ],
+    "output": "_site",
+    "template": [
+      "default",
+      "modern"
+    ],
+    "globalMetadata": {
+      "_appName": "clio",
+      "_appTitle": "clio",
+      "_enableSearch": true,
+      "pdf": true,
+      "_gitUrlPattern": "github",
+      "_gitContribute": "https://github.com/Advance-Technologies-Foundation/clio.git",
+      "highlight": {
+        "enabled": true,
+        "languages": [
+          "csharp",
+          "javascript"
+        ]
+      }
+    },
+    "markdownEngineProperties": {
+      "markdigExtensions": [
+          "Abbreviations",
+          "Footnotes"
+      ],
+      "plantUml": {
+          "outputFormat": "svg",
+          "remoteUrl": "http://www.plantuml.com/plantuml/",
+          "renderingMode": "remote"
+      }
+    }
+  }
+}
