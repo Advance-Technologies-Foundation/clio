@@ -1,14 +1,53 @@
 items:
 - name: Application Management
   items:
+  - name: Register Web Application
+    href: reg-web-app.md
+  - name: Unregister Web Application
+    href: unreg-web-app.md
+  - name: Show Web Application List
+    href: show-web-app-list.md
   - name: Restart
     href: restart-web-app.md
   - name: Clear Redis
     href: clear-redis-db.md
-  - name: Register Web Application
-    href: reg-web-app.md
+  - name: Install Gate
+    href: install-gate.md
 - name: Package Management
+  items:
+  - name: Push Package
+    href: push-pkg.md
+  - name: Pull Package
+    href: pull-pkg.md
+  - name: Delete Package
+    href: delete-pkg-remote.md
+  - name: Generate Package Zip
+    href: generate-pkg-zip.md
+  - name: Extract Package Zip
+    href: extract-pkg-zip.md
+  - name: New Package
+    href: new-pkg.md
+  - name: Set Package Version
+    href: set-pkg-version.md
 - name: Environment Settings
-- name: Workspaces
+  items:
+  - name: Set System Setting
+    href: set-syssetting.md
+  - name: Set Feature
+    href: set-feature.md
+  - name: Set Dev Mode
+    href: set-dev-mode.md
 - name: Development
+  items:
+  - name: Add Item
+    href: add-item.md
+  - name: Execute Assembly Code
+    href: execute-assembly-code.md
+  - name: Execute SQL Script
+    href: execute-sql-script.md
+  - name: Update CLI
+    href: update-cli.md
+  - name: Help
+    href: help.md
+- name: Workspaces
 - name: GitOps
