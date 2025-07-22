@@ -50,7 +50,7 @@ spec:
             - containerPort: 1433
               name: primary-port
           volumeMounts:
-            - mountPath: /var/opt/mssql
+            - mountPath: /var/opt/mssql/data
               name: mssql-data 
   volumeClaimTemplates:
   - metadata:
