@@ -80,14 +80,14 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IPostgres> _dropPgDbByName
 		= (dbName, cn, logger, db) => {
-			db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
+			db.Init($"{BindingsModule.k8sDns}", cn.DbPort, cn.DbUsername, cn.DbPassword);
 			db.DropDb(dbName);
 			logger.WriteInfo($"Postgres DB: {dbName} dropped");
 		};
 
 	private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
 		= (dbName, cn, logger, db) => {
-			db.Init("127.0.0.1", cn.DbPort, cn.DbUsername, cn.DbPassword);
+			db.Init($"{BindingsModule.k8sDns}", cn.DbPort, cn.DbUsername, cn.DbPassword);
 			db.DropDb(dbName);
 			logger.WriteInfo($"MsSQL DB: {dbName} dropped");
 		};

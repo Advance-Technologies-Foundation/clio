@@ -36,6 +36,7 @@ public class BindingsModule {
 
 	#region Fields: Private
 
+	public static string k8sDns = "";
 	private readonly IFileSystem _fileSystem;
 
 	#endregion
@@ -78,6 +79,16 @@ public class BindingsModule {
 		containerBuilder.Register(provider =>
 		{
 			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+			Uri.TryCreate(config.Host, UriKind.Absolute, out var uriResult);
+			if (uriResult != null && uriResult.Scheme == Uri.UriSchemeHttp) {
+				k8sDns = uriResult.Host;
+			}
+			else if (uriResult != null && uriResult.Scheme == Uri.UriSchemeHttps) {
+				k8sDns = uriResult.Host;
+			}
+			else {
+				throw new InvalidOperationException("Invalid Kubernetes configuration host.");
+			}
 			return new Kubernetes(config);
 		}).As<IKubernetes>();
 		containerBuilder.RegisterType<k8Commands>();

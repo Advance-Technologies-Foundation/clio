@@ -47,7 +47,7 @@ public class Mssql : IMssql
 	
 	public Mssql(int port, string username, string password) {
 		_builder = new SqlConnectionStringBuilder {
-			DataSource = $"127.0.0.1,{port}",
+			DataSource = $"{BindingsModule.k8sDns},{port}",
 			UserID = username,
 			Password = password,
 			InitialCatalog = "master",
