@@ -247,7 +247,9 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	/// </summary>
 	public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> GetSites = psf => {
 		Dictionary<string, Uri> result = new();
-
+		var psfInstance = psf.GetInstance();
+		psf.GetInstance().AddCommand("Import-Module").AddArgument("WebAdministration").Invoke();
+		
 		Collection<Site> sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
 		Collection<WebApp> webApps = psf.GetInstance().AddCommand("Get-WebApplication").Invoke<WebApp>();
 
@@ -383,7 +385,7 @@ public record Site {
 	private static readonly Func<PSObject, Site> _asSite = psObject => {
 		return new Site {
 			Name = psObject.Properties["Name"].Value as string,
-			PhysicalPath = psObject.Properties["PhysicalPath"].ToString(),
+			PhysicalPath = psObject.Properties["PhysicalPath"]?.Value as string ?? string.Empty,
 			Id = (long)psObject.Properties["Id"].Value,
 			EnabledProtocols = psObject.Properties["EnabledProtocols"].ToString(),
 			Binding = (psObject.Properties["Bindings"].Value as PSObject).Properties

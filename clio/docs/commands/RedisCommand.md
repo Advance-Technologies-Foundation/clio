@@ -24,7 +24,6 @@ The RedisCommand inherits all options from `RemoteCommandOptions`, which include
 | `--uri`         | `-u`  | Creatio application URI                    | `string` | -       |
 | `--login`       | `-l`  | Login username for authentication          | `string` | -       |
 | `--password`    | `-p`  | Password for authentication                | `string` | -       |
-| `--maintainer`  | `-m`  | Maintainer mode access                     | `string` | -       |
 
 ### Remote Command Options
 

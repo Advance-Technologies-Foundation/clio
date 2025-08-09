@@ -18,6 +18,8 @@ The documentation should help users understand command purpose, arguments, and u
 5. **Document arguments** with required/optional status and defaults
 6. **Create usage examples** based on real-world scenarios
 7. **Save documentation** in `clio/docs/commands/[command-name].md` (path from the repository root).
+8. **Update Commands.md** file to reference new or updated command documentation
+9. Command references should be maintained as correct navigational links as [`command`](./path-to-command-doc.md). For instance ping command should be refed as [`ping`](./PingCommand.md)
 
 ## Detailed Instructions
 
@@ -185,9 +187,18 @@ Most commands that interact with Creatio require:
 ### Remote Commands
 Commands that connect to remote instances typically have:
 - `--uri` or `-u` - Server URI (often has default)
-- `--login` or `-l` - Username
-- `--password` or `-p` - Password
+- `--login` or `-l` - Username (for basic auth)
+- `--password` or `-p` - Password (for basic auth)
+- `--clientid` - OAuth Client ID (for OAuth authentication)
+- `--clientsecret` - OAuth Client Secret (for OAuth authentication)
+- `--authappuri` - OAuth Authentication App URI (for OAuth authentication)
 - Often inherit from `RemoteCommandOptions`
+
+**Note**: Remote commands support two authentication methods:
+1. **Environment-based** (recommended): Use `-e` or `--environment` to reference pre-configured environment
+2. **Direct authentication**: Either username/password OR OAuth credentials (clientid, clientsecret, authappuri)
+
+**Important**: All examples in documentation should use the `-e` option as the primary method, with OAuth and username/password mentioned as alternatives.
 
 ### Package Commands
 Commands working with packages usually include:

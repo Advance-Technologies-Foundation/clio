@@ -622,14 +622,13 @@ Aliases: `gwu`
 
 
 # Environment settings
-- [Create/Update an environment](#reg-web-app)
-- [Delete the existing environment](#unreg-web-app)
-- [Ping environment](#ping)
-- [View application list](#show-web-app-list)
-- [View application options](#show-web-app)
+- [Create/Update an environment](./docs/commands/RegAppCommand.md)
+- [Delete the existing environment](./docs/commands/UnregAppCommand.md)
+- [Ping environment](./docs/commands/PingCommand.md)
+- [View application list](./docs/commands/ShowAppListCommand.md)
 - [Open application](#open)
 - [Clone environment](#clone-env)
-- [Healthcheck](#healthcheck)
+- [Healthcheck](./docs/commands/HealthCheckCommand.md)
 - [Get Creatio Info](#get-info)
 - [CustomizeDataProtection](#CustomizeDataProtection)
 
@@ -670,18 +669,25 @@ clio ping <ENVIRONMENT_NAME>
 
 ## show-web-app-list
 
-For view list of all applications
+Display registered environment configurations from local clio settings. Use this to view all environments you've registered with `reg-web-app` command.
 
 ```bash
+# List all environments with full details
 clio show-web-app-list
-```
 
-## show-web-app
-View application settings
+# Show concise table format (Name, URL)
+clio show-web-app-list --short
 
-```bash
+# Show specific environment details
+clio show-web-app-list <ENVIRONMENT_NAME>
+
+# Using aliases
+clio envs -s
 clio show-web-app <ENVIRONMENT_NAME>
 ```
+
+For comprehensive documentation, see: [`show-web-app-list`](./docs/commands/ShowAppListCommand.md)
+
 
 ## open
 

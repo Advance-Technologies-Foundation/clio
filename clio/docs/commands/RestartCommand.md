@@ -21,7 +21,6 @@ The RestartCommand inherits all options from `RemoteCommandOptions`, which inclu
 | `--uri`         | `-u`  | Creatio application URI                    | `string` | -       |
 | `--login`       | `-l`  | Login username for authentication          | `string` | -       |
 | `--password`    | `-p`  | Password for authentication                | `string` | -       |
-| `--maintainer`  | `-m`  | Maintainer mode access                     | `string` | -       |
 
 ### Remote Command Options
 
