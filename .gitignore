@@ -210,3 +210,6 @@ FakesAssemblies/
 
 clio/Properties/launchSettings.json
 /cliogate/cliogate.csproj.DotSettings
+
+
+./.claude/settings.local.json
