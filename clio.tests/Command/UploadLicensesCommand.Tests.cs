@@ -51,10 +51,10 @@ public class UploadLicensesCommandTestCase
 	}
 
 	[Test]
-	public void TestProceedResponse_ResponseWithoutSuccessProperty_DoesNotThrow() {
+	public void TestProceedResponse_ResponseWithoutSuccessProperty_DoesThrow() {
 		var response = "{\"errorInfo\": { \"message\": \"Error occurred\" }}";
 		var options = new UploadLicensesOptions();
-		Assert.DoesNotThrow(() => _command.TestProceedResponse(response, options));
+		Assert.Throws<LicenseInstallationException>(() => _command.TestProceedResponse(response, options));
 	}
 
 	[Test]
