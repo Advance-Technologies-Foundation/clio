@@ -4,6 +4,7 @@
 
 
 ## When generating code always follow these guidelines:
+For commands that require cliogate to be installed, always include a check for its presence and display a message to the user if it is not installed. Follow the pattern used in existing commands.
 Use Microsoft coding style for all code unless otherwise specified.
 
 All filesystem operations must use the filesystem abstraction already used in the project. This ensures unit tests can be written without depending on the real filesystem.
