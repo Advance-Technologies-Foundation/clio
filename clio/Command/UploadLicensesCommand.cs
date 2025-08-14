@@ -22,24 +22,27 @@
 
 		protected override void ProceedResponse(string response, UploadLicensesOptions options) {
 			var json = JsonDocument.Parse(response);
-			if (json.RootElement.TryGetProperty("success", out var successProperty) &&
-				successProperty.GetBoolean() == false) {
-				if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo)) {
-					var errorMessage = errorInfo.TryGetProperty("message", out var messageProperty)
-						? messageProperty.GetString()
-						: "Unknown error message";
-					var errorCode = errorInfo.TryGetProperty("errorCode", out var codeProperty)
-						? codeProperty.GetString()
-						: "UNKNOWN_CODE";
-					throw new LicenseInstallationException(
-						$"License not installed. ErrorCode: {errorCode}, Message: {errorMessage}");
-				}
-				throw new LicenseInstallationException("License not installed: Unknown error details");
+			bool isSuccess = json.RootElement.TryGetProperty("success", out var successProperty) &&
+				successProperty.GetBoolean();
+			if (isSuccess) {
+				base.ProceedResponse(response, options);
+				return;
+			}
+			if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo)) {
+				var errorMessage = errorInfo.TryGetProperty("message", out var messageProperty)
+					? messageProperty.GetString()
+					: "Unknown error message";
+				var errorCode = errorInfo.TryGetProperty("errorCode", out var codeProperty)
+					? codeProperty.GetString()
+					: "UNKNOWN_CODE";
+				throw new LicenseInstallationException(
+					$"License not installed. ErrorCode: {errorCode}, Message: {errorMessage}");
 			}
 			if (response.ToLower().Contains("authentication failed")) {
 				throw new LicenseInstallationException("License not installed: Authentication failed.");
 			}
-				base.ProceedResponse(response, options);
+			throw new LicenseInstallationException("License not installed: Unknown error details");
+				
 		}
 	}
 
