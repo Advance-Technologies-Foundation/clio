@@ -4,11 +4,14 @@
 
 
 ## When generating code always follow these guidelines:
-- All methods should have XML documentation comments.
-- Use code style as described in the [C# Coding Style Guidelines](./code-style.md).
-- When adding or updating commands visible to a user, ensure to update relevant sections of the documentation files. All documentation files are located in [Commands](../clio/Commands.md) file.
-- When changing the source code always try to add unit tests. Make sure that tests are placed in the `Clio.Tests` project. If you are adding a new command, add tests for it in the `Clio.Tests/Commands` folder.
+Use Microsoft coding style for all code unless otherwise specified.
 
+All filesystem operations must use the filesystem abstraction already used in the project. This ensures unit tests can be written without depending on the real filesystem.
+
+Use Microsoft coding style for all code unless otherwise specified.
+
+
+Every time you change code, always check the documentation in README.md and Commands.md. Update, add, or remove documentation as needed to keep it complete and up-to-date.
 
 ## Unit tests
 - Tests should be compatible with Windows, MacOS, and Linux. 
