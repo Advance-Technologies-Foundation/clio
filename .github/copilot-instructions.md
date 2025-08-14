@@ -23,7 +23,7 @@ Every time you change code, always check the documentation in README.md and Comm
 - Use FluentAssertions for assertions.
 - Always use Arrange-Act-Assert pattern in tests.
 - Whenever possible, always use "because" argument for all assertions. For example:
-  ```
+  ```csharp
   result.Should().Be(0, "explain why the result should be 0");
   ```
 - Tests should be decorated with Description attribute, explaining what the test is doing.
@@ -32,6 +32,7 @@ Every time you change code, always check the documentation in README.md and Comm
 [Description("Descrites the tests purpose")]
 public void TestName()
  ```
+- When designing unit tests, always apply equivalence class partitioning, boundary value analysis, and pairwise testing principles to ensure comprehensive coverage of all possible input combinations and edge cases.
 
 
 ## Project structure
