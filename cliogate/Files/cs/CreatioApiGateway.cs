@@ -772,7 +772,7 @@ namespace cliogate.Files.cs
 			return path;
 		}
 
-		private void ExtractFilesWithOverrite(string archivePath, string extractPath) {
+		private void ExtractFilesWithOverwrite(string archivePath, string extractPath) {
 			using (ZipArchive archive = ZipFile.OpenRead(archivePath)) {
 				foreach (var entry in archive.Entries) {
 					if (string.IsNullOrEmpty(entry.Name)) {
@@ -841,16 +841,20 @@ namespace cliogate.Files.cs
 			}
 
 			foreach (var file in Directory.GetFiles(directoryPath)) {
-				File.Delete(file);
+				try {
+					File.Delete(file);
+				} catch (Exception ex) {
+					_log.WarnFormat("Failed to delete file during restore: {0}. Error: {1}", file, ex.Message);
+				}
 			}
 
 			foreach (var dir in Directory.GetDirectories(directoryPath)) {
-				if (!dir.EndsWith("Backups")) {
+				if (!dir.EndsWith("Backups", StringComparison.OrdinalIgnoreCase)) {
 					Directory.Delete(dir, recursive: true);
 				}
 			}
 
-			ZipFile.ExtractToDirectory(fullPath, directoryPath);
+			ExtractFilesWithOverwrite(fullPath, directoryPath);
 			return true;
 		}
 
@@ -867,7 +871,7 @@ namespace cliogate.Files.cs
 
 			string directoryPath = Path.GetDirectoryName(fullPath);
 			try {
-				ExtractFilesWithOverrite(fullPath, directoryPath);
+				ExtractFilesWithOverwrite(fullPath, directoryPath);
 				if (File.Exists(fullPath)) {
 					File.Delete(fullPath);
 				}
