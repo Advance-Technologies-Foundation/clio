@@ -66,6 +66,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Npgsql" Version="7.0.6" />
     <PackageReference Include="System.CodeDom" Version="5.0.0.0" />
+	  <PackageReference Include="System.IO.Compression" Version="4.1.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="NLogExt">

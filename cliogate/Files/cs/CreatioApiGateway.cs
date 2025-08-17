@@ -31,6 +31,8 @@ using Terrasoft.Web.Common;
 using Terrasoft.Web.Http.Abstractions;
 using cliogate.Files.cs; // Add this line to include the LiveLogger namespace
 using Exception = System.Exception;
+using System.IO.Compression;
+
 #if NETSTANDARD2_0
 using System.Globalization;
 using Terrasoft.Web.Http.Abstractions;
@@ -482,13 +484,13 @@ namespace cliogate.Files.cs
 		[OperationContract]
 		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.WrappedRequest,
 			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public BaseResponse UploadFile(Stream stream){
+		public BaseResponse UploadFile(Stream stream) {
 			CheckCanManageSolution();
 			HttpContext contextAccessor = HttpContextAccessor.GetInstance();
 			HeaderCollection headers = contextAccessor.Request.Headers;
 			const string fileNameHeader = "X-File-Name";
 			const string packageNameHeader = "X-Package-Name";
-			if(!headers.AllKeys.Contains(fileNameHeader)) {
+			if (!headers.AllKeys.Contains(fileNameHeader)) {
 				return new BaseResponse {
 					Success = false,
 					ErrorInfo = new ErrorInfo() {
@@ -496,7 +498,7 @@ namespace cliogate.Files.cs
 					}
 				};
 			}
-			if(!headers.AllKeys.Contains(packageNameHeader)) {
+			if (!headers.AllKeys.Contains(packageNameHeader)) {
 				return new BaseResponse {
 					Success = false,
 					ErrorInfo = new ErrorInfo() {
@@ -506,14 +508,84 @@ namespace cliogate.Files.cs
 			}
 			string filename = headers[fileNameHeader];
 			string packageName = headers[packageNameHeader];
-			
+
 			PackageExplorer packageExplorer = new PackageExplorer(packageName);
 			packageExplorer.SaveFileContent(filename, stream);
-			
+
 			return new BaseResponse {
 				Success = true
 			};
 		}
+
+		[OperationContract]
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.Bare, ResponseFormat = WebMessageFormat.Json)]
+		public string BackupStaticFiles() {
+			CheckCanManageSolution();
+			HttpContext contextAccessor = HttpContextAccessor.GetInstance();
+			HeaderCollection headers = contextAccessor.Request.Headers;
+			const string folderNameHeader = "X-Folder-Name";
+			const string backupNameHeader = "X-Backup-Name";
+			if (!headers.AllKeys.Contains(folderNameHeader)) {
+				return $"Error: {folderNameHeader} header missing";
+			}
+			bool restoreFlag = headers.AllKeys.Contains(backupNameHeader);
+			string folderName = headers[folderNameHeader];
+			var staticContentExplorer = new StaticContentExplorer();
+			if (restoreFlag) {
+				string backupName = headers[backupNameHeader];
+				return staticContentExplorer.RestoreStaticContent(folderName, backupName) ? backupName : null;
+			}
+
+			return staticContentExplorer.BackupStaticContent(folderName);
+		}
+
+		[OperationContract]
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.Bare, ResponseFormat = WebMessageFormat.Json)]
+		public BaseResponse UploadStaticFile(Stream stream) {
+			CheckCanManageSolution();
+			HttpContext contextAccessor = HttpContextAccessor.GetInstance();
+			HeaderCollection headers = contextAccessor.Request.Headers;
+			const string fileNameHeader = "X-File-Name";
+			const string folderNameHeader = "X-Folder-Name";
+			if (!headers.AllKeys.Contains(fileNameHeader)) {
+				return new BaseResponse {
+					Success = false,
+					ErrorInfo = new ErrorInfo() {
+						Message = $"Error: {fileNameHeader} header missing",
+					}
+				};
+			}
+			if (!headers.AllKeys.Contains(folderNameHeader)) {
+				return new BaseResponse {
+					Success = false,
+					ErrorInfo = new ErrorInfo() {
+						Message = $"Error: {folderNameHeader} header missing",
+					}
+				};
+			}
+			string fileName = headers[fileNameHeader];
+			string folderName = headers[folderNameHeader];
+			var response = new BaseResponse();
+			using (var memoryStream = new MemoryStream()) {
+				stream.CopyTo(memoryStream);
+				memoryStream.Position = 0;
+				using (var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress))
+				using (var decompressedStream = new MemoryStream()) {
+					gzipStream.CopyTo(decompressedStream);
+					decompressedStream.Position = 0;
+					var staticContentExplorer = new StaticContentExplorer();
+					var saveResult = staticContentExplorer.SaveStaticContent(decompressedStream, folderName, fileName);
+					response.Success = saveResult.isSuccess;
+					if (saveResult.ex != null) {
+						response.ErrorInfo = new ErrorInfo() {
+							Message = saveResult.ex.Message,
+						};
+					}
+				}
+			}
+			return response;
+		}
+
 		// 200: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
 		// 404: http://localhost:40020/rest/CreatioApiGateway/DownloadFile
 		[OperationContract]
@@ -660,8 +732,154 @@ namespace cliogate.Files.cs
 		public string CommandName { get; set; }
 
 	}
-	
-	
+
+	public class StaticContentExplorer : PackageExplorer
+	{
+		#region Fields: Private
+
+		private readonly string _baseDir = AppDomain.CurrentDomain.BaseDirectory;
+		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
+
+		#endregion
+
+		#region Constructors: Public
+
+		public StaticContentExplorer() : base("cliogate") { }
+
+		#endregion
+
+		#region Methods: Private
+
+		private string GetStaticContentDirectoryPath(string folderName) {
+			CheckNameForDeniedSymbols(folderName);
+			string staticContentPath = Path.Combine(_baseDir, folderName);
+			if (!Directory.Exists(staticContentPath)) {
+				Directory.CreateDirectory(staticContentPath);
+			}
+			return staticContentPath;
+		}
+
+		private string GetRelativePath(string basePath, string fullPath) {
+			Uri baseUri = new Uri(AppendDirectorySeparatorChar(basePath));
+			Uri fullUri = new Uri(fullPath);
+			return Uri.UnescapeDataString(baseUri.MakeRelativeUri(fullUri).ToString().Replace('/', Path.DirectorySeparatorChar));
+		}
+
+		private string AppendDirectorySeparatorChar(string path) {
+			if (!path.EndsWith(Path.DirectorySeparatorChar.ToString())) {
+				return path + Path.DirectorySeparatorChar;
+			}
+			return path;
+		}
+
+		private void ExtractFilesWithOverrite(string archivePath, string extractPath) {
+			using (ZipArchive archive = ZipFile.OpenRead(archivePath)) {
+				foreach (var entry in archive.Entries) {
+					if (string.IsNullOrEmpty(entry.Name)) {
+						continue;
+					}
+
+					string destinationPath = Path.Combine(extractPath, entry.FullName);
+					Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+					using (var entryStream = entry.Open())
+					using (var destinationStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write)) {
+						entryStream.CopyTo(destinationStream);
+					}
+				}
+			}
+		}
+
+		#endregion
+
+		#region Methods: Public
+
+		public string BackupStaticContent(string folderName) {
+			string directoryPath = GetStaticContentDirectoryPath(folderName);
+			string backupDir = Path.Combine(directoryPath, "Backups");
+			if (!Directory.Exists(backupDir)) {
+				Directory.CreateDirectory(backupDir);
+			}
+
+			var oldBackups = Directory.GetFiles(backupDir, "backup_*.zip");
+			foreach (var backup in oldBackups) {
+				try {
+					File.Delete(backup);
+				} catch (Exception ex) {
+					_log.WarnFormat("Failed to delete old backup: {0}. Error: {1}", backup, ex.Message);
+				}
+			}
+
+			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+			var backupName = $"backup_{timestamp}.zip";
+			var backupPath = Path.Combine(backupDir, backupName);
+			using (var archive = ZipFile.Open(backupPath, ZipArchiveMode.Create)) {
+				foreach (var file in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)) {
+					if (file.StartsWith(backupDir, StringComparison.OrdinalIgnoreCase)) {
+						continue;
+					}
+					string entryName = GetRelativePath(directoryPath, file);
+					archive.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+				}
+			}
+
+			return backupName;
+		}
+
+		public bool RestoreStaticContent(string folderName, string backupName) {
+			CheckNameForDeniedSymbols(backupName);
+			string directoryPath = GetStaticContentDirectoryPath(folderName);
+			string backupDir = Path.Combine(directoryPath, "Backups");
+			if (!Directory.Exists(backupDir)) {
+				_log.Warn($"Restore failed: backup folder not found {backupDir}");
+				return false;
+			}
+
+			string fullPath = Path.Combine(backupDir, backupName);
+			if (!File.Exists(fullPath)) {
+				_log.Warn($"Restore failed: backup file not found {fullPath}");
+				return false;
+			}
+
+			foreach (var file in Directory.GetFiles(directoryPath)) {
+				File.Delete(file);
+			}
+
+			foreach (var dir in Directory.GetDirectories(directoryPath)) {
+				if (!dir.EndsWith("Backups")) {
+					Directory.Delete(dir, recursive: true);
+				}
+			}
+
+			ZipFile.ExtractToDirectory(fullPath, directoryPath);
+			return true;
+		}
+
+		public (bool isSuccess, Exception ex) SaveStaticContent(Stream fileContent, string folderName, string fileName) {
+			CheckNameForDeniedSymbols(fileName);
+			string fullPath = Path.Combine(GetStaticContentDirectoryPath(folderName), fileName);
+			using (var destinationStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None)) {
+				fileContent.CopyTo(destinationStream);
+			}
+			string extension = Path.GetExtension(fullPath);
+			if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) {
+				return (true, null);
+			}
+
+			string directoryPath = Path.GetDirectoryName(fullPath);
+			try {
+				ExtractFilesWithOverrite(fullPath, directoryPath);
+				if (File.Exists(fullPath)) {
+					File.Delete(fullPath);
+				}
+				return (true, null);
+			} catch (Exception ex) {
+				return (false, ex);
+			}
+		}
+
+		#endregion
+	}
+
 	public class PackageExplorer
 	{
 
@@ -684,18 +902,6 @@ namespace cliogate.Files.cs
 
 		#region Methods: Private
 
-		private void CheckNameForDeniedSymbols(string name){
-			string[] invalidArgs = {
-				"%2e%2e%2f", "%2e%2e/", "..%2f", "%2e%2e%5c", "2e%2e\\", "..%5c",
-				"%252e%252e%255c", "..%255c", "../", "..\\"
-			};
-			foreach (string invalidArg in invalidArgs) {
-				if (name.Contains(invalidArg)) {
-					throw new Exception("Invalid character");
-				}
-			}
-		}
-
 		private string PackageDirectoryPath(){
 			return Path.Combine(_baseDir, "Terrasoft.Configuration", "Pkg", _packageName, "Files");
 		}
@@ -715,7 +921,23 @@ namespace cliogate.Files.cs
 				as Select;
 			return select.ExecuteScalar<int>() == 1;
 		}
-		
+
+		#endregion
+
+		#region Methods: Protected
+
+		protected void CheckNameForDeniedSymbols(string name) {
+			string[] invalidArgs = {
+				"%2e%2e%2f", "%2e%2e/", "..%2f", "%2e%2e%5c", "2e%2e\\", "..%5c",
+				"%252e%252e%255c", "..%255c", "../", "..\\"
+			};
+			foreach (string invalidArg in invalidArgs) {
+				if (name.Contains(invalidArg)) {
+					throw new Exception("Invalid character");
+				}
+			}
+		}
+
 		#endregion
 
 		#region Methods: Public
