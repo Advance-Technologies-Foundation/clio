@@ -849,7 +849,7 @@ namespace cliogate.Files.cs
 			}
 
 			foreach (var dir in Directory.GetDirectories(directoryPath)) {
-				if (!dir.EndsWith("Backups", StringComparison.OrdinalIgnoreCase)) {
+				if (!Path.GetFileName(dir).Equals("Backups", StringComparison.OrdinalIgnoreCase)) {
 					Directory.Delete(dir, recursive: true);
 				}
 			}
