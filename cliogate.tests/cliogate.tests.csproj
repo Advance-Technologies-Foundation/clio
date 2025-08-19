@@ -17,6 +17,13 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2"/>
         <PackageReference Include="NUnit" Version="3.14.0"/>
         <PackageReference Include="NUnit3TestAdapter" Version="4.5.0"/>
+        <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+        <PackageReference Include="System.Collections.Immutable" Version="8.0.0" />
+        <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0" />
+        <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
+            <Private>False</Private>
+        </PackageReference>
     </ItemGroup>
 
     <ItemGroup>
