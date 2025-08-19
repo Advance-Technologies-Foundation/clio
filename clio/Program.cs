@@ -33,7 +33,7 @@ internal class Program {
 
 	// Note: order of types in this array affets how the commands are listed in the 'clio help' output.
 	// Group commands by their purpose.
-	private static readonly Type[] CommandOption = new[] {
+	private static readonly Type[] CommandOption = [
 		// Application management
 		typeof(RegAppOptions),
 		typeof(UnregAppOptions),
@@ -144,7 +144,7 @@ internal class Program {
 		typeof(CustomizeDataProtectionCommandOptions),
 		typeof(GetAppHashCommandOptions),
 		typeof(MergeWorkspacesCommandOptions)
-	};
+	];
 
 	internal static bool IsCfgOpenCommand;
 	public static IAppUpdater _appUpdater;
