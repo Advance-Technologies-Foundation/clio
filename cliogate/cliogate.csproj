@@ -50,18 +50,18 @@
   <Choose>
     <When Condition="'$(TargetFramework)' == 'net472'">
       <ItemGroup>
-          <PackageReference Include="CreatioSDK" Version="8.2.0.4299-fix"></PackageReference>    
+          <PackageReference Include="CreatioSDK" Version="8.1.4.2938"></PackageReference>    
       </ItemGroup>
     </When>
     <When Condition="'$(TargetFramework)' == 'netstandard2.0'" >
       <ItemGroup>
-          <PackageReference Include="CreatioSDK" Version="8.2.0.4158"></PackageReference>
+          <PackageReference Include="CreatioSDK" Version="8.1.4.2938"></PackageReference>
       </ItemGroup>
     </When>
   </Choose>
   
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="2.0.2.10" />
+    <PackageReference Include="ATF.Repository" Version="2.0.2.11" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Npgsql" Version="7.0.6" />
