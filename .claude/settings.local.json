@@ -14,7 +14,11 @@
       "Bash(copy:*)",
       "Bash(cp:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "C:\\mnt\\c\\Projects"
+    ]
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [

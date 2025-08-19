@@ -49,6 +49,10 @@ public interface ISysSettingsManager
 
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "");
 
+	SysSettings GetSysSettingByCode(string code);
+
+	void SetSysSettingByCode(string code, string value);
+
 	#endregion
 
 	void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
@@ -162,7 +166,7 @@ public class SysSettingsManager : ISysSettingsManager
 	
 	
 
-	private SysSettings GetSysSettingByCode(string code){
+	private SysSettings GetSysSettingByCodePrivate(string code){
 
 		SysSettings sysSetting = AppDataContextFactory.GetAppDataContext(_dataProvider)
 													.Models<SysSettings>()
@@ -226,7 +230,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = ""){
 		string requestData = string.Empty;
-		var sysSetting = GetSysSettingByCode(code);
+		var sysSetting = GetSysSettingByCodePrivate(code);
 		string optionsType = string.IsNullOrWhiteSpace(valueTypeName)
 			? sysSetting.ValueTypeName : valueTypeName;
 
@@ -261,7 +265,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
 		
-		var sysSetting = GetSysSettingByCode(code); 
+		var sysSetting = GetSysSettingByCodePrivate(code); 
 		if(sysSetting is null) {
 			var result = InsertSysSetting(optsCode, code, optsType);
 			string text = result switch {
@@ -289,6 +293,14 @@ public class SysSettingsManager : ISysSettingsManager
 			sysSetting.SysSettingsValues = currentSysSettingValue;
 		}		
 		return sysSettings;
+	}
+
+	public SysSettings GetSysSettingByCode(string code) {
+		return GetSysSettingByCodePrivate(code);
+	}
+
+	public void SetSysSettingByCode(string code, string value) {
+		UpdateSysSetting(code, value);
 	}
 
 	#endregion

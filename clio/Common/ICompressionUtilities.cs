@@ -12,5 +12,7 @@ namespace Clio.Common
 
 		void Zip(string directoryPath, string zipFilePath);
 
+		void ZipDirectory(string directoryPath, string zipFilePath);
+
 	}
 }

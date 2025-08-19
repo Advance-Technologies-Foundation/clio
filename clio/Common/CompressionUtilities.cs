@@ -182,6 +182,14 @@ namespace Clio.Common
 			_zipFile.CreateFromDirectory(directoryPath, zipFilePath);
 		}
 
+		public void ZipDirectory(string directoryPath, string zipFilePath) {
+			directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+			zipFilePath.CheckArgumentNullOrWhiteSpace(nameof(zipFilePath));
+			
+			var files = _fileSystem.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
+			PackToGZip(files, directoryPath, zipFilePath);
+		}
+
 		#endregion
 
 	}

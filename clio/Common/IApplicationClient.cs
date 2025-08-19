@@ -41,6 +41,7 @@ namespace Clio.Common
 		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 		void Login();
 		string UploadFile(string url, string filePath);
+		string UploadStaticFile(string url, string filePath, string folderName);
 		string UploadAlmFile(string url, string filePath);
 
 		string UploadAlmFileByChunk(string url, string filePath);
@@ -97,6 +98,9 @@ namespace Clio.Common
 
 		public string UploadFile(string url, string filePath) {
 			return _creatioClient.UploadFile(url, filePath);
+		}
+		public string UploadStaticFile(string url, string filePath, string folderName) {
+			return _creatioClient.UploadStaticFile(url, filePath, folderName);
 		}
 
 		public string UploadAlmFile(string url, string filePath) {

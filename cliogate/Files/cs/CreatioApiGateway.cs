@@ -171,6 +171,8 @@ namespace cliogate.Files.cs
 			return result;
 		}
 
+
+		
 		#endregion
 
 		#region Methods: Public
@@ -540,31 +542,53 @@ namespace cliogate.Files.cs
 		}
 
 		[OperationContract]
-		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.Bare, ResponseFormat = WebMessageFormat.Json)]
-		public BaseResponse UploadStaticFile(Stream stream) {
+		[WebInvoke(Method = "POST", BodyStyle = WebMessageBodyStyle.Bare, ResponseFormat = WebMessageFormat.Json,
+			UriTemplate = "UploadStaticFile?fileName={fileName}&folderName={folderName}"
+		)]
+		public BaseResponse UploadStaticFile(Stream stream, string fileName = null, string folderName = null) {
 			CheckCanManageSolution();
 			HttpContext contextAccessor = HttpContextAccessor.GetInstance();
 			HeaderCollection headers = contextAccessor.Request.Headers;
 			const string fileNameHeader = "X-File-Name";
 			const string folderNameHeader = "X-Folder-Name";
-			if (!headers.AllKeys.Contains(fileNameHeader)) {
+			
+			// Try to get fileName and folderName from multiple sources with priority:
+			// 1. URL parameters (method parameters)
+			// 2. Headers
+			// 3. Form data (if multipart)
+			
+			// Get fileName with fallback hierarchy
+			string finalFileName = fileName; // URL parameter (highest priority)
+			if (string.IsNullOrEmpty(finalFileName) && headers.AllKeys.Contains(fileNameHeader)) {
+				finalFileName = headers[fileNameHeader]; // Header (second priority)
+			}
+			
+			
+			// Get folderName with fallback hierarchy
+			string finalFolderName = folderName; // URL parameter (highest priority)
+			if (string.IsNullOrEmpty(finalFolderName) && headers.AllKeys.Contains(folderNameHeader)) {
+				finalFolderName = headers[folderNameHeader]; // Header (second priority)
+			}
+			
+			
+			// Validate required parameters
+			if (string.IsNullOrEmpty(finalFileName)) {
 				return new BaseResponse {
 					Success = false,
 					ErrorInfo = new ErrorInfo() {
-						Message = $"Error: {fileNameHeader} header missing",
+						Message = $"Error: fileName is required. Provide it via URL parameter, {fileNameHeader} header, or form data.",
 					}
 				};
 			}
-			if (!headers.AllKeys.Contains(folderNameHeader)) {
+			if (string.IsNullOrEmpty(finalFolderName)) {
 				return new BaseResponse {
 					Success = false,
 					ErrorInfo = new ErrorInfo() {
-						Message = $"Error: {folderNameHeader} header missing",
+						Message = $"Error: folderName is required. Provide it via URL parameter, {folderNameHeader} header, or form data.",
 					}
 				};
 			}
-			string fileName = headers[fileNameHeader];
-			string folderName = headers[folderNameHeader];
+			
 			var response = new BaseResponse();
 			using (var memoryStream = new MemoryStream()) {
 				stream.CopyTo(memoryStream);
@@ -574,7 +598,7 @@ namespace cliogate.Files.cs
 					gzipStream.CopyTo(decompressedStream);
 					decompressedStream.Position = 0;
 					var staticContentExplorer = new StaticContentExplorer();
-					var saveResult = staticContentExplorer.SaveStaticContent(decompressedStream, folderName, fileName);
+					var saveResult = staticContentExplorer.SaveStaticContent(decompressedStream, finalFolderName, finalFileName);
 					response.Success = saveResult.isSuccess;
 					if (saveResult.ex != null) {
 						response.ErrorInfo = new ErrorInfo() {
@@ -1019,3 +1043,4 @@ namespace cliogate.Files.cs
 
 	#endregion
 }
+

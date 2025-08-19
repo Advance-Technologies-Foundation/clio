@@ -825,20 +825,21 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-  <!-- <Choose>
-    <When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
-      <ItemGroup>
-        <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
-      </ItemGroup>
-    </When>
-    <Otherwise>
-      <ItemGroup>
-        <PackageReference Include="creatio.client" Version="1.0.24" />
-      </ItemGroup>
-    </Otherwise>
-  </Choose> -->
+<!--  <Choose>-->
+<!--    <When Condition="Exists('`C:\Projects\creatioclient\creatioclient\creatioclient.csproj`')">-->
+<!--      <ItemGroup>-->
+<!--        <ProjectReference Include="C:\Projects\creatioclient\creatioclient\creatioclient.csproj" />-->
+<!--      </ItemGroup>-->
+<!--    </When>-->
+<!--    <Otherwise>-->
+<!--      <ItemGroup>-->
+<!--        <PackageReference Include="creatio.client" Version="1.0.29" />-->
+<!--      </ItemGroup>-->
+<!--    </Otherwise>-->
+<!--  </Choose>-->
   <ItemGroup>
-    <PackageReference Include="creatio.client" Version="1.0.28" />
+     
+    <PackageReference Include="creatio.client" Version="1.0.29" />
     <PackageReference Include="ATF.Repository" Version="2.0.2.10" />
     <PackageReference Include="Autofac" Version="8.3.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />

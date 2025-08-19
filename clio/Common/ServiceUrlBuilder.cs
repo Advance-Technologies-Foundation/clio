@@ -58,7 +58,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		DownloadPackageDllFile = 14,
 		ClearFeaturesCacheForAllUsers = 15,
 		GetSysSettingValueByCode = 16,
-		SendEventToUI = 17
+		SendEventToUI = 17,
+		UploadStaticFile = 18
 
 	}
 
@@ -89,7 +90,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
 		{KnownRoute.ClearFeaturesCacheForAllUsers, "/rest/FeatureService/ClearFeaturesCacheForAllUsers"},
 		{KnownRoute.GetSysSettingValueByCode, "/rest/CreatioApiGateway/GetSysSettingValueByCode"},
-		{KnownRoute.SendEventToUI, "/rest/CreatioApiGateway/SendEventToUI"}
+		{KnownRoute.SendEventToUI, "/rest/CreatioApiGateway/SendEventToUI"},
+		{KnownRoute.UploadStaticFile, "/rest/CreatioApiGateway/UploadStaticFile"}
 	};
 
 	private EnvironmentSettings _environmentSettings;
