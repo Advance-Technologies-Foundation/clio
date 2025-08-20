@@ -259,14 +259,10 @@ namespace Clio.Command
 
                 // Upload via the CreatioApiGateway/UploadStaticFile endpoint
                 string uploadUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.UploadStaticFile);
-                uploadUrl +=$"?fileName={Path.GetFileName(archiveFilePath)}&folderName=Shell";
                 var response = ApplicationClient.UploadStaticFile(uploadUrl, archiveFilePath, "Shell");
-                // string response = ApplicationClient.ExecutePostRequest(uploadUrl, formData.ToString(), RequestTimeout,
-                //     RetryCount, DelaySec);
-
                 
                 // Parse response to check for success
-                if (string.IsNullOrEmpty(response) || response.Contains("error", StringComparison.OrdinalIgnoreCase))
+                if (!response.Contains("\"errorInfo\":null", StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException($"Upload failed: {response}");
                 }

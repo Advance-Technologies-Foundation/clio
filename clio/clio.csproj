@@ -839,7 +839,7 @@
 <!--  </Choose>-->
   <ItemGroup>
      
-    <PackageReference Include="creatio.client" Version="1.0.29" />
+<!--    <PackageReference Include="creatio.client" Version="1.0.29" />-->
     <PackageReference Include="ATF.Repository" Version="2.0.2.10" />
     <PackageReference Include="Autofac" Version="8.3.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
@@ -1012,5 +1012,8 @@
     <Compile Update="SetWebServiceUrlCommand.cs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
   </ItemGroup>
 </Project>
