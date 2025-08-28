@@ -73,7 +73,7 @@ function New-ReleaseTag {
     Write-Host "🏷️  Creating new tag: $version" -ForegroundColor Green
     
     if (-not $force) {
-        $confirmation = Read-Host "Do you want to create and push tag '$version'? (y/N)"
+        $confirmation = Read-Host "Do you want to create and push tag '$version' and create GitHub release? (y/N)"
         if ($confirmation -notmatch '^[Yy]') {
             Write-Host "❌ Tag creation cancelled" -ForegroundColor Yellow
             return $false
@@ -94,6 +94,18 @@ function New-ReleaseTag {
         }
         
         Write-Host "✅ Successfully created and pushed tag: $version" -ForegroundColor Green
+        
+        # Try to create GitHub release using gh CLI
+        Write-Host "🚀 Creating GitHub release..." -ForegroundColor Cyan
+        $ghResult = gh release create $version --title "Release $version" --notes "Automated release $version" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Successfully created GitHub release: $version" -ForegroundColor Green
+        }
+        else {
+            Write-Host "⚠️  Could not create GitHub release automatically (gh CLI not available or not authenticated)" -ForegroundColor Yellow
+            Write-Host "📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version" -ForegroundColor Blue
+        }
+        
         Write-Host "🚀 Release workflow will be triggered automatically" -ForegroundColor Cyan
         return $true
     }
@@ -132,12 +144,12 @@ try {
     
     if ($success) {
         Write-Host ""
-        Write-Host "📋 Next steps:" -ForegroundColor Cyan
-        Write-Host "   1. Go to GitHub releases page" -ForegroundColor White
-        Write-Host "   2. Create a release for tag '$newVersion'" -ForegroundColor White
-        Write-Host "   3. The package will be automatically published to NuGet" -ForegroundColor White
+        Write-Host "📋 Summary:" -ForegroundColor Cyan
+        Write-Host "   ✅ Tag '$newVersion' created and pushed" -ForegroundColor White
+        Write-Host "   ✅ GitHub release created (if gh CLI available)" -ForegroundColor White
+        Write-Host "   🚀 NuGet package will be published automatically" -ForegroundColor White
         Write-Host ""
-        Write-Host "🔗 Releases page: https://github.com/Advance-Technologies-Foundation/clio/releases" -ForegroundColor Blue
+        Write-Host "🔗 Monitor progress at: https://github.com/Advance-Technologies-Foundation/clio/releases" -ForegroundColor Blue
     }
 }
 catch {

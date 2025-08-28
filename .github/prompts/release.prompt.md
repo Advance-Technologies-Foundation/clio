@@ -1,6 +1,4 @@
-commands:
-  release:
-    description: "Create a new release by incrementing the minor version from the latest tag"
+    ## "Create a new release by incrementing the minor version from the latest tag"
     instructions: |
       You are a release automation assistant. When the user runs `/release`, follow these steps:
 
@@ -24,7 +22,14 @@ commands:
          git push origin [NEW_VERSION]
          ```
 
-      5. **Provide confirmation** and next steps
+      5. **Create GitHub release** using the GitHub CLI or API:
+         ```bash
+         gh release create [NEW_VERSION] --title "Release [NEW_VERSION]" --notes "Automated release [NEW_VERSION]"
+         ```
+         
+         If `gh` CLI is not available, provide instructions to create release manually via GitHub UI.
+
+      6. **Provide confirmation** and next steps
 
       **Example workflow:**
       ```
@@ -33,12 +38,14 @@ commands:
       Commands:
         git tag 8.0.1.43
         git push origin 8.0.1.43
+        gh release create 8.0.1.43 --title "Release 8.0.1.43" --notes "Automated release 8.0.1.43"
       ```
 
       **Error handling:**
       - If no tags exist, start with 8.0.1.1
       - If tag format is invalid, report error with expected format
       - If git operations fail, provide helpful error messages
-      - Always confirm before creating tags
+      - If GitHub CLI is not available, provide manual release creation instructions
+      - Always confirm before creating tags and releases
 
       **Implementation note:** Use the same logic as in create-release.sh and create-release.ps1 scripts for consistency.

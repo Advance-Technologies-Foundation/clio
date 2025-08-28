@@ -77,7 +77,7 @@ create_release_tag() {
     echo -e "${GREEN}🏷️  Creating new tag: $version${NC}"
     
     if [[ "$force" != "true" ]]; then
-        echo -n "Do you want to create and push tag '$version'? (y/N): "
+        echo -n "Do you want to create and push tag '$version' and create GitHub release? (y/N): "
         read -r confirmation
         if [[ ! $confirmation =~ ^[Yy] ]]; then
             echo -e "${YELLOW}❌ Tag creation cancelled${NC}"
@@ -98,6 +98,21 @@ create_release_tag() {
     fi
     
     echo -e "${GREEN}✅ Successfully created and pushed tag: $version${NC}"
+    
+    # Try to create GitHub release using gh CLI
+    echo -e "${CYAN}🚀 Creating GitHub release...${NC}"
+    if command -v gh >/dev/null 2>&1; then
+        if gh release create "$version" --title "Release $version" --notes "Automated release $version" >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Successfully created GitHub release: $version${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Could not create GitHub release (authentication issue or release already exists)${NC}"
+            echo -e "${BLUE}📝 Please check: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  GitHub CLI (gh) not found. Skipping automatic release creation.${NC}"
+        echo -e "${BLUE}📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version${NC}"
+    fi
+    
     echo -e "${CYAN}🚀 Release workflow will be triggered automatically${NC}"
     return 0
 }
@@ -129,12 +144,12 @@ main() {
     
     if create_release_tag "$new_version" "$FORCE"; then
         echo ""
-        echo -e "${CYAN}📋 Next steps:${NC}"
-        echo -e "${WHITE}   1. Go to GitHub releases page${NC}"
-        echo -e "${WHITE}   2. Create a release for tag '$new_version'${NC}"
-        echo -e "${WHITE}   3. The package will be automatically published to NuGet${NC}"
+        echo -e "${CYAN}📋 Summary:${NC}"
+        echo -e "${WHITE}   ✅ Tag '$new_version' created and pushed${NC}"
+        echo -e "${WHITE}   ✅ GitHub release created (if gh CLI available)${NC}"
+        echo -e "${WHITE}   🚀 NuGet package will be published automatically${NC}"
         echo ""
-        echo -e "${BLUE}🔗 Releases page: https://github.com/Advance-Technologies-Foundation/clio/releases${NC}"
+        echo -e "${BLUE}🔗 Monitor progress at: https://github.com/Advance-Technologies-Foundation/clio/releases${NC}"
     else
         exit 1
     fi
