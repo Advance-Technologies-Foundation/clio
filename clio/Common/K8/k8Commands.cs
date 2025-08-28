@@ -234,7 +234,13 @@ public class k8Commands : Ik8Commands
 		byte[] username = secrets?.Data[currentPod.UsernameKey];
 		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
 		string usernameStr = Encoding.UTF8.GetString(username ?? Array.Empty<byte>());
-		return new ConnectionStringParams(pgPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port, usernameStr, passwordStr);
+
+		var dbPortValue = pgPort.NodePort ?? pgPort.Port;
+		var dbPortInternalValue = dbPortInternal.NodePort ?? dbPortInternal.Port;
+		var redisPortValue = redisPort.NodePort ?? redisPort.Port;
+		var redisPortInternalValue = redisPortInternal.NodePort ?? redisPortInternal.Port;
+
+		return new ConnectionStringParams(dbPortValue, dbPortInternalValue, redisPortValue, redisPortInternalValue, usernameStr, passwordStr);
 	}
 	
 	public ConnectionStringParams GetMssqlConnectionString() {
@@ -252,8 +258,13 @@ public class k8Commands : Ik8Commands
 			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
 		byte[] password = secrets?.Data[currentPod.PasswordKey];
 		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
-		
-		return new ConnectionStringParams(dbPort.Port, dbPortInternal.Port, redisPort.Port, redisPortInternal.Port,"sa", passwordStr);
+
+		var dbPortValue = dbPort.NodePort ?? dbPort.Port;
+		var dbPortInternalValue = dbPortInternal.NodePort ?? dbPortInternal.Port;
+		var redisPortValue = redisPort.NodePort ?? redisPort.Port;
+		var redisPortInternalValue = redisPortInternal.NodePort ?? redisPortInternal.Port;
+
+		return new ConnectionStringParams(dbPortValue, dbPortInternalValue, redisPortValue, redisPortInternalValue, "sa", passwordStr);
 	}
 	private V1ServicePort GetServicePort(string appName, string serviceName ) {
 		V1Service service = _client.CoreV1.ListNamespacedService(K8NNameSpace, labelSelector:$"app={appName}")

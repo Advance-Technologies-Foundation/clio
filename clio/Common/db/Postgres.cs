@@ -23,7 +23,7 @@ public class Postgres : IPostgres
 	public Postgres(){ }
 	
 	public Postgres(int port, string username, string password) {
-		_connectionString = $"Host=127.0.0.1;Port={port};Username={username};Password={password};Database=postgres";
+		_connectionString = $"Host={BindingsModule.k8sDns};Port={port};Username={username};Password={password};Database=postgres";
 	}
 	
 	public void Init(string host, int port, string username, string password){

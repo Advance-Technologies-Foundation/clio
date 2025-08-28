@@ -104,8 +104,16 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private int FindEmptyRedisDb(int port){
-		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
-		IServer server = redis.GetServer("localhost", port);
+		ConfigurationOptions configurationOptions = new ConfigurationOptions() {
+			SyncTimeout = 500000,
+			EndPoints =
+			{
+				{$"{BindingsModule.k8sDns}",port }
+			},
+			AbortOnConnectFail = false // Prevents exceptions when the initial connection to Redis fails, allowing the client to retry connecting.
+		};
+		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
+		IServer server = redis.GetServer($"{BindingsModule.k8sDns}", port);
 		int count = server.DatabaseCount;
 		for (int i = 1; i < count; i++) {
 			long records = server.DatabaseSize(i);
@@ -300,9 +308,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
 						"dbString",
-						$"Server=127.0.0.1;Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
+						$"Server={BindingsModule.k8sDns};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
 					},
-					{"redis", $"host=127.0.0.1;db={redisDb};port={csParam.RedisPort}"}, {
+					{"redis", $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}"}, {
 						"isNetFramework",
 						(InstallerHelper.DetectFramework(unzippedDirectory) ==
 							InstallerHelper.FrameworkType.NetFramework).ToString()
@@ -313,9 +321,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				Arguments = new Dictionary<string, string> {
 					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
 						"dbString",
-						$"Data Source=127.0.0.1,{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+						$"Data Source={BindingsModule.k8sDns},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
 					},
-					{"redis", $"host=127.0.0.1;db={redisDb};port={csParam.RedisPort}"}, {
+					{"redis", $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}"}, {
 						"isNetFramework",
 						(InstallerHelper.DetectFramework(unzippedDirectory) ==
 							InstallerHelper.FrameworkType.NetFramework).ToString()
