@@ -41,6 +41,90 @@ get_latest_tag() {
     git describe --tags --abbrev=0 2>/dev/null || echo ""
 }
 
+check_github_cli() {
+    command -v gh >/dev/null 2>&1
+}
+
+install_github_cli() {
+    echo -e "${YELLOW}🔧 GitHub CLI (gh) not found. Installing...${NC}"
+    
+    # Detect OS
+    case "$(uname -s)" in
+        Darwin*)
+            echo -e "${CYAN}📦 Installing GitHub CLI on macOS...${NC}"
+            if command -v brew >/dev/null 2>&1; then
+                if brew install gh; then
+                    echo -e "${GREEN}✅ GitHub CLI installed successfully via homebrew${NC}"
+                    return 0
+                else
+                    echo -e "${RED}❌ Failed to install via homebrew${NC}"
+                fi
+            else
+                echo -e "${YELLOW}⚠️  Homebrew not found. Please install manually: https://cli.github.com/${NC}"
+            fi
+            ;;
+        Linux*)
+            echo -e "${CYAN}📦 Linux detected. Installing GitHub CLI...${NC}"
+            
+            # Try different package managers
+            if command -v apt >/dev/null 2>&1; then
+                echo -e "${CYAN}Using apt package manager...${NC}"
+                curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+                echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+                sudo apt update && sudo apt install gh
+            elif command -v yum >/dev/null 2>&1; then
+                echo -e "${CYAN}Using yum package manager...${NC}"
+                sudo yum install -y gh
+            elif command -v dnf >/dev/null 2>&1; then
+                echo -e "${CYAN}Using dnf package manager...${NC}"
+                sudo dnf install -y gh
+            else
+                echo -e "${YELLOW}📦 Please install GitHub CLI manually:${NC}"
+                echo -e "${BLUE}🔗 https://github.com/cli/cli/blob/trunk/docs/install_linux.md${NC}"
+                return 1
+            fi
+            ;;
+        CYGWIN*|MINGW32*|MSYS*|MINGW*)
+            echo -e "${CYAN}📦 Windows detected. Installing GitHub CLI...${NC}"
+            if command -v winget >/dev/null 2>&1; then
+                winget install --id GitHub.cli --silent
+            elif command -v choco >/dev/null 2>&1; then
+                choco install gh -y
+            else
+                echo -e "${YELLOW}📦 Please install GitHub CLI manually:${NC}"
+                echo -e "${BLUE}🔗 https://cli.github.com/${NC}"
+                return 1
+            fi
+            ;;
+        *)
+            echo -e "${YELLOW}📦 Unknown OS. Please install GitHub CLI manually:${NC}"
+            echo -e "${BLUE}🔗 https://cli.github.com/${NC}"
+            return 1
+            ;;
+    esac
+    
+    # Check if installation was successful
+    if check_github_cli; then
+        echo -e "${GREEN}✅ GitHub CLI installed successfully${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ GitHub CLI installation failed${NC}"
+        echo -e "${BLUE}📝 Manual installation: https://cli.github.com/${NC}"
+        return 1
+    fi
+}
+
+check_github_auth() {
+    if gh auth status >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ GitHub CLI is authenticated${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}⚠️  GitHub CLI is not authenticated${NC}"
+        echo -e "${BLUE}🔑 Please run: gh auth login${NC}"
+        return 1
+    fi
+}
+
 test_version_format() {
     local version=$1
     if [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -99,17 +183,28 @@ create_release_tag() {
     
     echo -e "${GREEN}✅ Successfully created and pushed tag: $version${NC}"
     
-    # Try to create GitHub release using gh CLI
+    # Check and install GitHub CLI if needed
     echo -e "${CYAN}🚀 Creating GitHub release...${NC}"
-    if command -v gh >/dev/null 2>&1; then
-        if gh release create "$version" --title "Release $version" --notes "Automated release $version" >/dev/null 2>&1; then
-            echo -e "${GREEN}✅ Successfully created GitHub release: $version${NC}"
+    
+    if ! check_github_cli; then
+        if install_github_cli; then
+            echo -e "${CYAN}🔄 GitHub CLI installation completed${NC}"
+        fi
+    fi
+    
+    if check_github_cli; then
+        if check_github_auth; then
+            if gh release create "$version" --title "Release $version" --notes "Automated release $version" >/dev/null 2>&1; then
+                echo -e "${GREEN}✅ Successfully created GitHub release: $version${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Could not create GitHub release (API error or release already exists)${NC}"
+                echo -e "${BLUE}📝 Please check: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version${NC}"
+            fi
         else
-            echo -e "${YELLOW}⚠️  Could not create GitHub release (authentication issue or release already exists)${NC}"
-            echo -e "${BLUE}📝 Please check: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version${NC}"
+            echo -e "${BLUE}📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version${NC}"
         fi
     else
-        echo -e "${YELLOW}⚠️  GitHub CLI (gh) not found. Skipping automatic release creation.${NC}"
+        echo -e "${YELLOW}⚠️  GitHub CLI installation failed${NC}"
         echo -e "${BLUE}📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version${NC}"
     fi
     

@@ -6,7 +6,10 @@
 
 .DESCRIPTION
     This script:
-    1. Gets the latest release tag from the repository
+    1. Gets the lat        # Create GitHub release (CLI should be ready from step 1)
+        Write-Host "🚀 Step 6: Creating GitHub release..." -ForegroundColor Cyan
+        
+        if (Test-GitHubCLI) {       if (Test-GitHubCLI) {      if (Test-GitHubCLI) { tag from the repository
     2. Parses the current version (format X.Y.Z.W)
     3. Increments the minor version (last number) by 1
     4. Creates and pushes the new tag to the repository
@@ -43,6 +46,87 @@ function Get-LatestTag {
 function Test-VersionFormat {
     param([string]$version)
     return $version -match '^\d+\.\d+\.\d+\.\d+$'
+}
+
+function Test-GitHubCLI {
+    try {
+        $null = Get-Command gh -ErrorAction Stop
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Install-GitHubCLI {
+    Write-Host "🔧 GitHub CLI (gh) not found. Installing..." -ForegroundColor Yellow
+    
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        Write-Host "📦 Installing GitHub CLI on Windows..." -ForegroundColor Cyan
+        try {
+            # Try winget first (Windows 10+)
+            winget install --id GitHub.cli --silent
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ GitHub CLI installed successfully via winget" -ForegroundColor Green
+                return $true
+            }
+        }
+        catch {
+            Write-Host "⚠️  winget not available, trying chocolatey..." -ForegroundColor Yellow
+        }
+        
+        try {
+            # Try chocolatey as fallback
+            choco install gh -y
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ GitHub CLI installed successfully via chocolatey" -ForegroundColor Green
+                return $true
+            }
+        }
+        catch {
+            Write-Host "❌ Failed to install via chocolatey" -ForegroundColor Red
+        }
+    }
+    elseif ($IsMacOS -or $env:OSTYPE -eq "darwin") {
+        Write-Host "📦 Installing GitHub CLI on macOS..." -ForegroundColor Cyan
+        try {
+            brew install gh
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ GitHub CLI installed successfully via homebrew" -ForegroundColor Green
+                return $true
+            }
+        }
+        catch {
+            Write-Host "❌ Failed to install via homebrew. Please install manually: https://cli.github.com/" -ForegroundColor Red
+        }
+    }
+    else {
+        Write-Host "📦 Linux detected. Please install GitHub CLI manually:" -ForegroundColor Cyan
+        Write-Host "🔗 https://github.com/cli/cli/blob/trunk/docs/install_linux.md" -ForegroundColor Blue
+    }
+    
+    Write-Host "❌ Automatic installation failed" -ForegroundColor Red
+    Write-Host "📝 Manual installation: https://cli.github.com/" -ForegroundColor Blue
+    return $false
+}
+
+function Test-GitHubAuth {
+    try {
+        $authStatus = gh auth status 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ GitHub CLI is authenticated" -ForegroundColor Green
+            return $true
+        }
+        else {
+            Write-Host "⚠️  GitHub CLI is not authenticated" -ForegroundColor Yellow
+            Write-Host "🔑 Please run: gh auth login" -ForegroundColor Blue
+            return $false
+        }
+    }
+    catch {
+        Write-Host "❌ Failed to check GitHub CLI authentication" -ForegroundColor Red
+        return $false
+    }
 }
 
 function Get-NextVersion {
@@ -95,14 +179,40 @@ function New-ReleaseTag {
         
         Write-Host "✅ Successfully created and pushed tag: $version" -ForegroundColor Green
         
-        # Try to create GitHub release using gh CLI
-        Write-Host "🚀 Creating GitHub release..." -ForegroundColor Cyan
-        $ghResult = gh release create $version --title "Release $version" --notes "Automated release $version" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Successfully created GitHub release: $version" -ForegroundColor Green
+        # Create GitHub release (CLI should be ready from step 1)
+        Write-Host "🚀 Step 6: Creating GitHub release..." -ForegroundColor Cyan
+        
+        if (-not (Test-GitHubCLI)) {
+            if (Install-GitHubCLI) {
+                Write-Host "� Refreshing environment..." -ForegroundColor Cyan
+                # Refresh PATH for current session
+                $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            }
+        }
+        
+        if (Test-GitHubCLI) {
+            if (Test-GitHubAuth) {
+                try {
+                    gh release create $version --title "Release $version" --notes "Automated release $version"
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "✅ Successfully created GitHub release: $version" -ForegroundColor Green
+                    }
+                    else {
+                        Write-Host "⚠️  Could not create GitHub release (API error)" -ForegroundColor Yellow
+                        Write-Host "📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version" -ForegroundColor Blue
+                    }
+                }
+                catch {
+                    Write-Host "⚠️  Could not create GitHub release: $_" -ForegroundColor Yellow
+                    Write-Host "📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version" -ForegroundColor Blue
+                }
+            }
+            else {
+                Write-Host "📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version" -ForegroundColor Blue
+            }
         }
         else {
-            Write-Host "⚠️  Could not create GitHub release automatically (gh CLI not available or not authenticated)" -ForegroundColor Yellow
+            Write-Host "⚠️  GitHub CLI not available (setup failed in step 1)" -ForegroundColor Yellow
             Write-Host "📝 Please create release manually at: https://github.com/Advance-Technologies-Foundation/clio/releases/new?tag=$version" -ForegroundColor Blue
         }
         
@@ -117,7 +227,26 @@ function New-ReleaseTag {
 
 # Main execution
 try {
-    Write-Host "🔍 Getting latest release tag..." -ForegroundColor Cyan
+    Write-Host "� Step 1: Checking GitHub CLI setup..." -ForegroundColor Cyan
+    
+    # Check and install GitHub CLI first
+    if (-not (Test-GitHubCLI)) {
+        if (Install-GitHubCLI) {
+            Write-Host "🔄 Refreshing environment..." -ForegroundColor Cyan
+            # Refresh PATH for current session
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+        }
+        else {
+            Write-Host "⚠️  GitHub CLI installation failed, but continuing with tag creation..." -ForegroundColor Yellow
+        }
+    }
+    
+    # Check authentication if CLI is available
+    if (Test-GitHubCLI) {
+        Test-GitHubAuth | Out-Null
+    }
+    
+    Write-Host "�🔍 Step 2: Getting latest release tag..." -ForegroundColor Cyan
     
     $currentTag = Get-LatestTag
     
