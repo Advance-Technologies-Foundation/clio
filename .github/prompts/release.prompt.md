@@ -35,18 +35,22 @@
          - Next: 8.0.1.43
          - Logic: Split by '.', increment PARTS[3], rejoin
 
-      5. **Create and push the new tag**:
+      5. **Update project version** in clio.csproj:
+         - Update AssemblyVersion to match the new version
+         - This ensures the compiled application shows the correct version
+
+      6. **Create and push the new tag**:
          ```bash
          git tag [NEW_VERSION]
          git push origin [NEW_VERSION]
          ```
 
-      6. **Create GitHub release** (should work now since we checked CLI in step 1):
+      7. **Create GitHub release** (should work now since we checked CLI in step 1):
          ```bash
          gh release create [NEW_VERSION] --title "Release [NEW_VERSION]" --notes "Automated release [NEW_VERSION]"
          ```
 
-      6. **Provide confirmation** and next steps
+      8. **Provide confirmation** and next steps
 
       **Example workflow:**
       ```
@@ -62,8 +66,10 @@
       Current tag: 8.0.1.42
       Next version: 8.0.1.43
       
-      # Step 5-6: Create release
+      # Step 5-7: Update and create release
       Commands:
+        # Update clio.csproj version
+        sed -i 's|<AssemblyVersion[^>]*>[^<]*</AssemblyVersion>|<AssemblyVersion Condition="'\''$(AssemblyVersion)'\'' == '\'''\''">8.0.1.43</AssemblyVersion>|g' clio/clio.csproj
         git tag 8.0.1.43
         git push origin 8.0.1.43
         gh release create 8.0.1.43 --title "Release 8.0.1.43" --notes "Automated release 8.0.1.43"
