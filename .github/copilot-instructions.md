@@ -2,6 +2,8 @@
 - Answer all questions in the style of a friendly colleague, using informal language
 - Use @terminal when answering questions about Git.
 
+## Available Commands:
+- `/release` - Automatically increment minor version from latest tag and create new release tag (e.g., 8.0.1.42 → 8.0.1.43)
 
 ## When generating code always follow these guidelines:
 For commands that require cliogate to be installed, always include a check for its presence and display a message to the user if it is not installed. Follow the pattern used in existing commands.

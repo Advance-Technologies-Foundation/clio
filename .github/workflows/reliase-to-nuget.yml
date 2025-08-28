@@ -39,13 +39,34 @@ jobs:
           dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
           dotnet build-server shutdown;
 
-      - name: Pack
+      - name: Extract Version from Tag
+        id: extract_version
         run: |
           $tag = "${{ github.event.release.tag_name }}"
-          dotnet pack .\clio\clio.csproj --configuration Release --output ./output /p:AssemblyVersion=$tag /p:FileVersion=$tag /p:Version=$tag
+          # Remove 'v' prefix if present (e.g., v8.0.1.42 -> 8.0.1.42)
+          $version = $tag -replace '^v', ''
+          
+          # Validate version format (should be like 8.0.1.42)
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            throw "Invalid version format: $version. Expected format: X.Y.Z.W (e.g., 8.0.1.42)"
+          }
+          
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "Extracted version: $version"
+        shell: powershell
+
+      - name: Pack clio with release version
+        run: |
+          $version = "${{ steps.extract_version.outputs.VERSION }}"
+          echo "Packing clio with version: $version"
+          dotnet pack .\clio\clio.csproj --configuration Release --output ./output /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version
         shell: powershell
 
       - name: Publish to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.CLIO_NUGET_API_KEY }}
-        run: dotnet nuget push ".\output\*.nupkg" --api-key ${{ secrets.CLIO_NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+        run: |
+          $version = "${{ steps.extract_version.outputs.VERSION }}"
+          echo "Publishing clio package version $version to NuGet..."
+          dotnet nuget push ".\output\*.nupkg" --api-key ${{ secrets.CLIO_NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+          echo "Successfully published clio $version to NuGet!"
