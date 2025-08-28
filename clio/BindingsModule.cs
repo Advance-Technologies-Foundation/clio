@@ -36,7 +36,7 @@ public class BindingsModule {
 
 	#region Fields: Private
 
-	public static string k8sDns = "";
+	public static string k8sDns = "127.0.0.1";
 	private readonly IFileSystem _fileSystem;
 
 	#endregion
