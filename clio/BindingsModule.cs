@@ -80,10 +80,7 @@ public class BindingsModule {
 		{
 			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
 			Uri.TryCreate(config.Host, UriKind.Absolute, out var uriResult);
-			if (uriResult != null && uriResult.Scheme == Uri.UriSchemeHttp) {
-				k8sDns = uriResult.Host;
-			}
-			else if (uriResult != null && uriResult.Scheme == Uri.UriSchemeHttps) {
+			if (uriResult != null && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps)) {
 				k8sDns = uriResult.Host;
 			}
 			else {
