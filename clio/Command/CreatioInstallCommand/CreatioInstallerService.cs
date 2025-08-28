@@ -110,7 +110,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			{
 				{$"{BindingsModule.k8sDns}",port }
 			},
-			AbortOnConnectFail = false // this prevents that error
+			AbortOnConnectFail = false // Prevents exceptions when the initial connection to Redis fails, allowing the client to retry connecting.
 		};
 		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
 		IServer server = redis.GetServer($"{BindingsModule.k8sDns}", port);
