@@ -50,7 +50,14 @@
          gh release create [NEW_VERSION] --title "Release [NEW_VERSION]" --notes "Automated release [NEW_VERSION]"
          ```
 
-      8. **Provide confirmation** and next steps
+      8. **CI/CD Automation**: Once the GitHub release is created, the CI/CD workflow will automatically:
+         - Extract version from the release tag
+         - Build clio with the extracted version (overriding project file version)
+         - Run tests with the release version
+         - Pack and publish NuGet package with the release version
+         - This ensures both the compiled application and NuGet package have the same version from the tag
+
+      9. **Provide confirmation** and next steps
 
       **Example workflow:**
       ```

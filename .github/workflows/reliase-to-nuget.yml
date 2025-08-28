@@ -13,32 +13,6 @@ jobs:
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
 
-      - name: Test Solution
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: powershell
-        run: |
-            $ErrorActionPreference = 'Stop'
-            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
-            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
-            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml";
-
-      - name: Build and analyze
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_URL: ${{ secrets.SONAR_URL }}
-        shell: powershell
-        run: |
-          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml";
-          dotnet sonarscanner begin /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
-          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
-          /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml;
-          dotnet build .\clio\clio.csproj -c Release --no-incremental;
-          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
-          dotnet build-server shutdown;
-
       - name: Extract Version from Tag
         id: extract_version
         run: |
@@ -54,6 +28,37 @@ jobs:
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
           echo "Extracted version: $version"
         shell: powershell
+
+      - name: Test Solution
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: powershell
+        run: |
+            $ErrorActionPreference = 'Stop'
+            $version = "${{ steps.extract_version.outputs.VERSION }}"
+            echo "Testing clio with version: $version"
+            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
+            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml" `
+            /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version;
+
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_URL: ${{ secrets.SONAR_URL }}
+        shell: powershell
+        run: |
+          $version = "${{ steps.extract_version.outputs.VERSION }}"
+          echo "Building clio with version: $version"
+          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml";
+          dotnet sonarscanner begin /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
+          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
+          /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml;
+          dotnet build .\clio\clio.csproj -c Release --no-incremental /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version;
+          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
+          dotnet build-server shutdown;
 
       - name: Pack clio with release version
         run: |
