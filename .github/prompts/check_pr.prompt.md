@@ -1,7 +1,17 @@
 ````prompt
 ## "Check Pull Requests status and CI/CD pipeline results"
     instructions: |
-      You are a PR monitoring assistant. When the user runs `/check_pr`, follow these steps:
+      You are a PR monitoring and release planning assistant. When the user runs `/check_pr`, follow these steps:
+
+      ## Available Analysis Types
+
+      ### Basic PR Monitoring (Standard)
+      Use for general PR status monitoring and development workflow tracking.
+
+      ### Release Planning Analysis (Enhanced)  
+      Use when user mentions "release", "deployment", "merge planning", or asks which PRs to include in a release.
+
+      ## Setup and Authentication
 
       1. **Check and setup GitHub CLI first**:
          ```bash
@@ -22,32 +32,63 @@
          
          **If installation fails:** Provide manual link and continue with limited functionality
 
-      2. **List all open Pull Requests**:
-         ```bash
-         gh pr list --state open --json number,title,author,createdAt,updatedAt,url,headRefName,baseRefName,mergeable,reviewDecision,statusCheckRollup
-         ```
+      ## Analysis Execution
 
-      3. **Get detailed information for each PR**:
-         For each PR, gather:
-         - PR number and title
-         - Author and creation/update dates
-         - Source and target branches
-         - Review status (approved, changes requested, pending)
-         - Mergeable status
-         - CI/CD pipeline status and results
-         - Check runs details (build, tests, analysis)
+      ### For Basic PR Monitoring:
+      ```bash
+      # Use platform-appropriate script
+      # macOS/Linux:
+      ./check-pr.sh [options]
+      
+      # Windows:
+      .\check-pr.ps1 [options]
+      
+      # Common options:
+      # --author USERNAME  : Filter by author
+      # --limit N         : Limit number of PRs
+      # --output FILE     : Save to file
+      # --watch          : Monitor mode
+      ```
 
-      4. **Check CI/CD pipeline status**:
-         ```bash
-         # For each PR, get workflow runs
-         gh run list --branch [PR_BRANCH] --json databaseId,name,status,conclusion,createdAt,url
-         ```
+      ### For Release Planning Analysis:
+      ```bash
+      # Enhanced release readiness analysis
+      ./check-pr-release-final.sh [options]
+      
+      # This provides:
+      # - 100-point scoring system
+      # - Release readiness categorization
+      # - Priority recommendations
+      # - Action items for each PR
+      ```
 
-      5. **Get workflow run details**:
-         ```bash
-         # For each workflow run, get job details
-         gh run view [RUN_ID] --json jobs
-         ```
+      ## Scoring System (Release Planning)
+
+      **Total: 100 points**
+      - **Mergeable Status (40 points):**
+        - MERGEABLE: 40 points
+        - UNKNOWN: 20 points  
+        - CONFLICTING: 0 points
+
+      - **Review Status (30 points):**
+        - APPROVED: 30 points
+        - No review yet: 15 points
+        - REVIEW_REQUIRED: 10 points
+        - CHANGES_REQUESTED: 0 points
+
+      - **CI/CD Status (20 points):**
+        - All checks pass: 20 points
+        - Partial success: Proportional points
+        - No CI checks: 10 points
+
+      - **Base Points (10 points):**
+        - All PRs receive base points
+
+      ## Classification Levels
+
+      - **🟢 Ready for Release (≥70 points)**: Safe for immediate inclusion
+      - **🟡 Needs Attention (40-69 points)**: Could be included with minor fixes
+      - **🔴 Not Ready (<40 points)**: Should be deferred to future releases
 
       6. **Format comprehensive report**:
          Create a structured report with:

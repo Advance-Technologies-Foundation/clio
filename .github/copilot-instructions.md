@@ -1,4 +1,131 @@
-## How to interact with a user:
+## How# GitHub Copilot Custom Instructions for Clio Project
+
+## Project Context
+This is the Clio project - a command-line tool for Creatio (formerly bpm'online) development. The project includes CI/CD automation, package management, and development tools.
+
+## Available Commands
+
+### `/check_pr` - Enhanced PR Analysis and Release Planning
+Provides comprehensive Pull Request monitoring and release readiness analysis.
+
+**Basic Usage:** Analyzes current PR status, CI/CD pipelines, and action items
+**Release Planning:** Uses 100-point scoring system to categorize PRs by release readiness
+
+**Key Features:**
+- **Release Readiness Scoring**: 100-point system based on mergeable status (40pts), review status (30pts), CI/CD results (20pts), and base points (10pts)
+- **Three-Tier Classification**: Ready (≥70), Needs Attention (40-69), Not Ready (<40)
+- **Cross-Platform**: Works on Windows (PowerShell) and macOS/Linux (Bash)
+- **Filtering Options**: By author, label, state, or PR count
+- **Export and Watch**: Save reports to files or monitor in real-time
+
+**Usage Examples:**
+- `/check_pr` - Standard PR analysis
+- `/check_pr for release planning` - Enhanced scoring and categorization  
+- `/check_pr by author kirillkrylov` - Filter by specific author
+- `/check_pr watch mode` - Continuous monitoring
+
+**Available Scripts:**
+- `check-pr.sh` / `check-pr.ps1` - Basic PR monitoring
+- `check-pr-release-final.sh` - Enhanced release planning analysis
+
+### `/release` - Release Management
+Automates version management and release creation with comprehensive changelog generation.
+
+**Usage:** `/release` followed by release type or specific instructions
+- Semantic versioning support (major.minor.patch.build)
+- Automated changelog generation from commits and PRs
+- Integration with CI/CD pipelines for NuGet publishing
+- Cross-platform PowerShell and Bash scripts
+
+## Code Analysis Guidelines
+
+### When working with Clio codebase:
+1. **Architecture Understanding**: Clio follows a command-based architecture with dependency injection
+2. **Command Pattern**: New features should follow the existing command pattern in `/Command` folder
+3. **Testing**: Maintain test coverage in `clio.tests` project
+4. **Cross-Platform**: Consider Windows, macOS, and Linux compatibility
+5. **Version Management**: Use X.Y.Z.W format for versioning
+
+### Key Directories:
+- `/clio/Command/` - Command implementations
+- `/clio/Common/` - Shared utilities and services
+- `/clio.tests/` - Unit tests
+- `/.github/workflows/` - CI/CD pipelines
+- `/.github/prompts/` - GitHub Copilot instructions
+
+## Release Planning Best Practices
+
+### Use Enhanced PR Analysis When:
+- Planning a release or deployment
+- Deciding which PRs to merge
+- Assessing release readiness
+- Prioritizing development work
+
+### Scoring Interpretation:
+- **Ready PRs (≥70)**: Include in next release
+- **Needs Attention (40-69)**: Consider quick fixes for inclusion
+- **Not Ready (<40)**: Defer to future releases
+
+### Priority Factors:
+1. **Security fixes**: Always prioritize regardless of score
+2. **Bug fixes**: High priority for stability
+3. **Features**: Balance business value with readiness
+4. **Dependencies**: Carefully review for breaking changes
+5. **Documentation**: Usually safe if basic checks pass
+
+## CI/CD Integration
+
+### Workflows:
+- `reliase-to-nuget.yml` - Automated NuGet package publishing with version synchronization
+- Version consistency between application and NuGet package ensured through tag-based versioning
+
+### Version Management:
+- Uses GitHub releases and tags for version control
+- Automatic project file updates during release process
+- Integration with package publishing pipelines
+
+## Development Workflow
+
+### PR Management:
+1. Use `/check_pr` for regular monitoring
+2. Apply enhanced analysis before releases
+3. Address high-scoring PRs first
+4. Maintain clean merge history
+
+### Release Process:
+1. Run release readiness analysis
+2. Review and merge ready PRs
+3. Use `/release` command for version management
+4. Validate CI/CD pipeline execution
+
+## Communication Style
+
+### When providing PR analysis:
+- Start with executive summary (ready/attention/not ready counts)
+- Categorize PRs by readiness level
+- Provide specific action items for each PR
+- Include business impact assessment when relevant
+- Suggest concrete next steps
+
+### When discussing releases:
+- Focus on risk assessment
+- Highlight breaking changes
+- Consider rollback strategies
+- Document decisions and rationale
+
+## Error Handling
+
+### Common Issues:
+- GitHub CLI authentication: Guide to `gh auth login`
+- Script permissions: Provide `chmod +x` instructions
+- Missing dependencies: Auto-detect and suggest installation
+- Network issues: Provide troubleshooting steps
+
+### Troubleshooting Approach:
+1. Verify prerequisites (GitHub CLI, permissions)
+2. Test basic connectivity (`gh repo view`)
+3. Check script execution permissions
+4. Provide alternative approaches when possibleto interact with a user:
 - Answer all questions in the style of a friendly colleague, using informal language
 - Use @terminal when answering questions about Git.
 
