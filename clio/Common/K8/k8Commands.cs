@@ -216,7 +216,7 @@ public class k8Commands : Ik8Commands
 	}
 	
 	public ConnectionStringParams GetPostgresConnectionString() {
-		ActivePod currentPod = new ActivePod(PodType.Postgres);
+		ActivePod currentPod = new (PodType.Postgres);
 		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
 			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
 		string serviceName = statefulSet.Spec.ServiceName;
@@ -234,11 +234,11 @@ public class k8Commands : Ik8Commands
 		byte[] username = secrets?.Data[currentPod.UsernameKey];
 		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
 		string usernameStr = Encoding.UTF8.GetString(username ?? Array.Empty<byte>());
-
-		var dbPortValue = pgPort.NodePort ?? pgPort.Port;
-		var dbPortInternalValue = dbPortInternal.NodePort ?? dbPortInternal.Port;
-		var redisPortValue = redisPort.NodePort ?? redisPort.Port;
-		var redisPortInternalValue = redisPortInternal.NodePort ?? redisPortInternal.Port;
+		
+		int dbPortValue = pgPort.Port >0? pgPort.Port: pgPort.NodePort ?? 5432;
+		int dbPortInternalValue = dbPortInternal.Port>0? dbPortInternal.Port : dbPortInternal.NodePort ?? 0;
+		int redisPortValue = redisPort.Port>0? redisPort.Port : redisPort.NodePort ?? 6379;
+		int redisPortInternalValue = redisPortInternal.Port>0? redisPortInternal.Port : redisPortInternal.NodePort ?? 0;
 
 		return new ConnectionStringParams(dbPortValue, dbPortInternalValue, redisPortValue, redisPortInternalValue, usernameStr, passwordStr);
 	}
@@ -259,10 +259,16 @@ public class k8Commands : Ik8Commands
 		byte[] password = secrets?.Data[currentPod.PasswordKey];
 		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
 
-		var dbPortValue = dbPort.NodePort ?? dbPort.Port;
-		var dbPortInternalValue = dbPortInternal.NodePort ?? dbPortInternal.Port;
-		var redisPortValue = redisPort.NodePort ?? redisPort.Port;
-		var redisPortInternalValue = redisPortInternal.NodePort ?? redisPortInternal.Port;
+		// var dbPortValue = dbPort.NodePort ?? dbPort.Port;
+		// var dbPortInternalValue = dbPortInternal.NodePort ?? dbPortInternal.Port;
+		// var redisPortValue = redisPort.NodePort ?? redisPort.Port;
+		// var redisPortInternalValue = redisPortInternal.NodePort ?? redisPortInternal.Port;
+		
+		int dbPortValue = dbPort.Port >0? dbPort.Port: dbPort.NodePort ?? 1433;
+		int dbPortInternalValue = dbPortInternal.Port>0? dbPortInternal.Port : dbPortInternal.NodePort ?? 0;
+		int redisPortValue = redisPort.Port>0? redisPort.Port : redisPort.NodePort ?? 6379;
+		int redisPortInternalValue = redisPortInternal.Port>0? redisPortInternal.Port : redisPortInternal.NodePort ?? 0;
+
 
 		return new ConnectionStringParams(dbPortValue, dbPortInternalValue, redisPortValue, redisPortInternalValue, "sa", passwordStr);
 	}
