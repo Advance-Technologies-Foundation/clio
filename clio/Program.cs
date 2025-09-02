@@ -139,6 +139,8 @@ internal class Program {
 		typeof(RegisterOptions),
 		typeof(UnregisterOptions),
 		typeof(InstallTideCommandOptions),
+		typeof(TideInstallClioCommandOptions),
+		typeof(TideInstallGitCommandOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
 		typeof(CustomizeDataProtectionCommandOptions),
@@ -258,6 +260,8 @@ internal class Program {
 					SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 					LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 					InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
+					TideInstallClioCommandOptions opts => CreateRemoteCommand<TideInstallClioCommand>(opts).Execute(opts),
+					TideInstallGitCommandOptions opts => CreateRemoteCommand<TideInstallGitCommand>(opts).Execute(opts),
 					CustomizeDataProtectionCommandOptions opts => Resolve<CustomizeDataProtectionCommand>(opts).Execute(opts),
 					LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts)
 						.Execute(opts),
@@ -804,18 +808,18 @@ internal class Program {
 	internal static int DownloadZipPackages(PullPkgOptions options){
 		try {
 			SetupAppConnection(options);
-			string packageName = options.Name;
+			String packageName = options.Name;
 			if (options.Unzip) {
-				string destPath = options.DestPath ?? Environment.CurrentDirectory;
+				String destPath = options.DestPath ?? Environment.CurrentDirectory;
 				IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>();
 				workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-					string zipFilePath = Path.Combine(tempDirectory, $"{packageName}.zip");
+					String zipFilePath = Path.Combine(tempDirectory, $"{packageName}.zip");
 					DownloadZipPackagesInternal(packageName, zipFilePath, options.Async);
 					UnZipPackages(zipFilePath, destPath);
 				});
 			}
 			else {
-				string destPath = options.DestPath ?? Path.Combine(Environment.CurrentDirectory, $"{packageName}.zip");
+				String destPath = options.DestPath ?? Path.Combine(Environment.CurrentDirectory, $"{packageName}.zip");
 				if (Directory.Exists(destPath)) {
 					destPath = Path.Combine(destPath, $"{packageName}.zip");
 				}
