@@ -12,8 +12,7 @@ namespace Clio.Command;
 
 #region Class: CreateTestProjectOptions
 
-[Verb("new-test-project", Aliases = new[] {"create-test-project"},
-	HelpText = "Add new test project")]
+[Verb("new-test-project", Aliases = ["create-test-project"], HelpText = "Add new test project")]
 public class CreateTestProjectOptions : EnvironmentOptions
 {
 
