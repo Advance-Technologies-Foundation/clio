@@ -114,7 +114,7 @@ public class BindingsModule {
 
 		if (settings is not null) {
 			CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId)
-				? new CreatioClient(settings.Uri, settings.Login, settings.Password, true, settings.IsNetCore)
+				? new CreatioClient(settings.Uri ?? "http://localhost", settings.Login ?? "Supervisor", settings.Password ?? "Supervisor", true, settings.IsNetCore)
 				: CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId,
 					settings.ClientSecret, settings.IsNetCore);
 			IApplicationClient clientAdapter = new CreatioClientAdapter(creatioClient);

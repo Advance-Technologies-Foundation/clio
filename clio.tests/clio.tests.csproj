@@ -7,18 +7,18 @@
   </PropertyGroup>
   <ItemGroup Label="References">
     <ProjectReference Include="..\clio\clio.csproj" />
-    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.13" />
+    <PackageReference Include="ATF.Repository.Mock" Version="2.0.2.14" />
     <PackageReference Include="coverlet.collector" Version="6.0.4">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" Version="[7.0.0]" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
-    <PackageReference Include="nunit" Version="4.3.2" />
-    <PackageReference Include="NUnit3TestAdapter" Version="5.0.0" />
+    <PackageReference Include="nunit" Version="4.4.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="5.1.0" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="22.0.15" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.6" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->
