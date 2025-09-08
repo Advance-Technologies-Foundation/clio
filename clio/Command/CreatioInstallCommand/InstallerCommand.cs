@@ -61,7 +61,7 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
 	public string Product {
 		get {
-			if (_productList.ContainsKey(ProductKey)) {
+			if (_productList.ContainsKey(ProductKey ?? string.Empty)) {
 				return _productList[ProductKey];
 			}
 			return ProductKey;
