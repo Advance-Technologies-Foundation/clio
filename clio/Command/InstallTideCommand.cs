@@ -41,10 +41,9 @@ namespace Clio.Command
 
 		private int InstallGateForEnvironment(InstallTideCommandOptions options)
 		{
-			var gateOptions = new PushPkgOptions();
-			gateOptions.CopyFromEnvironmentSettings(options);
-			gateOptions.Name = "cliogate";
-			return _installGatePkgCommand.Execute(gateOptions);
+			   var gateOptions = new InstallGateOptions();
+			   gateOptions.CopyFromEnvironmentSettings(options);
+			   return _installGatePkgCommand.Execute(gateOptions);
 		}
 
 		private int InstallTideForEnvironment(InstallTideCommandOptions options)
