@@ -447,6 +447,7 @@ namespace cliogate.Files.cs
 			CheckCanManageSolution();
 			_log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages));
 			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
+			_log.WarnFormat($"Maintainer code: {maintainerCode}");
 			if (unlockPackages != null && unlockPackages.Any()) {
 				foreach (string unlockPackage in unlockPackages) {
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
@@ -460,14 +461,24 @@ namespace cliogate.Files.cs
 						.Where("Name").IsEqual(Column.Parameter(unlockPackage));
 					Update update = query as Update;
 					update.BuildParametersAsValue = true;
-					update.Execute();
+					string sql = update.GetSqlText();
+					_log.WarnFormat("Unlocking with sql:\r\n {0}",sql);	
+					int isSuccess = update.Execute();
+					_log.WarnFormat(isSuccess == 1
+						? $"Successfully unlocked {unlockPackage} package"
+						: $"Could not unlock {unlockPackage} packages.");
 				}
 			} else {
+				_log.WarnFormat($"Start UnlockPackages, packages: all with maintainer code {maintainerCode}");
 				Query query = new Update(UserConnection, "SysPackage")
 					.Set("InstallType", Column.Parameter(0))
 					.Where("Maintainer").IsEqual(Column.Parameter(maintainerCode));
 				Update update = query as Update;
-				update.Execute();
+				int isSuccess = update.Execute();
+				
+				_log.WarnFormat(isSuccess == 1
+					? $"Successfully unlocked package by maintainer code {maintainerCode}"
+					: $"Could not unlock packages by maintainer code {maintainerCode}");
 			}
 			return true;
 		}

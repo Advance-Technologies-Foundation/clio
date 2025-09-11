@@ -15,7 +15,7 @@ namespace Clio.Command
 
 	#region Class: LockPackageOptions
 
-	[Verb("lock-package", Aliases = new string[] { "lp" }, HelpText = "Lock package")]
+	[Verb("lock-package", Aliases = ["lp"], HelpText = "Lock package")]
 	public class LockPackageOptions : EnvironmentOptions
 	{
 
@@ -53,10 +53,10 @@ namespace Clio.Command
 
 		#region Methods: Private
 
-		public IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
+		private static IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
 			string.IsNullOrWhiteSpace(options.Name)
-				? Enumerable.Empty<string>()
-				: new[] { options.Name }; 
+				? []
+				: options.Name.Split(',').Select(i=> i.Trim()); 
 
 		#endregion
 
