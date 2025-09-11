@@ -17,14 +17,40 @@ namespace Clio.Command
 
 	internal class InstallTideCommand : Command<InstallTideCommandOptions>
 	{
-		InstallNugetPackageCommand _installNugetPackageCommand;
+		private readonly InstallNugetPackageCommand _installNugetPackageCommand;
+		private readonly InstallGatePkgCommand _installGatePkgCommand;
 
-		public InstallTideCommand(InstallNugetPackageCommand installNugetPackageCommand) {
+		public InstallTideCommand(
+			InstallNugetPackageCommand installNugetPackageCommand,
+			InstallGatePkgCommand installGatePkgCommand)
+		{
 			_installNugetPackageCommand = installNugetPackageCommand;
+			_installGatePkgCommand = installGatePkgCommand;
 		}
 
-		public override int Execute(InstallTideCommandOptions options) {
-			var installNugetPackageCommandOptions = new InstallNugetPkgOptions {
+		public override int Execute(InstallTideCommandOptions options)
+		{
+			int gateResult = InstallGateForEnvironment(options);
+			if (gateResult != 0)
+			{
+				Console.WriteLine("[TIDE] Gate installation failed. Tide installation will not proceed.");
+				return gateResult;
+			}
+			return InstallTideForEnvironment(options);
+		}
+
+		private int InstallGateForEnvironment(InstallTideCommandOptions options)
+		{
+			var gateOptions = new PushPkgOptions();
+			gateOptions.CopyFromEnvironmentSettings(options);
+			gateOptions.Name = "cliogate";
+			return _installGatePkgCommand.Execute(gateOptions);
+		}
+
+		private int InstallTideForEnvironment(InstallTideCommandOptions options)
+		{
+			var installNugetPackageCommandOptions = new InstallNugetPkgOptions
+			{
 				Names = "atftide",
 			};
 			installNugetPackageCommandOptions.CopyFromEnvironmentSettings(options);
