@@ -133,6 +133,7 @@ Automates version management and release creation with comprehensive changelog g
 - `/release` - Automatically increment minor version from latest tag and create new release tag (e.g., 8.0.1.42 → 8.0.1.43)
 - `/check_pr` - Check Pull Requests status, review state, and CI/CD pipeline results for the clio repository
 
+
 ## When generating code always follow these guidelines:
 For commands that require cliogate to be installed, always include a check for its presence and display a message to the user if it is not installed. Follow the pattern used in existing commands.
 Use Microsoft coding style for all code unless otherwise specified.
@@ -141,6 +142,7 @@ All filesystem operations must use the filesystem abstraction already used in th
 
 Use Microsoft coding style for all code unless otherwise specified.
 
+**All code comments and user-facing messages must be in English.**
 
 Every time you change code, always check the documentation in README.md and Commands.md. Update, add, or remove documentation as needed to keep it complete and up-to-date.
 
