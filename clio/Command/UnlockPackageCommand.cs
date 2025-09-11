@@ -9,7 +9,7 @@ namespace Clio.Command
 
 	#region Class: UnlockPackageOptions
 
-	[Verb("unlock-package", Aliases = new string[] { "up" }, HelpText = "Unlock package")]
+	[Verb("unlock-package", Aliases = ["up"], HelpText = "Unlock package")]
 	public class UnlockPackageOptions : EnvironmentOptions
 	{
 
@@ -45,10 +45,10 @@ namespace Clio.Command
 
 		#region Methods: Private
 
-		public IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
+		private static IEnumerable<string> GetPackagesNames(UnlockPackageOptions options) =>
 			string.IsNullOrWhiteSpace(options.Name)
-				? Enumerable.Empty<string>()
-				: new[] { options.Name }; 
+				? []
+				: options.Name.Split(',').Select(i=> i.Trim()); 
 
 		#endregion
 
