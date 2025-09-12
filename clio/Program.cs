@@ -480,7 +480,7 @@ internal class Program {
 	/// </summary>
 	/// <param name="opts">Gate installation options</param>
 	/// <returns>Configured package options</returns>
-	private static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts){
+	internal static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts){
 		PushPkgOptions pushPackageOptions = CreatePushPkgOptions(opts);
 		pushPackageOptions.DeveloperModeEnabled = false;
 		pushPackageOptions.RestartEnvironment = true;
