@@ -9,7 +9,7 @@
         <When Condition="'$(CoreTargetFramework)' == 'netstandard2.0'">
             <PropertyGroup>
                 <TestCoreLibPath Condition="'$(TestCoreLibPath)' == ''">../../.application/net-core/core-bin</TestCoreLibPath>
-                <TargetFramework>net6.0</TargetFramework>
+                <TargetFramework>net8.0</TargetFramework>
             </PropertyGroup>
         </When>
     </Choose>
@@ -37,16 +37,20 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="FluentAssertions" Version="5.6.0"/>
-        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="3.1.6"/>
-        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="3.1.6"/>
-        <PackageReference Include="NUnit" Version="3.13.3"/>
-        <PackageReference Include="NUnit3TestAdapter" Version="4.5.0"/>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2"/>
-        <PackageReference Include="Castle.Core" version="4.4.0"/>
-        <PackageReference Include="Ninject" version="3.3.3"/>
+        <PackageReference Include="FluentAssertions" Version="[7.2.0]"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0"/>
+        <PackageReference Include="NUnit" Version="4.4.0" />
+        <PackageReference Include="NUnit3TestAdapter" Version="5.1.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+        <PackageReference Include="Castle.Core" version="5.2.1"/>
+        <PackageReference Include="Ninject" version="3.3.6"/>
+        <PackageReference Condition="'$(TargetFramework)' == 'net8.0'" Include="System.Net.Http.Json" Version="8.0.1" />
+        <Reference Condition="'$(TargetFramework)' == 'net472'" Include="System.Net.Http.Json" Version="8.0.1">
+            <HintPath>$(TestCoreLibPath)/System.Net.Http.Json.dll</HintPath>
+        </Reference>
         <PackageReference Include="NSubstitute" version="3.1.0"/>
-        <PackageReference Include="System.Runtime" version="4.3.0"/>
+        <PackageReference Include="System.Runtime" version="4.3.1"/>
         <PackageReference Include="System.Threading.Tasks.Extensions" version="4.5.4"/>
         <Reference Include="*">
             <HintPath>.\Libs\Terrasoft.TestFramework.dll</HintPath>

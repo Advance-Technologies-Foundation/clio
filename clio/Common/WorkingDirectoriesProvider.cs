@@ -102,8 +102,12 @@ public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
 
 	public string GetTemplatePath(string templateName){
 		templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
-		return Path.Combine(TemplateDirectory, $"{templateName}.tpl");
+		string tplPath = Path.Combine(TemplateDirectory, $"{templateName}.tpl");
+		return _fileSystem.File.Exists(tplPath) 
+			? tplPath 
+			: Path.Combine(TemplateDirectory, templateName);
 	}
+	
 
 	#endregion
 
