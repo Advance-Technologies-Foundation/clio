@@ -1601,3 +1601,15 @@ Turn off file system mode for a specific environment:
 ```bash
 clio turn-fsm --environmentName MyEnvironment off
 ```
+
+## Workspace Solution Generation (.slnx)
+
+- The `createw` (or `create-workspace`) command now generates a solution file in `.slnx` format instead of `.sln`.
+- All projects are added to the solution in a stable, sorted order by their relative path. This ensures the same project sequence every time the command is run.
+- Example usage:
+
+```bash
+clio createw
+```
+
+The generated solution file will be located in the `.solution` folder and named `CreatioPackages.slnx`.

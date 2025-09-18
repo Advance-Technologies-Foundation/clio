@@ -27,26 +27,16 @@ namespace Clio.Workspaces
 		#region Methods: Private
 
 		public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects) {
+			// Формируем .slnx как XML
+			var sortedProjects = solutionProjects.OrderBy(p => p.Path).ToList();
 			var sb = new StringBuilder();
-			sb.AppendLine("Microsoft Visual Studio Solution File, Format Version 12.00");
-			foreach (SolutionProject sp in solutionProjects) {
-				sb.AppendLine($"Project(\"{{{sp.Id}}}\") = \"{sp.Name}\", \"{sp.Path}\", \"{{{sp.UId}}}\"");
-				sb.AppendLine("EndProject");
+			sb.AppendLine("<Solution Version=\"1.0\">");
+			sb.AppendLine("  <Projects>");
+			foreach (var sp in sortedProjects) {
+				sb.AppendLine($"    <Project Path=\"{System.Security.SecurityElement.Escape(sp.Path)}\" />");
 			}
-			sb.AppendLine("Global");
-			sb.AppendLine("\tGlobalSection(SolutionConfigurationPlatforms) = preSolution");
-			sb.AppendLine("\t\tDebug|Any CPU = Debug|Any CPU");
-			sb.AppendLine("\t\tRelease|Any CPU = Release|Any CPU");
-			sb.AppendLine("\tEndGlobalSection");
-			sb.AppendLine("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution");
-			foreach (SolutionProject sp in solutionProjects) {
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.ActiveCfg = Debug|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.Build.0 = Debug|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.ActiveCfg = Release|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.Build.0 = Release|Any CPU");
-			}
-			sb.AppendLine("\tEndGlobalSection");
-			sb.AppendLine("EndGlobal");
+			sb.AppendLine("  </Projects>");
+			sb.AppendLine("</Solution>");
 			return sb.ToString();
 		}
 

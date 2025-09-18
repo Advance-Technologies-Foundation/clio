@@ -96,3 +96,13 @@ docker run -it --rm clio reg-web-app -help
 
 ## Commands Reference
 [Explore clio commands](clio/Commands.md)
+
+## Workspace Solution Generation (.slnx)
+
+Starting from September 2025, the `createw` command generates a solution file in `.slnx` format. All projects are added in a sorted order by their relative path, ensuring a stable and repeatable solution structure.
+
+- Solution file: `.solution/CreatioPackages.slnx`
+- Projects: always sorted by path
+- Command: `clio createw`
+
+This change improves consistency for CI/CD and version control.

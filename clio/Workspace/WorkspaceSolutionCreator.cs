@@ -61,7 +61,8 @@ namespace Clio.Workspaces
 					new SolutionProject(standalonePackageProject.PackageName, relativeStandaloneProjectPath);
 				solutionProjects.Add(solutionProject);
 			}
-			return solutionProjects;
+			// Сортировка по относительному пути
+			return solutionProjects.OrderBy(p => p.Path).ToList();
 		}
 
 		#endregion
