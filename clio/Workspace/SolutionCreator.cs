@@ -8,29 +8,25 @@ namespace Clio.Workspaces
 
 	public class SolutionCreator : ISolutionCreator
 	{
-
-		#region Fields: Private
-
 		private readonly IFileSystem _fileSystem;
+		private readonly ProjectGuidStore _guidStore;
 
-		#endregion
-
-		#region Constructors: Public
-
-		public SolutionCreator(IFileSystem fileSystem) {
+		public SolutionCreator(IFileSystem fileSystem)
+		{
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_fileSystem = fileSystem;
+			var guidStorePath = ".solution/project-guids.json";
+			_guidStore = new ProjectGuidStore(_fileSystem, guidStorePath);
 		}
 
-		#endregion
-
-		#region Methods: Private
-
-		public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects) {
+		private string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects)
+		{
 			var sb = new StringBuilder();
 			sb.AppendLine("Microsoft Visual Studio Solution File, Format Version 12.00");
-			foreach (SolutionProject sp in solutionProjects) {
-				sb.AppendLine($"Project(\"{{{sp.Id}}}\") = \"{sp.Name}\", \"{sp.Path}\", \"{{{sp.UId}}}\"");
+			foreach (SolutionProject sp in solutionProjects)
+			{
+				var guid = _guidStore.GetOrCreateGuid(sp.Name);
+				sb.AppendLine($"Project(\"{{{sp.Id}}}\") = \"{sp.Name}\", \"{sp.Path}\", \"{{{guid}}}\"");
 				sb.AppendLine("EndProject");
 			}
 			sb.AppendLine("Global");
@@ -39,30 +35,25 @@ namespace Clio.Workspaces
 			sb.AppendLine("\t\tRelease|Any CPU = Release|Any CPU");
 			sb.AppendLine("\tEndGlobalSection");
 			sb.AppendLine("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution");
-			foreach (SolutionProject sp in solutionProjects) {
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.ActiveCfg = Debug|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Debug|Any CPU.Build.0 = Debug|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.ActiveCfg = Release|Any CPU");
-				sb.AppendLine($"\t\t\t{{{sp.UId}}}.Release|Any CPU.Build.0 = Release|Any CPU");
+			foreach (SolutionProject sp in solutionProjects)
+			{
+				var guid = _guidStore.GetOrCreateGuid(sp.Name);
+				sb.AppendLine($"\t\t\t{{{guid}}}.Debug|Any CPU.ActiveCfg = Debug|Any CPU");
+				sb.AppendLine($"\t\t\t{{{guid}}}.Debug|Any CPU.Build.0 = Debug|Any CPU");
+				sb.AppendLine($"\t\t\t{{{guid}}}.Release|Any CPU.ActiveCfg = Release|Any CPU");
+				sb.AppendLine($"\t\t\t{{{guid}}}.Release|Any CPU.Build.0 = Release|Any CPU");
 			}
 			sb.AppendLine("\tEndGlobalSection");
 			sb.AppendLine("EndGlobal");
 			return sb.ToString();
 		}
 
-		#endregion
-
-		#region Methods: Public
-
-		public void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects) {
+		public void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects)
+		{
 			string solutionContent = BuildSolutionContent(solutionProjects);
 			_fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
 		}
-
-		#endregion
-
 	}
 
 	#endregion
-
 }
