@@ -28,14 +28,14 @@ pipeline{
     }   
     stage ('unit tests'){
       steps {
-                powershell 'dotnet test "./tests/UnitTests.sln"  --filter TestCategory=UnitTest'
+                powershell 'dotnet test "./tests/UnitTests.slnx"  --filter TestCategory=UnitTest'
             }
     }
     stage ('build'){
       steps {
-                powershell 'dotnet clean ./.solution/CreatioPackages.sln'
+                powershell 'dotnet clean ./.solution/CreatioPackages.slnx'
                 powershell '$env:CoreTargetFramework = "net472"'
-                powershell 'dotnet build ./.solution/CreatioPackages.sln -c Release '
+                powershell 'dotnet build ./.solution/CreatioPackages.slnx -c Release '
             }
     } 
     stage ('deploy-pkg'){

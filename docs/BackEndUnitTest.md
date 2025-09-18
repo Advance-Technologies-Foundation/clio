@@ -17,6 +17,9 @@ To specify a package for which a UnitTest will be created, run the following com
 clio new-test-project --package <PACKAGE_NAME>
 ```
 
+> The `new-test-project` command now generates a solution file named `UnitTests.slnx` in the tests directory. 
+All references to the solution file should use the `.slnx` extension.
+
 To open UnitTest solution use task open-test-project:
 
 ```bash

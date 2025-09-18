@@ -1,2 +1,2 @@
 ﻿call ..\.solution\set-netcore-environment.cmd
-dotnet build ..\.solution\CreatioPackages.sln
+dotnet build ..\.solution\CreatioPackages.slnx

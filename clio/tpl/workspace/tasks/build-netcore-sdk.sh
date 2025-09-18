@@ -1,2 +1,2 @@
 ﻿source "./../.solution/set-netcore-environment.sh"
-dotnet build "./../.solution/CreatioPackages.sln"
+dotnet build "./../.solution/CreatioPackages.slnx"
