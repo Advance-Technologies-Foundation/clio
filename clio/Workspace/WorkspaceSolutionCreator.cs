@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace Clio.Workspaces
 {
 	using System.Collections.Generic;

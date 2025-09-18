@@ -1,2 +1,2 @@
 ﻿call ..\.solution\set-netcore-environment.cmd
-START ..\.solution\CreatioPackages.sln
+START ..\.solution\CreatioPackages.slnx

@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace Clio.Workspaces
 {
 	using System.Collections.Generic;
@@ -30,12 +32,10 @@ namespace Clio.Workspaces
 			// Формируем .slnx как XML
 			var sortedProjects = solutionProjects.OrderBy(p => p.Path).ToList();
 			var sb = new StringBuilder();
-			sb.AppendLine("<Solution Version=\"1.0\">");
-			sb.AppendLine("  <Projects>");
+			sb.AppendLine("<Solution>");
 			foreach (var sp in sortedProjects) {
 				sb.AppendLine($"    <Project Path=\"{System.Security.SecurityElement.Escape(sp.Path)}\" />");
 			}
-			sb.AppendLine("  </Projects>");
 			sb.AppendLine("</Solution>");
 			return sb.ToString();
 		}

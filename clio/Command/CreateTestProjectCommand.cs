@@ -122,6 +122,8 @@ internal class CreateTestProjectCommand
 
 				string underTestProjectPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 				ExecuteDotnetCommand($"sln {solutionName}.sln add {underTestProjectPath}", TestsPath);
+				ExecuteDotnetCommand("sln migrate", TestsPath);
+				_fileSystem.DeleteFileIfExists(Path.Combine(TestsPath, "UnitTests.sln"));
 			}
 			Console.WriteLine("Done");
 			return 0;

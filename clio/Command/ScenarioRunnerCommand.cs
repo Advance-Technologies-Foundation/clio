@@ -30,6 +30,7 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions>{
     public override int Execute(ScenarioRunnerOptions options) {
         int result = 0;
         _logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario started");
+        
         _scenario
             .InitScript(options.FileName)
             .GetSteps(GetType().Assembly.GetTypes())

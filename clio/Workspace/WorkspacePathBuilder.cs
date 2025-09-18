@@ -17,7 +17,7 @@ namespace Clio.Workspaces
 		private const string ClioDirectoryName = ".clio";
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 		private const string WorkspaceEnvironmentSettingsJson = "workspaceEnvironmentSettings.json";
-	private const string SolutionName = "CreatioPackages.slnx";
+		private const string SolutionName = "CreatioPackages.slnx";
 		private const string NugetFolderName = ".nuget";
 		private const string SolutionFolderName = ".solution";
 		private const string TasksFolderName = "tasks";

@@ -339,7 +339,7 @@ sonar-analysis:
         /d:sonar.sourceEncoding=UTF-8 `
         /d:sonar.qualitygate.wait=true `
         /d:sonar.qualitygate.timeout=1000
-    - dotnet test .\tests\MyPackage.Tests.sln /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=..\Results\coverage.opencover.xml
+    - dotnet test .\tests\MyPackage.Tests.slnx /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=..\Results\coverage.opencover.xml
     - dotnet sonarscanner end /d:sonar.login=$SONAR_TOKEN
 ```
 
