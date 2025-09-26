@@ -39,7 +39,7 @@ spec:
                   name: clio-postgres-secret
                   key: POSTGRES_PASSWORD
           volumeMounts:
-            - mountPath: /var/lib/postgresql/data
+            - mountPath: /var/lib/postgresql
               name: postgres-data
             - mountPath: /usr/local/backup-images
               name: postgres-backup-images
