@@ -4,12 +4,12 @@
 	using Clio.Common.Responses;
 	using Clio.WebApplication;
 	using Newtonsoft.Json;
-	using System.IO;
-	using System.Text;
-	using System.Threading.Tasks;
-	using System.Threading;
 	using System;
+	using System.IO;
 	using System.Linq;
+	using System.Text;
+	using System.Threading;
+	using System.Threading.Tasks;
 
 	public abstract class BasePackageInstaller {
 
@@ -149,6 +149,49 @@
 				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
 		}
 
+		/// <summary>
+		/// Checks the provided installation log for specific warning or error messages.
+		/// </summary>
+		/// <param name="logText">The installation log content to inspect.</param>
+		/// <returns>
+		/// <c>true</c> if any of the predefined warning patterns are found in the log; otherwise, <c>false</c>.
+		/// Returns <c>false</c> if the log text is null or whitespace.
+		/// </returns>
+		/// <remarks>
+		/// This method performs a case-insensitive search for the following patterns:
+		/// <list type="bullet">
+		/// <item><description>skipped</description></item>
+		/// <item><description>failed</description></item>
+		/// <item><description>warning</description></item>
+		/// <item><description>error</description></item>
+		/// <item><description>not installed</description></item>
+		/// <item><description>schema not found</description></item>
+		/// <item><description>data not imported</description></item>
+		/// <item><description>operation skipped</description></item>
+		/// </list>
+		/// </remarks>
+		internal static bool CheckForWarningsInLog(string logText) {
+			if (string.IsNullOrWhiteSpace(logText)) {
+				return false;
+			}
+			
+			string lowerLog = logText.ToLower(System.Globalization.CultureInfo.InvariantCulture);
+			
+			// Check for various warning indicators in installation logs
+			string[] warningPatterns = {
+				"skipped",
+				"failed",
+				"warning",
+				"error",
+				"not installed",
+				"schema not found",
+				"data not imported",
+				"operation skipped"
+			};
+			
+			return warningPatterns.Any(pattern => lowerLog.Contains(pattern, StringComparison.InvariantCultureIgnoreCase));
+		}
+
 		private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings) {
 			var cancellationToken = (CancellationToken)cancellationTokenObject;
 			var currentLogContent = string.Empty;
@@ -198,8 +241,18 @@
 			if (CheckLogsOnSuccessMessage) {
 				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
 			}
+			
+			// Check for warnings if FailOnWarning is enabled
+			bool hasWarnings = false;
+			if (packageInstallOptions?.FailOnWarning == true) {
+				hasWarnings = CheckForWarningsInLog(completeInstallLog);
+				if (hasWarnings) {
+					_logger.WriteLine("Installation completed with warnings. Installation failed due to FailOnWarning setting.");
+				}
+			}
+			
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			var success = (response != null && response.Success || response == null) && successLog;
+			var success = (response != null && response.Success || response == null) && successLog && !hasWarnings;
 			return (success, completeInstallLog);
 		}
 

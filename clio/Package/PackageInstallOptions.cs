@@ -14,6 +14,7 @@ public class PackageInstallOptions
 	public bool SkipValidateActions { get; set; } = false;
 	public bool ExecuteValidateActions { get; set; } = false;
 	public bool IsForceUpdateAllColumns { get; set; } = false;
+	public bool FailOnWarning { get; set; } = false;
 
 	#endregion
 
@@ -41,7 +42,8 @@ public class PackageInstallOptions
 				ContinueIfError == obj.ContinueIfError &&
 				SkipConstraints == obj.SkipConstraints &&
 				SkipValidateActions == obj.SkipValidateActions &&
-				ExecuteValidateActions == obj.ExecuteValidateActions);
+				ExecuteValidateActions == obj.ExecuteValidateActions &&
+				FailOnWarning == obj.FailOnWarning);
 	}
 
 	public static bool operator ==(PackageInstallOptions v1, PackageInstallOptions v2) =>
