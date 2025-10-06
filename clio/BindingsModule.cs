@@ -252,6 +252,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<SetApplicationIconCommand>();
 		containerBuilder.RegisterType<CustomizeDataProtectionCommand>();
 		containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
+		containerBuilder.RegisterType<ReleaseCommand>();
 
 		containerBuilder.RegisterType<ClioGateway>();
 
