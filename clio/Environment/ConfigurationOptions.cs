@@ -470,7 +470,7 @@ namespace Clio
 			return result;
 		}
 
-		private string GetDefaultEnvironmentName() {
+		public string GetDefaultEnvironmentName() {
 			return _settings.ActiveEnvironmentKey;
 		}
 

@@ -16,7 +16,7 @@ namespace Clio.Command {
 
 	#region Class: ExternalLinkOptions
 
-	[Verb("externalLink", Aliases = new[] { "link" }, HelpText = "Handle external deep-links")]
+	[Verb("externalLink", Aliases = ["link"], HelpText = "Handle external deep-links")]
 	public class ExternalLinkOptions : EnvironmentOptions {
 		#region Properties: Public
 
