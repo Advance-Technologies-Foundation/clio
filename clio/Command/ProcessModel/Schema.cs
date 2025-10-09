@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ErrorOr;
@@ -13,6 +14,7 @@ public class ProcessSchemaResponse{
 		try {
 			ProcessSchemaResponse item =  JsonSerializer.Deserialize<ProcessSchemaResponse>(jsonString);
 			FillParameterCaption(item, jsonString, logger);
+			FillCollectionParameterCaption(item, jsonString, logger);
 			return item;
 		}
 		catch (Exception e) {
@@ -29,10 +31,36 @@ public class ProcessSchemaResponse{
 			SetDescriptionForParameter(p, resources, logger);
 		});
 	}
-	private static void SetCaptionsForParameter(ProcessParameter parameter, JsonElement resourcesElement, Common.ILogger logger) {
+
+	private static void FillCollectionParameterCaption(ProcessSchemaResponse item, string jsonString
+		, Common.ILogger logger) {
+
+		List<ProcessParameter> collectionParameters = item.Schema.MetaDataSchema.Parameters?
+														  .Where(p => p.ItemProperties != null && p.ItemProperties!.Count != 0)
+														  .ToList();
+
+		if (collectionParameters is null || collectionParameters.Count == 0) {
+			return;
+		}
+		
+		JsonDocument jsonDocument = JsonDocument.Parse(jsonString);
+		JsonElement root = jsonDocument.RootElement;
+		JsonElement resources = root.GetProperty("schema").GetProperty("resources");
+		
+		collectionParameters.ForEach(cp => {
+			cp.ItemProperties?.ForEach(p => {
+				SetCaptionsForParameter(p, resources, logger, cp.Name);
+				SetDescriptionForParameter(p, resources, logger, cp.Name);
+			});
+		});
+	}
+	
+	private static void SetCaptionsForParameter(ProcessParameter parameter, JsonElement resourcesElement, Common.ILogger logger, string collectionName = "") {
 		string currentStep = $"GetProperty_Parameters.{parameter.Name}.Caption";
 		try {
-			JsonElement cap = resourcesElement.GetProperty($"Parameters.{parameter.Name}.Caption");
+			JsonElement cap = string.IsNullOrWhiteSpace(collectionName) 
+				? resourcesElement.GetProperty($"Parameters.{parameter.Name}.Caption")
+				: resourcesElement.GetProperty($"Parameters.{collectionName}.{parameter.Name}.Caption");
 			
 			//This line may fail
 			currentStep = "Deserialize description";
@@ -46,10 +74,12 @@ public class ProcessSchemaResponse{
 			logger.WriteWarning($"Could not complete {currentStep} in SetCaptionsForParameter for Parameter: {parameter.Name} due to: {e.Message}");
 		}
 	}
-	private static void SetDescriptionForParameter(ProcessParameter parameter, JsonElement resourcesElement, Common.ILogger logger) {
+	private static void SetDescriptionForParameter(ProcessParameter parameter, JsonElement resourcesElement, Common.ILogger logger, string collectionName = "") {
 		string currentStep = $"GetProperty_Parameters.{parameter.Name}.Sys_Description";
 		try {
-			JsonElement desc = resourcesElement.GetProperty($"Parameters.{parameter.Name}.Sys_Description");
+			JsonElement desc =  string.IsNullOrWhiteSpace(collectionName) 
+				? resourcesElement.GetProperty($"Parameters.{parameter.Name}.Sys_Description")
+				: resourcesElement.GetProperty($"Parameters.{collectionName}.{parameter.Name}.Sys_Description");
 			
 			//This line may fail
 			currentStep = "Deserialize description";
@@ -195,6 +225,9 @@ public class ProcessParameter{
     public Dictionary<string, string>? Captions { get; set; }
     public Dictionary<string, string>? Descriptions { get; set; }
     
+	[JsonPropertyName("itemProperties")]
+	public List<ProcessParameter>? ItemProperties { get; set; }
+	
 }
 
 public class SourceValue{
@@ -237,6 +270,7 @@ public static class DataValueTypeMap{
 		{} when dataValueTypeUId == DateDataValueTypeUId => typeof(DateOnly),
 		{} when dataValueTypeUId == DateTimeDataValueTypeUId => typeof(DateTime),
 		{} when dataValueTypeUId == TimeDataValueTypeUId => typeof(TimeOnly),
+		{} when dataValueTypeUId == CompositeObjectListDataValueTypeUId => typeof(List<object>),
 		var _ => typeof(object)
 	};
 
@@ -413,7 +447,7 @@ public static class DataValueTypeMap{
 	/// Returns the composite object list data value type identifier.
 	/// </summary>
 	/// <value>The composite object list data value type identifier.</value>
-	private static readonly Guid CompositeObjectListDataValueTypeUId  =
+	internal static readonly Guid CompositeObjectListDataValueTypeUId  =
 		new Guid("651EC16F-D140-46DB-B9E2-825C985A8AC2");
 
 	/// <summary>

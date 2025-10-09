@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Web;
 using IFileSystem = Clio.Common.IFileSystem;
 using Path = System.IO.Path;
 
@@ -77,7 +78,11 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 						IndentWithTab($"[BusinessProcessParameter(\"{para.Name}\", BusinessProcessParameterDirection.Output)]",2)
 					, var _ => string.Empty
 				};
-				string prop = IndentWithTab($"public {para.DataValueTypeResolved} {para.Name}" + "{ get; set; }", 2);
+				
+				//Here we may need to create a separate class for Collection parameter
+				string prop = para.DataValueType == DataValueTypeMap.CompositeObjectListDataValueTypeUId
+						? CreateCollectionModel(para)
+						: IndentWithTab($"public {para.DataValueTypeResolved} {para.Name}" + "{ get; set; }", 2);
 				
 				if (string.IsNullOrWhiteSpace(attribute) || string.IsNullOrWhiteSpace(prop)) {
 					return;
@@ -109,4 +114,33 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 			});
 		return builder.ToString();
 	}
+
+	private static string CreateCollectionModel(ProcessParameter parameter) {
+		
+		
+		
+		parameter.ItemProperties?.ForEach(p => {
+			
+		});
+		
+		
+		string collectionCass = $$"""
+								  "
+								   public class {{parameter.Name}} {
+								  	
+								  	[JsonProperty("ContactFirstName")]
+								  	public string FirstName { get; set; }
+								  	
+								  	[JsonProperty("ContactLastName")]
+								  	public string LastName { get; set; }
+
+								   }
+								  "
+								  """;
+
+
+		return collectionCass;
+	}
+	
+	
 }
