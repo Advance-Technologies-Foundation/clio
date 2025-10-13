@@ -31,6 +31,7 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 		builder
 			.AppendLine("using ATF.Repository;")
 			.AppendLine("using ATF.Repository.Attributes;")
+			.AppendLine("using Newtonsoft.Json;")
 			.Append($"namespace {nameSpace}").AppendLine("{")
 			.AppendLine();
 			
@@ -140,7 +141,7 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 		
 		StringBuilder sb = new ();
 		// public Contact Contact { get; set; }
-		string prop = $"public {parameter.Name} {parameter.Name} {{ get; set; }}";
+		string prop = $"public List<{parameter.Name}> {parameter.Name} {{ get; set; }}";
 
 		string className = $"public class {parameter.Name} {{";
 		sb
