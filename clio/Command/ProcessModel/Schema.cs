@@ -86,7 +86,7 @@ public class ProcessSchemaResponse{
 			Dictionary<string, string> descriptions = desc.Deserialize<Dictionary<string, string>>();
 			
 			currentStep = "Set description";
-			parameter.Captions = descriptions;
+			parameter.Descriptions = descriptions;
 		}
 		catch(Exception e) {
 			// Don't need to do anything, suppress all errors

@@ -35,7 +35,6 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 			.AppendLine();
 			
 		if (!string.IsNullOrWhiteSpace(processModel.Description)) {
-
 			string desc = $"""
 					   /// <summary>
 					   /// {processModel.Description} 
@@ -43,13 +42,25 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 					   """;
 			builder.AppendLine(IndentWithTab(desc,1));
 		}
-			builder
+		
+		builder
 			.AppendLine("\t[BusinessProcess(\""+processModel.Code+"\")]")
 			.AppendLine("\tpublic class " + processModel.Code + " : IBusinessProcess {")
-			.AppendLine()
-			.AppendLine(GenerateStringForProperty(processModel, culture))
+			.AppendLine();
+			
+		(string main, List<string> classes) x = GenerateStringForProperty(processModel, culture);
+		
+		builder
+			.AppendLine(x.main)
 			.AppendLine("\t}")
-			.AppendLine("}");
+			.AppendLine();
+
+		x.classes.ForEach(c => builder.AppendLine(c));
+			
+		builder.AppendLine("}");
+		
+		
+		
 		return builder.ToString();
 	}
 
@@ -64,9 +75,11 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 		fileSystem.WriteAllTextToFile(filePath, content);
 	}
 	
-	private static string GenerateStringForProperty(ProcessModel processModel, string culture) {
+	private static (string main, List<string> classes) GenerateStringForProperty(ProcessModel processModel, string culture) {
 
 		StringBuilder builder = new ();
+		List<string> classes = [];
+		
 		List<ProcessParameterDirection> directions = [ProcessParameterDirection.Input, ProcessParameterDirection.Output];
 		processModel.Parameters.Where(parameter => directions.Contains(parameter.Direction))
 			.ToList()
@@ -80,9 +93,17 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 				};
 				
 				//Here we may need to create a separate class for Collection parameter
-				string prop = para.DataValueType == DataValueTypeMap.CompositeObjectListDataValueTypeUId
-						? CreateCollectionModel(para)
-						: IndentWithTab($"public {para.DataValueTypeResolved} {para.Name}" + "{ get; set; }", 2);
+				(string Property, string CollectionClass) t = (string.Empty, string.Empty);
+				string prop = string.Empty;
+				
+				if (para.DataValueType == DataValueTypeMap.CompositeObjectListDataValueTypeUId) {
+					t = CreateCollectionModel(para, culture);
+					prop = IndentWithTab(t.Property,2);
+					classes.Add(t.CollectionClass);
+				}
+				else {
+					prop =IndentWithTab($"public {para.DataValueTypeResolved} {para.Name}" + "{ get; set; }", 2); 
+				}
 				
 				if (string.IsNullOrWhiteSpace(attribute) || string.IsNullOrWhiteSpace(prop)) {
 					return;
@@ -112,35 +133,52 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 					.AppendLine(prop)
 					.AppendLine();
 			});
-		return builder.ToString();
+		return new ValueTuple<string, List<string>>(builder.ToString(), classes);
 	}
 
-	private static string CreateCollectionModel(ProcessParameter parameter) {
+	private static (string Property, string CollectionClass) CreateCollectionModel(ProcessParameter parameter, string culture) {
 		
-		
+		StringBuilder sb = new ();
+		// public Contact Contact { get; set; }
+		string prop = $"public {parameter.Name} {parameter.Name} {{ get; set; }}";
+
+		string className = $"public class {parameter.Name} {{";
+		sb
+			.AppendLine(IndentWithTab(className,1))
+			.AppendLine();
 		
 		parameter.ItemProperties?.ForEach(p => {
 			
+			string description = string.Empty;
+			bool? isDescription = p.Descriptions?.TryGetValue(culture, out description);
+			
+			string captions = string.Empty;
+			bool? isCaption = p.Captions?.TryGetValue(culture, out captions);
+
+
+			if (isCaption.HasValue && isCaption.Value && !string.IsNullOrWhiteSpace(captions)) {
+				sb.AppendLine(IndentWithTab("/// <summary>", 2))
+				  .Append(IndentWithTab("/// ",2)).AppendLine(captions)
+				  .AppendLine(IndentWithTab("/// </summary>", 2));
+			}
+
+			if (isDescription.HasValue && isDescription.Value && !string.IsNullOrWhiteSpace(description)) {
+				sb.AppendLine(IndentWithTab("/// <remarks>", 2))
+				  .Append(IndentWithTab("/// ",2)).AppendLine(description)
+				  .AppendLine(IndentWithTab("/// </remarks>", 2));
+			}
+			
+			string attr = $"[JsonProperty(\"{p.Name}\")]";
+			string prop = $"public {p.DataValueTypeResolved.Name} {p.Name} {{get; set;}}";
+
+			if (!string.IsNullOrWhiteSpace(p.Name) && !string.IsNullOrWhiteSpace(p.DataValueTypeResolved.Name)) {
+				sb.AppendLine(IndentWithTab(attr,2))
+				  .AppendLine(IndentWithTab(prop,2))
+				  .AppendLine();
+			}
 		});
 		
-		
-		string collectionCass = $$"""
-								  "
-								   public class {{parameter.Name}} {
-								  	
-								  	[JsonProperty("ContactFirstName")]
-								  	public string FirstName { get; set; }
-								  	
-								  	[JsonProperty("ContactLastName")]
-								  	public string LastName { get; set; }
-
-								   }
-								  "
-								  """;
-
-
-		return collectionCass;
+		sb.AppendLine(IndentWithTab("}",1));
+		return new ValueTuple<string, string>(prop,sb.ToString());
 	}
-	
-	
 }
