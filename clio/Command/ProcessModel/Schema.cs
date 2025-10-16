@@ -50,9 +50,17 @@ public class ProcessSchemaResponse{
 	private static void FillParameterCaption(ProcessSchemaResponse item, string jsonString, Common.ILogger logger) {
 		JsonDocument jsonDocument = JsonDocument.Parse(jsonString);
 		JsonElement root = jsonDocument.RootElement;
-		JsonElement resources = root.GetProperty("schema").GetProperty("resources");
+
+		var hasResources = root.GetProperty("schema").TryGetProperty("resources", out var r);
+		JsonElement resources = new ();
+		if (hasResources) {
+			resources = r;
+		}
+		else {
+			return;
+		}
 		
-		item.Schema.MetaDataSchema.Parameters?.ForEach(p => {
+		item.Schema.MetaDataSchema?.Parameters?.ForEach(p => {
 			SetCaptionsForParameter(p, resources, logger);
 			SetDescriptionForParameter(p, resources, logger);
 		});
@@ -61,7 +69,7 @@ public class ProcessSchemaResponse{
 	private static void FillCollectionParameterCaption(ProcessSchemaResponse item, string jsonString
 		, Common.ILogger logger) {
 
-		List<ProcessParameter> collectionParameters = item.Schema.MetaDataSchema.Parameters?
+		List<ProcessParameter> collectionParameters = item.Schema.MetaDataSchema?.Parameters?
 														  .Where(p => p.ItemProperties != null && p.ItemProperties!.Count != 0)
 														  .ToList();
 
@@ -85,9 +93,12 @@ public class ProcessSchemaResponse{
 		
 		JsonDocument jsonDocument = JsonDocument.Parse(jsonString);
 		JsonElement root = jsonDocument.RootElement;
-		JsonElement resources = root.GetProperty("schema").GetProperty("resources");
 		
-		item.Schema.MetaDataSchema.FlowElements?.ForEach(fe => {
+		var hasResources = root.GetProperty("schema").TryGetProperty("resources", out var r);
+		JsonElement resources = hasResources ? r : new JsonElement();
+		
+		
+		item.Schema.MetaDataSchema?.FlowElements?.ForEach(fe => {
 			
 			string currentStep = $"GetProperty_BaseElement.{fe.Name}.Caption";
 			try {
