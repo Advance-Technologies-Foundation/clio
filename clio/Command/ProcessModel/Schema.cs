@@ -10,11 +10,37 @@ namespace Clio.Command.ProcessModel;
 
 public class ProcessSchemaResponse{
 	
+	private static readonly JsonSerializerOptions IgnoreNullOptions = new () {
+		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+	};
+
+	public readonly List<Guid> SubProcesses = [];
+	public string ForAi = string.Empty;
+	
+	
 	public static ErrorOr<ProcessSchemaResponse> FromJson(string jsonString, Common.ILogger logger) {
 		try {
 			ProcessSchemaResponse item =  JsonSerializer.Deserialize<ProcessSchemaResponse>(jsonString);
 			FillParameterCaption(item, jsonString, logger);
 			FillCollectionParameterCaption(item, jsonString, logger);
+			FillFlowElementCaption(item, jsonString, logger);
+			
+			
+			// var forAi = new {
+			// 	processName = item.Schema.Name,
+			// 	processDescription = item.Schema.Description?.GetValueOrDefault("en-US", string.Empty),
+			// 	processCaption = item.Schema.Caption?.GetValueOrDefault("en-US", string.Empty),
+			// 	uId= item.Schema.UId,
+			// 	processParameters = item.Schema.MetaDataSchema.Parameters
+			// 	, flowElements = item.Schema.MetaDataSchema.FlowElements
+			// };
+			// item.ForAi = JsonSerializer.Serialize(forAi, IgnoreNullOptions);
+			
+			IEnumerable<Guid> listOfSubProcesses = item.Schema.MetaDataSchema?.FlowElements?
+									  .Where(fe => fe.EventType == ManagerMap.EventType.SubProcess && fe.SchemaUId != Guid.Empty)
+									  .Select(fe => (Guid)fe.SchemaUId)
+									  .AsEnumerable();
+			item.SubProcesses.AddRange(listOfSubProcesses ?? []);
 			return item;
 		}
 		catch (Exception e) {
@@ -52,6 +78,33 @@ public class ProcessSchemaResponse{
 				SetCaptionsForParameter(p, resources, logger, cp.Name);
 				SetDescriptionForParameter(p, resources, logger, cp.Name);
 			});
+		});
+	}
+
+	private static void FillFlowElementCaption(ProcessSchemaResponse item, string jsonString, Common.ILogger logger) {
+		
+		JsonDocument jsonDocument = JsonDocument.Parse(jsonString);
+		JsonElement root = jsonDocument.RootElement;
+		JsonElement resources = root.GetProperty("schema").GetProperty("resources");
+		
+		item.Schema.MetaDataSchema.FlowElements?.ForEach(fe => {
+			
+			string currentStep = $"GetProperty_BaseElement.{fe.Name}.Caption";
+			try {
+				JsonElement cap = resources.GetProperty($"BaseElements.{fe.Name}.Caption");
+			
+				//This line may fail
+				currentStep = "Deserialize description";
+				Dictionary<string, string> captions = cap.Deserialize<Dictionary<string, string>>();
+			
+				currentStep = "Set caption";
+				fe.Captions = captions;
+			}
+			catch (Exception e){
+				// Don't need to do anything, suppress all errors
+				logger.WriteWarning($"Could not complete {currentStep} in FillFlowElementCaption for BaseElement: {fe.Name} due to: {e.Message}");
+			}
+			
 		});
 	}
 	
@@ -93,7 +146,6 @@ public class ProcessSchemaResponse{
 			logger.WriteWarning($"Could not complete {currentStep} in SetDescriptionForParameter for Parameter: {parameter.Name} due to: {e.Message}");
 		}
 	}
-	
 	
 	[JsonPropertyName("schema")]
 	public Schema Schema { get; set; }
@@ -188,6 +240,144 @@ public class MetaDataSchema{
 	[JsonPropertyName("serializeToDB")]
 	public bool SerializeToDB { get; set; }
 	
+	[JsonPropertyName("flowElements")]
+	public List<FlowElement>? FlowElements { get; set; }
+	
+	
+}
+
+public class FlowElement{
+	
+	[JsonPropertyName("typeName")]
+	public string TypeName { get; set; }
+	
+	[JsonPropertyName("uId")]
+	public Guid UId { get; set; }
+	
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("createdInSchemaUId")]
+	public Guid CreatedInSchemaUId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("modifiedInSchemaUId")]
+	public Guid ModifiedInSchemaUId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("createdInPackageId")]
+	public Guid CreatedInPackageId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("containerUId")]
+	public Guid ContainerUId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("position")]
+	public string Position { get; set; }
+	
+	[JsonPropertyName("managerItemUId")]
+	public Guid ManagerItemUId { get; set; }
+
+	[JsonPropertyName("EventType")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public ManagerMap.EventType EventType => ManagerMap.Resolve(ManagerItemUId);
+	
+	[JsonIgnore]
+	[JsonPropertyName("createdInOwnerSchemaUId")]
+	public Guid CreatedInOwnerSchemaUId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("size")]
+	public string Size { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("isLogging")]
+	public bool IsLogging { get; set; }
+	
+	[JsonPropertyName("parameters")]
+	public List<FlowElementParameter> Parameters { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("isInterrupting")]
+	public bool IsInterrupting { get; set; }
+	
+	[JsonPropertyName("sourceRefUId")]
+	public Guid? SourceRefUId { get; set; }
+	
+	[JsonPropertyName("targetRefUId")]
+	public Guid? TargetRefUId { get; set; }
+	
+	[JsonPropertyName("conditionExpression")]
+	public string? ConditionExpression { get; set; }
+	
+	[JsonPropertyName("flowType")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public FlowTypeSequence FlowType { get; set; } = 0;
+
+	[JsonPropertyName("Captions")]
+	public Dictionary<string, string>? Captions { get; set; }
+	
+	[JsonPropertyName("cronExpression")]
+	public string? CronExpression { get; set; }
+	
+	[JsonPropertyName("timeZoneOffset")]
+	public string? TimeZoneOffset { get; set; }
+
+	[JsonPropertyName("timeZoneInfo")]
+	[JsonConverter(typeof(TimeZoneInfoJsonConverter))]
+	public TimeZoneInfo? TimeZoneInfo => string.IsNullOrWhiteSpace(TimeZoneOffset)
+		? null
+		: TimeZoneInfo.FindSystemTimeZoneById(TimeZoneOffset ?? "UTC");
+
+	[JsonPropertyName("schemaUId")]
+	public Guid? SchemaUId { get; set; }
+}
+
+public class FlowElementParameter{
+	
+	[JsonPropertyName("typeName")]
+	public string TypeName { get; set; }
+	
+	[JsonPropertyName("uId")]
+	public string UId { get; set; }
+	
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("createdInSchemaUId")]
+	public Guid CreatedInSchemaUId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("modifiedInSchemaUId")]
+	public Guid ModifiedInSchemaUId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("createdInPackageId")]
+	public Guid CreatedInPackageId { get; set; }
+	
+	[JsonIgnore]
+	[JsonPropertyName("containerUId")]
+	public Guid ContainerUId { get; set; }
+	
+	[JsonPropertyName("dataValueType")]
+	public Guid DataValueType { get; set; }
+	
+	[JsonPropertyName("DataValueTypeResolved")]
+	[JsonConverter(typeof(TypeJsonConverter))]
+	public Type DataValueTypeResolved => DataValueTypeMap.Resolve(DataValueType);
+	
+	[JsonPropertyName("sourceValue")]
+	public SourceValue SourceValue { get; set; }
+	
+	
+	[JsonPropertyName("direction"), JsonConverter(typeof(JsonStringEnumConverter))]
+	public ProcessParameterDirection Direction { get; set; }
+	
+	[JsonPropertyName("itemProperties")]
+	public List<ProcessParameter>? ItemProperties { get; set; }
 	
 }
 
@@ -211,13 +401,15 @@ public class ProcessParameter{
     [JsonPropertyName("dataValueType")]
     public Guid DataValueType { get; set; }
     
+	[JsonPropertyName("DataValueTypeResolved")]
+	[JsonConverter(typeof(TypeJsonConverter))]
     public Type DataValueTypeResolved => DataValueTypeMap.Resolve(DataValueType);
     
     [JsonPropertyName("sourceValue")]
     public SourceValue SourceValue { get; set; }
     
     [JsonPropertyName("referenceSchemaUId")]
-    public Guid ReferenceSchemaUId { get; set; }
+    public Guid? ReferenceSchemaUId { get; set; }
     
     [JsonPropertyName("direction"), JsonConverter(typeof(JsonStringEnumConverter))]
     public ProcessParameterDirection Direction { get; set; }
@@ -232,7 +424,13 @@ public class ProcessParameter{
 
 public class SourceValue{
 	[JsonPropertyName("modifiedInSchemaUId")]
-    public Guid ModifiedInSchemaUId { get; set; }
+    public Guid? ModifiedInSchemaUId { get; set; }
+	
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+	
+	[JsonPropertyName("source")]
+	public int Source { get; set; }
 }
 
 public enum ProcessParameterDirection {
@@ -241,7 +439,6 @@ public enum ProcessParameterDirection {
 	Bidirectional = 2,
 	Internal = 3
 }
-
 
 public static class DataValueTypeMap{
 	public static Type Resolve(Guid dataValueTypeUId) => dataValueTypeUId switch {
@@ -464,4 +661,382 @@ public static class DataValueTypeMap{
 	/// Gets unique identifier of the color data value type.
 	/// </summary>
 	private static readonly Guid ColorDataValueTypeUId  = new ("{DAFB71F9-EE9F-4e0b-A4D7-37AA15987155}");
+}
+
+public enum FlowTypeSequence{
+	Sequence,
+	Default,
+	Conditional,
+	Data,
+	Message,
+	Association
+}
+
+
+/// <summary>
+/// Maps managerItemUId to EventType
+/// </summary>
+/// <seealso cref="Terrasoft.Core.Process.ProcessSchemaElementManager"/>
+public static class ManagerMap{
+	
+	public enum EventType {
+		SequenceFlow,
+		ConditionalFlow,
+		DefFlow,
+		DataAssociation,
+		MessageFlow,
+		StartEvent,
+		StartMessageEvent,
+		StartSignalEvent,
+		StartTimer,
+		StartMessageNonInterruptingEvent,
+		EndEvent,
+		TerminateEvent,
+		StartSignalNonInterruptingEvent,
+		IntermediateCatchMessageEvent,
+		IntermediateCatchMessageNonInterruptingEvent,
+		IntermediateThrowMessageEvent,
+		IntermediateThrowSignalEvent,
+		IntermediateCatchSignalEvent,
+		IntermediateCatchSignalNonInterruptingEvent,
+		IntermediateCatchTimerEvent,
+		TextAnnotation,
+		Association,
+		Group,
+		LaneSet,
+		Lane,
+		ParallelGateway,
+		InclusiveGateway,
+		ExclusiveGateway,
+		EventBasedGateway,
+		ParallelEventBasedGateway,
+		ExclusiveEventBasedGateway,
+		SubProcess,
+		EventSubProcess,
+		UserTask,
+		ScriptTask,
+		FormulaTask,
+		ServiceTask,
+		WebServiceTask,
+		DataObject,
+		Unknown
+	}
+	
+	/// <summary>
+	/// Gets the sequence flow unique identifier.
+	/// </summary>
+	private static Guid SequenceFlowUId { get; } = new Guid("{0D8351F6-C2F4-4737-BDD9-6FBFE0837FEC}");
+
+	/// <summary>
+	/// Gets the conditional flow unique identifier.
+	/// </summary>
+	private static Guid ConditionalFlowUId { get; } = new Guid("{DAC675D4-EA84-4E44-9056-38BF918618E9}");
+
+	/// <summary>
+	/// Gets the default flow unique identifier.
+	/// </summary>
+	private static Guid DefFlowUId { get; } = new Guid("{573ED909-E069-4161-B193-AE8DD9437C68}");
+
+	/// <summary>
+	/// Gets the data association unique identifier.
+	/// </summary>
+	private static Guid DataAssociationUId { get; } = new Guid("{2EA8E835-692C-4907-8FD5-E28B3095783A}");
+
+	/// <summary>
+	/// Gets the message flow unique identifier.
+	/// </summary>
+	private static Guid MessageFlowUId { get; } = new Guid("{1125414E-AC56-4052-A220-77D9719DA348}");
+
+	/// <summary>
+	/// Gets the untyped start event unique identifier.
+	/// </summary>
+	private static Guid StartEventUId { get; } = new Guid("{53818048-7868-48f6-ADA0-0EBAA65AF628}");
+
+	/// <summary>
+	/// Gets the start message event unique identifier.
+	/// </summary>
+	private static Guid StartMessageEventUId { get; } = new Guid("{02340C80-8E75-4f7a-917B-04125BC07192}");
+
+	/// <summary>
+	/// Gets the start signal event unique identifier.
+	/// </summary>
+	private static Guid StartSignalEventUId { get; } = new Guid("{1129E72F-0E8C-445A-B2EA-463517E86395}");
+
+	/// <summary>
+	/// Gets the non-interrupting start message event unique identifier.
+	/// </summary>
+	private static Guid StartMessageNonInterruptingEventUId { get; } =
+		new Guid("{429178F5-D44A-40D6-8B74-E72CAD04EE73}");
+
+	/// <summary>
+	/// Gets the end event unique identifier.
+	/// </summary>
+	private static Guid EndEventUId { get; } = new Guid("{45CEAAE2-4E1F-4c0c-86AA-CD4AEB4DA913}");
+
+	/// <summary>
+	/// Gets the terminate event unique identifier.
+	/// </summary>
+	private static Guid TerminateEventUId { get; } = new Guid("{1BD93619-0574-454E-BB4E-CF53B9EB9470}");
+
+	/// <summary>
+	/// Gets the non-interrupting start signal event unique identifier.
+	/// </summary>
+	private static Guid StartSignalNonInterruptingEventUId { get; } =
+		new Guid("{933555C5-E7D2-456D-B5AB-5F94D62B693A}");
+
+	/// <summary>
+	/// Gets the intermediate catch message event unique identifier.
+	/// </summary>
+	private static Guid IntermediateCatchMessageEventUId { get; } =
+		new Guid("{3CB9D737-779E-4085-AB4B-DB590853E266}");
+
+	/// <summary>
+	/// Gets the non-interrupting intermediate catch message event unique identifier.
+	/// </summary>
+	private static Guid IntermediateCatchMessageNonInterruptingEventUId { get; } =
+		new Guid("{B851455C-ED5A-427c-831F-19DD15EB3E76}");
+
+	/// <summary>
+	/// Gets the intermediate throw message event unique identifier.
+	/// </summary>
+	private static Guid IntermediateThrowMessageEventUId { get; } =
+		new Guid("{7B8B16FB-D4C6-4e8b-A519-988250AC636F}");
+
+	/// <summary>
+	/// Gets the intermediate throw signal event unique identifier.
+	/// </summary>
+	private static Guid IntermediateThrowSignalEventUId { get; } =
+		new Guid("{1793BFF9-C5FA-49e7-A32D-CA73D270E137}");
+
+	/// <summary>
+	/// Gets the intermediate catch signal event unique identifier.
+	/// </summary>
+	private static Guid IntermediateCatchSignalEventUId { get; } =
+		new Guid("{5CCAD23D-FC4B-4ec7-8051-E3A825B698FC}");
+
+	/// <summary>
+	/// Gets the non-interrupting intermediate catch signal event unique identifier.
+	/// </summary>
+	private static Guid IntermediateCatchSignalNonInterruptingEventUId { get; } =
+		new Guid("{1140FFF1-32A9-40de-A28B-111797383C67}");
+
+	/// <summary>
+	/// Gets the intermediate catch timer event unique identifier.
+	/// </summary>
+	private static Guid IntermediateCatchTimerEventUId { get; } = new Guid("{97D1AF3D-EF13-465C-B6D8-5425F78BF000}");
+
+	/// <summary>
+	/// Gets the text annotation unique identifier.
+	/// </summary>
+	private static Guid TextAnnotationUId { get; } = new Guid("{9E3E3482-2552-47DB-96CC-2F6F84E0E61F}");
+
+	/// <summary>
+	/// Gets the association unique identifier.
+	/// </summary>
+	private static Guid AssociationUId { get; } = new Guid("{D1F3A4A0-34E6-4DAB-9315-CC9DE0CAB7FE}");
+
+	/// <summary>
+	/// Gets the group unique identifier.
+	/// </summary>
+	private static Guid GroupUId { get; } = new Guid("{EB7053A9-51E7-456f-9498-73CCC42BFEB6}");
+
+	/// <summary>
+	/// Gets the lane set unique identifier.
+	/// </summary>
+	private static Guid LaneSetUId { get; } = new Guid("{11A47CAF-A0D5-41fa-A274-A0B11F77447A}");
+
+	/// <summary>
+	/// Gets the lane unique identifier.
+	/// </summary>
+	private static Guid LaneUId { get; } = new Guid("{ABCD74B9-5912-414b-82AC-F1AA4DCD554E}");
+
+	/// <summary>
+	/// Gets the parallel gateway unique identifier.
+	/// </summary>
+	private static Guid ParallelGatewayUId { get; } = new Guid("{E9E1E6DE-7066-4eb1-BBB4-5B75B13D4F56}");
+
+	/// <summary>
+	/// Gets the inclusive gateway unique identifier.
+	/// </summary>
+	private static Guid InclusiveGatewayUId { get; } = new Guid("{FFA4A06A-5747-49d4-96C2-C32A727A3B14}");
+
+	/// <summary>
+	/// Gets the exclusive gateway unique identifier.
+	/// </summary>
+	private static Guid ExclusiveGatewayUId { get; } = new Guid("{BD9F7570-6C97-4f16-90E5-663A190C6C7C}");
+
+	/// <summary>
+	/// Gets the event-based gateway unique identifier.
+	/// </summary>
+	private static Guid EventBasedGatewayUId { get; } = new Guid("{0DDBDA75-9CAC-4e42-B94C-5CF1EDB45846}");
+
+	/// <summary>
+	/// Gets the parallel event-based gateway unique identifier.
+	/// </summary>
+	private static Guid ParallelEventBasedGatewayUId { get; } = new Guid("{B11EB76C-C34E-4a34-BA93-559B8B0A9D04}");
+
+	/// <summary>
+	/// Gets the exclusive event-based gateway unique identifier.
+	/// </summary>
+	private static Guid ExclusiveEventBasedGatewayUId { get; } = new Guid("{7A3D548C-E994-4d07-B1C0-F471E2CE5687}");
+
+	/// <summary>
+	/// Gets the subprocess unique identifier.
+	/// </summary>
+	private static Guid SubProcessUId { get; } = new Guid("{49EAFDBB-A89E-4BDF-A29D-7F17B1670A45}");
+
+	/// <summary>
+	/// Gets the event subprocess unique identifier.
+	/// </summary>
+	private static Guid EventSubProcessUId { get; } = new Guid("{0824AF03-1340-47A3-8787-EF542F566992}");
+
+	/// <summary>
+	/// Gets the user task unique identifier.
+	/// </summary>
+	private static Guid UserTaskUId { get; } = new Guid("{1418E61A-82C3-403E-8221-01088F52C125}");
+
+	/// <summary>
+	/// Gets the script task unique identifier.
+	/// </summary>
+	private static Guid ScriptTaskUId { get; } = new Guid("{0E490DDA-E140-4441-B600-6F5C64D024DF}");
+
+	/// <summary>
+	/// Gets the formula task unique identifier.
+	/// </summary>
+	private static Guid FormulaTaskUId { get; } = new Guid("{D334D28F-B11A-477E-9FF0-0A95FA73D53B}");
+
+	/// <summary>
+	/// Gets the formula task parameters edit page unique identifier.
+	/// </summary>
+	private static Guid FormulaTaskParametersEditPageUId { get; } =
+		new Guid("{CF656BDD-D474-4488-AC1E-D43590D6D130}");
+
+	/// <summary>
+	/// Gets the condition expression edit page unique identifier.
+	/// </summary>
+	private static Guid ConditionExpressionEditPageUId { get; } = new Guid("{754BDAFD-B495-4E95-94A6-CE571E4CCD66}");
+
+	/// <summary>
+	/// Gets the lane user context edit page unique identifier.
+	/// </summary>
+	private static Guid LaneUserContextEditPageUId { get; } = new Guid("{AC4C3AF5-F3DF-452D-ADEC-C79A971E1ECB}");
+
+	/// <summary>
+	/// Gets the service task unique identifier.
+	/// </summary>
+	private static Guid ServiceTaskUId { get; } = new Guid("{24480389-FEC0-46C1-B4B3-1958DD332185}");
+
+	/// <summary>
+	/// Gets the web service task unique identifier.
+	/// </summary>
+	private static Guid WebServiceTaskUId { get; } = new Guid("{652B598D-CDD5-49D5-A86D-AAFAC88213F3}");
+
+	/// <summary>
+	/// Gets the data object unique identifier.
+	/// </summary>
+	private static Guid DataObjectUId { get; } = new Guid("{7197FE74-0FA0-4a7a-8F4B-86569678AA8C}");
+
+	
+	
+	private static Guid StartTimerEventUId { get; } = new Guid("{c735ed92-e545-4699-b3c6-f8f57dd8c529}");
+	
+	
+	/// <summary>
+	/// Gets the intermediate catch signal parameters edit page schema unique identifier.
+	/// </summary>
+	private static Guid IntermediateCatchSignalParametersEditPageSchemaUId { get; } =
+		new Guid("969A791D-250A-417E-9DE8-BC4FAEFD9ED4");
+
+	
+	private static readonly Dictionary<Guid, EventType> Map = new() {
+	    { SequenceFlowUId, EventType.SequenceFlow },
+	    { ConditionalFlowUId, EventType.ConditionalFlow },
+	    { DefFlowUId, EventType.DefFlow },
+	    { DataAssociationUId, EventType.DataAssociation },
+	    { MessageFlowUId, EventType.MessageFlow },
+	    { StartEventUId, EventType.StartEvent },
+	    { StartTimerEventUId, EventType.StartTimer },
+	    { StartMessageEventUId, EventType.StartMessageEvent },
+	    { StartSignalEventUId, EventType.StartSignalEvent },
+	    { StartMessageNonInterruptingEventUId, EventType.StartMessageNonInterruptingEvent },
+	    { EndEventUId, EventType.EndEvent },
+	    { TerminateEventUId, EventType.TerminateEvent },
+	    { StartSignalNonInterruptingEventUId, EventType.StartSignalNonInterruptingEvent },
+	    { IntermediateCatchMessageEventUId, EventType.IntermediateCatchMessageEvent },
+	    { IntermediateCatchMessageNonInterruptingEventUId, EventType.IntermediateCatchMessageNonInterruptingEvent },
+	    { IntermediateThrowMessageEventUId, EventType.IntermediateThrowMessageEvent },
+	    { IntermediateThrowSignalEventUId, EventType.IntermediateThrowSignalEvent },
+	    { IntermediateCatchSignalEventUId, EventType.IntermediateCatchSignalEvent },
+	    { IntermediateCatchSignalNonInterruptingEventUId, EventType.IntermediateCatchSignalNonInterruptingEvent },
+	    { IntermediateCatchTimerEventUId, EventType.IntermediateCatchTimerEvent },
+	    { TextAnnotationUId, EventType.TextAnnotation },
+	    { AssociationUId, EventType.Association },
+	    { GroupUId, EventType.Group },
+	    { LaneSetUId, EventType.LaneSet },
+	    { LaneUId, EventType.Lane },
+	    { ParallelGatewayUId, EventType.ParallelGateway },
+	    { InclusiveGatewayUId, EventType.InclusiveGateway },
+	    { ExclusiveGatewayUId, EventType.ExclusiveGateway },
+	    { EventBasedGatewayUId, EventType.EventBasedGateway },
+	    { ParallelEventBasedGatewayUId, EventType.ParallelEventBasedGateway },
+	    { ExclusiveEventBasedGatewayUId, EventType.ExclusiveEventBasedGateway },
+	    { SubProcessUId, EventType.SubProcess },
+	    { EventSubProcessUId, EventType.EventSubProcess },
+	    { UserTaskUId, EventType.UserTask },
+	    { ScriptTaskUId, EventType.ScriptTask },
+	    { FormulaTaskUId, EventType.FormulaTask },
+	    { ServiceTaskUId, EventType.ServiceTask },
+	    { WebServiceTaskUId, EventType.WebServiceTask },
+	    { DataObjectUId, EventType.DataObject }
+	};
+	
+	public static EventType Resolve(Guid managerItemUId) {
+		return Map.GetValueOrDefault(managerItemUId, EventType.Unknown);
+	}
+}
+
+
+public class TypeJsonConverter : JsonConverter<Type>{
+	public override Type Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
+		var typeName = reader.GetString();
+		if (string.IsNullOrWhiteSpace(typeName)) {
+			return null;
+		}
+		return Type.GetType(typeName, throwOnError: false);
+	}
+
+	public override void Write(Utf8JsonWriter writer, Type value, JsonSerializerOptions options)
+	{
+		writer.WriteStringValue(value?.FullName);
+	}
+}
+
+
+public class TimeZoneInfoJsonConverter : JsonConverter<TimeZoneInfo>
+{
+	public override TimeZoneInfo Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		var timeZoneId = reader.GetString();
+		if (string.IsNullOrWhiteSpace(timeZoneId))
+		{
+			return TimeZoneInfo.Utc;
+		}
+		try
+		{
+			return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+		}
+		catch (TimeZoneNotFoundException)
+		{
+			return TimeZoneInfo.Utc;
+		}
+		catch (InvalidTimeZoneException)
+		{
+			return TimeZoneInfo.Utc;
+		}
+	}
+
+	public override void Write(Utf8JsonWriter writer, TimeZoneInfo value, JsonSerializerOptions options)
+	{
+		writer.WriteStringValue(value?.Id ?? "UTC");
+	}
 }

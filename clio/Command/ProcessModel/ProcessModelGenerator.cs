@@ -16,12 +16,8 @@ public interface IProcessModelGenerator{
 	public ErrorOr<ProcessModel> Generate(GenerateProcessModelCommandOptions options);
 }
 
-public class ProcessModelGenerator(
-	ILogger logger
-	, IApplicationClient applicationClient
-	, IDataProvider dataProvider
-	, IServiceUrlBuilder serviceUrlBuilder)
-	: IProcessModelGenerator{
+public class ProcessModelGenerator(ILogger logger, IApplicationClient applicationClient, IDataProvider dataProvider
+	, IServiceUrlBuilder serviceUrlBuilder) : IProcessModelGenerator{
 	public ErrorOr<ProcessModel> Generate(GenerateProcessModelCommandOptions options) {
 
 		ErrorOr<ProcessModel> pm = GetProcessIdFromName(options.Code);
@@ -44,6 +40,8 @@ public class ProcessModelGenerator(
 			return schema.Errors;
 		}
 
+		
+		
 		string description = string.Empty;
 		bool? isDescription = schema.Value.Schema?.Description?.TryGetValue(options.Culture, out description);
 		if (isDescription.HasValue && isDescription.Value && !string.IsNullOrWhiteSpace(description)) {
