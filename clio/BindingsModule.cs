@@ -6,6 +6,7 @@ using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.PackageCommand;
+using Clio.Command.ProcessModel;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
 using Clio.Common;
@@ -17,6 +18,7 @@ using Clio.Package;
 using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
+using Clio.UserEnvironment;
 using Clio.Utilities;
 using Clio.Workspaces;
 using Clio.YAML;
@@ -74,6 +76,28 @@ public class BindingsModule {
 				return dataProvider;
 			});
 			containerBuilder.RegisterInstance(settings);
+		}
+		else {
+
+			SettingsRepository sr = new SettingsRepository(_fileSystem);
+			string envName = sr.GetDefaultEnvironmentName();
+			EnvironmentSettings defSettings = sr.FindEnvironment(envName);
+			
+			if (defSettings is not null) {
+				containerBuilder.Register(provider => {
+					IApplicationClient creatioClientInstance = new ApplicationClientFactory().CreateClient(defSettings);
+					containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
+					IDataProvider dataProvider = string.IsNullOrEmpty(defSettings.ClientId) switch {
+						false => new RemoteDataProvider(defSettings.Uri, defSettings.AuthAppUri,
+							defSettings.ClientId, defSettings.ClientSecret, defSettings.IsNetCore),
+						true => new RemoteDataProvider(defSettings.Uri, defSettings.Login,
+							defSettings.Password, defSettings.IsNetCore)
+					};
+					return dataProvider;
+				});
+				settings = defSettings;
+				containerBuilder.RegisterInstance(defSettings);
+			}
 		}
 
 		containerBuilder.Register(provider =>
@@ -251,7 +275,10 @@ public class BindingsModule {
 		containerBuilder.RegisterType<CreatioInstallerService>();
 		containerBuilder.RegisterType<SetApplicationIconCommand>();
 		containerBuilder.RegisterType<CustomizeDataProtectionCommand>();
+		containerBuilder.RegisterType<GenerateProcessModelCommand>();
 		containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
+		containerBuilder.RegisterType<ProcessModelGenerator>().As<IProcessModelGenerator>();
+		containerBuilder.RegisterType<ProcessModelWriter>().As<IProcessModelWriter>();
 
 		containerBuilder.RegisterType<ClioGateway>();
 

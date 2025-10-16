@@ -1,0 +1,16 @@
+﻿<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="README.md" />
+    <File Path="clio/Commands.md" />
+  </Folder>
+  <Project Path="clio.TestsAPI\clio.TestsAPI.csproj" />
+  <Project Path="clio.tests\clio.tests.csproj" />
+  <Project Path="cliogate.tests\cliogate.tests.csproj">
+    <Configuration Solution="Release|Any CPU" Project="Release|Any CPU|NoBuild" />
+  </Project>
+  <Project Path="cliogate\cliogate.csproj">
+    <Configuration Solution="Release|Any CPU" Project="Release|Any CPU|NoBuild" />
+  </Project>
+  <Project Path="clio\clio.csproj" />
+</Solution>

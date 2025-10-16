@@ -885,6 +885,7 @@ Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
 - [Execute service request](#callservice)
 - [Execute dataservice request](#dataservice)
 - [Add item](#add-item)
+- [Generate Process Model](#generate-process-model)
 - [Add schema](#add-schema)
 - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
 - [Link Workspace to File Design Mode](#link-from-repository)
@@ -1057,6 +1058,11 @@ Adds cs schema to a project
 ```bash
 clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
 ```
+
+## Generate Process Model
+
+Generate a model to start a business process with ATF.Repository package.
+
 
 ## switch-nuget-to-dll-reference
 

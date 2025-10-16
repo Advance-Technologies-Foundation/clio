@@ -1,7 +1,6 @@
 ﻿using Clio.Common;
 using Clio.UserEnvironment;
 using MediatR;
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,7 +18,7 @@ namespace Clio.Requests
 	/// </summary>
 	/// <remarks>
 	/// Handles extenral link requests
-	/// <example><code>clio --externalLink clio://GetAppSettingsFilePath</code></example>
+	/// <example><code>clio externalLink clio://GetAppSettingsFilePath</code></example>
 	/// </remarks>
 	internal class GetAppSettingsFilePathHandler : BaseExternalLinkHandler, IRequestHandler<GetAppSettingsFilePath>
 	{

@@ -14,7 +14,7 @@ public class CreatioLogStreamer : ILogStreamer
 		_callServiceCommand.Execute(new CallServiceCommandOptions {
 			HttpMethodName = "POST",
 			RequestBody = CreateBody(message),
-			ServicePath = ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.SendEventToUI],
+			ServicePath = ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.SendEventToUi],
 			IsSilent = true
 		});
 	}

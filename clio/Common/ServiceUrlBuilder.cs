@@ -42,7 +42,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		RunProcess = 6,
 
 		/// <summary>
-		///     Completes or continues business process
+		///     Completes or continues execution of a business process
 		/// </summary>
 		CompleteExecuting = 7,
 		
@@ -58,7 +58,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		DownloadPackageDllFile = 14,
 		ClearFeaturesCacheForAllUsers = 15,
 		GetSysSettingValueByCode = 16,
-		SendEventToUI = 17
+		SendEventToUi = 17,
+		
+		/// <summary>
+		/// Gets the schema of the process
+		/// </summary>
+		ProcessSchemaRequest = 18
 
 	}
 
@@ -72,7 +77,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 
 	#region Fields: Private
 
-	public static IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
+	public static readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
 		{KnownRoute.Select, "DataService/json/SyncReply/SelectQuery"},
 		{KnownRoute.Insert, "DataService/json/SyncReply/InsertQuery"},
 		{KnownRoute.Update, "DataService/json/SyncReply/UpdateQuery"},
@@ -89,7 +94,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
 		{KnownRoute.ClearFeaturesCacheForAllUsers, "/rest/FeatureService/ClearFeaturesCacheForAllUsers"},
 		{KnownRoute.GetSysSettingValueByCode, "/rest/CreatioApiGateway/GetSysSettingValueByCode"},
-		{KnownRoute.SendEventToUI, "/rest/CreatioApiGateway/SendEventToUI"}
+		{KnownRoute.SendEventToUi, "/rest/CreatioApiGateway/SendEventToUI"},
+		{KnownRoute.ProcessSchemaRequest, "DataService/json/SyncReply/ProcessSchemaRequest"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
