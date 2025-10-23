@@ -1,0 +1,16 @@
+Добавить возможность в команде dconf использвать такую сигнатуру
+
+clio dconf --build {PATH_TO_ZIP_FILE_NAME}.zip 
+
+при выполенении этой команды нужно разорхивировать указаный файл во временную директорю (директорию необходимо удалить после выполенения команды вне зависимости от успешности) будем называть полученную директорию
+Creatio
+
+если в разорхивированной папке находится папка вложенная Terrasoft.WebApp то это NetFramework Creatio
+
+для NetFramework необходимо скопировать содержимое Creatio из вложенной директории "Terrasoft.WebApp\bin"
+в директорию workspace для которого вызвана команда dconf ".application\net-framework\core-bin"
+также из Creatio нужно из Terrasoft.WebApp\Terrasoft.Configuration\Lib скопировать в workspace .application/net-framework/bin
+также из Creatio нужно из Terrasoft.WebApp\conf\bin\{NUMBER} (взять нужно последний номер) скопировать в workspace .application/net-framework/bin там должны быть файлы Terrasoft.Configuration.dll
+Terrasoft.Configuration.ODataEntities.dll
+
+результатов выполнения команды должно быть наполнении директор
