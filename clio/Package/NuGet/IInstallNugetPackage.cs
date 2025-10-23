@@ -9,7 +9,7 @@
 
 		#region Methods: Public
 
-		void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl);
+		void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl, EnvironmentSettings environmentSettings = null);
 		void Install(string packageName, string version, string nugetSourceUrl);
 
 		#endregion

@@ -60,7 +60,11 @@ namespace Clio.Command
 
 		public override int Execute(InstallNugetPkgOptions options) {
 			try {
-				_installNugetPackage.Install(ParseNugetPackageFullNames(options.Names), options.SourceUrl);
+				// Get environment settings from options to ensure correct configuration
+				SettingsRepository settingsRepository = new SettingsRepository();
+				EnvironmentSettings environmentSettings = settingsRepository.GetEnvironment(options);
+				
+				_installNugetPackage.Install(ParseNugetPackageFullNames(options.Names), options.SourceUrl, environmentSettings);
 				Console.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {

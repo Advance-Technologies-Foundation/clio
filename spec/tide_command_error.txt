@@ -1,0 +1,63 @@
+У меня есть приложение Creatio
+
+http://ts1-rnd-nocode1:88/tide_dev
+
+login/password: Supervisor/Supervisor
+
+я для него выполняю команду clio-dev tide -u http://ts1-rnd-nocode1:88/tide_dev -l Supervisor -p Supervisor
+
+после изменений кода обязательно віполнять билд проекта а потом 
+запускать команду проверки clio-dev tide -u http://ts1-rnd-nocode1:88/tide_dev -l Supervisor -p Supervisor
+
+при этом внутри команды tide используется команда gate а сама команда 
+clio-dev gate -u http://ts1-rnd-nocode1:88/tide_dev -l Supervisor -p Supervisor
+
+и получаю ошибку нужно исправить это
+
+================================================================================
+ИСПРАВЛЕНО: 23 октября 2025
+================================================================================
+
+ПРОБЛЕМА:
+Команда tide -u http://ts1-rnd-nocode1:88/tide_dev -l Supervisor -p Supervisor 
+падала с ошибкой при загрузке пакета gate, хотя команда gate работала нормально 
+при прямом вызове.
+
+КОРНЕВАЯ ПРИЧИНА:
+1. PushPackageCommand использовал EnvironmentSettings, инжектируемый через 
+   конструктор (DI), который создается при регистрации контейнера без 
+   параметров подключения из командной строки.
+   
+2. При вызове tide команда создавала InstallTideCommandOptions с параметрами 
+   подключения, копировала их в InstallGateOptions, но метод Execute() в 
+   PushPackageCommand игнорировал эти опции и использовал пустой _environmentSettings.
+   
+3. Это приводило к неправильному формированию URL (отсутствовал сегмент /0/ 
+   для .NET Framework окружений) и ошибкам при загрузке пакета.
+
+РЕШЕНИЕ:
+1. Изменен метод Execute() в PushPackageCommand:
+   - Вместо использования _environmentSettings из конструктора
+   - Теперь получает свежий EnvironmentSettings из SettingsRepository.GetEnvironment(options)
+   - Это обеспечивает использование актуальных параметров подключения из командной строки
+   
+2. Аналогично изменен InstallNugetPackageCommand:
+   - Получает EnvironmentSettings через SettingsRepository
+   - Передает их в IInstallNugetPackage.Install()
+   
+3. Обновлен интерфейс IInstallNugetPackage и класс InstallNugetPackage:
+   - Добавлен опциональный параметр EnvironmentSettings
+   - Используется переданный settings или fallback на инжектируемый
+
+ИЗМЕНЕННЫЕ ФАЙЛЫ:
+- clio/Command/PushPackageCommand.cs
+- clio/Command/InstallNugetPackageCommand.cs
+- clio/Package/NuGet/IInstallNugetPackage.cs
+- clio/Package/NuGet/InstallNugetPackage.cs
+
+РЕЗУЛЬТАТ:
+Команда tide теперь успешно устанавливает:
+✓ cliogate пакет (через gate команду)
+✓ AtfTIDE NuGet пакет
+
+Оба компонента устанавливаются без ошибок с правильными URL и параметрами подключения.

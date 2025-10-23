@@ -41,7 +41,10 @@
 
 		#region Methods: Public
 
-		public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl) {
+		public void Install(IEnumerable<NugetPackageFullName> nugetPackageFullNames, string nugetSourceUrl, EnvironmentSettings environmentSettings = null) {
+			// Use provided environment settings or fall back to the injected ones
+			EnvironmentSettings settingsToUse = environmentSettings ?? _environmentSettings;
+			
 			_workingDirectoriesProvider.CreateTempDirectory(restoreTempDirectory => {
 				foreach (NugetPackageFullName nugetPackageFullName in nugetPackageFullNames) {
 					_nugetManager.RestoreToDirectory(nugetPackageFullName, nugetSourceUrl, restoreTempDirectory, true);
@@ -51,7 +54,7 @@
 					string packagePath = Path.Combine(zipTempDirectory, 
 						_packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));
 					_packageArchiver.ZipPackages(restoreTempDirectory, packagePath, true);
-					_packageInstaller.Install(packagePath, _environmentSettings);
+					_packageInstaller.Install(packagePath, settingsToUse);
 				});
 			});
 		}

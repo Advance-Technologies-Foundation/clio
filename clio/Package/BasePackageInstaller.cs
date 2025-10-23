@@ -110,17 +110,15 @@
 			}
 		}
 
-		private string UploadPackage(string filePath, EnvironmentSettings environmentSettings) {
-			_logger.WriteLine("Uploading...");
-			FileInfo fileInfo = new FileInfo(filePath);
-			string packageName = fileInfo.Name;
-			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
-			_logger.WriteLine("Uploaded");
-			return packageName;
-		}
-
-		private bool CreateBackupPackage(string packageCode, string filePath,
+	private string UploadPackage(string filePath, EnvironmentSettings environmentSettings) {
+		_logger.WriteLine("Uploading...");
+		FileInfo fileInfo = new FileInfo(filePath);
+		string packageName = fileInfo.Name;
+		IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+		applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
+		_logger.WriteLine("Uploaded");
+		return packageName;
+	}		private bool CreateBackupPackage(string packageCode, string filePath,
 			EnvironmentSettings environmentSettings) {
 			try {
 				_logger.WriteLine("Backup process...");

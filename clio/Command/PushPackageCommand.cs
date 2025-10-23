@@ -109,6 +109,11 @@
 		/// </remarks>
 		public override int Execute(PushPkgOptions options)
 		{
+			// Get environment settings from options to ensure correct configuration
+			// This handles cases where options contain different environment settings than the injected ones
+			SettingsRepository settingsRepository = new();
+			EnvironmentSettings environmentSettings = settingsRepository.GetEnvironment(options);
+			
 			PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
 			bool success = false;
 			try
@@ -123,7 +128,7 @@
 							fullPath = await _marketplace.GetFileByIdAsync(MarketplaceId);
 						}).Wait();
 						
-						bool _loopSuccess = _packageInstaller.Install(fullPath, _environmentSettings,
+						bool _loopSuccess = _packageInstaller.Install(fullPath, environmentSettings,
 							packageInstallOptions, options.ReportPath);
 						Console.WriteLine(_loopSuccess ? $"Done installing app by id: {MarketplaceId}" : $"Error installing app by id: {MarketplaceId}");
 					}
@@ -131,7 +136,7 @@
 				}
 				else
 				{
-					success = _packageInstaller.Install(options.Name, _environmentSettings,
+					success = _packageInstaller.Install(options.Name, environmentSettings,
 						packageInstallOptions, options.ReportPath);
 				}
 				if (options.ForceCompilation && success) {
