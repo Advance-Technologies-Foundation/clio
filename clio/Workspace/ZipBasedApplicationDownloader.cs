@@ -194,50 +194,125 @@ namespace Clio.Workspaces
 			}
 		}
 
-		private void DownloadNetCoreConfiguration(string extractedPath)
+	private void DownloadNetCoreConfiguration(string extractedPath)
+	{
+		_logger.WriteInfo("Detected NetCore Creatio");
+		
+		// For NetCore (NET8), the structure is:
+		// - Root DLL and PDB files -> .application/net-core/core-bin
+		// - Terrasoft.Configuration/Lib/ -> .application/net-core/bin
+		// - conf/bin/{NUMBER}/ -> .application/net-core/bin
+		// - Terrasoft.Configuration/Pkg/ -> .application/net-core/packages (filtered by Files/bin)
+
+		string coreBinDestination = _workspacePathBuilder.CoreBinFolderPath.Replace("net-framework", "net-core");
+		string libDestination = _workspacePathBuilder.LibFolderPath.Replace("net-framework", "net-core");
+		string configBinDestination = _workspacePathBuilder.ConfigurationBinFolderPath.Replace("net-framework", "net-core");
+
+		// Copy root DLL and PDB files
+		_logger.WriteInfo($"Copying NetCore root assemblies (DLL and PDB) to {coreBinDestination}");
+		_fileSystem.CreateDirectoryIfNotExists(coreBinDestination);
+		CopyRootAssemblies(extractedPath, coreBinDestination);
+
+		// Copy Terrasoft.Configuration/Lib if exists
+		string libPath = Path.Combine(extractedPath, "Terrasoft.Configuration", "Lib");
+		if (_fileSystem.ExistsDirectory(libPath))
 		{
-			_logger.WriteInfo("Detected NetCore Creatio");
-			
-			// For NetCore, the structure is typically:
-			// - bin/ -> .application/net-core/core-bin
-			// - Terrasoft.Configuration/Lib/ -> .application/net-core/bin
-			// - Terrasoft.Configuration.dll and related -> .application/net-core/bin
-
-			string coreBinDestination = _workspacePathBuilder.CoreBinFolderPath.Replace("net-framework", "net-core");
-			string libDestination = _workspacePathBuilder.LibFolderPath.Replace("net-framework", "net-core");
-			string configBinDestination = _workspacePathBuilder.ConfigurationBinFolderPath.Replace("net-framework", "net-core");
-
-			// Copy bin folder if exists
-			string binPath = Path.Combine(extractedPath, "bin");
-			if (_fileSystem.ExistsDirectory(binPath))
-			{
-				_logger.WriteInfo($"Copying NetCore bin files to {coreBinDestination}");
-				_fileSystem.CreateDirectoryIfNotExists(coreBinDestination);
-				CopyAllFiles(binPath, coreBinDestination);
-			}
-
-			// Copy Terrasoft.Configuration/Lib if exists
-			string libPath = Path.Combine(extractedPath, "Terrasoft.Configuration", "Lib");
-			if (_fileSystem.ExistsDirectory(libPath))
-			{
-				_logger.WriteInfo($"Copying NetCore lib files to {libDestination}");
-				_fileSystem.CreateDirectoryIfNotExists(libDestination);
-				CopyAllFiles(libPath, libDestination);
-			}
-
-			// Copy configuration assemblies
-			string confPath = Path.Combine(extractedPath, "conf");
-			if (_fileSystem.ExistsDirectory(confPath))
-			{
-				_logger.WriteInfo($"Copying NetCore configuration files to {configBinDestination}");
-				_fileSystem.CreateDirectoryIfNotExists(configBinDestination);
-				CopyAllFiles(confPath, configBinDestination);
-			}
-
-			_logger.WriteInfo("NetCore configuration downloaded successfully");
+			_logger.WriteInfo($"Copying NetCore lib files to {libDestination}");
+			_fileSystem.CreateDirectoryIfNotExists(libDestination);
+			CopyAllFiles(libPath, libDestination);
 		}
 
-		private void CopyAllFiles(string sourcePath, string destinationPath)
+		// Copy conf/bin/{NUMBER} - select latest numbered folder
+		CopyNetCoreConfigurationBinFiles(extractedPath, configBinDestination);
+
+		// Copy packages with Files/bin filter
+		CopyNetCorePackages(extractedPath);
+
+		_logger.WriteInfo("NetCore configuration downloaded successfully");
+	}
+
+	private void CopyRootAssemblies(string extractedPath, string destination)
+	{
+		var files = _fileSystem.GetFiles(extractedPath);
+		int copiedCount = 0;
+
+		foreach (string file in files)
+		{
+			string fileName = Path.GetFileName(file);
+			string extension = Path.GetExtension(fileName).ToLowerInvariant();
+
+			// Copy only DLL and PDB files
+			if (extension == ".dll" || extension == ".pdb")
+			{
+				string destFile = Path.Combine(destination, fileName);
+				_fileSystem.CopyFile(file, destFile, true);
+				copiedCount++;
+			}
+		}
+
+		_logger.WriteInfo($"Copied {copiedCount} root assemblies (DLL and PDB files)");
+	}
+
+	private void CopyNetCoreConfigurationBinFiles(string extractedPath, string destination)
+	{
+		string confBinPath = Path.Combine(extractedPath, "conf", "bin");
+
+		if (!_fileSystem.ExistsDirectory(confBinPath))
+		{
+			_logger.WriteWarning($"Configuration bin directory not found: {confBinPath}");
+			return;
+		}
+
+		// Find the latest numbered folder
+		var numberedFolders = _fileSystem.GetDirectories(confBinPath)
+			.Where(dir => int.TryParse(Path.GetFileName(dir), out _))
+			.OrderByDescending(dir => int.Parse(Path.GetFileName(dir)))
+			.ToList();
+
+		if (!numberedFolders.Any())
+		{
+			_logger.WriteWarning($"No numbered folders found in {confBinPath}");
+			return;
+		}
+
+		string latestFolder = numberedFolders.First();
+		_logger.WriteInfo($"Copying NetCore configuration bin files from {latestFolder} to {destination}");
+		_fileSystem.CreateDirectoryIfNotExists(destination);
+
+		// Copy specific DLLs
+		CopyFileIfExists(latestFolder, destination, TerrasoftConfigurationDll);
+		CopyFileIfExists(latestFolder, destination, TerrasoftConfigurationODataDll);
+	}
+
+	private void CopyNetCorePackages(string extractedPath)
+	{
+		string packagesSourcePath = Path.Combine(extractedPath, "Terrasoft.Configuration", "Pkg");
+
+		if (!_fileSystem.ExistsDirectory(packagesSourcePath))
+		{
+			_logger.WriteWarning($"Packages directory not found: {packagesSourcePath}");
+			return;
+		}
+
+		string packagesDestinationRoot = _workspacePathBuilder.PackagesFolderPath.Replace("net-framework", "net-core");
+		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
+
+		var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
+
+		foreach (string packageFolder in packageFolders)
+		{
+			string packageName = Path.GetFileName(packageFolder);
+			string filesBinPath = Path.Combine(packageFolder, "Files", "bin");
+
+			if (_fileSystem.ExistsDirectory(filesBinPath))
+			{
+				string destinationPackagePath = Path.Combine(packagesDestinationRoot, packageName);
+				_logger.WriteInfo($"Copying NetCore package {packageName}");
+				_fileSystem.CreateDirectoryIfNotExists(destinationPackagePath);
+				CopyDirectory(packageFolder, destinationPackagePath);
+			}
+		}
+	}		private void CopyAllFiles(string sourcePath, string destinationPath)
 		{
 			var files = _fileSystem.GetFiles(sourcePath);
 			foreach (string file in files)

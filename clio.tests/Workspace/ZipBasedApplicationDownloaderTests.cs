@@ -135,19 +135,66 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 	}
 
 	private void CreateNetCoreStructure(){
-		// No Terrasoft.WebApp folder for NetCore
-		var binPath = Path.Combine(TempDir, "bin");
-		_mockFileSystem.AddDirectory(binPath);
-		_mockFileSystem.AddFile(Path.Combine(binPath, "Terrasoft.Core.dll"), new MockFileData("core dll content"));
+		// No Terrasoft.WebApp folder for NetCore (NET8)
+		// Root directory contains DLL and PDB files
+		_mockFileSystem.AddFile(Path.Combine(TempDir, "Terrasoft.Core.dll"), new MockFileData("core dll content"));
+		_mockFileSystem.AddFile(Path.Combine(TempDir, "Terrasoft.Core.pdb"), new MockFileData("core pdb content"));
+		_mockFileSystem.AddFile(Path.Combine(TempDir, "Terrasoft.Common.dll"), new MockFileData("common dll content"));
+		_mockFileSystem.AddFile(Path.Combine(TempDir, "Terrasoft.Common.pdb"), new MockFileData("common pdb content"));
+		_mockFileSystem.AddFile(Path.Combine(TempDir, "SomeOther.dll"), new MockFileData("other dll content"));
+		_mockFileSystem.AddFile(Path.Combine(TempDir, "config.json"), new MockFileData("{}")); // Should NOT be copied
 
+		// Terrasoft.Configuration/Lib folder
 		var libPath = Path.Combine(TempDir, "Terrasoft.Configuration", "Lib");
 		_mockFileSystem.AddDirectory(libPath);
 		_mockFileSystem.AddFile(Path.Combine(libPath, "Newtonsoft.Json.dll"), new MockFileData("json dll content"));
+		_mockFileSystem.AddFile(Path.Combine(libPath, "AutoMapper.dll"), new MockFileData("automapper dll content"));
 
-		var confPath = Path.Combine(TempDir, "conf");
-		_mockFileSystem.AddDirectory(confPath);
-		_mockFileSystem.AddFile(Path.Combine(confPath, "Terrasoft.Configuration.dll"), 
-			new MockFileData("configuration dll content"));
+		// conf/bin/{NUMBER} structure - create multiple numbered folders
+		var confBinPath = Path.Combine(TempDir, "conf", "bin");
+		_mockFileSystem.AddDirectory(confBinPath);
+
+		// Folder 1 (older)
+		var confBin1 = Path.Combine(confBinPath, "1");
+		_mockFileSystem.AddDirectory(confBin1);
+		_mockFileSystem.AddFile(Path.Combine(confBin1, "Terrasoft.Configuration.dll"), 
+			new MockFileData("old configuration dll"));
+
+		// Folder 2 (older)
+		var confBin2 = Path.Combine(confBinPath, "2");
+		_mockFileSystem.AddDirectory(confBin2);
+		_mockFileSystem.AddFile(Path.Combine(confBin2, "Terrasoft.Configuration.dll"), 
+			new MockFileData("old configuration dll"));
+
+		// Folder 3 (latest - should be selected)
+		var confBin3 = Path.Combine(confBinPath, "3");
+		_mockFileSystem.AddDirectory(confBin3);
+		_mockFileSystem.AddFile(Path.Combine(confBin3, "Terrasoft.Configuration.dll"), 
+			new MockFileData("latest configuration dll"));
+		_mockFileSystem.AddFile(Path.Combine(confBin3, "Terrasoft.Configuration.ODataEntities.dll"), 
+			new MockFileData("latest odata dll"));
+
+		// Terrasoft.Configuration/Pkg - packages structure
+		var pkgPath = Path.Combine(TempDir, "Terrasoft.Configuration", "Pkg");
+		_mockFileSystem.AddDirectory(pkgPath);
+
+		// Package with Files/bin - should be copied
+		var package1Path = Path.Combine(pkgPath, "NetCorePackage1", "Files", "bin");
+		_mockFileSystem.AddDirectory(package1Path);
+		_mockFileSystem.AddFile(Path.Combine(package1Path, "NetCorePackage1.dll"), 
+			new MockFileData("netcore package1 dll content"));
+
+		// Package without Files/bin - should NOT be copied
+		var package2Path = Path.Combine(pkgPath, "NetCorePackage2");
+		_mockFileSystem.AddDirectory(package2Path);
+		_mockFileSystem.AddFile(Path.Combine(package2Path, "descriptor.json"), 
+			new MockFileData("{}"));
+
+		// Package with Files/bin - should be copied
+		var package3Path = Path.Combine(pkgPath, "NetCorePackage3", "Files", "bin");
+		_mockFileSystem.AddDirectory(package3Path);
+		_mockFileSystem.AddFile(Path.Combine(package3Path, "NetCorePackage3.dll"), 
+			new MockFileData("netcore package3 dll content"));
 	}
 
 	#endregion
@@ -303,15 +350,61 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("Should copy files from bin, Terrasoft.Configuration/Lib, and conf for NetCore")]
+	[Description("Should copy root DLL/PDB, lib files, conf/bin/{NUMBER}, and packages for NetCore")]
 	public void DownloadFromZip_CopiesFiles_ForNetCore(){
 		// Arrange
 		var zipFilePath = @"C:\creatio.zip";
 		SetupWorkspacePaths();
-		// Setup NetCore paths
-		_workspacePathBuilderMock.CoreBinFolderPath.Returns(Path.Combine(WorkspaceRoot, ".application", "net-core", "bin"));
-		_workspacePathBuilderMock.LibFolderPath.Returns(Path.Combine(WorkspaceRoot, ".application", "net-core", "lib"));
-		_workspacePathBuilderMock.ConfigurationBinFolderPath.Returns(Path.Combine(WorkspaceRoot, ".application", "net-core", "conf"));
+		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
+		SetupZipFile(zipFilePath);
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act
+		downloader.DownloadFromZip(zipFilePath);
+
+		// Assert - Root assemblies (DLL and PDB from root directory)
+		var netCoreCoreBin = Path.Combine(WorkspaceRoot, ".application", "net-core", "core-bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreCoreBin, "Terrasoft.Core.dll"))
+			.Should().BeTrue(because: "Root DLL should be copied to net-core/core-bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreCoreBin, "Terrasoft.Core.pdb"))
+			.Should().BeTrue(because: "Root PDB should be copied to net-core/core-bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreCoreBin, "Terrasoft.Common.dll"))
+			.Should().BeTrue(because: "Root DLL should be copied to net-core/core-bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreCoreBin, "SomeOther.dll"))
+			.Should().BeTrue(because: "All root DLLs should be copied");
+		_mockFileSystem.FileExists(Path.Combine(netCoreCoreBin, "config.json"))
+			.Should().BeFalse(because: "Only DLL and PDB files should be copied, not JSON");
+
+		// Assert - Lib files
+		var netCoreBin = Path.Combine(WorkspaceRoot, ".application", "net-core", "bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreBin, "Newtonsoft.Json.dll"))
+			.Should().BeTrue(because: "Lib DLL should be copied to net-core/bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreBin, "AutoMapper.dll"))
+			.Should().BeTrue(because: "Lib DLL should be copied to net-core/bin");
+
+		// Assert - Configuration bin files from latest numbered folder
+		_mockFileSystem.FileExists(Path.Combine(netCoreBin, "Terrasoft.Configuration.dll"))
+			.Should().BeTrue(because: "Configuration DLL from latest numbered folder should be copied");
+		_mockFileSystem.FileExists(Path.Combine(netCoreBin, "Terrasoft.Configuration.ODataEntities.dll"))
+			.Should().BeTrue(because: "OData DLL from latest numbered folder should be copied");
+
+		// Assert - Packages with Files/bin filter
+		var netCorePackages = Path.Combine(WorkspaceRoot, ".application", "net-core", "packages");
+		_mockFileSystem.Directory.Exists(Path.Combine(netCorePackages, "NetCorePackage1"))
+			.Should().BeTrue(because: "Package with Files/bin should be copied");
+		_mockFileSystem.Directory.Exists(Path.Combine(netCorePackages, "NetCorePackage2"))
+			.Should().BeFalse(because: "Package without Files/bin should not be copied");
+		_mockFileSystem.Directory.Exists(Path.Combine(netCorePackages, "NetCorePackage3"))
+			.Should().BeTrue(because: "Package with Files/bin should be copied");
+	}
+
+	[Test]
+	[Description("Should select latest numbered folder from conf/bin for NetCore")]
+	public void DownloadFromZip_SelectsLatestNumberedFolder_ForNetCore(){
+		// Arrange
+		var zipFilePath = @"C:\creatio.zip";
+		SetupWorkspacePaths();
 		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
 		SetupZipFile(zipFilePath);
 		
@@ -321,12 +414,33 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		downloader.DownloadFromZip(zipFilePath);
 
 		// Assert
-		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.CoreBinFolderPath, "Terrasoft.Core.dll"))
-			.Should().BeTrue(because: "Core DLL should be copied for NetCore");
-		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.LibFolderPath, "Newtonsoft.Json.dll"))
-			.Should().BeTrue(because: "Library DLL should be copied for NetCore");
-		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.ConfigurationBinFolderPath, "Terrasoft.Configuration.dll"))
-			.Should().BeTrue(because: "Configuration DLL should be copied for NetCore");
+		var netCoreBin = Path.Combine(WorkspaceRoot, ".application", "net-core", "bin");
+		var configDllContent = _mockFileSystem.File.ReadAllText(Path.Combine(netCoreBin, "Terrasoft.Configuration.dll"));
+		configDllContent.Should().Be("latest configuration dll", because: "Should select files from folder 3 (latest)");
+	}
+
+	[Test]
+	[Description("Should copy only packages with Files/bin folder for NetCore")]
+	public void DownloadFromZip_CopiesOnlyPackagesWithFilesBin_ForNetCore(){
+		// Arrange
+		var zipFilePath = @"C:\creatio.zip";
+		SetupWorkspacePaths();
+		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
+		SetupZipFile(zipFilePath);
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act
+		downloader.DownloadFromZip(zipFilePath);
+
+		// Assert
+		var netCorePackages = Path.Combine(WorkspaceRoot, ".application", "net-core", "packages");
+		_mockFileSystem.Directory.Exists(Path.Combine(netCorePackages, "NetCorePackage1"))
+			.Should().BeTrue(because: "NetCore package with Files/bin should be copied");
+		_mockFileSystem.Directory.Exists(Path.Combine(netCorePackages, "NetCorePackage2"))
+			.Should().BeFalse(because: "NetCore package without Files/bin should not be copied");
+		_mockFileSystem.Directory.Exists(Path.Combine(netCorePackages, "NetCorePackage3"))
+			.Should().BeTrue(because: "NetCore package with Files/bin should be copied");
 	}
 
 	#endregion

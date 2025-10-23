@@ -9,24 +9,31 @@ Creatio
 
 если в разорхивированной папке находится папка вложенная Terrasoft.WebApp то это NetFramework Creatio
 
-для NetFramework необходимо скопировать содержимое Creatio из вложенной директории "Terrasoft.WebApp\bin"
+для NetFramework необходимо скопировать
+содержимое Creatio из вложенной директории "Terrasoft.WebApp\bin"
 в директорию workspace для которого вызвана команда dconf ".application\net-framework\core-bin"
 также из Creatio нужно из Terrasoft.WebApp\Terrasoft.Configuration\Lib скопировать в workspace .application/net-framework/bin
 также из Creatio нужно из Terrasoft.WebApp\conf\bin\{NUMBER} (взять нужно последний номер) скопировать в workspace .application/net-framework/bin там должны быть файлы Terrasoft.Configuration.dll
 Terrasoft.Configuration.ODataEntities.dll
 также из Creatio нужно из Terrasoft.WebApp\Terrasoft.Configuration\Pkg для каждой вложенной папки (єто папки пакетов) если в ней есть Files\bin нужно скопировать папку конкретного пакета в .application/net-framework/packages/
 
-результатов выполнения команды должно быть наполнении директор
+если Creatio не NetFramework то значит єто сборка NET8 то нужно сделать следующее копирование которое отличается от Framework
+содержимое Creatio корневой директории все dll и pdb в директорию workspace для которого вызвана команда dconf ".application\net-core\core-bin"
+также из Creatio нужно из Terrasoft.Configuration\Lib скопировать в workspace .application/net-core/bin
+также из Creatio нужно из conf\bin\{NUMBER} (взять нужно последний номер) скопировать в workspace .application/net-core/bin там должны быть файлы Terrasoft.Configuration.dll
+Terrasoft.Configuration.ODataEntities.dll
+также из Creatio нужно из Terrasoft.Configuration\Pkg для каждой вложенной папки (єто папки пакетов) если в ней есть Files\bin\ нужно скопировать папку конкретного пакета в .application/net-core/packages/
 
 
 === РЕАЛИЗАЦИЯ ===
 
 ✅ Задание выполнено полностью. Дата завершения: 24 октября 2025
+✅ Обновление NET8: 24 октября 2025 - Добавлена полная поддержка NET8 requirements
 
 Реализованная функциональность:
 - Добавлена опция --build (-b) в команду dconf для извлечения конфигурации из ZIP-файлов
 - Реализована автоматическая очистка временной директории через callback механизм
-- Добавлена автоматическая детекция NetFramework (Terrasoft.WebApp) и NetCore
+- Добавлена автоматическая детекция NetFramework (Terrasoft.WebApp) и NET8 (NetCore)
 - Реализовано копирование всех необходимых файлов для обоих типов Creatio
 
 Созданные/изменённые файлы:
@@ -35,18 +42,28 @@ Terrasoft.Configuration.ODataEntities.dll
    - Добавлена валидация BuildZipPath (DownloadConfigurationCommandOptionsValidator)
    - Реализована условная маршрутизация между environment download и ZIP extraction
 
-2. clio/Workspace/ZipBasedApplicationDownloader.cs (НОВЫЙ ФАЙЛ - 346 строк)
+2. clio/Workspace/ZipBasedApplicationDownloader.cs (НОВЫЙ ФАЙЛ - ~420 строк)
    - Интерфейс: IZipBasedApplicationDownloader
    - Детекция типа: IsNetFrameworkCreatio() проверяет наличие Terrasoft.WebApp
-   - NetFramework:
+   
+   NetFramework:
      * CopyCoreBinFiles(): Terrasoft.WebApp/bin -> .application/net-framework/core-bin
      * CopyLibFiles(): Terrasoft.WebApp/Terrasoft.Configuration/Lib -> .application/net-framework/bin
      * CopyConfigurationBinFiles(): Terrasoft.WebApp/conf/bin/{NUMBER} -> .application/net-framework/bin
        (выбирается последний номер через OrderByDescending + int.Parse)
-     * CopyPackages(): Terrasoft.WebApp/Terrasoft.Configuration/Pkg -> .application/packages
+     * CopyPackages(): Terrasoft.WebApp/Terrasoft.Configuration/Pkg -> .application/net-framework/packages
        (копируются только пакеты с Files/bin)
-   - NetCore:
-     * DownloadNetCoreConfiguration(): обработка bin/, Terrasoft.Configuration/Lib/, conf/
+   
+   NET8 (NetCore) - ОБНОВЛЕНО:
+     * CopyRootAssemblies(): ROOT/*.dll и ROOT/*.pdb -> .application/net-core/core-bin
+       (фильтрация по расширению .dll и .pdb, исключая другие файлы)
+     * CopyLibFiles(): Terrasoft.Configuration/Lib -> .application/net-core/bin
+     * CopyNetCoreConfigurationBinFiles(): conf/bin/{NUMBER} -> .application/net-core/bin
+       (выбирается последний номер через LINQ OrderByDescending + int.Parse)
+       Копируются: Terrasoft.Configuration.dll, Terrasoft.Configuration.ODataEntities.dll
+     * CopyNetCorePackages(): Terrasoft.Configuration/Pkg -> .application/net-core/packages
+       (копируются только пакеты с Files/bin, используется EnumerateDirectories + filtering)
+   
    - Cleanup: IWorkingDirectoriesProvider.CreateTempDirectory(Action<string> callback)
 
 3. clio/BindingsModule.cs
@@ -54,37 +71,65 @@ Terrasoft.Configuration.ODataEntities.dll
 
 4. clio/Commands.md
    - Добавлена секция "Download Configuration" с примерами использования обоих режимов
-   - Документация по детекции NetFramework/NetCore
-   - Mapping файловой структуры
+   - Документация по детекции NetFramework/NET8
+   - Mapping файловой структуры для обоих типов Creatio
    - Use cases: offline development, version comparison, CI/CD
 
-5. clio.tests/Workspace/ZipBasedApplicationDownloaderTests.cs (НОВЫЙ ФАЙЛ - 414 строк)
-   - 11 comprehensive unit tests
-   - Покрытие: NetFramework detection (1), NetFramework copying (5), NetCore (2), Error handling (2), Cleanup (1)
+5. clio.tests/Workspace/ZipBasedApplicationDownloaderTests.cs (НОВЫЙ ФАЙЛ - ~520 строк)
+   - 13 comprehensive unit tests (11 original + 2 new NET8-specific)
+   
+   Покрытие тестами:
+     * NetFramework: detection (1), core-bin copying (1), lib copying (1), conf/bin copying (1), 
+       packages filtering (2)
+     * NET8: main test with assertions (1), latest folder selection (1), package filtering (1), 
+       full integration (2)
+     * Error handling: missing ZIP (1), invalid ZIP (1)
+     * Cleanup: temp directory (1)
+   
+   NET8 Test Structure (CreateNetCoreStructure):
+     * Корневые файлы: Terrasoft.Core.dll/.pdb, Terrasoft.Common.dll/.pdb, SomeOther.dll
+     * Негативный тест: config.json (НЕ должен копироваться)
+     * Terrasoft.Configuration/Lib: Newtonsoft.Json.dll, AutoMapper.dll
+     * conf/bin/1, conf/bin/2, conf/bin/3 (выбирается папка 3 как последняя)
+     * Packages: NetCorePackage1 (с Files/bin ✓), NetCorePackage2 (без Files/bin ✗), 
+       NetCorePackage3 (с Files/bin ✓)
+   
+   NET8 Specific Tests:
+     * DownloadFromZip_CopiesFiles_ForNetCore - комплексный тест с 4 группами assertions:
+       1. Root assemblies (DLLs и PDBs копируются, config.json НЕ копируется)
+       2. Lib files (Newtonsoft.Json.dll, AutoMapper.dll)
+       3. Configuration bin (Terrasoft.Configuration.dll, ODataEntities.dll из папки 3)
+       4. Packages (NetCorePackage1 ✓, NetCorePackage2 ✗, NetCorePackage3 ✓)
+     * DownloadFromZip_SelectsLatestNumberedFolder_ForNetCore - проверка выбора папки 3
+     * DownloadFromZip_CopiesOnlyPackagesWithFilesBin_ForNetCore - проверка фильтрации пакетов
+   
    - Использует: NUnit, NSubstitute, FluentAssertions, MockFileSystem
 
 Ключевые особенности реализации:
 - Валидация входных данных (файл существует, расширение .zip, не пустой)
 - Умный выбор последней версии из conf/bin/{NUMBER} через LINQ
-- Фильтрация пакетов по наличию Files/bin
-- Логирование прогресса и предупреждений
+- Фильтрация пакетов по наличию Files/bin для обоих типов Creatio
+- NET8: Копирование DLL/PDB из корневой директории с фильтрацией по расширению
+- NET8: Отдельная логика для conf/bin/{NUMBER} с автоматическим выбором последнего
+- Логирование прогресса и предупреждений на английском
 - Автоматическая очистка временной директории через callback pattern
-- Поддержка как NetFramework, так и NetCore Creatio
+- Поддержка как NetFramework, так и NET8 (NetCore) Creatio
 - Использование IFileSystem для тестируемости
 - Все сообщения и комментарии на английском языке согласно code style проекта
 
 Результаты тестирования:
-- ✅ 11/11 новых unit тестов прошли успешно
-- ✅ 733/733 всех тестов проекта прошли успешно
+- ✅ 13/13 новых unit тестов прошли успешно (11 original + 2 NET8-specific)
+- ✅ 735/735 всех тестов проекта прошли успешно (+2 новых теста)
 - ✅ Нет регрессий в существующем функционале
+- ✅ Все NET8 requirements полностью покрыты тестами
 
 Примеры использования:
 ```bash
 # Извлечение конфигурации из ZIP-файла NetFramework
 clio dconf --build C:\downloads\creatio-netframework.zip
 
-# Извлечение конфигурации из ZIP-файла NetCore
-clio dconf --build /path/to/creatio-netcore.zip
+# Извлечение конфигурации из ZIP-файла NET8 (NetCore)
+clio dconf --build /path/to/creatio-net8.zip
 
 # Стандартный режим (скачивание с environment) продолжает работать
 clio dconf -e myenv
