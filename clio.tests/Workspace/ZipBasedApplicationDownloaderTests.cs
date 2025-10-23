@@ -52,6 +52,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 
 	private void SetupWorkspacePaths(){
 		_workspacePathBuilderMock.IsWorkspace.Returns(true);
+		_workspacePathBuilderMock.RootPath.Returns(WorkspaceRoot);
 		_workspacePathBuilderMock.ApplicationFolderPath.Returns(Path.Combine(WorkspaceRoot, ".application"));
 		_workspacePathBuilderMock.CoreBinFolderPath.Returns(Path.Combine(WorkspaceRoot, ".application", "net-framework", "core-bin"));
 		_workspacePathBuilderMock.LibFolderPath.Returns(Path.Combine(WorkspaceRoot, ".application", "net-framework", "bin"));
