@@ -17,9 +17,13 @@ namespace Clio.Command
 
 	public class HealthCheckCommand : RemoteCommand<HealthCheckOptions>
 	{
-		public HealthCheckCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings) {
-			settings.IsNetCore = true;
+	
+		public HealthCheckCommand(IApplicationClient applicationClient, EnvironmentSettings settings): base(applicationClient, settings)
+		{
+			var _internalSettings = new EnvironmentSettings();
+			_internalSettings.Merge(settings);
+			_internalSettings.IsNetCore = true;
+			EnvironmentSettings = _internalSettings;
 		}
 
 		private int ExecuteGetRequest(string checkName) {
