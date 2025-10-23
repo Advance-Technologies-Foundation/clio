@@ -176,8 +176,9 @@ namespace Clio.Workspaces
 			return;
 		}
 
-		string packagesDestinationRoot = _workspacePathBuilder.PackagesFolderPath;
-		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);			var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
+		string packagesDestinationRoot = Path.Join(_workspacePathBuilder.RootPath,".application", "net-framework", "packages");
+		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);			
+		var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
 
 			foreach (string packageFolder in packageFolders)
 			{
@@ -294,7 +295,8 @@ namespace Clio.Workspaces
 			return;
 		}
 
-		string packagesDestinationRoot = _workspacePathBuilder.PackagesFolderPath.Replace("net-framework", "net-core");
+		
+		string packagesDestinationRoot = Path.Join(_workspacePathBuilder.RootPath,".application", "net-core", "packages");
 		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
 
 		var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
