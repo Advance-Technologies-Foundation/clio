@@ -255,6 +255,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<TurnFarmModeOptionsValidator>();
 		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
 		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
+		containerBuilder.RegisterType<DownloadConfigurationCommandOptionsValidator>();
 
 		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
 		containerBuilder.RegisterType<UnzipRequestValidator>();
@@ -279,6 +280,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
 		containerBuilder.RegisterType<ProcessModelGenerator>().As<IProcessModelGenerator>();
 		containerBuilder.RegisterType<ProcessModelWriter>().As<IProcessModelWriter>();
+		containerBuilder.RegisterType<ZipBasedApplicationDownloader>().As<IZipBasedApplicationDownloader>();
 
 		containerBuilder.RegisterType<ClioGateway>();
 

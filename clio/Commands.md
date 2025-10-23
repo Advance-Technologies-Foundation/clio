@@ -9,6 +9,7 @@ Clio Command Reference
 - [Application Management](#application)
 - [Environment Settings](#environment-settings)
 - [Workspaces](#workspaces)
+- [Download Configuration](#download-configuration)
 - [Development](#development)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Web farm deployments](#web-farm-deployments)
@@ -876,6 +877,67 @@ Options:
 - `-b`, `--branch` (optional): Branch name
 
 Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
+
+## download-configuration
+
+Download Creatio configuration (libraries and assemblies) to the workspace `.application` folder. This command supports two modes:
+
+1. **Download from running environment** - Downloads libraries from a live Creatio instance
+2. **Extract from ZIP file** - Extracts configuration from a Creatio installation ZIP file
+
+### Download from Environment
+
+To download configuration from a running Creatio instance:
+
+```bash
+clio download-configuration -e <ENVIRONMENT_NAME>
+
+# or using alias
+clio dconf -e <ENVIRONMENT_NAME>
+```
+
+This will download libraries and assemblies from the specified environment and place them in the workspace `.application` folder structure.
+
+### Extract from ZIP File
+
+To extract Creatio configuration from a ZIP file (useful for offline development or analyzing installations):
+
+```bash
+clio download-configuration --build <PATH_TO_ZIP_FILE>
+
+# or using alias
+clio dconf --build C:\path\to\creatio.zip
+```
+
+**How it works:**
+1. Extracts the ZIP file to a temporary directory
+2. Automatically detects if the package is NetFramework or NetCore based
+   - **NetFramework detection**: Looks for `Terrasoft.WebApp` folder
+   - **NetCore**: Used when `Terrasoft.WebApp` folder is not present
+3. Copies files to the appropriate workspace `.application` folder structure:
+   - For **NetFramework**:
+     - Core binaries: `.application/net-framework/core-bin/`
+     - Libraries: `.application/net-framework/bin/`
+     - Configuration DLLs (from latest `conf/bin/{NUMBER}`)
+     - Package binaries: `.application/net-framework/packages/{PackageName}/`
+   - For **NetCore**:
+     - Binaries: `.application/net-core/bin/`
+     - Libraries: `.application/net-core/lib/`
+     - Configuration: `.application/net-core/conf/`
+4. Automatically cleans up temporary files
+
+**Requirements:**
+- Must be executed in a valid clio workspace
+- ZIP file must exist and have `.zip` extension
+- ZIP file must contain a valid Creatio installation structure
+
+**Use cases:**
+- Offline development: Extract configuration without running instance
+- Version comparison: Analyze different Creatio versions
+- Quick setup: Initialize workspace from installation package
+- CI/CD: Prepare build environments from release packages
+
+Aliases: `dconf`
 
 # Development
 - [Convert package](#convert)
