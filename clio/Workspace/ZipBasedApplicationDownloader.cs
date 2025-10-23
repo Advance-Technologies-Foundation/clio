@@ -166,20 +166,18 @@ namespace Clio.Workspaces
 			CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationODataDll);
 		}
 
-		private void CopyPackages(string terrasoftWebAppPath)
+	private void CopyPackages(string terrasoftWebAppPath)
+	{
+		string packagesSourcePath = Path.Combine(terrasoftWebAppPath, "Terrasoft.Configuration", "Pkg");
+
+		if (!_fileSystem.ExistsDirectory(packagesSourcePath))
 		{
-			string packagesSourcePath = Path.Combine(terrasoftWebAppPath, "Terrasoft.Configuration", "Pkg");
+			_logger.WriteWarning($"Packages directory not found: {packagesSourcePath}");
+			return;
+		}
 
-			if (!_fileSystem.ExistsDirectory(packagesSourcePath))
-			{
-				_logger.WriteWarning($"Packages directory not found: {packagesSourcePath}");
-				return;
-			}
-
-			string packagesDestinationRoot = Path.Combine(_workspacePathBuilder.ApplicationFolderPath, "packages");
-			_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
-
-			var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
+		string packagesDestinationRoot = _workspacePathBuilder.PackagesFolderPath;
+		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);			var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
 
 			foreach (string packageFolder in packageFolders)
 			{
