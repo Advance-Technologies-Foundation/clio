@@ -101,26 +101,34 @@ namespace Clio.Workspaces
 			_logger.WriteInfo("NetFramework configuration downloaded successfully");
 		}
 
-		private void CopyCoreBinFiles(string terrasoftWebAppPath)
+	private void CopyCoreBinFiles(string terrasoftWebAppPath)
+	{
+		string sourcePath = Path.Combine(terrasoftWebAppPath, "bin");
+		string destinationPath = _workspacePathBuilder.CoreBinFolderPath;
+
+		if (Program.IsDebugMode)
 		{
-			string sourcePath = Path.Combine(terrasoftWebAppPath, "bin");
-			string destinationPath = _workspacePathBuilder.CoreBinFolderPath;
-
-			if (!_fileSystem.ExistsDirectory(sourcePath))
-			{
-				_logger.WriteWarning($"Source directory not found: {sourcePath}");
-				return;
-			}
-
-			_logger.WriteInfo($"Copying core bin files from {sourcePath} to {destinationPath}");
-			_fileSystem.CreateDirectoryIfNotExists(destinationPath);
-			CopyAllFiles(sourcePath, destinationPath);
+			_logger.WriteInfo($"[DEBUG] CopyCoreBinFiles: Source={sourcePath}, Destination={destinationPath}");
 		}
 
-		private void CopyLibFiles(string terrasoftWebAppPath)
+		if (!_fileSystem.ExistsDirectory(sourcePath))
+		{
+			_logger.WriteWarning($"Source directory not found: {sourcePath}");
+			return;
+		}
+
+		_logger.WriteInfo($"Copying core bin files from {sourcePath} to {destinationPath}");
+		_fileSystem.CreateDirectoryIfNotExists(destinationPath);
+		CopyAllFiles(sourcePath, destinationPath);
+	}		private void CopyLibFiles(string terrasoftWebAppPath)
 		{
 			string sourcePath = Path.Combine(terrasoftWebAppPath, "Terrasoft.Configuration", "Lib");
 			string destinationPath = _workspacePathBuilder.LibFolderPath;
+
+			if (Program.IsDebugMode)
+			{
+				_logger.WriteInfo($"[DEBUG] CopyLibFiles: Source={sourcePath}, Destination={destinationPath}");
+			}
 
 			if (!_fileSystem.ExistsDirectory(sourcePath))
 			{
@@ -133,42 +141,61 @@ namespace Clio.Workspaces
 			CopyAllFiles(sourcePath, destinationPath);
 		}
 
-		private void CopyConfigurationBinFiles(string terrasoftWebAppPath)
+	private void CopyConfigurationBinFiles(string terrasoftWebAppPath)
+	{
+		string confBinPath = Path.Combine(terrasoftWebAppPath, "conf", "bin");
+
+		if (Program.IsDebugMode)
 		{
-			string confBinPath = Path.Combine(terrasoftWebAppPath, "conf", "bin");
-
-			if (!_fileSystem.ExistsDirectory(confBinPath))
-			{
-				_logger.WriteWarning($"Configuration bin directory not found: {confBinPath}");
-				return;
-			}
-
-			// Find the latest numbered folder
-			var numberedFolders = _fileSystem.GetDirectories(confBinPath)
-				.Where(dir => int.TryParse(Path.GetFileName(dir), out _))
-				.OrderByDescending(dir => int.Parse(Path.GetFileName(dir)))
-				.ToList();
-
-			if (!numberedFolders.Any())
-			{
-				_logger.WriteWarning($"No numbered folders found in {confBinPath}");
-				return;
-			}
-
-			string latestFolder = numberedFolders.First();
-			string destinationPath = _workspacePathBuilder.ConfigurationBinFolderPath;
-
-			_logger.WriteInfo($"Copying configuration bin files from {latestFolder} to {destinationPath}");
-			_fileSystem.CreateDirectoryIfNotExists(destinationPath);
-
-			// Copy specific DLLs
-			CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationDll);
-			CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationODataDll);
+			_logger.WriteInfo($"[DEBUG] CopyConfigurationBinFiles: ConfBinPath={confBinPath}");
 		}
 
-	private void CopyPackages(string terrasoftWebAppPath)
+		if (!_fileSystem.ExistsDirectory(confBinPath))
+		{
+			_logger.WriteWarning($"Configuration bin directory not found: {confBinPath}");
+			return;
+		}
+
+		// Find the latest numbered folder
+		var numberedFolders = _fileSystem.GetDirectories(confBinPath)
+			.Where(dir => int.TryParse(Path.GetFileName(dir), out _))
+			.OrderByDescending(dir => int.Parse(Path.GetFileName(dir)))
+			.ToList();
+
+		if (Program.IsDebugMode && numberedFolders.Any())
+		{
+			_logger.WriteInfo($"[DEBUG]   Found {numberedFolders.Count} numbered folders: {string.Join(", ", numberedFolders.Select(Path.GetFileName))}");
+		}
+
+		if (!numberedFolders.Any())
+		{
+			_logger.WriteWarning($"No numbered folders found in {confBinPath}");
+			return;
+		}
+
+		string latestFolder = numberedFolders.First();
+		string destinationPath = _workspacePathBuilder.ConfigurationBinFolderPath;
+
+		_logger.WriteInfo($"Copying configuration bin files from {latestFolder} to {destinationPath}");
+		
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG]   Selected latest folder: {Path.GetFileName(latestFolder)}, Destination={destinationPath}");
+		}
+
+		_fileSystem.CreateDirectoryIfNotExists(destinationPath);
+
+		// Copy specific DLLs
+		CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationDll);
+		CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationODataDll);
+	}	private void CopyPackages(string terrasoftWebAppPath)
 	{
 		string packagesSourcePath = Path.Combine(terrasoftWebAppPath, "Terrasoft.Configuration", "Pkg");
+
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] CopyPackages: Source={packagesSourcePath}");
+		}
 
 		if (!_fileSystem.ExistsDirectory(packagesSourcePath))
 		{
@@ -177,8 +204,16 @@ namespace Clio.Workspaces
 		}
 
 		string packagesDestinationRoot = Path.Join(_workspacePathBuilder.RootPath,".application", "net-framework", "packages");
-		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);			
+		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
+		
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG]   Destination: {packagesDestinationRoot}");
+		}
+		
 		var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
+		int copiedPackages = 0;
+		int skippedPackages = 0;
 
 			foreach (string packageFolder in packageFolders)
 			{
@@ -189,10 +224,30 @@ namespace Clio.Workspaces
 				{
 					string destinationPackagePath = Path.Combine(packagesDestinationRoot, packageName);
 					_logger.WriteInfo($"Copying package {packageName}");
+					
+					if (Program.IsDebugMode)
+					{
+						_logger.WriteInfo($"[DEBUG]   {packageName}: {packageFolder} -> {destinationPackagePath}");
+					}
+
 					_fileSystem.CreateDirectoryIfNotExists(destinationPackagePath);
 					CopyDirectory(packageFolder, destinationPackagePath);
+					copiedPackages++;
+				}
+				else
+				{
+					skippedPackages++;
+					if (Program.IsDebugMode)
+					{
+						_logger.WriteInfo($"[DEBUG]   Skipped {packageName} (no Files/bin folder)");
+					}
 				}
 			}
+
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] NetFramework packages summary: Copied={copiedPackages}, Skipped={skippedPackages}");
+		}
 		}
 
 	private void DownloadNetCoreConfiguration(string extractedPath)
@@ -234,6 +289,11 @@ namespace Clio.Workspaces
 
 	private void CopyRootAssemblies(string extractedPath, string destination)
 	{
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] CopyRootAssemblies: Source={extractedPath}, Destination={destination}");
+		}
+
 		var files = _fileSystem.GetFiles(extractedPath);
 		int copiedCount = 0;
 
@@ -248,6 +308,11 @@ namespace Clio.Workspaces
 				string destFile = Path.Combine(destination, fileName);
 				_fileSystem.CopyFile(file, destFile, true);
 				copiedCount++;
+				
+				if (Program.IsDebugMode)
+				{
+					_logger.WriteInfo($"[DEBUG]   Copied: {fileName} -> {destFile}");
+				}
 			}
 		}
 
@@ -257,6 +322,11 @@ namespace Clio.Workspaces
 	private void CopyNetCoreConfigurationBinFiles(string extractedPath, string destination)
 	{
 		string confBinPath = Path.Combine(extractedPath, "conf", "bin");
+
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] CopyNetCoreConfigurationBinFiles: ConfBinPath={confBinPath}, Destination={destination}");
+		}
 
 		if (!_fileSystem.ExistsDirectory(confBinPath))
 		{
@@ -270,6 +340,11 @@ namespace Clio.Workspaces
 			.OrderByDescending(dir => int.Parse(Path.GetFileName(dir)))
 			.ToList();
 
+		if (Program.IsDebugMode && numberedFolders.Any())
+		{
+			_logger.WriteInfo($"[DEBUG]   Found {numberedFolders.Count} numbered folders: {string.Join(", ", numberedFolders.Select(Path.GetFileName))}");
+		}
+
 		if (!numberedFolders.Any())
 		{
 			_logger.WriteWarning($"No numbered folders found in {confBinPath}");
@@ -278,6 +353,12 @@ namespace Clio.Workspaces
 
 		string latestFolder = numberedFolders.First();
 		_logger.WriteInfo($"Copying NetCore configuration bin files from {latestFolder} to {destination}");
+		
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG]   Selected latest folder: {Path.GetFileName(latestFolder)}");
+		}
+
 		_fileSystem.CreateDirectoryIfNotExists(destination);
 
 		// Copy specific DLLs
@@ -289,6 +370,11 @@ namespace Clio.Workspaces
 	{
 		string packagesSourcePath = Path.Combine(extractedPath, "Terrasoft.Configuration", "Pkg");
 
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] CopyNetCorePackages: Source={packagesSourcePath}");
+		}
+
 		if (!_fileSystem.ExistsDirectory(packagesSourcePath))
 		{
 			_logger.WriteWarning($"Packages directory not found: {packagesSourcePath}");
@@ -299,7 +385,14 @@ namespace Clio.Workspaces
 		string packagesDestinationRoot = Path.Join(_workspacePathBuilder.RootPath,".application", "net-core", "packages");
 		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
 
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG]   Destination: {packagesDestinationRoot}");
+		}
+
 		var packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
+		int copiedPackages = 0;
+		int skippedPackages = 0;
 
 		foreach (string packageFolder in packageFolders)
 		{
@@ -310,18 +403,49 @@ namespace Clio.Workspaces
 			{
 				string destinationPackagePath = Path.Combine(packagesDestinationRoot, packageName);
 				_logger.WriteInfo($"Copying NetCore package {packageName}");
+				
+				if (Program.IsDebugMode)
+				{
+					_logger.WriteInfo($"[DEBUG]   {packageName}: {packageFolder} -> {destinationPackagePath}");
+				}
+
 				_fileSystem.CreateDirectoryIfNotExists(destinationPackagePath);
 				CopyDirectory(packageFolder, destinationPackagePath);
+				copiedPackages++;
 			}
+			else
+			{
+				skippedPackages++;
+				if (Program.IsDebugMode)
+				{
+					_logger.WriteInfo($"[DEBUG]   Skipped {packageName} (no Files/bin folder)");
+				}
+			}
+		}
+
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] NetCore packages summary: Copied={copiedPackages}, Skipped={skippedPackages}");
 		}
 	}		private void CopyAllFiles(string sourcePath, string destinationPath)
 		{
 			var files = _fileSystem.GetFiles(sourcePath);
+			
+			if (Program.IsDebugMode)
+			{
+				_logger.WriteInfo($"[DEBUG]   CopyAllFiles: {files.Length} files from {sourcePath}");
+			}
+
 			foreach (string file in files)
 			{
 				string fileName = Path.GetFileName(file);
 				string destFile = Path.Combine(destinationPath, fileName);
 				_fileSystem.CopyFile(file, destFile, true);
+				
+				if (Program.IsDebugMode)
+				{
+					_logger.WriteInfo($"[DEBUG]     {fileName}");
+				}
 			}
 		}
 
@@ -333,6 +457,11 @@ namespace Clio.Workspaces
 				string destFile = Path.Combine(destinationPath, fileName);
 				_fileSystem.CopyFile(sourceFile, destFile, true);
 				_logger.WriteInfo($"Copied {fileName}");
+				
+				if (Program.IsDebugMode)
+				{
+					_logger.WriteInfo($"[DEBUG]   {sourceFile} -> {destFile}");
+				}
 			}
 			else
 			{
@@ -367,31 +496,40 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		public void DownloadFromZip(string zipFilePath)
+	public void DownloadFromZip(string zipFilePath)
+	{
+		zipFilePath.CheckArgumentNullOrWhiteSpace(nameof(zipFilePath));
+
+		if (Program.IsDebugMode)
 		{
-			zipFilePath.CheckArgumentNullOrWhiteSpace(nameof(zipFilePath));
+			_logger.WriteInfo($"[DEBUG] DownloadFromZip started: ZipFile={zipFilePath}");
+			_logger.WriteInfo($"[DEBUG]   Workspace root: {_workspacePathBuilder.RootPath}");
+		}
 
-			if (!_fileSystem.ExistsFile(zipFilePath))
+		if (!_fileSystem.ExistsFile(zipFilePath))
+		{
+			throw new FileNotFoundException($"Zip file not found: {zipFilePath}");
+		}
+
+		if (!_workspacePathBuilder.IsWorkspace)
+		{
+			throw new InvalidOperationException("Current directory is not a workspace. Please run this command from a workspace directory.");
+		}
+
+		_logger.WriteInfo($"Extracting Creatio from {zipFilePath}");
+
+		_workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
+		{
+			try
 			{
-				throw new FileNotFoundException($"Zip file not found: {zipFilePath}");
-			}
-
-			if (!_workspacePathBuilder.IsWorkspace)
-			{
-				throw new InvalidOperationException("Current directory is not a workspace. Please run this command from a workspace directory.");
-			}
-
-			_logger.WriteInfo($"Extracting Creatio from {zipFilePath}");
-
-			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory =>
-			{
-				try
+				if (Program.IsDebugMode)
 				{
-					// Extract zip to temp directory
-					_compressionUtilities.Unzip(zipFilePath, tempDirectory);
-					_logger.WriteInfo($"Extracted to temporary directory: {tempDirectory}");
+					_logger.WriteInfo($"[DEBUG]   Temporary directory created: {tempDirectory}");
+				}
 
-					// Detect Creatio type and download configuration
+				// Extract zip to temp directory
+				_compressionUtilities.Unzip(zipFilePath, tempDirectory);
+				_logger.WriteInfo($"Extracted to temporary directory: {tempDirectory}");					// Detect Creatio type and download configuration
 					if (IsNetFrameworkCreatio(tempDirectory))
 					{
 						DownloadNetFrameworkConfiguration(tempDirectory);

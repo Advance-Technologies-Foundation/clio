@@ -937,6 +937,39 @@ clio dconf --build C:\path\to\creatio.zip
 - Quick setup: Initialize workspace from installation package
 - CI/CD: Prepare build environments from release packages
 
+### Debug Mode
+
+Add the `--debug` flag to see detailed information about file operations:
+
+```bash
+clio dconf --build C:\path\to\creatio.zip --debug
+```
+
+**Debug output includes:**
+- ZIP file extraction paths and workspace locations
+- Numbered folder detection and selection (e.g., selecting latest from conf/bin/1/, conf/bin/2/, etc.)
+- Each file being copied with full source and destination paths
+- Package filtering decisions (which packages are copied and which are skipped)
+- Operation summaries (e.g., "Copied 45 packages, Skipped 12 packages")
+- Root assembly files (DLL/PDB) being copied
+- Directory structure creation
+
+**Example debug output:**
+```
+[DEBUG] Starting extraction from ZIP: C:\downloads\creatio.zip
+[DEBUG] Workspace root: C:\workspace
+[DEBUG] Temp directory: C:\Users\user\AppData\Local\Temp\xyz
+[DEBUG] Found numbered folders in conf/bin: 1, 2, 3, 4 (Total: 4)
+[DEBUG] Selected latest folder: 4
+[DEBUG] Copying file: tempPath\Terrasoft.Core.dll -> workspace\.application\net-framework\core-bin\Terrasoft.Core.dll
+[DEBUG] Packages: Source=tempPath\Terrasoft.WebApp\Packages, Destination=workspace\.application\net-framework\packages
+[DEBUG] Copying package: CrtBase (has Files/Bin folder)
+[DEBUG] Skipping package: SomePackage (no Files/Bin folder)
+[DEBUG] Package copy summary: Copied 45 packages, Skipped 12 packages
+```
+
+This helps troubleshoot file path issues and understand the extraction process.
+
 Aliases: `dconf`
 
 # Development

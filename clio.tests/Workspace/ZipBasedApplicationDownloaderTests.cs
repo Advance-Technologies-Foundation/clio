@@ -295,16 +295,15 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
 
-		// Assert
-		_mockFileSystem.Directory.Exists(Path.Combine(_workspacePathBuilderMock.PackagesFolderPath, "CustomPackage1"))
-			.Should().BeTrue(because: "Package with Files/bin should be copied");
-		_mockFileSystem.Directory.Exists(Path.Combine(_workspacePathBuilderMock.PackagesFolderPath, "CustomPackage2"))
-			.Should().BeFalse(because: "Package without Files/bin should not be copied");
-		_mockFileSystem.Directory.Exists(Path.Combine(_workspacePathBuilderMock.PackagesFolderPath, "CustomPackage3"))
-			.Should().BeTrue(because: "Package with Files/bin should be copied");
-	}
-
-	[Test]
+	// Assert
+	var netFrameworkPackages = Path.Combine(WorkspaceRoot, ".application", "net-framework", "packages");
+	_mockFileSystem.Directory.Exists(Path.Combine(netFrameworkPackages, "CustomPackage1"))
+		.Should().BeTrue(because: "Package with Files/bin should be copied");
+	_mockFileSystem.Directory.Exists(Path.Combine(netFrameworkPackages, "CustomPackage2"))
+		.Should().BeFalse(because: "Package without Files/bin should not be copied");
+	_mockFileSystem.Directory.Exists(Path.Combine(netFrameworkPackages, "CustomPackage3"))
+		.Should().BeTrue(because: "Package with Files/bin should be copied");
+}	[Test]
 	[Description("Should log warning when Terrasoft.WebApp/bin folder is missing")]
 	public void DownloadFromZip_LogsWarning_WhenBinFolderMissing(){
 		// Arrange

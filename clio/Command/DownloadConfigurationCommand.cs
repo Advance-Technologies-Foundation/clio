@@ -115,31 +115,45 @@
 		
 		#region Methods: Public
 
-		public override int Execute(DownloadConfigurationCommandOptions options) {
-			try
+	public override int Execute(DownloadConfigurationCommandOptions options) {
+		try
+		{
+			if (!string.IsNullOrWhiteSpace(options.BuildZipPath))
 			{
-				if (!string.IsNullOrWhiteSpace(options.BuildZipPath))
+				// Download from zip file
+				if (Program.IsDebugMode)
 				{
-					// Download from zip file
-					_zipBasedApplicationDownloader.DownloadFromZip(options.BuildZipPath);
+					_logger.WriteInfo($"[DEBUG] DownloadConfigurationCommand: Using ZIP mode with file={options.BuildZipPath}");
 				}
-				else
-				{
-					// Download from live environment
-					_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
-				}
-				
-				_logger.WriteLine("Done");
-				return 0;
+				_zipBasedApplicationDownloader.DownloadFromZip(options.BuildZipPath);
 			}
-			catch (Exception ex)
+			else
 			{
-				_logger.WriteError($"Error: {ex.Message}");
-				return 1;
+				// Download from live environment
+				if (Program.IsDebugMode)
+				{
+					_logger.WriteInfo($"[DEBUG] DownloadConfigurationCommand: Using environment mode");
+				}
+				_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
 			}
+			
+			_logger.WriteLine("Done");
+			return 0;
 		}
+		catch (Exception ex)
+		{
+			_logger.WriteError($"Error: {ex.Message}");
+			
+			if (Program.IsDebugMode)
+			{
+				_logger.WriteError($"[DEBUG] Stack trace: {ex.StackTrace}");
+			}
+			
+			return 1;
+		}
+	}
 
-		#endregion
+	#endregion
 
 	}
 

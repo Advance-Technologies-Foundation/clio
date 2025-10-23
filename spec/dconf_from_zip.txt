@@ -133,4 +133,97 @@ clio dconf --build /path/to/creatio-net8.zip
 
 # Стандартный режим (скачивание с environment) продолжает работать
 clio dconf -e myenv
+
+# Использование с debug режимом для детальной информации
+clio dconf --build /path/to/creatio.zip --debug
 ```
+
+=== DEBUG ЛОГИРОВАНИЕ ===
+
+✅ Добавлено: 24 октября 2025 - Реализовано детальное debug логирование
+
+Функциональность:
+- Все debug сообщения выводятся только при использовании флага --debug
+- Debug сообщения помечены префиксом [DEBUG] для легкой идентификации
+- Детальная информация о путях копирования файлов и директорий
+- Информация о количестве скопированных и пропущенных файлов
+- Список найденных numbered folders в conf/bin с выбором последнего
+- Полная трассировка стека при ошибках в debug режиме
+
+Обновленные файлы:
+
+1. clio/Command/DownloadConfigurationCommand.cs
+   - Добавлено логирование режима работы (ZIP или environment)
+   - Добавлен вывод полного stack trace при ошибках в debug режиме
+   - Проверка Program.IsDebugMode для условного вывода
+
+2. clio/Workspace/ZipBasedApplicationDownloader.cs
+   Добавлено debug логирование во все key методы:
+   
+   * DownloadFromZip() - основной метод:
+     - Входные параметры: ZIP file path, Workspace root
+     - Созданная временная директория
+   
+   * NetFramework методы:
+     - CopyCoreBinFiles(): source/destination paths
+     - CopyLibFiles(): source/destination paths  
+     - CopyConfigurationBinFiles(): conf/bin path, найденные numbered folders, выбранный последний
+     - CopyPackages(): source/destination, списки скопированных и пропущенных пакетов
+   
+   * NET8 (NetCore) методы:
+     - CopyRootAssemblies(): source/destination, каждый скопированный DLL/PDB файл
+     - CopyNetCoreConfigurationBinFiles(): conf/bin path, найденные folders, выбранный последний
+     - CopyNetCorePackages(): source/destination, скопированные и пропущенные пакеты
+   
+   * Utility методы:
+     - CopyAllFiles(): количество файлов и список каждого
+     - CopyFileIfExists(): source -> destination paths для каждого файла
+
+Debug Output Example (NetFramework):
+```
+[DEBUG] DownloadConfigurationCommand: Using ZIP mode with file=C:\creatio.zip
+[DEBUG] DownloadFromZip started: ZipFile=C:\creatio.zip
+[DEBUG]   Workspace root: C:\workspace
+[DEBUG]   Temporary directory created: C:\Temp\clio_abc123
+[DEBUG] CopyCoreBinFiles: Source=C:\Temp\clio_abc123\Terrasoft.WebApp\bin, Destination=C:\workspace\.application\net-framework\core-bin
+[DEBUG]   CopyAllFiles: 142 files from C:\Temp\clio_abc123\Terrasoft.WebApp\bin
+[DEBUG]     Terrasoft.Core.dll
+[DEBUG]     Terrasoft.Common.dll
+...
+[DEBUG] CopyLibFiles: Source=C:\Temp\clio_abc123\Terrasoft.WebApp\Terrasoft.Configuration\Lib, Destination=C:\workspace\.application\net-framework\bin
+[DEBUG] CopyConfigurationBinFiles: ConfBinPath=C:\Temp\clio_abc123\Terrasoft.WebApp\conf\bin
+[DEBUG]   Found 3 numbered folders: 3, 2, 1
+[DEBUG]   Selected latest folder: 3, Destination=C:\workspace\.application\net-framework\bin
+[DEBUG] CopyPackages: Source=C:\Temp\clio_abc123\Terrasoft.WebApp\Terrasoft.Configuration\Pkg
+[DEBUG]   Destination: C:\workspace\.application\net-framework\packages
+[DEBUG]   CustomPackage1: ...\CustomPackage1 -> C:\workspace\.application\net-framework\packages\CustomPackage1
+[DEBUG]   Skipped CustomPackage2 (no Files/bin folder)
+[DEBUG] NetFramework packages summary: Copied=15, Skipped=3
+```
+
+Debug Output Example (NET8):
+```
+[DEBUG] DownloadConfigurationCommand: Using ZIP mode with file=/path/to/creatio.zip
+[DEBUG] DownloadFromZip started: ZipFile=/path/to/creatio.zip
+[DEBUG]   Workspace root: /workspace
+[DEBUG]   Temporary directory created: /tmp/clio_xyz789
+[DEBUG] CopyRootAssemblies: Source=/tmp/clio_xyz789, Destination=/workspace/.application/net-core/core-bin
+[DEBUG]   Copied: Terrasoft.Core.dll -> /workspace/.application/net-core/core-bin/Terrasoft.Core.dll
+[DEBUG]   Copied: Terrasoft.Core.pdb -> /workspace/.application/net-core/core-bin/Terrasoft.Core.pdb
+[DEBUG]   Copied: Terrasoft.Common.dll -> /workspace/.application/net-core/core-bin/Terrasoft.Common.dll
+...
+[DEBUG] CopyNetCoreConfigurationBinFiles: ConfBinPath=/tmp/clio_xyz789/conf/bin, Destination=/workspace/.application/net-core/bin
+[DEBUG]   Found 3 numbered folders: 3, 2, 1
+[DEBUG]   Selected latest folder: 3
+[DEBUG] CopyNetCorePackages: Source=/tmp/clio_xyz789/Terrasoft.Configuration/Pkg
+[DEBUG]   Destination: /workspace/.application/net-core/packages
+[DEBUG]   NetCorePackage1: /tmp/clio_xyz789/Terrasoft.Configuration/Pkg/NetCorePackage1 -> /workspace/.application/net-core/packages/NetCorePackage1
+[DEBUG]   Skipped NetCorePackage2 (no Files/bin folder)
+[DEBUG] NetCore packages summary: Copied=12, Skipped=2
+```
+
+Использование Debug Mode:
+- Запуск: `clio dconf --build path/to/file.zip --debug`
+- Механизм: глобальный флаг Program.IsDebugMode устанавливается при наличии --debug в args
+- Производительность: минимальное влияние (проверка if перед каждым debug логом)
+- Все debug логи на английском языке согласно code style проекта
