@@ -4,6 +4,7 @@ using System.IO.Abstractions.TestingHelpers;
 using Autofac;
 using Clio.Common;
 using Clio.Tests.Command;
+using Clio.Workspace;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;

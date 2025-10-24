@@ -1352,17 +1352,25 @@ Aliases: `show-files`, `files`
 
 ## listen
 
-To subscribe to a WebSocket and get real-time logs from a Creatio environment, use the following command:
+Subscribe to Creatio telemetry websocket stream and optionally persist logs to a file.
 
 ```bash
-clio listen -e <ENVIRONMENT_NAME> --loglevel <LOG_LEVEL> --logPattern <PATTERN> --FileName <FILE_PATH>
+clio listen --loglevel Debug --logPattern ExceptNoisyLoggers
+clio listen --FileName logs.txt --Silent true
 ```
 
 Options:
-- `--loglevel` (optional, default: "All"): Log level (ALL, Debug, Error, Fatal, Info, Trace, Warn)
-- `--logPattern` (optional): Log pattern (i.e. ExceptNoisyLoggers)
-- `--FileName` (optional): File path to save logs into
-- `--Silent` (optional, default: false): Disable messages in console
+- `--loglevel` (optional, default: `All`): Log level filter (ALL, Debug, Error, Fatal, Info, Trace, Warn).
+- `--logPattern` (optional): Logger pattern (e.g. `ExceptNoisyLoggers`).
+- `--FileName` (optional): Target file path to append received telemetry messages. If omitted, messages are not written to file.
+- `--Silent` (optional, default: `false`): Suppress console output of telemetry messages while still writing to file if `--FileName` provided.
+
+Behavior:
+- Opens a websocket connection to Creatio and starts telemetry broadcast on execution.
+- Sends a start broadcast request with JSON payload containing `logLevelStr`, `bufferSize`, and `loggerPattern` (camelCase).
+- Stops telemetry broadcast when a key is pressed.
+- Writes each telemetry message line-by-line (prefixed with a newline) to the specified file if `--FileName` is provided.
+- Console output is suppressed when `--Silent` is true.
 
 # Using for CI/CD systems
 
@@ -1674,30 +1682,33 @@ clio restore-db --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> --backup
 You can register db-servers in clio config file (`appsetting.json`) see example below
 
 ```json
-  "dbConnectionStringKeys" : {
+{
+  "dbConnectionStringKeys": {
     "k8-mssql": {
-        "uri": "mssql://username:password@127.0.0.1:1433",
-        "workingFolder" : "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
-      }
+      "uri": "mssql://username:password@127.0.0.1:1433",
+      "workingFolder": "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
+    }
   }
+}
 ```
 To link environment with a db server use `DbServerKey` property in environment settings.
 You can also specify `DbName` and `BackupFilePath` properties to simplify command.
 ```json
+{
   "Environments": {
     "apollo-bundle-framework": {
-      ... OTHER PROPERTIES ...
-	  "DbServerKey": "k8-mssql",
-	  "DbName": "mydb10",
-	  "BackupFilePath": "D:\\Projects\\CreatioProductBuild\\8.1.2.2482_Studio_Softkey_MSSQL_ENU\\db\\BPMonline812Studio.bak"
+      "DbServerKey": "k8-mssql",
+      "DbName": "mydb10",
+      "BackupFilePath": "D:\\Projects\\CreatioProductBuild\\8.1.2.2482_Studio_Softkey_MSSQL_ENU\\db\\BPMonline812Studio.bak"
     }
   },
-  "dbConnectionStringKeys" : {
+  "dbConnectionStringKeys": {
     "k8-mssql": {
-		"uri": "mssql://username:password@127.0.0.1:1433",
-		"workingFolder" : "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
-	  }
+      "uri": "mssql://username:password@127.0.0.1:1433",
+      "workingFolder": "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
+    }
   }
+}
 ```
 
 ```bash
@@ -1771,3 +1782,24 @@ The generated solution file will be located in the `.solution` folder and named 
 
 Learn how to create and run backend unit tests for Creatio development, including usage of the `new-test-project` command and .slnx solution files:
 - [Backend Unit Test Guide](../docs/BackEndUnitTest.md)
+
+## ver
+Reference section for version command. See earlier examples in Help and examples.
+
+## extract-package
+Alias heading for extract-pkg-zip. Use extract-pkg-zip command section above.
+
+## set-application-icon
+Alias heading for set-app-icon. Refer to set-app-icon for usage.
+
+## lic
+Alias heading for Upload licenses. See Upload licenses section.
+
+## set-fsm-config
+Alias heading for Set File-System Mode configuration. See that section for details.
+
+## callservice
+Alias heading for call-Service command. Refer to call-Service for usage examples.
+
+## create-manifest
+Alias heading: creating a manifest is performed by save-state command; see save-state section.

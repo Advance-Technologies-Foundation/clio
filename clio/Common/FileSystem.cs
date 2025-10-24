@@ -368,6 +368,15 @@ public class FileSystem : IFileSystem
 		return GetFileHash(algorithm, first) == GetFileHash(algorithm, second);
 	}
 
+	public void AppendTextToFile(string filePath, string contents, Encoding encoding = null) {
+		if (encoding == null) {
+			_msFileSystem.File.AppendAllText(filePath, contents, Utf8NoBom);
+		}
+		else {
+			_msFileSystem.File.AppendAllText(filePath, contents, encoding);
+		}
+	}
+	
 	public void WriteAllTextToFile(string filePath, string contents, Encoding encoding) {
 		_msFileSystem.File.WriteAllText(filePath, contents, encoding);
 	}

@@ -35,14 +35,14 @@ namespace Clio.Command
 				foreach(var app_hub in appHubs) {
 					if(app_hub.Name == app.AppHubName) {
 						var zipFileName = app.Branch switch {
-							_ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(Workspace.GetSanitizeFileNameFromString(app.Name), app.Version, Workspace.GetSanitizeFileNameFromString(app.Branch)),
-							_ => app_hub.GetAppZipFileName(Workspace.GetSanitizeFileNameFromString(app.Name), app.Version)
+							_ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(app.Name), app.Version, Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(app.Branch)),
+							_ => app_hub.GetAppZipFileName(Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(app.Name), app.Version)
 						};
 						if (!fileSystem.File.Exists(app.ZipFileName) && app.Aliases != null) {
 							foreach(var alias in app.Aliases) {
 								var aliasFileName = app.Branch switch {
-									_ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(Workspace.GetSanitizeFileNameFromString(alias), app.Version, Workspace.GetSanitizeFileNameFromString(app.Branch)),
-									_ => app_hub.GetAppZipFileName(Workspace.GetSanitizeFileNameFromString(alias), app.Version)
+									_ when app.Branch is not null => app_hub.GetAppZipFileNameWithBranch(Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(alias), app.Version, Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(app.Branch)),
+									_ => app_hub.GetAppZipFileName(Clio.Workspaces.Workspace.GetSanitizeFileNameFromString(alias), app.Version)
 								};
 								if (fileSystem.File.Exists(aliasFileName)) {
 									zipFileName = aliasFileName;

@@ -20,6 +20,7 @@ using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.UserEnvironment;
 using Clio.Utilities;
+using Clio.Workspace;
 using Clio.Workspaces;
 using Clio.YAML;
 using Creatio.Client;

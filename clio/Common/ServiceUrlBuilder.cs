@@ -63,7 +63,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		/// Gets the schema of the process
 		/// </summary>
-		ProcessSchemaRequest = 18
+		ProcessSchemaRequest = 18,
+		StartLogBroadcast = 19,
+		StopLogBroadcast = 20
 
 	}
 
@@ -96,6 +98,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetSysSettingValueByCode, "/rest/CreatioApiGateway/GetSysSettingValueByCode"},
 		{KnownRoute.SendEventToUi, "/rest/CreatioApiGateway/SendEventToUI"},
 		{KnownRoute.ProcessSchemaRequest, "DataService/json/SyncReply/ProcessSchemaRequest"},
+		{KnownRoute.StartLogBroadcast, "/rest/ATFLogService/StartLogBroadcast"},
+		{KnownRoute.StopLogBroadcast, "/rest/ATFLogService/ResetConfiguration"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

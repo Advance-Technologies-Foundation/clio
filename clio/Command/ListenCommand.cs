@@ -1,5 +1,6 @@
 using System;
 using System.Net.WebSockets;
+using System.Text;
 using System.Threading;
 using Clio.Common;
 using CommandLine;
@@ -33,26 +34,27 @@ public class ListenOptions : EnvironmentOptions
 
 #region Class: ListenCommand
 
-public class ListenCommand : Command<ListenOptions>
+public class ListenCommand : Command<ListenOptions>, IDisposable
 {
 	
 	private readonly IApplicationClient _applicationClient;
 	private readonly ILogger _logger;
-	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IFileSystem _fileSystem;
-	private const string StartLogBroadcast = "/rest/ATFLogService/StartLogBroadcast";
-	private const string StopLogBroadcast = "/rest/ATFLogService/ResetConfiguration";
-	private string LogFilePath = string.Empty;
-	private bool Silent;
-	private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
-	
+	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IConsole _console;
+	private string _logFilePath = string.Empty;
+	private bool _silent;
+	private readonly CancellationTokenSource _cancellationTokenSource = new ();
+	private bool _disposed;
+	private static readonly JsonSerializerOptions SerializerOptions = new (){PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
 	#region Constructors: Public
 	
-	public ListenCommand(IApplicationClient applicationClient,ILogger logger,EnvironmentSettings environmentSettings, IFileSystem fileSystem){
+	public ListenCommand(IApplicationClient applicationClient,ILogger logger, IFileSystem fileSystem, IServiceUrlBuilder serviceUrlBuilder, IConsole console = null){
 		_applicationClient = applicationClient;
 		_logger = logger;
-		_environmentSettings = environmentSettings;
 		_fileSystem = fileSystem;
+		_serviceUrlBuilder = serviceUrlBuilder;
+		_console = console ?? new SystemConsoleAdapter();
 		_applicationClient.ConnectionStateChanged += OnConnectionStateChanged;
 		_applicationClient.MessageReceived += OnMessageReceived;
 	}
@@ -62,39 +64,34 @@ public class ListenCommand : Command<ListenOptions>
 
 	public override int Execute(ListenOptions options){
 		CancellationToken token = _cancellationTokenSource.Token;
-		LogFilePath = options.FileName;
-		Silent = options.Silent;
+		_logFilePath = options.FileName;
+		_silent = options.Silent;
 		_applicationClient.Listen(token);
 		StartLogger(options);
-		Console.ReadKey();
+		_console.ReadKey();
 		_cancellationTokenSource.Cancel();
 		StopLogger();
 		return 0;
 	}
 	
 	private void StartLogger(ListenOptions options){
-		string rootPath = _environmentSettings.IsNetCore ? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
-		string requestUrl = rootPath+StartLogBroadcast;
+		string requestUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.StartLogBroadcast);
 		var payload = new {
 			logLevelStr = options.LogLevel,
 			bufferSize = 1,
 			loggerPattern= options.LogPattern
 		};
-		JsonSerializerOptions serializerOptions = new (){PropertyNamingPolicy = JsonNamingPolicy.CamelCase};
-		string payloadString = JsonSerializer.Serialize(payload,serializerOptions);
+		string payloadString = JsonSerializer.Serialize(payload, SerializerOptions);
 		_applicationClient.ExecutePostRequest(requestUrl,payloadString);
 	}
 	
 	private void StopLogger(){
-		string rootPath = _environmentSettings.IsNetCore ? _environmentSettings.Uri : _environmentSettings.Uri + @"/0";
-		string requestUrl = rootPath+StopLogBroadcast;
+		string requestUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.StopLogBroadcast);
 		_applicationClient.ExecutePostRequest(requestUrl,string.Empty);
-		
 	}
 
 	private void OnMessageReceived(object sender, WsMessage message){
-		switch (message.Header.Sender)
-		{
+		switch (message.Header.Sender) {
 			case "TelemetryService":
 				HandleTelemetryServiceMessages(message);
 				break;
@@ -105,16 +102,35 @@ public class ListenCommand : Command<ListenOptions>
 	}
 	
 	private void HandleTelemetryServiceMessages(WsMessage message){
-		if(!Silent) {
+		if(!_silent) {
 			_logger.WriteLine(message.Body);
 		}
-		if(!LogFilePath.IsNullOrEmpty()) {
-			System.IO.File.AppendAllText(LogFilePath, Environment.NewLine+message.Body);
+		if(!_logFilePath.IsNullOrEmpty()) {
+			_fileSystem.AppendTextToFile(_logFilePath, Environment.NewLine+message.Body, Encoding.UTF8);
 		}
 	}
 	
 	private void OnConnectionStateChanged(object sender, WebSocketState state){
 		_logger.WriteLine($"Connection state changed to {state}");
+	}
+
+	public void Dispose(){
+		Dispose(true);
+		GC.SuppressFinalize(this);
+	}
+
+	protected virtual void Dispose(bool disposing){
+		if (_disposed){
+			return;
+		}
+
+		if (disposing){
+			_applicationClient.ConnectionStateChanged -= OnConnectionStateChanged;
+			_applicationClient.MessageReceived -= OnMessageReceived;
+			_cancellationTokenSource?.Dispose();
+		}
+
+		_disposed = true;
 	}
 	
 	
@@ -123,15 +139,3 @@ public class ListenCommand : Command<ListenOptions>
 }
 
 #endregion
-
-public record TelemetryMessage(LogPortion[] logPortion, int cpu, int ramMb);
-
-public record LogPortion(
-    string date,
-    string level,
-    object thread,
-    string logger,
-    string message,
-    object stackTrace
-);
-

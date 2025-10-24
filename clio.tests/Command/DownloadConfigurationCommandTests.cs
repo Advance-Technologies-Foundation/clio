@@ -4,6 +4,7 @@ using System.Linq;
 using Autofac;
 using Clio.Command;
 using Clio.Common;
+using Clio.Workspace;
 using Clio.Workspaces;
 using CommandLine;
 using FluentAssertions;

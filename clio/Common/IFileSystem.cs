@@ -32,7 +32,15 @@ namespace Clio.Common
 
 		public long GetFileSize(string filePath);
 		long GetFileSize(IFileInfo fileInfo);
-		
+
+
+		/// <summary>
+		/// Appends the specified text to the end of the file at the given path using the provided encoding.
+		/// </summary>
+		/// <param name="filePath">The path of the file to append text to.</param>
+		/// <param name="contents">The text content to append.</param>
+		/// <param name="encoding">The encoding to use when writing the text. Use Utf8NoBom as default</param>
+		void AppendTextToFile(string filePath, string contents, Encoding encoding = null);
 		
 		/// <summary>
 		/// Creates a symbolic link at the specified path that points to the target path.

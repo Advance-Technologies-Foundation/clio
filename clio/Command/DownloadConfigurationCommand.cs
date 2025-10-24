@@ -1,4 +1,6 @@
-﻿namespace Clio.Command
+﻿using Clio.Workspace;
+
+namespace Clio.Command
 {
 	using System;
 	using System.IO.Abstractions;
@@ -13,11 +15,9 @@
 
 	public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<DownloadConfigurationCommandOptions>
 	{
-		private readonly System.IO.Abstractions.IFileSystem _fileSystem;
-
 		public DownloadConfigurationCommandOptionsValidator(System.IO.Abstractions.IFileSystem fileSystem)
 		{
-			_fileSystem = fileSystem;
+			System.IO.Abstractions.IFileSystem fileSystem1 = fileSystem;
 			
 			RuleFor(o => o.BuildZipPath)
 				.Custom((value, context) =>
@@ -28,9 +28,9 @@
 						return;
 					}
 
-					// Check if path exists (either file or directory)
-					bool isFile = _fileSystem.File.Exists(value);
-					bool isDirectory = _fileSystem.Directory.Exists(value);
+					// Check if the path exists (either file or directory)
+					bool isFile = fileSystem1.File.Exists(value);
+					bool isDirectory = fileSystem1.Directory.Exists(value);
 
 					if (!isFile && !isDirectory)
 					{
@@ -47,7 +47,7 @@
 					// If it's a file, check if it has .zip extension
 					if (isFile)
 					{
-						string extension = _fileSystem.Path.GetExtension(value);
+						string extension = fileSystem1.Path.GetExtension(value);
 						if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
 						{
 							context.AddFailure(new ValidationFailure
@@ -60,8 +60,8 @@
 							return;
 						}
 
-						// Check if file is not empty
-						IFileInfo fileInfo = _fileSystem.FileInfo.New(value);
+						// Check if the file is not empty
+						IFileInfo fileInfo = fileSystem1.FileInfo.New(value);
 						if (fileInfo.Length == 0)
 						{
 							context.AddFailure(new ValidationFailure
@@ -74,9 +74,8 @@
 						}
 					}
 					// If it's a directory, check if it's not empty
-					else if (isDirectory)
-					{
-						if (!_fileSystem.Directory.EnumerateFileSystemEntries(value).Any())
+					else {
+						if (!fileSystem1.Directory.EnumerateFileSystemEntries(value).Any())
 						{
 							context.AddFailure(new ValidationFailure
 							{
@@ -144,7 +143,7 @@
 		{
 			if (!string.IsNullOrWhiteSpace(options.BuildZipPath))
 			{
-				// Download from zip file or directory (auto-detected)
+				// Download from the zip file or directory (auto-detected)
 				if (Program.IsDebugMode)
 				{
 					_logger.WriteInfo($"[DEBUG] DownloadConfigurationCommand: Using build mode with path={options.BuildZipPath}");
@@ -153,7 +152,7 @@
 			}
 			else
 			{
-				// Download from live environment
+				// Download from the live environment
 				if (Program.IsDebugMode)
 				{
 					_logger.WriteInfo($"[DEBUG] DownloadConfigurationCommand: Using environment mode");
