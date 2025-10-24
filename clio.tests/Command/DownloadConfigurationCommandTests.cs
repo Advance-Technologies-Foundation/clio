@@ -14,7 +14,7 @@ using SysIoAbstractions = System.IO.Abstractions;
 
 namespace Clio.Tests.Command;
 
-[TestFixture(Category = "Unit")]
+[TestFixture]
 [NUnit.Framework.Description("Tests for DownloadConfigurationCommand and DownloadConfigurationCommandOptionsValidator")]
 public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfigurationCommandOptions>
 {
@@ -50,12 +50,12 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	#region Tests: DownloadConfigurationCommandOptionsValidator - Basic Validation
 
 	[Test]
-	[NUnit.Framework.Description("Should pass validation when BuildZipPath is null")]
+	[Description("Should pass validation when BuildZipPath is null")]
 	public void Validator_PassesValidation_WhenBuildZipPathIsNull()
 	{
 		// Arrange
 		var options = new DownloadConfigurationCommandOptions { BuildZipPath = null };
-		var validator = new DownloadConfigurationCommandOptionsValidator();
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
 
 		// Act
 		ValidationResult result = validator.Validate(options);
@@ -65,12 +65,12 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	}
 
 	[Test]
-	[NUnit.Framework.Description("Should pass validation when BuildZipPath is empty string")]
+	[Description("Should pass validation when BuildZipPath is empty string")]
 	public void Validator_PassesValidation_WhenBuildZipPathIsEmptyString()
 	{
 		// Arrange
 		var options = new DownloadConfigurationCommandOptions { BuildZipPath = string.Empty };
-		var validator = new DownloadConfigurationCommandOptionsValidator();
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
 
 		// Act
 		ValidationResult result = validator.Validate(options);
@@ -80,12 +80,12 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	}
 
 	[Test]
-	[NUnit.Framework.Description("Should fail validation when ZIP file does not exist")]
+	[Description("Should fail validation when ZIP file does not exist")]
 	public void Validator_FailsValidation_WhenZipFileNotFound()
 	{
 		// Arrange
-		var options = new DownloadConfigurationCommandOptions { BuildZipPath = @"C:\nonexistent\file_12345.zip" };
-		var validator = new DownloadConfigurationCommandOptionsValidator();
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = "/nonexistent/file_12345.zip" };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
 
 		// Act
 		ValidationResult result = validator.Validate(options);
@@ -93,6 +93,143 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		// Assert
 		result.IsValid.Should().BeFalse(because: "Non-existent file should fail validation");
 		result.Errors.Should().Contain(e => e.ErrorCode == "FILE001", because: "Should have FILE001 error for missing file");
+	}
+
+	[Test]
+	[Description("Should fail validation when file exists but does not have .zip extension")]
+	public void Validator_FailsValidation_WhenFileExistsButNotZipExtension()
+	{
+		// Arrange
+		string testFilePath = "/tmp/testfile.txt";
+		_mockFileSystem.AddFile(testFilePath, new MockFileData("test content"));
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = testFilePath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "File without .zip extension should fail validation");
+		result.Errors.Should().Contain(e => e.ErrorCode == "FILE002", 
+			because: "Should have FILE002 error for non-zip file extension");
+		result.Errors.Should().Contain(e => e.ErrorMessage.Contains(".txt"), 
+			because: "Error message should mention the actual extension");
+	}
+
+	[Test]
+	[Description("Should accept validation when file has .ZIP extension in uppercase")]
+	public void Validator_AcceptsValidation_WhenFileHasUppercaseZipExtension()
+	{
+		// Arrange
+		string testFilePath = "/tmp/testfile.ZIP";
+		_mockFileSystem.AddFile(testFilePath, new MockFileData("test content"));
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = testFilePath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: ".ZIP extension should be accepted (case-insensitive comparison)");
+	}
+
+	[Test]
+	[Description("Should fail validation when file exists with no extension")]
+	public void Validator_FailsValidation_WhenFileExistsWithNoExtension()
+	{
+		// Arrange
+		string testFilePath = "/tmp/testfile";
+		_mockFileSystem.AddFile(testFilePath, new MockFileData("test content"));
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = testFilePath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "File without any extension should fail validation");
+		result.Errors.Should().Contain(e => e.ErrorCode == "FILE002", 
+			because: "Should have FILE002 error for missing extension");
+	}
+
+	[Test]
+	[Description("Should pass validation when file has .zip extension and is not empty")]
+	public void Validator_PassesValidation_WhenValidZipFileProvided()
+	{
+		// Arrange
+		string testFilePath = "/tmp/testfile.zip";
+		_mockFileSystem.AddFile(testFilePath, new MockFileData("test zip content"));
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = testFilePath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "Valid .zip file with content should pass validation");
+	}
+
+	[Test]
+	[Description("Should fail validation when .zip file exists but is empty")]
+	public void Validator_FailsValidation_WhenZipFileIsEmpty()
+	{
+		// Arrange
+		string testFilePath = "/tmp/testfile.zip";
+		_mockFileSystem.AddFile(testFilePath, new MockFileData(string.Empty));
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = testFilePath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "Empty .zip file should fail validation");
+		result.Errors.Should().Contain(e => e.ErrorCode == "FILE003", 
+			because: "Should have FILE003 error for empty zip file");
+	}
+
+	[Test]
+	[Description("Should pass validation when directory is provided and is not empty")]
+	public void Validator_PassesValidation_WhenValidDirectoryProvided()
+	{
+		// Arrange
+		string directoryPath = "/tmp/extracted/creatio";
+		_mockFileSystem.AddDirectory(directoryPath);
+		_mockFileSystem.AddFile($"{directoryPath}/file.txt", new MockFileData("content"));
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = directoryPath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "Non-empty directory should pass validation");
+	}
+
+	[Test]
+	[Description("Should fail validation when directory is provided but is empty")]
+	public void Validator_FailsValidation_WhenDirectoryIsEmpty()
+	{
+		// Arrange
+		string directoryPath = "/tmp/extracted/empty";
+		_mockFileSystem.AddDirectory(directoryPath);
+		
+		var options = new DownloadConfigurationCommandOptions { BuildZipPath = directoryPath };
+		var validator = new DownloadConfigurationCommandOptionsValidator(_mockFileSystem);
+
+		// Act
+		ValidationResult result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "Empty directory should fail validation");
+		result.Errors.Should().Contain(e => e.ErrorCode == "FILE004", 
+			because: "Should have FILE004 error for empty directory");
 	}
 
 	#endregion
@@ -128,7 +265,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	public void Execute_CallsDownloadFromPath_WhenBuildZipPathProvidedWithZipFile()
 	{
 		// Arrange
-		var zipPath = @"C:\creatio.zip";
+		var zipPath = "/tmp/creatio.zip";
 		_mockFileSystem.AddFile(zipPath, new MockFileData("PK\x03\x04"));
 		var options = new DownloadConfigurationCommandOptions 
 		{ 
@@ -152,9 +289,9 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	public void Execute_CallsDownloadFromPath_WhenBuildZipPathProvidedWithDirectory()
 	{
 		// Arrange
-		var directoryPath = @"C:\extracted\creatio";
+		var directoryPath = "/tmp/extracted/creatio";
 		_mockFileSystem.AddDirectory(directoryPath);
-		_mockFileSystem.AddFile($@"{directoryPath}\file.txt", new MockFileData("content"));
+		_mockFileSystem.AddFile($"{directoryPath}/file.txt", new MockFileData("content"));
 		var options = new DownloadConfigurationCommandOptions 
 		{ 
 			BuildZipPath = directoryPath
@@ -231,7 +368,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	{
 		// Arrange
 		Program.IsDebugMode = true;
-		var zipPath = @"C:\creatio.zip";
+		var zipPath = "/tmp/creatio.zip";
 		_mockFileSystem.AddFile(zipPath, new MockFileData("PK\x03\x04"));
 		var options = new DownloadConfigurationCommandOptions 
 		{ 
@@ -392,7 +529,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	public void Execute_HandlesMixedPathSeparators_InZipPath()
 	{
 		// Arrange
-		var zipPath = @"C:/extracted\creatio.zip";
+		var zipPath = "/tmp/extracted/creatio.zip";
 		_mockFileSystem.AddFile(zipPath, new MockFileData("PK\x03\x04"));
 		var options = new DownloadConfigurationCommandOptions 
 		{ 
@@ -405,7 +542,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		int result = command.Execute(options);
 
 		// Assert
-		result.Should().Be(0, because: "Command should handle mixed path separators");
+		result.Should().Be(0, because: "Command should handle path separators correctly");
 		_zipBasedApplicationDownloaderMock.Received(1).DownloadFromPath(zipPath);
 	}
 

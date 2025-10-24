@@ -1,10 +1,10 @@
 ﻿namespace Clio.Command
 {
 	using System;
-	using System.IO;
+	using System.IO.Abstractions;
 	using System.Linq;
-	using Clio.Common;
-	using Clio.Workspaces;
+	using Common;
+	using Workspaces;
 	using CommandLine;
 	using FluentValidation;
 	using FluentValidation.Results;
@@ -13,8 +13,12 @@
 
 	public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<DownloadConfigurationCommandOptions>
 	{
-		public DownloadConfigurationCommandOptionsValidator()
+		private readonly System.IO.Abstractions.IFileSystem _fileSystem;
+
+		public DownloadConfigurationCommandOptionsValidator(System.IO.Abstractions.IFileSystem fileSystem)
 		{
+			_fileSystem = fileSystem;
+			
 			RuleFor(o => o.BuildZipPath)
 				.Custom((value, context) =>
 				{
@@ -25,8 +29,8 @@
 					}
 
 					// Check if path exists (either file or directory)
-					bool isFile = File.Exists(value);
-					bool isDirectory = Directory.Exists(value);
+					bool isFile = _fileSystem.File.Exists(value);
+					bool isDirectory = _fileSystem.Directory.Exists(value);
 
 					if (!isFile && !isDirectory)
 					{
@@ -43,7 +47,7 @@
 					// If it's a file, check if it has .zip extension
 					if (isFile)
 					{
-						string extension = Path.GetExtension(value);
+						string extension = _fileSystem.Path.GetExtension(value);
 						if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
 						{
 							context.AddFailure(new ValidationFailure
@@ -57,7 +61,7 @@
 						}
 
 						// Check if file is not empty
-						FileInfo fileInfo = new FileInfo(value);
+						IFileInfo fileInfo = _fileSystem.FileInfo.New(value);
 						if (fileInfo.Length == 0)
 						{
 							context.AddFailure(new ValidationFailure
@@ -72,7 +76,7 @@
 					// If it's a directory, check if it's not empty
 					else if (isDirectory)
 					{
-						if (!Directory.EnumerateFileSystemEntries(value).Any())
+						if (!_fileSystem.Directory.EnumerateFileSystemEntries(value).Any())
 						{
 							context.AddFailure(new ValidationFailure
 							{
