@@ -524,4 +524,172 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 
 	#endregion
 
+	#region Tests: Directory Mode
+
+	[Test]
+	[Description("Should process already-extracted NetFramework directory without deleting it")]
+	public void DownloadFromDirectory_ProcessesNetFrameworkDirectory_WithoutDeletion(){
+		// Arrange
+		string directoryPath = @"C:\extracted\creatio";
+		SetupWorkspacePaths();
+		_workspacePathBuilderMock.IsWorkspace.Returns(true);
+		
+		CreateNetFrameworkStructure();
+		// Move extracted structure from temp to persistent directory
+		string webAppSourcePath = Path.Combine(TempDir, "Terrasoft.WebApp");
+		string webAppDestPath = Path.Combine(directoryPath, "Terrasoft.WebApp");
+		_mockFileSystem.AddDirectory(webAppDestPath);
+		
+		// Copy files from temp structure to destination
+		var binSourcePath = Path.Combine(webAppSourcePath, "bin");
+		var binDestPath = Path.Combine(webAppDestPath, "bin");
+		_mockFileSystem.AddDirectory(binDestPath);
+		_mockFileSystem.AddFile(Path.Combine(binDestPath, "Terrasoft.Core.dll"), new MockFileData("core dll content"));
+		_mockFileSystem.AddFile(Path.Combine(binDestPath, "Terrasoft.Common.dll"), new MockFileData("common dll content"));
+		
+		// Lib structure
+		var libSourcePath = Path.Combine(webAppSourcePath, "Terrasoft.Configuration", "Lib");
+		var libDestPath = Path.Combine(webAppDestPath, "Terrasoft.Configuration", "Lib");
+		_mockFileSystem.AddDirectory(libDestPath);
+		_mockFileSystem.AddFile(Path.Combine(libDestPath, "Newtonsoft.Json.dll"), new MockFileData("json dll content"));
+		
+		// Conf/bin structure
+		var confBin3Path = Path.Combine(webAppDestPath, "conf", "bin", "3");
+		_mockFileSystem.AddDirectory(confBin3Path);
+		_mockFileSystem.AddFile(Path.Combine(confBin3Path, "Terrasoft.Configuration.dll"), new MockFileData("configuration dll content"));
+		_mockFileSystem.AddFile(Path.Combine(confBin3Path, "Terrasoft.Configuration.ODataEntities.dll"), new MockFileData("odata dll content"));
+		
+		// Packages structure
+		var pkgDestPath = Path.Combine(webAppDestPath, "Terrasoft.Configuration", "Pkg", "CustomPackage1", "Files", "bin");
+		_mockFileSystem.AddDirectory(pkgDestPath);
+		_mockFileSystem.AddFile(Path.Combine(pkgDestPath, "CustomPackage1.dll"), new MockFileData("package1 dll content"));
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act
+		downloader.DownloadFromDirectory(directoryPath);
+
+		// Assert - Files should be copied
+		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.CoreBinFolderPath, "Terrasoft.Core.dll"))
+			.Should().BeTrue(because: "Core files should be copied from directory");
+		
+		// Assert - Directory should still exist (not deleted)
+		_mockFileSystem.Directory.Exists(directoryPath)
+			.Should().BeTrue(because: "Source directory should NOT be deleted when using DownloadFromDirectory");
+	}
+
+	[Test]
+	[Description("Should process already-extracted NetCore directory without deleting it")]
+	public void DownloadFromDirectory_ProcessesNetCoreDirectory_WithoutDeletion(){
+		// Arrange
+		string directoryPath = @"C:\extracted\creatio-net8";
+		SetupWorkspacePaths();
+		_workspacePathBuilderMock.IsWorkspace.Returns(true);
+		
+		// Setup NetCore structure in persistent directory
+		_mockFileSystem.AddFile(Path.Combine(directoryPath, "Terrasoft.Core.dll"), new MockFileData("core dll content"));
+		_mockFileSystem.AddFile(Path.Combine(directoryPath, "Terrasoft.Core.pdb"), new MockFileData("core pdb content"));
+		_mockFileSystem.AddFile(Path.Combine(directoryPath, "Terrasoft.Common.dll"), new MockFileData("common dll content"));
+		
+		// Lib structure
+		var libPath = Path.Combine(directoryPath, "Terrasoft.Configuration", "Lib");
+		_mockFileSystem.AddDirectory(libPath);
+		_mockFileSystem.AddFile(Path.Combine(libPath, "Newtonsoft.Json.dll"), new MockFileData("json dll content"));
+		
+		// Conf/bin structure - latest folder
+		var confBin3Path = Path.Combine(directoryPath, "conf", "bin", "3");
+		_mockFileSystem.AddDirectory(confBin3Path);
+		_mockFileSystem.AddFile(Path.Combine(confBin3Path, "Terrasoft.Configuration.dll"), new MockFileData("configuration dll content"));
+		_mockFileSystem.AddFile(Path.Combine(confBin3Path, "Terrasoft.Configuration.ODataEntities.dll"), new MockFileData("odata dll content"));
+		
+		// Packages structure
+		var pkg1Path = Path.Combine(directoryPath, "Terrasoft.Configuration", "Pkg", "NetCorePackage1", "Files", "bin");
+		_mockFileSystem.AddDirectory(pkg1Path);
+		_mockFileSystem.AddFile(Path.Combine(pkg1Path, "NetCorePackage1.dll"), new MockFileData("package1 dll content"));
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act
+		downloader.DownloadFromDirectory(directoryPath);
+
+		// Assert - NetCore files should be copied to correct net-core locations
+		var netCoreCoreBin = Path.Combine(WorkspaceRoot, ".application", "net-core", "core-bin");
+		_mockFileSystem.FileExists(Path.Combine(netCoreCoreBin, "Terrasoft.Core.dll"))
+			.Should().BeTrue(because: "Root DLLs should be copied for NetCore");
+		
+		// Assert - Directory should still exist (not deleted)
+		_mockFileSystem.Directory.Exists(directoryPath)
+			.Should().BeTrue(because: "Source directory should NOT be deleted when using DownloadFromDirectory");
+	}
+
+	[Test]
+	[Description("Should throw exception when directory does not exist")]
+	public void DownloadFromDirectory_ThrowsException_WhenDirectoryNotFound(){
+		// Arrange
+		string nonExistentPath = @"C:\does\not\exist";
+		SetupWorkspacePaths();
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act & Assert
+		Action act = () => downloader.DownloadFromDirectory(nonExistentPath);
+		act.Should().Throw<DirectoryNotFoundException>(
+			because: "Non-existent directory should cause exception")
+			.WithMessage("*not found*", 
+			because: "Error message should indicate directory was not found");
+	}
+
+	#endregion
+
+	#region Tests: Auto-Detection
+
+	[Test]
+	[Description("Should auto-detect ZIP file and call DownloadFromZip")]
+	public void DownloadFromPath_DetectsZipFile_AndProcessesAsZip(){
+		// Arrange
+		var zipFilePath = @"C:\creatio.zip";
+		SetupWorkspacePaths();
+		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
+		SetupZipFile(zipFilePath);
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act
+		downloader.DownloadFromPath(zipFilePath);
+
+		// Assert
+		_compressionUtilitiesMock.Received(1).Unzip(zipFilePath, TempDir);
+		_loggerMock.Received().WriteInfo(Arg.Is<string>(msg => msg.Contains("Detected NetFramework Creatio")));
+	}
+
+	[Test]
+	[Description("Should auto-detect directory path and call DownloadFromDirectory")]
+	public void DownloadFromPath_DetectsDirectory_AndProcessesAsDirectory(){
+		// Arrange
+		string directoryPath = @"C:\extracted\creatio";
+		SetupWorkspacePaths();
+		_workspacePathBuilderMock.IsWorkspace.Returns(true);
+		
+		// Setup simple NetFramework structure
+		var webAppPath = Path.Combine(directoryPath, "Terrasoft.WebApp");
+		_mockFileSystem.AddDirectory(webAppPath);
+		var binPath = Path.Combine(webAppPath, "bin");
+		_mockFileSystem.AddDirectory(binPath);
+		_mockFileSystem.AddFile(Path.Combine(binPath, "Terrasoft.Core.dll"), new MockFileData("core dll"));
+		
+		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+
+		// Act
+		downloader.DownloadFromPath(directoryPath);
+
+		// Assert
+		_compressionUtilitiesMock.DidNotReceive().Unzip(Arg.Any<string>(), Arg.Any<string>());
+		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.CoreBinFolderPath, "Terrasoft.Core.dll"))
+			.Should().BeTrue(because: "Directory should be processed directly without extraction");
+		_mockFileSystem.Directory.Exists(directoryPath)
+			.Should().BeTrue(because: "Source directory should remain after processing");
+	}
+
+	#endregion
+
 }

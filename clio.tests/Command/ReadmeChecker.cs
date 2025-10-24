@@ -69,11 +69,11 @@ public class ReadmeChecker
 		List<string> aliases = T.GetAttribute<VerbAttribute>().Aliases?.ToList()  ?? [];
 		aliases.Add(commandVerbName);
 		//Add Verb
-		foreach(var alias in aliases) {
+		foreach(string alias in aliases) {
 			_namesToCheck.Add(_convertCommandNameToSection(alias));
 		}
 		foreach (string anchorLine in _wikiAnchorsContent) {
-			var commandName = anchorLine.Split(':');
+			string[] commandName = anchorLine.Split(':');
 			if (commandName[0] == commandVerbName) {
 				string[] possibleSectionNames = commandName[1].Split(',');
 				foreach (string possibleSectionName in possibleSectionNames) {

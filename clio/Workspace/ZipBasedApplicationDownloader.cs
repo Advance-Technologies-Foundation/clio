@@ -15,10 +15,23 @@ namespace Clio.Workspaces
 		#region Methods: Public
 
 		/// <summary>
+		/// Downloads configuration from Creatio zip file or directory to workspace .application folder.
+		/// Automatically detects whether the path is a ZIP file or extracted directory.
+		/// </summary>
+		/// <param name="path">Path to Creatio zip file or extracted directory</param>
+		void DownloadFromPath(string path);
+
+		/// <summary>
 		/// Downloads configuration from Creatio zip file to workspace .application folder.
 		/// </summary>
 		/// <param name="zipFilePath">Path to Creatio zip file</param>
 		void DownloadFromZip(string zipFilePath);
+
+		/// <summary>
+		/// Downloads configuration from already-extracted Creatio directory to workspace .application folder.
+		/// </summary>
+		/// <param name="directoryPath">Path to extracted Creatio directory</param>
+		void DownloadFromDirectory(string directoryPath);
 
 		#endregion
 
@@ -496,6 +509,26 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
+		public void DownloadFromPath(string path)
+		{
+			path.CheckArgumentNullOrWhiteSpace(nameof(path));
+
+			bool isZipFile = Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase);
+
+			if (isZipFile)
+			{
+				DownloadFromZip(path);
+			}
+			else
+			{
+				DownloadFromDirectory(path);
+			}
+		}
+
+		#endregion
+
+		#region Methods: Public
+
 	public void DownloadFromZip(string zipFilePath)
 	{
 		zipFilePath.CheckArgumentNullOrWhiteSpace(nameof(zipFilePath));
@@ -546,8 +579,55 @@ namespace Clio.Workspaces
 				}
 			});
 
-			_logger.WriteInfo("Configuration download from zip completed successfully");
+		_logger.WriteInfo("Configuration download from zip completed successfully");
+	}
+
+	public void DownloadFromDirectory(string directoryPath)
+	{
+		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
+
+		if (Program.IsDebugMode)
+		{
+			_logger.WriteInfo($"[DEBUG] DownloadFromDirectory started: Directory={directoryPath}");
+			_logger.WriteInfo($"[DEBUG]   Workspace root: {_workspacePathBuilder.RootPath}");
 		}
+
+		if (!_fileSystem.ExistsDirectory(directoryPath))
+		{
+			throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
+		}
+
+		if (!_workspacePathBuilder.IsWorkspace)
+		{
+			throw new InvalidOperationException("Current directory is not a workspace. Please run this command from a workspace directory.");
+		}
+
+		_logger.WriteInfo($"Processing Creatio configuration from directory: {directoryPath}");
+
+		try
+		{
+			// Detect Creatio type and download configuration
+			if (IsNetFrameworkCreatio(directoryPath))
+			{
+				DownloadNetFrameworkConfiguration(directoryPath);
+			}
+			else
+			{
+				DownloadNetCoreConfiguration(directoryPath);
+			}
+
+			_logger.WriteInfo("Configuration download from directory completed successfully");
+		}
+		catch (Exception ex)
+		{
+			_logger.WriteError($"Error downloading configuration from directory: {ex.Message}");
+			if (Program.IsDebugMode)
+			{
+				_logger.WriteError($"[DEBUG] Stack trace: {ex.StackTrace}");
+			}
+			throw;
+		}
+	}
 
 		#endregion
 
@@ -556,3 +636,4 @@ namespace Clio.Workspaces
 	#endregion
 
 }
+

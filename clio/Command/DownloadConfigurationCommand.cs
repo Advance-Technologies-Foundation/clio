@@ -2,6 +2,7 @@
 {
 	using System;
 	using System.IO;
+	using System.Linq;
 	using Clio.Common;
 	using Clio.Workspaces;
 	using CommandLine;
@@ -23,44 +24,64 @@
 						return;
 					}
 
-					// Check if file exists
-					if (!File.Exists(value))
+					// Check if path exists (either file or directory)
+					bool isFile = File.Exists(value);
+					bool isDirectory = Directory.Exists(value);
+
+					if (!isFile && !isDirectory)
 					{
 						context.AddFailure(new ValidationFailure
 						{
 							ErrorCode = "FILE001",
-							ErrorMessage = $"Zip file not found: {value}",
+							ErrorMessage = $"Path not found: {value}",
 							Severity = Severity.Error,
 							AttemptedValue = value,
 						});
 						return;
 					}
 
-					// Check if file has .zip extension
-					string extension = Path.GetExtension(value);
-					if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+					// If it's a file, check if it has .zip extension
+					if (isFile)
 					{
-						context.AddFailure(new ValidationFailure
+						string extension = Path.GetExtension(value);
+						if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
 						{
-							ErrorCode = "FILE002",
-							ErrorMessage = $"File must have .zip extension. Current extension: {extension}",
-							Severity = Severity.Error,
-							AttemptedValue = value,
-						});
-						return;
-					}
+							context.AddFailure(new ValidationFailure
+							{
+								ErrorCode = "FILE002",
+								ErrorMessage = $"File must have .zip extension. Current extension: {extension}",
+								Severity = Severity.Error,
+								AttemptedValue = value,
+							});
+							return;
+						}
 
-					// Check if file is not empty
-					FileInfo fileInfo = new FileInfo(value);
-					if (fileInfo.Length == 0)
-					{
-						context.AddFailure(new ValidationFailure
+						// Check if file is not empty
+						FileInfo fileInfo = new FileInfo(value);
+						if (fileInfo.Length == 0)
 						{
-							ErrorCode = "FILE003",
-							ErrorMessage = $"Zip file is empty: {value}",
-							Severity = Severity.Error,
-							AttemptedValue = value,
-						});
+							context.AddFailure(new ValidationFailure
+							{
+								ErrorCode = "FILE003",
+								ErrorMessage = $"Zip file is empty: {value}",
+								Severity = Severity.Error,
+								AttemptedValue = value,
+							});
+						}
+					}
+					// If it's a directory, check if it's not empty
+					else if (isDirectory)
+					{
+						if (!Directory.EnumerateFileSystemEntries(value).Any())
+						{
+							context.AddFailure(new ValidationFailure
+							{
+								ErrorCode = "FILE004",
+								ErrorMessage = $"Directory is empty: {value}",
+								Severity = Severity.Error,
+								AttemptedValue = value,
+							});
+						}
 					}
 				});
 		}
@@ -70,13 +91,13 @@
 
 	#region Class: DownloadLibsCommandOptions
 
-	[Verb("download-configuration", Aliases = new [] { "dconf" },
+	[Verb("download-configuration", Aliases = ["dconf"],
 		HelpText = "Download libraries from web-application")]
 	public class DownloadConfigurationCommandOptions : EnvironmentOptions
 	{
-		[Option('b', "build", Required = false, 
-			HelpText = "Path to Creatio zip file to extract configuration from")]
-		public string BuildZipPath { get; set; }
+	[Option('b', "build", Required = false, 
+		HelpText = "Path to Creatio zip file or extracted directory to get configuration from")]
+	public string BuildZipPath { get; set; }
 	}
 
 	#endregion
@@ -111,7 +132,6 @@
 			_logger = logger;
 		}
 		#endregion
-
 		
 		#region Methods: Public
 
@@ -120,12 +140,12 @@
 		{
 			if (!string.IsNullOrWhiteSpace(options.BuildZipPath))
 			{
-				// Download from zip file
+				// Download from zip file or directory (auto-detected)
 				if (Program.IsDebugMode)
 				{
-					_logger.WriteInfo($"[DEBUG] DownloadConfigurationCommand: Using ZIP mode with file={options.BuildZipPath}");
+					_logger.WriteInfo($"[DEBUG] DownloadConfigurationCommand: Using build mode with path={options.BuildZipPath}");
 				}
-				_zipBasedApplicationDownloader.DownloadFromZip(options.BuildZipPath);
+				_zipBasedApplicationDownloader.DownloadFromPath(options.BuildZipPath);
 			}
 			else
 			{

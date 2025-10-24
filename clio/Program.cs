@@ -351,7 +351,7 @@ internal class Program {
 		set { autoUpdate = value; }
 	}
 
-	public static bool IsDebugMode { get; private set; }
+	public static bool IsDebugMode { get; set; }
 
 	public static bool IsEnvironmentReported { get; set; }
 

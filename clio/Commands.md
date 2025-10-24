@@ -878,12 +878,13 @@ Options:
 
 Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
 
-## download-configuration
+## Download configuration
 
-Download Creatio configuration (libraries and assemblies) to the workspace `.application` folder. This command supports two modes:
+Download Creatio configuration (libraries and assemblies) to the workspace `.application` folder. This command supports three modes:
 
 1. **Download from running environment** - Downloads libraries from a live Creatio instance
 2. **Extract from ZIP file** - Extracts configuration from a Creatio installation ZIP file
+3. **Copy from pre-extracted directory** - Copies configuration from an already-extracted Creatio folder (useful for CI/CD pipelines)
 
 ### Download from Environment
 
@@ -909,33 +910,70 @@ clio download-configuration --build <PATH_TO_ZIP_FILE>
 clio dconf --build C:\path\to\creatio.zip
 ```
 
-**How it works:**
-1. Extracts the ZIP file to a temporary directory
-2. Automatically detects if the package is NetFramework or NetCore based
-   - **NetFramework detection**: Looks for `Terrasoft.WebApp` folder
-   - **NetCore**: Used when `Terrasoft.WebApp` folder is not present
-3. Copies files to the appropriate workspace `.application` folder structure:
-   - For **NetFramework**:
-     - Core binaries: `.application/net-framework/core-bin/`
-     - Libraries: `.application/net-framework/bin/`
-     - Configuration DLLs (from latest `conf/bin/{NUMBER}`)
-     - Package binaries: `.application/net-framework/packages/{PackageName}/`
-   - For **NetCore**:
-     - Binaries: `.application/net-core/bin/`
-     - Libraries: `.application/net-core/lib/`
-     - Configuration: `.application/net-core/conf/`
-4. Automatically cleans up temporary files
+The ZIP file will be extracted to a temporary directory, processed, and then automatically cleaned up.
 
-**Requirements:**
+### Copy from Pre-extracted Directory
+
+To use an already-extracted Creatio directory (useful for CI/CD pipelines with pre-prepared folders):
+
+```bash
+clio download-configuration --build <PATH_TO_EXTRACTED_DIRECTORY>
+
+# or using alias
+clio dconf --build C:\extracted\creatio
+```
+
+The source directory will **NOT** be deleted after processing, allowing you to reuse it for multiple operations.
+
+**Auto-detection:**
+The command automatically detects whether you provided a ZIP file or a directory:
+- **ZIP files**: Must have `.zip` extension
+- **Directories**: Any path without `.zip` extension is treated as an extracted directory
+
+### How it Works
+
+1. **Input Detection:**
+   - Checks file extension to determine if input is ZIP (`.zip`) or directory
+
+2. **Creatio Type Detection:**
+   - **NetFramework**: Detected by presence of `Terrasoft.WebApp` folder
+   - **NetCore (NET8)**: Used when `Terrasoft.WebApp` folder is not present
+
+3. **File Copying:**
+
+   **For NetFramework:**
+   - Core binaries from `Terrasoft.WebApp\bin` → `.application\net-framework\core-bin\`
+   - Libraries from `Terrasoft.WebApp\Terrasoft.Configuration\Lib` → `.application\net-framework\bin\`
+   - Configuration DLLs from latest `Terrasoft.WebApp\conf\bin\{NUMBER}` → `.application\net-framework\bin\`
+     - Files copied: `Terrasoft.Configuration.dll`, `Terrasoft.Configuration.ODataEntities.dll`
+   - Packages from `Terrasoft.WebApp\Terrasoft.Configuration\Pkg` → `.application\net-framework\packages\{PackageName}\`
+     - Only packages with `Files\bin` folder are copied
+
+   **For NetCore (NET8):**
+   - Root DLL and PDB files from root directory → `.application\net-core\core-bin\`
+   - Libraries from `Terrasoft.Configuration\Lib` → `.application\net-core\bin\`
+   - Configuration DLLs from latest `conf\bin\{NUMBER}` → `.application\net-core\bin\`
+     - Files copied: `Terrasoft.Configuration.dll`, `Terrasoft.Configuration.ODataEntities.dll`
+   - Packages from `Terrasoft.Configuration\Pkg` → `.application\net-core\packages\{PackageName}\`
+     - Only packages with `Files\bin` folder are copied
+
+4. **Cleanup:**
+   - **ZIP mode**: Temporary directory is automatically deleted after processing
+   - **Directory mode**: Source directory is preserved for reuse
+
+### Requirements
+
 - Must be executed in a valid clio workspace
-- ZIP file must exist and have `.zip` extension
-- ZIP file must contain a valid Creatio installation structure
+- For ZIP: File must exist and have `.zip` extension
+- For Directory: Directory must exist and contain valid Creatio installation structure
 
-**Use cases:**
-- Offline development: Extract configuration without running instance
-- Version comparison: Analyze different Creatio versions
-- Quick setup: Initialize workspace from installation package
-- CI/CD: Prepare build environments from release packages
+### Use Cases
+
+- **Offline development**: Extract configuration without running instance
+- **Version comparison**: Analyze different Creatio versions
+- **Quick setup**: Initialize workspace from installation package
+- **CI/CD with pre-extracted folders**: Use pre-prepared directories in CI/CD pipelines
+- **Batch processing**: Process multiple pre-extracted Creatio instances
 
 ### Debug Mode
 
@@ -943,12 +981,34 @@ Add the `--debug` flag to see detailed information about file operations:
 
 ```bash
 clio dconf --build C:\path\to\creatio.zip --debug
+
+# or with directory
+clio dconf --build C:\extracted\creatio --debug
 ```
 
 **Debug output includes:**
-- ZIP file extraction paths and workspace locations
-- Numbered folder detection and selection (e.g., selecting latest from conf/bin/1/, conf/bin/2/, etc.)
-- Each file being copied with full source and destination paths
+- Input path and detection (ZIP vs Directory)
+- Workspace location and source path
+- Temporary directory creation (for ZIP mode)
+- Detected Creatio type (NetFramework vs NetCore)
+- Numbered folder detection and latest folder selection
+- Each file being copied with source and destination paths
+- Summary of copied/skipped files and packages
+- Cleanup confirmation (for ZIP mode)
+
+**Example debug output:**
+```
+[DEBUG] DownloadConfigurationCommand: Using build mode with path=C:\creatio.zip
+[DEBUG] DownloadFromZip started: ZipFile=C:\creatio.zip
+[DEBUG]   Temporary directory created: C:\Temp\clio_abc123
+[DEBUG] Detected NetFramework Creatio
+[DEBUG] CopyCoreBinFiles: Source=...\Terrasoft.WebApp\bin, Destination=...\.application\net-framework\core-bin
+[DEBUG]   CopyAllFiles: 142 files from ...
+[DEBUG] CopyConfigurationBinFiles: ConfBinPath=...
+[DEBUG]   Found 3 numbered folders: 3, 2, 1
+[DEBUG]   Selected latest folder: 3
+[DEBUG] CopyPackages: NetFramework packages summary: Copied=15, Skipped=3
+```
 - Package filtering decisions (which packages are copied and which are skipped)
 - Operation summaries (e.g., "Copied 45 packages, Skipped 12 packages")
 - Root assembly files (DLL/PDB) being copied
