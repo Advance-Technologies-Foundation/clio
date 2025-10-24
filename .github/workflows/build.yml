@@ -54,7 +54,7 @@ jobs:
           /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
           /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
           /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml `
-          /d:sonar.exclusions="clio.tests/Examples/**/*";
+          /d:sonar.exclusions="clio.tests/Examples/**/*,excludeclio.tests/YAML/**/*";
           dotnet build .\clio\clio.csproj -c Release --no-incremental;
           dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
           dotnet build-server shutdown;
