@@ -50,29 +50,23 @@ internal class Cp
                 var fileInfo = new FileInfo(destinationFilePath);
                 try
                 {
-                    using (var memoryStream = new MemoryStream())
+                    using (var inputFileStream = File.OpenRead(sourceFilePath))
+                    using (var tarOutputStream = new TarOutputStream(stdIn, Encoding.Default))
                     {
-                        using (var inputFileStream = File.OpenRead(sourceFilePath))
-                        using (var tarOutputStream = new TarOutputStream(memoryStream, Encoding.Default))
-                        {
-                            tarOutputStream.IsStreamOwner = false;
+                        tarOutputStream.IsStreamOwner = false;
 
-                            var fileSize = inputFileStream.Length;
-                            var entry = TarEntry.CreateTarEntry(fileInfo.Name);
+                        var fileSize = inputFileStream.Length;
+                        var entry = TarEntry.CreateTarEntry(fileInfo.Name);
 
-                            entry.Size = fileSize;
+                        entry.Size = fileSize;
 
-                            tarOutputStream.PutNextEntry(entry);
-                            await inputFileStream.CopyToAsync(tarOutputStream);
-                            tarOutputStream.CloseEntry();
-                        }
-
-                        memoryStream.Position = 0;
-
-                        await memoryStream.CopyToAsync(stdIn);
-                        await stdIn.FlushAsync();
+                        tarOutputStream.PutNextEntry(entry);
+                        await inputFileStream.CopyToAsync(tarOutputStream, 81920, cancellationToken);
+                        tarOutputStream.CloseEntry();
+                        tarOutputStream.Flush();
                     }
 
+                    await stdIn.FlushAsync();
                 }
                 catch (Exception ex)
                 {
