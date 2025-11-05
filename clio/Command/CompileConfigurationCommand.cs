@@ -8,7 +8,7 @@ namespace Clio.Command
 
 	#region Class: CompileConfigurationOptions
 
-	[Verb("compile-configuration", Aliases = new[] { "compile-remote" }, HelpText = "Compile configuration for selected environment")]
+	[Verb("compile-configuration", Aliases = ["compile-remote"], HelpText = "Compile configuration for selected environment")]
 	public class CompileConfigurationOptions : RemoteCommandOptions
 	{
 
@@ -34,25 +34,23 @@ namespace Clio.Command
 	#region Class: CompileConfigurationCommand
 	
 	public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions>, ICompileConfigurationCommand {
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		
-		#region Constants: Private
-
-		private static string CompileUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Build";
-		private static string CompileAllUrl = @"/ServiceModel/WorkspaceExplorerService.svc/Rebuild";
-
-		#endregion
-
 		private bool _compileAll;
 
 		#region Constructors: Public
 
-		public CompileConfigurationCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-			: base(applicationClient, settings) {
+		public CompileConfigurationCommand(IApplicationClient applicationClient, EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder)
+			: base(applicationClient, settings)
+		{
+			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
 		#endregion
 
-		protected override string ServicePath => _compileAll ? CompileAllUrl : CompileUrl;
+		protected override string ServicePath => _compileAll 
+			? _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CompileAll) 
+			: _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Compile);
 
 
 		public override int Execute(CompileConfigurationOptions options) {
