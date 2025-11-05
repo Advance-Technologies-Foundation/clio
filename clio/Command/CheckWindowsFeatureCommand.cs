@@ -34,13 +34,13 @@ namespace Clio.Command
 			}
 			_logger.WriteLine("");
 			if (missedComponents.Count > 0) {
-				_logger.WriteInfo("Windows has missed components:");
+				_logger.WriteError("Windows has missed components:");
 				foreach (var item in missedComponents) {
 					_logger.WriteInfo($"{item}");
 				}
 				return 1;
 			} else {
-				_logger.WriteError("All requirment components installed");
+				_logger.WriteInfo("All requirement components installed");
 				return 0;
 			}
 		}
