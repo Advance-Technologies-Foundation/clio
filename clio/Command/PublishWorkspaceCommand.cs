@@ -29,8 +29,10 @@
 
 		[Option('v', "app-version", Required = false,
 			HelpText = "Application version", Default = null)]
-		public string AppVersion { get; internal set; }			[Option('a', "app-name", Required = false, HelpText = "Application name", Default = false)]
-			public string AppName { get; internal set; }
+		public string AppVersion { get; internal set; }			
+		
+		[Option('a', "app-name", Required = false, HelpText = "Application name", Default = null)]
+		public string AppName { get; internal set; }
 
 			[Option('f', "file", Required = false, HelpText = "Target zip file path for published workspace")]
 			public string FilePath { get; set; }
