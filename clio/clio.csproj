@@ -15,7 +15,6 @@
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 	  <PackageLicenseUrl></PackageLicenseUrl>
 	  <PackageLicense>MIT</PackageLicense>
 	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
