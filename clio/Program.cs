@@ -318,7 +318,7 @@ internal class Program {
 
 	private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
-	private static string Url => CreatioEnvironment.Settings.Uri; // Необходимо получить из конфига
+	private static string Url => CreatioEnvironment.Settings.Uri; // Should be obtained from config
 
 	private static string UserName => CreatioEnvironment.Settings.Login;
 

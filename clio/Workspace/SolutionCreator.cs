@@ -29,7 +29,7 @@ namespace Clio.Workspaces
 		#region Methods: Private
 
 		public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects) {
-			// Формируем .slnx как XML
+			// Build .slnx as XML
 			var sortedProjects = solutionProjects.OrderBy(p => p.Path).ToList();
 			var sb = new StringBuilder();
 			sb.AppendLine("<Solution>");

@@ -32,8 +32,6 @@ namespace Clio.Package
 	public class UiProjectCreator : IUiProjectCreator
 	{
 
-		// папа
-
 		#region Constants: Private
 
 		private const string packagesDirectoryName = "packages";

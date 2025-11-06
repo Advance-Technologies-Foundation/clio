@@ -79,7 +79,7 @@ namespace Clio.Workspaces
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			osPlatformChecker.CheckArgumentNull(nameof(osPlatformChecker));
-			// applicationInstaller может быть null
+			// applicationInstaller can be null
 			_environmentSettings = environmentSettings;
 			_workspacePathBuilder = workspacePathBuilder;
 			_applicationClientFactory = applicationClientFactory;
