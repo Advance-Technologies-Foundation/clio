@@ -1,10 +1,12 @@
 ﻿using Autofac;
+using Clio.Package;
 using Clio.Workspaces;
+using FluentAssertions;
 using NUnit.Framework;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
-using FluentAssertions;
 
 namespace Clio.Tests;
 
@@ -37,6 +39,24 @@ internal class WorkspaceTest
 		_diContainer = _bindingModule.Register(envSettings);
 		var workspace = _diContainer.Resolve<IWorkspace>();
 		return workspace;
+	}
+
+	private static void CopyDirectory(string sourceDirectory, string destinationDirectory) {
+		var sourceInfo = new DirectoryInfo(sourceDirectory);
+		if (!sourceInfo.Exists) {
+			throw new DirectoryNotFoundException($"Source directory not found: {sourceDirectory}");
+		}
+		Directory.CreateDirectory(destinationDirectory);
+		foreach (string filePath in Directory.GetFiles(sourceDirectory)) {
+			string fileName = Path.GetFileName(filePath);
+			string destFilePath = Path.Combine(destinationDirectory, fileName);
+			File.Copy(filePath, destFilePath, true);
+		}
+		foreach (string directoryPath in Directory.GetDirectories(sourceDirectory)) {
+			string directoryName = Path.GetFileName(directoryPath);
+			string destSubDirectory = Path.Combine(destinationDirectory, directoryName);
+			CopyDirectory(directoryPath, destSubDirectory);
+		}
 	}
 
 	
@@ -97,6 +117,45 @@ internal class WorkspaceTest
 		} finally {
 			if (File.Exists(expectedFilePath)) {
 				File.Delete(expectedFilePath);
+			}
+		}
+	}
+
+	[Test]
+	public void PublishWorkspaceToFileTest() {
+		// Arrange
+		string appName = "iframe-sample";
+		string appVersion = "2.3.4";
+		string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
+		string originalWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
+		string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+		string workspaceCopyPath = Path.Combine(tempRoot, "workspace");
+		string outputDirectory = Path.Combine(tempRoot, "output");
+		string outputFilePath = Path.Combine(outputDirectory, "custom-output.zip");
+		Directory.CreateDirectory(outputDirectory);
+		CopyDirectory(originalWorkspacePath, workspaceCopyPath);
+		try {
+			var envSettings = GetTestEnvironmentSettings();
+			var workspace = GetTestWorkspace(envSettings);
+
+			// Act
+			var resultPath = workspace.PublishToFile(workspaceCopyPath, outputFilePath, appVersion);
+
+			// Assert
+			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
+			File.Exists(outputFilePath).Should().BeTrue();
+			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000);
+			string descriptorPath = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories).Single();
+			string descriptorContent = File.ReadAllText(descriptorPath);
+			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+			descriptorDto!.Descriptor.PackageVersion.Should().Be(appVersion);
+		} finally {
+			try {
+				if (Directory.Exists(tempRoot)) {
+					Directory.Delete(tempRoot, true);
+				}
+			} catch {
+				// ignore cleanup errors
 			}
 		}
 	}

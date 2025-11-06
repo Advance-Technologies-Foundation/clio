@@ -21,7 +21,7 @@ namespace Clio.Workspaces
 
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
-		string PublishToFolder(string zipFileName, string destinationFolderPath, string destinationFolderPath1, bool v);
+		string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite);
 
 		#endregion
 

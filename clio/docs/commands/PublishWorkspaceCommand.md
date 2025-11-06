@@ -14,20 +14,19 @@ The `PublishWorkspaceCommand` is a CLI command that packages and publishes Creat
 
 ## Command Options
 
-### Required Parameters
+### Parameters
 
-| Option          | Short | Description                                                                      | Type     |
-|-----------------|-------|----------------------------------------------------------------------------------|----------|
-| `--app-hub`     | `-h`  | Path to application hub directory where the published application will be stored | `string` |
-| `--repo-path`   | `-r`  | Path to application workspace folder containing the application to be published  | `string` |
-| `--app-version` | `-v`  | Version number for the application being published (e.g., "1.0.0", "2.1.3")      | `string` |
-| `--app-name`    | `-a`  | Name of the application being published                                          | `string` |
+| Option / Argument | Short | Description | Type | Required when |
+|-------------------|-------|-------------|------|----------------|
+| `WorkspacePath`   | —     | Positional workspace folder path (alternative to `--repo-path`) | `string` | Use either this argument or `--repo-path` |
+| `--repo-path`     | `-r`  | Workspace folder containing the application to be published | `string` | Use either this option or the positional argument |
+| `--app-version`   | `-v`  | Version number applied to the application and all packages (e.g., "1.0.0", "2.1.3") | `string` | Always |
+| `--file`          | `-f`  | Target zip file path for direct publishing without an application hub | `string` | Direct file mode |
+| `--app-hub`       | `-h`  | Path to application hub directory where the published application will be stored | `string` | App hub mode (when `--file` is not set) |
+| `--app-name`      | `-a`  | Name of the application being published | `string` | App hub mode (when `--file` is not set) |
+| `--branch`        | `-b`  | Branch name to include in the published application metadata | `string` | Optional |
 
-### Optional Parameters
-
-| Option     | Short | Description                                                  | Type     | Default |
-|------------|-------|--------------------------------------------------------------|----------|---------|
-| `--branch` | `-b`  | Branch name to include in the published application metadata | `string` | `null`  |
+> **Note:** Only one of `--file` or `--app-hub` is required. When `--file` is used the command produces a zip exactly at the specified path and does not require `--app-name` or `--branch`.
 
 ## Usage Examples
 
@@ -56,6 +55,14 @@ clio publish-app -r "C:\MyWorkspace" -h "C:\AppHub" -a "MyApp" -v "1.0.0"
 clio publishw -r "C:\MyWorkspace" -h "C:\AppHub" -a "MyApp" -v "1.0.0"
 clio publish-hub -r "C:\MyWorkspace" -h "C:\AppHub" -a "MyApp" -v "1.0.0"
 ```
+
+### Direct File Output
+
+```bash
+clio publish-workspace "C:\MyWorkspace" --file "C:\Builds\MyApp.zip" --app-version "2.3.4"
+```
+
+In direct file mode, the command updates the version in `app-descriptor.json` and every package `descriptor.json`, then writes the resulting archive exactly to the path provided via `--file`.
 
 ## Integration with GitVersion
 
@@ -236,8 +243,9 @@ branches:
 The publish workspace command performs the following operations:
 
 1. **Reads the workspace structure and packages** from the specified workspace folder path
-2. **Creates a deployable package** (typically a zip file) containing all application components
-3. **Organizes the package in the hub directory** by application name, version, and optionally branch
+2. **Applies the supplied version** to the application descriptor and to every package descriptor
+3. **Creates a deployable package** (typically a zip file) containing all application components
+4. **Organizes the package in the hub directory** by application name, version, and optionally branch (app hub mode) or saves the archive directly to the provided file path (direct file mode)
 
 ## Directory Structure
 

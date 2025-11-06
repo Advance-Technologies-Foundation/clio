@@ -84,6 +84,25 @@ namespace Clio.Workspaces
 		private WorkspaceEnvironmentSettings ReadWorkspaceEnvironmentSettings() =>
 			_jsonConverter.DeserializeObjectFromFile<WorkspaceEnvironmentSettings>(WorkspaceEnvironmentSettingsPath);
 
+		private void UpdatePackagesVersion(string packagesFolderPath, string appVersion) {
+			if (string.IsNullOrWhiteSpace(packagesFolderPath) || !Directory.Exists(packagesFolderPath)) {
+				return;
+			}
+			foreach (string packageDirectory in Directory.GetDirectories(packagesFolderPath)) {
+				string descriptorPath = Path.Combine(packageDirectory, CreatioPackage.DescriptorName);
+				if (!File.Exists(descriptorPath)) {
+					continue;
+				}
+				var descriptorDto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath);
+				if (descriptorDto?.Descriptor == null) {
+					continue;
+				}
+				descriptorDto.Descriptor.PackageVersion = appVersion;
+				descriptorDto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
+				_jsonConverter.SerializeObjectToFile(descriptorDto, descriptorPath);
+			}
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -130,12 +149,60 @@ namespace Clio.Workspaces
 
 
 
+		public string PublishToFile(string workspacePath, string filePath, string appVersion) {
+			if (string.IsNullOrWhiteSpace(workspacePath)) {
+				throw new ArgumentNullException(nameof(workspacePath));
+			}
+			if (string.IsNullOrWhiteSpace(filePath)) {
+				throw new ArgumentNullException(nameof(filePath));
+			}
+			if (string.IsNullOrWhiteSpace(appVersion)) {
+				throw new ArgumentNullException(nameof(appVersion));
+			}
+			_workspacePathBuilder.RootPath = workspacePath;
+			var packagesFolderPath = _workspacePathBuilder.PackagesFolderPath;
+			_composableApplicationManager.TrySetVersion(workspacePath, appVersion);
+			UpdatePackagesVersion(packagesFolderPath, appVersion);
+			string destinationFolderPath = Path.GetDirectoryName(filePath);
+			if (string.IsNullOrWhiteSpace(destinationFolderPath)) {
+				destinationFolderPath = Directory.GetCurrentDirectory();
+			}
+			string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
+			if (string.IsNullOrWhiteSpace(fileNameWithoutExtension)) {
+				throw new ArgumentException("File path must include a file name.", nameof(filePath));
+			}
+			string expectedFileName = Path.GetFileName(filePath);
+			string sanitizeFileName = GetSanitizeFileNameFromString(fileNameWithoutExtension);
+			string resultPath = _workspaceInstaller.PublishToFolder(workspacePath, sanitizeFileName, destinationFolderPath, true);
+			string expectedPath = Path.GetFullPath(Path.Combine(destinationFolderPath, expectedFileName));
+			string normalizedResultPath = Path.GetFullPath(resultPath);
+			if (!string.Equals(Path.GetFileName(resultPath), expectedFileName, StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(normalizedResultPath, expectedPath, StringComparison.OrdinalIgnoreCase)) {
+				if (File.Exists(expectedPath)) {
+					File.Delete(expectedPath);
+				}
+				File.Move(resultPath, expectedPath);
+				resultPath = expectedPath;
+				normalizedResultPath = expectedPath;
+			} else if (!string.Equals(normalizedResultPath, expectedPath, StringComparison.OrdinalIgnoreCase)) {
+				if (File.Exists(expectedPath)) {
+					File.Delete(expectedPath);
+				}
+				File.Move(resultPath, expectedPath);
+				resultPath = expectedPath;
+				normalizedResultPath = expectedPath;
+			}
+			return normalizedResultPath;
+		}
+
+
 		public string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion, string branch = null) {
 			var hasBranch = !string.IsNullOrEmpty(branch);
 			var branchFolderName = hasBranch ? GetSanitizeFileNameFromString(branch) : null;
 			_workspacePathBuilder.RootPath = workspacePath;
 			var packagesFolderPath = _workspacePathBuilder.PackagesFolderPath;
 			_composableApplicationManager.TrySetVersion(workspacePath, appVersion);
+			UpdatePackagesVersion(packagesFolderPath, appVersion);
 			string zipFileName = $"{appName}_{appVersion}";
 			if (hasBranch) {
 				zipFileName = $"{appName}_{branch}_{appVersion}";
