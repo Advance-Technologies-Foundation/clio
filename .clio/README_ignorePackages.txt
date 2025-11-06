@@ -1,6 +1,6 @@
-Файл .clio/workspacesettings.json должен находиться в корне workspace.
-Ключ ignorePackages — массив строк, поддерживает маски и относительные пути.
-Пример:
+The .clio/workspacesettings.json file should be located in the workspace root.
+The ignorePackages key is an array of strings that supports wildcards and relative paths.
+Example:
 {
   "ignorePackages": [
     "TestPackage",
