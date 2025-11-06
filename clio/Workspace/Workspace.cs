@@ -163,13 +163,12 @@ namespace Clio.Workspaces
 			if (string.IsNullOrWhiteSpace(filePath)) {
 				throw new ArgumentNullException(nameof(filePath));
 			}
-			if (string.IsNullOrWhiteSpace(appVersion)) {
-				throw new ArgumentNullException(nameof(appVersion));
-			}
 			_workspacePathBuilder.RootPath = workspacePath;
 			var packagesFolderPath = _workspacePathBuilder.PackagesFolderPath;
-			_composableApplicationManager.TrySetVersion(workspacePath, appVersion);
-			UpdatePackagesVersion(packagesFolderPath, appVersion);
+			if (!string.IsNullOrWhiteSpace(appVersion)) {
+				_composableApplicationManager.TrySetVersion(workspacePath, appVersion);
+				UpdatePackagesVersion(packagesFolderPath, appVersion);
+			}
 			string destinationFolderPath = Path.GetDirectoryName(filePath);
 			if (string.IsNullOrWhiteSpace(destinationFolderPath)) {
 				destinationFolderPath = Directory.GetCurrentDirectory();

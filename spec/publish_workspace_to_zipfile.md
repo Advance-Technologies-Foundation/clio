@@ -1,18 +1,19 @@
 ### publish-workspace — new requirements
 
-- The command must support the format `clio publish-workspace {Path_to_workspace} --file {path_to_zip_file_name.zip} --app-version {semver}` without requiring `--app-hub` or `--app-name`.
+- The command must support the format `clio publish-workspace {Path_to_workspace} --file {path_to_zip_file_name.zip} [--app-version {semver}]` without requiring `--app-hub` or `--app-name`.
 - The workspace path is taken either from the positional argument or from `--repo-path`; when both are provided, `--repo-path` wins.
-- Before packaging, the version supplied via `--app-version` must be:
+- When `--app-version` is provided, the version must be:
   - written to the application `app-descriptor.json`;
   - applied to every package `descriptor.json` (the `PackageVersion` field).
+- When `--app-version` is not provided, the existing versions in descriptors are preserved.
 - The resulting zip file must be created exactly at the path passed via `--file`; overwrite the file if it already exists.
 - The previous app-hub publishing mode must remain available with `--app-hub`, `--app-name`, `--app-version`, and optional `--branch`.
 - Add an automated test for the new scenario to confirm that a workspace can be packaged into an arbitrary zip file and that all descriptors receive the requested version.
 
 ### Implementation Notes
 
-- Extend `PublishWorkspaceCommand` options with a positional workspace argument and a new `--file/-f` parameter; make `--app-hub`/`--app-name` optional and perform runtime validation depending on the chosen mode.
-- Teach `IWorkspace`/`Workspace` a `PublishToFile` method that sets the version on both `app-descriptor.json` and every package `descriptor.json`, then reuses `WorkspaceInstaller.PublishToFolder` to produce the archive before renaming it to the requested target path.
+- Extend `PublishWorkspaceCommand` options with a positional workspace argument and a new `--file/-f` parameter; make `--app-hub`/`--app-name` and `--app-version` optional and perform runtime validation depending on the chosen mode.
+- Teach `IWorkspace`/`Workspace` a `PublishToFile` method that optionally sets the version on both `app-descriptor.json` and every package `descriptor.json` when version is provided, then reuses `WorkspaceInstaller.PublishToFolder` to produce the archive before renaming it to the requested target path.
 - Keep the existing hub flow untouched by routing to the old `PublishToFolder` implementation when `--file` is not provided.
 - Update docs (`clio/docs/commands/PublishWorkspaceCommand.md`) to describe both modes and their parameters, and add a dedicated unit test (e.g., in `clio.tests/WorkspaceTest`) covering the direct-file scenario.
 

@@ -863,18 +863,30 @@ Aliases: `mergew`
 
 ## publish-workspace
 
-To publish a workspace to a ZIP file in an application hub, use the following command:
+To publish a workspace to a ZIP file or an application hub, use the following command:
 
 ```bash
+# Publish to file with version
+clio publish-workspace --file <FILE_PATH> --app-version <VERSION> --repo-path <WORKSPACE_PATH>
+
+# Publish to file without version (version will be omitted)
+clio publish-workspace --file <FILE_PATH> --repo-path <WORKSPACE_PATH>
+
+# Publish to application hub
 clio publish-workspace --app-name <APP_NAME> --app-version <VERSION> --app-hub <APP_HUB_PATH> --repo-path <WORKSPACE_PATH> -e <ENVIRONMENT_NAME>
 ```
 
 Options:
-- `-a`, `--app-name` (required): Application name
-- `-v`, `--app-version` (required): Application version
-- `-h`, `--app-hub` (required): Path to application hub
+- `-a`, `--app-name` (required for hub mode): Application name
+- `-v`, `--app-version` (optional): Application version. When not specified in file mode, no version will be included in the archive
+- `-h`, `--app-hub` (required for hub mode): Path to application hub
+- `-f`, `--file` (required for file mode): Path where to save the workspace ZIP file
 - `-r`, `--repo-path` (required): Path to application workspace folder
 - `-b`, `--branch` (optional): Branch name
+
+**Modes:**
+- **File Mode**: Use `--file` to publish workspace to a ZIP file on the local file system
+- **Hub Mode**: Use `--app-hub` and `--app-name` to publish to an application hub
 
 Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
 

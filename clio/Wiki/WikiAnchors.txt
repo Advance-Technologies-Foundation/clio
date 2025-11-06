@@ -25,3 +25,5 @@ set-fsm-config:Set File-System Mode configuration
 turn-fsm:Turn File-System Mode On/Off
 generate-process-model: Generate Process Model
 download-configuration: download configuration
+publish-app: publish workspace
+publish-workspace: publish workspace

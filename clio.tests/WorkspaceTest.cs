@@ -4,6 +4,7 @@ using Clio.Workspaces;
 using FluentAssertions;
 using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -158,6 +159,116 @@ internal class WorkspaceTest
 				}
 			}
 			foundUpdatedVersion.Should().BeTrue($"because at least one package should have version updated to {appVersion}");
+		} finally {
+			try {
+				if (Directory.Exists(tempRoot)) {
+					Directory.Delete(tempRoot, true);
+				}
+			} catch {
+				// ignore cleanup errors
+			}
+		}
+	}
+
+	[Test]
+	[Description("Should publish workspace to file without updating versions when app version is not provided")]
+	public void PublishWorkspaceToFileWithoutVersionTest() {
+		// Arrange
+		string appName = "iframe-sample";
+		string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
+		string originalWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
+		string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+		string workspaceCopyPath = Path.Combine(tempRoot, "workspace");
+		string outputDirectory = Path.Combine(tempRoot, "output");
+		string outputFilePath = Path.Combine(outputDirectory, "custom-output-no-version.zip");
+		Directory.CreateDirectory(outputDirectory);
+		CopyDirectory(originalWorkspacePath, workspaceCopyPath);
+		
+		// Store original versions before workspace operation
+		string[] descriptorPaths = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
+		var originalVersions = new Dictionary<string, string>();
+		foreach (string descriptorPath in descriptorPaths) {
+			string descriptorContent = File.ReadAllText(descriptorPath);
+			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+			originalVersions[descriptorPath] = descriptorDto?.Descriptor.PackageVersion ?? "";
+		}
+		
+		try {
+			var envSettings = GetTestEnvironmentSettings();
+			var workspace = GetTestWorkspace(envSettings);
+
+			// Act - publish without specifying version
+			var resultPath = workspace.PublishToFile(workspaceCopyPath, outputFilePath, null);
+
+			// Assert
+			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
+			File.Exists(outputFilePath).Should().BeTrue("because the zip file should be created");
+			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000, "because the zip file should contain workspace data");
+			
+			// Verify that versions were not changed
+			foreach (string descriptorPath in descriptorPaths) {
+				string descriptorContent = File.ReadAllText(descriptorPath);
+				var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+				string currentVersion = descriptorDto?.Descriptor.PackageVersion ?? "";
+				string originalVersion = originalVersions[descriptorPath];
+				currentVersion.Should().Be(originalVersion, 
+					$"because version in {descriptorPath} should remain unchanged when no version is provided");
+			}
+		} finally {
+			try {
+				if (Directory.Exists(tempRoot)) {
+					Directory.Delete(tempRoot, true);
+				}
+			} catch {
+				// ignore cleanup errors
+			}
+		}
+	}
+
+	[Test]
+	[Description("Should publish workspace to file without updating versions when app version is empty string")]
+	public void PublishWorkspaceToFileWithEmptyVersionTest() {
+		// Arrange
+		string appName = "iframe-sample";
+		string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
+		string originalWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
+		string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+		string workspaceCopyPath = Path.Combine(tempRoot, "workspace");
+		string outputDirectory = Path.Combine(tempRoot, "output");
+		string outputFilePath = Path.Combine(outputDirectory, "custom-output-empty-version.zip");
+		Directory.CreateDirectory(outputDirectory);
+		CopyDirectory(originalWorkspacePath, workspaceCopyPath);
+		
+		// Store original versions before workspace operation
+		string[] descriptorPaths = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
+		var originalVersions = new Dictionary<string, string>();
+		foreach (string descriptorPath in descriptorPaths) {
+			string descriptorContent = File.ReadAllText(descriptorPath);
+			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+			originalVersions[descriptorPath] = descriptorDto?.Descriptor.PackageVersion ?? "";
+		}
+		
+		try {
+			var envSettings = GetTestEnvironmentSettings();
+			var workspace = GetTestWorkspace(envSettings);
+
+			// Act - publish with empty version string
+			var resultPath = workspace.PublishToFile(workspaceCopyPath, outputFilePath, "");
+
+			// Assert
+			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
+			File.Exists(outputFilePath).Should().BeTrue("because the zip file should be created");
+			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000, "because the zip file should contain workspace data");
+			
+			// Verify that versions were not changed
+			foreach (string descriptorPath in descriptorPaths) {
+				string descriptorContent = File.ReadAllText(descriptorPath);
+				var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+				string currentVersion = descriptorDto?.Descriptor.PackageVersion ?? "";
+				string originalVersion = originalVersions[descriptorPath];
+				currentVersion.Should().Be(originalVersion, 
+					$"because version in {descriptorPath} should remain unchanged when empty version is provided");
+			}
 		} finally {
 			try {
 				if (Directory.Exists(tempRoot)) {

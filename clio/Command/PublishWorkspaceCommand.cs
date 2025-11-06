@@ -27,11 +27,9 @@
 				HelpText = "Path to application workspace folder", Default = null)]
 			public string WorkspaceFolderPath { get; internal set; }
 
-			[Option('v', "app-version", Required = true,
-				HelpText = "Application version", Default = null)]
-			public string AppVersion { get; internal set; }
-
-			[Option('a', "app-name", Required = false, HelpText = "Application name", Default = false)]
+		[Option('v', "app-version", Required = false,
+			HelpText = "Application version", Default = null)]
+		public string AppVersion { get; internal set; }			[Option('a', "app-name", Required = false, HelpText = "Application name", Default = false)]
 			public string AppName { get; internal set; }
 
 			[Option('f', "file", Required = false, HelpText = "Target zip file path for published workspace")]
@@ -75,9 +73,6 @@
 				bool useFileMode = !string.IsNullOrWhiteSpace(options.FilePath);
 				if (useFileMode) {
 					var version = options.AppVersion;
-					if (string.IsNullOrWhiteSpace(version)) {
-						throw new ArgumentException("Application version is required when --file is specified.");
-					}
 					var targetPath = Path.GetFullPath(options.FilePath);
 					_workspace.PublishToFile(workspacePath, targetPath, version);
 				} else {
