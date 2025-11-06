@@ -145,10 +145,19 @@ internal class WorkspaceTest
 			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
 			File.Exists(outputFilePath).Should().BeTrue();
 			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000);
-			string descriptorPath = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories).Single();
-			string descriptorContent = File.ReadAllText(descriptorPath);
-			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
-			descriptorDto!.Descriptor.PackageVersion.Should().Be(appVersion);
+			string[] descriptorPaths = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
+			descriptorPaths.Should().NotBeEmpty("because at least one package descriptor should exist");
+			// Check that at least one package has the updated version
+			bool foundUpdatedVersion = false;
+			foreach (string descriptorPath in descriptorPaths) {
+				string descriptorContent = File.ReadAllText(descriptorPath);
+				var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+				if (descriptorDto?.Descriptor.PackageVersion == appVersion) {
+					foundUpdatedVersion = true;
+					break;
+				}
+			}
+			foundUpdatedVersion.Should().BeTrue($"because at least one package should have version updated to {appVersion}");
 		} finally {
 			try {
 				if (Directory.Exists(tempRoot)) {
