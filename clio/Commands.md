@@ -9,6 +9,7 @@ Clio Command Reference
 - [Application Management](#application)
 - [Environment Settings](#environment-settings)
 - [Workspaces](#workspaces)
+  - [Package Filtering](#package-filtering-in-workspace)
 - [Download Configuration](#download-configuration)
 - [Development](#development)
 - [Using for CI/CD systems](#using-for-cicd-systems)
@@ -759,6 +760,7 @@ clio cdp false -e <ENVIRONMENT_NAME>
 - [Configure workspace](#configure-workspace)
 - [Publish workspace](#publish-workspace)
 - [Merge workspaces](#merge-workspaces)
+- [Package Filtering](#package-filtering-in-workspace)
 - [Configure workspace](#configure-workspace)
 
 ## Workspaces
@@ -889,6 +891,107 @@ Options:
 - **Hub Mode**: Use `--app-hub` and `--app-name` to publish to an application hub
 
 Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
+
+## Package Filtering in Workspace
+
+Clio supports package filtering functionality that allows you to exclude specific packages from workspace operations through configuration settings. This is useful for ignoring test packages, demo content, or development utilities during production operations.
+
+### Configuration
+
+Create or edit the `.clio/workspaceSettings.json` file in your workspace root:
+
+```json
+{
+  "IgnorePackages": [
+    "TestPackage",
+    "DemoPackage", 
+    "*Test*",
+    "Dev*",
+    "Sample*"
+  ]
+}
+```
+
+### Supported Patterns
+
+- **Exact match**: `TestPackage` - matches package with exact name
+- **Wildcard prefix**: `Demo*` - matches all packages starting with "Demo"
+- **Wildcard suffix**: `*Test` - matches all packages ending with "Test"  
+- **Wildcard contains**: `*Test*` - matches all packages containing "Test"
+- **Single character**: `?Debug` - matches any single character followed by "Debug"
+
+### Affected Operations
+
+Package filtering is automatically applied to the following workspace operations:
+
+- **restore-workspace**: Ignores specified packages during restoration
+- **push-workspace**: Excludes packages from being pushed to environment
+- **publish-workspace**: Filters packages out of published archives
+- **build-workspace**: Skips ignored packages during build process
+- **merge-workspaces**: Excludes filtered packages from merge operations
+
+### Behavior
+
+- **Missing configuration**: If `.clio/workspaceSettings.json` doesn't exist or `IgnorePackages` key is missing, all packages are processed normally
+- **Empty patterns**: Empty array or null values result in no filtering
+- **Case insensitive**: Pattern matching is case-insensitive
+- **User feedback**: Clio logs which packages are being ignored during operations
+- **No exceptions**: Invalid configuration gracefully falls back to processing all packages
+
+### Examples
+
+#### Basic filtering
+```json
+{
+  "IgnorePackages": [
+    "UnitTestFramework",
+    "DemoData",
+    "SamplePackage"
+  ]
+}
+```
+
+#### Advanced patterns
+```json
+{
+  "IgnorePackages": [
+    "*Test*",
+    "Demo*", 
+    "Sample*",
+    "Dev*",
+    "Mock*Package",
+    "?Debug"
+  ]
+}
+```
+
+#### Real-world scenario
+```json
+{
+  "IgnorePackages": [
+    "UnitTestFramework",
+    "*Test*",
+    "Demo*",
+    "SampleData*", 
+    "DevTools",
+    "MockServices"
+  ]
+}
+```
+
+When running `clio push-workspace -e production`, packages matching these patterns will be excluded:
+- `UnitTestFramework` (exact match)
+- `MyPackageTest`, `TestHelper` (contains "Test")
+- `DemoPackage`, `DemoConfiguration` (starts with "Demo")
+- `SampleDataLoader`, `SampleDataManager` (starts with "SampleData")
+- `DevTools` (exact match)
+- `MockServices` (exact match)
+
+### Performance
+
+- Package filtering uses optimized pattern matching with regex caching
+- Minimal performance impact on workspace operations
+- Filtering happens early in the pipeline to avoid unnecessary processing
 
 ## Download configuration
 

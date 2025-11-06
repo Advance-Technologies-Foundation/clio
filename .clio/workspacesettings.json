@@ -1,0 +1,6 @@
+{
+  "ignorePackages": [
+    "TestPackage",
+    "Demo*"
+  ]
+}
