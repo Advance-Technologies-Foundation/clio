@@ -86,20 +86,27 @@ namespace Clio.Workspaces
 
 		private void UpdatePackagesVersion(string packagesFolderPath, string appVersion) {
 			if (string.IsNullOrWhiteSpace(packagesFolderPath) || !Directory.Exists(packagesFolderPath)) {
+				Console.WriteLine($"Warning: Packages folder path is invalid or does not exist: {packagesFolderPath}");
 				return;
 			}
 			foreach (string packageDirectory in Directory.GetDirectories(packagesFolderPath)) {
 				string descriptorPath = Path.Combine(packageDirectory, CreatioPackage.DescriptorName);
 				if (!File.Exists(descriptorPath)) {
+					Console.WriteLine($"Warning: Package descriptor not found: {descriptorPath}");
 					continue;
 				}
-				var descriptorDto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath);
-				if (descriptorDto?.Descriptor == null) {
-					continue;
+				try {
+					var descriptorDto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath);
+					if (descriptorDto?.Descriptor == null) {
+						Console.WriteLine($"Warning: Invalid or empty package descriptor: {descriptorPath}");
+						continue;
+					}
+					descriptorDto.Descriptor.PackageVersion = appVersion;
+					descriptorDto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
+					_jsonConverter.SerializeObjectToFile(descriptorDto, descriptorPath);
+				} catch (Exception ex) {
+					Console.WriteLine($"Warning: Failed to update package version for {descriptorPath}: {ex.Message}");
 				}
-				descriptorDto.Descriptor.PackageVersion = appVersion;
-				descriptorDto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
-				_jsonConverter.SerializeObjectToFile(descriptorDto, descriptorPath);
 			}
 		}
 
@@ -175,24 +182,16 @@ namespace Clio.Workspaces
 			string sanitizeFileName = GetSanitizeFileNameFromString(fileNameWithoutExtension);
 			string resultPath = _workspaceInstaller.PublishToFolder(workspacePath, sanitizeFileName, destinationFolderPath, true);
 			string expectedPath = Path.GetFullPath(Path.Combine(destinationFolderPath, expectedFileName));
-			string normalizedResultPath = Path.GetFullPath(resultPath);
-			if (!string.Equals(Path.GetFileName(resultPath), expectedFileName, StringComparison.OrdinalIgnoreCase)
-					&& !string.Equals(normalizedResultPath, expectedPath, StringComparison.OrdinalIgnoreCase)) {
+			
+			// Rename the file to match the expected name if necessary
+			if (!string.Equals(Path.GetFullPath(resultPath), expectedPath, StringComparison.OrdinalIgnoreCase)) {
 				if (File.Exists(expectedPath)) {
 					File.Delete(expectedPath);
 				}
 				File.Move(resultPath, expectedPath);
 				resultPath = expectedPath;
-				normalizedResultPath = expectedPath;
-			} else if (!string.Equals(normalizedResultPath, expectedPath, StringComparison.OrdinalIgnoreCase)) {
-				if (File.Exists(expectedPath)) {
-					File.Delete(expectedPath);
-				}
-				File.Move(resultPath, expectedPath);
-				resultPath = expectedPath;
-				normalizedResultPath = expectedPath;
 			}
-			return normalizedResultPath;
+			return Path.GetFullPath(resultPath);
 		}
 
 
