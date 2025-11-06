@@ -175,6 +175,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<CreateWorkspaceCommand>();
 		containerBuilder.RegisterType<PushWorkspaceCommand>();
 		containerBuilder.RegisterType<WorkspaceMerger>().As<IWorkspaceMerger>();
+		containerBuilder.RegisterType<WorkspacePackageFilter>().As<IWorkspacePackageFilter>();
 		containerBuilder.RegisterType<MergeWorkspacesCommand>();
 		containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
 		containerBuilder.RegisterType<LoadPackagesToDbCommand>();

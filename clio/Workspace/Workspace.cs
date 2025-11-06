@@ -4,6 +4,8 @@ namespace Clio.Workspaces
 {
 	using System;
 	using System.IO;
+	using System.Collections.Generic;
+	using System.Linq;
 	using Clio.Command;
 	using Clio.Common;
 	using Clio.ComposableApplication;
@@ -19,14 +21,15 @@ namespace Clio.Workspaces
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
-
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IWorkspaceCreator _workspaceCreator;
 		private readonly IWorkspaceRestorer _workspaceRestorer;
 		private readonly IWorkspaceInstaller _workspaceInstaller;
 		private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
 		private readonly IJsonConverter _jsonConverter;
-		private IComposableApplicationManager _composableApplicationManager;
+		private readonly IComposableApplicationManager _composableApplicationManager;
+		private readonly IWorkspacePackageFilter _workspacePackageFilter;
+		private Lazy<WorkspaceSettings> _lazyWorkspaceSettings;
 
 		#endregion
 
@@ -35,7 +38,8 @@ namespace Clio.Workspaces
 		public Workspace(EnvironmentSettings environmentSettings, IWorkspacePathBuilder workspacePathBuilder,
 				IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
 				IWorkspaceInstaller workspaceInstaller, IWorkspaceSolutionCreator workspaceSolutionCreator,
-				IJsonConverter jsonConverter, IComposableApplicationManager composableApplicationManager) {
+				IJsonConverter jsonConverter, IComposableApplicationManager composableApplicationManager,
+				IWorkspacePackageFilter workspacePackageFilter) {
 			//environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			workspaceCreator.CheckArgumentNull(nameof(workspaceCreator));
@@ -43,6 +47,7 @@ namespace Clio.Workspaces
 			workspaceInstaller.CheckArgumentNull(nameof(workspaceInstaller));
 			workspaceSolutionCreator.CheckArgumentNull(nameof(workspaceSolutionCreator));
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
+			workspacePackageFilter.CheckArgumentNull(nameof(workspacePackageFilter));
 			_environmentSettings = environmentSettings;
 			_workspacePathBuilder = workspacePathBuilder;
 			_workspaceCreator = workspaceCreator;
@@ -51,6 +56,7 @@ namespace Clio.Workspaces
 			_workspaceSolutionCreator = workspaceSolutionCreator;
 			_jsonConverter = jsonConverter;
 			_composableApplicationManager = composableApplicationManager;
+			_workspacePackageFilter = workspacePackageFilter;
 			ResetLazyWorkspaceSettings();
 		}
 
@@ -66,8 +72,7 @@ namespace Clio.Workspaces
 
 		#region Properties: Public
 
-		private Lazy<WorkspaceSettings> _workspaceSettings;
-		public WorkspaceSettings WorkspaceSettings => _workspaceSettings.Value;
+		public WorkspaceSettings WorkspaceSettings => _lazyWorkspaceSettings.Value;
 		public bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
 
 		#endregion
@@ -75,7 +80,7 @@ namespace Clio.Workspaces
 		#region Methods: Private
 
 		private void ResetLazyWorkspaceSettings() {
-			_workspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
+			_lazyWorkspaceSettings = new Lazy<WorkspaceSettings>(ReadWorkspaceSettings);
 		}
 
 		private WorkspaceSettings ReadWorkspaceSettings() =>
@@ -131,8 +136,10 @@ namespace Clio.Workspaces
 			_workspaceRestorer.Restore(WorkspaceSettings, _environmentSettings, restoreWorkspaceOptions);
 		}
 
-		public void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false) =>
-			_workspaceInstaller.Install(WorkspaceSettings.Packages, creatioPackagesZipName, useApplicationInstaller);
+		public void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false) {
+			var filteredPackages = GetFilteredPackages();
+			_workspaceInstaller.Install(filteredPackages, creatioPackagesZipName, useApplicationInstaller);
+		}
 			
 		public void InstallUsingApplicationInstaller(string creatioPackagesZipName = null) =>
 			Install(creatioPackagesZipName, true);
@@ -151,7 +158,8 @@ namespace Clio.Workspaces
 		}
 
 		public void PublishZipToFolder(string zipFileName, string destionationFolderPath, bool overrideFile) {
-			_workspaceInstaller.Publish(WorkspaceSettings.Packages, zipFileName, destionationFolderPath, overrideFile);
+			var filteredPackages = GetFilteredPackages().ToList();
+			_workspaceInstaller.Publish(filteredPackages, zipFileName, destionationFolderPath, overrideFile);
 		}
 
 
@@ -211,16 +219,24 @@ namespace Clio.Workspaces
 			return _workspaceInstaller.PublishToFolder(workspacePath, sanitizeFileName, destinationFolderPath, false);
 		}
 
-
-		#endregion
-
-		public static string GetSanitizeFileNameFromString(string fileName) {
-			return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
+		public IEnumerable<string> GetFilteredPackages() {
+			return _workspacePackageFilter.FilterPackages(WorkspaceSettings.Packages, WorkspaceSettings);
 		}
 
 		public string GetWorkspaceApplicationCode() {
 			return _composableApplicationManager.GetCode(_workspacePathBuilder.PackagesFolderPath);
 		}
+
+		#endregion
+
+		#region Methods: Public Static
+
+		public static string GetSanitizeFileNameFromString(string fileName) {
+			return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
+		}
+
+		#endregion
+
 	}
 
 	#endregion

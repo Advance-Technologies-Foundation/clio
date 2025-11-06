@@ -1,5 +1,6 @@
 namespace Clio.Workspaces
 {
+	using System.Collections.Generic;
 	using Clio.Command;
 
 	#region Interface: IWorkspace
@@ -26,6 +27,7 @@ namespace Clio.Workspaces
 		string PublishToFolder(string workspacePath, string appStorePath, string appName, string appVersion, string branch = null);
 		string PublishToFile(string workspacePath, string filePath, string appVersion);
 		string GetWorkspaceApplicationCode();
+		IEnumerable<string> GetFilteredPackages();
 		#endregion
 
 	}
