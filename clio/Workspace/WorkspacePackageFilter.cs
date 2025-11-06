@@ -50,51 +50,45 @@ namespace Clio.Workspaces
 			return FilterPackages(packages, workspaceSettings.IgnorePackages);
 		}
 
-		/// <summary>
-		/// Filters the list of packages by applying provided ignore patterns.
-		/// </summary>
-		/// <param name="packages">The original list of packages</param>
-		/// <param name="ignorePatterns">List of ignore patterns to apply</param>
-		/// <returns>Filtered list of packages with ignored packages removed</returns>
-		public IEnumerable<string> FilterPackages(IEnumerable<string> packages, IEnumerable<string> ignorePatterns) {
-			if (packages == null) {
-				return Enumerable.Empty<string>();
-			}
-			
-			if (ignorePatterns == null) {
-				return packages;
-			}
+               /// <summary>
+               /// Filters the list of packages by applying provided ignore patterns.
+               /// </summary>
+               /// <param name="packages">The original list of packages</param>
+               /// <param name="ignorePatterns">List of ignore patterns to apply</param>
+               /// <returns>Filtered list of packages with ignored packages removed</returns>
+               public IEnumerable<string> FilterPackages(IEnumerable<string> packages, IEnumerable<string> ignorePatterns) {
+                       if (packages == null) {
+                               return Enumerable.Empty<string>();
+                       }
 
-			var packagesList = packages.ToList();
-			var ignorePatternsList = ignorePatterns.ToList();
+                       var ignorePatternsList = ignorePatterns?.ToList();
+                       if (ignorePatternsList == null || !ignorePatternsList.Any()) {
+                               return packages;
+                       }
 
-			if (!ignorePatternsList.Any()) {
-				return packagesList;
-			}
+                       var filteredPackages = new List<string>();
+                       var ignoredPackages = new List<string>();
 
-			var filteredPackages = new List<string>();
-			var ignoredPackages = new List<string>();
+                       foreach (string packageName in packages) {
+                               if (PackageIgnoreMatcher.IsIgnored(packageName, ignorePatternsList)) {
+                                       ignoredPackages.Add(packageName);
+                               } else {
+                                       filteredPackages.Add(packageName);
+                               }
+                       }
 
-			foreach (string packageName in packagesList) {
-				if (PackageIgnoreMatcher.IsIgnored(packageName, ignorePatternsList)) {
-					ignoredPackages.Add(packageName);
-				} else {
-					filteredPackages.Add(packageName);
-				}
-			}
+                       // Log information about ignored packages
+                       if (ignoredPackages.Any()) {
+                               _logger.WriteInfo($"Ignored {ignoredPackages.Count} package(s): {string.Join(", ", ignoredPackages)}");
+                       }
 
-			// Log information about ignored packages
-			if (ignoredPackages.Any()) {
-				_logger.WriteInfo($"Ignored {ignoredPackages.Count} package(s): {string.Join(", ", ignoredPackages)}");
-			}
+                       return filteredPackages;
+               }
 
-			return filteredPackages;
-		}
+               #endregion
 
-		#endregion
+       }
 
-	}
-
-	#endregion
+       #endregion
 
 }
