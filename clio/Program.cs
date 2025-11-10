@@ -214,7 +214,7 @@ internal class Program {
 					InfoCommandOptions opts => Resolve<InfoCommand>(opts).Execute(opts),
 					ExternalLinkOptions opts => Resolve<ExternalLinkCommand>(opts).Execute(opts),
 					OpenCfgOptions opts => Resolve<OpenCfgCommand>().Execute(opts),
-					CompileConfigurationOptions opts => CreateRemoteCommand<CompileConfigurationCommand>(opts)
+					CompileConfigurationOptions opts => Resolve<CompileConfigurationCommand>(opts)
 						.Execute(opts),
 					Link2RepoOptions opts => CreateCommand<Link2RepoCommand>().Execute(opts),
 					Link4RepoOptions opts => Resolve<Link4RepoCommand>().Execute(opts),

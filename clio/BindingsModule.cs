@@ -285,6 +285,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ZipBasedApplicationDownloader>().As<IZipBasedApplicationDownloader>();
 
 		containerBuilder.RegisterType<ClioGateway>();
+		containerBuilder.RegisterType<CompileConfigurationCommand>();
 
 		containerBuilder.RegisterType<Mssql>().As<IMssql>();
 		containerBuilder.RegisterType<Postgres>().As<IPostgres>();
