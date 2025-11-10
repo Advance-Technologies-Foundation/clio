@@ -75,8 +75,10 @@ namespace Clio.Command
         /// Service path for remote command. If contains "rest/CreatioApiGateway", cliogate is required.
         /// </summary>
         protected virtual string ServicePath { get; set; }
-        protected string ServiceUri => RootPath + ServicePath;
-
+        protected string ServiceUri => Uri.TryCreate(ServicePath, UriKind.Absolute, out var maybeUri) && (maybeUri.Scheme == Uri.UriSchemeHttp || maybeUri.Scheme == Uri.UriSchemeHttps)
+            ? ServicePath 
+            : RootPath + ServicePath;
+        
         #endregion
 
         #region Properties: Public
