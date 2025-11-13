@@ -104,69 +104,6 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		}
 	}
 
-	private void CopyConfigurationBinFiles(string terrasoftWebAppPath) {
-		string confBinPath = Path.Combine(terrasoftWebAppPath, "conf", "bin");
-
-		if (Program.IsDebugMode) {
-			_logger.WriteInfo($"[DEBUG] CopyConfigurationBinFiles: ConfBinPath={confBinPath}");
-		}
-
-		if (!_fileSystem.ExistsDirectory(confBinPath)) {
-			_logger.WriteWarning($"Configuration bin directory not found: {confBinPath}");
-			return;
-		}
-
-		// Find the latest numbered folder
-		List<string> numberedFolders = _fileSystem.GetDirectories(confBinPath)
-												  .Where(dir => int.TryParse(Path.GetFileName(dir), out int _))
-												  .OrderByDescending(dir => int.Parse(Path.GetFileName(dir)))
-												  .ToList();
-
-		if (Program.IsDebugMode && numberedFolders.Count != 0) {
-			_logger.WriteInfo(
-				$"[DEBUG]   Found {numberedFolders.Count} numbered folders: {string.Join(", ", numberedFolders.Select(Path.GetFileName))}");
-		}
-
-		if (numberedFolders.Count == 0) {
-			_logger.WriteWarning($"No numbered folders found in {confBinPath}");
-			return;
-		}
-
-		string latestFolder = numberedFolders.First();
-		string destinationPath = _workspacePathBuilder.ConfigurationBinFolderPath;
-
-		_logger.WriteInfo($"Copying configuration bin files from {latestFolder} to {destinationPath}");
-
-		if (Program.IsDebugMode) {
-			_logger.WriteInfo(
-				$"[DEBUG]   Selected latest folder: {Path.GetFileName(latestFolder)}, Destination={destinationPath}");
-		}
-
-		_fileSystem.CreateDirectoryIfNotExists(destinationPath);
-
-		// Copy specific DLLs
-		CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationDll);
-		CopyFileIfExists(latestFolder, destinationPath, TerrasoftConfigurationODataDll);
-	}
-
-	private void CopyCoreBinFiles(string terrasoftWebAppPath) {
-		string sourcePath = Path.Combine(terrasoftWebAppPath, "bin");
-		string destinationPath = _workspacePathBuilder.CoreBinFolderPath;
-
-		if (Program.IsDebugMode) {
-			_logger.WriteInfo($"[DEBUG] CopyCoreBinFiles: Source={sourcePath}, Destination={destinationPath}");
-		}
-
-		if (!_fileSystem.ExistsDirectory(sourcePath)) {
-			_logger.WriteWarning($"Source directory not found: {sourcePath}");
-			return;
-		}
-
-		_logger.WriteInfo($"Copying core bin files from {sourcePath} to {destinationPath}");
-		_fileSystem.CreateDirectoryIfNotExists(destinationPath);
-		CopyAllFiles(sourcePath, destinationPath);
-	}
-
 	private void CopyDirectory(string sourcePath, string destinationPath) {
 		_fileSystem.CreateDirectoryIfNotExists(destinationPath);
 
@@ -203,9 +140,14 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		}
 	}
 
-	private void CopyLibFiles(string terrasoftWebAppPath) {
-		string sourcePath = Path.Combine(terrasoftWebAppPath, "Terrasoft.Configuration", "Lib");
-		string destinationPath = _workspacePathBuilder.LibFolderPath;
+	private void CopyLibFiles(string extractedPath, bool isNetCore = true) {
+		string sourcePath = isNetCore 
+		? Path.Combine(extractedPath, "Terrasoft.Configuration", "Lib")
+		: Path.Combine(extractedPath,"Terrasoft.WebApp", "Terrasoft.Configuration", "Lib");
+		
+		string destinationPath = isNetCore 
+			? Path.Combine(_workspacePathBuilder.RootPath, ".application", "net-core", "lib")
+			: Path.Combine(_workspacePathBuilder.RootPath, ".application", "net-framework", "lib");
 
 		if (Program.IsDebugMode) {
 			_logger.WriteInfo($"[DEBUG] CopyLibFiles: Source={sourcePath}, Destination={destinationPath}");
@@ -221,12 +163,17 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		CopyAllFiles(sourcePath, destinationPath);
 	}
 
-	private void CopyNetCoreConfigurationBinFiles(string extractedPath, string destination) {
-		string confBinPath = Path.Combine(extractedPath, "conf", "bin");
+	private void CopyConfigurationBinFiles(string extractedPath, string destination, bool isNetCore = true) {
+		string confBinPath = isNetCore 
+			? Path.Combine(extractedPath, "conf", "bin")
+			: Path.Combine(extractedPath, "Terrasoft.WebApp", "conf", "bin");
 
 		if (Program.IsDebugMode) {
+			string msg = isNetCore 
+				? "[DEBUG] CopyNetCoreConfigurationBinFiles (NetCore): " 
+				: "[DEBUG] CopyNetCoreConfigurationBinFiles (NetFramework): ";
 			_logger.WriteInfo(
-				$"[DEBUG] CopyNetCoreConfigurationBinFiles: ConfBinPath={confBinPath}, Destination={destination}");
+				$"{msg} ConfBinPath={confBinPath}, Destination={destination}");
 		}
 
 		if (!_fileSystem.ExistsDirectory(confBinPath)) {
@@ -251,7 +198,8 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		}
 
 		string latestFolder = numberedFolders.First();
-		_logger.WriteInfo($"Copying NetCore configuration bin files from {latestFolder} to {destination}");
+		string framework = isNetCore ? "NetCore" : "NetFramework";
+		_logger.WriteInfo($"Copying {framework} configuration bin files from {latestFolder} to {destination}");
 
 		if (Program.IsDebugMode) {
 			_logger.WriteInfo($"[DEBUG]   Selected latest folder: {Path.GetFileName(latestFolder)}");
@@ -264,11 +212,14 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		CopyFileIfExists(latestFolder, destination, TerrasoftConfigurationODataDll);
 	}
 
-	private void CopyNetCorePackages(string extractedPath) {
-		string packagesSourcePath = Path.Combine(extractedPath, "Terrasoft.Configuration", "Pkg");
+	private void CopyPackages(string extractedPath, bool isNetCore = true) {
+		string packagesSourcePath = isNetCore 
+			? Path.Combine(extractedPath, "Terrasoft.Configuration", "Pkg")
+			: Path.Combine(extractedPath, "Terrasoft.WebApp","Terrasoft.Configuration", "Pkg");
 
 		if (Program.IsDebugMode) {
-			_logger.WriteInfo($"[DEBUG] CopyNetCorePackages: Source={packagesSourcePath}");
+			string msg = isNetCore ? "CopyNetCorePackages" : "CopyNetFrameworkPackages";
+			_logger.WriteInfo($"[DEBUG] {msg}: Source={packagesSourcePath}");
 		}
 
 		if (!_fileSystem.ExistsDirectory(packagesSourcePath)) {
@@ -278,7 +229,10 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 
 
 		string packagesDestinationRoot
-			= Path.Join(_workspacePathBuilder.RootPath, ".application", "net-core", "packages");
+			= isNetCore 
+				? Path.Join(_workspacePathBuilder.RootPath, ".application", "net-core", "packages")
+				: Path.Join(_workspacePathBuilder.RootPath, ".application", "net-framework", "packages");
+		
 		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
 
 		if (Program.IsDebugMode) {
@@ -295,7 +249,8 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 
 			if (_fileSystem.ExistsDirectory(filesBinPath)) {
 				string destinationPackagePath = Path.Combine(packagesDestinationRoot, packageName);
-				_logger.WriteInfo($"Copying NetCore package {packageName}");
+				string msg = isNetCore ? "NetCore" : "NetFramework";
+				_logger.WriteInfo($"Copying {msg} package {packageName}");
 
 				if (Program.IsDebugMode) {
 					_logger.WriteInfo($"[DEBUG]   {packageName}: {packageFolder} -> {destinationPackagePath}");
@@ -314,72 +269,25 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		}
 
 		if (Program.IsDebugMode) {
-			_logger.WriteInfo($"[DEBUG] NetCore packages summary: Copied={copiedPackages}, Skipped={skippedPackages}");
+			string msg = isNetCore ? "NetCore" : "NetFramework";
+			_logger.WriteInfo($"[DEBUG] {msg} packages summary: Copied={copiedPackages}, Skipped={skippedPackages}");
 		}
 	}
 
-	private void CopyPackages(string terrasoftWebAppPath) {
-		string packagesSourcePath = Path.Combine(terrasoftWebAppPath, "Terrasoft.Configuration", "Pkg");
-
-		if (Program.IsDebugMode) {
-			_logger.WriteInfo($"[DEBUG] CopyPackages: Source={packagesSourcePath}");
-		}
-
-		if (!_fileSystem.ExistsDirectory(packagesSourcePath)) {
-			_logger.WriteWarning($"Packages directory not found: {packagesSourcePath}");
-			return;
-		}
-
-		string packagesDestinationRoot
-			= Path.Join(_workspacePathBuilder.RootPath, ".application", "net-framework", "packages");
-		_fileSystem.CreateDirectoryIfNotExists(packagesDestinationRoot);
-
-		if (Program.IsDebugMode) {
-			_logger.WriteInfo($"[DEBUG]   Destination: {packagesDestinationRoot}");
-		}
-
-		string[] packageFolders = _fileSystem.GetDirectories(packagesSourcePath);
-		int copiedPackages = 0;
-		int skippedPackages = 0;
-
-		foreach (string packageFolder in packageFolders) {
-			string packageName = Path.GetFileName(packageFolder);
-			string filesBinPath = Path.Combine(packageFolder, "Files", "bin");
-
-			if (_fileSystem.ExistsDirectory(filesBinPath)) {
-				string destinationPackagePath = Path.Combine(packagesDestinationRoot, packageName);
-				_logger.WriteInfo($"Copying package {packageName}");
-
-				if (Program.IsDebugMode) {
-					_logger.WriteInfo($"[DEBUG]   {packageName}: {packageFolder} -> {destinationPackagePath}");
-				}
-
-				_fileSystem.CreateDirectoryIfNotExists(destinationPackagePath);
-				CopyDirectory(packageFolder, destinationPackagePath);
-				copiedPackages++;
-			}
-			else {
-				skippedPackages++;
-				if (Program.IsDebugMode) {
-					_logger.WriteInfo($"[DEBUG]   Skipped {packageName} (no Files/bin folder)");
-				}
-			}
-		}
-
-		if (Program.IsDebugMode) {
-			_logger.WriteInfo(
-				$"[DEBUG] NetFramework packages summary: Copied={copiedPackages}, Skipped={skippedPackages}");
-		}
-	}
-
-	private void CopyRootAssemblies(string extractedPath, string destination) {
+	private void CopyRootAssemblies(string extractedPath, string destination, bool isNetCore = true) {
 		if (Program.IsDebugMode) {
 			_logger.WriteInfo($"[DEBUG] CopyRootAssemblies: Source={extractedPath}, Destination={destination}");
 		}
 
-		string[] files = _fileSystem.GetFiles(extractedPath);
+		string[] files = isNetCore 
+			? _fileSystem.GetFiles(extractedPath)
+			: _fileSystem.GetFiles(Path.Combine(extractedPath, "Terrasoft.WebApp", "bin"));
 		int copiedCount = 0;
 
+		if (copiedCount == 0) {
+			_logger.WriteWarning($"No root assemblies found in {extractedPath}");
+		}
+		
 		foreach (string file in files) {
 			string fileName = Path.GetFileName(file);
 			string extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -427,30 +335,44 @@ public class ZipBasedApplicationDownloader : IZipBasedApplicationDownloader{
 		}
 
 		// Copy conf/bin/{NUMBER} - select the latest numbered folder
-		CopyNetCoreConfigurationBinFiles(extractedPath, configBinDestination);
+		CopyConfigurationBinFiles(extractedPath, configBinDestination, true);
 
 		// Copy packages with Files/bin filter
-		CopyNetCorePackages(extractedPath);
+		CopyPackages(extractedPath, true);
 
 		_logger.WriteInfo("NetCore configuration downloaded successfully");
 	}
 
 	private void DownloadNetFrameworkConfiguration(string extractedPath) {
 		_logger.WriteInfo("Detected NetFramework Creatio");
-		string terrasoftWebAppPath = Path.Combine(extractedPath, NetFrameworkMarkerFolder);
+		
+		string coreBinDestination = _workspacePathBuilder.CoreBinFolderPath.Replace("net-core", "net-framework");
+		string libDestination = _workspacePathBuilder.LibFolderPath.Replace("net-core", "net-framework");
+		string configBinDestination
+			= _workspacePathBuilder.ConfigurationBinFolderPath.Replace("net-core", "net-framework");
+		
+		
+		// Copy root DLL and PDB files
+		_logger.WriteInfo($"Copying NetFramework root assemblies (DLL and PDB) to {coreBinDestination}");
+		_fileSystem.CreateDirectoryIfNotExists(coreBinDestination);
+		CopyRootAssemblies(extractedPath, coreBinDestination, false);
 
-		// 1. Copy Terrasoft.WebApp/bin/* to .application/net-framework/core-bin
-		CopyCoreBinFiles(terrasoftWebAppPath);
+		// Copy Terrasoft.Configuration/Lib if exists
+		string libPath = Path.Combine(extractedPath, "Terrasoft.Configuration", "Lib");
+		if (_fileSystem.ExistsDirectory(libPath)) {
+			_logger.WriteInfo($"Copying NetFramework lib files to {libDestination}");
+			_fileSystem.CreateDirectoryIfNotExists(libDestination);
+			CopyAllFiles(libPath, libDestination);
+		}
 
-		// 2. Copy Terrasoft.WebApp/Terrasoft.Configuration/Lib/* to .application/net-framework/bin
-		CopyLibFiles(terrasoftWebAppPath);
+		// Copy conf/bin/{NUMBER} - select the latest numbered folder
+		CopyConfigurationBinFiles(extractedPath, configBinDestination, false);
 
-		// 3. Copy the latest conf / bin/{NUMBER} files to .application/net-framework/bin
-		CopyConfigurationBinFiles(terrasoftWebAppPath);
-
-		// 4. Copy packages with Files/bin to .application/net-framework/packages
-		CopyPackages(terrasoftWebAppPath);
-
+		// Copy packages with Files/bin filter
+		CopyPackages(extractedPath, false);
+		
+		CopyLibFiles(extractedPath, false);
+			
 		_logger.WriteInfo("NetFramework configuration downloaded successfully");
 	}
 

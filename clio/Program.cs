@@ -154,8 +154,10 @@ internal class Program {
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
 		return instance switch {
 					ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
-					RestartOptions opts => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
-					ClearRedisOptions opts => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
+					//RestartOptions opts => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
+					RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
+					//ClearRedisOptions opts => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
+					ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
 					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 					AppListOptions opts => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),

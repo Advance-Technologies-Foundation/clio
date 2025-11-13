@@ -99,6 +99,8 @@ namespace Clio.Workspaces
 		public string LibFolderPath => Path.Combine(ApplicationFolderPath, LibFolderName);
 		public string ConfigurationBinFolderPath => Path.Combine(ApplicationFolderPath, ConfigurationBinFolderName);
 
+		
+		
 		#endregion
 
 		#region Methods: Private

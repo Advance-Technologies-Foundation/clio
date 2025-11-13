@@ -258,7 +258,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		downloader.DownloadFromZip(zipFilePath);
 
 		// Assert
-		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.LibFolderPath, "Newtonsoft.Json.dll"))
+		_mockFileSystem.FileExists(Path.Combine(_workspacePathBuilderMock.RootPath,".application","net-framework","lib", "Newtonsoft.Json.dll"))
 			.Should().BeTrue(because: "Library DLL should be copied to lib folder");
 	}
 
@@ -313,7 +313,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupWorkspacePaths();
 		SetupTempDirectoryCallback(tempDir => {
 			// Create structure without bin folder
-			var webAppPath = Path.Combine(TempDir, "Terrasoft.WebApp");
+			var webAppPath = Path.Combine(tempDir,"extracted", "Terrasoft.WebApp");
 			_mockFileSystem.AddDirectory(webAppPath);
 		});
 		SetupZipFile(zipFilePath);
@@ -470,16 +470,16 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 	[Description("Should log warning when conf/bin folder has no numbered subfolders")]
 	public void DownloadFromZip_LogsWarning_WhenNoNumberedFolders(){
 		// Arrange
-		var zipFilePath = @"C:\creatio.zip";
 		SetupWorkspacePaths();
+		var zipFilePath = @"C:\creatio.zip";
+		SetupZipFile(zipFilePath);
 		SetupTempDirectoryCallback(tempDir => {
 			// Create NetFramework structure without numbered folders
-			var webAppPath = Path.Combine(TempDir, "Terrasoft.WebApp");
+			var webAppPath = Path.Combine(tempDir, "extracted","Terrasoft.WebApp");
 			_mockFileSystem.AddDirectory(webAppPath);
 			var confBinPath = Path.Combine(webAppPath, "conf", "bin");
 			_mockFileSystem.AddDirectory(confBinPath);
 		});
-		SetupZipFile(zipFilePath);
 		
 		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
 
