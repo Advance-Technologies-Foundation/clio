@@ -23,8 +23,28 @@ spec:
               memory: "2Gi"
               cpu: "1"
             requests:
-              memory: "512Mi"
-              cpu: "0.25"
+              memory: "1Gi"
+              cpu: "0.5"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U postgres
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U postgres
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
           env:
             - name : POSTGRES_DB
               value : postgres

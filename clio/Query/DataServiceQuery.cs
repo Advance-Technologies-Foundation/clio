@@ -161,11 +161,19 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 							};
 
 		string beautifiedJson = BeautifyJsonIfPossible(jsonResult);
+		
 		if (string.IsNullOrWhiteSpace(resultFileName)) {
-			if (!IsSilent) { Logger.WriteLine(beautifiedJson); }
+			// Print to console if no destination file specified
+			if (!IsSilent) { 
+				Logger.WriteLine(beautifiedJson); 
+			}
 		}
 		else {
+			// Write to file if destination specified
 			_fileSystem.WriteAllTextToFile(resultFileName, beautifiedJson);
+			if (!IsSilent) {
+				Logger.WriteInfo($"Result saved to {resultFileName}");
+			}
 		}
 
 		return jsonResult;

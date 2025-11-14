@@ -29,11 +29,27 @@ spec:
           imagePullPolicy: "Always"
           resources:
             requests:
-              cpu: "0.10"
-              memory: "128Mi"
-            limits:
               cpu: "0.25"
               memory: "256Mi"
+            limits:
+              cpu: "0.5"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /misc/ping
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /misc/ping
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
           env:
             - name: PGADMIN_DEFAULT_EMAIL
               valueFrom:

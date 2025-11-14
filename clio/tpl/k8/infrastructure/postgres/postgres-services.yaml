@@ -14,6 +14,10 @@ spec:
     type: LoadBalancer
     selector:
       app: clio-postgres
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
 
 
 ---
@@ -22,7 +26,7 @@ kind: Service
 metadata:
   name: postgres-service-internal
   annotations:
-    a8r.io/description: "This is cluster internal service, primarily used by email-listener, pdAdmin and IdentityService if installed"
+    a8r.io/description: "This is cluster internal service, primarily used by email-listener, pgAdmin and IdentityService if installed"
   namespace: clio-infrastructure
   labels:
     app: clio-postgres
@@ -30,6 +34,9 @@ spec:
     ports:
     - port: 5432
       targetPort: 5432
+      protocol: TCP
     type: ClusterIP
     selector:
       app: clio-postgres
+    sessionAffinity: None
+    clusterIP: None
