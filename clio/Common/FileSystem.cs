@@ -35,22 +35,10 @@ public class FileSystem : IFileSystem
 		_msFileSystem.File.Open(filePath, mode, access, share);
 
 	public static void CreateLink(string link, string target) {
-		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-			Process mklinkProcess = Process.Start(
-				new ProcessStartInfo("cmd", $"/c mklink /D \"{link}\" \"{target}\"") {
-					CreateNoWindow = true
-				});
-			mklinkProcess.WaitForExit();
-		} else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
-			Process lnProcess = Process.Start(
-				new ProcessStartInfo("ln", $"-s \"{target}\" \"{link}\"") {
-					CreateNoWindow = true
-				});
-			lnProcess.WaitForExit();
-		} else {
-			throw new NotSupportedException($"CreateLink is not supported on {RuntimeInformation.OSDescription}");
-		}
+		var _msFileSystem = new System.IO.Abstractions.FileSystem();
+    	_msFileSystem.Directory.CreateSymbolicLink(link, target);
 	}
+	
 	public long GetFileSize(string filePath) {
 		filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
 		Ms.IFileInfoFactory fileInfoFactory = _msFileSystem.FileInfo;
