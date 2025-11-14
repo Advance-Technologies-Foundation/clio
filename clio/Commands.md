@@ -1364,17 +1364,38 @@ clio nuget2dll <PACKAGE_NAME>
 ## link-from-repository
 
 To connect your package from workspace to local system in file design mode use command
-```
-clio link-from-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
-```
-<details>
-<summary>Link all packages from repository</summary>
 
+**On Windows (with environment name):**
+```
+clio link-from-repository -e MyEnvironment --repoPath {Path to workspace packages folder} --packages {package name or *}
+```
+
+**On Windows/macOS/Linux (with direct path):**
+```
+clio link-from-repository --envPkgPath {Path to environment package folder} --repoPath {Path to workspace packages folder} --packages {package name or *}
+```
+
+**Examples:**
+
+Windows with environment name:
 ```ps
-clio l4r -e ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg) -p * -r .\
+clio l4r -e MyEnvironment -p * -r .\packages
 ```
 
-</details>
+macOS/Linux with direct path:
+```bash
+clio l4r --envPkgPath /path/to/Creatio/Terrasoft.Configuration/Pkg --repoPath ./packages --packages "*"
+```
+
+Windows with direct path:
+```ps
+clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\packages --packages "*"
+```
+
+**Notes:**
+- On Windows, you can use environment name if it's registered in clio settings
+- On macOS and Linux, you must use the `--envPkgPath` with the direct file path
+- Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
 ## link-to-repository
 

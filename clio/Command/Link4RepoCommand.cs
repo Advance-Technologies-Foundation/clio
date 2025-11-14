@@ -10,6 +10,7 @@ using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;
 using MediatR;
+using static Clio.Common.OperationSystem;
 
 namespace Clio.Command;
 
@@ -144,19 +145,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 				};
 	}
 
-	/// <summary>
-	///  Handles the linking of repository packages to the environment by environment name.
-	/// </summary>
-	/// <param name="envName">The name of the environment.</param>
-	/// <param name="repoPath">The path to the package repository folder.</param>
-	/// <param name="packages">The packages to link.</param>
-	/// <returns>
-	///  <list type="bullet">
-	///   <item>0 if the linking is successful.</item>
-	///   <item>1 if the environment is not registered or the URL is missing.</item>
-	///  </list>
-	/// </returns>
-	private int HandleLinkingByEnvName(string envName, string repoPath, string packages){
+	private int HandleLinkingByEnvNameOnWindows(string envName, string repoPath, string packages){
 		ExecuteMediatorRequest(OnAllSitesRequestCompleted); //This fills AllSites property with all registered sites.
 		if (!_settingsRepository.IsEnvironmentExists(envName)) {
 			_logger.WriteError(
@@ -192,6 +181,26 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 		_logger.WriteError($"Environment {envName} not found. Please check the environment name and try again.");
 		return 1;
+	}
+
+	/// <summary>
+	///  Handles the linking of repository packages to the environment by environment name.
+	/// </summary>
+	/// <param name="envName">The name of the environment.</param>
+	/// <param name="repoPath">The path to the package repository folder.</param>
+	/// <param name="packages">The packages to link.</param>
+	/// <returns>
+	///  <list type="bullet">
+	///   <item>0 if the linking is successful.</item>
+	///   <item>1 if the environment is not registered or the URL is missing.</item>
+	///  </list>
+	/// </returns>
+	private int HandleLinkingByEnvName(string envName, string repoPath, string packages){
+		if (!Current.IsWindows) {
+			_logger.WriteError("Linking by environment name is only supported on Windows. Please use --envPkgPath with direct file path instead.");
+			return 1;
+		}
+		return HandleLinkingByEnvNameOnWindows(envName, repoPath, packages);
 	}
 
 	/// <summary>
@@ -234,8 +243,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// <remarks>
 	///  This method performs the following steps:
 	///  <list type="bullet">
-	///   <item>Checks if the current operating system is Windows.</item>
-	///   <item>Attempts to create a URI from the provided environment package path.</item>
+	///   <item>Validates the provided options.</item>
 	///   <item>
 	///    Calls the appropriate method to handle the linking based on whether the path is a valid URI or an environment
 	///    name.
@@ -243,21 +251,21 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	///  </list>
 	/// </remarks>
 	public override int Execute(Link4RepoOptions options){
-		if (!OperationSystem.Current.IsWindows) {
-			_logger.WriteError("Clio mklink command is only supported on: 'windows'.");
-			return 1;
-		}
-
 		ValidationResult validationResult = _validator.Validate(options);
 		if (!validationResult.IsValid) {
 			return PrintErrorsAndExit(validationResult.Errors);
 		}
 
-		return options switch {
-					not null when !string.IsNullOrWhiteSpace(options.Environment) => HandleEnvironmentOption(options),
-					not null when !string.IsNullOrWhiteSpace(options.EnvPkgPath) => HandleEnvPkgPathOptions(options),
-					var _ => 1
-				};
+		try {
+			return options switch {
+						not null when !string.IsNullOrWhiteSpace(options.Environment) => HandleEnvironmentOption(options),
+						not null when !string.IsNullOrWhiteSpace(options.EnvPkgPath) => HandleEnvPkgPathOptions(options),
+						var _ => 1
+					};
+		} catch (Exception ex) {
+			_logger.WriteError($"Error during linking: {ex.Message}");
+			return 1;
+		}
 	}
 
 	#endregion
