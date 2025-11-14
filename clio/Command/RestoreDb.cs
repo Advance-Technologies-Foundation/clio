@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Globalization;
 using System.IO;
+using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.db;
 using Clio.UserEnvironment;
@@ -10,8 +11,15 @@ namespace Clio.Command;
 
 #region Class: RestoreDbCommandOptions
 
-[Verb("restore-db", Aliases = new string[] {"rdb"}, HelpText = "Restores database from backup file")]
-public class RestoreDbCommandOptions : EnvironmentOptions { }
+[Verb("restore-db", Aliases = ["rdb"], HelpText = "Restores database from backup file")]
+public class RestoreDbCommandOptions : EnvironmentOptions{
+	[Option( "dbName", Required = false, HelpText = "dbName")]
+	public string DbName { get; set; }
+	
+	[Option( "backupPath", Required = false, HelpText = "backup Path")]
+	public string BackupPath { get; set; }
+	
+}
 
 #endregion
 
@@ -26,16 +34,19 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	private readonly IFileSystem _fileSystem;
 	private readonly IDbClientFactory _dbClientFactory;
 	private readonly ISettingsRepository _settingsRepository;
+	private readonly ICreatioInstallerService _creatioInstallerService;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory, ISettingsRepository settingsRepository) {
+	public RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory, 
+		ISettingsRepository settingsRepository, ICreatioInstallerService creatioInstallerService) {
 		_logger = logger;
 		_fileSystem = fileSystem;
 		_dbClientFactory = dbClientFactory;
 		_settingsRepository = settingsRepository;
+		_creatioInstallerService = creatioInstallerService;
 	}
 
 	#endregion
@@ -43,8 +54,28 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	#region Methods: Public
 
 	public override int Execute(RestoreDbCommandOptions options) {
-		EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
+
+		if (!string.IsNullOrEmpty(options.BackupPath)) {
+			
+			if (Path.GetExtension(options.BackupPath) == ".backup") {
+				
+				_logger.WriteInfo($"Restoring database from backup file: {options.BackupPath}");
+				return RestorePg(options.DbName, options.BackupPath);
+			}
+			
+			if (_fileSystem.ExistsDirectory(options.BackupPath)) {
+				string[] backupFiles = _fileSystem.GetFiles(
+					options.BackupPath, "*.backup", SearchOption.AllDirectories);
+				if (backupFiles.Length == 0) {
+					_logger.WriteError($"No .backup files found in directory: {options.BackupPath}");
+					return 1;
+				}
+				_logger.WriteInfo($"Restoring database from backup file: {backupFiles[0]}");
+				return RestorePg(options.DbName, backupFiles[0]);
+			}
+		}
 		
+		EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
 		var result =  env.DbServer.Uri.Scheme switch {
 			 "mssql" => RestoreMs(env.DbServer, env.DbName, options.Force, env.BackupFilePath),
 			  var _ => HandleIncorrectUri(options.Uri)
@@ -85,8 +116,10 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		return result;
 	}
 
-	private int RestorePg(Uri uri, RestoreDbCommandOptions options){
-		throw new NotImplementedException("Not implemented yet;");
+	private int RestorePg(string dbName, string backupFilePath ){
+		var fileInfo = new FileInfo(backupFilePath);
+		DirectoryInfo directoryInfo = fileInfo.Directory;
+		return _creatioInstallerService.DoPgWork(directoryInfo, dbName);
 	}
 
 	

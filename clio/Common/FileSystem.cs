@@ -36,7 +36,12 @@ public class FileSystem : IFileSystem
 
 	public static void CreateLink(string link, string target) {
 		var _msFileSystem = new System.IO.Abstractions.FileSystem();
-    	_msFileSystem.Directory.CreateSymbolicLink(link, target);
+		_msFileSystem.Directory.CreateSymbolicLink(link, target);
+		// Process mklinkProcess = Process.Start(
+		// 	new ProcessStartInfo("cmd", $"/c mklink /D \"{link}\" \"{target}\"") {
+		// 		CreateNoWindow = true
+		// 	});
+		// mklinkProcess.WaitForExit();
 	}
 	
 	public long GetFileSize(string filePath) {

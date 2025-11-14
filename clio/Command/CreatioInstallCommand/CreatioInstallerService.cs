@@ -26,6 +26,7 @@ public interface ICreatioInstallerService
 		CreatioRuntimePlatform runtimePlatform);
 	
 	int StartWebBrowser(PfInstallerOptions options);
+	int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName);
 
 }
 
@@ -217,6 +218,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return;
 		}
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
+		if (src is null) {
+			src = unzippedDirectory?.GetFiles("*.backup").FirstOrDefault();
+			
+		}
 		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
@@ -261,7 +266,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 0;
 	}
 
-	private int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName){
+	public int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName){
 		string tmpDbName = "template_" + unzippedDirectory.Name;
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
 		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);

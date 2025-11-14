@@ -55,7 +55,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 			DbName = options.DbName,
 			BackupFilePath = options.BackUpFilePath
 		});
-		RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository);
+		RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository, null);
 		
 		StringReader input = new (newDbName);
 		Console.SetIn(input);
