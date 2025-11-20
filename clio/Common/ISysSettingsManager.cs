@@ -9,6 +9,7 @@ using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
 using Newtonsoft.Json.Linq;
+using Terrasoft.Core;
 using static CreatioModel.SysSettings;
 
 namespace Clio.Common;
@@ -224,13 +225,12 @@ public class SysSettingsManager : ISysSettingsManager
 		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
 	}
 
-	public bool UpdateSysSetting(string code, object value, string valueTypeName = ""){
+	public bool UpdateSysSetting(string code, object value, string valueTypeName = "Text"){
 		string requestData = string.Empty;
 		var sysSetting = GetSysSettingByCode(code);
-		string optionsType = string.IsNullOrWhiteSpace(valueTypeName)
+		string optionsType = sysSetting is not null
 			? sysSetting.ValueTypeName : valueTypeName;
-
-		if (optionsType.Contains("Text") || optionsType.Contains("Date") ||optionsType.Contains("Time") || optionsType.Contains("Lookup")) {
+		if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Time") || optionsType.Contains("Lookup")) {
 			if (optionsType == "Lookup") {
 				bool isGuid = Guid.TryParse(value.ToString(), out Guid id);
 				if (!isGuid) {
@@ -240,7 +240,7 @@ public class SysSettingsManager : ISysSettingsManager
 					value = entityId.ToString();
 				}
 			}
-			if (new[] {"Date", "DateTime", "Time"}.Contains(optionsType)) {
+			if (new[] { "Date", "DateTime", "Time" }.Contains(optionsType)) {
 				value = DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss.fff");
 			}
 
