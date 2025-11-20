@@ -1159,6 +1159,7 @@ Aliases: `dconf`
 - [Add schema](#add-schema)
 - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
 - [Link Workspace to File Design Mode](#link-from-repository)
+- [Link PackageStore to Environment](#link-package-store)
 - [Mock data for Unit Tests](#mock-data)
 - [Calculate App Hash](#get-app-hash)
 - [Link workspace with T.I.D.E. repository](#link-workspace-with-tide-repository)
@@ -1532,6 +1533,52 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 - On Windows, you can use environment name if it's registered in clio settings
 - On macOS and Linux, you must use the `--envPkgPath` with the direct file path
 - Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
+
+## link-package-store
+
+To link packages from PackageStore to environment packages with version control use command:
+
+**Syntax:**
+```
+clio link-package-store --packageStorePath {Path to PackageStore} --envPkgPath {Path to environment package folder}
+```
+
+**Examples:**
+
+macOS/Linux:
+```bash
+clio lps --packageStorePath /store/packages --envPkgPath /path/to/Creatio/Terrasoft.Configuration/Pkg
+```
+
+Windows:
+```ps
+clio link-package-store --packageStorePath "C:\PackageStore" --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg"
+```
+
+Windows with environment name:
+```ps
+clio link-package-store --packageStorePath "C:\PackageStore" -e MyEnvironment
+```
+
+**Options:**
+- `--packageStorePath` (required): Path to PackageStore root directory
+- `--envPkgPath` (optional): Path to environment package folder. Can be omitted if using `-e`
+- `-e`, `--Environment` (optional): Environment name registered in clio settings (Windows only, alternative to `--envPkgPath`)
+
+**Notes:**
+- PackageStore expected structure: `{Package_name}/{branches}/{version}/{content}` (3-level hierarchy)
+- Only packages existing in both PackageStore and environment will be linked
+- Package version is determined from `descriptor.json` in the environment package
+- If package versions don't match, package will be skipped
+- Creates symbolic links for package content (efficient disk usage)
+- Works on Windows, macOS, and Linux
+- If a symbolic link already exists, it will be removed and recreated
+- Missing packages in store are logged and skipped (not added to environment)
+- Missing packages in environment are not modified
+
+**Return codes:**
+- `0` - linking completed successfully
+- `1` - errors occurred during linking or validation failed
 
 ## link-to-repository
 

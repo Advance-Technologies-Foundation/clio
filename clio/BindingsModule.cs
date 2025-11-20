@@ -241,6 +241,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<GetAppHashCommand>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
+		containerBuilder.RegisterType<LinkPackageStoreCommand>();
 		
 		
 
@@ -258,6 +259,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<TurnFarmModeOptionsValidator>();
 		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
 		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
+		containerBuilder.RegisterType<LinkPackageStoreOptionsValidator>();
 		containerBuilder.RegisterType<DownloadConfigurationCommandOptionsValidator>();
 
 		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();

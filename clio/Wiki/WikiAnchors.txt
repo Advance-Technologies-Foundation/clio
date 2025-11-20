@@ -27,3 +27,4 @@ generate-process-model: Generate Process Model
 download-configuration: download configuration
 publish-app: publish workspace
 publish-workspace: publish workspace
+link-package-store:link-package-store
