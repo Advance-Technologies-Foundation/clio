@@ -136,6 +136,9 @@ public class Step
 	[YamlMember(Alias = "options")]
 	public IReadOnlyDictionary<object, object> Options { get; init; }
 
+	[YamlMember(Alias = "values")]
+	public IReadOnlyDictionary<object, object> Values { get; init; }
+
 	#endregion
 
 	#region Methods: Public
@@ -152,6 +155,7 @@ public class Step
 		Func<string, OneOf<object, None>> secretsLookup) {
 		OneOf<Type, None> maybeType = FindOptionTypeByName(allTypes, Action);
 		OneOf<None, object> maybeOptions = ActivateOptions(maybeType, Options, settingsLookup, secretsLookup);
+		//OneOf<None, object> maybeValues = ActivateOptions(maybeType, Values, settingsLookup, secretsLookup);
 		return new Tuple<OneOf<None, object>, string>( maybeOptions, Description ?? Action);
 	}
 

@@ -39,14 +39,14 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
 				bool isLoaderPathEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.PhysicalPath);
 				bool isEnvEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.Environment);
 
-				if (isEnvEmpty && isLoaderPathEmpty) {
-					context.AddFailure(new ValidationFailure {
-						ErrorCode = "ArgumentParse.Error",
-						ErrorMessage = "Either loacalpath or environment name must be provided",
-						Severity = Severity.Error,
-						AttemptedValue = value
-					});
-				}
+				// if (isEnvEmpty && isLoaderPathEmpty) {
+				// 	context.AddFailure(new ValidationFailure {
+				// 		ErrorCode = "ArgumentParse.Error",
+				// 		ErrorMessage = "Either local-path or environment name must be provided",
+				// 		Severity = Severity.Error,
+				// 		AttemptedValue = value
+				// 	});
+				// }
 			});
 	}
 

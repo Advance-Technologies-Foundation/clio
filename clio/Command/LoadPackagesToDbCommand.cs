@@ -7,7 +7,7 @@ namespace Clio.Command
 
 	#region Class: LoadPackagesToDbOptions
 
-	[Verb("pkg-to-db", Aliases = new string[] { "todb", "2db" },
+	[Verb("pkg-to-db", Aliases = ["todb", "2db"],
 		HelpText = "Load packages to database on a web application")]
 	public class LoadPackagesToDbOptions : EnvironmentOptions
 	{
