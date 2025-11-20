@@ -24,6 +24,7 @@ public class CallServiceCommandOptions : RemoteCommandOptions {
 	[Option('f', "input", Required = false, HelpText = "Request file", Separator = ' ')]
 	public string RequestFileName { get; set; }
 
+	[Option('b', "body", Required = false, HelpText = "Request body JSON")]
 	public string RequestBody { get; set; }
 
 	[Option('d', "destination", Required = false, HelpText = "Destination set")]

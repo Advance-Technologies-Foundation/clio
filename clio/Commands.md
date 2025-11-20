@@ -1229,32 +1229,137 @@ execute-sql-script -f c:\Path to file\file.sql
 
 ## call-Service
 
-Makes HTTP call to specified service endpoint.
+Makes HTTP call to specified service endpoint. Supports both file-based and inline JSON request bodies.
+
+### Parameters
+
+| Key | Short | Value | Description |
+|:---:|:-----:|:------|:------------|
+| --service-path | | Path | Route service path (required) |
+| --method | -m | GET\|POST\|PUT\|DELETE\|PATCH | HTTP method (default: POST) |
+| --input | -f | File path | Request body from file (path to JSON file) |
+| --body | -b | JSON string | Request body inline (JSON as string) |
+| --destination | -d | File path | Save result to file |
+| --variables | -v | key=value pairs | Variable substitution in body (separated by `;`) |
+| --silent | | | Suppress console output |
+
+**Note:** `--body` and `--input` are mutually exclusive. If both provided, `--body` takes precedence.
+
+### Basic Usage - GET Request
 
 ```bash
-clio call-service --service-path <path> -e <environment> --destination <file>
+clio call-service --service-path ServiceModel/ApplicationInfoService.svc/GetApplicationInfo -e myEnv
 ```
 
-Example:
+### Usage - POST with File (Backward Compatible)
 
 ```bash
-clio call-service --service-path ServiceModel/ApplicationInfoService.svc/GetApplicationInfo -e myEnv --destination C:\json.json
+clio call-service --service-path ServiceModel/YourService.svc/YourMethod \
+  --input request.json \
+  --destination result.json \
+  -e myEnv
 ```
+
+### Usage - POST with Inline Body (New)
+
+**Simple inline JSON:**
+```bash
+clio call-service --service-path ServiceModel/YourService.svc/YourMethod \
+  --body '{"key":"value","number":123}' \
+  --destination result.json \
+  -e myEnv
+```
+
+### Usage - Different HTTP Methods
+
+**PUT request with inline body:**
+```bash
+clio call-service --service-path ServiceModel/UpdateService.svc/UpdateData \
+  --method PUT \
+  --body '{"id":1,"name":"Updated"}' \
+  -e myEnv
+```
+
+**DELETE request:**
+```bash
+clio call-service --service-path ServiceModel/DeleteService.svc/RemoveItem \
+  --method DELETE \
+  --body '{"id":123}' \
+  -e myEnv
+```
+
+### Usage - Variable Substitution with Inline Body
+
+**Single variable:**
+```bash
+clio call-service --service-path ServiceModel/UserService.svc/GetUser \
+  --body '{"userId":"{{userId}}"}' \
+  --variables userId=12345 \
+  -e myEnv
+```
+
+**Multiple variables:**
+```bash
+clio call-service --service-path ServiceModel/SearchService.svc/Search \
+  --body '{"firstName":"{{firstName}}","lastName":"{{lastName}}","age":"{{age}}"}' \
+  --variables firstName=John;lastName=Doe;age=30 \
+  -e myEnv
+```
+
+### Cross-Platform Shell Notes
+
+**Linux/macOS (Bash, Zsh):**
+```bash
+# Use single quotes to preserve JSON
+clio call-service --body '{"key":"value"}' --service-path ServicePath -e env
+```
+
+**PowerShell (Windows):**
+```powershell
+# Option 1: Use single quotes (works in PowerShell 7+)
+clio call-service --body '{"key":"value"}' --service-path ServicePath -e env
+
+# Option 2: Escape double quotes with backticks
+clio call-service --body "{`"key`":`"value`"}" --service-path ServicePath -e env
+```
+
+### Use Cases
+
+**When to use `--body` (inline):**
+- Small JSON payloads
+- Quick testing and validation
+- AI agents testing code without file management
+- CI/CD pipelines with dynamic content
+
+**When to use `--input` (file):**
+- Large or complex JSON structures
+- Reusable request templates
+- Requests with many variables
+- Sensitive data (credentials, etc.)
 
 
 
 ## DataService
 
-Execute dataservice requests on a web application.
+Execute dataservice requests on a web application. Supports both file-based and inline JSON request bodies.
 
-| Key | Value                   | Description                                            |
-|:---:|:------------------------|:-------------------------------------------------------|
-| -t  | Operation Type          | One of [select, insert, update, delete]                |
-| -f  | Input filename          | File in json format that contains request payload      |
-| -d  | Output filename         | File where result of the operation will be saved       |
-| -v  | Variables to substitute | List of key-value pairs to substitute in an input file |
+| Key | Short | Value | Description |
+|:---:|:-----:|:------|:------------|
+| -t | --type | Operation type | One of [select, insert, update, delete] (required) |
+| -f | --input | File path | Request body from file (JSON format) |
+| -b | --body | JSON string | Request body inline (JSON as string) |
+| -d | --destination | File path | File where result will be saved |
+| -v | --variables | key=value pairs | List of variables to substitute (separated by `;`) |
 
-Execute dataservice request with variable substitution.
+**Note:** `--body` and `--input` are mutually exclusive. If both provided, `--body` takes precedence.
+
+### SELECT Operation with File
+
+```bash
+clio ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v rootSchemaName=Contact;IdVar=Id
+```
+
+Where `SelectAllContacts.json` contains:
 ```json
 {
 	"rootSchemaName": "{{rootSchemaName}}",
@@ -1277,8 +1382,39 @@ Execute dataservice request with variable substitution.
 }
 ```
 
+### SELECT Operation with Inline Body (New)
+
+```bash
+clio ds -t select \
+  --body '{"rootSchemaName":"Contact","operationType":0,"columns":{"items":{"Id":{"caption":"","isVisible":true}}}}' \
+  -d SelectResult.json
 ```
-clio ds -t select -f SelectAllContacts.json -d SelectAllContacts_Result.json -v rootSchemaName=Contact;IdVar=Id
+
+### INSERT Operation with Inline Body
+
+```bash
+clio ds -t insert \
+  --body '{"rootSchemaName":"Contact","values":{"Name":"{{contactName}}","Email":"{{email}}"}}' \
+  --variables contactName=John;email=john@example.com \
+  -d InsertResult.json
+```
+
+### UPDATE Operation with Inline Body and Variables
+
+```bash
+clio ds -t update \
+  --body '{"rootSchemaName":"Contact","values":{"Name":"{{newName}}"},"filters":{"Id":"{{recordId}}"}}' \
+  --variables newName=Jane;recordId=12345 \
+  -d UpdateResult.json
+```
+
+### DELETE Operation with Inline Body
+
+```bash
+clio ds -t delete \
+  --body '{"rootSchemaName":"Contact","filters":{"Id":"{{recordId}}"}}' \
+  --variables recordId=12345 \
+  -d DeleteResult.json
 ```
 
 ## add-item
