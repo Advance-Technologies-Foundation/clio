@@ -79,23 +79,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			{
 				return ExitWithErrorMessage($"Port {options.SitePort} is not available. Please stop the process using this port or choose a different port.");
 			}
-
-			// Kill any existing Creatio process for this environment to release locked files
-			await KillExistingApplication(appDirectory.FullName, options);
-
-			// NOTE: appDirectory is already the prepared deployment folder with:
-			// - Extracted application files
-			// - Restored database in 'db' subfolder
-			// We do NOT delete this directory as it would lose the restored database.
-			// Simply copy/update application files, preserving the db folder.
-
-			// Ensure target directory exists
-			Directory.CreateDirectory(appDirectory.FullName);
-
-			// Copy application files (will overwrite existing, but preserve db folder)
-			CopyApplicationFiles(appDirectory.FullName, appDirectory.FullName);
-			_logger.WriteInfo("Application files copied");
-
+            _logger.WriteInfo($"Port {options.SitePort} is available");
+            
 			// Create appsettings.json configuration
 			CreateApplicationConfiguration(appDirectory.FullName, options);
 			_logger.WriteInfo("Application configuration created");
@@ -198,8 +183,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			}
 			catch (IOException ex) when (ex.Message.Contains("being used by another process"))
 			{
-				_logger.WriteWarning($"File locked, skipping: {file.Name} - {ex.Message}");
-				// Skip locked files - they might be in use by running process
+				// Skip locked files silently - they might be in use by running process
 				// Continue copying other files
 			}
 			catch (Exception ex)

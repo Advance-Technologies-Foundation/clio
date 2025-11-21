@@ -225,7 +225,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			options.DeploymentMethod ?? "auto",
 			options.NoIIS
 		);
-		_logger.WriteInfo($"[Selected deployment strategy] - {strategy.GetDescription()}");
 		return strategy;
 	}
 
