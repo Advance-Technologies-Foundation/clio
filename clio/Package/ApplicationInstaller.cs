@@ -64,6 +64,11 @@ namespace Clio.Package
 			return InternalInstall(packagePath, environmentSettings, null, reportPath);
 		}
 
+		public bool InstallWithOptions(string packagePath, EnvironmentSettings environmentSettings = null,
+			string reportPath = null, PackageInstallOptions packageInstallOptions = null){
+			return InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
+		}
+
 		public bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
 			string reportPath = null){
 			return InternalUnInstall(appInfo, environmentSettings, null, reportPath);
