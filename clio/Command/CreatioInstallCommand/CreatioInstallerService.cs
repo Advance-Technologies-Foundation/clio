@@ -595,7 +595,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		Console.WriteLine(); // Blank line for readability
 		_logger.WriteInfo($"[OS Platform] - {(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macOS" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Windows")}");
 		_logger.WriteInfo($"[Is IIS Deployment] - {isIisDeployment}");
-		_logger.WriteInfo($"[Deployment Strategy] - {strategy.GetDescription()}");
 		_logger.WriteInfo($"[Site Name] - {options.SiteName}");
 		_logger.WriteInfo($"[Site Port] - {options.SitePort}");
 
