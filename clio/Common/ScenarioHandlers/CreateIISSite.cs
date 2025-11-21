@@ -95,7 +95,7 @@ namespace Clio.Common.ScenarioHandlers {
             string siteName = request.Arguments["siteName"].Trim();
             int sitePort = int.Parse(request.Arguments["port"].Trim());
             string sourceDirectory = request.Arguments["sourceDirectory"];
-            string destinationFolder = Path.Join(request.Arguments["destinationDirectory"].Trim(), siteName);
+            string destinationFolder = Path.Combine(request.Arguments["destinationDirectory"].Trim(), siteName);
             bool isNetFramework = bool.Parse(request.Arguments["isNetFramework"]);
             
             StringBuilder sb = new();
@@ -108,7 +108,7 @@ namespace Clio.Common.ScenarioHandlers {
             sb.Append(CreateAppPool(siteName, isNetFramework));
             sb.Append(CreateWebSite(siteName, sitePort, destinationFolder));
             if(isNetFramework) {
-                sb.Append(CreateWebApplication(siteName, Path.Join(destinationFolder, "Terrasoft.WebApp")));
+                sb.Append(CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
             }
 
             return new CreateIISSiteResponse {

@@ -1,0 +1,156 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    deploy-creatio - Deploy Creatio from a zip file to IIS (Windows) or dotnet runner (macOS/Linux)
+
+DESCRIPTION
+    Deploys Creatio application from a zip file. On Windows, deploys to Internet Information 
+    Services (IIS) by default. On macOS and Linux, uses dotnet runtime. Supports cross-platform
+    deployment with optional HTTPS configuration and automatic service management.
+
+SYNOPSIS
+    clio deploy-creatio [OPTIONS]
+
+OPTIONS
+    -e, --environment-name NAME
+        Required. Environment/site name for the deployment
+
+    --db DATABASE_TYPE
+        Database type: pg (PostgreSQL) or mssql (MS SQL Server)
+        Default: pg
+
+    --platform RUNTIME
+        Runtime platform: net6 or netframework
+        Default: net6 (if available)
+
+    --product PRODUCT_NAME
+        Product to deploy (optional)
+
+    --SiteName SITE_NAME
+        Website/application name in IIS (Windows) or service name (macOS/Linux)
+
+    --SitePort PORT
+        HTTP port number for the application
+        Default: 80 (HTTP), 443 (HTTPS)
+
+    --ZipFile FILE_PATH
+        Required. Path to Creatio zip file for deployment
+
+    --deployment METHOD
+        Deployment method: auto, iis, or dotnet
+        - auto: Use IIS on Windows, dotnet on macOS/Linux (default)
+        - iis: Force IIS deployment (Windows only)
+        - dotnet: Use dotnet runner on any platform
+        Default: auto
+
+    --no-iis
+        Don't use IIS on Windows - use dotnet runner instead
+        Equivalent to: --deployment dotnet
+
+    --app-path PATH
+        Custom application installation path
+        Default: Windows %ProgramFiles%/Creatio, macOS ~/creatio, Linux /opt/creatio
+
+    --use-https
+        Enable HTTPS for the application
+        Default: false (HTTP only)
+
+    --cert-path PATH
+        Path to SSL certificate file (.pem or .pfx format)
+        Required if --use-https is specified
+
+    --cert-password PASSWORD
+        Password for SSL certificate (if certificate is password-protected)
+
+    --auto-run
+        Automatically launch application in browser after deployment
+        Default: true
+
+    --silent
+        Run in silent mode without interactive prompts
+        Default: false
+
+EXAMPLES
+
+    1. Basic deployment with default settings (PostgreSQL, port 80, auto-run):
+       clio deploy-creatio -e "MyCreatio" --ZipFile "C:\creatio-app.zip"
+
+    2. Deploy with MS SQL and custom port:
+       clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
+           --ZipFile "/path/to/creatio-app.zip"
+
+    3. Deploy with .NET Framework (Windows):
+       clio deploy-creatio -e "LegacyApp" --platform netframework \\
+           --ZipFile "C:\creatio-framework.zip"
+
+    4. Deploy with HTTPS on Windows using dotnet (no IIS):
+       clio deploy-creatio -e "SecureApp" --no-iis --use-https \\
+           --cert-path "C:\certs\app.pem" --ZipFile "C:\creatio-app.zip"
+
+    5. Deploy to custom path on macOS:
+       clio deploy-creatio -e "CreatioApp" --app-path "/var/creatio" \\
+           --ZipFile "/Users/downloads/creatio-app.zip"
+
+    6. Deploy on Linux with systemd service management:
+       clio deploy-creatio -e "LinuxApp" --deployment dotnet \\
+           --app-path "/opt/creatio-prod" --ZipFile "/home/admin/creatio-app.zip"
+
+    7. Deploy without auto-launching browser:
+       clio deploy-creatio -e "BackgroundApp" --auto-run=false \\
+           --ZipFile "C:\creatio-app.zip"
+
+    8. Silent deployment with all parameters:
+       clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
+           --SiteName "AutoCreatio" --SitePort 8443 --use-https \\
+           --cert-path "/certs/server.pem" --ZipFile "/app/creatio.zip" --silent
+
+BEHAVIOR
+
+    Windows (Default - IIS):
+    - Creates IIS Application Pool
+    - Creates IIS Website with HTTP/HTTPS bindings
+    - Configures application pool identity and recycling
+    - Returns application URL in format: http(s)://FQDN:port
+
+    Windows (dotnet runtime):
+    - Deploys application files to custom or default path
+    - Creates Windows service (if applicable)
+    - Runs application via dotnet executable
+    - Returns application URL in format: http(s)://FQDN:port
+
+    macOS:
+    - Deploys application files to ~/creatio or custom path
+    - Creates launchd service for auto-start
+    - Manages service via launchctl
+    - Returns application URL with configured port
+
+    Linux:
+    - Deploys application files to /opt/creatio or custom path
+    - Creates systemd service unit file
+    - Manages service via systemctl
+    - Returns application URL with configured port
+
+DATABASE SETUP
+    Before deployment, ensure:
+    - Database server is accessible at configured hostname/port
+    - Database credentials are configured in appsettings.json
+    - Appropriate database exists or will be created during deployment
+
+TROUBLESHOOTING
+
+    Q: "The type or namespace name could not be found"
+    A: Ensure IIS is installed (Windows) or dotnet SDK is available
+
+    Q: "Application deployed but inaccessible"
+    A: Check firewall rules, port availability, and FQDN resolution
+
+    Q: "Certificate path not found"
+    A: Verify --cert-path points to valid certificate file (absolute path recommended)
+
+    Q: "Service not starting on macOS/Linux"
+    A: Check /var/log/system.log (macOS) or journalctl (Linux) for error details
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+

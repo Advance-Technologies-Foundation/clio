@@ -81,6 +81,27 @@ public class PfInstallerOptions : EnvironmentNameOptions
 	[Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
 	public string ZipFile { get; set; }
 
+	[Option("deployment", Required = false, Default = "auto", HelpText = "Deployment method: auto|iis|dotnet")]
+	public string DeploymentMethod { get; set; }
+
+	[Option("no-iis", Required = false, Default = false, HelpText = "Don't use IIS on Windows (use dotnet run instead)")]
+	public bool NoIIS { get; set; }
+
+	[Option("app-path", Required = false, HelpText = "Application installation path")]
+	public string AppPath { get; set; }
+
+	[Option("use-https", Required = false, Default = false, HelpText = "Use HTTPS (requires certificate for dotnet)")]
+	public bool UseHttps { get; set; }
+
+	[Option("cert-path", Required = false, HelpText = "Path to SSL certificate file (.pem or .pfx)")]
+	public string CertificatePath { get; set; }
+
+	[Option("cert-password", Required = false, HelpText = "Password for SSL certificate")]
+	public string CertificatePassword { get; set; }
+
+	[Option("auto-run", Required = false, Default = true, HelpText = "Automatically run application after deployment")]
+	public bool AutoRun { get; set; }
+
 	#endregion
 
 }

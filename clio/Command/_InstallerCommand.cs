@@ -337,7 +337,14 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
 		Console.WriteLine("[CheckUpdate connection string] - Started");
-		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		InstallerHelper.DatabaseType dbType;
+		try {
+			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		} catch (Exception ex) {
+			Console.WriteLine($"[DetectDataBase] - Could not detect database type: {ex.Message}");
+			Console.WriteLine("[DetectDataBase] - Defaulting to PostgreSQL");
+			dbType = InstallerHelper.DatabaseType.Postgres;
+		}
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
 			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
@@ -469,12 +476,22 @@ public class InstallerCommand : Command<PfInstallerOptions>
 		}
 
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
-		Console.WriteLine($"[Staring unzipping] - {options.ZipFile}");
-		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
+		string deploymentFolder = Path.Combine(_iisRootFolder, options.SiteName);
+		Console.WriteLine($"[Starting unzipping] - {options.ZipFile} to {deploymentFolder}");
+		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver);
 		Console.WriteLine($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
 
-		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {
+		InstallerHelper.DatabaseType dbType;
+		try {
+			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		} catch (Exception ex) {
+			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
+			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
+			dbType = InstallerHelper.DatabaseType.Postgres;
+		}
+
+		int dbRestoreResult = dbType switch {
 			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
 			_ => DoPgWork(unzippedDirectory, options.SiteName)
 		};

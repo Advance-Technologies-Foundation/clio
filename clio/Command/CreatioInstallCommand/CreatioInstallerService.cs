@@ -5,9 +5,12 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Management.Automation;
+using System.Net;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.DeploymentStrategies;
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
@@ -60,6 +63,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly RegAppCommand _registerCommand;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly DeploymentStrategyFactory _deploymentStrategyFactory;
 
 	#endregion
 
@@ -74,7 +78,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, ILogger logger) {
+		IFileSystem fileSystem, ILogger logger, DeploymentStrategyFactory deploymentStrategyFactory) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -84,6 +88,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ProductFolder = settingsRepository.GetCreatioProductsFolder();
 		RemoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
 		_logger = logger;
+		_deploymentStrategyFactory = deploymentStrategyFactory;
 	}
 
 	public CreatioInstallerService() {
@@ -126,7 +131,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	public int StartWebBrowser(PfInstallerOptions options){
-		string url = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}";
+		string url = $"http://localhost:{options.SitePort}";
 		try {
 			Process.Start(url);
 			return 0;
@@ -151,6 +156,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		if (path.StartsWith(@"\\")) {
 			return CopyZipLocal(path);
 		}
+
+		// DriveInfo is Windows-specific. On macOS/Linux, network drives are handled differently
+		if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			return path;
+		}
+
 		return new DriveInfo(Path.GetPathRoot(path)) switch {
 			{DriveType: DriveType.Network} => CopyZipLocal(path),
 			_ => path
@@ -209,19 +220,47 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		};
 	}
 
+	private IDeploymentStrategy SelectDeploymentStrategy(PfInstallerOptions options) {
+		IDeploymentStrategy strategy = _deploymentStrategyFactory.SelectStrategy(
+			options.DeploymentMethod ?? "auto",
+			options.NoIIS
+		);
+		return strategy;
+	}
+
 	private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName){
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
 		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
 		bool exists = postgres.CheckTemplateExists(tmpDbName);
 		if (exists) {
+			_logger.WriteInfo($"[Database restore] - Template '{tmpDbName}' already exists, skipping restore");
 			return;
 		}
+		
+		// Search for backup file in db directory or root
 		FileInfo src = unzippedDirectory.GetDirectories("db").FirstOrDefault()?.GetFiles("*.backup").FirstOrDefault();
 		if (src is null) {
 			src = unzippedDirectory?.GetFiles("*.backup").FirstOrDefault();
-			
 		}
+		
+		// Log detailed information if backup file not found
+		if (src is null) {
+			_logger.WriteError($"[Database restore failed] - Backup file not found in {unzippedDirectory.FullName}");
+			_logger.WriteError($"[Database restore failed] - Directory structure: {string.Join(", ", unzippedDirectory.GetDirectories().Select(d => d.Name))}");
+			var files = unzippedDirectory.GetFiles("*.*", System.IO.SearchOption.TopDirectoryOnly);
+			_logger.WriteError($"[Database restore failed] - Files in root: {string.Join(", ", files.Take(10).Select(f => f.Name))}");
+			
+			// Check if db directory exists and list its contents
+			var dbDir = unzippedDirectory.GetDirectories("db").FirstOrDefault();
+			if (dbDir != null) {
+				var dbFiles = dbDir.GetFiles("*.*", System.IO.SearchOption.TopDirectoryOnly);
+				_logger.WriteError($"[Database restore failed] - Files in db/: {string.Join(", ", dbFiles.Take(10).Select(f => f.Name))}");
+			}
+			
+			throw new FileNotFoundException("Backup file not found in the specified directory.");
+		}
+		
 		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src.FullName, src.Name);
@@ -300,7 +339,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
 		_logger.WriteInfo("[CheckUpdate connection string] - Started");
-		InstallerHelper.DatabaseType dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		InstallerHelper.DatabaseType dbType;
+		try {
+			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		} catch (Exception ex) {
+			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
+			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
+			dbType = InstallerHelper.DatabaseType.Postgres;
+		}
 		k8Commands.ConnectionStringParams csParam = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
 			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
@@ -308,10 +354,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		int redisDb = FindEmptyRedisDb(csParam.RedisPort);
 
+		// Determine the folder path based on deployment strategy
+		string folderPath = DetermineFolderPath(options);
+		_logger.WriteInfo($"[Connection string] - Target folder path: {folderPath}");
+
 		ConfigureConnectionStringRequest request = dbType switch {
 			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
-					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
+					{"folderPath", folderPath}, {
 						"dbString",
 						$"Server={BindingsModule.k8sDns};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
 					},
@@ -324,7 +374,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			},
 			InstallerHelper.DatabaseType.MsSql => new ConfigureConnectionStringRequest {
 				Arguments = new Dictionary<string, string> {
-					{"folderPath", Path.Join(_iisRootFolder, options.SiteName)}, {
+					{"folderPath", folderPath}, {
 						"dbString",
 						$"Data Source={BindingsModule.k8sDns},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
 					},
@@ -347,6 +397,36 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			} result) => ExitWithErrorMessage(result.Description),
 			_ => ExitWithErrorMessage("Unknown error occured")
 		};
+	}
+
+	/// <summary>
+	/// Determines the folder path based on whether deployment is IIS or DotNet.
+	/// For IIS: uses _iisRootFolder + site name
+	/// For DotNet: uses current directory + site name (or AppPath if provided)
+	/// </summary>
+	private string DetermineFolderPath(PfInstallerOptions options) {
+		IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
+		
+		// Validate site name is not empty
+		if (string.IsNullOrWhiteSpace(options.SiteName)) {
+			_logger.WriteError("Site name is required but was empty");
+			throw new InvalidOperationException("Site name must not be empty");
+		}
+		
+		if (strategy is IISDeploymentStrategy) {
+			// IIS deployment uses configured IIS root path
+			if (string.IsNullOrWhiteSpace(_iisRootFolder)) {
+				_logger.WriteError("IIS root folder is not configured");
+				throw new InvalidOperationException("IIS root folder must be configured for IIS deployment");
+			}
+			return Path.Combine(_iisRootFolder, options.SiteName);
+		} else {
+			// DotNet deployment uses current directory or specified AppPath
+			if (!string.IsNullOrEmpty(options.AppPath)) {
+				return options.AppPath;
+			}
+			return Path.Combine(Directory.GetCurrentDirectory(), options.SiteName);
+		}
 	}
 
 	#endregion
@@ -406,65 +486,213 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			_logger.WriteInfo($"Could not find zip file: {options.ZipFile}");
 			return 1;
 		}
-		if (!Directory.Exists(_iisRootFolder)) {
-			Directory.CreateDirectory(_iisRootFolder);
+
+		// Determine deployment strategy to know whether to use IIS or DotNet
+		IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
+		bool isIisDeployment = strategy is IISDeploymentStrategy;
+
+		// Only use IIS root folder validation for IIS deployments
+		if (isIisDeployment) {
+			if (!Directory.Exists(_iisRootFolder)) {
+				Directory.CreateDirectory(_iisRootFolder);
+			}
 		}
+
+		// STEP 1: Get site name from user
 		while (string.IsNullOrEmpty(options.SiteName)) {
 			Console.WriteLine("Please enter site name:");
-			options.SiteName = Console.ReadLine();
+			string? input = Console.ReadLine();
+			options.SiteName = input?.Trim() ?? string.Empty;
+			
+			if (string.IsNullOrEmpty(options.SiteName)) {
+				Console.WriteLine("Site name cannot be empty");
+				continue;
+			}
 
-			if (Directory.Exists(Path.Join(_iisRootFolder, options.SiteName))) {
+			// Validate site name against appropriate root folder
+			string rootPath = isIisDeployment 
+				? _iisRootFolder 
+				: Directory.GetCurrentDirectory();
+
+			if (Directory.Exists(Path.Combine(rootPath, options.SiteName))) {
 				Console.WriteLine(
-					$"Site with name {options.SiteName} already exists in {Path.Join(_iisRootFolder, options.SiteName)}");
+					$"Site with name {options.SiteName} already exists in {Path.Combine(rootPath, options.SiteName)}");
 				options.SiteName = string.Empty;
 			}
 		}
 
-		while (options.SitePort is <= 0 or > 65536) {
-			Console.WriteLine(
-				$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
-			if (int.TryParse(Console.ReadLine(), out int value)) {
-				options.SitePort = value;
+		// STEP 2: Get port from user
+		// Only prompt for port on Windows IIS deployments
+		// DotNet deployments on macOS/Linux use default port or user-specified port
+		if (isIisDeployment) {
+			while (options.SitePort is <= 0 or > 65536) {
+				Console.WriteLine(
+					$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
+				if (int.TryParse(Console.ReadLine(), out int value)) {
+					options.SitePort = value;
+				} else {
+					Console.WriteLine("Site port must be an in value");
+				}
+			}
+		} else {
+			// For DotNet deployments, check if user wants to use custom port or default
+			Console.WriteLine("Port configuration for DotNet deployment:");
+			
+			// If port was already specified via command line, use it
+			if (options.SitePort > 0 && options.SitePort <= 65535) {
+				// Port already set, skip prompting
 			} else {
-				Console.WriteLine("Site port must be an in value");
+				bool portSelected = false;
+				
+				while (!portSelected) {
+					Console.WriteLine("Press Enter to use default port 8080, or enter a custom port number:");
+					string portInput = (Console.ReadLine() ?? string.Empty).Trim();
+					
+					int selectedPort = 8080; // Default
+					
+					if (string.IsNullOrEmpty(portInput)) {
+						selectedPort = 8080;
+					} else if (int.TryParse(portInput, out int customPort)) {
+						if (customPort > 0 && customPort <= 65535) {
+							selectedPort = customPort;
+						} else {
+							Console.WriteLine("Invalid port number. Port must be between 1 and 65535. Please try again.");
+							continue;
+						}
+					} else {
+						Console.WriteLine("Invalid port input. Please enter a number between 1 and 65535.");
+						continue;
+					}
+
+					// Check port availability for DotNet deployment
+					if (!IsPortAvailable(selectedPort)) {
+						Console.WriteLine($"⚠ WARNING: Port {selectedPort} appears to be in use by another process.");
+						Console.WriteLine("What would you like to do?");
+						Console.WriteLine("1. Select a different port (press 1)");
+						Console.WriteLine("2. Try another port (press Enter or any other key for port selection)");
+						
+						string choice = (Console.ReadLine() ?? string.Empty).ToLower().Trim();
+						if (choice == "1") {
+							continue; // Loop back to ask for port again
+						} else {
+							continue; // Also loop back
+						}
+					}
+					
+					options.SitePort = selectedPort;
+					portSelected = true;
+				}
+			}
+			
+			// Ensure we have a valid port
+			if (options.SitePort <= 0 || options.SitePort > 65535) {
+				options.SitePort = 8080;
 			}
 		}
 
+		// STEP 3: Now output all logging information after user has provided input
+		Console.WriteLine(); // Blank line for readability
+		_logger.WriteInfo($"[OS Platform] - {(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macOS" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Windows")}");
+		_logger.WriteInfo($"[Is IIS Deployment] - {isIisDeployment}");
+		_logger.WriteInfo($"[Site Name] - {options.SiteName}");
+		_logger.WriteInfo($"[Site Port] - {options.SitePort}");
+
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
-		_logger.WriteInfo($"[Staring unzipping] - {options.ZipFile}");
-		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, _packageArchiver);
+		string deploymentFolder = DetermineFolderPath(options);
+		_logger.WriteInfo($"[Starting unzipping] - {options.ZipFile} to {deploymentFolder}");
+		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver);
 		_logger.WriteInfo($"[Unzip completed] - {unzippedDirectory.FullName}");
 		Console.WriteLine();
 
-		int dbRestoreResult = InstallerHelper.DetectDataBase(unzippedDirectory) switch {
+		InstallerHelper.DatabaseType dbType;
+		try {
+			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		} catch (Exception ex) {
+			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
+			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
+			dbType = InstallerHelper.DatabaseType.Postgres;
+		}
+
+		int dbRestoreResult = dbType switch {
 			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
 			_ => DoPgWork(unzippedDirectory, options.SiteName)
 		};
 
-		int createSiteResult = dbRestoreResult switch {
-			0 => CreateIISSite(unzippedDirectory, options).GetAwaiter().GetResult(),
+		int deploySiteResult = dbRestoreResult switch {
+			0 => DeployApplication(unzippedDirectory, options),
 			_ => ExitWithErrorMessage("Database restore failed")
 		};
 
-		int updateConnectionStringResult = createSiteResult switch {
+		int updateConnectionStringResult = deploySiteResult switch {
 			0 => UpdateConnectionString(unzippedDirectory, options).GetAwaiter().GetResult(),
-			_ => ExitWithErrorMessage("Failed to update ConnectionString.config file")
+			_ => ExitWithErrorMessage("Failed to deploy application")
 		};
 
 		_registerCommand.Execute(new RegAppOptions {
 			EnvironmentName = options.SiteName,
 			Login = "Supervisor",
 			Password = "Supervisor",
-			Uri = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}",
+			Uri = $"http://localhost:{options.SitePort}",
 			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore
 		});
 
+		if (options.AutoRun) {
+			_logger.WriteInfo("[Auto-launching application]");
+			StartWebBrowser(options);
+		}
+
 		return 0;
+	}
+
+	private int DeployApplication(DirectoryInfo unzippedDirectory, PfInstallerOptions options) {
+		try {
+			IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
+			int result = strategy.Deploy(unzippedDirectory, options).GetAwaiter().GetResult();
+			
+			if (result == 0) {
+				string url = strategy.GetApplicationUrl(options);
+				_logger.WriteInfo($"[Application deployed successfully] - URL: {url}");
+			}
+			
+			return result;
+		}
+		catch (Exception ex) {
+			return ExitWithErrorMessage($"Deployment failed: {ex.Message}");
+		}
 	}
 
 	public string GetBuildFilePathFromOptions(string product, CreatioDBType dBType,
 		CreatioRuntimePlatform runtimePlatform){
 		return GetBuildFilePathFromOptions(RemoteArtefactServerPath, product, dBType, runtimePlatform);
+	}
+
+	private bool IsPortAvailable(int port) {
+		try {
+			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
+			TcpConnectionInformation[] tcpConnections = ipGlobalProperties.GetActiveTcpConnections();
+			
+			foreach (TcpConnectionInformation tcpConnection in tcpConnections) {
+				if (tcpConnection.LocalEndPoint.Port == port) {
+					_logger.WriteWarning($"Port {port} is in use (active connection)");
+					return false;
+				}
+			}
+			
+			IPEndPoint[] listeners = ipGlobalProperties.GetActiveTcpListeners();
+			foreach (IPEndPoint listener in listeners) {
+				if (listener.Port == port) {
+					_logger.WriteWarning($"Port {port} is in use (listening port)");
+					return false;
+				}
+			}
+			
+			_logger.WriteInfo($"Port {port} is available");
+			return true;
+		}
+		catch (Exception ex) {
+			_logger.WriteWarning($"Could not check port availability: {ex.Message}. Assuming port is available.");
+			return true;
+		}
 	}
 
 	#endregion

@@ -92,6 +92,7 @@ internal class Program {
 		typeof(CompileConfigurationOptions),
 		typeof(Link2RepoOptions),
 		typeof(Link4RepoOptions),
+		typeof(LinkPackageStoreOptions),
 		typeof(TurnFsmCommandOptions),
 		typeof(TurnFarmModeOptions),
 		typeof(SetFsmConfigOptions),

@@ -289,7 +289,20 @@ namespace Clio
 		public void UnZip(string zipFilePath, bool overwrite, string destinationPath = null) {
 			CheckUnZipPackagesArgument(zipFilePath);
 			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
-			_zipFile.ExtractToDirectory(zipFilePath, destinationPath ?? Environment.CurrentDirectory);
+			string finalDestination = destinationPath ?? Environment.CurrentDirectory;
+			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Starting extraction");
+			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Source: {zipFilePath}");
+			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Destination: {finalDestination}");
+			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Destination exists: {Directory.Exists(finalDestination)}");
+			try {
+				_zipFile.ExtractToDirectory(zipFilePath, finalDestination);
+				Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Extraction completed successfully");
+				var dirInfo = new System.IO.DirectoryInfo(finalDestination);
+				Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Files extracted: {dirInfo.GetFiles("*", System.IO.SearchOption.AllDirectories).Length}");
+			} catch (Exception ex) {
+				Console.WriteLine($"[ERR] PackageArchiver.UnZip - Extraction failed: {ex.Message}");
+				throw;
+			}
 		}
 		
 		#endregion

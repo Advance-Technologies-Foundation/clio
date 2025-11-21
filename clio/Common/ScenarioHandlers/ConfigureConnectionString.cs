@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using OneOf;
+using System;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -24,13 +25,25 @@ namespace Clio.Common.ScenarioHandlers {
             string dbString = request.Arguments["dbString"]; 
             string redisString = request.Arguments["redis"];
             
-            string cnPath = Path.Join(folder, "ConnectionStrings.config");
+            string cnPath = Path.Combine(folder, "ConnectionStrings.config");
+            
+            // Check if ConnectionStrings.config exists
+            if (!File.Exists(cnPath)) {
+                return new HandlerError {
+                    ErrorDescription = $"ConnectionStrings.config not found at {cnPath}. Archive may not have been fully extracted."
+                };
+            }
+            
             string result = ConfigureConnectionStrings(cnPath, dbString, redisString);
             
             bool isNetFrameWork = bool.Parse(request.Arguments["isNetFramework"]);
             if(!isNetFrameWork) {
-                string webConfigPath = Path.Join(folder, "Terrasoft.WebHost.dll.config");
-                result = result+"\n"+UpdateWebConfig(webConfigPath);
+                string webConfigPath = Path.Combine(folder, "Terrasoft.WebHost.dll.config");
+                if (File.Exists(webConfigPath)) {
+                    result = result+"\n"+UpdateWebConfig(webConfigPath);
+                } else {
+                    result = result+"\n"+$"Warning: Terrasoft.WebHost.dll.config not found at {webConfigPath}";
+                }
             }
             
             return new ConfigureConnectionStringResponse {
@@ -55,37 +68,42 @@ namespace Clio.Common.ScenarioHandlers {
         }
         
         private static string ConfigureConnectionStrings(string cnFilePath, string db, string redis) {
-            string cnFileContent = File.ReadAllText(cnFilePath);
-            XmlDocument doc = new();
-            doc.LoadXml(cnFileContent);
-            XmlNode root = doc.DocumentElement;
+            try {
+                string cnFileContent = File.ReadAllText(cnFilePath);
+                XmlDocument doc = new();
+                doc.LoadXml(cnFileContent);
+                XmlNode root = doc.DocumentElement;
 
-            XmlNode dbPostgreSqlNode = root?.SelectSingleNode("descendant::add[@name='dbPostgreSql']");
-            if(dbPostgreSqlNode != null) {
-                dbPostgreSqlNode.Attributes["connectionString"].Value = db;
+                XmlNode dbPostgreSqlNode = root?.SelectSingleNode("descendant::add[@name='dbPostgreSql']");
+                if(dbPostgreSqlNode != null) {
+                    dbPostgreSqlNode.Attributes["connectionString"].Value = db;
+                }
+
+                XmlNode dbNode = root?.SelectSingleNode("descendant::add[@name='db']");
+                if(dbNode != null ) {
+                    dbNode.Attributes["connectionString"].Value = db;
+                }
+                
+                
+                XmlNode redisNode = root?.SelectSingleNode("descendant::add[@name='redis']");
+                if(redisNode != null) {
+                    redisNode.Attributes["connectionString"].Value = redis;
+                }
+
+                doc.Save(cnFilePath);
+
+                StringBuilder sb = new();
+                sb.AppendLine("Successfully configured connection strings")
+                    .AppendLine("Set db to:")
+                    .Append("\t").AppendLine(db)
+                    .AppendLine("Set redis to:")
+                    .Append("\t").Append(redis)
+                    .AppendLine();
+
+                return sb.ToString();
+            } catch (Exception ex) {
+                return $"Error configuring connection strings: {ex.Message}";
             }
-
-            XmlNode dbNode = root?.SelectSingleNode("descendant::add[@name='db']");
-            if(dbNode != null ) {
-                dbNode.Attributes["connectionString"].Value = db;
-            }
-            
-            
-            XmlNode redisNode = root?.SelectSingleNode("descendant::add[@name='redis']");
-            if(redisNode != null) {
-                redisNode.Attributes["connectionString"].Value = redis;
-            }
-
-            doc.Save(cnFilePath);
-
-            StringBuilder sb = new();
-            sb.AppendLine("Set db to:")
-                .Append("\t").AppendLine(db)
-                .AppendLine("Set redis to:")
-                .Append("\t").Append(redis)
-                .AppendLine();
-
-            return sb.ToString();
         }
     }
 }

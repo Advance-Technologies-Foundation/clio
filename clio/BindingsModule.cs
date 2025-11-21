@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
@@ -11,6 +12,8 @@ using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
 using Clio.Common;
 using Clio.Common.db;
+using Clio.Common.DeploymentStrategies;
+using Clio.Common.SystemServices;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.ComposableApplication;
@@ -241,6 +244,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<GetAppHashCommand>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
+		containerBuilder.RegisterType<LinkPackageStoreCommand>();
 		
 		
 
@@ -258,6 +262,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<TurnFarmModeOptionsValidator>();
 		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
 		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
+		containerBuilder.RegisterType<LinkPackageStoreOptionsValidator>();
 		containerBuilder.RegisterType<DownloadConfigurationCommandOptionsValidator>();
 
 		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
@@ -284,6 +289,21 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ProcessModelGenerator>().As<IProcessModelGenerator>();
 		containerBuilder.RegisterType<ProcessModelWriter>().As<IProcessModelWriter>();
 		containerBuilder.RegisterType<ZipBasedApplicationDownloader>().As<IZipBasedApplicationDownloader>();
+
+		// Register deployment strategies and system service managers
+		containerBuilder.RegisterType<IISDeploymentStrategy>();
+		containerBuilder.RegisterType<DotNetDeploymentStrategy>();
+		containerBuilder.RegisterType<DeploymentStrategyFactory>();
+
+		// Register platform-specific system service managers
+		containerBuilder.Register<ISystemServiceManager>(c =>
+		{
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+				return new LinuxSystemServiceManager();
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+				return new MacOSSystemServiceManager();
+			return new WindowsSystemServiceManager();
+		}).SingleInstance();
 
 		containerBuilder.RegisterType<ClioGateway>();
 		containerBuilder.RegisterType<CompileConfigurationCommand>();
