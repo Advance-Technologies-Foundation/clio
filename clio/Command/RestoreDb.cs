@@ -58,6 +58,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		if (!string.IsNullOrEmpty(options.BackupPath)) {
 			
 			if (Path.GetExtension(options.BackupPath) == ".backup") {
+				
 				_logger.WriteInfo($"Restoring database from backup file: {options.BackupPath}");
 				return RestorePg(options.DbName, options.BackupPath);
 			}
@@ -70,7 +71,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 					return 1;
 				}
 				_logger.WriteInfo($"Restoring database from backup file: {backupFiles[0]}");
-				return RestorePg(options.DbName, options.BackupPath);
+				return RestorePg(options.DbName, backupFiles[0]);
 			}
 		}
 		
@@ -116,18 +117,9 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	}
 
 	private int RestorePg(string dbName, string backupFilePath ){
-		
-		if (_fileSystem.ExistsFile(backupFilePath)) {
-			FileInfo fileInfo = new FileInfo(backupFilePath);
-			DirectoryInfo directoryInfo = fileInfo.Directory;
-			return _creatioInstallerService.DoPgWork(directoryInfo, dbName);
-		} else if (_fileSystem.ExistsDirectory(backupFilePath)) {
-			DirectoryInfo directoryInfo = new DirectoryInfo(backupFilePath);
-			return _creatioInstallerService.DoPgWork(directoryInfo, dbName);
-		} else {
-			_logger.WriteError($"Backup path {backupFilePath} not found.");
-			return 1;
-		}
+		var fileInfo = new FileInfo(backupFilePath);
+		DirectoryInfo directoryInfo = fileInfo.Directory;
+		return _creatioInstallerService.DoPgWork(directoryInfo, dbName);
 	}
 
 	

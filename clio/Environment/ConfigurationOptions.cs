@@ -502,10 +502,8 @@ namespace Clio
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
 			if (string.IsNullOrEmpty(name)) {
 				_settings.GetActiveEnviroment().Merge(environment);
-			} else if (_settings.Environments.ContainsKey(name)) {
+			} else if (!_settings.Environments.TryAdd(name, environment)) {
 				_settings.Environments[name].Merge(environment);
-			} else {
-				_settings.Environments.Add(name, environment);
 			}
 			Save();
 		}
@@ -516,8 +514,7 @@ namespace Clio
 		}
 
 		public void RemoveEnvironment(string environment) {
-			if (_settings.Environments.ContainsKey(environment)) {
-				_settings.Environments.Remove(environment);
+			if (_settings.Environments.Remove(environment)) {
 				Save();
 			} else {
 				throw new KeyNotFoundException($"Application \"{environment}\" not found");

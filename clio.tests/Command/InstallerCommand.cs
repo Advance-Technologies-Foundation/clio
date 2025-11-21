@@ -84,11 +84,12 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		_creatioInstallerServiceMock.Received(0).StartWebBrowser(options);
 	}
 	
+	[Ignore( "StartWebBrowser is now called from the CreatioInstallerService directly" )]
 	[Test(Description = "Should open browser")]
 	public void Execute_OpensBrowser_WhenNotSilent(){
 		//Arrange
 		var command = Container.Resolve<InstallerCommand>();
-		PfInstallerOptions options = new PfInstallerOptions() {
+		PfInstallerOptions options = new () {
 			IsSilent = false
 		};
 		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
@@ -102,10 +103,9 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		
 		//Act
 		var actual = command.Execute(options);
+		
 		//Assert
 		actual.Should().Be(0);
-		
-		
 		_creatioInstallerServiceMock.Received(1).StartWebBrowser(options);
 	}
 

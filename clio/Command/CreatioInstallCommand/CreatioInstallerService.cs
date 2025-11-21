@@ -29,7 +29,8 @@ public interface ICreatioInstallerService
 		CreatioRuntimePlatform runtimePlatform);
 	
 	int StartWebBrowser(PfInstallerOptions options);
-	int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName);
+	int StartWebBrowser(PfInstallerOptions options, bool isIisDeployment);
+	int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName, string templateName = "");
 
 }
 
@@ -130,12 +131,17 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return -1;
 	}
 
-	public int StartWebBrowser(PfInstallerOptions options){
-		string url = $"http://localhost:{options.SitePort}";
+	public int StartWebBrowser(PfInstallerOptions options) {
+		return StartWebBrowser(options, false);
+	}
+
+	public int StartWebBrowser(PfInstallerOptions options, bool isIisDeployment) {
+
+		string url = isIisDeployment 
+			? $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}"
+			: $"http://localhost:{options.SitePort}";
+		
 		try {
-			Process.Start(url);
-			return 0;
-		} catch {
 			// Windows
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
 				Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") {CreateNoWindow = true});
@@ -148,8 +154,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
 				Process.Start("open", url);
 			}
+		} 
+		catch(Exception ex) {
+			_logger.WriteError($"Failed to launch web browser: {ex.Message}");
 			return 1;
 		}
+		return 0;
 	}
 
 	private string CopyLocalWhenNetworkDrive(string path){
@@ -305,8 +315,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 0;
 	}
 
-	public int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName){
-		string tmpDbName = "template_" + unzippedDirectory.Name;
+	public int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName, string templateName = "") {
+
+		string tmpDbName = string.IsNullOrWhiteSpace(templateName) ? "template_" + unzippedDirectory.Name : "template_"+templateName;
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
 		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
@@ -420,7 +431,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				throw new InvalidOperationException("IIS root folder must be configured for IIS deployment");
 			}
 			return Path.Combine(_iisRootFolder, options.SiteName);
-		} else {
+		} 
+		else {
 			// DotNet deployment uses current directory or specified AppPath
 			if (!string.IsNullOrEmpty(options.AppPath)) {
 				return options.AppPath;
@@ -534,7 +546,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 					Console.WriteLine("Site port must be an in value");
 				}
 			}
-		} else {
+		} 
+		else {
 			// For DotNet deployments, check if user wants to use custom port or default
 			Console.WriteLine("Port configuration for DotNet deployment:");
 			
@@ -609,36 +622,40 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
 		} catch (Exception ex) {
 			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
-			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
+			_logger.WriteInfo("[DetectDataBase] - Defaulting to Postgres");
 			dbType = InstallerHelper.DatabaseType.Postgres;
 		}
 
 		int dbRestoreResult = dbType switch {
 			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
-			_ => DoPgWork(unzippedDirectory, options.SiteName)
+			var _ => DoPgWork(unzippedDirectory, options.SiteName, Path.GetFileNameWithoutExtension(options.ZipFile))
 		};
 
 		int deploySiteResult = dbRestoreResult switch {
 			0 => DeployApplication(unzippedDirectory, options),
-			_ => ExitWithErrorMessage("Database restore failed")
+			var _ => ExitWithErrorMessage("Database restore failed")
 		};
 
 		int updateConnectionStringResult = deploySiteResult switch {
 			0 => UpdateConnectionString(unzippedDirectory, options).GetAwaiter().GetResult(),
-			_ => ExitWithErrorMessage("Failed to deploy application")
+			var _ => ExitWithErrorMessage("Failed to deploy application")
 		};
 
+		string uri = $"http://localhost:{options.SitePort}";
+		if (isIisDeployment) {
+			uri = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}";
+		}
 		_registerCommand.Execute(new RegAppOptions {
 			EnvironmentName = options.SiteName,
 			Login = "Supervisor",
 			Password = "Supervisor",
-			Uri = $"http://localhost:{options.SitePort}",
+			Uri = uri,
 			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore
 		});
 
 		if (options.AutoRun) {
 			_logger.WriteInfo("[Auto-launching application]");
-			StartWebBrowser(options);
+			StartWebBrowser(options,isIisDeployment);
 		}
 
 		return 0;

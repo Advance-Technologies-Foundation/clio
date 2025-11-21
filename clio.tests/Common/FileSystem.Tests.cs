@@ -80,9 +80,10 @@ public class FileSystemTests
 	{
 		// Arrange
 		string psHash;
+		var logger = Substitute.For<ILogger>();
 		if (OperatingSystem.IsWindows())
 		{
-			psHash = new ProcessExecutor().Execute("pwsh.exe",
+			psHash = new ProcessExecutor(logger).Execute("pwsh.exe",
 				$"-c \"Get-FileHash {sampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
 				true, null, true);
 		}
@@ -98,7 +99,7 @@ public class FileSystemTests
 				"sha512" => $"sha512sum {sampleFile} | awk '{{print $1}}'",
 				_ => throw new NotSupportedException($"Algorithm {algorithm} not supported on this platform")
 			};
-			psHash = new ProcessExecutor().Execute("/bin/bash", $"-c \"{hashCmd}\"", true, null, true).Trim();
+			psHash = new ProcessExecutor(logger).Execute("/bin/bash", $"-c \"{hashCmd}\"", true, null, true).Trim();
 		}
 	
 		// Assert

@@ -25,6 +25,7 @@ internal class CreateTestProjectCommand{
 	#region Fields: Private
 
 	private readonly IFileSystem _fileSystem;
+	private readonly ILogger _logger;
 
 	private readonly IValidator<CreateTestProjectOptions> _optionsValidator;
 	private readonly ITemplateProvider _templateProvider;
@@ -38,7 +39,7 @@ internal class CreateTestProjectCommand{
 
 	public CreateTestProjectCommand(IValidator<CreateTestProjectOptions> optionsValidator, IWorkspace workspace,
 		IWorkspacePathBuilder workspacePathBuilder, IWorkingDirectoriesProvider workingDirectoriesProvider,
-		ITemplateProvider templateProvider, IFileSystem fileSystem
+		ITemplateProvider templateProvider, IFileSystem fileSystem, ILogger logger
 	) {
 		_optionsValidator = optionsValidator;
 		_workspace = workspace;
@@ -46,6 +47,7 @@ internal class CreateTestProjectCommand{
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_templateProvider = templateProvider;
 		_fileSystem = fileSystem;
+		_logger = logger;
 	}
 
 	#endregion
@@ -78,7 +80,7 @@ internal class CreateTestProjectCommand{
 	}
 
 	private void ExecuteDotnetCommand(string command, string workingDirectoryPath) {
-		IProcessExecutor processExecutor = new ProcessExecutor();
+		IProcessExecutor processExecutor = new ProcessExecutor(_logger);
 		IDotnetExecutor dotnetExecutor = new DotnetExecutor(processExecutor);
 		dotnetExecutor.Execute(command, true, workingDirectoryPath);
 	}

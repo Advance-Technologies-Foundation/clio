@@ -5,9 +5,14 @@ using System.IO;
 
 namespace Clio
 {
-	public class CreatioPackage
-	{
+	public class CreatioPackage{
+		private readonly ILogger _logger;
 
+
+		public CreatioPackage(ILogger logger) {
+			_logger = logger;
+		}
+		
 		public const string DescriptorName = "descriptor.json";
 		public const string PropertiesDirName = "Properties";
 		public const string CsprojExtension = "csproj";
@@ -88,7 +93,7 @@ namespace Clio
 		}
 
 		private void ExecuteDotnetCommand(string command) {
-			IProcessExecutor processExecutor = new ProcessExecutor();
+			IProcessExecutor processExecutor = new ProcessExecutor(_logger);
 			IDotnetExecutor dotnetExecutor = new DotnetExecutor(processExecutor);
 			dotnetExecutor.Execute(command, true, FullPath);
 		}

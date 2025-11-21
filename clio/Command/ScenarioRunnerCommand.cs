@@ -44,13 +44,6 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions>{
                         IContainer container = new BindingsModule().Register(settings);
                         Program.Container = container;
                     }
-                    else if (!string.IsNullOrWhiteSpace(options.Environment)) {
-                        SettingsRepository settingsRepository = new(FileSystem);
-                        stepOptions.Environment = options.Environment;
-                        EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment);
-                        IContainer container = new BindingsModule().Register(settings);
-                        Program.Container = container;
-                    }
                     else {
                         SettingsRepository settingsRepository = new(FileSystem);
                         EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment);

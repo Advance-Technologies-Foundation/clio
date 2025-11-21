@@ -41,8 +41,7 @@ public static class InstallerHelper
 	
 	public static string FetFQDN() {
 		string FQDN = "localhost";
-		try
-		{
+		try {
 			FQDN =  Dns.GetHostName();
 			FQDN = Dns.GetHostEntry(Dns.GetHostName()).HostName;
 			return FQDN;
@@ -96,7 +95,9 @@ public static class InstallerHelper
 			}
 			
 			return Unzip(packageArchiver, new FileInfo(zipFile), targetFolder);
-		};	/// <summary>
+		};	
+	
+	/// <summary>
 	/// This function is used to detect the type of a database from a directory.
 	/// </summary>
 	/// <param name="unzippedDirectory">The directory where the database files are expected to be found.</param>
@@ -114,7 +115,7 @@ public static class InstallerHelper
 			throw new Exception($"db folder does not exist in {unzippedDirectory.FullName}");
 		}
 		Console.WriteLine($"[DEBUG] DetectDataBase - db directory found: {dbDirectory.FullName}");
-		var files = dbDirectory.GetFiles();
+		FileInfo[] files = dbDirectory.GetFiles();
 		Console.WriteLine($"[DEBUG] DetectDataBase - Files in db folder: {string.Join(", ", files.Select(f => f.Name))}");
 		FileInfo fi = files.FirstOrDefault();
 
@@ -144,7 +145,7 @@ public static class InstallerHelper
 	public static readonly Func<DirectoryInfo, FrameworkType> DetectFramework = unzippedDirectory => unzippedDirectory switch {
 			not null when unzippedDirectory.GetDirectories("Terrasoft.WebApp").Any() => FrameworkType.NetFramework,
 			not null when unzippedDirectory.GetDirectories("Terrasoft.Configuration").Any() => FrameworkType.NetCore,
-			_ => throw new Exception(
+			var _ => throw new Exception(
 				$"Cannot determine framework type, Terrasoft.WebApp or Terrasoft.WebAppCore does not exist in {unzippedDirectory}")
 		};
 	#endregion

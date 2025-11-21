@@ -7,15 +7,18 @@ namespace Clio.Common
 
 	#region Class: ProcessExecutor
 
-	public class ProcessExecutor : IProcessExecutor
-	{
-		
+	public class ProcessExecutor : IProcessExecutor{
+		private readonly ILogger _logger;
+
+		public ProcessExecutor(ILogger logger) {
+			_logger = logger;
+		}
 		#region Methods: Public
 
 		public string Execute(string program, string command, bool waitForExit, string workingDirectory = null, bool showOutput = false) {
 			program.CheckArgumentNullOrWhiteSpace(nameof(program));
 			command.CheckArgumentNullOrWhiteSpace(nameof(command));
-			using var process = new Process();
+			using Process process = new Process();
 			process.StartInfo = new ProcessStartInfo {
 				FileName = program,
 				Arguments = command,
@@ -25,27 +28,33 @@ namespace Clio.Common
 				RedirectStandardOutput = true,
 				RedirectStandardError = true,
 			};
-			var sb = new StringBuilder();
+			StringBuilder sb = new StringBuilder();
 			process.EnableRaisingEvents = waitForExit;
 				
 			if(showOutput) {
-				process.OutputDataReceived += (sender, e) =>
-				{
-					if (e.Data != null)
-					{
-						Console.WriteLine(e.Data);
+				process.OutputDataReceived += (sender, e) => {
+					if (e.Data != null) {
+						_logger.WriteInfo(e.Data);
+						// Console.WriteLine(e.Data);
 						sb.Append(e.Data);
 					}
 				};
-				process.ErrorDataReceived +=(sender, e) =>
-				{
-					if (e.Data != null)
-					{
-						ConsoleColor color = Console.ForegroundColor;
-						Console.ForegroundColor = e.Data.ToLower().Contains("error") 
-							? ConsoleColor.DarkRed : ConsoleColor.DarkYellow;
-						Console.WriteLine(e.Data);
-						Console.ForegroundColor = color;
+				process.ErrorDataReceived +=(sender, e) => {
+					if (e.Data != null) {
+						//ConsoleColor color = Console.ForegroundColor;
+						
+						// Console.ForegroundColor = e.Data.ToLower().Contains("error") 
+						// 	? ConsoleColor.DarkRed : ConsoleColor.DarkYellow;
+						// Console.WriteLine(e.Data);
+
+						if (e.Data.ToLower().Contains("error", StringComparison.OrdinalIgnoreCase)) {
+							_logger.WriteError(e.Data);
+						}
+						else {
+							_logger.WriteInfo(e.Data);
+						}
+						
+						//Console.ForegroundColor = color;
 						sb.Append(e.Data);
 					}
 				};

@@ -31,7 +31,16 @@ public class Postgres : IPostgres
 	}
 	
 	public bool CreateDbFromTemplate (string templateName, string dbName) {
+		_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
+		bool dbExists = CheckDbExists(dbName);
+		_logger.WriteInfo($"Database '{dbName}' exists: {dbExists}");
+		if (dbExists) {
+			_logger.WriteWarning($"Dropping existing database '{dbName}'");
+			DropDb(dbName);
+			_logger.WriteWarning($"Dropped existing database '{dbName}'");
+		}
 		try {
+			_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			
@@ -71,7 +80,7 @@ public class Postgres : IPostgres
 			cnn.Close();
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
-			_logger.WriteInfo($"[{pe.Severity}] - {pe.MessageText}");
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
@@ -113,6 +122,34 @@ public class Postgres : IPostgres
 				SELECT COUNT(datname) 
 				FROM pg_catalog.pg_database d 
 				WHERE datistemplate = true AND datName = '{templateName}';
+			";
+			
+			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+			using NpgsqlConnection cnn = dataSource.OpenConnection();
+			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			var result = cmd.ExecuteScalar();
+			cnn.Close();
+			return result is long and 1;
+		} catch (Exception e)  when (e is PostgresException pe){
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
+			return false;
+		}
+		catch(Exception e) when (e is NpgsqlException ne) {
+			_logger.WriteError(ne.Message);
+			return false;
+		}
+		catch(Exception e) {
+			_logger.WriteError(e.Message);
+			return false;
+		}
+	}
+	
+	public bool CheckDbExists (string templateName) {
+		try {
+			string sqlText = @$"
+				SELECT COUNT(datname) 
+				FROM pg_catalog.pg_database d 
+				WHERE datName = '{templateName}';
 			";
 			
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);

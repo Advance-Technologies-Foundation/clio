@@ -8,6 +8,7 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.ScenarioHandlers;
 using MediatR;
+using OneOf;
 
 namespace Clio.Common.DeploymentStrategies;
 
@@ -58,41 +59,32 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 
 		_logger.WriteInfo("[Create IIS Site] - Started");
 
-		try
-		{
-			var frameworkType = InstallerHelper.DetectFramework(appDirectory);
-			var request = new CreateIISSiteRequest
-			{
-				Arguments = new Dictionary<string, string>
-				{
+		try {
+			InstallerHelper.FrameworkType frameworkType = InstallerHelper.DetectFramework(appDirectory);
+			CreateIISSiteRequest request = new() {
+				Arguments = new Dictionary<string, string> {
 					{ "siteName", options.SiteName },
 					{ "port", options.SitePort.ToString() },
 					{ "sourceDirectory", appDirectory.FullName },
-					{ "destinationDirectory", string.Empty }, // Will be filled from settings
+					{ "destinationDirectory", appDirectory.Parent.FullName }, // Will be filled from settings
 					{ "isNetFramework", (frameworkType == InstallerHelper.FrameworkType.NetFramework).ToString() }
 				}
 			};
 
-			var result = await _mediator.Send(request);
-
-			if (result.Value is HandlerError error)
-			{
+			OneOf<BaseHandlerResponse, HandlerError> result = await _mediator.Send(request);
+			if (result.Value is HandlerError error) {
 				_logger.WriteError(error.ErrorDescription);
 				return 1;
 			}
 
-			if (result.Value is CreateIISSiteResponse response)
-			{
-				if (response.Status == BaseHandlerResponse.CompletionStatus.Success)
-				{
-					_logger.WriteInfo(response.Description);
+			if (result.Value is CreateIISSiteResponse response) {
+				if (response.Status == BaseHandlerResponse.CompletionStatus.Success) {
+					string str = response.Description.Replace("\r\n", "\r\n\t");
+					_logger.WriteInfo(str);
 					return 0;
 				}
-				else
-				{
-					_logger.WriteError(response.Description);
-					return 1;
-				}
+				_logger.WriteError(response.Description);
+				return 1;
 			}
 
 			_logger.WriteError("Unknown error occurred during IIS deployment");

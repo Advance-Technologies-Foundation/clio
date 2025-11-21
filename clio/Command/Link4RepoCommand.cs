@@ -255,7 +255,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		if (!validationResult.IsValid) {
 			return PrintErrorsAndExit(validationResult.Errors);
 		}
-		
+
 		try {
 			return options switch {
 						not null when !string.IsNullOrWhiteSpace(options.Environment) => HandleEnvironmentOption(options),

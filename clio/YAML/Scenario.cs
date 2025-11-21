@@ -64,10 +64,9 @@ public class Scenario : IScenario, IExecutableScenario
 			}
 			using TextReader reader = new StreamReader(fileName);
 			try {
-				var content = deserializer.Deserialize<Dictionary<object, object>>(reader) ?? new Dictionary<object, object>();
-				return content;
-			} catch (Exception ex) {
-				Console.WriteLine("Could not deserialize file: " + fileName+ Environment.NewLine+ex.ToString());
+				return deserializer.Deserialize<Dictionary<object, object>>(reader) ?? new Dictionary<object, object>();
+			} catch (Exception) {
+				Console.WriteLine("Could not deserialize file: " + fileName);
 				return new Dictionary<object, object>();
 			}
 		};
@@ -106,9 +105,6 @@ public class Scenario : IScenario, IExecutableScenario
 							: string.Empty,
 						Options = dict.TryGetValue("options", out object options)
 							? options as Dictionary<object, object>
-							: new Dictionary<object, object>(),
-						Values = dict.TryGetValue("values", out object values)
-							? values as Dictionary<object, object>
 							: new Dictionary<object, object>()
 					});
 				}
@@ -188,7 +184,7 @@ public class Scenario : IScenario, IExecutableScenario
 		Secrets = sectionParser(deserializedContent, "secrets", fileContentLoader);
 		Settings = sectionParser(deserializedContent, "settings", fileContentLoader);
 		Steps = sectionParser(deserializedContent, "steps", fileContentLoader)
-			.TryGetValue("steps", out object stepsValue) ? ParseSteps(stepsValue as List<object>) : [];
+			.TryGetValue("steps", out object stepsValue) ? ParseSteps(stepsValue as List<object>) : new List<Step>();
 	}
 
 	#endregion

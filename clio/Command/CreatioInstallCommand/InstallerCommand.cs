@@ -128,7 +128,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	public override int Execute(PfInstallerOptions options){
 		int result = _creatioInstallerService.Execute(options);
 		if (!options.IsSilent) {
-			_creatioInstallerService.StartWebBrowser(options);
+			//_creatioInstallerService.StartWebBrowser(options);
 			Console.WriteLine("Press enter to exit...");
 			Console.ReadLine();
 		}

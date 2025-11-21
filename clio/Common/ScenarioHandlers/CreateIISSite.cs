@@ -83,10 +83,11 @@ namespace Clio.Common.ScenarioHandlers {
     
     internal class CreateIISSiteRequestHandler : IRequestHandler<CreateIISSiteRequest, OneOf<BaseHandlerResponse, HandlerError>> {
         private readonly IProcessExecutor _processExecutor;
-        
-        public CreateIISSiteRequestHandler(IProcessExecutor processExecutor)
-        {
+        private readonly ILogger _logger;
+
+        public CreateIISSiteRequestHandler(IProcessExecutor processExecutor, ILogger logger) {
             _processExecutor = processExecutor;
+            _logger = logger;
         }
 
 
@@ -99,11 +100,16 @@ namespace Clio.Common.ScenarioHandlers {
             bool isNetFramework = bool.Parse(request.Arguments["isNetFramework"]);
             
             StringBuilder sb = new();
- 
-            CopyFiles(sourceDirectory,destinationFolder);
-            sb.AppendLine($"Copied directory");
-            sb.Append("\tfrom: ").AppendLine(sourceDirectory)
-                .Append("\tto: ").AppendLine(destinationFolder);
+
+            if (sourceDirectory != destinationFolder) {
+                CopyFiles(sourceDirectory,destinationFolder);
+                sb.AppendLine($"Copied directory");
+                sb.Append("\tfrom: ").AppendLine(sourceDirectory)
+                    .Append("\tto: ").AppendLine(destinationFolder);
+            }
+            else {
+                sb.AppendLine($"Directory already exists: {destinationFolder} skipped copying");
+            }
 
             sb.Append(CreateAppPool(siteName, isNetFramework));
             sb.Append(CreateWebSite(siteName, sitePort, destinationFolder));
@@ -126,7 +132,8 @@ namespace Clio.Common.ScenarioHandlers {
             else {
                 command = $"add apppool /name:{poolName} /managedRuntimeVersion:\"\" /managedPipelineMode:\"Integrated\"";
             }
-            return _processExecutor.Execute(appcmdPath, command, true);
+            string result = _processExecutor.Execute(appcmdPath, command, true);
+            return result;
         }
 
         private string CreateWebSite(string siteName, int port, string destinationFolder) {
@@ -134,13 +141,15 @@ namespace Clio.Common.ScenarioHandlers {
             //string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
             string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:{InstallerHelper.FetFQDN()}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
             
-            return _processExecutor.Execute(appcmdPath, command, true);
+            var result =  _processExecutor.Execute(appcmdPath, command, true);
+            return result;
         }
 
         private string CreateWebApplication(string siteName, string physicalPath) {
             string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
             string command = $"add app /site.name:\"{siteName}\" /path:\"/0\" /physicalPath:\"{physicalPath}\" /applicationPool:\"{siteName}\"";
-            return _processExecutor.Execute(appcmdPath, command, true);
+            string result =  _processExecutor.Execute(appcmdPath, command, true);
+            return result;
         }
         
         private static void CopyFiles(string sourceDirectory, string destinationDirectory) {
