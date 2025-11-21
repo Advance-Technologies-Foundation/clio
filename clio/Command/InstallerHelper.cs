@@ -55,24 +55,48 @@ public static class InstallerHelper
 	}
 	
 	/// <summary>
-	/// Represents a function that takes a zip file and a package archiver as parameters,
-	/// checks if a directory with the same name as the zip file (without the extension) exists.
-	/// If it does, it returns the directory info. If not, it unzips the file and returns the info of the new directory.
+	/// Represents a function that takes a zip file, target folder, and a package archiver as parameters.
+	/// Checks if the target directory exists and contains essential files (db folder).
+	/// If it does, it returns the directory info. If not, it unzips the file directly into target folder and returns the info.
 	/// </summary>
 	/// <param name="zipFile">The full path of the zip file.</param>
+	/// <param name="targetFolder">The target folder where ZIP should be extracted (e.g., ~/creatio_app/mac_env).</param>
 	/// <param name="packageArchiver">The package archiver instance to be used for the unzipping process.</param>
 	/// <returns>The DirectoryInfo object representing the existing or newly created directory.</returns>
 	[NotNull]
-	public static readonly Func<string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExisting =
-		(zipFile, packageArchiver) => {
-			string destinationPath = Path.Join(new FileInfo(zipFile).Directory.FullName, Path.GetFileNameWithoutExtension(new FileInfo(zipFile).FullName));
-			return Directory.Exists(destinationPath) switch {
-				true => new DirectoryInfo(destinationPath),
-				false => Unzip(packageArchiver, new FileInfo(zipFile), destinationPath)
-			};
-		};
-	
-	/// <summary>
+	public static readonly Func<string, string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExisting = 
+		(zipFile, targetFolder, packageArchiver) => {
+			Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Zip file: {zipFile}");
+			Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Target folder: {targetFolder}");
+			Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Directory exists: {Directory.Exists(targetFolder)}");
+			
+			// Check if directory exists and contains extracted application files
+			// We check for key application files/folders that indicate successful extraction
+			// Note: 'db' folder is created by database restore script, not included in archive
+			if (Directory.Exists(targetFolder)) {
+				var existingDir = new DirectoryInfo(targetFolder);
+				var files = existingDir.GetFiles();
+				var directories = existingDir.GetDirectories();
+				
+				// Check if extraction appears complete: has files and subdirectories
+				// (typically includes bin, App_Data, ConnectionStrings.config, etc.)
+				if (files.Length > 0 && directories.Length > 0) {
+					Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Directory exists and appears complete (has files and folders)");
+					return existingDir;
+				} else {
+					Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Directory exists but appears incomplete (missing files), re-extracting");
+					// Remove incomplete directory and extract fresh
+					try {
+						Directory.Delete(targetFolder, true);
+						Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Removed incomplete directory");
+					} catch (Exception ex) {
+						Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Failed to remove incomplete directory: {ex.Message}");
+					}
+				}
+			}
+			
+			return Unzip(packageArchiver, new FileInfo(zipFile), targetFolder);
+		};	/// <summary>
 	/// This function is used to detect the type of a database from a directory.
 	/// </summary>
 	/// <param name="unzippedDirectory">The directory where the database files are expected to be found.</param>
@@ -83,14 +107,27 @@ public static class InstallerHelper
 	/// <exception cref="Exception">An exception is thrown if the backup file does not exist in the expected db folder.</exception>
 	[NotNull]
 	public static readonly Func<DirectoryInfo, DatabaseType> DetectDataBase = unzippedDirectory => {
-		FileInfo fi = unzippedDirectory.GetDirectories("db")
-			.FirstOrDefault()
-			?.GetFiles().FirstOrDefault();
+		Console.WriteLine($"[DEBUG] DetectDataBase - Searching for backup in: {unzippedDirectory.FullName}");
+		var dbDirectory = unzippedDirectory.GetDirectories("db").FirstOrDefault();
+		if (dbDirectory == null) {
+			Console.WriteLine($"[DEBUG] DetectDataBase - db directory not found!");
+			throw new Exception($"db folder does not exist in {unzippedDirectory.FullName}");
+		}
+		Console.WriteLine($"[DEBUG] DetectDataBase - db directory found: {dbDirectory.FullName}");
+		var files = dbDirectory.GetFiles();
+		Console.WriteLine($"[DEBUG] DetectDataBase - Files in db folder: {string.Join(", ", files.Select(f => f.Name))}");
+		FileInfo fi = files.FirstOrDefault();
 
-		return fi?.Extension switch {
+		if (fi == null) {
+			Console.WriteLine($"[DEBUG] DetectDataBase - No backup file found in db folder!");
+			throw new Exception($"Backup file does not exist in db folder {dbDirectory.FullName}");
+		}
+
+		Console.WriteLine($"[DEBUG] DetectDataBase - Found backup file: {fi.Name}, Extension: {fi.Extension}");
+		return fi.Extension switch {
 			MsSqlBackupExtension => DatabaseType.MsSql,
 			PgBackupExtension => DatabaseType.Postgres,
-			_ => throw new Exception($"Backup file does not exist in db folder {unzippedDirectory}\\db")
+			_ => throw new Exception($"Unknown backup file extension: {fi.Extension} for file {fi.FullName}")
 		};
 	};
 	
@@ -119,8 +156,15 @@ public static class InstallerHelper
 	[NotNull]
 	private static readonly Func<IPackageArchiver, FileInfo, string, DirectoryInfo> Unzip =
 		(packageArchiver, sourceFile, destingationPath) => {
-			packageArchiver.UnZip(sourceFile.FullName, false, Directory.CreateDirectory(destingationPath).FullName);
-			return new DirectoryInfo(destingationPath);
+			Console.WriteLine($"[DEBUG] Unzip - Creating directory: {destingationPath}");
+			Directory.CreateDirectory(destingationPath);
+			Console.WriteLine($"[DEBUG] Unzip - Directory created successfully");
+			Console.WriteLine($"[DEBUG] Unzip - Extracting zip: {sourceFile.FullName} to {destingationPath}");
+			packageArchiver.UnZip(sourceFile.FullName, false, destingationPath);
+			Console.WriteLine($"[DEBUG] Unzip - Extraction completed successfully");
+			var resultDir = new DirectoryInfo(destingationPath);
+			Console.WriteLine($"[DEBUG] Unzip - Result directory: {resultDir.FullName}, Exists: {resultDir.Exists}, Files count: {resultDir.GetFiles().Length}");
+			return resultDir;
 		};
 
 	#endregion

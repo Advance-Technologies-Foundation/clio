@@ -243,13 +243,25 @@ namespace Clio
 			set => _creatioProductFolder = value;
 		}
 
-		//TODO: This wont work for Mac and Linux
-		private const string DefaultIisRootPath = @"C:\inetpub\wwwroot\clio";
+		// Get platform-specific default IIS root path
+		private static string GetDefaultIisRootPath() {
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+				return @"C:\inetpub\wwwroot\clio";
+			}
+			// For macOS and Linux, use a sensible local path
+			// These platforms typically don't use IIS, so this is mainly for consistency
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
+				return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".clio", "iis-root");
+			}
+			// Linux
+			return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".clio", "iis-root");
+		}
+
 		private string _iISClioRootPath;
 
 		[JsonProperty("iis-clio-root-path")]
 		public string IISClioRootPath {
-			get => string.IsNullOrWhiteSpace(_iISClioRootPath) ? DefaultIisRootPath : _iISClioRootPath;
+			get => string.IsNullOrWhiteSpace(_iISClioRootPath) ? GetDefaultIisRootPath() : _iISClioRootPath;
 			set => _iISClioRootPath = value;
 		}
 
