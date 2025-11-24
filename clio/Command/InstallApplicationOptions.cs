@@ -30,8 +30,8 @@
 	[Verb("install-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
 	public class InstallApplicationOptions : InstallOptions
 	{
-		[Option("force-install", Required = false, HelpText = "Force installation of the application")]
-		public bool ForceInstall { get; set; }
+		[Option("check-compilation-errors", Required = false, HelpText = "Check compilation errors")]
+		public bool CheckCompilationErrors { get; set; }
 	}
 
 	#endregion
@@ -73,7 +73,7 @@
 			bool success = false;
 			try {
 				success = _applicationInstaller.Install(options.Name, _environmentSettings,
-					options.ReportPath, options.ForceInstall);
+					options.ReportPath, options.CheckCompilationErrors);
 				
 				Console.WriteLine(success ? "Done" : "Error");
 				return success ? 0 : 1;

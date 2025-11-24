@@ -13,7 +13,7 @@ namespace Clio.Package
 	{
 		#region Fields: Private
 		
-		private bool _forceInstall;
+		private bool _checkCompilationErrors;
 		
 		#endregion
 
@@ -56,8 +56,8 @@ namespace Clio.Package
 
 		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions){
 			string code = _fileSystem.GetFileNameWithoutExtension(new FileInfo(fileName));
-			return _forceInstall 
-				? $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0,\"ForceInstall\":true}}"
+			return _checkCompilationErrors 
+				? $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0,\"CheckCompilationErrors\":true}}"
 				: $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0}}";
 		}
 
@@ -66,9 +66,9 @@ namespace Clio.Package
 		#region Methods: Public
 
 		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null, bool forceInstall = false)
+			string reportPath = null, bool checkCompilationErrors = false)
 		{
-			_forceInstall = forceInstall;
+			_checkCompilationErrors = checkCompilationErrors;
 			return InternalInstall(packagePath, environmentSettings, null, reportPath);
 		}
 

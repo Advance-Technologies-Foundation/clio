@@ -190,8 +190,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("Install should use forceInstall flag when set to true")]
-	public void InstallWithForceInstallTrueIncludesForceInstallInRequestData() {
+	[Description("Install should use checkCompilationErrors flag when set to true")]
+	public void InstallWithCheckCompilationErrorsTrueIncludesCheckConfigurationErrorsInRequestData() {
 		string packagePath = "T:\\TestApp.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
@@ -226,12 +226,12 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			packageLockManager
 		);
 		applicationInstaller.Install(packagePath, environmentSettings, null, true);
-		capturedRequestData.Should().Contain("\"ForceInstall\":true", because: "ForceInstall should be set to true in JSON");
+		capturedRequestData.Should().Contain("\"CheckCompilationErrors\":true", because: "CheckCompilationErrors should be set to true in JSON");
 	}
 
 	[Test]
-	[Description("Install should not include forceInstall flag when set to false")]
-	public void InstallWithForceInstallFalseExcludesForceInstallFromRequestData() {
+	[Description("Install should not include checkCompilationErrors flag when set to false")]
+	public void InstallWithCheckCompilationErrorsFalseExcludesCheckConfigurationErrorsFromRequestData() {
 		string packagePath = "T:\\TestApp.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
@@ -266,6 +266,6 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			packageLockManager
 		);
 		applicationInstaller.Install(packagePath, environmentSettings, null, false);
-		capturedRequestData.Should().NotContain("ForceInstall", because: "forceInstall parameter was set to false");
+		capturedRequestData.Should().NotContain("CheckCompilationErrors", because: "checkCompilationErrors parameter was set to false");
 	}
 }

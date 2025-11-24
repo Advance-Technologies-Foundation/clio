@@ -181,13 +181,13 @@ clio push-pkg --id 22966 10096
 clio push-app C:\Packages\package.gz
 ```
 
-To force installation and ignore compilation errors, use the `--force-install` flag:
+To enable configuration error checking during installation, use the `--check-configuration-errors` flag:
 
 ```
-clio push-app C:\Packages\package.gz --force-install
+clio push-app C:\Packages\package.gz --check-configuration-errors
 ```
 
-The `--force-install` flag determines whether to ignore compilation errors during installation. If the flag is not set and there are compilation errors, the installation will return an error with information about the compilation problems. If the `--force-install` flag is set, the installation will continue despite any compilation errors.
+The `--check-configuration-errors` flag enables validation of compilation and configuration errors during installation. If the flag is set and there are compilation or configuration errors, the installation will stop and return an error with detailed information about the problems. If the flag is not set, the installation will proceed without checking for configuration errors.
 ## compile-package
 
 To compile package
