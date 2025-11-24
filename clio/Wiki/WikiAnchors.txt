@@ -28,3 +28,4 @@ download-configuration: download configuration
 publish-app: publish workspace
 publish-workspace: publish workspace
 link-package-store:link-package-store
+create-dev-env:create-dev-env

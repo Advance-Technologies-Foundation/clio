@@ -155,6 +155,12 @@ public class BindingsModule {
 
 		containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 		containerBuilder.RegisterInstance(serializer).As<ISerializer>();
+		// Services for create-dev-env command
+		containerBuilder.RegisterType<KubernetesService>().As<IKubernetesService>();
+		containerBuilder.RegisterType<ConfigPatcherService>().As<IConfigPatcherService>();
+		containerBuilder.RegisterType<PostgresService>().As<IPostgresService>();
+		containerBuilder.RegisterType<CreateDevEnvironmentCommand>();
+
 		containerBuilder.RegisterType<FeatureCommand>();
 		containerBuilder.RegisterType<SysSettingsCommand>();
 		containerBuilder.RegisterType<BuildInfoCommand>();
@@ -213,6 +219,12 @@ public class BindingsModule {
 		containerBuilder.RegisterType<CreateInfrastructureCommand>();
 		containerBuilder.RegisterType<OpenInfrastructureCommand>();
 		containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
+		
+		// Dev environment command and services
+		containerBuilder.RegisterType<CreateDevEnvironmentCommand>();
+		containerBuilder.RegisterType<KubernetesService>().As<IKubernetesService>();
+		containerBuilder.RegisterType<ConfigPatcherService>().As<IConfigPatcherService>();
+		containerBuilder.RegisterType<PostgresService>().As<IPostgresService>();
 		containerBuilder.RegisterType<ManageWindowsFeaturesCommand>();
 		containerBuilder.RegisterType<CreateTestProjectCommand>();
 		containerBuilder.RegisterType<ListenCommand>();

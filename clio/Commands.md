@@ -1148,6 +1148,7 @@ This helps troubleshoot file path issues and understand the extraction process.
 Aliases: `dconf`
 
 # Development
+- [Create development environment](#create-dev-env)
 - [Convert package](#convert)
 - [Execute assembly](#execute-assembly-code)
 - [Set references](#ref-to)
@@ -1167,6 +1168,231 @@ Aliases: `dconf`
 - [Get product build info](#get-build-info)
 - [Show package file content](#show-package-file-content)
 - [Listen to logs](#listen)
+
+## create-dev-env
+
+Create an integrated development environment for Creatio on macOS with Kubernetes infrastructure support.
+
+### Prerequisites
+
+Before using this command, ensure you have the following installed and configured:
+
+- **Rancher Desktop** (macOS) - Kubernetes runtime with Docker integration
+- **kubectl** - Kubernetes command-line tool (included with Rancher Desktop)
+- **Docker** - Container runtime (included with Rancher Desktop)
+- **PostgreSQL** - Database server (deployed via Kubernetes)
+- Network access to configure ports and database connections
+
+### Syntax
+
+Both kebab-case and CamelCase parameter formats are supported:
+
+```bash
+# Kebab-case format (recommended)
+clio create-dev-env --zip <PATH> --env-name <NAME> [options]
+
+# CamelCase format (alternative)
+clio create-dev-environment --Zip <PATH> --EnvName <NAME> [options]
+```
+
+### Parameters
+
+| Parameter | Alias | Type | Default | Description |
+|:----------|:-----:|:----:|:-------:|:------------|
+| `--zip` / `--Zip` | | string | (required) | Path to ZIP archive containing Creatio application files |
+| `--env-name` / `--EnvName` | | string | (interactive) | Name of the development environment (must be unique) |
+| `--target-dir` / `--TargetDir` | | string | (interactive) | Target directory for deployment. Default: `~/creatio-dev/<env-name>` |
+| `--port` / `--Port` | | int | 8080 | HTTP port for web application access |
+| `--username` / `--Username` | | string | Supervisor | Database user name |
+| `--password` / `--Password` | | string | Supervisor | Database user password |
+| `--maintainer` / `--Maintainer` | | string | (optional) | Maintainer user name to configure in Creatio |
+| `--skip-infra` / `--SkipInfra` | | bool | false | Skip Kubernetes infrastructure setup (use existing) |
+| `--no-confirm` / `--NoConfirm` | | bool | false | Skip confirmation prompts |
+
+### Command Workflow
+
+The command executes the following steps automatically:
+
+1. **Validate Input** - Checks ZIP file exists and parameters are valid
+2. **Setup Infrastructure** - Deploys Kubernetes infrastructure (unless `--skip-infra` is set)
+3. **Deploy Application** - Extracts Creatio application to target directory
+4. **Configure Components** - Patches configuration files for local development
+5. **Setup Database** - Initializes PostgreSQL database and settings
+6. **Enable Development Mode** - Activates development features
+7. **Finalize** - Outputs access information and next steps
+
+### Examples
+
+#### Basic Setup (Interactive Mode)
+
+```bash
+# Minimal setup with interactive prompts
+clio create-dev-env --zip /Users/user/creatio-app.zip
+```
+
+#### Fully Automated Setup
+
+```bash
+# All parameters specified - no prompts
+clio create-dev-env \
+  --zip /Users/user/creatio-app.zip \
+  --env-name my-dev-env \
+  --target-dir /Users/user/dev/creatio \
+  --port 8080 \
+  --username devuser \
+  --password DevPassword123 \
+  --maintainer john.doe \
+  --no-confirm
+```
+
+#### Using CamelCase Parameters
+
+```bash
+# Alternative syntax with CamelCase
+clio create-dev-environment \
+  --Zip /Users/user/creatio-app.zip \
+  --EnvName staging-env \
+  --Port 9090 \
+  --Username admin \
+  --Password AdminPass123 \
+  --NoConfirm
+```
+
+#### Reuse Existing Infrastructure
+
+```bash
+# Skip infrastructure setup if already configured
+clio create-dev-env \
+  --zip /Users/user/creatio-app.zip \
+  --env-name second-env \
+  --skip-infra \
+  --no-confirm
+```
+
+#### Custom Port and Database Credentials
+
+```bash
+# Configure non-standard port and database access
+clio create-dev-env \
+  --zip /Users/user/creatio-app.zip \
+  --env-name qa-env \
+  --port 9000 \
+  --username qauser \
+  --password QAPassword456 \
+  --maintainer qa.team \
+  --no-confirm
+```
+
+### Configuration Details
+
+#### Environment Setup
+
+- **Application Directory**: Extracts ZIP to specified target directory
+- **Configuration Files**: Patches `Terrasoft.WebHost.dll.config` for:
+  - SameSite cookie mode (macOS compatibility fix)
+  - PostgreSQL connection strings
+  - HTTP port configuration
+- **Database**: PostgreSQL instance running in Kubernetes pod
+
+#### Port Configuration
+
+The application will be accessible at:
+
+```
+http://localhost:<port>/
+```
+
+Default port is `8080`. Use `--port` to configure alternate ports.
+
+#### Database Connection
+
+- **Server**: PostgreSQL running in Kubernetes (`postgres` service)
+- **Port**: 5432 (standard PostgreSQL port)
+- **Database**: `creatio` (default)
+- **Credentials**: Configured via `--username` and `--password` parameters
+- **Connection String**: Automatically injected into application configuration
+
+#### Maintainer Configuration
+
+If `--maintainer` parameter is provided, the system settings are updated to set the specified user as the default maintainer for all packages.
+
+### Output Example
+
+```
+[02:15:45] Setting up Creatio development environment...
+[02:15:46] ✓ Validating input parameters
+[02:15:47] ✓ Setting up Kubernetes infrastructure
+[02:15:52] ✓ Infrastructure ready (5.2s)
+[02:15:53] ✓ Extracting application files
+[02:15:58] ✓ Application deployed (5.1s)
+[02:15:59] ✓ Patching configuration files
+[02:16:00] ✓ Configuring database connection
+[02:16:01] ✓ Setting maintainer: john.doe
+[02:16:02] ✓ Enabling development mode
+[02:16:03] ✓ Environment ready
+
+Access your Creatio application:
+  URL: http://localhost:8080/
+  Username: Supervisor
+  Password: Supervisor
+  
+Target Directory: /Users/user/dev/creatio/my-dev-env
+```
+
+### Error Handling
+
+| Error | Cause | Solution |
+|:-----:|:-----:|:-------:|
+| ZIP file not found | `--zip` path doesn't exist | Verify ZIP file path |
+| Port already in use | Another service uses target port | Choose different port with `--port` |
+| Kubernetes not running | Rancher Desktop not started | Start Rancher Desktop and retry |
+| Database connection failed | PostgreSQL pod not ready | Wait for Kubernetes to stabilize, then retry |
+| Configuration file not found | ZIP missing config files | Ensure ZIP contains complete Creatio application |
+
+### Troubleshooting
+
+#### Kubernetes Infrastructure Issues
+
+```bash
+# Check Kubernetes status
+kubectl cluster-info
+
+# View pod status
+kubectl get pods
+
+# Check service status
+kubectl get svc
+```
+
+#### Database Connection Issues
+
+```bash
+# Test PostgreSQL connection
+psql -h localhost -U devuser -d creatio
+```
+
+#### Application Access Issues
+
+```bash
+# Verify application is running
+curl http://localhost:8080/
+
+# Check application logs (in target directory)
+tail -f <target-dir>/logs/application.log
+```
+
+### Related Commands
+
+- [`reg-web-app`](#reg-web-app) - Register/update environment settings
+- [`compile-configuration`](#compile-configuration) - Compile Creatio configuration
+- [`set-dev-mode`](#set-dev-mode) - Enable/disable developer mode
+- [`clear-redis-db`](#clear-redis-db) - Clear cache
+
+### See Also
+
+- [Creatio Installation Guide](./docs/commands/DeployCreatioCommand.md)
+- [Environment Settings](#environment-settings)
+- [Rancher Desktop Documentation](https://docs.rancherdesktop.io/)
 
 ## convert
 Convert package to project.
