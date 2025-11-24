@@ -30,7 +30,7 @@
 	[Verb("install-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
 	public class InstallApplicationOptions : InstallOptions
 	{
-		[Option("check-compilation-errors", Required = false, HelpText = "Check compilation errors")]
+		[Option("check-compilation-errors", Required = false, HelpText = "Check compilation errors", Hidden = true, Default = false)]
 		public bool CheckCompilationErrors { get; set; }
 	}
 
