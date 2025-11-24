@@ -181,6 +181,13 @@ clio push-pkg --id 22966 10096
 clio push-app C:\Packages\package.gz
 ```
 
+To force installation and ignore compilation errors, use the `--force-install` flag:
+
+```
+clio push-app C:\Packages\package.gz --force-install
+```
+
+The `--force-install` flag determines whether to ignore compilation errors during installation. If the flag is not set and there are compilation errors, the installation will return an error with information about the compilation problems. If the `--force-install` flag is set, the installation will continue despite any compilation errors.
 ## compile-package
 
 To compile package

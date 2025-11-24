@@ -11,6 +11,11 @@ namespace Clio.Package
 
 	public class ApplicationInstaller : BasePackageInstaller, IApplicationInstaller
 	{
+		#region Fields: Private
+		
+		private bool _forceInstall;
+		
+		#endregion
 
 		#region Constructors: Public
 
@@ -51,8 +56,9 @@ namespace Clio.Package
 
 		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions){
 			string code = _fileSystem.GetFileNameWithoutExtension(new FileInfo(fileName));
-			return
-				$"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0}}";
+			return _forceInstall 
+				? $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0,\"ForceInstall\":true}}"
+				: $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0}}";
 		}
 
 		#endregion
@@ -60,7 +66,9 @@ namespace Clio.Package
 		#region Methods: Public
 
 		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null){
+			string reportPath = null, bool forceInstall = false)
+		{
+			_forceInstall = forceInstall;
 			return InternalInstall(packagePath, environmentSettings, null, reportPath);
 		}
 

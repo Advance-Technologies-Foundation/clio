@@ -188,4 +188,84 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
 		result.Should().BeTrue();
 	}
+
+	[Test]
+	[Description("Install should use forceInstall flag when set to true")]
+	public void InstallWithForceInstallTrueIncludesForceInstallInRequestData() {
+		string packagePath = "T:\\TestApp.gz";
+		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
+		EnvironmentSettings environmentSettings = new EnvironmentSettings();
+		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		var applicationClient = Substitute.For<IApplicationClient>();
+		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
+		string capturedRequestData = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedRequestData = callInfo.ArgAt<string>(1);
+				return "{\"Success\":true}";
+			});
+		var application = Substitute.For<IApplication>();
+		var packageArchiver = Substitute.For<IPackageArchiver>();
+		var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.ArgAt<string>(0));
+		var logger = Substitute.For<ILogger>();
+		var packageLockManager = Substitute.For<IPackageLockManager>();
+		var clioFileSystem = new FileSystem(FileSystem);
+		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
+		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+			environmentSettings,
+			applicationClientFactory,
+			application,
+			packageArchiver,
+			scriptExecutor,
+			serviceUrlBuilder,
+			clioFileSystem,
+			logger,
+			packageLockManager
+		);
+		applicationInstaller.Install(packagePath, environmentSettings, null, true);
+		capturedRequestData.Should().Contain("\"ForceInstall\":true", because: "ForceInstall should be set to true in JSON");
+	}
+
+	[Test]
+	[Description("Install should not include forceInstall flag when set to false")]
+	public void InstallWithForceInstallFalseExcludesForceInstallFromRequestData() {
+		string packagePath = "T:\\TestApp.gz";
+		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
+		EnvironmentSettings environmentSettings = new EnvironmentSettings();
+		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		var applicationClient = Substitute.For<IApplicationClient>();
+		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
+		string capturedRequestData = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedRequestData = callInfo.ArgAt<string>(1);
+				return "{\"Success\":true}";
+			});
+		var application = Substitute.For<IApplication>();
+		var packageArchiver = Substitute.For<IPackageArchiver>();
+		var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.ArgAt<string>(0));
+		var logger = Substitute.For<ILogger>();
+		var packageLockManager = Substitute.For<IPackageLockManager>();
+		var clioFileSystem = new FileSystem(FileSystem);
+		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
+		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+			environmentSettings,
+			applicationClientFactory,
+			application,
+			packageArchiver,
+			scriptExecutor,
+			serviceUrlBuilder,
+			clioFileSystem,
+			logger,
+			packageLockManager
+		);
+		applicationInstaller.Install(packagePath, environmentSettings, null, false);
+		capturedRequestData.Should().NotContain("ForceInstall", because: "forceInstall parameter was set to false");
+	}
 }
