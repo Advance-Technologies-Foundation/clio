@@ -217,6 +217,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<Scenario>();
 		containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
 		containerBuilder.RegisterType<CreateInfrastructureCommand>();
+		containerBuilder.RegisterType<CreateDevEnvironmentCommand>();
 		containerBuilder.RegisterType<OpenInfrastructureCommand>();
 		containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
 		
@@ -322,6 +323,11 @@ public class BindingsModule {
 
 		containerBuilder.RegisterType<Mssql>().As<IMssql>();
 		containerBuilder.RegisterType<Postgres>().As<IPostgres>();
+		
+		// Register K8s development environment services
+		containerBuilder.RegisterType<KubernetesService>().As<IKubernetesService>();
+		containerBuilder.RegisterType<ConfigPatcherService>().As<IConfigPatcherService>();
+		containerBuilder.RegisterType<PostgresService>().As<IPostgresService>();
 
 		additionalRegistrations?.Invoke(containerBuilder);
 		return containerBuilder.Build();
