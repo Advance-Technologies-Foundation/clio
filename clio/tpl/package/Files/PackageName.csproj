@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
+        <LangVersion>7.3</LangVersion>
+        <RootNamespace>#RootNameSpace#</RootNamespace>
         <AppendTargetFrameworkToOutputPath>False</AppendTargetFrameworkToOutputPath>
         <CoreTargetFramework Condition="'$(CoreTargetFramework)' == ''">net472</CoreTargetFramework>
         <TargetFramework>$(CoreTargetFramework)</TargetFramework>
@@ -260,12 +262,54 @@
             <SpecificVersion>False</SpecificVersion>
             <Private>False</Private>
         </Reference>
+
+        <!--    Microsoft.Extensions.DependencyInjection is included in NetFramework and ommited in NET8 -->
+        <Reference Condition="'$(TargetFramework)' == 'net472'" Include="Microsoft.Extensions.DependencyInjection">
+            <HintPath>$(CoreLibPath)/Microsoft.Extensions.DependencyInjection.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <PackageReference Condition="'$(TargetFramework)' == 'netstandard2.0'" Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+        <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
+            <HintPath>$(CoreLibPath)/Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="System.Threading.Tasks.Extensions">
+            <HintPath>$(CoreLibPath)/System.Threading.Tasks.Extensions.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="Microsoft.Bcl.AsyncInterfaces">
+            <HintPath>$(CoreLibPath)/Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        
+        <Reference Condition="'$(TargetFramework)' == 'net472'" Include="Microsoft.Extensions.Http">
+            <HintPath>$(CoreLibPath)/Microsoft.Extensions.Http.dll</HintPath>
+            <SpecificVersion>False</SpecificVersion>
+            <Private>False</Private>
+        </Reference>
+        <PackageReference Condition="'$(TargetFramework)' == 'netstandard2.0'" Include="Microsoft.Extensions.Http" Version="8.0.0" />
+
+        <!--<PackageReference Include="ATF.Repository" Version="2.0.2.11" />-->
+        <Reference Include="ATF.Repository">
+            <HintPath>Libs/ATF.Repository.dll</HintPath>
+        </Reference>
+
+        <!--<PackageReference Include="ErrorOr" Version="2.1.0" />-->
+        <Reference Include="ErrorOr">
+            <HintPath>Libs/ErrorOr.dll</HintPath>
+        </Reference>
+        
     </ItemGroup>
     <ItemGroup Label="Add visibility for test project">
         <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
             <_Parameter1>$(MSBuildProjectName).Tests</_Parameter1>
         </AssemblyAttribute>
     </ItemGroup>
+    
 	<ItemGroup Label="Package References">
 	</ItemGroup>
     <Target Name="Paths" BeforeTargets="BeforeCompile">

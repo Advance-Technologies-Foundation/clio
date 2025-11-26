@@ -31,6 +31,14 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 	#region Methods: Private
 
+	private IWorkspaceSolutionCreator _solutionCreatorMock = Substitute.For<IWorkspaceSolutionCreator>();
+
+	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+		_solutionCreatorMock.ClearReceivedCalls();
+		base.AdditionalRegistrations(containerBuilder);
+		containerBuilder.RegisterInstance(_solutionCreatorMock);
+	}
+	
 	private PackageCreator InitCreator(){
 		return new PackageCreator(Container.Resolve<EnvironmentSettings>(), Container.Resolve<IWorkspace>(),
 			Container.Resolve<IWorkspaceSolutionCreator>(),
@@ -65,12 +73,16 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		//Assert
 		string appDescriptorPathOne = Path.Combine(PackagesPath, PackageNameOne, "Files", "app-descriptor.json");
-		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
-		string appDescriptorPathThree = Path.Combine(PackagesPath, PackageNameThree, "Files", "app-descriptor.json");
-
 		FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
+		
+		string appDescriptorPathTwo = Path.Combine(PackagesPath, PackageNameTwo, "Files", "app-descriptor.json");
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
+		
+		string appDescriptorPathThree = Path.Combine(PackagesPath, PackageNameThree, "Files", "app-descriptor.json");
 		FileSystem.File.Exists(appDescriptorPathThree).Should().BeFalse();
+		
+		_solutionCreatorMock.Received(3).Create();
+		
 	}
 
 	[Test]
@@ -88,6 +100,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		FileSystem.File.Exists(appDescriptorPathOne).Should().BeTrue();
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
+		
+		_solutionCreatorMock.Received(2).Create();
 	}
 
 	[Test]
@@ -105,6 +119,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		FileSystem.File.Exists(appDescriptorPathOne).Should().BeFalse();
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
+		
+		_solutionCreatorMock.Received(2).Create();
 	}
 
 	[Test]
@@ -122,6 +138,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		FileSystem.File.Exists(appDescriptorPathOne).Should().BeFalse();
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
+		
+		_solutionCreatorMock.Received(2).Create();
 	}
 
 	[Test]
@@ -142,6 +160,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
 		appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
 		appDescriptor.Packages.Count().Should().Be(2);
+		
+		_solutionCreatorMock.Received(3).Create();
 	}
 
 	[Test]
@@ -158,6 +178,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
 		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
 		appDescriptor.Packages.Count().Should().Be(2);
+		
+		_solutionCreatorMock.Received(3).Create();
 	}
 
 	[Test]
@@ -167,7 +189,11 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		//Act
 		creator.Create(PackagesPath, PackageNameOne, false);
-		Assert.Throws<InvalidOperationException>(() => creator.Create(PackagesPath, PackageNameOne, false));
+		Action act = () => creator.Create(PackagesPath, PackageNameOne, false);
+		
+		//Assert
+		act.Should().Throw<InvalidOperationException>("because creating a package with the same name should throw an exception");
+		_solutionCreatorMock.Received(1).Create();
 	}
 
 	[Test]
@@ -188,7 +214,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		string appDescriptorContent = FileSystem.File.ReadAllText(appDescriptorPathOne);
 		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
-		appDescriptor.Packages.Count().Should().Be(2);
+		appDescriptor.Packages.Should().HaveCount(2);
+		_solutionCreatorMock.Received(2).Create();
 	}
 
 	[Test]
@@ -212,6 +239,8 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		appDescriptor.Version.Should().Be("0.1.0");
 		appDescriptor.Packages.Should().HaveCount(1);
 		appDescriptor.Packages.First().Name.Should().Be(PackageNameOne);
+		
+		_solutionCreatorMock.Received(1).Create();
 	}
 
 }

@@ -10,11 +10,11 @@
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <!-- Default version for local development. Will be overridden during release from tag -->
-  <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.68</AssemblyVersion>
+      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.68</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+      <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	  <PackageLicenseUrl></PackageLicenseUrl>
 	  <PackageLicense>MIT</PackageLicense>
 	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
@@ -41,14 +41,14 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
 	
-    <ItemGroup>
-		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-			<_Parameter1>clio.tests</_Parameter1>
-		</AssemblyAttribute>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-			<_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
-		</AssemblyAttribute>
-	</ItemGroup>
+  <ItemGroup>
+      <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+          <_Parameter1>clio.tests</_Parameter1>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+          <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
+      </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <None Remove="reg\clio_context_menu_win.reg" />
@@ -595,15 +595,6 @@
 		<Pack>true</Pack>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="tpl\package\Files\PackageName.csproj">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\Files\Directory.Build.targets">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\Files\src\js\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
     <Content Include="tpl\workspace\.gitignore">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -658,6 +649,17 @@
     <Content Include="tpl\workspace\tasks\run-all-platfrom-build.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+
+    <None Remove="tpl\workspace\tasks\open-main-solution-framework.cmd" />
+    <Content Include="tpl\workspace\tasks\open-main-solution-framework.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Remove="tpl\workspace\tasks\open-main-solution-netcore.cmd" />
+    <Content Include="tpl\workspace\tasks\open-main-solution-netcore.cmd">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    
+    
     <Content Include="tpl\workspace\packages\placeholder.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -996,7 +998,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="tpl\package\Files\src\cs\RssFeedApp.cs" />
     <Folder Include="tpl\package\Data" />
+    <Folder Include="tpl\package\Files\Libs\" />
     <Folder Include="tpl\package\Resources" />
     <Folder Include="tpl\package\Schemas" />
     <Folder Include="tpl\package\SqlScripts" />
@@ -1004,6 +1008,13 @@
     <Folder Include="tpl\schemas-template\source-code\Schema\" />
     <Folder Include="tpl\ui\8.0.3\" />
     <Folder Include="tpl\ui\8.0.8\" />
+
+    <Compile Remove="tpl\package\**" />
+    <Content Include="tpl\package\**" >
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    
+    
   </ItemGroup>
   <ItemGroup>
     <None Include="tpl\workspace\.clio\clioignore" />
