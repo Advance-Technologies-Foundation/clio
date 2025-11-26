@@ -5,6 +5,7 @@ using ATF.Repository.Providers;
 using Autofac;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
+using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
@@ -153,6 +154,8 @@ public class BindingsModule {
 
 		#endregion
 
+		containerBuilder.RegisterType<DconfChainItem>().As<DconfChainItem>();
+		containerBuilder.RegisterType<FollowUpChain>().As<IFollowUpChain>();
 		containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
 		containerBuilder.RegisterInstance(serializer).As<ISerializer>();
 		containerBuilder.RegisterType<FeatureCommand>();

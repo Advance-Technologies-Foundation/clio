@@ -18,6 +18,7 @@ namespace Clio.Workspaces
 		private const string WorkspaceSettingsJson = "workspaceSettings.json";
 		private const string WorkspaceEnvironmentSettingsJson = "workspaceEnvironmentSettings.json";
 		private const string SolutionName = "CreatioPackages.slnx";
+		private const string MainSolutionName = "MainSolution.slnx";
 		private const string NugetFolderName = ".nuget";
 		private const string SolutionFolderName = ".solution";
 		private const string TasksFolderName = "tasks";
@@ -89,7 +90,9 @@ namespace Clio.Workspaces
 
 		public string SolutionFolderPath => Path.Combine(RootPath, SolutionFolderName);
 		public string SolutionPath => Path.Combine(SolutionFolderPath, SolutionName);
-
+		
+		public string MainSolutionPath => Path.Combine(RootPath, MainSolutionName);
+		public string MainSolutionFolderPath => Path.Combine(RootPath);
 		public string NugetFolderPath => Path.Combine(RootPath, NugetFolderName);
 		public string TasksFolderPath => Path.Combine(RootPath, TasksFolderName);
 		public string ApplicationFolderPath => _environmentSettings.IsNetCore 
@@ -98,8 +101,6 @@ namespace Clio.Workspaces
 		public string CoreBinFolderPath => Path.Combine(ApplicationFolderPath, CoreBinFolderName);
 		public string LibFolderPath => Path.Combine(ApplicationFolderPath, LibFolderName);
 		public string ConfigurationBinFolderPath => Path.Combine(ApplicationFolderPath, ConfigurationBinFolderName);
-
-		
 		
 		#endregion
 

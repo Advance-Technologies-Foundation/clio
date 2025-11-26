@@ -51,16 +51,17 @@ namespace Clio.Workspaces
 
 		#region Methods: Private
 
-		private IEnumerable<SolutionProject> FindSolutionProjects() {
-			IList<SolutionProject> solutionProjects = new List<SolutionProject>();
+		private IEnumerable<SolutionProject> FindSolutionProjects(string solutionFolderPath) {
+			List<SolutionProject> solutionProjects = [];
 			IEnumerable<StandalonePackageProject> standalonePackageProjects = _standalonePackageFileManager
 				.FindStandalonePackageProjects(_workspacePathBuilder.PackagesFolderPath);
-			string solutionFolderPath = _workspacePathBuilder.SolutionFolderPath;
+			
 			foreach (StandalonePackageProject standalonePackageProject in standalonePackageProjects) {
+				
 				string relativeStandaloneProjectPath =
 					Path.GetRelativePath(solutionFolderPath, standalonePackageProject.Path);
-				SolutionProject solutionProject =
-					new SolutionProject(standalonePackageProject.PackageName, relativeStandaloneProjectPath);
+				
+				SolutionProject solutionProject = new (standalonePackageProject.PackageName, relativeStandaloneProjectPath);
 				solutionProjects.Add(solutionProject);
 			}
 			// Sort by relative path
@@ -72,8 +73,11 @@ namespace Clio.Workspaces
 		#region Methods: Public
 
 		public void Create() {
-			IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects();
+			IEnumerable<SolutionProject> solutionProjects = FindSolutionProjects(_workspacePathBuilder.SolutionFolderPath);
 			_solutionCreator.Create(_workspacePathBuilder.SolutionPath, solutionProjects);
+			
+			IEnumerable<SolutionProject> mainSolutionProjects = FindSolutionProjects(_workspacePathBuilder.MainSolutionFolderPath);
+			_solutionCreator.Create(_workspacePathBuilder.MainSolutionPath, mainSolutionProjects);
 		}
 
 		#endregion

@@ -1,3 +1,5 @@
+using System.IO.Abstractions;
+
 namespace Clio.Package
 {
 	using System.Collections.Generic;
@@ -36,7 +38,7 @@ namespace Clio.Package
 
 		#region Constructors: Public
 
-		public StandalonePackageFileManager( IFileSystem fileSystem) {
+		public StandalonePackageFileManager(IFileSystem fileSystem) {
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_fileSystem = fileSystem;
 		}
@@ -45,8 +47,8 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private static IEnumerable<string> GetPackagesNames(string packagesPath) {
-			DirectoryInfo packagesDirectoryInfo = new DirectoryInfo(packagesPath);
+		private IEnumerable<string> GetPackagesNames(string packagesPath) {
+			IDirectoryInfo packagesDirectoryInfo = _fileSystem.GetDirectoryInfo(packagesPath);
 			return packagesDirectoryInfo
 				.GetDirectories("*.*", SearchOption.TopDirectoryOnly)
 				.Select(packageDirectoryInfo => packageDirectoryInfo.Name);

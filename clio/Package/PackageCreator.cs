@@ -106,6 +106,13 @@ namespace Clio.Package
             _fileSystem.MoveFile(templatePackageNameCsprojPath, newPackageNameCsprojPath);
         }
 
+        private void RenameMainAppCs(string packagesPath, string packageName) {
+            string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
+            string mainAppCsPath = Path.Combine(packageFilesPath,"src","cs", "MainApp.cs");
+            string newMainAppCsPath = Path.Combine(packageFilesPath,"src","cs", $"{RootNameSpace(packageName)}.cs");
+            _fileSystem.MoveFile(mainAppCsPath, newMainAppCsPath);
+        }
+
         private void CreatePackageDescriptorToFileSystem(string packagePath, string packageName) {
             PackageDescriptorDto descriptor = CreatePackageDescriptor(packageName);
             string descriptorPath = Path.Combine(packagePath, "descriptor.json");
@@ -115,17 +122,19 @@ namespace Clio.Package
         private void CreatePackageIfNotExists(string packagesPath, string packageName) {
             string packagePath = Path.Combine(packagesPath, packageName);
             if (_fileSystem.ExistsDirectory(packagePath)) {
-                throw new InvalidOperationException($"Directory '{packagePath}' allready exists");
+                throw new InvalidOperationException($"Directory '{packagePath}' already exists");
             }
             _templateProvider.CopyTemplateFolder("package", packagePath);
             CreatePackageDescriptorToFileSystem(packagePath, packageName);
             CreatePackageProj(packagesPath, packageName);
-
         }
 
+        private static readonly Func<string, string> RootNameSpace = packageName => $"{packageName}App";
         private void CreatePackageProj(string packagesPath, string packageName) {
             ApplyMacrosToProjectFiles(packagesPath, packageName);
             RenameTemplatePackageNameCsproj(packagesPath, packageName);
+            ApplyMacrosToCsFiles(packagesPath, packageName);
+            RenameMainAppCs(packagesPath, packageName);
         }
 
         private void ApplyMacrosToProjectFiles(string packagesPath, string packageName) {
@@ -133,10 +142,25 @@ namespace Clio.Package
             string packageNameTargetPropsPath = Path.Combine(packageFilesPath, "Directory.Build.targets");
             string packageNameTargetPropsContent = _fileSystem.ReadAllText(packageNameTargetPropsPath);
             string newPackageNameCsprojContent = packageNameTargetPropsContent
-                .Replace("#PackageName#", packageName);
+                .Replace("#PackageName#", packageName)
+                .Replace("#RootNameSpace#", RootNameSpace(packageName));
             _fileSystem.WriteAllTextToFile(packageNameTargetPropsPath, newPackageNameCsprojContent);
         }
 
+        private void ApplyMacrosToCsFiles(string packagesPath, string packageName) {
+            string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
+            string[] csFiles = _fileSystem.GetFiles(packageFilesPath, "*.cs", SearchOption.AllDirectories);
+            foreach (string csFilePath in csFiles) {
+                string csFileContent = _fileSystem.ReadAllText(csFilePath);
+                string newCsFileContent = csFileContent
+                    .Replace("#PackageName#", packageName)
+                    .Replace("#RootNameSpace#", RootNameSpace(packageName))
+                    ;
+                _fileSystem.WriteAllTextToFile(csFilePath, newCsFileContent);
+            }
+        }
+        
+        
         private string GetPackagesPath() =>
             IsWorkspace
                 ? _workspacePathBuilder.PackagesFolderPath
@@ -176,6 +200,8 @@ namespace Clio.Package
             } else {
                 UpdateAppDescriptorIfExists(packagesPath, packageName);
             }
+            _workspaceSolutionCreator.Create();
+
         }
 
         private void UpdateAppDescriptorIfExists(string packagesPath, string packageName) {

@@ -284,6 +284,9 @@ public class FileSystem : IFileSystem
 
 	public bool IsEmptyDirectory() =>
 		!_msFileSystem.Directory.GetFileSystemEntries(_msFileSystem.Directory.GetCurrentDirectory()).Any();
+	
+	public bool IsEmptyDirectory(string path) =>
+		!_msFileSystem.Directory.GetFileSystemEntries(path).Any();
 
 	public string GetDestinationFileDirectory(string filePath, string destinationPath) {
 		filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));

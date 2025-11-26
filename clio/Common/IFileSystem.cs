@@ -189,6 +189,7 @@ namespace Clio.Common
 		string GetCurrentDirectoryIfEmpty(string directoryPath);
 
 		bool IsEmptyDirectory();
+		bool IsEmptyDirectory(string directoryPath);
 
 		string GetDestinationFileDirectory(string filePath, string destinationPath);
 
