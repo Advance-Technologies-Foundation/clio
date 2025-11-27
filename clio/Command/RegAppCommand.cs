@@ -87,7 +87,7 @@ public class RegAppCommand : Command<RegAppOptions> {
 			EnvironmentSettings environment = new() {
 				Login = options.Login,
 				Password = options.Password,
-				Uri = options.Uri.TrimEnd('/'),
+				Uri = options.Uri?.TrimEnd('/'),
 				Maintainer = options.Maintainer,
 				Safe = options.SafeValue ?? false,
 				IsNetCore = options.IsNetCore ?? false,

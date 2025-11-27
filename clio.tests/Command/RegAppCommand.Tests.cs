@@ -1,6 +1,7 @@
 ﻿using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -44,7 +45,8 @@ public class RegAppCommandTestCase {
 	[Test]
 	[Category("Unit")]
 	public void Execute_CallsSettingsRepositoryToSetActiveEnvironment_WhenEnvironmentExists(){
-		string name = "Test";
+		// Arrange
+		const string name = "Test";
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.IsEnvironmentExists(name).Returns(true);
 		RegAppOptions options = new() {
@@ -53,8 +55,13 @@ public class RegAppCommandTestCase {
 		};
 		IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
 		RegAppCommand command = new(settingsRepository, clientFactory, null, _loggerMock);
-		command.Execute(options);
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
 		settingsRepository.Received(1).SetActiveEnvironment(name);
+		result.Should().Be(0);
 	}
 
 	[Test]
