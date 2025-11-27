@@ -138,6 +138,9 @@ clio add-package <PACKAGE_NAME> -a True
 
 #To add package without app descriptor
 clio add-package <PACKAGE_NAME> -a False
+
+#To add package app descriptor and download configuration from multiple environments
+clio add-package <PACKAGE_NAME> -a True -e env_nf,env_n8
 ```
 
 

@@ -32,22 +32,25 @@ public class DconfChainItem(DownloadConfigurationCommand dconf, ILogger logger, 
 		if (answer == null || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase)) {
 			return 0;
 		}
-
-
+		
 		if (context.TryGetValue(nameof(DownloadConfigurationCommandOptions.Environment), out object environment)) {
 			string value = environment as string;
 			if (!string.IsNullOrWhiteSpace(value)) {
-				DownloadConfigurationCommandOptions options = new () {
-					Environment = value,
-				};
-
-				try {
-					return dconf.Execute(options);
+				string[] envs = value.Split(',');
+				int i = 0;
+				foreach (string env in envs) {
+					DownloadConfigurationCommandOptions options = new () {
+						Environment = env
+					};
+					try {
+						i+=dconf.Execute(options);
+					}
+					catch (Exception ex) {
+						var message = $"Failed to download configuration from environment {env}";
+						return Error.Failure("Failed.Dconf", $"{message}{Environment.NewLine}{ex.Message}");
+					}
 				}
-				catch (Exception ex) {
-					string message = $"Failed to download configuration from environment {value}";
-					return ErrorOr.Error.Failure("Failed.Dconf", $"{message}{Environment.NewLine}{ex.Message}");
-				}
+				return i;
 			}
 		}
 		

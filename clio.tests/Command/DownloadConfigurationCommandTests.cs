@@ -26,6 +26,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	private IWorkspace _workspaceMock;
 	private ILogger _loggerMock;
 	private MockFileSystem _mockFileSystem;
+	private IFileSystem _fileSystemMock;
 
 	#endregion
 
@@ -38,11 +39,13 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		_workspaceMock = Substitute.For<IWorkspace>();
 		_loggerMock = Substitute.For<ILogger>();
 		_mockFileSystem = new MockFileSystem();
+		_fileSystemMock = new FileSystem(_mockFileSystem);
 
 		containerBuilder.RegisterInstance(_applicationDownloaderMock).As<IApplicationDownloader>();
 		containerBuilder.RegisterInstance(_zipBasedApplicationDownloaderMock).As<IZipBasedApplicationDownloader>();
 		containerBuilder.RegisterInstance(_workspaceMock).As<IWorkspace>();
 		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
+		containerBuilder.RegisterInstance(_mockFileSystem).As<IFileSystem>();
 		containerBuilder.RegisterInstance((SysIoAbstractions.IFileSystem)_mockFileSystem).As<SysIoAbstractions.IFileSystem>();
 	}
 
@@ -422,7 +425,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	#region Tests: DownloadConfigurationCommand - Constructor Validation
 
 	[Test]
-	[NUnit.Framework.Description("Should throw ArgumentNullException when IApplicationDownloader is null")]
+	[Description("Should throw ArgumentNullException when IApplicationDownloader is null")]
 	public void Constructor_ThrowsArgumentNullException_WhenApplicationDownloaderIsNull()
 	{
 		// Arrange & Act & Assert
@@ -430,13 +433,13 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			null,
 			_zipBasedApplicationDownloaderMock,
 			_workspaceMock,
-			_loggerMock);
+			_loggerMock, _fileSystemMock);
 		
 		act.Should().Throw<ArgumentNullException>(because: "Null applicationDownloader should throw ArgumentNullException");
 	}
 
 	[Test]
-	[NUnit.Framework.Description("Should throw ArgumentNullException when IZipBasedApplicationDownloader is null")]
+	[Description("Should throw ArgumentNullException when IZipBasedApplicationDownloader is null")]
 	public void Constructor_ThrowsArgumentNullException_WhenZipBasedApplicationDownloaderIsNull()
 	{
 		// Arrange & Act & Assert
@@ -444,13 +447,13 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			_applicationDownloaderMock,
 			null,
 			_workspaceMock,
-			_loggerMock);
+			_loggerMock, _fileSystemMock);
 		
 		act.Should().Throw<ArgumentNullException>(because: "Null zipBasedApplicationDownloader should throw ArgumentNullException");
 	}
 
 	[Test]
-	[NUnit.Framework.Description("Should throw ArgumentNullException when IWorkspace is null")]
+	[Description("Should throw ArgumentNullException when IWorkspace is null")]
 	public void Constructor_ThrowsArgumentNullException_WhenWorkspaceIsNull()
 	{
 		// Arrange & Act & Assert
@@ -458,7 +461,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			_applicationDownloaderMock,
 			_zipBasedApplicationDownloaderMock,
 			null,
-			_loggerMock);
+			_loggerMock, _fileSystemMock);
 		
 		act.Should().Throw<ArgumentNullException>(because: "Null workspace should throw ArgumentNullException");
 	}
@@ -468,7 +471,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	#region Tests: DownloadConfigurationCommandOptions Metadata
 
 	[Test]
-	[NUnit.Framework.Description("Should have correct verb name and alias for command")]
+	[Description("Should have correct verb name and alias for command")]
 	public void CommandOptions_HasCorrectVerbAndAlias()
 	{
 		// Act
@@ -483,7 +486,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	}
 
 	[Test]
-	[NUnit.Framework.Description("Should have BuildZipPath property as optional")]
+	[Description("Should have BuildZipPath property as optional")]
 	public void CommandOptions_HasOptionalBuildZipPath()
 	{
 		// Act
