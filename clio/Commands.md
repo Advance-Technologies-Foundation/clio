@@ -1904,11 +1904,24 @@ or execute command to open directory
 
 ## open-k8-files
 
-Opens folder with deployment scripts
+Opens folder with deployment scripts in your system's default file manager.
 
-```
+**Supported on:** Windows, macOS, and Linux
+
+```bash
 clio open-k8-files
+
+# or using aliases
+clio cfg-k8f
+clio cfg-k8s
+clio cfg-k8
 ```
+
+The command opens:
+- **Windows:** File Explorer at `%LOCALAPPDATA%\creatio\clio\infrastructure`
+- **macOS:** Finder at `~/.local/creatio/clio/infrastructure`
+- **Linux:** Default file manager at `~/.local/creatio/clio/infrastructure`
+
 ```ps
 # common
 kubectl apply -f clio-namespace.yaml

@@ -19,7 +19,7 @@ namespace Clio.Command
 		
 	}
 
-	[Verb("open-k8-files", Aliases = new string[] { "cfg-k8f", "cfg-k8s" }, HelpText = "Open folder K8 files for deployment")]
+	[Verb("open-k8-files", Aliases = new string[] { "cfg-k8f", "cfg-k8s", "cfg-k8" }, HelpText = "Open folder K8 files for deployment")]
 	public class OpenInfrastructureOptions
 	{
 
@@ -29,11 +29,25 @@ namespace Clio.Command
 	{
 		public override int Execute(OpenInfrastructureOptions options) {
 			string infrsatructureCfgFilesFolder = Path.Join(SettingsRepository.AppSettingsFolderPath, "infrastructure");
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-				Process.Start("explorer.exe", infrsatructureCfgFilesFolder);
+			try {
+				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+					Process.Start("explorer.exe", infrsatructureCfgFilesFolder);
+				}
+				else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
+					Process.Start("open", infrsatructureCfgFilesFolder);
+				}
+				else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+					Process.Start("xdg-open", infrsatructureCfgFilesFolder);
+				}
+				else {
+					Console.WriteLine($"Unsupported platform: {RuntimeInformation.OSDescription}");
+					return 1;
+				}
 				return 0;
-			} else {
-				Console.WriteLine("Clio open-k8-files command is only supported on: 'windows'.");
+			}
+			catch (Exception e) {
+				Console.WriteLine($"Failed to open folder: {e.Message}");
+				Console.WriteLine($"Folder path: {infrsatructureCfgFilesFolder}");
 				return 1;
 			}
 		}
