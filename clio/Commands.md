@@ -512,30 +512,38 @@ clio restart-web-app <ENVIRONMENT_NAME>
 
 ## start
 
-Start a local Creatio application using dotnet. This command launches the Creatio application from the configured `EnvironmentPath` in a new terminal window.
+Start a local Creatio application using dotnet. By default, runs as a background service (same as deployment). Use `--terminal` or `-w` option to launch in a new terminal window with visible logs.
 
 **Aliases**: `start-server`, `start-creatio`, `sc`
 
 ### Usage
 
-Start application for a specific environment:
+Start application as background service (default):
 
 ```bash
 clio start -e <ENVIRONMENT_NAME>
 ```
 
-Start application for default environment:
+Start application in terminal window with logs:
+
+```bash
+clio start -e <ENVIRONMENT_NAME> --terminal
+clio start -e <ENVIRONMENT_NAME> -w
+```
+
+Start default environment:
 
 ```bash
 clio start
+clio start --terminal
 ```
 
 Using aliases:
 
 ```bash
 clio start-server -e <ENVIRONMENT_NAME>
-clio start-creatio -e <ENVIRONMENT_NAME>
-clio sc -e <ENVIRONMENT_NAME>
+clio start-creatio -e <ENVIRONMENT_NAME> -w
+clio sc -e <ENVIRONMENT_NAME> --terminal
 ```
 
 ### Prerequisites
@@ -552,23 +560,36 @@ clio sc -e <ENVIRONMENT_NAME>
 ### Examples
 
 ```bash
-# Start local development environment
+# Start as background service (default)
 clio start -e local_dev
+
+# Start with terminal window to see logs
+clio start -e local_dev -w
+clio start -e local_dev --terminal
 
 # Start default environment
 clio start
 
 # Using aliases
 clio sc -e local_dev
-clio start-creatio -e local_dev
+clio start-creatio -e local_dev --terminal
 ```
 
 ### Behavior
 
+**Default Mode (Background Service)**:
+- Launches the Creatio application as a background process
+- No terminal window or logs visible (consistent with deployment)
+- Returns control to the original terminal immediately with success message and process ID
+- The application continues running independently
+- Use this mode for automated deployments or when logs are not needed
+
+**Terminal Mode (`--terminal` or `-w`)**:
 - Launches the Creatio application in a new terminal window
 - Shows application logs in the new terminal
 - Returns control to the original terminal immediately with a success message
 - The application continues running independently
+- Use this mode when you need to see application logs
 
 ### Error Handling
 

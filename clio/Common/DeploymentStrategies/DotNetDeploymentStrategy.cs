@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -20,14 +21,16 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 {
 	private readonly ILogger _logger;
 	private readonly ISystemServiceManager _serviceManager;
+	private readonly ICreatioHostService _creatioHostService;
 
 	/// <summary>
 	/// Initializes a new instance of the DotNetDeploymentStrategy class.
 	/// </summary>
-	public DotNetDeploymentStrategy(ILogger logger, ISystemServiceManager serviceManager)
+	public DotNetDeploymentStrategy(ILogger logger, ISystemServiceManager serviceManager, ICreatioHostService creatioHostService)
 	{
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_serviceManager = serviceManager ?? throw new ArgumentNullException(nameof(serviceManager));
+		_creatioHostService = creatioHostService ?? throw new ArgumentNullException(nameof(creatioHostService));
 	}
 
 	/// <summary>
@@ -84,6 +87,13 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			// Create appsettings.json configuration
 			CreateApplicationConfiguration(appDirectory.FullName, options);
 			_logger.WriteInfo("Application configuration created");
+
+			// Start the host application as a background process
+			int? processId = _creatioHostService.StartInBackground(appDirectory.FullName);
+			if (processId.HasValue)
+			{
+				_logger.WriteInfo($"Application will be available at: {GetApplicationUrl(options)}");
+			}
 
 			// Set up service management if on Linux or macOS
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && options.AutoRun)

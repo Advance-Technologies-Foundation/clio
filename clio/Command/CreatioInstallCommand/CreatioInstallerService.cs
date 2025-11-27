@@ -65,6 +65,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 	private readonly DeploymentStrategyFactory _deploymentStrategyFactory;
+	private readonly HealthCheckCommand _healthCheckCommand;
 
 	#endregion
 
@@ -79,7 +80,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, ILogger logger, DeploymentStrategyFactory deploymentStrategyFactory) {
+		IFileSystem fileSystem, ILogger logger, DeploymentStrategyFactory deploymentStrategyFactory,
+		HealthCheckCommand healthCheckCommand) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -90,6 +92,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		RemoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
 		_logger = logger;
 		_deploymentStrategyFactory = deploymentStrategyFactory;
+		_healthCheckCommand = healthCheckCommand;
 	}
 
 	public CreatioInstallerService() {
@@ -486,6 +489,29 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return version.Max();
 	}
 
+	private bool WaitForServerReady(string environmentName) {
+		const int maxAttempts = 5;
+		const int delaySeconds = 3;
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			HealthCheckOptions healthOptions = new() {
+				Environment = environmentName
+			};
+			int result = _healthCheckCommand.Execute(healthOptions);
+			if (result == 0) {
+				_logger.WriteInfo($"Server is ready after {attempt} attempt(s).");
+				return true;
+			}
+
+			if (attempt < maxAttempts) {
+				_logger.WriteInfo($"Waiting for server to become ready... ({attempt}/{maxAttempts}). Next check in {delaySeconds} seconds.");
+				System.Threading.Thread.Sleep(delaySeconds * 1000);
+			}
+		}
+
+		_logger.WriteWarning($"Server did not become ready after {maxAttempts * delaySeconds} seconds.");
+		return false;
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -656,6 +682,15 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		if (options.AutoRun) {
 			_logger.WriteInfo("[Auto-launching application]");
+			
+			// For DotNet deployments, wait for server to become ready before opening browser
+			if (!isIisDeployment) {
+				_logger.WriteInfo("Waiting for server to become ready...");
+				if (!WaitForServerReady(options.SiteName)) {
+					_logger.WriteWarning("Server is not ready yet. Browser will still open, but the site may not be available immediately.");
+				}
+			}
+			
 			StartWebBrowser(options,isIisDeployment);
 		}
 

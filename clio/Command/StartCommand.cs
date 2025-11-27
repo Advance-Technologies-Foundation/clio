@@ -14,6 +14,8 @@ namespace Clio.Command
 	[Verb("start", Aliases = new string[] { "start-server", "start-creatio", "sc" }, HelpText = "Start local Creatio application")]
 	public class StartOptions : EnvironmentNameOptions
 	{
+		[Option('w', "terminal", Required = false, HelpText = "Start Creatio in a new terminal window (default: background service)")]
+		public bool Terminal { get; set; }
 	}
 
 	public class StartCommand : Command<StartOptions>
@@ -22,13 +24,15 @@ namespace Clio.Command
 		private readonly IDotnetExecutor _dotnetExecutor;
 		private readonly ILogger _logger;
 		private readonly IFileSystem _fileSystem;
+		private readonly ICreatioHostService _creatioHostService;
 
 		public StartCommand(ISettingsRepository settingsRepository, IDotnetExecutor dotnetExecutor,
-			ILogger logger, IFileSystem fileSystem) {
+			ILogger logger, IFileSystem fileSystem, ICreatioHostService creatioHostService) {
 			_settingsRepository = settingsRepository;
 			_dotnetExecutor = dotnetExecutor;
 			_logger = logger;
 			_fileSystem = fileSystem;
+			_creatioHostService = creatioHostService;
 		}
 
 		public override int Execute(StartOptions options) {
@@ -66,16 +70,25 @@ namespace Clio.Command
 					return 1;
 				}
 
-				string envName = options.Environment ?? "default";
+			string envName = options.Environment ?? "default";
+			
+			if (options.Terminal) {
 				_logger.WriteInfo($"Starting Creatio application '{envName}' in a new terminal window...");
 				_logger.WriteInfo($"Path: {env.EnvironmentPath}");
-				
-				StartInNewTerminal(env.EnvironmentPath, envName);
-				
+				_creatioHostService.StartInNewTerminal(env.EnvironmentPath, envName);
 				_logger.WriteInfo("✓ Creatio application started successfully!");
 				_logger.WriteInfo("Check the new terminal window for application logs.");
-
-				return 0;
+			} else {
+				_logger.WriteInfo($"Starting Creatio application '{envName}' as a background service...");
+				_logger.WriteInfo($"Path: {env.EnvironmentPath}");
+				int? processId = _creatioHostService.StartInBackground(env.EnvironmentPath);
+				if (processId.HasValue) {
+					_logger.WriteInfo($"✓ Creatio application started successfully as background service (PID: {processId.Value})!");
+					_logger.WriteInfo("Use 'clio start -w' to start with terminal window for logs.");
+				} else {
+					_logger.WriteInfo("✓ Creatio application started successfully as background service!");
+				}
+			}				return 0;
 			}
 			catch (Exception ex) {
 				_logger.WriteError($"Failed to start application: {ex.Message}");
@@ -87,71 +100,6 @@ namespace Clio.Command
 			// Get environment by name (uses default if not specified)
 			// Don't use GetEnvironment(options) as Fill() doesn't preserve EnvironmentPath
 			return _settingsRepository.GetEnvironment(options.Environment);
-		}
-
-		private void StartInNewTerminal(string workingDirectory, string envName) {
-			ProcessStartInfo startInfo;
-
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-				// Windows: Use cmd.exe to start a new window
-				startInfo = new ProcessStartInfo {
-					FileName = "cmd.exe",
-					Arguments = $"/k \"cd /d \"{workingDirectory}\" && dotnet Terrasoft.WebHost.dll\"",
-					UseShellExecute = true,
-					CreateNoWindow = false
-				};
-			}
-			else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
-				// macOS: Use osascript to open Terminal.app with the command
-				string command = $"cd '{workingDirectory}' && echo 'Starting Creatio [{envName}]...' && dotnet Terrasoft.WebHost.dll";
-				string script = $"tell application \\\"Terminal\\\" to do script \\\"{command}\\\"";
-				startInfo = new ProcessStartInfo {
-					FileName = "osascript",
-					Arguments = $"-e \"{script}\"",
-					UseShellExecute = false,
-					CreateNoWindow = true
-				};
-			}
-			else {
-				// Linux: Try common terminal emulators
-				string terminal = GetLinuxTerminal();
-				startInfo = new ProcessStartInfo {
-					FileName = terminal,
-					Arguments = $"--working-directory=\"{workingDirectory}\" -e \"bash -c 'echo Starting Creatio [{envName}]...; dotnet Terrasoft.WebHost.dll; exec bash'\"",
-					UseShellExecute = false,
-					CreateNoWindow = false
-				};
-			}
-
-			Process.Start(startInfo);
-		}
-
-		private string GetLinuxTerminal() {
-			// Try to find available terminal emulator on Linux
-			string[] terminals = { "gnome-terminal", "konsole", "xfce4-terminal", "xterm" };
-			
-			foreach (string terminal in terminals) {
-				try {
-					var process = Process.Start(new ProcessStartInfo {
-						FileName = "which",
-						Arguments = terminal,
-						RedirectStandardOutput = true,
-						UseShellExecute = false
-					});
-					
-					if (process != null) {
-						process.WaitForExit();
-						if (process.ExitCode == 0) {
-							return terminal;
-						}
-					}
-				}
-				catch {
-					// Continue to next terminal
-				}
-			}
-			
-			return "xterm"; // Fallback
 		}
 
 		private void ShowAvailableEnvironments() {

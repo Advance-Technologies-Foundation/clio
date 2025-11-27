@@ -16,35 +16,46 @@ i want to run new terminal window whith the new process and logs, righ now i don
 ### Key Requirements
 
 1. **Command**: `clio start -e env_name` (aliases: `start-server`, `start-creatio`, `sc`)
-2. **Action**: Launch `dotnet {EnvPath}/Terrasoft.WebHost.dll` in a new terminal window
+2. **Action**: Launch `dotnet {EnvPath}/Terrasoft.WebHost.dll` as a background service (default) or in a new terminal window (with `--terminal` option)
 3. **EnvironmentPath**: Use existing `EnvironmentPath` from environment settings (set during registration)
-4. **Options**: Inherit from `EnvironmentNameOptions`
+4. **Options**: 
+   - Inherit from `EnvironmentNameOptions`
+   - `--terminal` / `-w`: Run in new terminal window with visible logs (default: background service)
 5. **Validation**: 
    - If `EnvironmentPath` is not configured, show error and list available environments
    - If path doesn't exist, show error
    - If `Terrasoft.WebHost.dll` not found, show error
 6. **Language**: All messages in English
 7. **Interactive Mode**: If no environment specified or `EnvironmentPath` missing, list environments with `EnvironmentPath`
-8. **Terminal Behavior**: 
-   - Launch in new terminal window with visible logs
+8. **Execution Modes**: 
+   - **Default (Background Service)**: Runs as background process without terminal window (same as deployment)
+   - **Terminal Mode (`-w` or `--terminal`)**: Launch in new terminal window with visible logs
    - Original terminal shows success message and returns control immediately
-   - Application runs independently in new window
+   - Application runs independently
 
 ## Implementation
 
 ### Files Created/Modified
 
-1. **`/clio/Command/StartCommand.cs`** (NEW - 197 lines)
+1. **`/clio/Command/StartCommand.cs`** (UPDATED - ~150 lines)
    - `StartOptions` class inheriting from `EnvironmentNameOptions`
+     - Added: `Terminal` property with `-w` / `--terminal` option
    - Verb: `"start"`, Aliases: `["start-server", "start-creatio", "sc"]`
    - `StartCommand` class with dependencies:
      - `ISettingsRepository` - to retrieve environment settings
-     - `IDotnetExecutor` - declared but not used (replaced by Process.Start for terminal launching)
+     - `IDotnetExecutor` - for .NET execution
      - `ILogger` - for user messages
      - `IFileSystem` - for path validation
+     - `ICreatioHostService` - shared service for starting Creatio processes
 
-2. **`/clio/BindingsModule.cs`** (line 209)
+2. **`/clio/BindingsModule.cs`** (line ~209, ~300)
    - Added: `containerBuilder.RegisterType<StartCommand>()`
+   - Added: `containerBuilder.RegisterType<CreatioHostService>().As<ICreatioHostService>()`
+
+3. **`/clio/Common/CreatioHostService.cs`** (NEW - ~172 lines)
+   - `ICreatioHostService` interface with `StartInBackground()` and `StartInNewTerminal()` methods
+   - Shared service used by both `StartCommand` and `DotNetDeploymentStrategy`
+   - Platform-specific terminal launching for Windows/macOS/Linux
 
 3. **`/clio/Program.cs`**
    - Added `typeof(StartOptions)` to `_allOptions` array (after `RestartOptions`)
@@ -91,11 +102,19 @@ i want to run new terminal window whith the new process and logs, righ now i don
    }
    ```
 
-5. **Launch in New Terminal**
+5. **Launch Application**
    ```csharp
-   StartInNewTerminal(env.EnvironmentPath, options.Environment ?? "default");
-   _logger.WriteInfo("✓ Creatio application started successfully!");
-   _logger.WriteInfo($"Application is running at: {env.EnvironmentPath}");
+   if (options.Terminal) {
+       // Terminal mode: Open new window with logs
+       _creatioHostService.StartInNewTerminal(env.EnvironmentPath, envName);
+       _logger.WriteInfo("✓ Creatio application started successfully!");
+       _logger.WriteInfo("Check the new terminal window for application logs.");
+   } else {
+       // Default: Background service mode
+       int? processId = _creatioHostService.StartInBackground(env.EnvironmentPath);
+       _logger.WriteInfo($"✓ Creatio application started successfully as background service (PID: {processId})!");
+       _logger.WriteInfo("Use 'clio start -w' to start with terminal window for logs.");
+   }
    return 0;
    ```
 
@@ -165,12 +184,16 @@ This uses reflection to access the internal `_settings.Environments` dictionary 
 ### Usage
 
 ```bash
-# Start application for specific environment
+# Start as background service (default)
 clio start -e my_env
+
+# Start in terminal window with logs
+clio start -e my_env -w
+clio start -e my_env --terminal
 
 # Using aliases
 clio start-server -e my_env
-clio start-creatio -e my_env
+clio start-creatio -e my_env --terminal
 clio sc -e my_env  # shortest form
 
 # Start default environment
@@ -179,6 +202,18 @@ clio start
 
 ### Behavior
 
+**Default Mode (Background Service)**:
+1. **Background Process**: Application runs as a background service without terminal window
+2. **Process ID**: Shows the process ID for management
+3. **No Logs**: Logs are not visible (consistent with deployment behavior)
+4. **Immediate Return**: Original terminal shows success message and returns control
+5. **Success Message**: Original terminal displays:
+   ```
+   ✓ Creatio application started successfully as background service (PID: 12345)!
+   Use 'clio start -w' to start with terminal window for logs.
+   ```
+
+**Terminal Mode (`-w` or `--terminal`)**:
 1. **New Terminal Window**: Application launches in a new terminal window
 2. **Visible Logs**: All application output appears in the new terminal
 3. **Immediate Return**: Original terminal shows success message and returns control
@@ -186,9 +221,7 @@ clio start
 5. **Success Message**: Original terminal displays:
    ```
    ✓ Creatio application started successfully!
-   Application is running at: /path/to/env
-   
-   To stop the application, close the terminal window or press Ctrl+C in the new terminal.
+   Check the new terminal window for application logs.
    ```
 
 ### Error Messages

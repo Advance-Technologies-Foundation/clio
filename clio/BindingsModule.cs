@@ -295,6 +295,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ZipBasedApplicationDownloader>().As<IZipBasedApplicationDownloader>();
 
 		// Register deployment strategies and system service managers
+		containerBuilder.RegisterType<CreatioHostService>().As<ICreatioHostService>();
 		containerBuilder.RegisterType<IISDeploymentStrategy>();
 		containerBuilder.RegisterType<DotNetDeploymentStrategy>();
 		containerBuilder.RegisterType<DeploymentStrategyFactory>();
