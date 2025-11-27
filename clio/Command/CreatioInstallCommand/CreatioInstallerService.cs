@@ -490,8 +490,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private bool WaitForServerReady(string environmentName) {
-		const int maxAttempts = 5;
+		const int initialDelaySeconds = 15; // Initial delay to allow server to start
+		const int maxAttempts = 10; // Increased attempts for longer wait time
 		const int delaySeconds = 3;
+		
+		_logger.WriteInfo($"Waiting {initialDelaySeconds} seconds for server to start...");
+		System.Threading.Thread.Sleep(initialDelaySeconds * 1000);
+		
 		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 			HealthCheckOptions healthOptions = new() {
 				Environment = environmentName
@@ -508,7 +513,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 		}
 
-		_logger.WriteWarning($"Server did not become ready after {maxAttempts * delaySeconds} seconds.");
+		_logger.WriteWarning($"Server did not become ready after {initialDelaySeconds + (maxAttempts * delaySeconds)} seconds.");
 		return false;
 	}
 
@@ -680,17 +685,16 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			EnvironmentPath = deploymentFolder
 		});
 
+		// For DotNet deployments, wait for server to become ready before proceeding
+		if (!isIisDeployment) {
+			_logger.WriteInfo("Waiting for server to become ready...");
+			if (!WaitForServerReady(options.SiteName)) {
+				_logger.WriteWarning("Server did not become ready within the timeout period.");
+			}
+		}
+
 		if (options.AutoRun) {
 			_logger.WriteInfo("[Auto-launching application]");
-			
-			// For DotNet deployments, wait for server to become ready before opening browser
-			if (!isIisDeployment) {
-				_logger.WriteInfo("Waiting for server to become ready...");
-				if (!WaitForServerReady(options.SiteName)) {
-					_logger.WriteWarning("Server is not ready yet. Browser will still open, but the site may not be available immediately.");
-				}
-			}
-			
 			StartWebBrowser(options,isIisDeployment);
 		}
 

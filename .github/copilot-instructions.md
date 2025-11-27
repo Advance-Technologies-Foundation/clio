@@ -37,6 +37,15 @@ Automates version management and release creation with comprehensive changelog g
 - Integration with CI/CD pipelines for NuGet publishing
 - Cross-platform PowerShell and Bash scripts
 
+### `/debug_build` - Build Project in Debug Mode
+Builds the clio project in Debug configuration for development and testing.
+
+**Usage:** `/debug_build`
+- Executes `dotnet build clio/clio.csproj -c Debug`
+- Compiles the project with debug symbols
+- Generates NuGet package in Debug configuration
+- Useful for local development and debugging
+
 ## Code Analysis Guidelines
 
 ### When working with Clio codebase:
