@@ -78,6 +78,7 @@ bld/
 
 # Visual Studo Code assets directory
 .vscode/
+!clio/tpl/k8/infrastructure/.vscode/
 
 # Rider assets directory
 
