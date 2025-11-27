@@ -129,11 +129,13 @@ namespace Clio
 			}
 
 			internal virtual bool RequiredEnvironment => true;
+			
+			[Option("ep", Required = false, HelpText = "Path to the application root folder")]
+			public string EnvironmentPath { get; set; }
 
 			public void CopyFromEnvironmentSettings(EnvironmentOptions source)
             {
-                if (source == null)
-                {
+                if (source == null) {
                     throw new ArgumentNullException(nameof(source), "Source environment options cannot be null.");
                 }
             
@@ -162,6 +164,7 @@ namespace Clio
                 this.DbName = source.DbName;
                 this.Force = source.Force;
 				this.CallbackProcess = source.CallbackProcess;
+				this.EnvironmentPath = source.EnvironmentPath;
             }
 
         internal bool IsEmpty() {
@@ -172,7 +175,10 @@ namespace Clio
 	public class EnvironmentNameOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "EnvironmentName", Required = false, HelpText = "Application name")]
-		public string EnvironmentName { get => Environment; set { Environment = value; } }
+		public string EnvironmentName {
+			get => Environment;
+			set => Environment = value;
+		}
 	}
 
 

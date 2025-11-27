@@ -66,6 +66,7 @@ public class ConsoleLogger : ILogger, IDisposable
 					WarningMessage warningMessage => () => WriteWarningInternal(warningMessage.Value.ToString()),
 					UndecoratedMessage noneMessage => () => WriteLineInternal(noneMessage.Value.ToString()),
 					TableMessage tableMessage => () => PrintTableInternal(tableMessage.Value),
+					DebugMessage debugMessage => () => PrintDebugInternal(debugMessage.Value.ToString()),
 					_ => throw new ArgumentOutOfRangeException()
 				};
 				action.Invoke();
@@ -105,6 +106,16 @@ public class ConsoleLogger : ILogger, IDisposable
 	private void WriteInfoInternal(string value){
 		string linePrefix = GetLinePrefix("[INF]");
 		Console.ForegroundColor = ConsoleColor.Green;
+		Console.Write(linePrefix);
+		Console.ForegroundColor = _defaultConsoleColor;
+		Console.WriteLine(value);
+		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
+	}
+	
+	private void PrintDebugInternal(string value){
+		string linePrefix = GetLinePrefix("[DBG]");
+		Console.ForegroundColor = ConsoleColor.DarkYellow;
 		Console.Write(linePrefix);
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.WriteLine(value);
@@ -270,6 +281,17 @@ public class ConsoleLogger : ILogger, IDisposable
 		}
 		_logQueue.Enqueue(new WarningMessage(value));
 	}
+	
+	/// <summary>
+	/// Enqueues a debug message to the log queue.
+	/// </summary>
+	/// <param name="value">String value to be printed to the log</param>
+	public void WriteDebug(string value){
+		if(CancellationToken.IsCancellationRequested) {
+			return;
+		}
+		_logQueue.Enqueue(new DebugMessage(value));
+	}
 
 	/// <summary>
 	/// Dispose the log file writer.
@@ -285,26 +307,19 @@ public class ConsoleLogger : ILogger, IDisposable
 
 #endregion
 
-public enum LogDecoratorType
-{
+public enum LogDecoratorType{
 
 	Info,
 	Error,
 	Warning,
+	Debug,
 	None,
 	Table
 
 }
 
-internal class InfoMessage : LogMessage
-{
-
-	#region Constructors: Public
-
-	public InfoMessage(string value)
-		: base(value){ }
-
-	#endregion
+internal class InfoMessage(string value) : LogMessage(value){
+	
 
 	#region Properties: Public
 
@@ -314,15 +329,8 @@ internal class InfoMessage : LogMessage
 
 }
 
-internal class ErrorMessage : LogMessage
-{
-
-	#region Constructors: Public
-
-	public ErrorMessage(string value)
-		: base(value){ }
-
-	#endregion
+internal class ErrorMessage(string value) : LogMessage(value){
+	
 
 	#region Properties: Public
 
@@ -332,15 +340,17 @@ internal class ErrorMessage : LogMessage
 
 }
 
-internal class WarningMessage : LogMessage
-{
+internal class DebugMessage(string value) : LogMessage(value){
+	
+	#region Properties: Public
 
-	#region Constructors: Public
-
-	public WarningMessage(string value)
-		: base(value){ }
+	public override LogDecoratorType LogDecoratorType => LogDecoratorType.Debug;
 
 	#endregion
+
+}
+
+internal class WarningMessage(string value) : LogMessage(value){
 
 	#region Properties: Public
 
@@ -350,16 +360,8 @@ internal class WarningMessage : LogMessage
 
 }
 
-internal class UndecoratedMessage : LogMessage
-{
-
-	#region Constructors: Public
-
-	public UndecoratedMessage(string value)
-		: base(value){ }
-
-	#endregion
-
+internal class UndecoratedMessage(string value) : LogMessage(value){
+	
 	#region Properties: Public
 
 	public override LogDecoratorType LogDecoratorType => LogDecoratorType.None;
@@ -368,15 +370,7 @@ internal class UndecoratedMessage : LogMessage
 
 }
 
-internal class TableMessage : LogMessage
-{
-
-	#region Constructors: Public
-
-	public TableMessage(ConsoleTable value)
-		: base(value){ }
-
-	#endregion
+internal class TableMessage(ConsoleTable value) : LogMessage(value){
 
 	#region Properties: Public
 
@@ -386,23 +380,12 @@ internal class TableMessage : LogMessage
 
 }
 
-internal abstract class LogMessage
-{
-
-	#region Constructors: Protected
-
-	protected LogMessage(object value){
-		Value = value;
-	}
-
-	#endregion
-
+internal abstract class LogMessage(object value){
 	#region Properties: Public
 
 	public abstract LogDecoratorType LogDecoratorType { get; }
 
-	public object Value { get; set; }
+	public object Value { get; set; } = value;
 
 	#endregion
-
 }

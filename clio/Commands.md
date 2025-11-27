@@ -643,6 +643,16 @@ Register new application settings
 ```powershell
 clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password
 ```
+Register new application settings (NET8)
+
+```powershell
+clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password -i true
+```
+
+Register an application with path to the application root, this will help with dconf command
+```powershell
+clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password --ep C:\inetpub\wwwroot\clio\s_n8
+```
 
 ### Update existing settings
 
