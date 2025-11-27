@@ -133,6 +133,7 @@ internal class Program {
 		typeof(SetApplicationIconOption),
 		// Creatio instance management
 		typeof(RestartOptions),
+		typeof(StartOptions),
 		typeof(ClearRedisOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(UploadLicenseCommandOptions),
@@ -157,6 +158,7 @@ internal class Program {
 					ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 					//RestartOptions opts => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 					RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
+					StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
 					//ClearRedisOptions opts => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
 					ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
 					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),

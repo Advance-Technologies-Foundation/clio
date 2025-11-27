@@ -205,6 +205,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<PowerShellFactory>();
 		containerBuilder.RegisterType<RegAppCommand>();
 		containerBuilder.RegisterType<RestartCommand>();
+		containerBuilder.RegisterType<StartCommand>();
 		containerBuilder.RegisterType<RedisCommand>();
 		containerBuilder.RegisterType<SetFsmConfigCommand>();
 		containerBuilder.RegisterType<TurnFsmCommand>();

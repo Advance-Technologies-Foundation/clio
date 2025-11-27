@@ -510,6 +510,77 @@ or for register application
 clio restart-web-app <ENVIRONMENT_NAME>
 ```
 
+## start
+
+Start a local Creatio application using dotnet. This command launches the Creatio application from the configured `EnvironmentPath` in a new terminal window.
+
+**Aliases**: `start-server`, `start-creatio`, `sc`
+
+### Usage
+
+Start application for a specific environment:
+
+```bash
+clio start -e <ENVIRONMENT_NAME>
+```
+
+Start application for default environment:
+
+```bash
+clio start
+```
+
+Using aliases:
+
+```bash
+clio start-server -e <ENVIRONMENT_NAME>
+clio start-creatio -e <ENVIRONMENT_NAME>
+clio sc -e <ENVIRONMENT_NAME>
+```
+
+### Prerequisites
+
+1. The environment must be registered with `EnvironmentPath` configured:
+   ```bash
+   clio reg-web-app my_env --ep /path/to/creatio
+   ```
+
+2. The `EnvironmentPath` must contain `Terrasoft.WebHost.dll`
+
+3. .NET runtime must be installed and available in PATH
+
+### Examples
+
+```bash
+# Start local development environment
+clio start -e local_dev
+
+# Start default environment
+clio start
+
+# Using aliases
+clio sc -e local_dev
+clio start-creatio -e local_dev
+```
+
+### Behavior
+
+- Launches the Creatio application in a new terminal window
+- Shows application logs in the new terminal
+- Returns control to the original terminal immediately with a success message
+- The application continues running independently
+
+### Error Handling
+
+The command validates:
+- EnvironmentPath is configured for the environment
+- The specified path exists on the file system
+- `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+
+If no environment is specified or EnvironmentPath is not configured, the command displays a list of available environments with configured paths.
+
+If any validation fails, an appropriate error message is displayed.
+
 ## clear-redis-db
 
 To clear Redis database for default application
