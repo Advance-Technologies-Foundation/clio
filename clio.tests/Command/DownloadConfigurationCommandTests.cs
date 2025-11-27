@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Autofac;
@@ -45,7 +46,6 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		containerBuilder.RegisterInstance(_zipBasedApplicationDownloaderMock).As<IZipBasedApplicationDownloader>();
 		containerBuilder.RegisterInstance(_workspaceMock).As<IWorkspace>();
 		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
-		containerBuilder.RegisterInstance(_mockFileSystem).As<IFileSystem>();
 		containerBuilder.RegisterInstance((SysIoAbstractions.IFileSystem)_mockFileSystem).As<SysIoAbstractions.IFileSystem>();
 	}
 
@@ -342,16 +342,15 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	{
 		// Arrange
 		Program.IsDebugMode = true;
-		var options = new DownloadConfigurationCommandOptions 
-		{ 
+		DownloadConfigurationCommandOptions options = new () { 
 			BuildZipPath = null
 		};
-		_workspaceMock.WorkspaceSettings.Returns(new WorkspaceSettings { Packages = new string[] { } });
+		_workspaceMock.WorkspaceSettings.Returns(new WorkspaceSettings { Packages = [] });
 		_applicationDownloaderMock
-			.When(x => x.Download(Arg.Any<string[]>()))
+			.When(x => x.Download(Arg.Any<IEnumerable<string>>()))
 			.Do(_ => throw new InvalidOperationException("Debug test exception"));
 		
-		var command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -360,7 +359,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		result.Should().Be(1, because: "Command should return error code when exception occurs");
 		_loggerMock
 			.Received(1)
-			.WriteError(Arg.Is<string>(msg => msg.Contains("[DEBUG]") && msg.Contains("Stack trace")));
+			.WriteError(Arg.Is<string>(msg => msg.Contains("Stack trace")));
 		
 		// Cleanup
 		Program.IsDebugMode = false;
@@ -386,8 +385,8 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 
 		// Assert
 		result.Should().Be(0, because: "Command should succeed with debug mode enabled");
-		_loggerMock.Received(1).WriteInfo(Arg.Is<string>(msg => 
-			msg.Contains("[DEBUG]") && msg.Contains("build mode") && msg.Contains(zipPath)));
+		_loggerMock.Received(1).WriteDebug(Arg.Is<string>(msg => 
+			msg.Contains("build mode") && msg.Contains(zipPath)));
 		
 		// Cleanup
 		Program.IsDebugMode = false;
@@ -413,8 +412,8 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 
 		// Assert
 		result.Should().Be(0, because: "Command should succeed with debug mode enabled");
-		_loggerMock.Received(1).WriteInfo(Arg.Is<string>(msg => 
-			msg.Contains("[DEBUG]") && msg.Contains("environment mode")));
+		_loggerMock.Received(1).WriteDebug(Arg.Is<string>(msg => 
+			msg.Contains("environment mode")));
 		
 		// Cleanup
 		Program.IsDebugMode = false;
