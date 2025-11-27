@@ -604,7 +604,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		// STEP 3: Now output all logging information after user has provided input
-		Console.WriteLine(); // Blank line for readability
+		_logger.WriteLine(); // Blank line for readability
 		_logger.WriteInfo($"[OS Platform] - {(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macOS" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Windows")}");
 		_logger.WriteInfo($"[Is IIS Deployment] - {isIisDeployment}");
 		_logger.WriteInfo($"[Site Name] - {options.SiteName}");
@@ -615,7 +615,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_logger.WriteInfo($"[Starting unzipping] - {options.ZipFile} to {deploymentFolder}");
 		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver);
 		_logger.WriteInfo($"[Unzip completed] - {unzippedDirectory.FullName}");
-		Console.WriteLine();
+		_logger.WriteLine();
 
 		InstallerHelper.DatabaseType dbType;
 		try {
@@ -650,7 +650,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			Login = "Supervisor",
 			Password = "Supervisor",
 			Uri = uri,
-			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore
+			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore,
+			EnvironmentPath = deploymentFolder
 		});
 
 		if (options.AutoRun) {

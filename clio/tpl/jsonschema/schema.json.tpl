@@ -88,7 +88,11 @@
 				"AuthAppUri":{
 					"type": "string",
 					"description": "IdentityService Url"
-				}
+				},
+				"EnvironmentPath":{
+                    "type": "string",
+                    "description": "Path to the environment on disk"
+                }
 			},
 			"description": "Clio environment",
 			"required": ["Uri", "Login","Password"],
@@ -99,7 +103,8 @@
 				"Maintainer": "Customer",
 				"IsNetCore": false,
 				"Safe": false,
-				"DeveloperModeEnabled": true
+				"DeveloperModeEnabled": true,
+				"EnvironmentPath":"C:\\inetpub\\wwwroot\\clio\\<envkey>"
 			}
 		},
 		"dbconnectionstring":{

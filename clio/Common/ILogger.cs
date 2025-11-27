@@ -46,7 +46,7 @@ namespace Clio.Common
 		
 		
 		/// <summary>
-		/// Writes an line to the log.
+		/// Writes a line to the log.
 		/// </summary>
 		/// <remarks>
 		/// Line is decorated with [WAR] - at the beginning of the line in yellow color
@@ -56,7 +56,7 @@ namespace Clio.Common
 		void WriteWarning(string value);
 		
 		/// <summary>
-		/// Writes an line to the log.
+		/// Writes a line to the log.
 		/// </summary>
 		/// <remarks>
 		/// Line is decorated with [WAR] - at the beginning of the line in red color
@@ -66,7 +66,7 @@ namespace Clio.Common
 		void WriteError(string value);
 		
 		/// <summary>
-		/// Writes an line to the log.
+		/// Writes a line to the log.
 		/// </summary>
 		/// <remarks>
 		/// Line is decorated with [WAR] - at the beginning of the line in green color
@@ -74,6 +74,16 @@ namespace Clio.Common
 		/// </remarks>
 		/// <param name="value">The string value to be written to the log.</param>
 		void WriteInfo(string value);
+		
+		/// <summary>
+		/// Writes a line to the log.
+		/// </summary>
+		/// <remarks>
+		/// Line is decorated with [DBG] - at the beginning of the line in DarkYellow color
+		/// See <see cref="ConsoleLogger"/> for details
+		/// </remarks>
+		/// <param name="value">The string value to be written to the log.</param>
+		void WriteDebug(string value);
 		
 		/// <summary>
 		/// Prints ConsoleTable to the log.

@@ -242,12 +242,14 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
 	#region Fields: Public
 
+
+	public record App(string PhysicalPath, Uri Url);
+	
 	/// <summary>
 	///  Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
 	/// </summary>
-	public static readonly Func<IPowerShellFactory, Dictionary<string, Uri>> GetSites = psf => {
-		Dictionary<string, Uri> result = new();
-		var psfInstance = psf.GetInstance();
+	public static readonly Func<IPowerShellFactory, Dictionary<string, App>> GetSites = psf => {
+		Dictionary<string, App> result = new();
 		psf.GetInstance().AddCommand("Import-Module").AddArgument("WebAdministration").Invoke();
 		
 		Collection<Site> sites = psf.GetInstance().AddCommand("Get-WebSite").Invoke<Site>();
@@ -257,20 +259,27 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 			.ToList()
 			.ForEach(webApp => {
 				ConsoleLogger.Instance.WriteInfo(webApp.SiteName);
-				(string Name, List<Uri> Uris) rootSite = sites.Where(site =>
+				(string Name, List<Uri> Uris, string physicalPath) rootSite = sites.Where(site =>
 						site.Name == webApp.SiteName && site.Id == webApp.SiteId)
-					.Select(site => (site.Name, site.Uris)).FirstOrDefault();
+					.Select(site => (site.Name, site.Uris, site.PhysicalPath)).FirstOrDefault();
 
 				string newPath = webApp.Path.Substring(0, webApp.Path.Length - 2);
-				Uri rootUri = psf.ComputerName == "localhost" ? rootSite.Uris.FirstOrDefault()
+				Uri rootUri = psf.ComputerName == "localhost" 
+					? rootSite.Uris.FirstOrDefault()
 					: rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
+				
 				if (Uri.TryCreate(rootUri, newPath, out Uri value)) {
-					result.Add(rootSite.Name + newPath, value);
+					result.Add(rootSite.Name + newPath, new App(rootSite.physicalPath, value));
 				}
 			});
+
+		sites.Where(site => !result.ContainsKey(site.Name)).ToList().ForEach(site => {
+			result.Add(site.Name, new App(site.PhysicalPath, site.Uris.FirstOrDefault()));
+		});
+		
 		return result;
 	};
-
+	
 	#endregion
 
 	#region Constructors: Public
@@ -326,7 +335,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 			int i = 1;
 
 			GetSites(_powerShellFactory)?.ToList().ForEach(async site => {
-				_logger.WriteInfo($"({i++}) {site.Key} - {site.Value}");
+				_logger.WriteInfo($"({i++}) {site.Key} - {site.Value.Url} at {site.Value.PhysicalPath}");
 			});
 
 			//Here I would call regApp command but instead I will write total

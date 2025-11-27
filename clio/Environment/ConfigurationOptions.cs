@@ -131,6 +131,10 @@ namespace Clio
 			AuthAppUri = environment.AuthAppUri;
 			WorkspacePathes = environment.WorkspacePathes;
 
+			if (!string.IsNullOrWhiteSpace(environment.EnvironmentPath)) {
+				EnvironmentPath = environment.EnvironmentPath;
+			}
+			
 			if (!string.IsNullOrEmpty(environment.DbName)) {
 				DbName = environment.DbName;
 			}
@@ -161,6 +165,10 @@ namespace Clio
 		public bool IsDevMode {
 			get => DeveloperModeEnabled ?? false;
 		}
+
+
+		//[Newtonsoft.Json.JsonIgnore]
+		public string EnvironmentPath { get; set; } = string.Empty;
 
 		public EnvironmentSettings Fill(EnvironmentOptions options) {
 			var result = new EnvironmentSettings();
@@ -277,7 +285,7 @@ namespace Clio
 		public Dictionary<string, DbServer> DbServers { get; set; }
 
 
-		public EnvironmentSettings GetActiveEnviroment() {
+		public EnvironmentSettings GetActiveEnvironment() {
 			if (String.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
 				ActiveEnvironmentKey = Environments.First().Key;
@@ -306,7 +314,7 @@ namespace Clio
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
 
-		private Settings _settings = new Settings();
+		private Settings _settings = new ();
 		public static string AppSettingsFolderPath {
 			get {
 				var userPath = Environment.GetEnvironmentVariable(
@@ -501,7 +509,7 @@ namespace Clio
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
 			if (string.IsNullOrEmpty(name)) {
-				_settings.GetActiveEnviroment().Merge(environment);
+				_settings.GetActiveEnvironment().Merge(environment);
 			} else if (!_settings.Environments.TryAdd(name, environment)) {
 				_settings.Environments[name].Merge(environment);
 			}

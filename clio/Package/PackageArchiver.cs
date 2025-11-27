@@ -290,17 +290,17 @@ namespace Clio
 			CheckUnZipPackagesArgument(zipFilePath);
 			CheckPackedPackageExistsAndNotEmpty(zipFilePath);
 			string finalDestination = destinationPath ?? Environment.CurrentDirectory;
-			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Starting extraction");
-			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Source: {zipFilePath}");
-			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Destination: {finalDestination}");
-			Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Destination exists: {Directory.Exists(finalDestination)}");
+			_logger.WriteDebug("PackageArchiver.UnZip - Starting extraction");
+			_logger.WriteDebug($"PackageArchiver.UnZip - Source: {zipFilePath}");
+			_logger.WriteDebug($"PackageArchiver.UnZip - Destination: {finalDestination}");
+			_logger.WriteDebug($"PackageArchiver.UnZip - Destination exists: {Directory.Exists(finalDestination)}");
 			try {
 				_zipFile.ExtractToDirectory(zipFilePath, finalDestination);
-				Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Extraction completed successfully");
-				var dirInfo = new System.IO.DirectoryInfo(finalDestination);
-				Console.WriteLine($"[DEBUG] PackageArchiver.UnZip - Files extracted: {dirInfo.GetFiles("*", System.IO.SearchOption.AllDirectories).Length}");
+				_logger.WriteDebug($"PackageArchiver.UnZip - Extraction completed successfully");
+				var dirInfo = _fileSystem.GetDirectoryInfo(finalDestination);
+				_logger.WriteDebug($"PackageArchiver.UnZip - Files extracted: {dirInfo.GetFiles("*", System.IO.SearchOption.AllDirectories).Length}");
 			} catch (Exception ex) {
-				Console.WriteLine($"[ERR] PackageArchiver.UnZip - Extraction failed: {ex.Message}");
+				_logger.WriteError($"PackageArchiver.UnZip - Extraction failed: {ex.Message}");
 				throw;
 			}
 		}

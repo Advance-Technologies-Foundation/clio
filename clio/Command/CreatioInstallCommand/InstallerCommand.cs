@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio.Common;
 using CommandLine;
+using Common.Logging;
 
 namespace Clio.Command.CreatioInstallCommand;
 
@@ -112,13 +114,15 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
+	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public InstallerCommand(ICreatioInstallerService creatioInstallerService){
+	public InstallerCommand(ICreatioInstallerService creatioInstallerService, ILogger logger) {
 		_creatioInstallerService = creatioInstallerService;
+		_logger = logger;
 	}
 
 	#endregion
@@ -128,8 +132,7 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	public override int Execute(PfInstallerOptions options){
 		int result = _creatioInstallerService.Execute(options);
 		if (!options.IsSilent) {
-			//_creatioInstallerService.StartWebBrowser(options);
-			Console.WriteLine("Press enter to exit...");
+			_logger.WriteLine("Press enter to exit...");
 			Console.ReadLine();
 		}
 		return result;

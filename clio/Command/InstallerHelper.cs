@@ -3,6 +3,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
+using Clio.Common;
+using Terrasoft.Web.Common;
 
 namespace Clio.Command;
 
@@ -65,9 +67,11 @@ public static class InstallerHelper
 	[NotNull]
 	public static readonly Func<string, string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExisting = 
 		(zipFile, targetFolder, packageArchiver) => {
-			Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Zip file: {zipFile}");
-			Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Target folder: {targetFolder}");
-			Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Directory exists: {Directory.Exists(targetFolder)}");
+			ILogger logger = ConsoleLogger.Instance;
+			logger.WriteDebug("UnzipOrTakeExisting - Starting");
+			logger.WriteDebug($"UnzipOrTakeExisting - Zip file: {zipFile}");
+			logger.WriteDebug($"UnzipOrTakeExisting - Target folder: {targetFolder}");
+			logger.WriteDebug($"UnzipOrTakeExisting - Directory exists: {Directory.Exists(targetFolder)}");
 			
 			// Check if directory exists and contains extracted application files
 			// We check for key application files/folders that indicate successful extraction
@@ -80,16 +84,16 @@ public static class InstallerHelper
 				// Check if extraction appears complete: has files and subdirectories
 				// (typically includes bin, App_Data, ConnectionStrings.config, etc.)
 				if (files.Length > 0 && directories.Length > 0) {
-					Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Directory exists and appears complete (has files and folders)");
+					logger.WriteDebug("UnzipOrTakeExisting - Directory exists and appears complete (has files and folders)");
 					return existingDir;
 				} else {
-					Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Directory exists but appears incomplete (missing files), re-extracting");
+					logger.WriteDebug(" UnzipOrTakeExisting - Directory exists but appears incomplete (missing files), re-extracting");
 					// Remove incomplete directory and extract fresh
 					try {
 						Directory.Delete(targetFolder, true);
-						Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Removed incomplete directory");
+						logger.WriteDebug(" UnzipOrTakeExisting - Removed incomplete directory");
 					} catch (Exception ex) {
-						Console.WriteLine($"[DEBUG] UnzipOrTakeExisting - Failed to remove incomplete directory: {ex.Message}");
+						logger.WriteError($"UnzipOrTakeExisting - Failed to remove incomplete directory: {ex.Message}");
 					}
 				}
 			}
@@ -108,23 +112,24 @@ public static class InstallerHelper
 	/// <exception cref="Exception">An exception is thrown if the backup file does not exist in the expected db folder.</exception>
 	[NotNull]
 	public static readonly Func<DirectoryInfo, DatabaseType> DetectDataBase = unzippedDirectory => {
-		Console.WriteLine($"[DEBUG] DetectDataBase - Searching for backup in: {unzippedDirectory.FullName}");
+		ILogger logger = ConsoleLogger.Instance;
+		logger.WriteDebug($"DetectDataBase - Searching for backup in: {unzippedDirectory.FullName}");
 		var dbDirectory = unzippedDirectory.GetDirectories("db").FirstOrDefault();
 		if (dbDirectory == null) {
-			Console.WriteLine($"[DEBUG] DetectDataBase - db directory not found!");
+			logger.WriteDebug("DetectDataBase - db directory not found!");
 			throw new Exception($"db folder does not exist in {unzippedDirectory.FullName}");
 		}
-		Console.WriteLine($"[DEBUG] DetectDataBase - db directory found: {dbDirectory.FullName}");
+		logger.WriteDebug($"DetectDataBase - db directory found: {dbDirectory.FullName}");
 		FileInfo[] files = dbDirectory.GetFiles();
-		Console.WriteLine($"[DEBUG] DetectDataBase - Files in db folder: {string.Join(", ", files.Select(f => f.Name))}");
+		logger.WriteDebug($"DetectDataBase - Files in db folder: {string.Join(", ", files.Select(f => f.Name))}");
 		FileInfo fi = files.FirstOrDefault();
 
 		if (fi == null) {
-			Console.WriteLine($"[DEBUG] DetectDataBase - No backup file found in db folder!");
+			logger.WriteDebug("DetectDataBase - No backup file found in db folder!");
 			throw new Exception($"Backup file does not exist in db folder {dbDirectory.FullName}");
 		}
 
-		Console.WriteLine($"[DEBUG] DetectDataBase - Found backup file: {fi.Name}, Extension: {fi.Extension}");
+		logger.WriteDebug($"DetectDataBase - Found backup file: {fi.Name}, Extension: {fi.Extension}");
 		return fi.Extension switch {
 			MsSqlBackupExtension => DatabaseType.MsSql,
 			PgBackupExtension => DatabaseType.Postgres,
@@ -157,14 +162,15 @@ public static class InstallerHelper
 	[NotNull]
 	private static readonly Func<IPackageArchiver, FileInfo, string, DirectoryInfo> Unzip =
 		(packageArchiver, sourceFile, destingationPath) => {
-			Console.WriteLine($"[DEBUG] Unzip - Creating directory: {destingationPath}");
+			ILogger logger = ConsoleLogger.Instance;
+			logger.WriteDebug($"Unzip - Creating directory: {destingationPath}");
 			Directory.CreateDirectory(destingationPath);
-			Console.WriteLine($"[DEBUG] Unzip - Directory created successfully");
-			Console.WriteLine($"[DEBUG] Unzip - Extracting zip: {sourceFile.FullName} to {destingationPath}");
+			logger.WriteDebug("Unzip - Directory created successfully");
+			logger.WriteDebug($"Unzip - Extracting zip: {sourceFile.FullName} to {destingationPath}");
 			packageArchiver.UnZip(sourceFile.FullName, false, destingationPath);
-			Console.WriteLine($"[DEBUG] Unzip - Extraction completed successfully");
-			var resultDir = new DirectoryInfo(destingationPath);
-			Console.WriteLine($"[DEBUG] Unzip - Result directory: {resultDir.FullName}, Exists: {resultDir.Exists}, Files count: {resultDir.GetFiles().Length}");
+			logger.WriteDebug("Unzip - Extraction completed successfully");
+			DirectoryInfo resultDir = new (destingationPath);
+			logger.WriteDebug($"Unzip - Result directory: {resultDir.FullName}, Exists: {resultDir.Exists}, Files count: {resultDir.GetFiles().Length}");
 			return resultDir;
 		};
 

@@ -61,17 +61,18 @@ public class RegAppCommand : Command<RegAppOptions> {
 		try {
 			if (options.FromIis) {
 				_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
-				Dictionary<string, Uri> sites = IISScannerHandler.GetSites(_powerShellFactory);
+				Dictionary<string, IISScannerHandler.App> sites = IISScannerHandler.GetSites(_powerShellFactory);
 
 				sites.ToList().ForEach(site => {
 					_settingsRepository.ConfigureEnvironment(site.Key, new EnvironmentSettings {
 						Login = "Supervisor",
 						Password = "Supervisor",
-						Uri = site.Value.ToString(),
+						Uri = site.Value.Url.ToString().TrimEnd('/'),
 						Maintainer = "Customer",
 						Safe = false,
 						IsNetCore = false,
-						DeveloperModeEnabled = true
+						DeveloperModeEnabled = true,
+						EnvironmentPath = site.Value.PhysicalPath
 					});
 					_logger.WriteInfo($"Environment {site.Key} was added from {options.Host ?? "localhost"}");
 				});
@@ -82,10 +83,11 @@ public class RegAppCommand : Command<RegAppOptions> {
 				_settingsRepository.OpenFile();
 				return 0;
 			}
+			
 			EnvironmentSettings environment = new() {
 				Login = options.Login,
 				Password = options.Password,
-				Uri = options.Uri,
+				Uri = options.Uri.TrimEnd('/'),
 				Maintainer = options.Maintainer,
 				Safe = options.SafeValue ?? false,
 				IsNetCore = options.IsNetCore ?? false,
@@ -93,8 +95,10 @@ public class RegAppCommand : Command<RegAppOptions> {
 				ClientId = options.ClientId,
 				ClientSecret = options.ClientSecret,
 				AuthAppUri = options.AuthAppUri,
-				WorkspacePathes = options.WorkspacePathes
+				WorkspacePathes = options.WorkspacePathes, 
+				EnvironmentPath = options.EnvironmentPath
 			};
+			
 			if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
 				if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
 					_settingsRepository.SetActiveEnvironment(options.ActiveEnvironment);
