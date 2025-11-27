@@ -206,6 +206,8 @@ public class BindingsModule {
 		containerBuilder.RegisterType<RegAppCommand>();
 		containerBuilder.RegisterType<RestartCommand>();
 		containerBuilder.RegisterType<StartCommand>();
+		containerBuilder.RegisterType<StopCommand>();
+		containerBuilder.RegisterType<HostsCommand>();
 		containerBuilder.RegisterType<RedisCommand>();
 		containerBuilder.RegisterType<SetFsmConfigCommand>();
 		containerBuilder.RegisterType<TurnFsmCommand>();

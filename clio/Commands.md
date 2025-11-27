@@ -1929,6 +1929,8 @@ See more examples in [samples](https://github.com/Advance-Technologies-Foundatio
 - [Manage Windows features](#manage-windows-features)
 - [Generate deployment scripts](#create-k8-files)
 - [Install Creatio](#deploy-creatio)
+- [List Creatio hosts](#hosts)
+- [Stop Creatio hosts](#stop)
 - [Uninstall Creatio](#uninstall-creatio)
 
 ## check-windows-features
@@ -2150,6 +2152,147 @@ You can also specify `DbName` and `BackupFilePath` properties to simplify comman
 
 ```bash
 clio restore-db -e <ENVIRONMENT_NAME>
+```
+
+## hosts
+
+Lists all registered Creatio environments and their current runtime status.
+
+### Syntax
+```bash
+clio hosts
+# or
+clio list-hosts
+```
+
+### Output
+
+Displays a table with the following information:
+
+| Environment | Service Name | Status | PID | Environment Path |
+|-------------|--------------|--------|-----|------------------|
+| dev1 | creatio-dev1 | Running (Service) | - | /path/to/creatio |
+| dev2 | creatio-dev2 | Stopped | - | /path/to/creatio2 |
+
+**Column Descriptions:**
+- **Environment** - Environment name from clio configuration
+- **Service Name** - OS service name (format: `creatio-<env>`)
+- **Status** - Current runtime status:
+  - `Running (Service)` - Running as an OS service
+  - `Running (Process)` - Running as a background process
+  - `Stopped` - Not currently running
+- **PID** - Process ID (shown when running as a background process)
+- **Environment Path** - Physical path to the Creatio installation
+
+### Notes
+- Lists environments from clio configuration file that have an `EnvironmentPath` defined
+- Checks both OS services and background processes
+- Helps identify which environments are currently active
+
+### Example
+```bash
+clio hosts
+```
+
+Output:
+```
+Environment  Service Name    Status              PID     Environment Path
+-----------  --------------  ------------------  ------  ---------------------
+dc1          creatio-dc1     Running (Service)   -       /Users/admin/creatio/dc1
+dc2          creatio-dc2     Stopped             -       /Users/admin/creatio/dc2
+```
+
+## stop
+
+Stops Creatio services and background processes for one or more environments.
+
+### Syntax
+```bash
+# Stop specific environment
+clio stop -e <ENV_NAME>
+
+# Stop all registered environments
+clio stop --all
+```
+
+### Options
+- `-e, --environment <ENV_NAME>` - Stop specific environment
+- `--all` - Stop all registered Creatio environments
+- `-q, --quiet` - Skip confirmation prompt
+
+### Behavior
+
+The command performs the following actions:
+
+1. **Service Stopping** - Stops and disables OS services:
+   - macOS: Uses `launchctl stop` and `launchctl unload`
+   - Linux: Uses `systemctl stop` and `systemctl disable`
+   - Windows: Stops and disables Windows services
+
+2. **Process Termination** - Kills background processes:
+   - Finds dotnet processes running `Terrasoft.WebHost.dll`
+   - Verifies process working directory matches environment path
+   - Terminates matching processes
+
+3. **Confirmation** - Prompts user to confirm unless `--quiet` flag is used
+
+4. **Error Handling** - Continues processing all environments even if some fail
+
+5. **Exit Code** - Returns non-zero if any environment fails to stop
+
+### Environment Detection
+
+An environment is considered active if either:
+- An OS service named `creatio-<env>` is running, OR
+- A dotnet process running from the `EnvironmentPath` directory is found
+
+### Notes
+- Services are unloaded but service definition files (.plist, .service) are **not deleted**
+- Environment configuration remains in clio settings after stop
+- Use `clio uninstall-creatio` to completely remove an environment including files and configuration
+
+### Examples
+
+Stop a specific environment with confirmation:
+```bash
+clio stop -e dev1
+```
+
+Stop a specific environment without confirmation:
+```bash
+clio stop -e dev1 --quiet
+```
+
+Stop all registered environments:
+```bash
+clio stop --all --quiet
+```
+
+### Example Output
+
+```bash
+$ clio hosts
+Environment  Service Name    Status              PID     Environment Path
+-----------  --------------  ------------------  ------  ---------------------
+dc1          creatio-dc1     Running (Process)   96498   /Users/admin/creatio/dc1
+dc2          creatio-dc2     Running (Service)   -       /Users/admin/creatio/dc2
+
+$ clio stop --all --quiet
+Stopping environment: dc1
+Stopped background process with PID: 96498
+Successfully stopped environment: dc1
+
+Stopping environment: dc2
+Stopped service: creatio-dc2
+Successfully stopped environment: dc2
+
+All environments stopped.
+
+$ clio hosts
+Environment  Service Name    Status              PID     Environment Path
+-----------  --------------  ------------------  ------  ---------------------
+dc1          creatio-dc1     Stopped             -       /Users/admin/creatio/dc1
+dc2          creatio-dc2     Stopped             -       /Users/admin/creatio/dc2
 ```
 
 ## Uninstall Creatio

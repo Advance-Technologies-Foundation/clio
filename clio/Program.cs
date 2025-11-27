@@ -134,6 +134,8 @@ internal class Program {
 		// Creatio instance management
 		typeof(RestartOptions),
 		typeof(StartOptions),
+		typeof(StopOptions),
+		typeof(HostsOptions),
 		typeof(ClearRedisOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(UploadLicenseCommandOptions),
@@ -276,6 +278,8 @@ internal class Program {
 						.Execute(opts),
 					GenerateProcessModelCommandOptions opts => Resolve<GenerateProcessModelCommand>(opts)
 						.Execute(opts),
+					StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
+					HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
 					var _ => 1
 				};
 	};

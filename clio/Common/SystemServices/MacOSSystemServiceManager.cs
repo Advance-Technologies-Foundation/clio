@@ -79,8 +79,28 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 		try
 		{
 			// launchctl unload ~/Library/LaunchAgents/servicename.plist
-			await Task.CompletedTask;
-			return true;
+			var expandedPath = ExpandTilde(LaunchdDirectory);
+			var plistPath = Path.Combine(expandedPath, $"{serviceName}.plist");
+
+			if (!File.Exists(plistPath))
+				return false;
+
+			var process = new Process
+			{
+				StartInfo = new ProcessStartInfo
+				{
+					FileName = "launchctl",
+					Arguments = $"unload \"{plistPath}\"",
+					RedirectStandardOutput = true,
+					RedirectStandardError = true,
+					UseShellExecute = false,
+					CreateNoWindow = true
+				}
+			};
+
+			process.Start();
+			await process.WaitForExitAsync();
+			return process.ExitCode == 0;
 		}
 		catch
 		{
@@ -113,8 +133,22 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 		try
 		{
 			// launchctl stop servicename
-			await Task.CompletedTask;
-			return true;
+			var process = new Process
+			{
+				StartInfo = new ProcessStartInfo
+				{
+					FileName = "launchctl",
+					Arguments = $"stop {serviceName}",
+					RedirectStandardOutput = true,
+					RedirectStandardError = true,
+					UseShellExecute = false,
+					CreateNoWindow = true
+				}
+			};
+
+			process.Start();
+			await process.WaitForExitAsync();
+			return process.ExitCode == 0;
 		}
 		catch
 		{
@@ -147,8 +181,24 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 		try
 		{
 			// launchctl list | grep servicename
-			await Task.CompletedTask;
-			return true;
+			var process = new Process
+			{
+				StartInfo = new ProcessStartInfo
+				{
+					FileName = "launchctl",
+					Arguments = "list",
+					RedirectStandardOutput = true,
+					RedirectStandardError = true,
+					UseShellExecute = false,
+					CreateNoWindow = true
+				}
+			};
+
+			process.Start();
+			var output = await process.StandardOutput.ReadToEndAsync();
+			await process.WaitForExitAsync();
+
+			return output.Contains(serviceName);
 		}
 		catch
 		{
@@ -163,8 +213,15 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl unload ~/Library/LaunchAgents/servicename.plist
 			// rm ~/Library/LaunchAgents/servicename.plist
+			var expandedPath = ExpandTilde(LaunchdDirectory);
+			var plistPath = Path.Combine(expandedPath, $"{serviceName}.plist");
+
+			if (File.Exists(plistPath))
+			{
+				File.Delete(plistPath);
+			}
+
 			await Task.CompletedTask;
 			return true;
 		}
