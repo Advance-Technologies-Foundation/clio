@@ -279,19 +279,40 @@ namespace Clio.Command
 						   connectionParams.DbPassword);
 
 					   // Try to check if template exists - this will verify connection works
-					   bool exists = postgres.CheckTemplateExists("template0");
-					   if (exists)
+					   // Suppress console output during connection attempts
+					   var originalConsoleOut = Console.Out;
+					   var originalConsoleError = Console.Error;
+					   try
 					   {
-						   _logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
-						   return true;
+						   // Redirect console output to null during connection attempts
+						   Console.SetOut(System.IO.TextWriter.Null);
+						   Console.SetError(System.IO.TextWriter.Null);
+						   
+						   bool exists = postgres.CheckTemplateExists("template0");
+						   if (exists)
+						   {
+							   // Restore console output before logging success
+							   Console.SetOut(originalConsoleOut);
+							   Console.SetError(originalConsoleError);
+							   _logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
+							   return true;
+						   }
+					   }
+					   finally
+					   {
+						   // Always restore console output
+						   Console.SetOut(originalConsoleOut);
+						   Console.SetError(originalConsoleError);
 					   }
 				   }
-				   catch (Exception ex)
+				   catch (Exception)
 				   {
+					   // Silently catch exceptions during connection attempts
 					   if (attempt == maxAttempts)
 					   {
 						   _logger.WriteError($"  ✗ PostgreSQL connection failed after {maxAttempts} attempts");
-						   _logger.WriteError($"    Error: {ex.Message}");
+						   _logger.WriteError($"    Please check that PostgreSQL pod is running:");
+						   _logger.WriteError($"    kubectl get pods -n clio-infrastructure");
 						   return false;
 					   }
 					   // Only show a friendly progress indicator, not error spam
@@ -331,23 +352,44 @@ namespace Clio.Command
 						   AbortOnConnectFail = false
 					   };
 
-					   using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-					   IServer server = redis.GetServer(BindingsModule.k8sDns, connectionParams.RedisPort);
-               
-					   // Simple ping test
-					   int dbCount = server.DatabaseCount;
-					   if (dbCount >= 0)
+					   // Suppress console output during connection attempts
+					   var originalConsoleOut = Console.Out;
+					   var originalConsoleError = Console.Error;
+					   try
 					   {
-						   _logger.WriteInfo($"  ✓ Redis connection verified (attempt {attempt}/{maxAttempts})");
-						   return true;
+						   // Redirect console output to null during connection attempts
+						   Console.SetOut(System.IO.TextWriter.Null);
+						   Console.SetError(System.IO.TextWriter.Null);
+						   
+						   using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
+						   IServer server = redis.GetServer(BindingsModule.k8sDns, connectionParams.RedisPort);
+						   
+						   // Simple ping test
+						   int dbCount = server.DatabaseCount;
+						   if (dbCount >= 0)
+						   {
+							   // Restore console output before logging success
+							   Console.SetOut(originalConsoleOut);
+							   Console.SetError(originalConsoleError);
+							   _logger.WriteInfo($"  ✓ Redis connection verified (attempt {attempt}/{maxAttempts})");
+							   return true;
+						   }
+					   }
+					   finally
+					   {
+						   // Always restore console output
+						   Console.SetOut(originalConsoleOut);
+						   Console.SetError(originalConsoleError);
 					   }
 				   }
-				   catch (Exception ex)
+				   catch (Exception)
 				   {
+					   // Silently catch exceptions during connection attempts
 					   if (attempt == maxAttempts)
 					   {
 						   _logger.WriteError($"  ✗ Redis connection failed after {maxAttempts} attempts");
-						   _logger.WriteError($"    Error: {ex.Message}");
+						   _logger.WriteError($"    Please check that Redis pod is running:");
+						   _logger.WriteError($"    kubectl get pods -n clio-infrastructure");
 						   return false;
 					   }
 					   // Only show a friendly progress indicator, not error spam

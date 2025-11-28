@@ -15,7 +15,7 @@ namespace Clio.Common
 		}
 		#region Methods: Public
 
-		public string Execute(string program, string command, bool waitForExit, string workingDirectory = null, bool showOutput = false) {
+		public string Execute(string program, string command, bool waitForExit, string workingDirectory = null, bool showOutput = false, bool suppressErrors = false) {
 			program.CheckArgumentNullOrWhiteSpace(nameof(program));
 			command.CheckArgumentNullOrWhiteSpace(nameof(command));
 			using Process process = new Process();
@@ -47,11 +47,14 @@ namespace Clio.Common
 						// 	? ConsoleColor.DarkRed : ConsoleColor.DarkYellow;
 						// Console.WriteLine(e.Data);
 
-						if (e.Data.ToLower().Contains("error", StringComparison.OrdinalIgnoreCase)) {
-							_logger.WriteError(e.Data);
-						}
-						else {
-							_logger.WriteInfo(e.Data);
+						// Suppress errors if requested (useful during connection retries)
+						if (!suppressErrors) {
+							if (e.Data.ToLower().Contains("error", StringComparison.OrdinalIgnoreCase)) {
+								_logger.WriteError(e.Data);
+							}
+							else {
+								_logger.WriteInfo(e.Data);
+							}
 						}
 						
 						//Console.ForegroundColor = color;

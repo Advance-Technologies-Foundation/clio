@@ -35,6 +35,7 @@ public class CreatioHostService : ICreatioHostService
 	/// <summary>
 	/// Starts the Creatio host process in the background.
 	/// The process runs detached and unmanaged - user can stop it via 'clio stop' or manual termination.
+	/// Output is suppressed to avoid cluttering the console.
 	/// </summary>
 	public int? StartInBackground(string workingDirectory)
 	{
@@ -47,15 +48,23 @@ public class CreatioHostService : ICreatioHostService
 				WorkingDirectory = workingDirectory,
 				UseShellExecute = false,
 				CreateNoWindow = true,
-				RedirectStandardOutput = false,
-				RedirectStandardError = false
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
 			};
 
 			Process process = Process.Start(startInfo);
 			
 			if (process != null)
 			{
+				// Consume output streams to prevent process blocking
+				// but don't log them to console to avoid clutter
+				process.OutputDataReceived += (sender, e) => { /* Suppress output */ };
+				process.ErrorDataReceived += (sender, e) => { /* Suppress errors */ };
+				process.BeginOutputReadLine();
+				process.BeginErrorReadLine();
+				
 				_logger.WriteInfo($"Started Creatio host process (PID: {process.Id})");
+				_logger.WriteInfo($"To view logs: check application log files in the Creatio directory");
 				return process.Id;
 			}
 			else
