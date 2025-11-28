@@ -706,6 +706,23 @@
     <Content Include="tpl\workspace\tasks\build-framework-sdk.cmd">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+
+    <None Remove="tpl\k8\infrastructure\.codex\**" />
+    <Content Include="tpl\k8\infrastructure\.codex\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
+    <None Remove="tpl\k8\infrastructure\.vscode\**" />
+    <Content Include="tpl\k8\infrastructure\.vscode\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
+    <None Remove="tpl\k8\infrastructure\.github\**" />
+    <Content Include="tpl\k8\infrastructure\.github\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    
+    
     <None Remove="tpl\k8\infrastructure\email-listener\email-listener-services.yaml" />
     <Content Include="tpl\k8\infrastructure\email-listener\email-listener-services.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

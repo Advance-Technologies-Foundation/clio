@@ -1,0 +1,82 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Apply Namespace",
+            "type": "shell",
+            "command": "kubectl apply -f clio-namespace.yaml",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply Storage Class",
+            "type": "shell",
+            "command": "kubectl apply -f clio-storage-class.yaml",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply Email Listener",
+            "type": "shell",
+            "command": "kubectl apply -f email-listener/",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply MSSQL",
+            "type": "shell",
+            "command": "kubectl apply -f mssql/",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply PgAdmin",
+            "type": "shell",
+            "command": "kubectl apply -f pgadmin/",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply Postgres",
+            "type": "shell",
+            "command": "kubectl apply -f postgres/",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply Redis",
+            "type": "shell",
+            "command": "kubectl apply -f redis/",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Apply All",
+            "type": "shell",
+            "command": "kubectl apply -f clio-namespace.yaml -f clio-storage-class.yaml -f pgadmin/ -f postgres/ -f redis/",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}
