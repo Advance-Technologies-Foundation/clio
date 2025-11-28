@@ -16,28 +16,54 @@ spec:
     spec:
       terminationGracePeriodSeconds: 60
       restartPolicy: Always
+      securityContext:
+        fsGroup: 999
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.36
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command: 
+            - sh
+            - -c
+            - |
+              echo "Fixing permissions for PostgreSQL data and backups..."
+              echo "Before:"
+              ls -ld /var/lib/postgresql/data /usr/local/backup-images
+              chown -R 999:999 /var/lib/postgresql/data && chmod -R 700 /var/lib/postgresql/data
+              chown -R 999:999 /usr/local/backup-images && chmod -R 755 /usr/local/backup-images
+              echo "After:"
+              ls -ld /var/lib/postgresql/data /usr/local/backup-images
+              echo "Permissions fixed successfully"
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-data
+            - mountPath: /usr/local/backup-images
+              name: postgres-backup-images
       containers:
         - name: clio-postgres
           image: postgres:16
           imagePullPolicy: "IfNotPresent"
-          command: ["-c", "config_file=/etc/postgresql/postgresql.conf"]
+          args: ["-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
           securityContext:
             runAsUser: 999
             runAsGroup: 999
-            fsGroup: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
           resources:
             limits:
+              memory: "4Gi"
+              cpu: "2"
+            requests:
               memory: "2Gi"
               cpu: "1"
-            requests:
-              memory: "1Gi"
-              cpu: "0.5"
           startupProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432
+                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB -h 127.0.0.1 -p 5432
             initialDelaySeconds: 15
             periodSeconds: 5
             timeoutSeconds: 5
@@ -48,7 +74,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432
+                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB -h 127.0.0.1 -p 5432
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -59,7 +85,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432
+                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB -h 127.0.0.1 -p 5432
             initialDelaySeconds: 15
             periodSeconds: 5
             timeoutSeconds: 3
@@ -80,6 +106,8 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: TZ
               value: "UTC"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           volumeMounts:
             - mountPath: /var/lib/postgresql/data
               name: postgres-data
@@ -88,6 +116,14 @@ spec:
             - mountPath: /etc/postgresql/postgresql.conf
               name: postgres-config
               subPath: postgresql.conf
+              readOnly: true
+            - mountPath: /etc/postgresql/pg_hba.conf
+              name: postgres-config
+              subPath: pg_hba.conf
+              readOnly: true
+            - mountPath: /docker-entrypoint-initdb.d/init-db.sql
+              name: postgres-config
+              subPath: init-db.sql
               readOnly: true
             - mountPath: /dev/shm
               name: dshm
@@ -98,7 +134,7 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: 1Gi
+            sizeLimit: 2Gi
   volumeClaimTemplates:
   - metadata:
       name: postgres-data

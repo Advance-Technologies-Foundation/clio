@@ -2017,23 +2017,31 @@ The command opens:
 - **macOS:** Finder at `~/.local/creatio/clio/infrastructure`
 - **Linux:** Default file manager at `~/.local/creatio/clio/infrastructure`
 
-```ps
-# common
+**Manual deployment order (if not using `deploy-infrastructure` command):**
+
+```bash
+# Step 1: Create namespace and storage
 kubectl apply -f clio-namespace.yaml
 kubectl apply -f clio-storage-class.yaml
 
-# redis
-kubectl apply -f redis
+# Step 2: Deploy Redis
+kubectl apply -f redis/redis-workload.yaml
+kubectl apply -f redis/redis-services.yaml
 
-# mssql
-kubectl apply -f mssql\mssql-volumes.yaml
-kubectl apply -f mssql
+# Step 3: Deploy PostgreSQL (order matters!)
+kubectl apply -f postgres/postgres-secrets.yaml
+kubectl apply -f postgres/postgres-volumes.yaml
+kubectl apply -f postgres/postgres-services.yaml
+kubectl apply -f postgres/postgres-stateful-set.yaml
 
-# postgresql
-kubectl apply -f postgres\postgres-volumes.yaml
-kubectl apply -f postgres
-kubectl apply -f pgadmin
+# Step 4: Deploy pgAdmin (order matters!)
+kubectl apply -f pgadmin/pgadmin-secrets.yaml
+kubectl apply -f pgadmin/pgadmin-volumes.yaml
+kubectl apply -f pgadmin/pgadmin-services.yaml
+kubectl apply -f pgadmin/pgadmin-workload.yaml
 ```
+
+**Note:** Use `clio deploy-infrastructure` command for automatic deployment with correct order and verification.
 
 ## deploy-infrastructure
 
@@ -2087,23 +2095,37 @@ clio deploy-infrastructure --no-verify
 ✓ Infrastructure files generated at: ~/.local/creatio/clio/infrastructure
 
 [3/4] Deploying infrastructure to Kubernetes...
-  [1/5] Deploying Namespace...
+  [1/13] Deploying Namespace...
   ✓ Namespace deployed successfully
-  [2/5] Deploying Storage Class...
+  [2/13] Deploying Storage Class...
   ✓ Storage Class deployed successfully
-  [3/5] Deploying Redis...
-  ✓ Redis deployed successfully
-  [4/5] Deploying PostgreSQL...
-  ✓ PostgreSQL deployed successfully
-  [5/5] Deploying pgAdmin...
-  ✓ pgAdmin deployed successfully
+  [3/13] Deploying Redis Workload...
+  ✓ Redis Workload deployed successfully
+  [4/13] Deploying Redis Services...
+  ✓ Redis Services deployed successfully
+  [5/13] Deploying PostgreSQL Secrets...
+  ✓ PostgreSQL Secrets deployed successfully
+  [6/13] Deploying PostgreSQL Volumes...
+  ✓ PostgreSQL Volumes deployed successfully
+  [7/13] Deploying PostgreSQL Services...
+  ✓ PostgreSQL Services deployed successfully
+  [8/13] Deploying PostgreSQL StatefulSet...
+  ✓ PostgreSQL StatefulSet deployed successfully
+  [9/13] Deploying pgAdmin Secrets...
+  ✓ pgAdmin Secrets deployed successfully
+  [10/13] Deploying pgAdmin Volumes...
+  ✓ pgAdmin Volumes deployed successfully
+  [11/13] Deploying pgAdmin Services...
+  ✓ pgAdmin Services deployed successfully
+  [12/13] Deploying pgAdmin Workload...
+  ✓ pgAdmin Workload deployed successfully
 
 ✓ All infrastructure components deployed
 
 [4/4] Verifying service connections...
 Waiting for services to start (this may take a minute)...
   Testing PostgreSQL connection...
-  ✓ PostgreSQL connection verified (attempt 3/10)
+  ✓ PostgreSQL connection verified (attempt 3/40)
   Testing Redis connection...
   ✓ Redis connection verified (attempt 2/10)
 

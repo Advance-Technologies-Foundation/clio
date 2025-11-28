@@ -13,11 +13,12 @@ data:
     # Connection Settings
     max_connections = 100
     
-    # Memory Settings (adjusted for 2Gi container limit)
-    shared_buffers = 512MB
-    work_mem = 32MB
-    maintenance_work_mem = 256MB
-    effective_cache_size = 1536MB
+    # Memory Settings (adjusted for 4Gi container limit)
+    shared_buffers = 1GB
+    work_mem = 64MB
+    maintenance_work_mem = 512MB
+    effective_cache_size = 3GB
+    temp_buffers = 128MB
     
     # Parallelism
     max_worker_processes = 8
@@ -69,6 +70,60 @@ data:
     
     # Shared Memory
     dynamic_shared_memory_type = posix
+    
+    # Authentication configuration file
+    hba_file = '/etc/postgresql/pg_hba.conf'
+
+  pg_hba.conf: |-
+    # PostgreSQL Client Authentication Configuration File
+    # ===================================================
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    
+    # "local" is for Unix domain socket connections only
+    local   all             all                                     trust
+    
+    # IPv4 local connections:
+    host    all             all             127.0.0.1/32            scram-sha-256
+    
+    # IPv4 connections from within the cluster (pod network)
+    host    all             all             10.0.0.0/8              scram-sha-256
+    
+    # IPv4 connections from any source (for LoadBalancer access)
+    # WARNING: In production, restrict this to specific IP ranges
+    host    all             all             0.0.0.0/0               scram-sha-256
+    
+    # IPv6 local connections:
+    host    all             all             ::1/128                 scram-sha-256
+    
+    # IPv6 connections from any source
+    host    all             all             ::/0                    scram-sha-256
+    
+    # Replication connections (currently disabled as wal_level = minimal)
+    # local   replication     all                                   trust
+    # host    replication     all             127.0.0.1/32          scram-sha-256
+    # host    replication     all             ::1/128               scram-sha-256
+
+  init-db.sql: |-
+    -- Database initialization script
+    -- This script runs once when the database is first created
+    
+    -- Grant necessary permissions to postgres user
+    ALTER USER postgres WITH SUPERUSER CREATEDB CREATEROLE REPLICATION;
+    
+    -- Enable required extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    -- Set default privileges for future objects
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
+    
+    -- Log successful initialization
+    DO $$
+    BEGIN
+        RAISE NOTICE 'Database initialization completed successfully';
+    END $$;
 
 ---
 kind: PersistentVolume

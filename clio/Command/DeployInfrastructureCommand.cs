@@ -168,14 +168,30 @@ namespace Clio.Command
 			_logger.WriteInfo("[3/4] Deploying infrastructure to Kubernetes...");
 			_logger.WriteLine();
 
-			// Define deployment order
+			// Define deployment order - order matters for dependencies
 			var deploymentSteps = new List<DeploymentStep>
 			{
+				// Step 1: Create namespace first (required by all other resources)
 				new("Namespace", Path.Join(infrastructurePath, "clio-namespace.yaml")),
+				
+				// Step 2: Create storage class (required by PersistentVolumes)
 				new("Storage Class", Path.Join(infrastructurePath, "clio-storage-class.yaml")),
-				new("Redis", Path.Join(infrastructurePath, "redis")),
-				new("PostgreSQL", Path.Join(infrastructurePath, "postgres")),
-				new("pgAdmin", Path.Join(infrastructurePath, "pgadmin"))
+				
+				// Step 3: Deploy Redis - workload contains ConfigMap, then Services
+				new("Redis Workload", Path.Join(infrastructurePath, "redis", "redis-workload.yaml")),
+				new("Redis Services", Path.Join(infrastructurePath, "redis", "redis-services.yaml")),
+				
+				// Step 4: Deploy PostgreSQL - secrets, volumes (ConfigMap), services, then StatefulSet
+				new("PostgreSQL Secrets", Path.Join(infrastructurePath, "postgres", "postgres-secrets.yaml")),
+				new("PostgreSQL Volumes", Path.Join(infrastructurePath, "postgres", "postgres-volumes.yaml")),
+				new("PostgreSQL Services", Path.Join(infrastructurePath, "postgres", "postgres-services.yaml")),
+				new("PostgreSQL StatefulSet", Path.Join(infrastructurePath, "postgres", "postgres-stateful-set.yaml")),
+				
+				// Step 5: Deploy pgAdmin - secrets, volumes (PVC + ConfigMap), services, then workload
+				new("pgAdmin Secrets", Path.Join(infrastructurePath, "pgadmin", "pgadmin-secrets.yaml")),
+				new("pgAdmin Volumes", Path.Join(infrastructurePath, "pgadmin", "pgadmin-volumes.yaml")),
+				new("pgAdmin Services", Path.Join(infrastructurePath, "pgadmin", "pgadmin-services.yaml")),
+				new("pgAdmin Workload", Path.Join(infrastructurePath, "pgadmin", "pgadmin-workload.yaml"))
 			};
 
 			int stepNumber = 1;
@@ -254,34 +270,41 @@ namespace Clio.Command
 
 			for (int attempt = 1; attempt <= maxAttempts; attempt++)
 			{
-				try
-				{
-					k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
-					Postgres postgres = _dbClientFactory.CreatePostgres(
-						connectionParams.DbPort, 
-						connectionParams.DbUsername, 
-						connectionParams.DbPassword);
+				   try
+				   {
+					   k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
+					   Postgres postgres = _dbClientFactory.CreatePostgres(
+						   connectionParams.DbPort, 
+						   connectionParams.DbUsername, 
+						   connectionParams.DbPassword);
 
-					// Try to check if template exists - this will verify connection works
-					bool exists = postgres.CheckTemplateExists("template0");
-					if (exists)
-					{
-						_logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
-						return true;
-					}
-				}
-				catch (Exception ex)
-				{
-					if (attempt == maxAttempts)
-					{
-						_logger.WriteError($"  ✗ PostgreSQL connection failed after {maxAttempts} attempts");
-						_logger.WriteError($"    Error: {ex.Message}");
-						return false;
-					}
-					
-					_logger.WriteInfo($"  ⏳ Attempt {attempt}/{maxAttempts} failed, retrying in {delaySeconds}s...");
-					Thread.Sleep(delaySeconds * 1000);
-				}
+					   // Try to check if template exists - this will verify connection works
+					   bool exists = postgres.CheckTemplateExists("template0");
+					   if (exists)
+					   {
+						   _logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
+						   return true;
+					   }
+				   }
+				   catch (Exception ex)
+				   {
+					   if (attempt == maxAttempts)
+					   {
+						   _logger.WriteError($"  ✗ PostgreSQL connection failed after {maxAttempts} attempts");
+						   _logger.WriteError($"    Error: {ex.Message}");
+						   return false;
+					   }
+					   // Only show a friendly progress indicator, not error spam
+					   if (attempt == 1)
+					   {
+						   _logger.WriteInfo($"  ⏳ Waiting for PostgreSQL to become available...");
+					   }
+					   else if (attempt % 5 == 0)
+					   {
+						   _logger.WriteInfo($"  ⏳ Still waiting for PostgreSQL... (attempt {attempt}/{maxAttempts})");
+					   }
+					   Thread.Sleep(delaySeconds * 1000);
+				   }
 			}
 
 			return false;
@@ -296,41 +319,48 @@ namespace Clio.Command
 
 			for (int attempt = 1; attempt <= maxAttempts; attempt++)
 			{
-				try
-				{
-					k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
-					
-					ConfigurationOptions configurationOptions = new ConfigurationOptions()
-					{
-						SyncTimeout = 5000,
-						ConnectTimeout = 5000,
-						EndPoints = { { BindingsModule.k8sDns, connectionParams.RedisPort } },
-						AbortOnConnectFail = false
-					};
+				   try
+				   {
+					   k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
+               
+					   ConfigurationOptions configurationOptions = new ConfigurationOptions()
+					   {
+						   SyncTimeout = 5000,
+						   ConnectTimeout = 5000,
+						   EndPoints = { { BindingsModule.k8sDns, connectionParams.RedisPort } },
+						   AbortOnConnectFail = false
+					   };
 
-					using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-					IServer server = redis.GetServer(BindingsModule.k8sDns, connectionParams.RedisPort);
-					
-					// Simple ping test
-					int dbCount = server.DatabaseCount;
-					if (dbCount >= 0)
-					{
-						_logger.WriteInfo($"  ✓ Redis connection verified (attempt {attempt}/{maxAttempts})");
-						return true;
-					}
-				}
-				catch (Exception ex)
-				{
-					if (attempt == maxAttempts)
-					{
-						_logger.WriteError($"  ✗ Redis connection failed after {maxAttempts} attempts");
-						_logger.WriteError($"    Error: {ex.Message}");
-						return false;
-					}
-					
-					_logger.WriteInfo($"  ⏳ Attempt {attempt}/{maxAttempts} failed, retrying in {delaySeconds}s...");
-					Thread.Sleep(delaySeconds * 1000);
-				}
+					   using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
+					   IServer server = redis.GetServer(BindingsModule.k8sDns, connectionParams.RedisPort);
+               
+					   // Simple ping test
+					   int dbCount = server.DatabaseCount;
+					   if (dbCount >= 0)
+					   {
+						   _logger.WriteInfo($"  ✓ Redis connection verified (attempt {attempt}/{maxAttempts})");
+						   return true;
+					   }
+				   }
+				   catch (Exception ex)
+				   {
+					   if (attempt == maxAttempts)
+					   {
+						   _logger.WriteError($"  ✗ Redis connection failed after {maxAttempts} attempts");
+						   _logger.WriteError($"    Error: {ex.Message}");
+						   return false;
+					   }
+					   // Only show a friendly progress indicator, not error spam
+					   if (attempt == 1)
+					   {
+						   _logger.WriteInfo($"  ⏳ Waiting for Redis to become available...");
+					   }
+					   else if (attempt % 3 == 0)
+					   {
+						   _logger.WriteInfo($"  ⏳ Still waiting for Redis... (attempt {attempt}/{maxAttempts})");
+					   }
+					   Thread.Sleep(delaySeconds * 1000);
+				   }
 			}
 
 			return false;
