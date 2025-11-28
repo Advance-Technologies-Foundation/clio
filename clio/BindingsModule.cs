@@ -217,6 +217,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<Scenario>();
 		containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
 		containerBuilder.RegisterType<CreateInfrastructureCommand>();
+		containerBuilder.RegisterType<DeployInfrastructureCommand>();
 		containerBuilder.RegisterType<OpenInfrastructureCommand>();
 		containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
 		containerBuilder.RegisterType<ManageWindowsFeaturesCommand>();

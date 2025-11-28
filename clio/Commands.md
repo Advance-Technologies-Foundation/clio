@@ -1928,6 +1928,7 @@ See more examples in [samples](https://github.com/Advance-Technologies-Foundatio
 - [Check Windows features](#check-windows-features)
 - [Manage Windows features](#manage-windows-features)
 - [Generate deployment scripts](#create-k8-files)
+- [Deploy infrastructure](#deploy-infrastructure)
 - [Install Creatio](#deploy-creatio)
 - [List Creatio hosts](#hosts)
 - [Stop Creatio hosts](#stop)
@@ -2032,6 +2033,98 @@ kubectl apply -f mssql
 kubectl apply -f postgres\postgres-volumes.yaml
 kubectl apply -f postgres
 kubectl apply -f pgadmin
+```
+
+## deploy-infrastructure
+
+Deploys Kubernetes infrastructure for Creatio automatically. This command generates K8s YAML files and applies them to your Kubernetes cluster in the correct order.
+
+**What it does:**
+1. Generates infrastructure files from templates
+2. Applies K8s manifests in correct order:
+   - Namespace (`clio-infrastructure`)
+   - Storage class
+   - Redis service
+   - PostgreSQL database
+   - pgAdmin management tool
+3. Verifies connections to PostgreSQL and Redis
+
+**Prerequisites:**
+- `kubectl` must be installed and configured
+- Kubernetes cluster must be running (Docker Desktop, Minikube, Rancher Desktop, etc.)
+
+**Usage:**
+
+```bash
+# Deploy with default settings
+clio deploy-infrastructure
+
+# or using alias
+clio di
+
+# Specify custom path for infrastructure files
+clio deploy-infrastructure --path /custom/path
+
+# Skip connection verification
+clio deploy-infrastructure --no-verify
+```
+
+**Options:**
+- `-p, --path` - Custom path for infrastructure files (default: auto-detected from clio settings)
+- `--no-verify` - Skip connection verification after deployment
+
+**Example output:**
+
+```
+========================================
+  Deploy Kubernetes Infrastructure
+========================================
+
+[1/4] Checking kubectl installation...
+✓ kubectl is installed
+
+[2/4] Generating infrastructure files...
+✓ Infrastructure files generated at: ~/.local/creatio/clio/infrastructure
+
+[3/4] Deploying infrastructure to Kubernetes...
+  [1/5] Deploying Namespace...
+  ✓ Namespace deployed successfully
+  [2/5] Deploying Storage Class...
+  ✓ Storage Class deployed successfully
+  [3/5] Deploying Redis...
+  ✓ Redis deployed successfully
+  [4/5] Deploying PostgreSQL...
+  ✓ PostgreSQL deployed successfully
+  [5/5] Deploying pgAdmin...
+  ✓ pgAdmin deployed successfully
+
+✓ All infrastructure components deployed
+
+[4/4] Verifying service connections...
+Waiting for services to start (this may take a minute)...
+  Testing PostgreSQL connection...
+  ✓ PostgreSQL connection verified (attempt 3/10)
+  Testing Redis connection...
+  ✓ Redis connection verified (attempt 2/10)
+
+✓ All service connections verified
+
+========================================
+  Infrastructure deployed successfully!
+========================================
+```
+
+**Troubleshooting:**
+
+If deployment fails, check:
+1. Kubernetes cluster is running: `kubectl cluster-info`
+2. You have permissions: `kubectl auth can-i create namespace`
+3. Previous deployments are cleaned up: `kubectl get all -n clio-infrastructure`
+
+To manually cleanup and retry:
+```bash
+kubectl delete namespace clio-infrastructure
+clio deploy-infrastructure
 ```
 
 
