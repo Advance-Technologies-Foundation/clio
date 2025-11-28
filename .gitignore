@@ -24,8 +24,6 @@ _UpgradeReport_Files/
 ###############
 packages/
 !**/Examples/workspaces/**/packages/
-bin/
-obj/
 TestResults/
 !/TestResults/Api-Test-Results/.gitkeep
 
@@ -79,6 +77,7 @@ bld/
 # Visual Studo Code assets directory
 .vscode/
 !clio/tpl/k8/infrastructure/.vscode/
+
 
 # Rider assets directory
 

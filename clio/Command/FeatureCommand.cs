@@ -9,7 +9,7 @@ using CreatioModel;
 
 namespace Clio.Command;
 
-[Verb("set-feature", Aliases = new[] {"feature"}, HelpText = "Set feature state")]
+[Verb("set-feature", Aliases = ["feature"], HelpText = "Set feature state")]
 public class FeatureOptions : RemoteCommandOptions {
 
 	#region Properties: Public

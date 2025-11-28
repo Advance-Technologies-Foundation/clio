@@ -1021,7 +1021,6 @@
   <ItemGroup>
     <Compile Include="tpl\package\Files\src\cs\RssFeedApp.cs" />
     <Folder Include="tpl\package\Data" />
-    <Folder Include="tpl\package\Files\Libs\" />
     <Folder Include="tpl\package\Resources" />
     <Folder Include="tpl\package\Schemas" />
     <Folder Include="tpl\package\SqlScripts" />
