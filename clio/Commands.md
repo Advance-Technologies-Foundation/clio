@@ -17,7 +17,7 @@ Clio Command Reference
 - [Web farm deployments](#web-farm-deployments)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
-  - [📖 Deploy Creatio on macOS - Quick Start Guide](DeployCreatioMacOS.md)
+  - [🚀 Quick Start Guide for macOS](#-quick-start-guide-for-macos)
 
 # Running Clio
 The general syntax for running clio:
@@ -1930,7 +1930,7 @@ See more examples in [samples](https://github.com/Advance-Technologies-Foundatio
 
 ## 🚀 Quick Start Guide for macOS
 
-**Want to deploy Creatio locally on macOS?** See our comprehensive step-by-step guide: **[Deploy Creatio on macOS](DeployCreatioMacOS.md)**
+📖 **For complete deployment instructions, see: [Deploy Creatio on macOS - Full Guide](DeployCreatioMacOS.md)**
 
 **Prerequisites:** Rancher Desktop (6GB+ Memory, 2+ CPU), .NET 8 SDK, clio 8.0.1.71+
 
