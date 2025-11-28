@@ -1,4 +1,76 @@
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: clio-infrastructure
+data:
+  postgresql.conf: |-
+    # Network
+    # Listen on all network interfaces (required for Kubernetes service access)
+    listen_addresses = '*'
+    
+    # Connection Settings
+    max_connections = 100
+    
+    # Memory Settings (adjusted for 2Gi container limit)
+    shared_buffers = 512MB
+    work_mem = 32MB
+    maintenance_work_mem = 256MB
+    effective_cache_size = 1536MB
+    
+    # Parallelism
+    max_worker_processes = 8
+    max_parallel_workers_per_gather = 4
+    max_parallel_maintenance_workers = 2
+    max_parallel_workers = 8
+    
+    # Write Ahead Log (WAL)
+    wal_level = minimal
+    max_wal_senders = 0
+    max_replication_slots = 0
+    wal_compression = on
+    max_wal_size = 4GB
+    min_wal_size = 1GB
+    checkpoint_timeout = 15min
+    checkpoint_completion_target = 0.9
+    full_page_writes = on
+    
+    # Query Planner
+    seq_page_cost = 1.0
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    maintenance_io_concurrency = 200
+    default_statistics_target = 200
+    
+    # JIT
+    jit = off
+    
+    # Logging
+    log_checkpoints = on
+    log_min_duration_statement = 200ms
+    log_lock_waits = on
+    log_timezone = 'UTC'
+    
+    # Autovacuum
+    autovacuum_vacuum_scale_factor = 0.1
+    autovacuum_analyze_scale_factor = 0.05
+    autovacuum_vacuum_cost_limit = 400
+    autovacuum_vacuum_cost_delay = 2ms
+    
+    # Locale and Formatting
+    datestyle = 'iso, mdy'
+    timezone = 'UTC'
+    lc_messages = 'en_US.utf8'
+    lc_monetary = 'en_US.utf8'
+    lc_numeric = 'en_US.utf8'
+    lc_time = 'en_US.utf8'
+    default_text_search_config = 'pg_catalog.english'
+    
+    # Shared Memory
+    dynamic_shared_memory_type = posix
+
+---
 kind: PersistentVolume
 apiVersion: v1
 metadata:
@@ -9,7 +81,7 @@ metadata:
 spec:
   storageClassName: clio-storage
   capacity:
-    storage: 40Gi
+    storage: 20Gi
   accessModes:
     - ReadWriteOnce
   hostPath:

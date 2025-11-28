@@ -14,10 +14,17 @@ spec:
       labels:
         app: clio-postgres
     spec:
+      terminationGracePeriodSeconds: 60
+      restartPolicy: Always
       containers:
         - name: clio-postgres
-          image: postgres:latest
+          image: postgres:16
           imagePullPolicy: "IfNotPresent"
+          command: ["-c", "config_file=/etc/postgresql/postgresql.conf"]
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
           resources:
             limits:
               memory: "2Gi"
@@ -25,29 +32,42 @@ spec:
             requests:
               memory: "1Gi"
               cpu: "0.5"
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 6
+            successThreshold: 1
           livenessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - pg_isready -U postgres
+                - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+            failureThreshold: 6
+            successThreshold: 1
           readinessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - pg_isready -U postgres
-            initialDelaySeconds: 10
+                - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 15
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 2
+            successThreshold: 1
           env:
-            - name : POSTGRES_DB
-              value : postgres
+            - name: POSTGRES_DB
+              value: postgres
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -58,11 +78,27 @@ spec:
                 secretKeyRef:
                   name: clio-postgres-secret
                   key: POSTGRES_PASSWORD
+            - name: TZ
+              value: "UTC"
           volumeMounts:
-            - mountPath: /var/lib/postgresql
+            - mountPath: /var/lib/postgresql/data
               name: postgres-data
             - mountPath: /usr/local/backup-images
               name: postgres-backup-images
+            - mountPath: /etc/postgresql/postgresql.conf
+              name: postgres-config
+              subPath: postgresql.conf
+              readOnly: true
+            - mountPath: /dev/shm
+              name: dshm
+      volumes:
+        - name: postgres-config
+          configMap:
+            name: postgres-config
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
   volumeClaimTemplates:
   - metadata:
       name: postgres-data
@@ -72,7 +108,7 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 40Gi
+          storage: 20Gi
   - metadata:
       name: postgres-backup-images
       namespace: clio-infrastructure
