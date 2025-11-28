@@ -18,12 +18,15 @@ public class Postgres : IPostgres
 {
 
 	private string _connectionString;
-	private readonly ILogger _logger = ConsoleLogger.Instance;
+	private readonly ILogger _logger;
 
-	public Postgres(){ }
+	public Postgres() {
+		_logger = ConsoleLogger.Instance;
+	}
 	
-	public Postgres(int port, string username, string password) {
+	public Postgres(int port, string username, string password, ILogger logger = null) {
 		_connectionString = $"Host={BindingsModule.k8sDns};Port={port};Username={username};Password={password};Database=postgres";
+		_logger = logger ?? ConsoleLogger.Instance;
 	}
 	
 	public void Init(string host, int port, string username, string password){

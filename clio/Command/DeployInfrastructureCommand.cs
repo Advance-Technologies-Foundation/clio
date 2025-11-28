@@ -273,36 +273,18 @@ namespace Clio.Command
 				   try
 				   {
 					   k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
-					   Postgres postgres = _dbClientFactory.CreatePostgres(
+					   // Use silent postgres instance to avoid error logging during connection attempts
+					   Postgres postgres = _dbClientFactory.CreatePostgresSilent(
 						   connectionParams.DbPort, 
 						   connectionParams.DbUsername, 
 						   connectionParams.DbPassword);
 
 					   // Try to check if template exists - this will verify connection works
-					   // Suppress console output during connection attempts
-					   var originalConsoleOut = Console.Out;
-					   var originalConsoleError = Console.Error;
-					   try
+					   bool exists = postgres.CheckTemplateExists("template0");
+					   if (exists)
 					   {
-						   // Redirect console output to null during connection attempts
-						   Console.SetOut(System.IO.TextWriter.Null);
-						   Console.SetError(System.IO.TextWriter.Null);
-						   
-						   bool exists = postgres.CheckTemplateExists("template0");
-						   if (exists)
-						   {
-							   // Restore console output before logging success
-							   Console.SetOut(originalConsoleOut);
-							   Console.SetError(originalConsoleError);
-							   _logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
-							   return true;
-						   }
-					   }
-					   finally
-					   {
-						   // Always restore console output
-						   Console.SetOut(originalConsoleOut);
-						   Console.SetError(originalConsoleError);
+						   _logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
+						   return true;
 					   }
 				   }
 				   catch (Exception)

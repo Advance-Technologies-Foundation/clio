@@ -8,6 +8,8 @@ public interface IDbClientFactory
 	IMssql CreateMssql(int port, string username, string password);
 
 	Postgres CreatePostgres(int port, string username, string password);
+	
+	Postgres CreatePostgresSilent(int port, string username, string password);
 
 }
 
@@ -25,6 +27,13 @@ public class DbClientFactory : IDbClientFactory
 	//TODO: Add interface
 	public Postgres CreatePostgres(int port, string username, string password) {
 		return new Postgres(port, username, password);
+	}
+	
+	/// <summary>
+	/// Creates a Postgres instance with NullLogger for silent operations (connection testing)
+	/// </summary>
+	public Postgres CreatePostgresSilent(int port, string username, string password) {
+		return new Postgres(port, username, password, NullLogger.Instance);
 	}
 
 }
