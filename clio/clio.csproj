@@ -10,7 +10,7 @@
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <!-- Default version for local development. Will be overridden during release from tag -->
-      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.69</AssemblyVersion>
+      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.71</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>

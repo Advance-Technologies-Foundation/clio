@@ -1,5 +1,32 @@
 Clio Command Reference
 ======================
+
+## 🚀 Quick Start Guide
+
+**Want to deploy Creatio locally on macOS?** Check out our comprehensive step-by-step guide:
+
+📖 **[Deploy Creatio on macOS](DeployCreatioMacOS.md)**
+
+**Quick deployment:**
+```bash
+# 1. Deploy infrastructure (PostgreSQL, Redis, pgAdmin)
+clio deploy-infrastructure
+
+# 2. Deploy Creatio application
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip
+
+# 3. Check status
+clio hosts
+
+# 4. Manage your applications
+clio start -e <ENV_NAME>    # Start
+clio stop -e <ENV_NAME>     # Stop
+```
+
+**Prerequisites:** Rancher Desktop, .NET 8 SDK, clio 8.0.1.71+
+
+---
+
 ## In this article
 
 - [Arguments](#command-arguments)
