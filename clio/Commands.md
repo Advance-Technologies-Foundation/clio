@@ -17,6 +17,7 @@ Clio Command Reference
 - [Web farm deployments](#web-farm-deployments)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
+  - [📖 Deploy Creatio on macOS - Quick Start Guide](DeployCreatioMacOS.md)
 
 # Running Clio
 The general syntax for running clio:
