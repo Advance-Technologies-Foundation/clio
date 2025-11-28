@@ -290,6 +290,10 @@ public class ConsoleLogger : ILogger, IDisposable
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
+		// Only enqueue debug messages if debug mode is enabled
+		if (!Program.IsDebugMode) {
+			return;
+		}
 		_logQueue.Enqueue(new DebugMessage(value));
 	}
 

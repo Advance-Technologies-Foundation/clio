@@ -12,7 +12,7 @@ public class NullLogger : ILogger
 {
 	public static readonly ILogger Instance = new NullLogger();
 
-	private NullLogger() { }
+	public NullLogger() { }
 
 	public void Start(string logFilePath = "") { }
 	public void StartWithStream() { }
