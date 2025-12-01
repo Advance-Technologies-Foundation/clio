@@ -1,7 +1,6 @@
-﻿using System;
-using System.IO;
-using System.Management.Automation;
-using ATF.Repository.Providers;
+﻿using System.IO;
+using System.Text.Json;
+using Clio.Requests;
 using CreatioModel;
 
 namespace Clio.Package
@@ -13,7 +12,7 @@ namespace Clio.Package
 	{
 		#region Fields: Private
 		
-		private bool _checkCompilationErrors;
+		private bool? _checkCompilationErrors;
 		
 		#endregion
 
@@ -54,11 +53,17 @@ namespace Clio.Package
 
 		#region Methods: Protected
 
-		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions){
+		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions)
+		{
 			string code = _fileSystem.GetFileNameWithoutExtension(new FileInfo(fileName));
-			return _checkCompilationErrors 
-				? $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0,\"CheckCompilationErrors\":true}}"
-				: $"{{\"Name\":\"{code}\",\"Code\":\"{code}\",\"ZipPackageName\":\"{fileName}\",\"LastUpdateString\":0}}";
+			var request = new InstallAppRequest {
+				Name = code,
+				Code = code,
+				ZipPackageName = fileName,
+				LastUpdateString = 0,
+				CheckCompilationErrors = _checkCompilationErrors
+			};
+			return JsonSerializer.Serialize(request);
 		}
 
 		#endregion
@@ -66,7 +71,7 @@ namespace Clio.Package
 		#region Methods: Public
 
 		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null, bool checkCompilationErrors = false)
+			string reportPath = null, bool? checkCompilationErrors = null)
 		{
 			_checkCompilationErrors = checkCompilationErrors;
 			return InternalInstall(packagePath, environmentSettings, null, reportPath);

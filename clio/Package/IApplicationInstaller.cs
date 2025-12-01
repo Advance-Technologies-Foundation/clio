@@ -12,7 +12,7 @@ namespace Clio.Package
 		#region Methods: Public
 
 		bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null, bool checkCompilationErrors = false);
+			string reportPath = null, bool? checkCompilationErrors = null);
 
 		bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
 			string reportPath = null);
