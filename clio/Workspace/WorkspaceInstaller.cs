@@ -21,7 +21,10 @@ namespace Clio.Workspaces
 
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
-		string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite);
+		//string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite);
+
+		string PublishToFolder(IEnumerable<string> packages, string zipFileName, string destinationFolderPath,
+			bool overwrite);
 
 		#endregion
 
@@ -56,6 +59,7 @@ namespace Clio.Workspaces
 		private readonly IFileSystem _fileSystem;
 		private readonly IOSPlatformChecker _osPlatformChecker;
 		private readonly ILogger _logger;
+		private readonly IWorkspacePackageFilter _workspacePackageFilter;
 		private readonly Lazy<IApplicationClient> _applicationClientLazy;
 
 		#endregion
@@ -67,7 +71,8 @@ namespace Clio.Workspaces
 			IPackageArchiver packageArchiver, IPackageBuilder packageBuilder,
 			IStandalonePackageFileManager standalonePackageFileManager, IServiceUrlBuilder serviceUrlBuilder,
 			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
-			IOSPlatformChecker osPlatformChecker, ILogger logger, IApplicationInstaller applicationInstaller = null){
+			IOSPlatformChecker osPlatformChecker, ILogger logger, 
+			IWorkspacePackageFilter workspacePackageFilter, IApplicationInstaller applicationInstaller = null){
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
@@ -93,6 +98,7 @@ namespace Clio.Workspaces
 			_fileSystem = fileSystem;
 			_osPlatformChecker = osPlatformChecker;
 			_logger = logger;
+			_workspacePackageFilter = workspacePackageFilter;
 			_applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
 		}
 
@@ -177,11 +183,9 @@ namespace Clio.Workspaces
 			});
 		}
 
-		public void Publish(IList<string> packages, string zipFileName, string destionationFolderPath,
-			bool overrideFile = false){
+		public void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool overrideFile = false){
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
-				var rootPackedPackagePath =
-					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+				string rootPackedPackagePath = CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
 				foreach (string packageName in packages) {
 					PackPackage(packageName, rootPackedPackagePath);
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
@@ -191,12 +195,11 @@ namespace Clio.Workspaces
 			});
 		}
 
-		public string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath,
+		
+		public string PublishToFolder(IEnumerable<string> packages, string zipFileName, string destinationFolderPath,
 			bool overwrite){
-			_workspacePathBuilder.RootPath = workspaceFolderPath;
 			string resultApplicationFilePath = string.Empty;
-			var packages = Directory.GetDirectories(_workspacePathBuilder.PackagesFolderPath)
-				.Select(p => new DirectoryInfo(p).Name);
+			
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				var rootPackedPackagePath =
 					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
@@ -212,6 +215,32 @@ namespace Clio.Workspaces
 			});
 			return resultApplicationFilePath;
 		}
+		
+		// [Obsolete("This method does not account for included and filtered packages. Use PublishToFolder with package list instead.")]
+		// public string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath,
+		// 	bool overwrite){
+		// 	_workspacePathBuilder.RootPath = workspaceFolderPath;
+		// 	string resultApplicationFilePath = string.Empty;
+		// 	
+		// 	IEnumerable<string> packages = Directory.GetDirectories(_workspacePathBuilder.PackagesFolderPath)
+		// 											.Select(p => new DirectoryInfo(p).Name).ToList();
+		// 	
+		// 	
+		// 	_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
+		// 		var rootPackedPackagePath =
+		// 			CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+		// 		foreach (string packageName in packages) {
+		// 			PackPackage(packageName, rootPackedPackagePath);
+		// 			//ResetSchemaChangeStateServiceUrl(packageName);
+		// 		}
+		// 		var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
+		// 		var filename = Path.GetFileName(applicationZip);
+		// 		resultApplicationFilePath = Path.Combine(destinationFolderPath, filename);
+		// 		_fileSystem.CreateDirectoryIfNotExists(destinationFolderPath);
+		// 		_fileSystem.CopyFile(applicationZip, resultApplicationFilePath, overwrite);
+		// 	});
+		// 	return resultApplicationFilePath;
+		// }
 		
 
 

@@ -15,13 +15,14 @@ namespace Clio.Tests.Command;
 public class PublishWorkspaceCommandTests : BaseCommandTests<PublishWorkspaceCommandOptions>
 {
 	private IWorkspace _mockWorkspace;
+	private ILogger _logerMock;
 	private PublishWorkspaceCommand _command;
 
 	[SetUp]
-	public void SetUp()
-	{
+	public void SetUp() {
 		_mockWorkspace = Substitute.For<IWorkspace>();
-		_command = new PublishWorkspaceCommand(_mockWorkspace);
+		_logerMock = Substitute.For<ILogger>();
+		_command = new PublishWorkspaceCommand(_mockWorkspace, _logerMock);
 	}
 
 	[Test]
