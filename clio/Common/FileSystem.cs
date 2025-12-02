@@ -364,7 +364,7 @@ public class FileSystem : IFileSystem
 		
 	public bool CompareFiles(string first, string second) => CompareFiles(Algorithm.MD5, first, second);
 	public string[] GetDirectories() {
-		return GetDirectories(Directory.GetCurrentDirectory());
+		return GetDirectories(_msFileSystem.Directory.GetCurrentDirectory());
 	}
 
 

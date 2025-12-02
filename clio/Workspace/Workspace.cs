@@ -25,6 +25,8 @@ public class Workspace : IWorkspace{
 	private readonly IWorkspaceCreator _workspaceCreator;
 	private readonly IWorkspaceInstaller _workspaceInstaller;
 	private readonly IWorkspacePackageFilter _workspacePackageFilter;
+	private readonly IFileSystem _fileSystem;
+	private readonly ILogger _logger;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IWorkspaceRestorer _workspaceRestorer;
 	private readonly IWorkspaceSolutionCreator _workspaceSolutionCreator;
@@ -38,7 +40,7 @@ public class Workspace : IWorkspace{
 		IWorkspaceCreator workspaceCreator, IWorkspaceRestorer workspaceRestorer,
 		IWorkspaceInstaller workspaceInstaller, IWorkspaceSolutionCreator workspaceSolutionCreator,
 		IJsonConverter jsonConverter, IComposableApplicationManager composableApplicationManager,
-		IWorkspacePackageFilter workspacePackageFilter) {
+		IWorkspacePackageFilter workspacePackageFilter, IFileSystem fileSystem, ILogger logger) {
 		//environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 		workspaceCreator.CheckArgumentNull(nameof(workspaceCreator));
@@ -56,6 +58,8 @@ public class Workspace : IWorkspace{
 		_jsonConverter = jsonConverter;
 		_composableApplicationManager = composableApplicationManager;
 		_workspacePackageFilter = workspacePackageFilter;
+		_fileSystem = fileSystem;
+		_logger = logger;
 		ResetLazyWorkspaceSettings();
 	}
 
@@ -91,15 +95,14 @@ public class Workspace : IWorkspace{
 	}
 
 	private void UpdatePackagesVersion(string packagesFolderPath, string appVersion) {
-		if (string.IsNullOrWhiteSpace(packagesFolderPath) || !Directory.Exists(packagesFolderPath)) {
-			Console.WriteLine($"Warning: Packages folder path is invalid or does not exist: {packagesFolderPath}");
+		if (string.IsNullOrWhiteSpace(packagesFolderPath) || !_fileSystem.ExistsDirectory(packagesFolderPath)) {
+			_logger.WriteWarning($"Packages folder path is invalid or does not exist: {packagesFolderPath}");
 			return;
 		}
-
-		foreach (string packageDirectory in Directory.GetDirectories(packagesFolderPath)) {
+		foreach (string packageDirectory in _fileSystem.GetDirectories(packagesFolderPath)) {
 			string descriptorPath = Path.Combine(packageDirectory, CreatioPackage.DescriptorName);
-			if (!File.Exists(descriptorPath)) {
-				Console.WriteLine($"Warning: Package descriptor not found: {descriptorPath}");
+			if (!_fileSystem.ExistsFile(descriptorPath)) {
+				_logger.WriteWarning($"Package descriptor not found: {descriptorPath}");
 				continue;
 			}
 
@@ -107,7 +110,7 @@ public class Workspace : IWorkspace{
 				PackageDescriptorDto descriptorDto
 					= _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath);
 				if (descriptorDto?.Descriptor == null) {
-					Console.WriteLine($"Warning: Invalid or empty package descriptor: {descriptorPath}");
+					_logger.WriteWarning($"Invalid or empty package descriptor: {descriptorPath}");
 					continue;
 				}
 
@@ -116,7 +119,7 @@ public class Workspace : IWorkspace{
 				_jsonConverter.SerializeObjectToFile(descriptorDto, descriptorPath);
 			}
 			catch (Exception ex) {
-				Console.WriteLine($"Warning: Failed to update package version for {descriptorPath}: {ex.Message}");
+				_logger.WriteWarning($"Failed to update package version for {descriptorPath}: {ex.Message}");
 			}
 		}
 	}

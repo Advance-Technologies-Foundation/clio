@@ -150,161 +150,79 @@ internal class WorkspaceTest : BaseClioModuleTests
 		
 	}
 
+	
 	[Test]
 	public void PublishWorkspaceToFileTest() {
 		// Arrange
-		string appName = "iframe-sample";
-		string appVersion = "2.3.4";
-		string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-		string originalWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
-		string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-		string workspaceCopyPath = Path.Combine(tempRoot, "workspace");
-		string outputDirectory = Path.Combine(tempRoot, "output");
-		string outputFilePath = Path.Combine(outputDirectory, "custom-output.zip");
-		Directory.CreateDirectory(outputDirectory);
-		CopyDirectory(originalWorkspacePath, workspaceCopyPath);
-		try {
-			var envSettings = GetTestEnvironmentSettings();
-			var workspace = GetTestWorkspace(envSettings);
+		const string appStorePath = @"C:\clioAppStore";
+		const string appName = "iframe-sample";
+		const string appVersion = "2.0.0";
+		const string fileName = $"{appName}_{appVersion}.zip";
+		string dir = FileSystem.AllDirectories.FirstOrDefault(d => d.EndsWith("iframe-sample"));
+		var envSettings = GetTestEnvironmentSettings();
+		var workspace = GetTestWorkspace(envSettings);
+		string expectedFileName = Path.Combine(appStorePath, appName, appVersion, fileName);
 
-			// Act
-			var resultPath = workspace.PublishToFile(workspaceCopyPath, outputFilePath, appVersion);
+		// Act
+		string resultPath = workspace.PublishToFile(dir, expectedFileName, appVersion);
 
-			// Assert
-			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
-			File.Exists(outputFilePath).Should().BeTrue();
-			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000);
-			string[] descriptorPaths = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
-			descriptorPaths.Should().NotBeEmpty("because at least one package descriptor should exist");
-			// Check that at least one package has the updated version
-			bool foundUpdatedVersion = false;
-			foreach (string descriptorPath in descriptorPaths) {
-				string descriptorContent = File.ReadAllText(descriptorPath);
-				var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
-				if (descriptorDto?.Descriptor.PackageVersion == appVersion) {
-					foundUpdatedVersion = true;
-					break;
-				}
-			}
-			foundUpdatedVersion.Should().BeTrue($"because at least one package should have version updated to {appVersion}");
-		} finally {
-			try {
-				if (Directory.Exists(tempRoot)) {
-					Directory.Delete(tempRoot, true);
-				}
-			} catch {
-				// ignore cleanup errors
+		// Assert
+		resultPath.Should().Be(expectedFileName);
+		bool versionFileExist = FileSystem.File.Exists(expectedFileName);
+		versionFileExist.Should().BeTrue();
+		FileSystem.FileInfo.New(expectedFileName).Length.Should().BeGreaterThan(80000);
+
+		string[] descriptorPaths = FileSystem.Directory.GetFiles(dir, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
+		descriptorPaths.Should().NotBeEmpty("because at least one package descriptor should exist");
+		// Check that at least one package has the updated version
+		bool foundUpdatedVersion = false;
+		foreach (string descriptorPath in descriptorPaths) {
+			string descriptorContent = FileSystem.File.ReadAllText(descriptorPath);
+			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+			if (descriptorDto?.Descriptor.PackageVersion == appVersion) {
+				foundUpdatedVersion = true;
+				break;
 			}
 		}
+		foundUpdatedVersion.Should().BeTrue($"because at least one package should have version updated to {appVersion}");
 	}
 
-	[Test]
+	[TestCase("")]
+	[TestCase(null)]
 	[Description("Should publish workspace to file without updating versions when app version is not provided")]
-	public void PublishWorkspaceToFileWithoutVersionTest() {
+	public void PublishWorkspaceToFileWithoutVersionTest(string appVersionE) {
 		// Arrange
-		string appName = "iframe-sample";
-		string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-		string originalWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
-		string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-		string workspaceCopyPath = Path.Combine(tempRoot, "workspace");
-		string outputDirectory = Path.Combine(tempRoot, "output");
-		string outputFilePath = Path.Combine(outputDirectory, "custom-output-no-version.zip");
-		Directory.CreateDirectory(outputDirectory);
-		CopyDirectory(originalWorkspacePath, workspaceCopyPath);
+		const string appStorePath = @"C:\clioAppStore";
+		const string appName = "iframe-sample";
+		const string appVersion = "7.8.0";
+		const string fileName = $"{appName}_{appVersion}.zip";
+		string dir = FileSystem.AllDirectories.FirstOrDefault(d => d.EndsWith("iframe-sample"));
+		var envSettings = GetTestEnvironmentSettings();
+		var workspace = GetTestWorkspace(envSettings);
+		string expectedFileName = Path.Combine(appStorePath, appName, appVersion, fileName);
+
+		// Act
+		string resultPath = workspace.PublishToFile(dir, expectedFileName, appVersionE);
 		
-		// Store original versions before workspace operation
-		string[] descriptorPaths = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
-		var originalVersions = new Dictionary<string, string>();
+		// Assert
+		resultPath.Should().Be(expectedFileName);
+		bool versionFileExist = FileSystem.File.Exists(expectedFileName);
+		versionFileExist.Should().BeTrue();
+		FileSystem.FileInfo.New(expectedFileName).Length.Should().BeGreaterThan(80000);
+
+		string[] descriptorPaths = FileSystem.Directory.GetFiles(dir, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
+		descriptorPaths.Should().NotBeEmpty("because at least one package descriptor should exist");
+		// Check that at least one package has the updated version
+		bool foundUpdatedVersion = false;
 		foreach (string descriptorPath in descriptorPaths) {
-			string descriptorContent = File.ReadAllText(descriptorPath);
-			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
-			originalVersions[descriptorPath] = descriptorDto?.Descriptor.PackageVersion ?? "";
-		}
-		
-		try {
-			var envSettings = GetTestEnvironmentSettings();
-			var workspace = GetTestWorkspace(envSettings);
-
-			// Act - publish without specifying version
-			var resultPath = workspace.PublishToFile(workspaceCopyPath, outputFilePath, null);
-
-			// Assert
-			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
-			File.Exists(outputFilePath).Should().BeTrue("because the zip file should be created");
-			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000, "because the zip file should contain workspace data");
-			
-			// Verify that versions were not changed
-			foreach (string descriptorPath in descriptorPaths) {
-				string descriptorContent = File.ReadAllText(descriptorPath);
-				var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
-				string currentVersion = descriptorDto?.Descriptor.PackageVersion ?? "";
-				string originalVersion = originalVersions[descriptorPath];
-				currentVersion.Should().Be(originalVersion, 
-					$"because version in {descriptorPath} should remain unchanged when no version is provided");
-			}
-		} finally {
-			try {
-				if (Directory.Exists(tempRoot)) {
-					Directory.Delete(tempRoot, true);
-				}
-			} catch {
-				// ignore cleanup errors
+			string descriptorContent = FileSystem.File.ReadAllText(descriptorPath);
+			PackageDescriptorDto descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
+			if (descriptorDto?.Descriptor.PackageVersion == appVersion) {
+				foundUpdatedVersion = true;
+				break;
 			}
 		}
+		foundUpdatedVersion.Should().BeTrue($"because at least one package should have version updated to {appVersion}");
 	}
-
-	[Test]
-	[Description("Should publish workspace to file without updating versions when app version is empty string")]
-	public void PublishWorkspaceToFileWithEmptyVersionTest() {
-		// Arrange
-		string appName = "iframe-sample";
-		string originClioSourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory);
-		string originalWorkspacePath = Path.Combine(originClioSourcePath, "Examples", "workspaces", appName);
-		string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-		string workspaceCopyPath = Path.Combine(tempRoot, "workspace");
-		string outputDirectory = Path.Combine(tempRoot, "output");
-		string outputFilePath = Path.Combine(outputDirectory, "custom-output-empty-version.zip");
-		Directory.CreateDirectory(outputDirectory);
-		CopyDirectory(originalWorkspacePath, workspaceCopyPath);
-		
-		// Store original versions before workspace operation
-		string[] descriptorPaths = Directory.GetFiles(workspaceCopyPath, CreatioPackage.DescriptorName, SearchOption.AllDirectories);
-		var originalVersions = new Dictionary<string, string>();
-		foreach (string descriptorPath in descriptorPaths) {
-			string descriptorContent = File.ReadAllText(descriptorPath);
-			var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
-			originalVersions[descriptorPath] = descriptorDto?.Descriptor.PackageVersion ?? "";
-		}
-		
-		try {
-			var envSettings = GetTestEnvironmentSettings();
-			var workspace = GetTestWorkspace(envSettings);
-
-			// Act - publish with empty version string
-			var resultPath = workspace.PublishToFile(workspaceCopyPath, outputFilePath, "");
-
-			// Assert
-			resultPath.Should().Be(Path.GetFullPath(outputFilePath));
-			File.Exists(outputFilePath).Should().BeTrue("because the zip file should be created");
-			new FileInfo(outputFilePath).Length.Should().BeGreaterThan(80000, "because the zip file should contain workspace data");
-			
-			// Verify that versions were not changed
-			foreach (string descriptorPath in descriptorPaths) {
-				string descriptorContent = File.ReadAllText(descriptorPath);
-				var descriptorDto = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
-				string currentVersion = descriptorDto?.Descriptor.PackageVersion ?? "";
-				string originalVersion = originalVersions[descriptorPath];
-				currentVersion.Should().Be(originalVersion, 
-					$"because version in {descriptorPath} should remain unchanged when empty version is provided");
-			}
-		} finally {
-			try {
-				if (Directory.Exists(tempRoot)) {
-					Directory.Delete(tempRoot, true);
-				}
-			} catch {
-				// ignore cleanup errors
-			}
-		}
-	}
+	
 }
