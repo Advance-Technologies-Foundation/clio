@@ -205,6 +205,7 @@ namespace Clio.Common
 		}
 
 		public void CreateFromDirectory(string sourceDirectoryName, string destinationArchiveFileName) {
+			
 			ZipFile.CreateFromDirectory(sourceDirectoryName, destinationArchiveFileName);
 		}
 

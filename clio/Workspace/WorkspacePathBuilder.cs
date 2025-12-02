@@ -108,7 +108,9 @@ namespace Clio.Workspaces
 
 		private string GetRootPath() {
 			string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
-			DirectoryInfo directoryInfo = new DirectoryInfo(currentDirectory);
+
+			var directoryInfo = _fileSystem.GetDirectoryInfo(currentDirectory);
+			//DirectoryInfo directoryInfo = new DirectoryInfo(currentDirectory);
 			while (true) {
 				string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
 				if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath)) {
