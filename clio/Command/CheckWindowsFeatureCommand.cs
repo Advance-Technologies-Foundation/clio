@@ -33,8 +33,13 @@ public class CheckWindowsFeaturesCommand : Command<CheckWindowsFeaturesOptions>{
 	#region Methods: Public
 
 	public override int Execute(CheckWindowsFeaturesOptions options) {
+		if (!OperationSystem.Current.IsWindows) {
+			_logger.WriteError("This command is only available on Windows operating system.");
+			return 1;
+		}
+
 		List<WindowsFeature> missedComponents = _windowsFeatureManager.GetMissedComponents();
-		IEnumerable<WindowsFeature> requiredComponentStates = _windowsFeatureManager.GerRequiredComponent();
+		IEnumerable<WindowsFeature> requiredComponentStates = _windowsFeatureManager.GetRequiredComponent();
 		_logger.WriteLine(
 			"For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
 		_logger.WriteInfo($"{Environment.NewLine}Check started:");

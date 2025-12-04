@@ -1970,28 +1970,84 @@ clio stop --all
 - [Stop Creatio hosts](#stop)
 - [Uninstall Creatio](#uninstall-creatio)
 
-## check-windows-features
+## check-windows-features (Windows only)
 
-For automated check of Windows features required for Creatio installation execute command
+Check Windows system for required components needed for Creatio installation.
+
+**Note**: This command is only available on Windows operating system. When executed on macOS or Linux, it will return an error message with exit code 1.
+
+**Description**: Automated check of Windows features required for Creatio installation. This command will:
+- List all required Windows features
+- Display which components are installed
+- Display which components are missing
+
+**Usage**:
 ```bash
 clio check-windows-features
 ```
-## manage-windows-features
 
-To manage Windows features required for Creatio installation execute command
+**Exit codes**:
+- `0` - All required components are installed
+- `1` - Some components are missing or command execution failed
 
+**Example output**:
+```
+[INF] Check started:
+[INF] OK : NET-Framework-Core
+[INF] Not installed : NET-Framework-45-Core
+[ERR] Windows has missed components:
+[INF] Not installed : NET-Framework-45-Core
+```
+
+---
+
+## manage-windows-features (Windows only)
+
+Manage Windows features required for Creatio installation. Install, uninstall, or check the status of required Windows features.
+
+**Note**: This command is only available on Windows operating system. Administrator rights are required for install and uninstall operations. When executed on macOS or Linux, it will return an error message with exit code 1.
+
+**Description**: This command allows you to manage Windows features in three modes:
+
+**Modes**:
+
+### Check mode (-c)
+Verify the status of required Windows features without making any changes.
 ```bash
+clio manage-windows-features -c
+```
 
-# check
+### Install mode (-i)
+Install all missing required Windows features. Requires administrator rights.
+```bash
+clio manage-windows-features -i
+```
+
+### Uninstall mode (-u)
+Uninstall all required Windows features. Requires administrator rights.
+```bash
+clio manage-windows-features -u
+```
+
+**Exit codes**:
+- `0` - Operation completed successfully
+- `1` - Operation failed (missing features detected in check mode, or error during install/uninstall)
+
+**Example usage**:
+```bash
+# Check status
 clio manage-windows-features -c
 
-# install
+# Install missing features (run as administrator)
 clio manage-windows-features -i
 
-# uninstall
+# Uninstall features (run as administrator)  
 clio manage-windows-features -u
-
 ```
+
+**Troubleshooting**:
+- If you see "This command is only available on Windows operating system" - the command only works on Windows
+- For detailed information about Windows features, visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components
 ## Installing Creatio using Clio
 
 Clio provides functionality to install Creatio on a local machine using a zip file or an unzipped folder.

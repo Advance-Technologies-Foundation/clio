@@ -8,7 +8,7 @@ namespace Clio;
 
 [Verb("manage-windows-features", Aliases = new[] {"mwf", "mng-win-features"},
 	HelpText = "Install windows features required for Creatio")]
-internal class ManageWindowsFeaturesOptions
+public class ManageWindowsFeaturesOptions
 {
 
 	#region Properties: Public
@@ -20,7 +20,7 @@ internal class ManageWindowsFeaturesOptions
 	public bool InstallMode { get; set; }
 
 	[Option('u', "Uninstall", Required = false, HelpText = "Uninstall required features")]
-	public bool UnistallMode { get; set; }
+	public bool UninstallMode { get; set; }
 
 	#endregion
 
@@ -48,21 +48,26 @@ internal class ManageWindowsFeaturesCommand : Command<ManageWindowsFeaturesOptio
 	#region Methods: Public
 
 	public override int Execute(ManageWindowsFeaturesOptions options){
+		if (!OperationSystem.Current.IsWindows) {
+			_logger.WriteError("This command is only available on Windows operating system.");
+			return 1;
+		}
+
 		if (options.CheckMode) {
-			CheckRequiredFeatureOptions();
+			return CheckRequiredFeatureOptions();
 		} else if (options.InstallMode) {
-			InstallRequiredComponents();
-		} else if (options.UnistallMode) {
-			UninstallRequiredComponents();
+			return InstallRequiredComponents();
+		} else if (options.UninstallMode) {
+			return UninstallRequiredComponents();
 		} else {
 			_logger.WriteInfo("Please select mode");
 		}
 		return 0;
 	}
 
-	public void CheckRequiredFeatureOptions(){
+	public int CheckRequiredFeatureOptions(){
 		List<WindowsFeature> missedComponents = _windowsFeatureManager.GetMissedComponents();
-		IEnumerable<WindowsFeature> requiredComponentStates = _windowsFeatureManager.GerRequiredComponent();
+		IEnumerable<WindowsFeature> requiredComponentStates = _windowsFeatureManager.GetRequiredComponent();
 		_logger.WriteInfo(
 			"For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
 		_logger.WriteInfo($"{Environment.NewLine}Check started:");
@@ -71,23 +76,43 @@ internal class ManageWindowsFeaturesCommand : Command<ManageWindowsFeaturesOptio
 		}
 		Console.WriteLine();
 		if (missedComponents.Count > 0) {
-			_logger.WriteInfo("Windows has missed components:");
+			_logger.WriteError("Windows has missed components:");
 			foreach (WindowsFeature item in missedComponents) {
 				_logger.WriteInfo($"{item}");
 			}
+			return 1;
 		} else {
 			_logger.WriteInfo("All required components installed");
 		}
+		return 0;
 	}
 
-	public void InstallRequiredComponents(){
-		_windowsFeatureManager.InstallMissingFeatures();
-		_logger.WriteInfo("Done");
+	public int InstallRequiredComponents(){
+		try {
+			_windowsFeatureManager.InstallMissingFeatures();
+			_logger.WriteInfo("Done");
+			return 0;
+		} catch (Exception ex) {
+			_logger.WriteError($"Installation failed: {ex.Message}");
+			if (Program.IsDebugMode) {
+				_logger.WriteDebug($"Exception details: {ex}");
+			}
+			return 1;
+		}
 	}
 
-	public void UninstallRequiredComponents(){
-		_windowsFeatureManager.UnInstallMissingFeatures();
-		_logger.WriteInfo("Done");
+	public int UninstallRequiredComponents(){
+		try {
+			_windowsFeatureManager.UninstallMissingFeatures();
+			_logger.WriteInfo("Done");
+			return 0;
+		} catch (Exception ex) {
+			_logger.WriteError($"Uninstallation failed: {ex.Message}");
+			if (Program.IsDebugMode) {
+				_logger.WriteDebug($"Exception details: {ex}");
+			}
+			return 1;
+		}
 	}
 
 	#endregion

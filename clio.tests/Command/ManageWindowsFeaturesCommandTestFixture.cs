@@ -33,7 +33,7 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 		//Arrange
 		var options = new ManageWindowsFeaturesOptions {
 			InstallMode = actionName == "install",
-			UnistallMode = actionName == "uninstall"
+			UninstallMode = actionName == "uninstall"
 		};
 
 		//Act
@@ -45,8 +45,8 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 		if(actionName == "install") {
 			_windowsFeatureManager.Received(1).InstallMissingFeatures();
 		}
-		if(actionName == "ininstall") {
-			_windowsFeatureManager.Received(1).UnInstallMissingFeatures();
+		if(actionName == "uninstall") {
+			_windowsFeatureManager.Received(1).UninstallMissingFeatures();
 		}
 		
 		

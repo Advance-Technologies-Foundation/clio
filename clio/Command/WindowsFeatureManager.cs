@@ -13,13 +13,13 @@ public interface IWindowsFeatureManager
 	void InstallFeature(string featureName);
 	List<WindowsFeature> GetMissedComponents();
 
-	IEnumerable<WindowsFeature> GerRequiredComponent();
+	IEnumerable<WindowsFeature> GetRequiredComponent();
 
 	void UninstallFeature(string featureName);
 
 	void InstallMissingFeatures();
 
-	void UnInstallMissingFeatures();
+	void UninstallMissingFeatures();
 
 	int GetActionMaxLength(IEnumerable<string> items);
 
@@ -86,7 +86,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		return missedComponents;
 	}
 
-	public IEnumerable<WindowsFeature> GerRequiredComponent() {
+	public IEnumerable<WindowsFeature> GetRequiredComponent() {
 		var requirmentFeatures = new List<WindowsFeature>();
 		foreach (var item in RequirmentNETFrameworkFeatures) {
 			requirmentFeatures.Add(new WindowsFeature() {
@@ -119,8 +119,8 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		}
 	}
 
-	public void UnInstallMissingFeatures(){
-		IEnumerable<WindowsFeature> requirmentsFeature = GerRequiredComponent();
+	public void UninstallMissingFeatures(){
+		IEnumerable<WindowsFeature> requirmentsFeature = GetRequiredComponent();
 		int maxLengthComponentName = GetActionMaxLength(requirmentsFeature.Select(s => s.Name));
 		_consoleProgressBar.MaxActionNameLength = maxLengthComponentName;
 		foreach (WindowsFeature feature in requirmentsFeature) {
