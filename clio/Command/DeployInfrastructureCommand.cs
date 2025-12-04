@@ -24,10 +24,6 @@ namespace Clio.Command
 		[Option("no-verify", Required = false, Default = false,
 			HelpText = "Skip connection verification after deployment")]
 		public bool SkipVerification { get; set; }
-
-		[Option("force", Required = false, Default = false,
-			HelpText = "Force recreation of namespace without prompting if it already exists")]
-		public bool Force { get; set; }
 	}
 
 	public class DeployInfrastructureCommand : Command<DeployInfrastructureOptions>
@@ -72,9 +68,9 @@ namespace Clio.Command
 					return 1;
 				}
 
-				// Step 1.5: Check and handle existing namespace
-				const string namespaceName = "clio-infrastructure";
-				if (!CheckAndHandleExistingNamespace(namespaceName, options.Force))
+			// Step 1.5: Check and handle existing namespace
+			const string namespaceName = "clio-infrastructure";
+			if (!CheckAndHandleExistingNamespace(namespaceName))
 				{
 					_logger.WriteInfo("Infrastructure deployment cancelled by user");
 					return 1;
@@ -123,106 +119,100 @@ namespace Clio.Command
 			}
 		}
 
-		private bool CheckAndHandleExistingNamespace(string namespaceName, bool forceRecreate)
+	private bool CheckAndHandleExistingNamespace(string namespaceName)
+	{
+		_logger.WriteInfo("[1/5] Checking for existing namespace...");
+		
+		try
 		{
-			_logger.WriteInfo("[1/5] Checking for existing namespace...");
-			
-			try
+			if (!_k8Commands.NamespaceExists(namespaceName))
 			{
-				if (!_k8Commands.NamespaceExists(namespaceName))
-				{
-					_logger.WriteInfo("✓ No existing namespace found");
-					
-					// Always check for orphaned PersistentVolumes regardless of --force flag
-					// They can appear after namespace deletion and prevent new PVC binding
-					// Wait a moment for Released PV status to stabilize
-					System.Threading.Thread.Sleep(2000);
-					_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
-					CleanupOrphanedPersistentVolumes();
-					
-					_logger.WriteInfo("Proceeding with deployment");
-					return true;
-				}
-
-				_logger.WriteWarning($"⚠ Namespace '{namespaceName}' already exists");
-				_logger.WriteLine();
-
-				if (forceRecreate)
-				{
-					_logger.WriteInfo("Deleting existing namespace (--force flag)...");
-					if (!DeleteExistingNamespace(namespaceName))
-					{
-						_logger.WriteError("Failed to delete existing namespace");
-						return false;
-					}
-					_logger.WriteInfo("✓ Namespace deleted successfully");
-					
-					// After namespace deletion, clean up any Released PersistentVolumes
-					// They can prevent new PVC binding
-					_logger.WriteInfo("Checking for orphaned PersistentVolumes after namespace deletion...");
-					CleanupOrphanedPersistentVolumes();
-					
-					return true;
-				}
-
-				// Ask user for confirmation
-				_logger.WriteInfo("Do you want to recreate it? (y/n)");
-				string answer = Console.ReadLine();
-
-				if (string.IsNullOrWhiteSpace(answer) || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase))
-				{
-					_logger.WriteInfo("User declined namespace recreation");
-					return false;
-				}
-
-				if (!DeleteExistingNamespace(namespaceName))
-				{
-					_logger.WriteError("Failed to delete existing namespace");
-					return false;
-				}
-
-				_logger.WriteInfo("✓ Namespace deleted successfully");
+				_logger.WriteInfo("✓ No existing namespace found");
 				
-				// After namespace deletion, clean up any Released PersistentVolumes
-				// They can prevent new PVC binding
-				_logger.WriteInfo("Checking for orphaned PersistentVolumes after namespace deletion...");
+				// Always check for orphaned PersistentVolumes
+				// They can appear after namespace deletion and prevent new PVC binding
+				// Wait a moment for Released PV status to stabilize
+				System.Threading.Thread.Sleep(2000);
+				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
 				CleanupOrphanedPersistentVolumes();
 				
+				_logger.WriteInfo("Proceeding with deployment");
 				return true;
 			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"Error checking namespace: {ex.Message}");
-				return false;
-			}
-		}
 
-		private void CleanupOrphanedPersistentVolumes()
+			// Namespace already exists - this is an error
+			_logger.WriteError($"✗ Namespace '{namespaceName}' already exists");
+			_logger.WriteLine();
+			_logger.WriteError("To recreate the infrastructure, first delete it with:");
+			_logger.WriteError("  clio delete-infrastructure [--force]");
+			_logger.WriteLine();
+			_logger.WriteError("Then deploy again:");
+			_logger.WriteError("  clio deploy-infrastructure");
+			_logger.WriteLine();
+			
+			return false;
+		}
+		catch (Exception ex)
+		{
+			_logger.WriteError($"Error checking namespace: {ex.Message}");
+			return false;
+		}
+	}		private void CleanupOrphanedPersistentVolumes()
 		{
 			try
 			{
 				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
 				
-				var releasedPvs = _k8Commands.GetReleasedPersistentVolumes("clio-infrastructure");
+				int maxAttempts = 5;
+				int attemptCount = 0;
+				var allDeletedPvs = new HashSet<string>();
 				
-				if (releasedPvs.Count == 0)
+				while (attemptCount < maxAttempts)
 				{
-					_logger.WriteInfo("✓ No orphaned PersistentVolumes found");
-					return;
+					// Get ALL orphaned PV (not just Released) to handle various states during cleanup
+					var orphanedPvs = _k8Commands.GetOrphanedPersistentVolumes("clio-infrastructure");
+					
+					if (orphanedPvs.Count == 0)
+					{
+						if (allDeletedPvs.Count == 0)
+						{
+							_logger.WriteInfo("✓ No orphaned PersistentVolumes found");
+						}
+						else
+						{
+							_logger.WriteInfo($"✓ All {allDeletedPvs.Count} orphaned PersistentVolume(s) cleaned up successfully");
+						}
+						return;
+					}
+					
+					if (attemptCount == 0)
+					{
+						_logger.WriteInfo($"Found {orphanedPvs.Count} orphaned PersistentVolume(s), cleaning up...");
+					}
+					
+					foreach (var pvName in orphanedPvs)
+					{
+						if (_k8Commands.DeletePersistentVolume(pvName))
+						{
+							_logger.WriteInfo($"  ✓ {pvName}");
+							allDeletedPvs.Add(pvName);
+						}
+						else
+						{
+							_logger.WriteWarning($"  ⚠ Failed to delete {pvName}");
+						}
+					}
+					
+					attemptCount++;
+					if (attemptCount < maxAttempts && orphanedPvs.Count > 0)
+					{
+						System.Threading.Thread.Sleep(1000); // Wait before retrying
+					}
 				}
 				
-				_logger.WriteInfo($"Found {releasedPvs.Count} orphaned PersistentVolume(s), cleaning up...");
-				
-				foreach (var pvName in releasedPvs)
+				if (allDeletedPvs.Count > 0)
 				{
-					if (_k8Commands.DeletePersistentVolume(pvName))
-					{
-						_logger.WriteInfo($"  ✓ {pvName}");
-					}
-					else
-					{
-						_logger.WriteWarning($"  ⚠ Failed to delete {pvName}");
-					}
+					_logger.WriteInfo($"✓ Cleaned up {allDeletedPvs.Count} orphaned PersistentVolume(s)");
 				}
 			}
 			catch (Exception ex)
@@ -231,49 +221,7 @@ namespace Clio.Command
 			}
 		}
 
-		private bool DeleteExistingNamespace(string namespaceName)
-		{
-			_logger.WriteInfo($"Deleting namespace '{namespaceName}' and all its contents...");
-			
-			try
-			{
-				var result = _k8Commands.CleanupAndDeleteNamespace(namespaceName, "clio-infrastructure");
-
-				if (result.DeletedPersistentVolumes.Count > 0)
-				{
-					_logger.WriteInfo("  Cleaned up released PersistentVolumes:");
-					foreach (var pvName in result.DeletedPersistentVolumes)
-					{
-						_logger.WriteInfo($"    ✓ {pvName}");
-					}
-				}
-
-				if (!result.Success)
-				{
-					_logger.WriteError(result.Message);
-					return false;
-				}
-
-				if (!result.NamespaceFullyDeleted)
-				{
-					_logger.WriteWarning($"⚠ {result.Message}");
-					System.Threading.Thread.Sleep(5000); // Give it extra time
-				}
-				else
-				{
-					_logger.WriteInfo($"✓ {result.Message}");
-				}
-
-				return true;
-			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"Error deleting namespace: {ex.Message}");
-				return false;
-			}
-		}
-
-		private bool CheckKubectlInstalled()
+	private bool CheckKubectlInstalled()
 		{
 			_logger.WriteInfo("[1/5] Checking kubectl installation...");
 			try
@@ -328,6 +276,12 @@ namespace Clio.Command
 		private bool DeployInfrastructure(string infrastructurePath)
 		{
 			_logger.WriteInfo("[3/5] Deploying infrastructure to Kubernetes...");
+			_logger.WriteLine();
+
+			// Before deploying infrastructure, ensure NO orphaned PV exist from previous deployments
+			// This is critical for PVC binding to work properly
+			_logger.WriteInfo("Pre-deployment cleanup: Removing any orphaned PersistentVolumes...");
+			CleanupOrphanedPersistentVolumes();
 			_logger.WriteLine();
 
 			// Define deployment order - order matters for dependencies

@@ -1,179 +1,100 @@
-# Спецификация: Команда `find-local-workspaces`
+# Specification: Find Local Workspaces Command
 
-## Описание
-Найти все clio workspaces в файловой системе с возможностью ограничения области поиска.
+## Description
+Find all clio workspaces in the file system with ability to limit search scope.
 
-## Требования
+## Requirements
 
-### Функциональность
-- Рекурсивный поиск всех clio workspaces в файловой системе
-- Поиск без ограничения глубины вложенности
-- Возможность ограничения области поиска конкретной папкой
+### Functionality
+- Recursive search of all clio workspaces in the file system
+- Search without nesting depth limitation
+- Ability to limit search scope to specific folder
 
-### Поведение
+### Behavior
 
-#### Поиск по всей системе (без параметров)
+#### Search across entire system (no parameters)
 ```bash
 clio find-local-workspaces
 ```
-- Сканирует все диски и папки
-- Ищет везде на файловой системе
+- Scans all disks and folders
+- Searches everywhere in the file system
 
-#### Поиск в конкретной папке
+#### Search in specific folder
 ```bash
 clio find-local-workspaces -d "/path/to/folder"
 clio find-local-workspaces --directory "/path/to/folder"
 ```
-- Сканирует только указанную папку и все подпапки
-- Глубина вложенности неограниченна
+- Scans only specified folder and all subfolders
+- Nesting depth is unlimited
 
-### Идентификация Workspace
-- Workspace определяется наличием файла `.clio` в директории
-- Возвращает полный путь к workspace'у
+### Workspace Identification
+- Workspace is identified by presence of `.clio` file in directory
+- Returns full path to workspace
 
-## Синтаксис команды
+## Command Syntax
 
 ```bash
 clio find-local-workspaces [OPTIONS]
 ```
 
-### Параметры
-- `-d`, `--directory` — (опционально) Путь к папке для поиска
-  - Тип: строка
-  - Обязательно: нет
-  - Значение по умолчанию: корень файловой системы
+### Parameters
+- `-d`, `--directory` — (optional) Path to folder for search
+  - Type: string
+  - Required: no
+  - Default: file system root
 
-## Вывод
-Список найденных workspace'ов с полными путями к каждому (один workspace на строку)
+## Output
+List of found workspaces with full paths to each (one workspace per line)
 
-## Примеры использования
+## Usage Examples
 
-### Поиск всех workspace'ов в системе
+### Find all workspaces in system
 ```bash
 clio find-local-workspaces
 ```
 
-Вывод:
+Output:
 ```
 /Users/dev/workspace1
 /Users/dev/projects/workspace2
 /Volumes/Data/workspace3
 ```
 
-### Поиск в конкретной папке
+### Search in specific folder
 ```bash
 clio find-local-workspaces -d "/Users/dev"
 ```
 
-Вывод:
+Output:
 ```
 /Users/dev/workspace1
 /Users/dev/projects/workspace2
 ```
 
-## Кроссплатформенность
-- Работает на Windows, macOS и Linux
-- Корректно обрабатывает разделители пути для каждой ОС
+## Cross-Platform Support
+- Works on Windows, macOS, and Linux
+- Correctly handles path separators for each OS
 
-## Обработка ошибок
-- Пропускать папки, к которым нет доступа
-- Не ломать поиск при недоступных директориях
-- Вывести предупреждение о недоступных папках (опционально)
+## Error Handling
+- Skip folders without access
+- Don't break search on inaccessible directories
+- Output warning about inaccessible folders (optional)
 
 ---
 
-# План реализации
+# Implementation Plan
 
-## Обзор
-Реализовать команду `find-local-workspaces` для рекурсивного поиска всех clio workspaces. Команда будет сканировать файловую систему, искать папки с файлом `.clio` и выводить их полные пути.
+## Overview
+Implement `find-local-workspaces` command for recursive search of all clio workspaces. Command will scan file system, look for folders with `.clio` file and output their full paths.
 
-## Шаги реализации
+## Implementation Steps
 
-### 1. Создать класс команды и опций
-**Файл:** `clio/Command/FindLocalWorkspacesCommand.cs`
+### 1. Create Command and Options Class
+**File:** `clio/Command/FindLocalWorkspacesCommand.cs`
 
-Содержит:
-- `FindLocalWorkspacesOptions` — класс с параметром `-d`/`--directory`
-- `FindLocalWorkspacesCommand` — наследует `Command<FindLocalWorkspacesOptions>`
+Contains:
+- `FindLocalWorkspacesOptions` — class with `-d`/`--directory` parameter
+- `FindLocalWorkspacesCommand` — inherits `Command<FindLocalWorkspacesOptions>`
 
-### 2. Реализовать логику поиска
-- Рекурсивный поиск через `IFileSystem` (не System.IO)
-- Проверка наличия файла `.clio` в каждой директории
-- Обработка исключений для недоступных папок
-- Кроссплатформенная поддержка путей
-
-### 3. Интегрировать в Program.cs
-- Добавить в массив `CommandDescriptions`
-- Добавить обработку в метод `Execute()`
-
-### 4. Обновить документацию Commands.md
-- Добавить раздел о команде
-- Привести примеры использования
-- Описать синтаксис параметров
-
-### 5. Написать unit-тесты
-**Файл:** `Clio.Tests/FindLocalWorkspacesCommandTests.cs`
-
-Тесты должны:
-- Наследовать `BaseCommandTests<FindLocalWorkspacesOptions>`
-- Проверить документацию команды в `Commands.md`
-- Покрыть сценарии:
-  - Поиск без параметров
-  - Поиск в конкретной папке
-  - Обработка недоступных директорий
-  - Обработка путей с пробелами и спецсимволами
-  - Кроссплатформенность путей
-
-## Ключевые технические требования
-
-### Использование IFileSystem
-```csharp
-// ✅ ПРАВИЛЬНО - использовать IFileSystem
-var directories = _fileSystem.Directory.EnumerateFileSystemEntries(path);
-
-// ❌ НЕПРАВИЛЬНО - не использовать System.IO
-var directories = Directory.EnumerateDirectories(path);
-```
-
-### Идентификация Workspace
-- Проверить наличие файла `.clio` в директории
-- Использовать `_fileSystem.File.Exists(Path.Combine(dir, ".clio"))`
-
-### Обработка ошибок
-- Try-catch вокруг операций с файловой системой
-- Пропускать недоступные директории
-- Логировать предупреждения
-
-### Return Codes
-- `0` — успешно, workspace'ы найдены или не найдены
-- `1` — ошибка выполнения
-
-## Архитектурные решения
-
-### Где искать при отсутствии пути (-d)?
-- **macOS/Linux:** начать с `/`
-- **Windows:** сканировать все логические диски или пользовательские пути
-- **Рекомендация:** начать с домашней директории пользователя для быстрого поиска
-
-### Формат вывода
-- Один полный путь на строку
-- Сортировка по алфавиту для консистентности
-- Пусто, если ничего не найдено (exit code 0)
-
-### Производительность
-- Использовать асинхронный поиск для больших структур папок (опционально)
-- Кэшировать результаты в пределах одного вызова команды
-
-## Файлы для изменения
-
-1. **Создать:** `clio/Command/FindLocalWorkspacesCommand.cs`
-2. **Изменить:** `clio/Program.cs` — добавить команду
-3. **Изменить:** `clio/Commands.md` — добавить документацию
-4. **Создать:** `Clio.Tests/FindLocalWorkspacesCommandTests.cs`
-
-## Готовность к интеграции
-- ✅ Следует существующим паттернам Clio
-- ✅ Кроссплатформенная реализация
-- ✅ Полное тестовое покрытие
-- ✅ Документирована в Commands.md
-- ✅ Использует `IFileSystem` для тестируемости
+### 2. Implement Search Logic
+- Recursive search via `IFileSystem` (not System.IO)

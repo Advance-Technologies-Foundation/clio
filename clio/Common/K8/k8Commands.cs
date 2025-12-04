@@ -30,6 +30,8 @@ public interface Ik8Commands
 
 	IList<string> GetReleasedPersistentVolumes(string namespacePrefix);
 
+	IList<string> GetOrphanedPersistentVolumes(string namespacePrefix);
+
 	bool DeletePersistentVolume(string pvName);
 
 	bool CleanupReleasedVolumes(string namespacePrefix);
@@ -352,12 +354,79 @@ public class k8Commands : Ik8Commands
 	{
 		try
 		{
-			_client.CoreV1.DeletePersistentVolume(pvName);
-			return true;
+			// Use aggressive deletion options
+			var deleteOptions = new V1DeleteOptions
+			{
+				GracePeriodSeconds = 0,
+				PropagationPolicy = "Foreground" // Force delete even if there are finalizers
+			};
+			_client.CoreV1.DeletePersistentVolume(pvName, deleteOptions);
+			
+			// Verify deletion by checking if PV still exists
+			// Give it a moment for the deletion to be processed
+			System.Threading.Thread.Sleep(300);
+			
+			try
+			{
+				var pv = _client.CoreV1.ReadPersistentVolume(pvName);
+				// If we got here, PV still exists - deletion failed
+				// This can happen if PV has finalizers or is stuck
+				return false;
+			}
+			catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+			{
+				// PV was deleted successfully (404 = not found)
+				return true;
+			}
+		}
+		catch (k8s.Autorest.HttpOperationException deleteEx)
+		{
+			// Even if deletion throws an exception, check if it's actually gone
+			System.Threading.Thread.Sleep(300);
+			try
+			{
+				_client.CoreV1.ReadPersistentVolume(pvName);
+				return false;
+			}
+			catch (k8s.Autorest.HttpOperationException readEx) when (readEx.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+			{
+				// It's actually deleted despite the exception
+				return true;
+			}
+		}
+		catch (Exception ex)
+		{
+			// Unknown exception - fail
+			return false;
+		}
+	}
+
+	public IList<string> GetOrphanedPersistentVolumes(string namespacePrefix)
+	{
+		try
+		{
+			var pvs = _client.CoreV1.ListPersistentVolume().Items;
+			var orphanedPvs = new List<string>();
+			
+			foreach (var pv in pvs)
+			{
+				// Check if PV has a ClaimRef that points to our namespace
+				if (pv.Spec?.ClaimRef != null)
+				{
+					var claimNamespace = pv.Spec.ClaimRef.NamespaceProperty;
+					
+					if (!string.IsNullOrEmpty(claimNamespace) && claimNamespace.StartsWith(namespacePrefix))
+					{
+						orphanedPvs.Add(pv.Metadata.Name);
+					}
+				}
+			}
+
+			return orphanedPvs;
 		}
 		catch (Exception)
 		{
-			return false;
+			return new List<string>();
 		}
 	}
 
@@ -445,9 +514,10 @@ public class k8Commands : Ik8Commands
 		{
 			var deletedPvs = new List<string>();
 			
-			// Step 1: Clean up released PersistentVolumes (before namespace deletion)
-			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
-			foreach (var pvName in releasedPvs)
+			// Step 1: Get all PV related to this namespace BEFORE deletion and attempt to delete them
+			// This includes Bound, Released, Available, etc. - any PV with ClaimRef to this namespace
+			var pvsBefore = GetOrphanedPersistentVolumes(namespacePrefix);
+			foreach (var pvName in pvsBefore)
 			{
 				if (DeletePersistentVolume(pvName))
 				{
@@ -466,8 +536,8 @@ public class k8Commands : Ik8Commands
 				};
 			}
 
-			// Step 3: Wait for namespace deletion (up to 30 seconds)
-			int maxWaitAttempts = 15;
+			// Step 3: Wait for namespace deletion (up to 40 seconds)
+			int maxWaitAttempts = 20;
 			int delaySeconds = 2;
 			int attemptCount = 0;
 			
@@ -479,17 +549,28 @@ public class k8Commands : Ik8Commands
 
 			bool namespaceFullyDeleted = !NamespaceExists(namespaceName);
 
-			// Step 4: Clean up any newly Released PersistentVolumes (after namespace deletion)
-			// These appear after the namespace is deleted
-			var newlyReleasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
-			foreach (var pvName in newlyReleasedPvs)
+			// Step 4: Aggressively clean up any remaining PV (attempt multiple times)
+			// Even if they weren't found in Phase 1, they might appear or transition after namespace deletion
+			for (int attempt = 0; attempt < 15; attempt++)
 			{
-				if (DeletePersistentVolume(pvName))
+				var pvsAfter = GetOrphanedPersistentVolumes(namespacePrefix);
+				if (pvsAfter.Count == 0)
+					break;
+					
+				foreach (var pvName in pvsAfter)
 				{
-					if (!deletedPvs.Contains(pvName))
+					if (DeletePersistentVolume(pvName))
 					{
-						deletedPvs.Add(pvName);
+						if (!deletedPvs.Contains(pvName))
+						{
+							deletedPvs.Add(pvName);
+						}
 					}
+				}
+				
+				if (attempt < 14 && pvsAfter.Count > 0)
+				{
+					System.Threading.Thread.Sleep(1000); // Longer wait between retry attempts
 				}
 			}
 			

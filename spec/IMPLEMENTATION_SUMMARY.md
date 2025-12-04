@@ -1,61 +1,61 @@
 # Deploy Infrastructure Force Recreate - Implementation Summary
 
-## ✅ Статус: ЗАВЕРШЕНО
+## ✅ Status: COMPLETED
 
-Успешно реализована полная функциональность для безопасного пересоздания Kubernetes namespace при развертывании инфраструктуры и добавлена новая команда для удаления инфраструктуры.
-
----
-
-## 📋 Что было реализовано
-
-### 1. Расширение K8S сервисов (этап 1)
-
-**Файл:** `clio/Common/K8/k8Commands.cs`
-
-✅ Добавлены два новых метода в интерфейс `Ik8Commands`:
-- `bool NamespaceExists(string namespaceName)` - проверка существования namespace
-- `bool DeleteNamespace(string namespaceName)` - удаление namespace со всем содержимым
-
-✅ Реализованы оба метода в классе `k8Commands`:
-- Использует `IKubernetes` клиент из k8s библиотеки
-- Обработка HTTP 404 ошибок при проверке существования
-- Поддержка форграунд удаления с таймаутом на graceful shutdown
-- Обработка исключений с возвращением boolean результата
+Successfully implemented complete functionality for safe recreation of Kubernetes namespace during infrastructure deployment and added new command for infrastructure deletion.
 
 ---
 
-### 2. Модификация DeployInfrastructureCommand (этап 2)
+## 📋 What Was Implemented
 
-**Файл:** `clio/Command/DeployInfrastructureCommand.cs`
+### 1. K8S Services Extension (Stage 1)
 
-#### Добавлены параметры:
+**File:** `clio/Common/K8/k8Commands.cs`
+
+✅ Added two new methods to the `Ik8Commands` interface:
+- `bool NamespaceExists(string namespaceName)` - check namespace existence
+- `bool DeleteNamespace(string namespaceName)` - delete namespace with all contents
+
+✅ Both methods implemented in the `k8Commands` class:
+- Uses `IKubernetes` client from k8s library
+- HTTP 404 error handling when checking existence
+- Support for foreground deletion with graceful shutdown timeout
+- Exception handling with boolean result return
+
+---
+
+### 2. DeployInfrastructureCommand Modification (Stage 2)
+
+**File:** `clio/Command/DeployInfrastructureCommand.cs`
+
+#### Added Parameters:
 ```csharp
 [Option("force", Required = false, Default = false,
     HelpText = "Force recreation of namespace without prompting if it already exists")]
 public bool Force { get; set; }
 ```
 
-#### Добавлена логика в метод Execute():
-- Шаг [1/5]: Проверка существования namespace перед началом развертывания
-- Если namespace существует:
-  - При флаге `--force` - автоматически удаляет без вопросов
-  - Иначе - интерактивный запрос пользователю
-  - Ждет полного удаления namespace (максимум 10 попыток с интервалом 2 сек)
+#### Added Logic to Execute() Method:
+- Step [1/5]: Check namespace existence before deployment starts
+- If namespace exists:
+  - With `--force` flag - automatically deletes without asking
+  - Otherwise - interactive user prompt
+  - Waits for complete namespace deletion (maximum 10 attempts with 2 sec intervals)
 
-#### Добавлены приватные методы:
-- `CheckAndHandleExistingNamespace()` - основная логика проверки и обработки
-- `DeleteExistingNamespace()` - удаление с логированием и ожиданием
+#### Added Private Methods:
+- `CheckAndHandleExistingNamespace()` - main check and handling logic
+- `DeleteExistingNamespace()` - deletion with logging and waiting
 
-#### Обновлены номера шагов:
-- Изменены с [1/4] на [1/5] для всех шагов
+#### Updated Step Numbers:
+- Changed from [1/4] to [1/5] for all steps
 
 ---
 
-### 3. Создание DeleteInfrastructureCommand (этап 3)
+### 3. DeleteInfrastructureCommand Creation (Stage 3)
 
-**Файл:** `clio/Command/DeployInfrastructureCommand.cs` (в конце файла)
+**File:** `clio/Command/DeployInfrastructureCommand.cs` (at end of file)
 
-#### Новый класс опций:
+#### New Options Class:
 ```csharp
 [Verb("delete-infrastructure", Aliases = new[] { "di-delete", "remove-infrastructure" },
     HelpText = "Delete Kubernetes infrastructure for Creatio")]
@@ -67,136 +67,136 @@ public class DeleteInfrastructureOptions
 }
 ```
 
-#### Новый класс команды:
-- Наследуется от `Command<DeleteInfrastructureOptions>`
-- Проверяет наличие namespace
-- Запрашивает подтверждение у пользователя (если не --force)
-- Удаляет namespace с ожиданием завершения (до 15 попыток)
-- Информативное логирование на всех этапах
+#### New Command Class:
+- Inherits from `Command<DeleteInfrastructureOptions>`
+- Checks namespace existence
+- Requests user confirmation (unless --force)
+- Deletes namespace with completion waiting (up to 15 attempts)
+- Informative logging on all stages
 
-#### Функциональность:
-- Если namespace не существует - выход с кодом 0
-- Если существует - удаление с логированием
-- Ожидание полного удаления ресурсов
-- Обработка ошибок и исключений
+#### Functionality:
+- If namespace doesn't exist - exit with code 0
+- If exists - deletion with logging
+- Wait for complete resource deletion
+- Error and exception handling
 
 ---
 
-### 4. Регистрация команд (этап 4)
+### 4. Command Registration (Stage 4)
 
-**Файл 1:** `clio/BindingsModule.cs`
+**File 1:** `clio/BindingsModule.cs`
 ```csharp
 containerBuilder.RegisterType<DeleteInfrastructureCommand>();
 ```
 
-**Файл 2:** `clio/Program.cs`
-- Добавлен `typeof(DeleteInfrastructureOptions)` в массив `CommandOption`
-- Добавлена обработка в switch выражении `ExecuteCommandWithOption`:
+**File 2:** `clio/Program.cs`
+- Added `typeof(DeleteInfrastructureOptions)` to `CommandOption` array
+- Added handling in `ExecuteCommandWithOption` switch expression:
 ```csharp
 DeleteInfrastructureOptions opts => Resolve<DeleteInfrastructureCommand>().Execute(opts),
 ```
 
 ---
 
-### 5. Документация (этап 5)
+### 5. Documentation (Stage 5)
 
-**Файл:** `clio/Commands.md`
+**File:** `clio/Commands.md`
 
-✅ Обновлен раздел `deploy-infrastructure`:
-- Добавлено описание проверки существующего namespace
-- Добавлены примеры использования с `--force` флагом
-- Обновлены номера шагов с [1/4] на [1/5]
-- Добавлены примеры вывода с новым шагом [1/5]
-- Добавлена информация о комбинировании опций
+✅ Updated `deploy-infrastructure` section:
+- Added description of existing namespace check
+- Added examples of usage with `--force` flag
+- Updated step numbers from [1/4] to [1/5]
+- Added output examples with new step [1/5]
+- Added information about option combining
 
-✅ Добавлен новый раздел `delete-infrastructure`:
-- Полное описание команды
-- Примеры использования (с/без --force)
-- Информация о параметрах
-- Пример вывода команды
-- Troubleshooting раздел
-- Примечания о потере данных
-
----
-
-## 🧪 Проверка компиляции
-
-✅ **Проект успешно скомпилирован в Debug конфигурации**
-- Нет ошибок компиляции
-- Все warnings это существующие проблемы в коде
-- NuGet пакет успешно создан: `clio.8.0.1.72.nupkg`
+✅ Added new `delete-infrastructure` section:
+- Complete command description
+- Usage examples (with/without --force)
+- Parameter information
+- Command output example
+- Troubleshooting section
+- Data loss notes
 
 ---
 
-## 🎯 Возможности использования
+## 🧪 Compilation Check
 
-### Команда `deploy-infrastructure`:
+✅ **Project successfully compiled in Debug configuration**
+- No compilation errors
+- All warnings are pre-existing issues in code
+- NuGet package created successfully: `clio.8.0.1.72.nupkg`
+
+---
+
+## 🎯 Usage Capabilities
+
+### `deploy-infrastructure` Command:
 ```bash
-# Развертывание с проверкой (интерактивно)
+# Deploy with check (interactive)
 clio deploy-infrastructure
 
-# Принудительное пересоздание без вопросов
+# Force recreation without asking
 clio deploy-infrastructure --force
 
-# С пользовательским путем
+# With custom path
 clio deploy-infrastructure --path /custom/path
 
-# Без проверки подключений
+# Without connection verification
 clio deploy-infrastructure --no-verify
 
-# Комбинация опций
+# Combination of options
 clio deploy-infrastructure --force --no-verify
 ```
 
-### Команда `delete-infrastructure`:
+### `delete-infrastructure` Command:
 ```bash
-# Удаление с подтверждением
+# Delete with confirmation
 clio delete-infrastructure
 
-# Принудительное удаление
+# Force deletion without confirmation
 clio delete-infrastructure --force
 
-# Альтернативные названия
+# Alternative names
 clio di-delete
 clio remove-infrastructure
 ```
 
 ---
 
-## 📊 Изменения по файлам
+## 📊 Changes by File
 
-| Файл | Тип изменения | Описание |
-|------|---------------|---------|
-| `clio/Common/K8/k8Commands.cs` | Добавление | Два новых метода в интерфейс и реализацию |
-| `clio/Command/DeployInfrastructureCommand.cs` | Добавление | Параметр --force, логика проверки, новая команда |
-| `clio/BindingsModule.cs` | Добавление | Регистрация DeleteInfrastructureCommand в DI |
-| `clio/Program.cs` | Добавление | Регистрация команды в парсере CommandLine |
-| `clio/Commands.md` | Обновление | Документация для обеих команд |
-
----
-
-## ✨ Особенности реализации
-
-1. **Безопасность**: Интерактивное подтверждение перед удалением (может быть пропущено с --force)
-
-2. **Robustness**: Ожидание полного удаления namespace перед продолжением
-
-3. **Информативность**: Подробное логирование всех этапов выполнения
-
-4. **Совместимость**: Следует существующему архитектурному паттерну проекта
-
-5. **Готовность к тестированию**: Все методы написаны с учетом возможности модульного тестирования
+| File | Change Type | Description |
+|------|-------------|---------|
+| `clio/Common/K8/k8Commands.cs` | Addition | Two new methods to interface and implementation |
+| `clio/Command/DeployInfrastructureCommand.cs` | Addition | --force parameter, check logic, new command |
+| `clio/BindingsModule.cs` | Addition | DeleteInfrastructureCommand registration in DI |
+| `clio/Program.cs` | Addition | Command registration in CommandLine parser |
+| `clio/Commands.md` | Update | Documentation for both commands |
 
 ---
 
-## 🔍 Готово к следующим шагам
+## ✨ Implementation Features
 
-- ✅ Написание юнит тестов для новых методов
-- ✅ Интеграционное тестирование
+1. **Safety**: Interactive confirmation before deletion (can be skipped with --force)
+
+2. **Robustness**: Waits for complete namespace deletion before proceeding
+
+3. **Informativeness**: Detailed logging of all execution stages
+
+4. **Compatibility**: Follows existing project architectural patterns
+
+5. **Testability**: All methods written with unit testing in mind
+
+---
+
+## 🔍 Ready for Next Steps
+
+- ✅ Write unit tests for new methods
+- ✅ Integration testing
 - ✅ Code review
-- ✅ Merge в master
+- ✅ Merge to master
 
 ---
 
-**Дата завершения:** 4 декабря 2025  
-**Статус:** Готово к тестированию и передаче в продакшен
+**Completion Date:** December 4, 2025  
+**Status:** Ready for testing and production release

@@ -1,12 +1,12 @@
-# Анализ и улучшение команды deploy-creatio
+# Analysis and Improvement of deploy-creatio Command
 
-## Текущее состояние
+## Current State
 
-### Основной файл: `CreatioInstallerService.cs`
+### Main File: `CreatioInstallerService.cs`
 
-Команда `deploy-creatio` (aliases: `dc`, `ic`, `install-creation`) в настоящее время:
+The `deploy-creatio` command (aliases: `dc`, `ic`, `install-creation`) currently:
 
-**Обязательно использует IIS для развертывания:**
+**Mandatory uses IIS for deployment:**
 ```csharp
 int createSiteResult = dbRestoreResult switch {
     0 => CreateIISSite(unzippedDirectory, options).GetAwaiter().GetResult(),
@@ -14,30 +14,30 @@ int createSiteResult = dbRestoreResult switch {
 };
 ```
 
-**Проблемы текущей реализации:**
-1. ❌ Жестко привязано к IIS (только для Windows)
-2. ❌ На macOS и Linux команда не работает (не может создать IIS сайт)
-3. ❌ Нет способа явно запретить использование IIS на Windows
-4. ❌ Нет автоопределения ОС
-5. ❌ Нет прямого запуска через `dotnet Terrasoft.WebHost.dll` на других платформах
+**Issues with current implementation:**
+1. ❌ Tightly coupled to IIS (Windows only)
+2. ❌ Doesn't work on macOS and Linux (cannot create IIS site)
+3. ❌ No way to explicitly disable IIS on Windows
+4. ❌ No automatic OS detection
+5. ❌ No direct launch via `dotnet Terrasoft.WebHost.dll` on other platforms
 
-### Архитектура развертывания:
+### Deployment Architecture:
 
 ```
 Execute()
-  ├─ Распаковка ZIP файла
-  ├─ Проверка и создание БД (MSSQL или PostgreSQL)
-  ├─ Инициализация инфраструктуры (Redis, pgAdmin, PostgreSQL в K8s)
-  ├─ Запуск приложения (IIS на Windows или dotnet на macOS/Linux)
-  ├─ Обновление ConnectionString
-  └─ Регистрация приложения
+  ├─ Unpack ZIP file
+  ├─ Check and create DB (MSSQL or PostgreSQL)
+  ├─ Initialize infrastructure (Redis, pgAdmin, PostgreSQL in K8s)
+  ├─ Start application (IIS on Windows or dotnet on macOS/Linux)
+  ├─ Update ConnectionString
+  └─ Register application
 ```
 
-## Требуемые улучшения
+## Required Improvements
 
-### 1. Автоопределение платформы
+### 1. Automatic Platform Detection
 
-Система должна автоматически определить ОС и выбрать соответствующий метод развертывания:
+System should automatically detect OS and select appropriate deployment method:
 
 ```csharp
 public enum DeploymentPlatform
@@ -62,58 +62,58 @@ private DeploymentPlatform DetectPlatform()
 }
 ```
 
-### 2. Новые параметры команды
+### 2. New Command Parameters
 
 ```csharp
 [Verb("deploy-creatio", ...)]
 public class PfInstallerOptions : EnvironmentNameOptions
 {
-    // Существующие параметры...
+    // Existing parameters...
     
     /// <summary>
-    /// Способ развертывания (auto, iis, dotnet)
+    /// Deployment method (auto, iis, dotnet)
     /// </summary>
     [Option("deployment", Required = false, Default = "auto", 
         HelpText = "Deployment method: auto|iis|dotnet")]
     public string DeploymentMethod { get; set; }
     
     /// <summary>
-    /// Явный запрет на использование IIS даже на Windows
+    /// Explicitly disable IIS even on Windows
     /// </summary>
     [Option("no-iis", Required = false, Default = false,
         HelpText = "Don't use IIS on Windows (use dotnet run instead)")]
     public bool NoIIS { get; set; }
     
     /// <summary>
-    /// Путь для развертывания приложения
+    /// Path for application deployment
     /// </summary>
     [Option("app-path", Required = false,
         HelpText = "Application installation path")]
     public string AppPath { get; set; }
     
     /// <summary>
-    /// Использовать SSL/HTTPS для приложения
+    /// Use SSL/HTTPS for application
     /// </summary>
     [Option("use-https", Required = false, Default = false,
         HelpText = "Use HTTPS (requires certificate for dotnet)")]
     public bool UseHttps { get; set; }
     
     /// <summary>
-    /// Путь к SSL сертификату (.pem или .pfx)
+    /// Path to SSL certificate (.pem or .pfx)
     /// </summary>
     [Option("cert-path", Required = false,
         HelpText = "Path to SSL certificate file (.pem or .pfx)")]
     public string CertificatePath { get; set; }
     
     /// <summary>
-    /// Пароль для SSL сертификата (если требуется)
+    /// Password for SSL certificate (if required)
     /// </summary>
     [Option("cert-password", Required = false,
         HelpText = "Password for SSL certificate")]
     public string CertificatePassword { get; set; }
     
     /// <summary>
-    /// Автоматически запустить приложение после развертывания
+    /// Automatically run application after deployment
     /// </summary>
     [Option("auto-run", Required = false, Default = true,
         HelpText = "Automatically run application after deployment")]
@@ -121,61 +121,61 @@ public class PfInstallerOptions : EnvironmentNameOptions
 }
 ```
 
-### 3. Интерфейс и реализация стратегий развертывания
+### 3. Deployment Strategy Interface and Implementation
 
 ```csharp
 /// <summary>
-/// Интерфейс для стратегии развертывания приложения
+/// Interface for application deployment strategy
 /// </summary>
 public interface IDeploymentStrategy
 {
     /// <summary>
-    /// Проверить, применима ли эта стратегия на текущей платформе
+    /// Check if this strategy is applicable on current platform
     /// </summary>
     bool CanDeploy();
     
     /// <summary>
-    /// Развернуть приложение
+    /// Deploy application
     /// </summary>
     Task<int> Deploy(DirectoryInfo appDirectory, PfInstallerOptions options);
     
     /// <summary>
-    /// Получить URL приложения
+    /// Get application URL
     /// </summary>
     string GetApplicationUrl(PfInstallerOptions options);
     
     /// <summary>
-    /// Получить описание стратегии
+    /// Get strategy description
     /// </summary>
     string GetDescription();
 }
 
-// Конкретные реализации:
+// Concrete implementations:
 public class IISDeploymentStrategy : IDeploymentStrategy { }
 public class DotNetDeploymentStrategy : IDeploymentStrategy { }
 ```
 
-### 4. Новая архитектура Execute()
+### 4. New Execute() Architecture
 
 ```csharp
 public override int Execute(PfInstallerOptions options)
 {
-    // Инициализация
+    // Initialization
     ValidateOptions(options);
     DirectoryInfo unzippedDirectory = PrepareApplication(options);
     
-    // Выбор стратегии развертывания
+    // Select deployment strategy
     IDeploymentStrategy deploymentStrategy = SelectDeploymentStrategy(options);
     
     _logger.WriteInfo($"Selected deployment strategy: {deploymentStrategy.GetDescription()}");
     _logger.WriteInfo($"Platform: {RuntimeInformation.OSDescription}");
     
-    // Подготовка БД (одинакова для всех платформ)
-    int dbRestoreResult = PrepareDatabse(unzippedDirectory, options);
+    // Database preparation (same for all platforms)
+    int dbRestoreResult = PrepareDatabase(unzippedDirectory, options);
     if (dbRestoreResult != 0)
         return ExitWithErrorMessage("Database preparation failed");
     
-    // Развертывание приложения (зависит от стратегии)
+    // Application deployment (depends on strategy)
     int deployResult = deploymentStrategy
         .Deploy(unzippedDirectory, options)
         .GetAwaiter()
@@ -184,7 +184,7 @@ public override int Execute(PfInstallerOptions options)
     if (deployResult != 0)
         return ExitWithErrorMessage("Application deployment failed");
     
-    // Постразвертывающие операции
+    // Post-deployment operations
     string appUrl = deploymentStrategy.GetApplicationUrl(options);
     
     int updateConnectionStringResult = UpdateConnectionString(unzippedDirectory, options)
@@ -194,7 +194,7 @@ public override int Execute(PfInstallerOptions options)
     if (updateConnectionStringResult != 0)
         return ExitWithErrorMessage("Failed to update ConnectionString");
     
-    // Регистрация в clio
+    // Register in clio
     RegisterApplication(options, appUrl);
     
     return 0;
@@ -202,20 +202,20 @@ public override int Execute(PfInstallerOptions options)
 
 private IDeploymentStrategy SelectDeploymentStrategy(PfInstallerOptions options)
 {
-    // Если явно указано --no-iis, не использовать IIS
+    // If explicitly disabled, don't use IIS
     if (options.NoIIS && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
     {
         _logger.WriteInfo("IIS explicitly disabled, using dotnet run");
         return _serviceProvider.GetRequiredService<DotNetDeploymentStrategy>();
     }
     
-    // Если явно указан метод
+    // If method explicitly specified
     if (!string.IsNullOrEmpty(options.DeploymentMethod) && options.DeploymentMethod != "auto")
     {
         return SelectStrategyByName(options.DeploymentMethod);
     }
     
-    // Автоопределение по ОС
+    // Auto-detection by OS
     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         return _serviceProvider.GetRequiredService<IISDeploymentStrategy>();
     
@@ -236,28 +236,28 @@ private IDeploymentStrategy SelectStrategyByName(string methodName)
 }
 ```
 
-## Примеры использования
+## Usage Examples
 
-### Пример 1: Автоматический выбор (рекомендуется)
+### Example 1: Automatic Selection (recommended)
 ```bash
-# На Windows → использует IIS
+# On Windows → uses IIS
 clio deploy-creatio --ZipFile creatio.zip
 
-# На macOS → использует dotnet run
+# On macOS → uses dotnet run
 clio deploy-creatio --ZipFile creatio.zip
 
-# На Linux → использует dotnet run
+# On Linux → uses dotnet run
 clio deploy-creatio --ZipFile creatio.zip
 ```
 
-### Пример 2: Явно указать Windows без IIS (dotnet)
+### Example 2: Explicitly specify Windows without IIS (dotnet)
 ```bash
 clio deploy-creatio --ZipFile creatio.zip --no-iis
-# или
+# or
 clio deploy-creatio --ZipFile creatio.zip --deployment dotnet
 ```
 
-### Пример 3: Полная спецификация параметров
+### Example 3: Full parameter specification
 ```bash
 clio deploy-creatio \
   --ZipFile creatio.zip \
@@ -269,7 +269,7 @@ clio deploy-creatio \
   --platform net6
 ```
 
-### Пример 4: С HTTPS/SSL сертификатом
+### Example 4: With HTTPS/SSL Certificate
 ```bash
 clio deploy-creatio \
   --ZipFile creatio.zip \
@@ -281,7 +281,7 @@ clio deploy-creatio \
   --cert-password "certificate-password"
 ```
 
-### Пример 5: Без автоматического запуска (для отладки)
+### Example 5: Without Automatic Startup (for debugging)
 ```bash
 clio deploy-creatio \
   --ZipFile creatio.zip \
@@ -290,7 +290,7 @@ clio deploy-creatio \
   --auto-run false
 ```
 
-### Пример 6: IIS развертывание на Windows (явно)
+### Example 6: IIS Deployment on Windows (explicit)
 ```bash
 clio deploy-creatio \
   --ZipFile creatio.zip \
@@ -300,29 +300,29 @@ clio deploy-creatio \
   --db mssql
 ```
 
-## Реализация стратегий развертывания
+## Deployment Strategy Implementation
 
 ### 1. IIS Strategy (Windows only)
-**Условие**: Windows OS, `--deployment iis` или автоматически на Windows (если не `--no-iis`)
+**Condition**: Windows OS, `--deployment iis` or automatically on Windows (if not `--no-iis`)
 
-**Действия**:
-- Создать IIS AppPool
-- Скопировать файлы в `%iis-clio-root-path%\{siteName}`
-- Создать IIS веб-сайт
-- Настроить привязки HTTP/HTTPS
-- Запустить приложение через IIS
-- Регистрация в clio
+**Actions**:
+- Create IIS AppPool
+- Copy files to `%iis-clio-root-path%\{siteName}`
+- Create IIS website
+- Configure HTTP/HTTPS bindings
+- Start application through IIS
+- Register in clio
 
 ### 2. DotNet Strategy (macOS, Linux, Windows)
-**Условие**: `--deployment dotnet` или автоматически на macOS/Linux
+**Condition**: `--deployment dotnet` or automatically on macOS/Linux
 
-**Действия**:
-- Скопировать файлы приложения в `{AppPath}` (default: `~/creatio/{SiteName}`)
-- Создать конфигурацию `appsettings.json` с параметрами:
+**Actions**:
+- Copy application files to `{AppPath}` (default: `~/creatio/{SiteName}`)
+- Create `appsettings.json` configuration with parameters:
   - Port: `{SitePort}`
-  - ConnectionString: из конфига БД
-  - HTTPS (опционально): сертификат и ключ
-- Создать systemd service (Linux) или launchd (macOS) для автозапуска:
+  - ConnectionString: from DB config
+  - HTTPS (optional): certificate and key
+- Create systemd service (Linux) or launchd (macOS) for auto-launch:
   ```
   [Unit]
   Description=Creatio Application {SiteName}
@@ -341,19 +341,19 @@ clio deploy-creatio \
   [Install]
   WantedBy=multi-user.target
   ```
-- Запустить сервис: `systemctl start creatio-{SiteName}` (Linux)
-- Убедиться что приложение доступно на `http://localhost:{SitePort}`
-- Регистрация в clio
+- Start service: `systemctl start creatio-{SiteName}` (Linux)
+- Verify application available at `http://localhost:{SitePort}`
+- Register in clio
 
-**Особенности**:
-- На macOS: использует `launchctl` для управления сервисом
-- На Linux: использует `systemd` для управления сервисом
-- На Windows (с --no-iis): запускает процесс через консоль или background task
-- Автоматический перезапуск при падении
+**Features**:
+- On macOS: uses `launchctl` for service management
+- On Linux: uses `systemd` for service management
+- On Windows (with --no-iis): runs process via console or background task
+- Automatic restart on failure
 
-## Инфраструктура (одинакова для всех платформ)
+## Infrastructure (same for all platforms)
 
-Используется Kubernetes в локальном кластере (via Docker Desktop на macOS/Windows или minikube на Linux):
+Uses Kubernetes in local cluster (via Docker Desktop on macOS/Windows or minikube on Linux):
 
 ```yaml
 Namespace: creatio
@@ -363,7 +363,7 @@ Services:
   └─ pgAdmin (Deployment + Service)
 ```
 
-**Команды инфраструктуры** (выполняются перед развертыванием приложения):
+**Infrastructure commands** (executed before application deployment):
 ```bash
 kubectl apply -f clio-namespace.yaml
 kubectl apply -f postgres/
@@ -371,7 +371,7 @@ kubectl apply -f redis/
 kubectl apply -f pgadmin/
 ```
 
-**Переменные окружения** для подключения:
+**Environment variables** for connection:
 ```
 DATABASE_HOST=postgres.creatio.svc.cluster.local
 DATABASE_PORT=5432
@@ -379,128 +379,128 @@ REDIS_HOST=redis.creatio.svc.cluster.local
 REDIS_PORT=6379
 ```
 
-## Таблица совместимости платформ и методов развертывания
+## Platform Compatibility Matrix
 
-| Стратегия | Windows | macOS | Linux | Требования |
-|-----------|---------|-------|-------|-----------|
-| IIS       | ✅      | ❌    | ❌    | Windows + IIS installed |
-| DotNet    | ✅*     | ✅    | ✅    | .NET 6+ SDK |
+| Strategy | Windows | macOS | Linux | Requirements |
+|----------|---------|-------|-------|-----------|
+| IIS      | ✅      | ❌    | ❌    | Windows + IIS installed |
+| DotNet   | ✅*     | ✅    | ✅    | .NET 6+ SDK |
 
-*На Windows с флагом `--no-iis`
+*On Windows with `--no-iis` flag
 
-## Поток выполнения команды deploy-creatio
+## deploy-creatio Command Execution Flow
 
 ```
-1. Валидация параметров
-   ├─ Проверка ZIP файла
-   ├─ Проверка портов (1-65535)
-   └─ Проверка путей
+1. Validate parameters
+   ├─ Check ZIP file
+   ├─ Check ports (1-65535)
+   └─ Check paths
    
-2. Определение платформы и стратегии
-   ├─ Определить OS (Windows/macOS/Linux)
-   ├─ Проверить флаги (--no-iis, --deployment)
-   └─ Выбрать стратегию развертывания
+2. Determine platform and strategy
+   ├─ Detect OS (Windows/macOS/Linux)
+   ├─ Check flags (--no-iis, --deployment)
+   └─ Select deployment strategy
    
-3. Подготовка приложения
-   ├─ Распаковка ZIP
-   ├─ Копирование файлов в целевую директорию
-   └─ Инициализация структуры каталогов
+3. Prepare application
+   ├─ Unpack ZIP
+   ├─ Copy files to target directory
+   └─ Initialize directory structure
    
-4. Подготовка инфраструктуры (K8s)
-   ├─ Создать namespace
-   ├─ Развернуть PostgreSQL
-   ├─ Развернуть Redis
-   └─ Развернуть pgAdmin
+4. Prepare infrastructure (K8s)
+   ├─ Create namespace
+   ├─ Deploy PostgreSQL
+   ├─ Deploy Redis
+   └─ Deploy pgAdmin
    
-5. Подготовка БД
-   ├─ Выполнить миграции
-   ├─ Инициализировать схемы
-   └─ Создать системные данные
+5. Prepare database
+   ├─ Run migrations
+   ├─ Initialize schemas
+   └─ Create system data
    
-6. Развертывание приложения (зависит от стратегии)
-   ├─ [IIS] Создать AppPool, сайт, привязки
-   └─ [DotNet] Создать сервис, скопировать конфиги
+6. Deploy application (depends on strategy)
+   ├─ [IIS] Create AppPool, site, bindings
+   └─ [DotNet] Create service, copy configs
    
-7. Конфигурация приложения
-   ├─ Обновить ConnectionString
-   ├─ Установить HTTPS (если нужно)
-   └─ Обновить параметры приложения
+7. Configure application
+   ├─ Update ConnectionString
+   ├─ Set HTTPS (if needed)
+   └─ Update application parameters
    
-8. Запуск приложения
-   ├─ Запустить сервис
-   ├─ Проверить доступность (health check)
-   └─ Дождаться готовности
+8. Start application
+   ├─ Start service
+   ├─ Check availability (health check)
+   └─ Wait for readiness
    
-9. Регистрация в clio
-   ├─ Добавить окружение
-   ├─ Настроить параметры подключения
-   └─ Проверить связь
+9. Register in clio
+   ├─ Add environment
+   ├─ Configure connection parameters
+   └─ Check connection
    
-10. Завершение
-    ├─ Вывести URL для доступа
-    ├─ Открыть браузер (если --auto-run)
-    └─ Вывести статус
+10. Completion
+    ├─ Output URL for access
+    ├─ Open browser (if --auto-run)
+    └─ Output status
 ```
 
-## Файлы для создания/модификации
+## Files to Create/Modify
 
-### Новые файлы:
-1. `Common/DeploymentStrategies/IDeploymentStrategy.cs` - интерфейс стратегии
-2. `Common/DeploymentStrategies/IISDeploymentStrategy.cs` - развертывание через IIS (Windows)
-3. `Common/DeploymentStrategies/DotNetDeploymentStrategy.cs` - развертывание через dotnet (macOS/Linux/Windows)
-4. `Common/DeploymentStrategies/DeploymentStrategyFactory.cs` - фабрика для выбора стратегии
-5. `Common/SystemServices/ISystemServiceManager.cs` - интерфейс для управления сервисами
-6. `Common/SystemServices/LinuxSystemServiceManager.cs` - управление systemd сервисами
-7. `Common/SystemServices/MacOSSystemServiceManager.cs` - управление launchd сервисами
-8. `Common/SystemServices/WindowsSystemServiceManager.cs` - управление Windows сервисами
+### New files:
+1. `Common/DeploymentStrategies/IDeploymentStrategy.cs` - strategy interface
+2. `Common/DeploymentStrategies/IISDeploymentStrategy.cs` - IIS deployment (Windows)
+3. `Common/DeploymentStrategies/DotNetDeploymentStrategy.cs` - dotnet deployment (macOS/Linux/Windows)
+4. `Common/DeploymentStrategies/DeploymentStrategyFactory.cs` - factory for strategy selection
+5. `Common/SystemServices/ISystemServiceManager.cs` - interface for service management
+6. `Common/SystemServices/LinuxSystemServiceManager.cs` - systemd service management
+7. `Common/SystemServices/MacOSSystemServiceManager.cs` - launchd service management
+8. `Common/SystemServices/WindowsSystemServiceManager.cs` - Windows service management
 
-### Модификация:
-1. `Command/CreatioInstallCommand/InstallerCommand.cs` - добавить новые параметры
-2. `Command/CreatioInstallCommand/CreatioInstallerService.cs` - переписать Execute() с использованием стратегий
-3. `BindingsModule.cs` - регистрация стратегий и менеджеров сервисов в DI контейнере
-4. `Commands.md` - обновить документацию команды deploy-creatio
+### Modifications:
+1. `Command/CreatioInstallCommand/InstallerCommand.cs` - add new parameters
+2. `Command/CreatioInstallCommand/CreatioInstallerService.cs` - rewrite Execute() using strategies
+3. `BindingsModule.cs` - register strategies and service managers in DI container
+4. `Commands.md` - update deploy-creatio command documentation
 
-## Преимущества новой архитектуры
+## Advantages of New Architecture
 
-✅ **Кроссплатформенность** - работает на Windows (IIS/dotnet), macOS (dotnet), Linux (dotnet)  
-✅ **Гибкость** - можно выбрать способ развертывания явно или использовать автоматический выбор  
-✅ **Расширяемость** - паттерн Strategy позволяет легко добавить новые способы развертывания  
-✅ **Простота** - единая команда для всех платформ  
-✅ **Безопасность** - явное управление SSL/HTTPS сертификатами  
-✅ **Автоматизация** - systemd (Linux) и launchd (macOS) интеграция для автозапуска  
-✅ **Видимость** - детальное логирование всех операций  
-✅ **Надежность** - автоматический перезапуск при падении приложения  
+✅ **Cross-platform support** - works on Windows (IIS/dotnet), macOS (dotnet), Linux (dotnet)  
+✅ **Flexibility** - can select deployment method explicitly or use automatic selection  
+✅ **Extensibility** - Strategy pattern allows easy addition of new deployment methods  
+✅ **Simplicity** - single command for all platforms  
+✅ **Security** - explicit SSL/HTTPS certificate management  
+✅ **Automation** - systemd (Linux) and launchd (macOS) integration for auto-launch  
+✅ **Visibility** - detailed logging of all operations  
+✅ **Reliability** - automatic restart on application failure  
 
-## Параметры командной строки (справочник)
+## Command Line Parameters (Reference)
 
-| Параметр | Флаг | Тип | Обязательный | По умолчанию | Описание |
-|----------|------|-----|-------------|------------|----------|
-| ZIP файл | `--ZipFile` | string | Да | - | Путь к ZIP архиву с приложением |
-| Имя сайта | `--SiteName` | string | Нет | - | Имя приложения (спросит, если не указано) |
-| Порт | `--SitePort` | int | Нет | 40000-40100 | Порт приложения (спросит, если не указано) |
-| Метод развертывания | `--deployment` | string | Нет | auto | auto\|iis\|dotnet |
-| Без IIS | `--no-iis` | bool | Нет | false | Не использовать IIS на Windows |
-| Путь приложения | `--app-path` | string | Нет | ~/creatio/{SiteName} | Директория установки приложения |
-| Использовать HTTPS | `--use-https` | bool | Нет | false | Использовать HTTPS вместо HTTP |
-| Путь сертификата | `--cert-path` | string | Нет | - | Путь к SSL сертификату (.pem или .pfx) |
-| Пароль сертификата | `--cert-password` | string | Нет | - | Пароль для SSL сертификата |
-| Автоматический запуск | `--auto-run` | bool | Нет | true | Запустить приложение после развертывания |
-| Тип БД | `--db` | string | Нет | pg | pg\|mssql |
-| Платформа | `--platform` | string | Нет | - | net6\|netframework |
-| Тихий режим | `--silent` | bool | Нет | false | Не показывать интерактивные подсказки |
-| Продукт | `--product` | string | Нет | - | Краткое имя продукта (s\|semse\|bcj) |
+| Parameter | Flag | Type | Required | Default | Description |
+|----------|------|------|----------|---------|---------|
+| ZIP file | `--ZipFile` | string | Yes | - | Path to application ZIP archive |
+| Site name | `--SiteName` | string | No | - | Application name (will ask if not specified) |
+| Port | `--SitePort` | int | No | 40000-40100 | Application port (will ask if not specified) |
+| Deployment method | `--deployment` | string | No | auto | auto\|iis\|dotnet |
+| No IIS | `--no-iis` | bool | No | false | Don't use IIS on Windows |
+| App path | `--app-path` | string | No | ~/creatio/{SiteName} | Application installation directory |
+| Use HTTPS | `--use-https` | bool | No | false | Use HTTPS instead of HTTP |
+| Certificate path | `--cert-path` | string | No | - | Path to SSL certificate (.pem or .pfx) |
+| Certificate password | `--cert-password` | string | No | - | SSL certificate password |
+| Auto-run | `--auto-run` | bool | No | true | Run application after deployment |
+| Database type | `--db` | string | No | pg | pg\|mssql |
+| Platform | `--platform` | string | No | - | net6\|netframework |
+| Silent mode | `--silent` | bool | No | false | Don't show interactive prompts |
+| Product | `--product` | string | No | - | Product short name (s\|semse\|bcj) |
 
-## Фазы реализации
+## Implementation Phases
 
-### Фаза 1: Базовая поддержка (MVP)
-- [ ] Интерфейс `IDeploymentStrategy`
-- [ ] `IISDeploymentStrategy` (рефакторинг текущего кода)
-- [ ] `DotNetDeploymentStrategy` (базовая версия)
-- [ ] Новые параметры в `PfInstallerOptions`
-- [ ] Логика выбора стратегии в `Execute()`
+### Phase 1: Basic Support (MVP)
+- [ ] `IDeploymentStrategy` interface
+- [ ] `IISDeploymentStrategy` (refactor current code)
+- [ ] `DotNetDeploymentStrategy` (basic version)
+- [ ] New parameters in `PfInstallerOptions`
+- [ ] Strategy selection logic in `Execute()`
 
-### Фаза 2: Улучшение и документация
-- [ ] Обновление `Commands.md`
-- [ ] Unit тесты для стратегий
-- [ ] Integration тесты для кроссплатформенности
-- [ ] Примеры использования для разных сценариев
+### Phase 2: Enhancement and Documentation
+- [ ] Update `Commands.md`
+- [ ] Unit tests for strategies
+- [ ] Integration tests for cross-platform support
+- [ ] Usage examples for different scenarios

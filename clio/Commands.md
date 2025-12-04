@@ -1965,6 +1965,7 @@ clio stop --all
 - [Manage Windows features](#manage-windows-features)
 - [Generate deployment scripts](#create-k8-files)
 - [Deploy infrastructure](#deploy-infrastructure)
+- [Delete infrastructure](#delete-infrastructure)
 - [Install Creatio](#deploy-creatio)
 - [List Creatio hosts](#hosts)
 - [Stop Creatio hosts](#stop)
