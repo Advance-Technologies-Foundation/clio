@@ -36,6 +36,8 @@ public interface Ik8Commands
 
 	DeleteNamespaceResult DeleteNamespaceWithCleanup(string namespaceName, string namespacePrefix, int maxWaitAttempts = 15, int delaySeconds = 2);
 
+	CleanupNamespaceResult CleanupAndDeleteNamespace(string namespaceName, string namespacePrefix);
+
 }
 
 public class k8Commands : Ik8Commands
@@ -437,6 +439,67 @@ public class k8Commands : Ik8Commands
 		}
 	}
 
+	public CleanupNamespaceResult CleanupAndDeleteNamespace(string namespaceName, string namespacePrefix)
+	{
+		try
+		{
+			// Step 1: Clean up released PersistentVolumes
+			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
+			var deletedPvs = new List<string>();
+			
+			foreach (var pvName in releasedPvs)
+			{
+				if (DeletePersistentVolume(pvName))
+				{
+					deletedPvs.Add(pvName);
+				}
+			}
+
+			// Step 2: Delete namespace
+			if (!DeleteNamespace(namespaceName))
+			{
+				return new CleanupNamespaceResult
+				{
+					Success = false,
+					Message = $"Failed to delete namespace '{namespaceName}'",
+					DeletedPersistentVolumes = deletedPvs
+				};
+			}
+
+			// Step 3: Wait for namespace deletion (up to 30 seconds)
+			int maxWaitAttempts = 15;
+			int delaySeconds = 2;
+			int attemptCount = 0;
+			
+			while (attemptCount < maxWaitAttempts && NamespaceExists(namespaceName))
+			{
+				System.Threading.Thread.Sleep(delaySeconds * 1000);
+				attemptCount++;
+			}
+
+			bool namespaceFullyDeleted = !NamespaceExists(namespaceName);
+			
+			return new CleanupNamespaceResult
+			{
+				Success = namespaceFullyDeleted,
+				Message = namespaceFullyDeleted 
+					? $"Namespace '{namespaceName}' deleted successfully"
+					: $"Namespace deletion in progress but may not be fully complete yet",
+				DeletedPersistentVolumes = deletedPvs,
+				NamespaceFullyDeleted = namespaceFullyDeleted
+			};
+		}
+		catch (Exception ex)
+		{
+			return new CleanupNamespaceResult
+			{
+				Success = false,
+				Message = $"Error deleting namespace: {ex.Message}",
+				DeletedPersistentVolumes = new List<string>()
+			};
+		}
+	}
+
 	#endregion
 	public record ConnectionStringParams(int DbPort, int DbInternalPort,int RedisPort, int RedisInternalPort,string DbUsername, string DbPassword);
 	
@@ -451,4 +514,11 @@ public class DeleteNamespaceResult
 	public bool NamespaceFullyDeleted { get; set; }
 }
 
+public class CleanupNamespaceResult
+{
+	public bool Success { get; set; }
+	public string Message { get; set; }
+	public IList<string> DeletedPersistentVolumes { get; set; }
+	public bool NamespaceFullyDeleted { get; set; }
+}
 

@@ -131,7 +131,17 @@ namespace Clio.Command
 			{
 				if (!_k8Commands.NamespaceExists(namespaceName))
 				{
-					_logger.WriteInfo("✓ No existing namespace found, proceeding with deployment");
+					_logger.WriteInfo("✓ No existing namespace found");
+					
+					// Even if namespace doesn't exist, check for orphaned PersistentVolumes
+					// and clean them up if --force flag is used or user confirms
+					if (forceRecreate)
+					{
+						_logger.WriteInfo("Cleaning up any orphaned PersistentVolumes (--force flag)...");
+						CleanupOrphanedPersistentVolumes();
+					}
+					
+					_logger.WriteInfo("Proceeding with deployment");
 					return true;
 				}
 
@@ -176,13 +186,47 @@ namespace Clio.Command
 			}
 		}
 
+		private void CleanupOrphanedPersistentVolumes()
+		{
+			try
+			{
+				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
+				
+				var releasedPvs = _k8Commands.GetReleasedPersistentVolumes("clio-infrastructure");
+				
+				if (releasedPvs.Count == 0)
+				{
+					_logger.WriteInfo("✓ No orphaned PersistentVolumes found");
+					return;
+				}
+				
+				_logger.WriteInfo($"Found {releasedPvs.Count} orphaned PersistentVolume(s), cleaning up...");
+				
+				foreach (var pvName in releasedPvs)
+				{
+					if (_k8Commands.DeletePersistentVolume(pvName))
+					{
+						_logger.WriteInfo($"  ✓ {pvName}");
+					}
+					else
+					{
+						_logger.WriteWarning($"  ⚠ Failed to delete {pvName}");
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				_logger.WriteWarning($"⚠ Error cleaning up orphaned PersistentVolumes: {ex.Message}");
+			}
+		}
+
 		private bool DeleteExistingNamespace(string namespaceName)
 		{
 			_logger.WriteInfo($"Deleting namespace '{namespaceName}' and all its contents...");
 			
 			try
 			{
-				var result = _k8Commands.DeleteNamespaceWithCleanup(namespaceName, "clio-infrastructure", maxWaitAttempts: 10, delaySeconds: 2);
+				var result = _k8Commands.CleanupAndDeleteNamespace(namespaceName, "clio-infrastructure");
 
 				if (result.DeletedPersistentVolumes.Count > 0)
 				{
@@ -604,7 +648,7 @@ namespace Clio.Command
 			{
 				_logger.WriteInfo("Step 1: Cleaning up released PersistentVolumes and deleting namespace...");
 
-				var result = _k8Commands.DeleteNamespaceWithCleanup(namespaceName, "clio-infrastructure");
+				var result = _k8Commands.CleanupAndDeleteNamespace(namespaceName, "clio-infrastructure");
 
 				if (result.DeletedPersistentVolumes.Count > 0)
 				{
