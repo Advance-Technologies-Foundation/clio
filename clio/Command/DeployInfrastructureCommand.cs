@@ -68,6 +68,14 @@ namespace Clio.Command
 					return 1;
 				}
 
+			// Step 1.5: Check and handle existing namespace
+			const string namespaceName = "clio-infrastructure";
+			if (!CheckAndHandleExistingNamespace(namespaceName))
+				{
+					_logger.WriteInfo("Infrastructure deployment cancelled by user");
+					return 1;
+				}
+
 				// Step 2: Generate infrastructure files
 				string infrastructurePath = GetInfrastructurePath(options);
 				if (!GenerateInfrastructureFiles(infrastructurePath))
@@ -111,9 +119,111 @@ namespace Clio.Command
 			}
 		}
 
-		private bool CheckKubectlInstalled()
+	private bool CheckAndHandleExistingNamespace(string namespaceName)
+	{
+		_logger.WriteInfo("[1/5] Checking for existing namespace...");
+		
+		try
 		{
-			_logger.WriteInfo("[1/4] Checking kubectl installation...");
+			if (!_k8Commands.NamespaceExists(namespaceName))
+			{
+				_logger.WriteInfo("✓ No existing namespace found");
+				
+				// Always check for orphaned PersistentVolumes
+				// They can appear after namespace deletion and prevent new PVC binding
+				// Wait a moment for Released PV status to stabilize
+				System.Threading.Thread.Sleep(2000);
+				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
+				CleanupOrphanedPersistentVolumes();
+				
+				_logger.WriteInfo("Proceeding with deployment");
+				return true;
+			}
+
+			// Namespace already exists - this is an error
+			_logger.WriteError($"✗ Namespace '{namespaceName}' already exists");
+			_logger.WriteLine();
+			_logger.WriteError("To recreate the infrastructure, first delete it with:");
+			_logger.WriteError("  clio delete-infrastructure [--force]");
+			_logger.WriteLine();
+			_logger.WriteError("Then deploy again:");
+			_logger.WriteError("  clio deploy-infrastructure");
+			_logger.WriteLine();
+			
+			return false;
+		}
+		catch (Exception ex)
+		{
+			_logger.WriteError($"Error checking namespace: {ex.Message}");
+			return false;
+		}
+	}		private void CleanupOrphanedPersistentVolumes()
+		{
+			try
+			{
+				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
+				
+				int maxAttempts = 5;
+				int attemptCount = 0;
+				var allDeletedPvs = new HashSet<string>();
+				
+				while (attemptCount < maxAttempts)
+				{
+					// Get ALL orphaned PV (not just Released) to handle various states during cleanup
+					var orphanedPvs = _k8Commands.GetOrphanedPersistentVolumes("clio-infrastructure");
+					
+					if (orphanedPvs.Count == 0)
+					{
+						if (allDeletedPvs.Count == 0)
+						{
+							_logger.WriteInfo("✓ No orphaned PersistentVolumes found");
+						}
+						else
+						{
+							_logger.WriteInfo($"✓ All {allDeletedPvs.Count} orphaned PersistentVolume(s) cleaned up successfully");
+						}
+						return;
+					}
+					
+					if (attemptCount == 0)
+					{
+						_logger.WriteInfo($"Found {orphanedPvs.Count} orphaned PersistentVolume(s), cleaning up...");
+					}
+					
+					foreach (var pvName in orphanedPvs)
+					{
+						if (_k8Commands.DeletePersistentVolume(pvName))
+						{
+							_logger.WriteInfo($"  ✓ {pvName}");
+							allDeletedPvs.Add(pvName);
+						}
+						else
+						{
+							_logger.WriteWarning($"  ⚠ Failed to delete {pvName}");
+						}
+					}
+					
+					attemptCount++;
+					if (attemptCount < maxAttempts && orphanedPvs.Count > 0)
+					{
+						System.Threading.Thread.Sleep(1000); // Wait before retrying
+					}
+				}
+				
+				if (allDeletedPvs.Count > 0)
+				{
+					_logger.WriteInfo($"✓ Cleaned up {allDeletedPvs.Count} orphaned PersistentVolume(s)");
+				}
+			}
+			catch (Exception ex)
+			{
+				_logger.WriteWarning($"⚠ Error cleaning up orphaned PersistentVolumes: {ex.Message}");
+			}
+		}
+
+	private bool CheckKubectlInstalled()
+		{
+			_logger.WriteInfo("[1/5] Checking kubectl installation...");
 			try
 			{
 				string result = _processExecutor.Execute("kubectl", "version --client --short", 
@@ -139,7 +249,7 @@ namespace Clio.Command
 
 		private bool GenerateInfrastructureFiles(string infrastructurePath)
 		{
-			_logger.WriteInfo("[2/4] Generating infrastructure files...");
+			_logger.WriteInfo("[2/5] Generating infrastructure files...");
 			
 			try
 			{
@@ -165,7 +275,13 @@ namespace Clio.Command
 
 		private bool DeployInfrastructure(string infrastructurePath)
 		{
-			_logger.WriteInfo("[3/4] Deploying infrastructure to Kubernetes...");
+			_logger.WriteInfo("[3/5] Deploying infrastructure to Kubernetes...");
+			_logger.WriteLine();
+
+			// Before deploying infrastructure, ensure NO orphaned PV exist from previous deployments
+			// This is critical for PVC binding to work properly
+			_logger.WriteInfo("Pre-deployment cleanup: Removing any orphaned PersistentVolumes...");
+			CleanupOrphanedPersistentVolumes();
 			_logger.WriteLine();
 
 			// Define deployment order - order matters for dependencies
@@ -239,11 +355,11 @@ namespace Clio.Command
 		private bool VerifyConnections()
 		{
 			_logger.WriteLine();
-			_logger.WriteInfo("[4/4] Verifying service connections...");
+			_logger.WriteInfo("[4/5] Verifying service connections...");
 			_logger.WriteInfo("Waiting for services to start (this may take a minute)...");
 			
 			// Wait for pods to be ready
-			Thread.Sleep(5000); // Initial wait
+			System.Threading.Thread.Sleep(5000); // Initial wait
 
 			bool postgresOk = VerifyPostgresConnection();
 			bool redisOk = VerifyRedisConnection();
@@ -399,6 +515,139 @@ namespace Clio.Command
 			{
 				Name = name;
 				Path = path;
+			}
+		}
+	}
+
+	[Verb("delete-infrastructure", Aliases = new[] { "di-delete", "remove-infrastructure" },
+		HelpText = "Delete Kubernetes infrastructure for Creatio (removes namespace and all resources)")]
+	public class DeleteInfrastructureOptions
+	{
+		[Option("force", Required = false, Default = false,
+			HelpText = "Skip confirmation and delete immediately")]
+		public bool Force { get; set; }
+	}
+
+	public class DeleteInfrastructureCommand : Command<DeleteInfrastructureOptions>
+	{
+		private readonly ILogger _logger;
+		private readonly Ik8Commands _k8Commands;
+
+		public DeleteInfrastructureCommand(
+			ILogger logger,
+			Ik8Commands k8Commands)
+		{
+			_logger = logger;
+			_k8Commands = k8Commands;
+		}
+
+		public override int Execute(DeleteInfrastructureOptions options)
+		{
+			try
+			{
+				_logger.WriteInfo("========================================");
+				_logger.WriteInfo("  Delete Kubernetes Infrastructure");
+				_logger.WriteInfo("========================================");
+				_logger.WriteLine();
+
+				const string namespaceName = "clio-infrastructure";
+
+				// Check if namespace exists
+				if (!_k8Commands.NamespaceExists(namespaceName))
+				{
+					_logger.WriteInfo($"Namespace '{namespaceName}' does not exist");
+					_logger.WriteInfo("Nothing to delete");
+					return 0;
+				}
+
+				_logger.WriteWarning($"⚠ This will delete the '{namespaceName}' namespace and all its contents:");
+				_logger.WriteWarning("  - All pods and deployments");
+				_logger.WriteWarning("  - All services and volumes");
+				_logger.WriteWarning("  - All persistent volume claims");
+				_logger.WriteWarning("  - All configuration and secrets");
+				_logger.WriteLine();
+
+				// Ask for confirmation unless --force is used
+				if (!options.Force)
+				{
+					_logger.WriteInfo("Are you sure you want to delete the infrastructure? (y/n)");
+					string answer = Console.ReadLine();
+
+					if (string.IsNullOrWhiteSpace(answer) || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase))
+					{
+						_logger.WriteInfo("Infrastructure deletion cancelled");
+						return 0;
+					}
+				}
+				else
+				{
+					_logger.WriteInfo("Deleting infrastructure (--force flag)...");
+				}
+
+				_logger.WriteLine();
+				_logger.WriteInfo("Deleting namespace and all resources...");
+
+				if (!DeleteInfrastructureNamespace(namespaceName))
+				{
+					return 1;
+				}
+
+				_logger.WriteLine();
+				_logger.WriteInfo("========================================");
+				_logger.WriteInfo("  Infrastructure deleted successfully!");
+				_logger.WriteInfo("========================================");
+
+				return 0;
+			}
+			catch (Exception ex)
+			{
+				_logger.WriteError($"Deletion failed: {ex.Message}");
+				_logger.WriteError(ex.StackTrace);
+				return 1;
+			}
+		}
+
+		private bool DeleteInfrastructureNamespace(string namespaceName)
+		{
+			try
+			{
+				_logger.WriteInfo("Step 1: Cleaning up released PersistentVolumes and deleting namespace...");
+
+				var result = _k8Commands.CleanupAndDeleteNamespace(namespaceName, "clio-infrastructure");
+
+				if (result.DeletedPersistentVolumes.Count > 0)
+				{
+					_logger.WriteInfo($"  Found {result.DeletedPersistentVolumes.Count} released PersistentVolume(s)");
+					foreach (var pvName in result.DeletedPersistentVolumes)
+					{
+						_logger.WriteInfo($"  ✓ PV '{pvName}' deleted");
+					}
+				}
+				else
+				{
+					_logger.WriteInfo("  No released PersistentVolumes found");
+				}
+
+				if (!result.Success)
+				{
+					_logger.WriteError(result.Message);
+					return false;
+				}
+
+				if (!result.NamespaceFullyDeleted)
+				{
+					_logger.WriteWarning($"⚠ {result.Message}");
+					_logger.WriteInfo("You can check status with: kubectl get ns clio-infrastructure");
+					return true;
+				}
+
+				_logger.WriteInfo($"✓ {result.Message}");
+				return true;
+			}
+			catch (Exception ex)
+			{
+				_logger.WriteError($"Error deleting namespace: {ex.Message}");
+				return false;
 			}
 		}
 	}

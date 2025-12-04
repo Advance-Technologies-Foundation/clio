@@ -1,54 +1,54 @@
-# Создание окружения разработки для macOS
+# Create Development Environment for macOS
 
-## Описание задачи
+## Task Description
 
-Требуется создать единую интегрированную команду, которая автоматизирует полный процесс развертывания локального окружения разработки Creatio на macOS. Команда должна выполнить последовательность операций для инициализации, конфигурации и подготовки приложения к разработке.
+A unified integrated command is required that automates the complete process of deploying a local Creatio development environment on macOS. The command should execute a sequence of operations to initialize, configure, and prepare the application for development.
 
-## Исходные данные
-- ZIP-архив с приложением Creatio на .NET 8
-- PostgreSQL база данных
-- Kubernetes для оркестрации инфраструктуры
+## Initial Data
+- ZIP archive with Creatio application on .NET 8
+- PostgreSQL database
+- Kubernetes for infrastructure orchestration
 
-## Основные этапы выполнения
+## Main Execution Stages
 
-### 1. **Подготовка и распаковка архива**
-- Распаковать ZIP-файл в указанную директорию
-- Если директория не задана, использовать текущую директорию
-- Создать папку с именем `environment` для размещения файлов
+### 1. **Archive Preparation and Extraction**
+- Extract ZIP file to specified directory
+- If directory not specified, use current directory
+- Create folder named `environment` for file placement
 
-### 2. **Создание инфраструктуры**
-- Выполнить команду: `clio create infrastructure`
-- Развернуть необходимые сервисы через kubectl (Redis, pgAdmin, PostgreSQL)
-- Настроить подключение к базе данных через `clio rdb`
+### 2. **Infrastructure Creation**
+- Execute command: `clio create infrastructure`
+- Deploy required services via kubectl (Redis, pgAdmin, PostgreSQL)
+- Configure database connection via `clio rdb`
 
-### 3. **Конфигурация Web-приложения**
-- Отредактировать строку подключения (ConnectionString) в конфигурации
-- Установить системную настройку **Maintainer** (пользователь может указать при запуске или система запросит интерактивно)
-- Изменить значение параметра `CookiesSameSiteMode` в файле `Terrasoft.WebHost.dll.config` на `Lax`
+### 3. **Web Application Configuration**
+- Edit connection string (ConnectionString) in configuration
+- Set **Maintainer** system setting (user can specify at launch or system will prompt interactively)
+- Change `CookiesSameSiteMode` parameter value in `Terrasoft.WebHost.dll.config` file to `Lax`
 
-### 4. **Установка компонентов**
-- Установить cliogate через команду `clio gate`
-- Зарегистрировать окружение в clio через команду `clio cfg`
-- Активировать режим разработки (CDP): `clio cdp true`
-- Включить File Design Mode: `clio fsm on`
+### 4. **Component Installation**
+- Install cliogate via `clio gate` command
+- Register environment in clio via `clio cfg` command
+- Activate development mode (CDP): `clio cdp true`
+- Enable File Design Mode: `clio fsm on`
 
-### 5. **Интерактивные параметры**
-- **Environment Name** (env_name) - спросить первым, после инициализации (обязательный параметр)
-- **Maintainer** - спросить вторым, если не указан в параметрах (обязательный параметр)
-- **Port Number** - использовать значение по умолчанию или позволить переопределить
-- **Credentials** - использовать значения по умолчанию (Supervisor/Supervisor) или позволить переопределить
+### 5. **Interactive Parameters**
+- **Environment Name** (env_name) - ask first, after initialization (required parameter)
+- **Maintainer** - ask second if not specified in parameters (required parameter)
+- **Port Number** - use default value or allow override
+- **Credentials** - use default values (Supervisor/Supervisor) or allow override
 
-## Примеры использования команды
+## Usage Examples
 
-### Пример 1: Минимальные параметры (все интерактивно)
+### Example 1: Minimal Parameters (all interactive)
 ```bash
 clio create-dev-env --zip ~/Downloads/creatio-application.zip
-# Система запросит:
+# System will ask:
 # 1. Environment Name: my-dev-env
 # 2. Maintainer: John Doe
 ```
 
-### Пример 2: Полная спецификация параметров
+### Example 2: Full Parameter Specification
 ```bash
 clio create-dev-env \
   --zip ~/Downloads/creatio-application.zip \
@@ -60,7 +60,7 @@ clio create-dev-env \
   --password Supervisor
 ```
 
-### Пример 3: С уже существующей директорией
+### Example 3: With Existing Directory
 ```bash
 clio create-dev-env \
   --zip ~/Downloads/creatio-app.zip \
@@ -69,13 +69,13 @@ clio create-dev-env \
   --maintainer "Admin User"
 ```
 
-### Пример 4: Использование текущей директории (создаст папку environment)
+### Example 4: Using Current Directory (will create environment folder)
 ```bash
 cd ~/projects/my-creatio
 clio create-dev-env --zip ~/Downloads/creatio-application.zip --env-name local-dev
 ```
 
-### Пример 5: С альтернативными учетными данными
+### Example 5: With Alternative Credentials
 ```bash
 clio create-dev-env \
   --zip ~/Downloads/creatio-application.zip \
@@ -86,35 +86,15 @@ clio create-dev-env \
   --password CustomPassword123
 ```
 
-## Параметры команды
+## Command Parameters
 
-| Параметр | Флаг | Тип | Обязательный | Описание |
-|----------|------|-----|--------------|----------|
-| ZIP-файл | `--zip` | string | Да | Путь к ZIP-архиву с приложением Creatio |
-| Целевая директория | `--target-dir` | string | Нет | Директория для развертывания (по умолчанию: текущая) |
-| Имя окружения | `--env-name` | string | Нет | Имя окружения (спросит интерактивно, если не указано) |
-| Maintainer | `--maintainer` | string | Нет | Системная настройка Maintainer (спросит интерактивно, если не указано) |
-| Порт | `--port` | int | Нет | Порт приложения (по умолчанию: 8080) |
-| Имя пользователя | `--username` | string | Нет | Учетные данные (по умолчанию: Supervisor) |
-| Пароль | `--password` | string | Нет | Пароль (по умолчанию: Supervisor) |
-| Пропустить подтверждение | `--no-confirm` | bool | Нет | Не запрашивать подтверждение перед выполнением |
-
-## Ожидаемый результат
-
-После успешного выполнения команды:
-- ✅ Приложение Creatio развернуто в целевой директории
-- ✅ Инфраструктура (Redis, PostgreSQL, pgAdmin) запущена и готова
-- ✅ База данных инициализирована
-- ✅ Параметр `Maintainer` установлен в системе
-- ✅ cliogate установлена и настроена
-- ✅ Окружение зарегистрировано в clio
-- ✅ CDP режим активирован
-- ✅ File Design Mode включен
-- ✅ Готово к локальной разработке
-
-## Обработка ошибок
-
-Команда должна предоставлять информативные сообщения об ошибках на каждом этапе с возможностью:
-- Отката к предыдущему состоянию при критических ошибках
-- Пропуска некритических ошибок с предупреждением
-- Логирования всех операций
+| Parameter | Flag | Type | Required | Description |
+|----------|------|------|----------|---------|
+| ZIP file | `--zip` | string | Yes | Path to Creatio application ZIP archive |
+| Target directory | `--target-dir` | string | No | Directory for deployment (default: current) |
+| Environment name | `--env-name` | string | No | Environment name (will ask interactively if not specified) |
+| Maintainer | `--maintainer` | string | No | Maintainer system setting (will ask interactively if not specified) |
+| Port | `--port` | int | No | Application port (default: 8080) |
+| Username | `--username` | string | No | Credentials (default: Supervisor) |
+| Password | `--password` | string | No | Password (default: Supervisor) |
+| Skip confirmation | `--no-confirm` | bool | No | Don't ask for confirmation before execution |

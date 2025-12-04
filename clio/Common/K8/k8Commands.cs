@@ -24,6 +24,22 @@ public interface Ik8Commands
 
 	k8Commands.ConnectionStringParams GetMssqlConnectionString();
 
+	bool NamespaceExists(string namespaceName);
+
+	bool DeleteNamespace(string namespaceName);
+
+	IList<string> GetReleasedPersistentVolumes(string namespacePrefix);
+
+	IList<string> GetOrphanedPersistentVolumes(string namespacePrefix);
+
+	bool DeletePersistentVolume(string pvName);
+
+	bool CleanupReleasedVolumes(string namespacePrefix);
+
+	DeleteNamespaceResult DeleteNamespaceWithCleanup(string namespaceName, string namespacePrefix, int maxWaitAttempts = 15, int delaySeconds = 2);
+
+	CleanupNamespaceResult CleanupAndDeleteNamespace(string namespaceName, string namespacePrefix);
+
 }
 
 public class k8Commands : Ik8Commands
@@ -277,9 +293,327 @@ public class k8Commands : Ik8Commands
 			.Items.FirstOrDefault(s=> s.Metadata.Name == serviceName);
 		return service?.Spec.Ports.FirstOrDefault();
 	}
+
+	public bool NamespaceExists(string namespaceName)
+	{
+		try
+		{
+			V1Namespace ns = _client.CoreV1.ReadNamespace(namespaceName);
+			return ns != null;
+		}
+		catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+		{
+			return false;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public bool DeleteNamespace(string namespaceName)
+	{
+		try
+		{
+			V1DeleteOptions deleteOptions = new V1DeleteOptions
+			{
+				PropagationPolicy = "Foreground", // Wait for dependent resources to be deleted
+				GracePeriodSeconds = 30
+			};
+			_client.CoreV1.DeleteNamespace(namespaceName, deleteOptions);
+			return true;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public IList<string> GetReleasedPersistentVolumes(string namespacePrefix)
+	{
+		try
+		{
+			var releasedPvs = _client.CoreV1.ListPersistentVolume()
+				.Items
+				.Where(pv => pv.Status.Phase == "Released" && 
+							 pv.Spec.ClaimRef != null &&
+							 pv.Spec.ClaimRef.NamespaceProperty != null &&
+							 pv.Spec.ClaimRef.NamespaceProperty.StartsWith(namespacePrefix))
+				.Select(pv => pv.Metadata.Name)
+				.ToList();
+
+			return releasedPvs;
+		}
+		catch (Exception)
+		{
+			return new List<string>();
+		}
+	}
+
+	public bool DeletePersistentVolume(string pvName)
+	{
+		try
+		{
+			// Use aggressive deletion options
+			var deleteOptions = new V1DeleteOptions
+			{
+				GracePeriodSeconds = 0,
+				PropagationPolicy = "Foreground" // Force delete even if there are finalizers
+			};
+			_client.CoreV1.DeletePersistentVolume(pvName, deleteOptions);
+			
+			// Verify deletion by checking if PV still exists
+			// Give it a moment for the deletion to be processed
+			System.Threading.Thread.Sleep(300);
+			
+			try
+			{
+				var pv = _client.CoreV1.ReadPersistentVolume(pvName);
+				// If we got here, PV still exists - deletion failed
+				// This can happen if PV has finalizers or is stuck
+				return false;
+			}
+			catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+			{
+				// PV was deleted successfully (404 = not found)
+				return true;
+			}
+		}
+		catch (k8s.Autorest.HttpOperationException deleteEx)
+		{
+			// Even if deletion throws an exception, check if it's actually gone
+			System.Threading.Thread.Sleep(300);
+			try
+			{
+				_client.CoreV1.ReadPersistentVolume(pvName);
+				return false;
+			}
+			catch (k8s.Autorest.HttpOperationException readEx) when (readEx.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+			{
+				// It's actually deleted despite the exception
+				return true;
+			}
+		}
+		catch (Exception ex)
+		{
+			// Unknown exception - fail
+			return false;
+		}
+	}
+
+	public IList<string> GetOrphanedPersistentVolumes(string namespacePrefix)
+	{
+		try
+		{
+			var pvs = _client.CoreV1.ListPersistentVolume().Items;
+			var orphanedPvs = new List<string>();
+			
+			foreach (var pv in pvs)
+			{
+				// Check if PV has a ClaimRef that points to our namespace
+				if (pv.Spec?.ClaimRef != null)
+				{
+					var claimNamespace = pv.Spec.ClaimRef.NamespaceProperty;
+					
+					if (!string.IsNullOrEmpty(claimNamespace) && claimNamespace.StartsWith(namespacePrefix))
+					{
+						orphanedPvs.Add(pv.Metadata.Name);
+					}
+				}
+			}
+
+			return orphanedPvs;
+		}
+		catch (Exception)
+		{
+			return new List<string>();
+		}
+	}
+
+	public bool CleanupReleasedVolumes(string namespacePrefix)
+	{
+		try
+		{
+			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
+			
+			foreach (var pvName in releasedPvs)
+			{
+				DeletePersistentVolume(pvName);
+			}
+
+			return true;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public DeleteNamespaceResult DeleteNamespaceWithCleanup(string namespaceName, string namespacePrefix, int maxWaitAttempts = 15, int delaySeconds = 2)
+	{
+		try
+		{
+			// Step 1: Clean up released PersistentVolumes
+			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
+			var deletedPvs = new List<string>();
+			
+			foreach (var pvName in releasedPvs)
+			{
+				if (DeletePersistentVolume(pvName))
+				{
+					deletedPvs.Add(pvName);
+				}
+			}
+
+			// Step 2: Delete namespace
+			if (!DeleteNamespace(namespaceName))
+			{
+				return new DeleteNamespaceResult
+				{
+					Success = false,
+					Message = $"Failed to delete namespace '{namespaceName}'",
+					DeletedPersistentVolumes = deletedPvs
+				};
+			}
+
+			// Step 3: Wait for namespace deletion
+			int attemptCount = 0;
+			while (attemptCount < maxWaitAttempts && NamespaceExists(namespaceName))
+			{
+				System.Threading.Thread.Sleep(delaySeconds * 1000);
+				attemptCount++;
+			}
+
+			bool namespaceFullyDeleted = !NamespaceExists(namespaceName);
+			
+			return new DeleteNamespaceResult
+			{
+				Success = namespaceFullyDeleted,
+				Message = namespaceFullyDeleted 
+					? $"Namespace '{namespaceName}' deleted successfully"
+					: $"Namespace deletion in progress but may not be fully complete yet",
+				DeletedPersistentVolumes = deletedPvs,
+				WaitAttempts = attemptCount,
+				NamespaceFullyDeleted = namespaceFullyDeleted
+			};
+		}
+		catch (Exception ex)
+		{
+			return new DeleteNamespaceResult
+			{
+				Success = false,
+				Message = $"Error deleting namespace: {ex.Message}",
+				DeletedPersistentVolumes = new List<string>()
+			};
+		}
+	}
+
+	public CleanupNamespaceResult CleanupAndDeleteNamespace(string namespaceName, string namespacePrefix)
+	{
+		try
+		{
+			var deletedPvs = new List<string>();
+			
+			// Step 1: Get all PV related to this namespace BEFORE deletion and attempt to delete them
+			// This includes Bound, Released, Available, etc. - any PV with ClaimRef to this namespace
+			var pvsBefore = GetOrphanedPersistentVolumes(namespacePrefix);
+			foreach (var pvName in pvsBefore)
+			{
+				if (DeletePersistentVolume(pvName))
+				{
+					deletedPvs.Add(pvName);
+				}
+			}
+
+			// Step 2: Delete namespace
+			if (!DeleteNamespace(namespaceName))
+			{
+				return new CleanupNamespaceResult
+				{
+					Success = false,
+					Message = $"Failed to delete namespace '{namespaceName}'",
+					DeletedPersistentVolumes = deletedPvs
+				};
+			}
+
+			// Step 3: Wait for namespace deletion (up to 40 seconds)
+			int maxWaitAttempts = 20;
+			int delaySeconds = 2;
+			int attemptCount = 0;
+			
+			while (attemptCount < maxWaitAttempts && NamespaceExists(namespaceName))
+			{
+				System.Threading.Thread.Sleep(delaySeconds * 1000);
+				attemptCount++;
+			}
+
+			bool namespaceFullyDeleted = !NamespaceExists(namespaceName);
+
+			// Step 4: Aggressively clean up any remaining PV (attempt multiple times)
+			// Even if they weren't found in Phase 1, they might appear or transition after namespace deletion
+			for (int attempt = 0; attempt < 15; attempt++)
+			{
+				var pvsAfter = GetOrphanedPersistentVolumes(namespacePrefix);
+				if (pvsAfter.Count == 0)
+					break;
+					
+				foreach (var pvName in pvsAfter)
+				{
+					if (DeletePersistentVolume(pvName))
+					{
+						if (!deletedPvs.Contains(pvName))
+						{
+							deletedPvs.Add(pvName);
+						}
+					}
+				}
+				
+				if (attempt < 14 && pvsAfter.Count > 0)
+				{
+					System.Threading.Thread.Sleep(1000); // Longer wait between retry attempts
+				}
+			}
+			
+			return new CleanupNamespaceResult
+			{
+				Success = namespaceFullyDeleted,
+				Message = namespaceFullyDeleted 
+					? $"Namespace '{namespaceName}' deleted successfully"
+					: $"Namespace deletion in progress but may not be fully complete yet",
+				DeletedPersistentVolumes = deletedPvs,
+				NamespaceFullyDeleted = namespaceFullyDeleted
+			};
+		}
+		catch (Exception ex)
+		{
+			return new CleanupNamespaceResult
+			{
+				Success = false,
+				Message = $"Error deleting namespace: {ex.Message}",
+				DeletedPersistentVolumes = new List<string>()
+			};
+		}
+	}
+
 	#endregion
 	public record ConnectionStringParams(int DbPort, int DbInternalPort,int RedisPort, int RedisInternalPort,string DbUsername, string DbPassword);
 	
 }
 
+public class DeleteNamespaceResult
+{
+	public bool Success { get; set; }
+	public string Message { get; set; }
+	public IList<string> DeletedPersistentVolumes { get; set; }
+	public int WaitAttempts { get; set; }
+	public bool NamespaceFullyDeleted { get; set; }
+}
+
+public class CleanupNamespaceResult
+{
+	public bool Success { get; set; }
+	public string Message { get; set; }
+	public IList<string> DeletedPersistentVolumes { get; set; }
+	public bool NamespaceFullyDeleted { get; set; }
+}
 
