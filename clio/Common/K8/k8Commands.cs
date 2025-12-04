@@ -443,10 +443,10 @@ public class k8Commands : Ik8Commands
 	{
 		try
 		{
-			// Step 1: Clean up released PersistentVolumes
-			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
 			var deletedPvs = new List<string>();
 			
+			// Step 1: Clean up released PersistentVolumes (before namespace deletion)
+			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
 			foreach (var pvName in releasedPvs)
 			{
 				if (DeletePersistentVolume(pvName))
@@ -478,6 +478,20 @@ public class k8Commands : Ik8Commands
 			}
 
 			bool namespaceFullyDeleted = !NamespaceExists(namespaceName);
+
+			// Step 4: Clean up any newly Released PersistentVolumes (after namespace deletion)
+			// These appear after the namespace is deleted
+			var newlyReleasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
+			foreach (var pvName in newlyReleasedPvs)
+			{
+				if (DeletePersistentVolume(pvName))
+				{
+					if (!deletedPvs.Contains(pvName))
+					{
+						deletedPvs.Add(pvName);
+					}
+				}
+			}
 			
 			return new CleanupNamespaceResult
 			{

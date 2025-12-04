@@ -133,13 +133,12 @@ namespace Clio.Command
 				{
 					_logger.WriteInfo("✓ No existing namespace found");
 					
-					// Even if namespace doesn't exist, check for orphaned PersistentVolumes
-					// and clean them up if --force flag is used or user confirms
-					if (forceRecreate)
-					{
-						_logger.WriteInfo("Cleaning up any orphaned PersistentVolumes (--force flag)...");
-						CleanupOrphanedPersistentVolumes();
-					}
+					// Always check for orphaned PersistentVolumes regardless of --force flag
+					// They can appear after namespace deletion and prevent new PVC binding
+					// Wait a moment for Released PV status to stabilize
+					System.Threading.Thread.Sleep(2000);
+					_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
+					CleanupOrphanedPersistentVolumes();
 					
 					_logger.WriteInfo("Proceeding with deployment");
 					return true;
@@ -157,6 +156,12 @@ namespace Clio.Command
 						return false;
 					}
 					_logger.WriteInfo("✓ Namespace deleted successfully");
+					
+					// After namespace deletion, clean up any Released PersistentVolumes
+					// They can prevent new PVC binding
+					_logger.WriteInfo("Checking for orphaned PersistentVolumes after namespace deletion...");
+					CleanupOrphanedPersistentVolumes();
+					
 					return true;
 				}
 
@@ -177,6 +182,12 @@ namespace Clio.Command
 				}
 
 				_logger.WriteInfo("✓ Namespace deleted successfully");
+				
+				// After namespace deletion, clean up any Released PersistentVolumes
+				// They can prevent new PVC binding
+				_logger.WriteInfo("Checking for orphaned PersistentVolumes after namespace deletion...");
+				CleanupOrphanedPersistentVolumes();
+				
 				return true;
 			}
 			catch (Exception ex)
