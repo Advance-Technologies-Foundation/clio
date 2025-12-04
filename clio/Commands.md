@@ -2137,17 +2137,20 @@ kubectl apply -f pgadmin/pgadmin-workload.yaml
 
 ## deploy-infrastructure
 
-Deploys Kubernetes infrastructure for Creatio automatically. This command generates K8s YAML files and applies them to your Kubernetes cluster in the correct order.
+Deploys Kubernetes infrastructure for Creatio automatically. This command generates K8s YAML files and applies them to your Kubernetes cluster in the correct order. If infrastructure already exists, it can automatically recreate it and cleanup old PersistentVolumes.
 
 **What it does:**
-1. Generates infrastructure files from templates
-2. Applies K8s manifests in correct order:
+1. Checks if `clio-infrastructure` namespace already exists
+2. If it exists, prompts to recreate it (or uses `--force` to skip confirmation)
+3. Cleans up any released PersistentVolumes from previous deployments
+4. Generates infrastructure files from templates
+5. Applies K8s manifests in correct order:
    - Namespace (`clio-infrastructure`)
    - Storage class
    - Redis service
    - PostgreSQL database
    - pgAdmin management tool
-3. Verifies connections to PostgreSQL and Redis
+6. Verifies connections to PostgreSQL and Redis
 
 **Prerequisites:**
 - `kubectl` must be installed and configured
@@ -2156,22 +2159,32 @@ Deploys Kubernetes infrastructure for Creatio automatically. This command genera
 **Usage:**
 
 ```bash
-# Deploy with default settings
+# Deploy with default settings (prompts if namespace exists)
 clio deploy-infrastructure
 
 # or using alias
 clio di
+
+# Force recreation without prompting (will delete existing namespace and cleanup volumes)
+clio deploy-infrastructure --force
 
 # Specify custom path for infrastructure files
 clio deploy-infrastructure --path /custom/path
 
 # Skip connection verification
 clio deploy-infrastructure --no-verify
+
+# Combine options
+clio deploy-infrastructure --force --no-verify
 ```
 
 **Options:**
 - `-p, --path` - Custom path for infrastructure files (default: auto-detected from clio settings)
+- `--force` - Force recreation of namespace without prompting if it already exists
 - `--no-verify` - Skip connection verification after deployment
+
+**Important note about PersistentVolumes:**
+When deleting and recreating infrastructure, the command automatically cleans up any "Released" PersistentVolumes from previous deployments. This prevents "unbound PersistentVolumeClaim" errors during new deployments.
 
 **Example output:**
 
@@ -2180,13 +2193,13 @@ clio deploy-infrastructure --no-verify
   Deploy Kubernetes Infrastructure
 ========================================
 
-[1/4] Checking kubectl installation...
-✓ kubectl is installed
+[1/5] Checking for existing namespace...
+✓ No existing namespace found, proceeding with deployment
 
-[2/4] Generating infrastructure files...
+[2/5] Generating infrastructure files...
 ✓ Infrastructure files generated at: ~/.local/creatio/clio/infrastructure
 
-[3/4] Deploying infrastructure to Kubernetes...
+[3/5] Deploying infrastructure to Kubernetes...
   [1/13] Deploying Namespace...
   ✓ Namespace deployed successfully
   [2/13] Deploying Storage Class...
@@ -2214,7 +2227,7 @@ clio deploy-infrastructure --no-verify
 
 ✓ All infrastructure components deployed
 
-[4/4] Verifying service connections...
+[4/5] Verifying service connections...
 Waiting for services to start (this may take a minute)...
   Testing PostgreSQL connection...
   ✓ PostgreSQL connection verified (attempt 3/40)
@@ -2223,6 +2236,7 @@ Waiting for services to start (this may take a minute)...
 
 ✓ All service connections verified
 
+[5/5] Infrastructure deployment complete!
 ========================================
   Infrastructure deployed successfully!
 ========================================
@@ -2234,13 +2248,121 @@ If deployment fails, check:
 1. Kubernetes cluster is running: `kubectl cluster-info`
 2. You have permissions: `kubectl auth can-i create namespace`
 3. Previous deployments are cleaned up: `kubectl get all -n clio-infrastructure`
+4. PersistentVolumes are properly bound: `kubectl get pv`
 
 To manually cleanup and retry:
 ```bash
+# Delete released PersistentVolumes
+kubectl delete pv $(kubectl get pv -o jsonpath='{.items[?(@.status.phase=="Released")].metadata.name}')
+
+# Delete namespace
 kubectl delete namespace clio-infrastructure
+
+# Retry deployment
 clio deploy-infrastructure
 ```
 
+**What's new:**
+- Automatic cleanup of released PersistentVolumes from previous deployments
+- Better handling of namespace recreation with proper resource cleanup
+- Step numbers updated to [1/5] to include cleanup step
+
+## delete-infrastructure
+
+Deletes the Kubernetes infrastructure for Creatio. This command removes the `clio-infrastructure` namespace and all its contents (pods, services, volumes, secrets, etc.).
+
+**What it does:**
+1. Checks if `clio-infrastructure` namespace exists
+2. Prompts for confirmation (unless `--force` is used)
+3. Deletes the namespace and all its contents:
+   - All pods and deployments
+   - All services and load balancers
+   - All persistent volumes and claims
+   - All configuration maps and secrets
+4. Cleans up any released PersistentVolumes from the previous deployment
+5. Waits for complete deletion
+
+**Prerequisites:**
+- `kubectl` must be installed and configured
+- Kubernetes cluster must be running
+
+**Usage:**
+
+```bash
+# Delete infrastructure with confirmation prompt
+clio delete-infrastructure
+
+# Delete infrastructure without confirmation (force)
+clio delete-infrastructure --force
+
+# Alternative aliases
+clio di-delete
+clio remove-infrastructure
+```
+
+**Options:**
+- `--force` - Skip confirmation and delete immediately
+
+**Example output:**
+
+```
+========================================
+  Delete Kubernetes Infrastructure
+========================================
+
+⚠ This will delete the 'clio-infrastructure' namespace and all its contents:
+  - All pods and deployments
+  - All services and volumes
+  - All persistent volume claims
+  - All configuration and secrets
+
+Are you sure you want to delete the infrastructure? (y/n)
+y
+
+Deleting namespace and all resources...
+
+Step 1: Cleaning up released PersistentVolumes...
+  Found 3 released PersistentVolume(s)
+  Deleting PV: postgres-data-pv
+  ✓ PV 'postgres-data-pv' deleted
+  Deleting PV: postgres-backup-images-pv
+  ✓ PV 'postgres-backup-images-pv' deleted
+  Deleting PV: pgadmin-pv
+  ✓ PV 'pgadmin-pv' deleted
+
+Step 2: Deleting namespace and all resources...
+  Waiting for namespace deletion... (1/15)
+  Waiting for namespace deletion... (2/15)
+✓ Namespace 'clio-infrastructure' deleted successfully
+
+========================================
+  Infrastructure deleted successfully!
+========================================
+```
+
+**Important features:**
+- **Automatic PersistentVolume cleanup**: Released PersistentVolumes from previous deployments are automatically detected and deleted
+- **Confirmation prompt**: Prevents accidental deletion (use `--force` to skip)
+- **Graceful termination**: Waits up to 30 seconds for resources to clean up properly
+
+**Notes:**
+- This command will delete all data in the persistent volumes
+- Make sure to backup any data before deleting
+- Released PersistentVolumes are cleaned up automatically to prevent "unbound claim" errors on next deployment
+- To recreate the infrastructure, use `clio deploy-infrastructure`
+
+**Troubleshooting:**
+
+If deletion is not completing:
+1. Check deletion status: `kubectl get namespace clio-infrastructure`
+2. Check PersistentVolumes: `kubectl get pv`
+3. Force immediate deletion (if stuck): `kubectl delete namespace clio-infrastructure --grace-period=0 --force`
+4. Manually delete stuck PVs: `kubectl delete pv <pv-name>`
+
+**What's new:**
+- Automatic cleanup of released PersistentVolumes prevents future deployment issues
+- Better error handling and status reporting during deletion
+- Step-by-step cleanup process visibility
 
 ### Prepare IIS Configuration and Launch
 Prepare IIS Configuration and Launch. Clio will set up an IIS site, configure the relevant app pool,

@@ -24,6 +24,18 @@ public interface Ik8Commands
 
 	k8Commands.ConnectionStringParams GetMssqlConnectionString();
 
+	bool NamespaceExists(string namespaceName);
+
+	bool DeleteNamespace(string namespaceName);
+
+	IList<string> GetReleasedPersistentVolumes(string namespacePrefix);
+
+	bool DeletePersistentVolume(string pvName);
+
+	bool CleanupReleasedVolumes(string namespacePrefix);
+
+	DeleteNamespaceResult DeleteNamespaceWithCleanup(string namespaceName, string namespacePrefix, int maxWaitAttempts = 15, int delaySeconds = 2);
+
 }
 
 public class k8Commands : Ik8Commands
@@ -277,9 +289,166 @@ public class k8Commands : Ik8Commands
 			.Items.FirstOrDefault(s=> s.Metadata.Name == serviceName);
 		return service?.Spec.Ports.FirstOrDefault();
 	}
+
+	public bool NamespaceExists(string namespaceName)
+	{
+		try
+		{
+			V1Namespace ns = _client.CoreV1.ReadNamespace(namespaceName);
+			return ns != null;
+		}
+		catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+		{
+			return false;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public bool DeleteNamespace(string namespaceName)
+	{
+		try
+		{
+			V1DeleteOptions deleteOptions = new V1DeleteOptions
+			{
+				PropagationPolicy = "Foreground", // Wait for dependent resources to be deleted
+				GracePeriodSeconds = 30
+			};
+			_client.CoreV1.DeleteNamespace(namespaceName, deleteOptions);
+			return true;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public IList<string> GetReleasedPersistentVolumes(string namespacePrefix)
+	{
+		try
+		{
+			var releasedPvs = _client.CoreV1.ListPersistentVolume()
+				.Items
+				.Where(pv => pv.Status.Phase == "Released" && 
+							 pv.Spec.ClaimRef != null &&
+							 pv.Spec.ClaimRef.NamespaceProperty != null &&
+							 pv.Spec.ClaimRef.NamespaceProperty.StartsWith(namespacePrefix))
+				.Select(pv => pv.Metadata.Name)
+				.ToList();
+
+			return releasedPvs;
+		}
+		catch (Exception)
+		{
+			return new List<string>();
+		}
+	}
+
+	public bool DeletePersistentVolume(string pvName)
+	{
+		try
+		{
+			_client.CoreV1.DeletePersistentVolume(pvName);
+			return true;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public bool CleanupReleasedVolumes(string namespacePrefix)
+	{
+		try
+		{
+			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
+			
+			foreach (var pvName in releasedPvs)
+			{
+				DeletePersistentVolume(pvName);
+			}
+
+			return true;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	public DeleteNamespaceResult DeleteNamespaceWithCleanup(string namespaceName, string namespacePrefix, int maxWaitAttempts = 15, int delaySeconds = 2)
+	{
+		try
+		{
+			// Step 1: Clean up released PersistentVolumes
+			var releasedPvs = GetReleasedPersistentVolumes(namespacePrefix);
+			var deletedPvs = new List<string>();
+			
+			foreach (var pvName in releasedPvs)
+			{
+				if (DeletePersistentVolume(pvName))
+				{
+					deletedPvs.Add(pvName);
+				}
+			}
+
+			// Step 2: Delete namespace
+			if (!DeleteNamespace(namespaceName))
+			{
+				return new DeleteNamespaceResult
+				{
+					Success = false,
+					Message = $"Failed to delete namespace '{namespaceName}'",
+					DeletedPersistentVolumes = deletedPvs
+				};
+			}
+
+			// Step 3: Wait for namespace deletion
+			int attemptCount = 0;
+			while (attemptCount < maxWaitAttempts && NamespaceExists(namespaceName))
+			{
+				System.Threading.Thread.Sleep(delaySeconds * 1000);
+				attemptCount++;
+			}
+
+			bool namespaceFullyDeleted = !NamespaceExists(namespaceName);
+			
+			return new DeleteNamespaceResult
+			{
+				Success = namespaceFullyDeleted,
+				Message = namespaceFullyDeleted 
+					? $"Namespace '{namespaceName}' deleted successfully"
+					: $"Namespace deletion in progress but may not be fully complete yet",
+				DeletedPersistentVolumes = deletedPvs,
+				WaitAttempts = attemptCount,
+				NamespaceFullyDeleted = namespaceFullyDeleted
+			};
+		}
+		catch (Exception ex)
+		{
+			return new DeleteNamespaceResult
+			{
+				Success = false,
+				Message = $"Error deleting namespace: {ex.Message}",
+				DeletedPersistentVolumes = new List<string>()
+			};
+		}
+	}
+
 	#endregion
 	public record ConnectionStringParams(int DbPort, int DbInternalPort,int RedisPort, int RedisInternalPort,string DbUsername, string DbPassword);
 	
+}
+
+public class DeleteNamespaceResult
+{
+	public bool Success { get; set; }
+	public string Message { get; set; }
+	public IList<string> DeletedPersistentVolumes { get; set; }
+	public int WaitAttempts { get; set; }
+	public bool NamespaceFullyDeleted { get; set; }
 }
 
 
