@@ -18,6 +18,18 @@ spec:
       restartPolicy: Always
       securityContext:
         fsGroup: 999
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - lima-rancher-desktop
+                      - docker-desktop
+                      - minikube
       initContainers:
         - name: fix-permissions
           image: busybox:1.36
@@ -134,7 +146,7 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: 2Gi
+            sizeLimit: 8Gi
   volumeClaimTemplates:
   - metadata:
       name: postgres-data
