@@ -37,6 +37,7 @@ clio deploy-creatio --ZipFile ~/Downloads/creatio-8.x.x.zip
 - [Database Access](#database-access)
 - [Typical Workflow](#typical-workflow)
 - [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
 - [Useful Commands](#useful-commands)
 
 ---
@@ -628,6 +629,22 @@ clio uninstall-creatio -e old_env
 1. Check command documentation: [Commands.md](Commands.md)
 2. Review logs: `tail -f ~/creatio/dev1/logs/creatio.log`
 3. Open issue: https://github.com/anthropics/clio/issues
+
+---
+
+## FAQ
+
+### Recommendation to reconfigure Rancher Desktop
+
+It looks like the current volume virtualization/mount type in Rancher Desktop is causing issues (the virtiofs / Virtual Machine option does not work properly — PostgreSQL connections fail, and others have the same problem). A reliable workaround is to switch the mount type to reverse-sshfs, which has been tested and works well.
+
+What to do:
+
+1. Open Rancher Desktop.
+2. Go to **Preferences → Volumes**.
+3. In **Mount Type**, select `reverse-sshfs` (instead of `virtiofs / Virtual Machine`).
+4. Click **Apply**.
+5. Restart Rancher Desktop if prompted.
 
 ---
 
