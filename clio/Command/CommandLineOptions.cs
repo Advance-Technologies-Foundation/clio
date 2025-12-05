@@ -247,9 +247,9 @@ namespace Clio
 	}
 
 	[Verb("link-core-src", Aliases = ["lcs"], HelpText = "Link core source code to environment for development")]
-	internal class LinkCoreSrcOptions : EnvironmentNameOptions
+	public class LinkCoreSrcOptions : EnvironmentNameOptions
 	{
-		[Option('c', "core-path", Required = true, HelpText = "Path to Creatio core source directory")]
+		[Option("core-path", Required = true, HelpText = "Path to Creatio core source directory")]
 		public string CorePath { get; set; }
 	}
 

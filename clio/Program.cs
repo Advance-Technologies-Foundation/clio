@@ -150,7 +150,8 @@ internal class Program {
 		typeof(CustomizeDataProtectionCommandOptions),
 		typeof(GetAppHashCommandOptions),
 		typeof(MergeWorkspacesCommandOptions),
-		typeof(GenerateProcessModelCommandOptions)
+		typeof(GenerateProcessModelCommandOptions),
+		typeof(LinkCoreSrcOptions)
 		
 	];
 
@@ -284,6 +285,7 @@ internal class Program {
 						.Execute(opts),
 					StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
 					HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
+					LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
 					var _ => 1
 				};
 	};

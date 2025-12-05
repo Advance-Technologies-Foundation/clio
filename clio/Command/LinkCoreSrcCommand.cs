@@ -37,7 +37,7 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			.Must(envName => EnvironmentExists(envName))
 			.WithMessage(o => $"Environment '{o.Environment}' is not registered in clio config");
 
-		Custom((options, context) => {
+		RuleFor(o => o).Custom((options, context) => {
 			ValidateApplicationFiles(options, context);
 			ValidateCoreFiles(options, context);
 		});
@@ -97,12 +97,12 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 
 	private void ValidateCoreFiles(LinkCoreSrcOptions options, ValidationContext<LinkCoreSrcOptions> context) {
 		try {
-			// Check appsettings.config exists in core
-			string[] coreConfigs = _fileSystem.GetFiles(options.CorePath, "appsettings.config", SearchOption.AllDirectories);
+			// Check appsettings.json exists in core (for .NET Core/6/8)
+			string[] coreConfigs = _fileSystem.GetFiles(options.CorePath, "appsettings.json", SearchOption.AllDirectories);
 			if (!coreConfigs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"appsettings.config not found in core directory: {options.CorePath}"
+					ErrorMessage = $"appsettings.json not found in core directory: {options.CorePath}"
 				});
 			}
 
@@ -219,7 +219,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		_logger.WriteInfo($"Core Path: {options.CorePath}");
 		_logger.WriteInfo("\nOperations to perform:");
 		_logger.WriteInfo("  1. Synchronize ConnectionStrings.config from app to core");
-		_logger.WriteInfo("  2. Configure ports in appsettings.config");
+		_logger.WriteInfo("  2. Configure ports in appsettings.json");
 		_logger.WriteInfo("  3. Enable LAX mode in app.config");
 		_logger.WriteInfo("  4. Create symlink for Terrasoft.WebHost");
 		_logger.WriteInfo("");
@@ -259,7 +259,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 	}
 
 	private void ConfigurePortsInAppSettings(LinkCoreSrcOptions options, EnvironmentSettings env) {
-		_logger.WriteInfo("\n[2/4] Configuring ports in appsettings.config...");
+		_logger.WriteInfo("\n[2/4] Configuring ports in appsettings.json...");
 
 		try {
 			// Extract port from URI
@@ -271,10 +271,10 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 				return;
 			}
 
-			// Find appsettings.config in core
-			string[] appSettingsFiles = _fileSystem.GetFiles(options.CorePath, "appsettings.config", SearchOption.AllDirectories);
+			// Find appsettings.json in core
+			string[] appSettingsFiles = _fileSystem.GetFiles(options.CorePath, "appsettings.json", SearchOption.AllDirectories);
 			if (!appSettingsFiles.Any()) {
-				throw new Exception("appsettings.config not found in core");
+				throw new Exception("appsettings.json not found in core");
 			}
 
 			string appSettingsPath = appSettingsFiles[0];
@@ -284,7 +284,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 			string updatedContent = UpdateConfigWithPort(content, port);
 
 			_fileSystem.WriteAllTextToFile(appSettingsPath, updatedContent);
-			_logger.WriteInfo($"  ✓ Port {port} configured in appsettings.config");
+			_logger.WriteInfo($"  ✓ Port {port} configured in appsettings.json");
 		} catch (Exception ex) {
 			_logger.WriteError($"  ✗ Error configuring ports: {ex.Message}");
 			throw;
@@ -329,7 +329,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 					@"""port"":\s*\d+",
 					$"\"port\": {port}");
 			}
-			throw new Exception("Unable to parse appsettings.config (unsupported format)");
+			throw new Exception("Unable to parse appsettings.json (unsupported format)");
 		}
 	}
 

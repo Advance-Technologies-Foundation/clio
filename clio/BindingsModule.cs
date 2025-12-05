@@ -253,7 +253,7 @@ public class BindingsModule {
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
 		containerBuilder.RegisterType<LinkPackageStoreCommand>();
-		
+		containerBuilder.RegisterType<LinkCoreSrcCommand>();
 		
 
 		MediatRConfiguration configuration = MediatRConfigurationBuilder
