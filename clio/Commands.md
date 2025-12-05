@@ -186,6 +186,13 @@ clio push-pkg --id 22966 10096
 clio push-app C:\Packages\package.gz
 ```
 
+To enable configuration error checking during installation, use the `--check-configuration-errors` flag:
+
+```
+clio push-app C:\Packages\package.gz --check-configuration-errors true
+```
+
+The `--check-configuration-errors` flag enables validation of compilation and configuration errors during installation. If the flag is set and there are compilation or configuration errors, the installation will stop and return an error with detailed information about the problems. If the flag is not set, the installation will proceed without checking for configuration errors.
 ## compile-package
 
 To compile package
