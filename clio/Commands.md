@@ -1641,6 +1641,71 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 - On macOS and Linux, you must use the `--envPkgPath` with the direct file path
 - Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
+## link-core-src
+
+Link Creatio core source code to an environment for development. This command synchronizes configuration files and creates a symlink to the Terrasoft.WebHost directory, allowing you to develop and debug the core using the running application.
+
+**Syntax:**
+```bash
+clio link-core-src -e {EnvName} -c {CoreDirPath}
+clio link-core-src -e {EnvName} --core-path {CoreDirPath}
+clio lcs -e {EnvName} -c {CoreDirPath}
+```
+
+**Parameters:**
+- `-e`, `--environment {EnvName}` (required): Environment name registered in clio config
+- `-c`, `--core-path {CoreDirPath}` (required): Path to Creatio core source directory
+
+**Examples:**
+
+macOS/Linux:
+```bash
+clio link-core-src -e development --core-path /Users/dev/creatio-core
+clio lcs -e dev -c ~/projects/core
+```
+
+Windows:
+```ps
+clio link-core-src -e development -c "C:\dev\creatio-core"
+clio lcs -e dev --core-path "C:\Projects\Core"
+```
+
+**What it does:**
+1. **Validates configuration** - Checks that environment is configured, all required files exist, and directories are accessible
+2. **Requests confirmation** - Displays a summary of operations and asks for user confirmation
+3. **Synchronizes ConnectionStrings.config** - Copies database connection configuration from deployed app to core
+4. **Configures ports** - Sets the application port in appsettings.config based on environment settings
+5. **Enables LAX mode** - Enables CookiesSameSiteMode=Lax in app.config for development
+6. **Creates symlink** - Links Terrasoft.WebHost from core to deployed application for live code changes
+
+**Behavior:**
+- If any validation fails, the command stops without making changes
+- Requires user confirmation before executing operations
+- Creates or overwrites symlink if it already exists
+- Logs detailed information about each operation
+- All file operations use the environment's configured settings
+
+**Prerequisites:**
+- Environment must be registered in clio settings
+- Environment must have a valid EnvironmentPath configured
+- Core source directory must contain: `app.config`, `appsettings.config`, and `Terrasoft.WebHost` directory
+- Application directory must have `ConnectionStrings.config`
+
+**Workflow Example:**
+```bash
+# 1. Link core to development environment
+clio link-core-src -e development --core-path /Users/dev/creatio-core
+
+# 2. Start the application (it will use core from symlink)
+clio start -e development
+
+# 3. Edit core files in /Users/dev/creatio-core
+# 4. Changes are immediately visible in running application through symlink
+# 5. Debug and test your core changes
+```
+
+**Aliases:** `lcs`
+
 ## link-package-store
 
 To link packages from PackageStore to environment packages with version control use command:
