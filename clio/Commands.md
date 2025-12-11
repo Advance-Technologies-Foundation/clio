@@ -1365,7 +1365,7 @@ Executes custom SQL script from specified file
 execute-sql-script -f c:\Path to file\file.sql
 ```
 
-## call-Service
+## call service
 
 Makes HTTP call to specified service endpoint. Supports both file-based and inline JSON request bodies.
 
@@ -1374,7 +1374,7 @@ Makes HTTP call to specified service endpoint. Supports both file-based and inli
 | Key | Short | Value | Description |
 |:---:|:-----:|:------|:------------|
 | --service-path | | Path | Route service path (required) |
-| --method | -m | GET\|POST\|PUT\|DELETE\|PATCH | HTTP method (default: POST) |
+| --method | -m | GET\|POST\|DELETE | HTTP method (default: POST) |
 | --input | -f | File path | Request body from file (path to JSON file) |
 | --body | -b | JSON string | Request body inline (JSON as string) |
 | --destination | -d | File path | Save result to file |
@@ -1409,14 +1409,6 @@ clio call-service --service-path ServiceModel/YourService.svc/YourMethod \
 ```
 
 ### Usage - Different HTTP Methods
-
-**PUT request with inline body:**
-```bash
-clio call-service --service-path ServiceModel/UpdateService.svc/UpdateData \
-  --method PUT \
-  --body '{"id":1,"name":"Updated"}' \
-  -e myEnv
-```
 
 **DELETE request:**
 ```bash
