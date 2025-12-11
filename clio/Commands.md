@@ -781,7 +781,7 @@ clio ping <ENVIRONMENT_NAME>
 Display registered environment configurations from local clio settings. Use this to view all environments you've registered with `reg-web-app` command.
 
 ```bash
-# List all environments with full details
+# List all environments with full details (JSON format)
 clio show-web-app-list
 
 # Show concise table format (Name, URL)
@@ -790,10 +790,40 @@ clio show-web-app-list --short
 # Show specific environment details
 clio show-web-app-list <ENVIRONMENT_NAME>
 
+# Show all environments in table format
+clio show-web-app-list --format table
+
+# Show environment with raw output (plain text)
+clio show-web-app-list --format raw
+clio show-web-app-list <ENVIRONMENT_NAME> --format raw
+
+# Using raw flag as shorthand
+clio show-web-app-list --raw
+
 # Using aliases
 clio envs -s
 clio show-web-app <ENVIRONMENT_NAME>
+clio envs --format table
 ```
+
+**Options:**
+- `-f, --format <FORMAT>`: Output format (json, table, raw). Default: json
+- `--raw`: Raw output shorthand (equivalent to --format raw)
+- `-s, --short`: Show short list (backward compatible, overrides other format options)
+- `-e, --env <ENVIRONMENT_NAME>`: Environment name (alias for positional argument)
+- `<ENVIRONMENT_NAME>`: Optional - show details for specific environment, or all if omitted
+
+**Output Formats:**
+- **json**: JSON format with environment settings (default)
+- **table**: Formatted table with all environments
+- **raw**: Plain text format with field labels
+
+Fields included: uri, dbName, backupFilePath, login, password (masked), maintainer, isNetCore,
+clientId, clientSecret (masked), authAppUri, simpleLoginUri, safe, developerModeEnabled,
+isDevMode, workspacePathes, environmentPath, dbServerKey, and nested dbServer { uri, workingFolder,
+login, password (masked) }.
+
+Note: Sensitive fields like Password and ClientSecret are masked in all formats.
 
 For comprehensive documentation, see: [`show-web-app-list`](./docs/commands/ShowAppListCommand.md)
 
