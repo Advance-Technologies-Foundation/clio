@@ -154,7 +154,11 @@ internal class WorkspaceTest : BaseClioModuleTests
 	[Test]
 	public void PublishWorkspaceToFileTest() {
 		// Arrange
-		const string appStorePath = @"C:\clioAppStore";
+		if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
+			Assert.Pass("Skipping Windows-only test on non-Windows OS");
+			return;
+		}
+		string appStorePath = GetPlatformPath("C", "clioAppStore");
 		const string appName = "iframe-sample";
 		const string appVersion = "2.0.0";
 		const string fileName = $"{appName}_{appVersion}.zip";
@@ -192,7 +196,11 @@ internal class WorkspaceTest : BaseClioModuleTests
 	[Description("Should publish workspace to file without updating versions when app version is not provided")]
 	public void PublishWorkspaceToFileWithoutVersionTest(string appVersionE) {
 		// Arrange
-		const string appStorePath = @"C:\clioAppStore";
+		if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
+			Assert.Pass("Skipping Windows-only test on non-Windows OS");
+			return;
+		}
+		string appStorePath = GetPlatformPath("C", "clioAppStore");
 		const string appName = "iframe-sample";
 		const string appVersion = "7.8.0";
 		const string fileName = $"{appName}_{appVersion}.zip";

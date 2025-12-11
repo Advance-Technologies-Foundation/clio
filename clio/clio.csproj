@@ -10,7 +10,7 @@
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <!-- Default version for local development. Will be overridden during release from tag -->
-      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.73</AssemblyVersion>
+      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.74</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
@@ -849,7 +849,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-  <!-- <Choose>
+  <Choose>
     <When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
       <ItemGroup>
         <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
@@ -857,12 +857,11 @@
     </When>
     <Otherwise>
       <ItemGroup>
-        <PackageReference Include="creatio.client" Version="1.0.24" />
+        <PackageReference Include="creatio.client" Version="1.0.33" />
       </ItemGroup>
     </Otherwise>
-  </Choose> -->
+  </Choose>
   <ItemGroup>
-    <PackageReference Include="creatio.client" Version="1.0.30" />
     <PackageReference Include="ATF.Repository" Version="2.0.2.11" />
     <PackageReference Include="Autofac" Version="8.4.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />

@@ -25,11 +25,27 @@ None - all arguments are optional.
 | Argument | Short | Description                              | Example              |
 |----------|-------|------------------------------------------|----------------------|
 | `name`   | -     | Specific environment name (positional)  | `production`         |
+| `--env`  | `-e`  | Environment name (option alias for `name`) | `--env production`   |
 
 #### Display Options
 | Argument  | Short | Description                    | Example    |
 |-----------|-------|--------------------------------|------------|
 | `--short` | `-s`  | Show abbreviated list format   | `--short`  |
+| `--format`| `-f`  | Output format: `json`, `table`, or `raw` | `--format table` |
+| `--raw`   | -     | Raw output (shorthand for `--format raw`) | `--raw` |
+
+## Specification
+
+- Outputs **all** fields from `EnvironmentSettings`, with secrets masked:
+  - `uri`, `dbName`, `backupFilePath`, `login`, `password (masked)`, `maintainer`, `isNetCore`
+  - `clientId`, `clientSecret (masked)`, `authAppUri`, `simpleLoginUri`
+  - `safe`, `developerModeEnabled`, `isDevMode`
+  - `workspacePathes`, `environmentPath`
+  - `dbServerKey`
+  - `dbServer` object: `uri`, `workingFolder`, `login`, `password (masked)`
+- `-e|--env` is a first-class alias for the positional `name` argument; both are interchangeable.
+- `--short` renders a table view (Name, Url, Login, IsNetCore) using `ISettingsRepository.ShowSettingsTo`.
+- `--format table` and `--format raw` apply to single-environment and all-environment outputs.
 
 ## Examples
 
@@ -40,7 +56,7 @@ Show all registered environments with full details:
 clio show-web-app-list
 ```
 
-Show all environments in a short formatm uses table view.
+Show all environments in a short format (table view).
 ```bash
 clio envs --short
 
@@ -56,6 +72,9 @@ clio show-web-app-list production
 
 # or short format
 clio envs production -s
+
+# using the option alias instead of positional
+clio show-web-app-list --env production
 ```
 
 
@@ -83,63 +102,77 @@ clio envs production
 
 ### Full Format (Default)
 
-Shows complete JSON configuration for each environment:
+Shows complete JSON configuration for each environment, including database info and paths (secrets are masked):
 ```json
 {
   "production": {
-    "Uri": "https://myapp.creatio.com",
-    "Login": "admin",
-    "Password": "***masked***",
-    "IsNetCore": true,
-    "DeveloperModeEnabled": false,
-    "Safe": true,
-    "Maintainer": "",
-    "ClientId": "",
-    "ClientSecret": "",
-    "AuthAppUri": "",
-    "WorkspacePathes": ""
-  },
-  "development": {
-    "Uri": "https://dev.creatio.com",
-    "Login": "admin", 
-    "Password": "***masked***",
-    "IsNetCore": true,
-    "DeveloperModeEnabled": true,
-    "Safe": false,
-    "Maintainer": "",
-    "ClientId": "",
-    "ClientSecret": "",
-    "AuthAppUri": "",
-    "WorkspacePathes": ""
+    "uri": "https://myapp.creatio.com",
+    "dbName": "creatio_prod",
+    "backupFilePath": "c:/backups/prod.bak",
+    "login": "admin",
+    "password": "****",
+    "maintainer": "",
+    "isNetCore": true,
+    "clientId": "",
+    "clientSecret": "****",
+    "authAppUri": "",
+    "simpleLoginUri": "https://myapp.creatio.com/Shell/?simplelogin=true",
+    "safe": true,
+    "developerModeEnabled": false,
+    "isDevMode": false,
+    "workspacePathes": "",
+    "environmentPath": "",
+    "dbServerKey": "default",
+    "dbServer": {
+      "uri": "https://sql.example.com",
+      "workingFolder": "c:/sql",
+      "login": "sa",
+      "password": "****"
+    }
   }
 }
 ```
 
 ### Short Format (`--short`)
 
-Shows a concise table format (only shows url and hides credentials):
+Shows a concise table format:
 ```
- ------------------------------------------------
- | Name   | Url                                 |
- ------------------------------------------------
- | dev    | https://dev.creatio.com             |
- ------------------------------------------------
- | prod   | https://prod.creatio.com            |
- ------------------------------------------------ 
+ ---------------------------------------------------------------------------
+ | Name   | Url                                 | Login | IsNetCore |
+ ---------------------------------------------------------------------------
+ | dev    | https://dev.creatio.com             | admin | Yes       |
+ ---------------------------------------------------------------------------
+ | prod   | https://prod.creatio.com            | admin | No        |
+ ---------------------------------------------------------------------------
 ```
 
 ### Specific Environment
 
-Shows details for the requested environment only:
+Shows all fields for the requested environment (masked where appropriate):
 ```json
 {
-  "production": {
-    "Uri": "https://myapp.creatio.com",
-    "Login": "admin",
-    "Password": "***masked***",
-    "IsNetCore": true,
-    "DeveloperModeEnabled": false,
-    "Safe": true
+  "uri": "https://myapp.creatio.com",
+  "dbName": "creatio_prod",
+  "backupFilePath": "c:/backups/prod.bak",
+  "login": "admin",
+  "password": "****",
+  "maintainer": "",
+  "isNetCore": true,
+  "clientId": "",
+  "clientSecret": "****",
+  "authAppUri": "",
+  "simpleLoginUri": "https://myapp.creatio.com/Shell/?simplelogin=true",
+  "safe": true,
+  "developerModeEnabled": false,
+  "isDevMode": false,
+  "workspacePathes": "",
+  "environmentPath": "",
+  "dbServerKey": "default",
+  "dbServer": {
+    "uri": "https://sql.example.com",
+    "workingFolder": "c:/sql",
+    "login": "sa",
+    "password": "****"
   }
 }
 ```
@@ -239,11 +272,12 @@ clio push-pkg MyPackage -e production
 - This is rare but the command sets UTF-8 encoding to handle international characters
 - Try running in a different terminal if character encoding issues persist
 
-### Technical Implementation
+### Architecture & Data Flow
 
-The command is implemented as:
-- **Command Class**: `ShowAppListCommand`
-- **Options Class**: `AppListOptions`
-- **Base Class**: `Command<AppListOptions>` (no environment inheritance - local only)
-- **Dependencies**: Uses `ISettingsRepository` for local settings access
-- **Output**: Uses `Console.Out` with UTF-8 encoding for proper character display
+- **Parsing**: `AppListOptions` accepts positional `name` or `-e|--env`; logic normalizes to a single `environmentName`.
+- **Data source**: `ISettingsRepository` supplies environments; `GetAllEnvironments` falls back to reflection for compatibility.
+- **Output selection**:
+  - `--short` delegates to `ISettingsRepository.ShowSettingsTo` for a compact table across environments.
+  - Otherwise chooses `json`, `table`, or `raw` formatting for single or multiple environments.
+- **Safety**: `MaskSensitiveData` masks `Password` and `ClientSecret` (including nested `DbServer`).
+- **I/O**: All output flows to `Console.Out` with UTF-8 encoding; no network calls (local config only).

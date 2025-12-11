@@ -39,6 +39,18 @@ namespace Clio.Common
 		/// <returns>Response</returns>
 		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
 		string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
+
+		/// <summary>
+		/// Executes DELETE Request with retry
+		/// </summary>
+		/// <param name="url">Request URL</param>
+		/// <param name="requestData">Request body (optional)</param>
+		/// <param name="requestTimeout">Request Timeout</param>
+		/// <param name="retryCount">retry count</param>
+		/// <param name="delaySec">delay between retries in seconds</param>
+		/// <returns>Response</returns>
+		/// <exception cref="Exception">Throws when request fails after attempts exceed <paramref name="retryCount"/> count</exception>
+		string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 		void Login();
 		string UploadFile(string url, string filePath);
 		string UploadAlmFile(string url, string filePath);
@@ -89,6 +101,10 @@ namespace Clio.Common
 
 		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1){
 			return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		}
+
+		public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1){
+			return _creatioClient.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec);
 		}
 
 		public void Login() {

@@ -155,11 +155,16 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	protected string ExecuteServiceRequest(string url, string requestData, string resultFileName = null,
 		string httpMethod = ""){
-		string jsonResult = httpMethod switch {
-								"POST" => ApplicationClient.ExecutePostRequest(url, requestData),
-								"GET" => ApplicationClient.ExecuteGetRequest(url),
-								var _ => ApplicationClient.ExecutePostRequest(url, requestData)
-							};
+		string normalizedMethod = string.IsNullOrWhiteSpace(httpMethod)
+			? "POST"
+			: httpMethod.ToUpperInvariant();
+
+		string jsonResult = normalizedMethod switch {
+					"POST" => ApplicationClient.ExecutePostRequest(url, requestData),
+					"GET" => ApplicationClient.ExecuteGetRequest(url),
+					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData),
+					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
+				};
 
 		string beautifiedJson = BeautifyJsonIfPossible(jsonResult);
 		

@@ -21,6 +21,13 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests
 		containerBuilder.RegisterInstance(_windowsFeatureManager).As<IWindowsFeatureManager>();
 	}
 
+	[OneTimeSetUp]
+	public void VerifyWindowsPlatform() {
+		if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) {
+			Assert.Ignore("This test class is Windows-only");
+		}
+	}
+
 	public override void Setup(){
 		base.Setup();
 		_sut = Container.Resolve<ManageWindowsFeaturesCommand>();
