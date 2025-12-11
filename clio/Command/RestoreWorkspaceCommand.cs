@@ -72,7 +72,7 @@ namespace Clio.Command
 				_workspace.Restore(options);
 				_logger.WriteInfo("Done");
 				return 0;
-			} catch (FileNotFoundException ex) {
+			} catch (FileNotFoundException) {
 				return _createWorkspaceCommand.Execute(CloneFromRestoreOptions(options));
 			} catch (Exception e) {
 				_logger.WriteError(e.Message);

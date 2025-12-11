@@ -828,6 +828,26 @@ Note: Sensitive fields like Password and ClientSecret are masked in all formats.
 For comprehensive documentation, see: [`show-web-app-list`](./docs/commands/ShowAppListCommand.md)
 
 
+## show-local-envs
+
+Display local environments that have an `environmentPath` configured and show their health in a styled table (Name, Status, Url, Path, Reason). Status values are colored in the console.
+
+```bash
+clio show-local-envs
+```
+
+Statuses:
+- `OK`: ping succeeded and login succeeded.
+- `Error Auth data`: ping succeeded but login failed.
+- `Deleted`: environment directory is missing or contains only the `Logs` folder (or access is denied).
+- `Not runned`: ping failed but the environment directory exists and has content beyond `Logs`.
+
+Notes:
+- Uses settings abstraction (no direct file reads) to discover environments and their paths.
+- Uses existing clio connectivity logic for ping/login checks.
+- Prints a message when no local environments are configured with paths.
+
+
 ## open
 
 For open selected environment in default browser use (Windows only command)

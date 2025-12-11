@@ -30,13 +30,15 @@ namespace Clio.Tests.Command {
 
 		[SetUp]
 		public void SetUp() {
-			_fileSystemMock = Substitute.For<IFileSystem>();
-			_settingsRepositoryMock = Substitute.For<ISettingsRepository>();
+			_fileSystemMock = Container.Resolve<IFileSystem>();
+			_settingsRepositoryMock = Container.Resolve<ISettingsRepository>();
 			_validator = Container.Resolve<IValidator<LinkCoreSrcOptions>>();
 		}
 
 		protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
 			base.AdditionalRegistrations(containerBuilder);
+			_fileSystemMock ??= Substitute.For<IFileSystem>();
+			_settingsRepositoryMock ??= Substitute.For<ISettingsRepository>();
 			containerBuilder.RegisterInstance(_fileSystemMock).As<IFileSystem>();
 			containerBuilder.RegisterInstance(_settingsRepositoryMock).As<ISettingsRepository>();
 		}

@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Collections.Generic;
+using System.IO;
 
 namespace Clio.UserEnvironment
 {
@@ -11,6 +12,8 @@ namespace Clio.UserEnvironment
 		{
 			get;
 		}
+
+		Dictionary<string, EnvironmentSettings> GetAllEnvironments();
 		bool IsEnvironmentExists(string name);
 		string FindEnvironmentNameByUri(string uri);
 		EnvironmentSettings GetEnvironment(string name = null);

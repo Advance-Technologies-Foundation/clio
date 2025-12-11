@@ -68,7 +68,7 @@ namespace Clio.Package
 			try {
 				string responseFormServer = _applicationClient.ExecutePostRequest(PackagesListServiceUrl, scriptData);
 				return ParsePackageInfoResponse(responseFormServer);
-			} catch (Exception e) {
+			} catch (Exception) {
 				return Array.Empty<PackageInfo>(); 
 			}
 		}

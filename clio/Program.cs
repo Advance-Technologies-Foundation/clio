@@ -55,6 +55,7 @@ internal class Program {
 		typeof(SysSettingsOptions),
 		typeof(FeatureOptions),
 		typeof(PingAppOptions),
+		typeof(ShowLocalEnvironmentsOptions),
 		typeof(OpenAppOptions),
 		// Package development
 		typeof(PkgListOptions),
@@ -194,6 +195,7 @@ internal class Program {
 					PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 					OpenAppOptions opts => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),
 					PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
+					ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
 					CompileOptions opts => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					PushNuGetPkgsOptions opts => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					PackNuGetPkgOptions opts => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),

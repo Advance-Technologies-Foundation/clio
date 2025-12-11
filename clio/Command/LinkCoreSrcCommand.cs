@@ -26,12 +26,14 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 		_fileSystem = fileSystem;
 
 		RuleFor(o => o.CorePath)
+			.Cascade(CascadeMode.Stop)
 			.NotEmpty()
 			.WithMessage("CorePath is required")
 			.Must(path => _fileSystem.ExistsDirectory(path))
 			.WithMessage(o => $"CorePath directory does not exist: {o.CorePath}");
 
 		RuleFor(o => o.Environment)
+			.Cascade(CascadeMode.Stop)
 			.NotEmpty()
 			.WithMessage("Environment name is required")
 			.Must(envName => EnvironmentExists(envName))
@@ -58,6 +60,10 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 
 	private void ValidateApplicationFiles(LinkCoreSrcOptions options, ValidationContext<LinkCoreSrcOptions> context) {
 		try {
+			if (string.IsNullOrWhiteSpace(options.Environment)) {
+				return;
+			}
+
 			var env = _settingsRepository.GetEnvironment(options.Environment);
 			if (env == null || string.IsNullOrWhiteSpace(env.EnvironmentPath)) {
 				context.AddFailure(new ValidationFailure {
@@ -97,9 +103,18 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 
 	private void ValidateCoreFiles(LinkCoreSrcOptions options, ValidationContext<LinkCoreSrcOptions> context) {
 		try {
-			// Check appsettings.json exists in core (for .NET Core/6/8)
-			string[] coreConfigs = _fileSystem.GetFiles(options.CorePath, "appsettings.json", SearchOption.AllDirectories);
-			if (!coreConfigs.Any()) {
+			if (string.IsNullOrWhiteSpace(options.CorePath)) {
+				return;
+			}
+
+			if (!_fileSystem.ExistsDirectory(options.CorePath)) {
+				return;
+			}
+
+			// Check appsettings exists in core (support json/config)
+			string[] coreJsonConfigs = _fileSystem.GetFiles(options.CorePath, "appsettings.json", SearchOption.AllDirectories);
+			string[] coreConfigConfigs = _fileSystem.GetFiles(options.CorePath, "appsettings.config", SearchOption.AllDirectories);
+			if (!coreJsonConfigs.Any() && !coreConfigConfigs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
 					ErrorMessage = $"appsettings.json not found in core directory: {options.CorePath}"
