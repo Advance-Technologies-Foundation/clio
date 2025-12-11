@@ -1,3 +1,4 @@
+using System;
 using Clio.Common;
 using Clio.Query;
 using FluentAssertions;
