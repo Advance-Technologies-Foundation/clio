@@ -5,6 +5,7 @@ using System.Xml;
 using Autofac;
 using Clio.Command;
 using Clio.Common;
+using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using FluentValidation;
@@ -22,6 +23,7 @@ namespace Clio.Tests.Command {
 
 		private IFileSystem _fileSystemMock;
 		private ISettingsRepository _settingsRepositoryMock;
+		private ISystemServiceManager _systemServiceManagerMock;
 		private IValidator<LinkCoreSrcOptions> _validator;
 
 		#endregion
@@ -30,15 +32,20 @@ namespace Clio.Tests.Command {
 
 		[SetUp]
 		public void SetUp() {
+			_fileSystemMock = Container.Resolve<IFileSystem>();
+			_settingsRepositoryMock = Container.Resolve<ISettingsRepository>();
+			_systemServiceManagerMock = Container.Resolve<ISystemServiceManager>();
 			_validator = Container.Resolve<IValidator<LinkCoreSrcOptions>>();
 		}
 
 		protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
 			base.AdditionalRegistrations(containerBuilder);
-			_fileSystemMock = Substitute.For<IFileSystem>();
-			_settingsRepositoryMock = Substitute.For<ISettingsRepository>();
+			_fileSystemMock ??= Substitute.For<IFileSystem>();
+			_settingsRepositoryMock ??= Substitute.For<ISettingsRepository>();
+			_systemServiceManagerMock ??= Substitute.For<ISystemServiceManager>();
 			containerBuilder.RegisterInstance(_fileSystemMock).As<IFileSystem>();
 			containerBuilder.RegisterInstance(_settingsRepositoryMock).As<ISettingsRepository>();
+			containerBuilder.RegisterInstance(_systemServiceManagerMock).As<ISystemServiceManager>();
 		}
 
 		#endregion
@@ -134,8 +141,22 @@ namespace Clio.Tests.Command {
 
 		_fileSystemMock.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_settingsRepositoryMock.GetEnvironment("test").Returns(envSettings);
+		
+		// Mock GetFiles to return different values based on path and filename
 		_fileSystemMock.GetFiles(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
-			.Returns(new[] { "/path/to/app/SomeOtherConfig.config" });
+			.Returns(callArgs => {
+				string path = (string)callArgs[0];
+				string pattern = (string)callArgs[1];
+				
+				// No ConnectionStrings.config in app
+				if (pattern == "ConnectionStrings.config") {
+					return Array.Empty<string>();
+				}
+				
+				// Return empty for other patterns
+				return Array.Empty<string>();
+			});
+		
 		_fileSystemMock.GetDirectories(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
 			.Returns(new[] { "/path/to/core/Terrasoft.WebHost" });
 
@@ -163,16 +184,20 @@ namespace Clio.Tests.Command {
 		_fileSystemMock.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_settingsRepositoryMock.GetEnvironment("test").Returns(envSettings);
 		
-		// Return ConnectionStrings.config for app, nothing for core appsettings
-		var callCount = 0;
 		_fileSystemMock.GetFiles(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
 			.Returns(callArgs => {
-				callCount++;
-				if (callCount == 1) {
-					// First call - looking for configs in app
+				string pattern = (string)callArgs[1];
+				
+				// Return ConnectionStrings.config in app
+				if (pattern == "ConnectionStrings.config") {
 					return new[] { "/path/to/app/ConnectionStrings.config" };
 				}
-				// Subsequent calls - looking for appsettings.config and app.config in core
+				
+				// No appsettings.json in core
+				if (pattern == "appsettings.json") {
+					return Array.Empty<string>();
+				}
+				
 				return Array.Empty<string>();
 			});
 
@@ -183,7 +208,7 @@ namespace Clio.Tests.Command {
 		var result = _validator.Validate(options);
 
 		// Assert
-		result.IsValid.Should().Be(false, "because appsettings.config must exist in core");
+		result.IsValid.Should().Be(false, "because appsettings.json must exist in core");
 	}
 
 	[Test]
@@ -203,17 +228,25 @@ namespace Clio.Tests.Command {
 		_fileSystemMock.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_settingsRepositoryMock.GetEnvironment("test").Returns(envSettings);
 		
-		var callCount = 0;
 		_fileSystemMock.GetFiles(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
 			.Returns(callArgs => {
-				callCount++;
-				if (callCount == 1) {
+				string pattern = (string)callArgs[1];
+				
+				// Return ConnectionStrings.config in app
+				if (pattern == "ConnectionStrings.config") {
 					return new[] { "/path/to/app/ConnectionStrings.config" };
 				}
-				if (callCount == 2) {
-					return new[] { "/path/to/core/appsettings.config" };
+				
+				// Return appsettings.json in core
+				if (pattern == "appsettings.json") {
+					return new[] { "/path/to/core/appsettings.json" };
 				}
-				// No app.config
+				
+				// No Terrasoft.WebHost.dll.config
+				if (pattern == "Terrasoft.WebHost.dll.config") {
+					return Array.Empty<string>();
+				}
+				
 				return Array.Empty<string>();
 			});
 
@@ -224,7 +257,7 @@ namespace Clio.Tests.Command {
 		var result = _validator.Validate(options);
 
 		// Assert
-		result.IsValid.Should().Be(false, "because app.config must exist in core");
+		result.IsValid.Should().Be(false, "because Terrasoft.WebHost.dll.config must exist in core");
 	}
 
 	[Test]
@@ -243,8 +276,25 @@ namespace Clio.Tests.Command {
 
 		_fileSystemMock.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_settingsRepositoryMock.GetEnvironment("test").Returns(envSettings);
+		
 		_fileSystemMock.GetFiles(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
-			.Returns(new[] { "/path/to/app/ConnectionStrings.config", "/path/to/core/appsettings.config", "/path/to/core/app.config" });
+			.Returns(callArgs => {
+				string pattern = (string)callArgs[1];
+				
+				if (pattern == "ConnectionStrings.config") {
+					return new[] { "/path/to/app/ConnectionStrings.config" };
+				}
+				if (pattern == "appsettings.json") {
+					return new[] { "/path/to/core/appsettings.json" };
+				}
+				if (pattern == "Terrasoft.WebHost.dll.config") {
+					return new[] { "/path/to/core/Terrasoft.WebHost.dll.config" };
+				}
+				
+				return Array.Empty<string>();
+			});
+		
+		// No Terrasoft.WebHost directory
 		_fileSystemMock.GetDirectories(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
 			.Returns(Array.Empty<string>());
 
@@ -271,8 +321,24 @@ namespace Clio.Tests.Command {
 
 		_fileSystemMock.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_settingsRepositoryMock.GetEnvironment("test").Returns(envSettings);
+		
 		_fileSystemMock.GetFiles(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
-			.Returns(new[] { "/path/to/app/ConnectionStrings.config", "/path/to/core/appsettings.config", "/path/to/core/app.config" });
+			.Returns(callArgs => {
+				string pattern = (string)callArgs[1];
+				
+				if (pattern == "ConnectionStrings.config") {
+					return new[] { "/path/to/app/ConnectionStrings.config" };
+				}
+				if (pattern == "appsettings.json") {
+					return new[] { "/path/to/core/appsettings.json" };
+				}
+				if (pattern == "Terrasoft.WebHost.dll.config") {
+					return new[] { "/path/to/core/Terrasoft.WebHost.dll.config" };
+				}
+				
+				return Array.Empty<string>();
+			});
+		
 		_fileSystemMock.GetDirectories(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>())
 			.Returns(new[] { "/path/to/core/Terrasoft.WebHost" });
 

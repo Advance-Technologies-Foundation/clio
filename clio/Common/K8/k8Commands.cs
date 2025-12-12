@@ -379,7 +379,7 @@ public class k8Commands : Ik8Commands
 				return true;
 			}
 		}
-		catch (k8s.Autorest.HttpOperationException deleteEx)
+		catch (k8s.Autorest.HttpOperationException)
 		{
 			// Even if deletion throws an exception, check if it's actually gone
 			System.Threading.Thread.Sleep(300);
@@ -394,7 +394,7 @@ public class k8Commands : Ik8Commands
 				return true;
 			}
 		}
-		catch (Exception ex)
+		catch (Exception)
 		{
 			// Unknown exception - fail
 			return false;

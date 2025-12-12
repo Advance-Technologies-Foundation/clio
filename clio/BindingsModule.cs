@@ -187,6 +187,8 @@ public class BindingsModule {
 		containerBuilder.RegisterType<LoadPackagesToDbCommand>();
 		containerBuilder.RegisterType<UploadLicensesCommand>();
 		containerBuilder.RegisterType<HealthCheckCommand>();
+		containerBuilder.RegisterType<ShowLocalEnvironmentsCommand>();
+		containerBuilder.RegisterType<ClearLocalEnvironmentCommand>();
 		containerBuilder.RegisterType<AddPackageCommand>();
 		containerBuilder.RegisterType<UnlockPackageCommand>();
 		containerBuilder.RegisterType<LockPackageCommand>();

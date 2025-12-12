@@ -828,6 +828,88 @@ Note: Sensitive fields like Password and ClientSecret are masked in all formats.
 For comprehensive documentation, see: [`show-web-app-list`](./docs/commands/ShowAppListCommand.md)
 
 
+## show-local-envs
+
+Display local environments that have an `environmentPath` configured and show their health in a styled table (Name, Status, Url, Path, Reason). Status values are colored in the console.
+
+```bash
+clio show-local-envs
+```
+
+Statuses:
+- `OK`: ping succeeded and login succeeded.
+- `Error Auth data`: ping succeeded but login failed.
+- `Deleted`: environment directory is missing or contains only the `Logs` folder (or access is denied).
+- `Not runned`: ping failed but the environment directory exists and has content beyond `Logs`.
+
+Notes:
+- Uses settings abstraction (no direct file reads) to discover environments and their paths.
+- Uses existing clio connectivity logic for ping/login checks.
+- Prints a message when no local environments are configured with paths.
+
+
+## clear local env
+
+Clear (remove) local environments that have been deleted from the file system and remove orphaned services. This command identifies deleted environments based on three criteria:
+1. Environment directory doesn't exist
+2. Directory contains only the `Logs` folder
+3. Directory access is denied
+
+Additionally, the command automatically detects and removes **orphaned services** - system services that reference non-existent Terrasoft.WebHost installations.
+
+For each deleted environment found, the command:
+1. Attempts to delete the associated Windows/Linux service
+2. Deletes the environment directory (if it exists)
+3. Removes the environment from clio's configuration
+
+For each orphaned service found, the command:
+1. Verifies the service executable path contains "Terrasoft.WebHost.dll"
+2. Confirms the referenced file does not exist on disk
+3. Deletes the orphaned service using the platform service manager
+
+```bash
+clio clear-local-env [--force]
+```
+
+Options:
+- `-f, --force`: Skip confirmation prompt and delete immediately without asking for user confirmation
+
+Examples:
+```bash
+# Interactive mode (prompts for confirmation)
+clio clear-local-env
+
+# Non-interactive mode (deletes without confirmation)
+clio clear-local-env --force
+
+# Example output:
+# Found 2 deleted environment(s):
+#   - old-app-1
+#   - old-app-2
+# Found 3 orphaned service(s):
+#   - creatio-old-app-1
+#   - creatio-old-app-2
+#   - creatio-legacy-service
+#
+# ✓ Summary: 5 item(s) cleaned up successfully
+#   - 2 environment(s)
+#   - 3 orphaned service(s)
+```
+
+Return codes:
+- `0`: Success - all deleted environments and orphaned services have been cleared
+- `1`: Error - a critical error occurred (e.g., failed to remove from settings)
+- `2`: Cancelled - user declined the confirmation prompt
+
+Notes:
+- The command only processes environments marked as "Deleted" by `show-local-envs`
+- Service deletion may fail for various reasons (permissions, service not found) but does not block directory deletion
+- Orphaned services are automatically discovered and require no manual configuration
+- Uses platform-specific service managers (Windows: Service Control Manager, Linux: systemd)
+- Service names follow the pattern `creatio-{environment-name}`
+- Remote environments (those without local path) are never touched or deleted
+
+
 ## open
 
 For open selected environment in default browser use (Windows only command)
@@ -1663,9 +1745,9 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 - On macOS and Linux, you must use the `--envPkgPath` with the direct file path
 - Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
-## link-core-src
+## link core src
 
-Link Creatio core source code to an environment for development. This command synchronizes configuration files and creates a symlink to the Terrasoft.WebHost directory, allowing you to develop and debug the core using the running application.
+Link Creatio core source code to an environment for development. This command synchronizes configuration files, updates environment settings with the core path, and restarts the OS service if running.
 
 **Syntax:**
 ```bash
@@ -1696,34 +1778,44 @@ clio lcs -e dev --core-path "C:\Projects\Core"
 1. **Validates configuration** - Checks that environment is configured, all required files exist, and directories are accessible
 2. **Requests confirmation** - Displays a summary of operations and asks for user confirmation
 3. **Synchronizes ConnectionStrings.config** - Copies database connection configuration from deployed app to core
-4. **Configures ports** - Sets the application port in appsettings.config based on environment settings
-5. **Enables LAX mode** - Enables CookiesSameSiteMode=Lax in app.config for development
-6. **Creates symlink** - Links Terrasoft.WebHost from core to deployed application for live code changes
+4. **Configures ports** - Sets the application port in appsettings.json based on environment settings
+5. **Enables LAX mode** - Enables CookiesSameSiteMode=Lax in Terrasoft.WebHost.dll.config for development
+6. **Updates environment path** - Changes environment's EnvironmentPath to point to the core's Terrasoft.WebHost directory
+7. **Restarts service** - Stops, re-registers, and restarts the OS service (if running) to apply changes
 
 **Behavior:**
 - If any validation fails, the command stops without making changes
 - Requires user confirmation before executing operations
-- Creates or overwrites symlink if it already exists
+- Updates the environment configuration with the new core path
+- Automatically handles OS service restart (systemd on Linux, launchd on macOS, Windows Services on Windows)
+- If service is not running, only configuration is updated
 - Logs detailed information about each operation
 - All file operations use the environment's configured settings
 
 **Prerequisites:**
 - Environment must be registered in clio settings
 - Environment must have a valid EnvironmentPath configured
-- Core source directory must contain: `app.config`, `appsettings.config`, and `Terrasoft.WebHost` directory
+- Core source directory must contain Terrasoft.WebHost/bin with `appsettings.json`, `Terrasoft.WebHost.dll.config`, and the `Terrasoft.WebHost` directory
 - Application directory must have `ConnectionStrings.config`
+
+**Service Handling:**
+The command automatically handles the OS service with the naming convention `creatio-{environment-name}`:
+- Checks if service exists and is running
+- If running: stops it, unregisters it, then restarts it
+- If not running: only updates configuration
+- If service management fails, continues without failing (configuration is updated anyway)
 
 **Workflow Example:**
 ```bash
 # 1. Link core to development environment
 clio link-core-src -e development --core-path /Users/dev/creatio-core
 
-# 2. Start the application (it will use core from symlink)
+# 2. Start the application (it will use the core binaries)
 clio start -e development
 
 # 3. Edit core files in /Users/dev/creatio-core
-# 4. Changes are immediately visible in running application through symlink
-# 5. Debug and test your core changes
+# 4. Changes require application restart to take effect
+# 5. Restart the application with: clio start -e development
 ```
 
 **Aliases:** `lcs`

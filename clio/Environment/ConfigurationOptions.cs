@@ -537,6 +537,12 @@ namespace Clio
 			OpenSettingsFile();
 		}
 
+		public Dictionary<string, EnvironmentSettings> GetAllEnvironments() {
+			return _settings?.Environments == null
+				? new Dictionary<string, EnvironmentSettings>()
+				: new Dictionary<string, EnvironmentSettings>(_settings.Environments);
+		}
+
 		void ISettingsRepository.RemoveAllEnvironment() {
 			_settings.Environments.Clear();
 			Save();
