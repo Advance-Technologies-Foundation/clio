@@ -82,25 +82,14 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				return;
 			}
 
-			// Check Terrasoft.WebHost exists in app
-			string appWebHostPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost");
-			if (!_fileSystem.ExistsDirectory(appWebHostPath)) {
-				context.AddFailure(new ValidationFailure {
-					PropertyName = nameof(options.Environment),
-					ErrorMessage = $"Terrasoft.WebHost directory not found in application: {appWebHostPath}"
-				});
-				return;
-			}
-
-			// Check ConnectionStrings.config exists in Terrasoft.WebHost (app)
-			string[] configFiles = _fileSystem.GetFiles(appWebHostPath, "ConnectionStrings.config", SearchOption.AllDirectories);
-			bool hasConnectionStringsConfig = configFiles.Any(f => 
-				f.Contains(Path.Combine("Terrasoft.WebHost", "ConnectionStrings.config")));
+			// Check ConnectionStrings.config exists in root of application
+			string[] configFiles = _fileSystem.GetFiles(env.EnvironmentPath, "ConnectionStrings.config", SearchOption.AllDirectories);
+			bool hasConnectionStringsConfig = configFiles.Any();
 
 			if (!hasConnectionStringsConfig) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.Environment),
-					ErrorMessage = $"ConnectionStrings.config not found in Terrasoft.WebHost: {appWebHostPath}"
+					ErrorMessage = $"ConnectionStrings.config not found in application: {env.EnvironmentPath}"
 				});
 			}
 		} catch (Exception ex) {
