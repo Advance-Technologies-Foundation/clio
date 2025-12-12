@@ -110,7 +110,7 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				return;
 			}
 
-			// Check Terrasoft.WebHost exists in core
+			// Find Terrasoft.WebHost starting from CorePath (recursive search)
 			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
 			if (!coreWebHostDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
@@ -123,11 +123,8 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			string coreWebHostPath = coreWebHostDirs[0];
 
 			// Check appsettings.json exists in Terrasoft.WebHost
-			string[] coreJsonConfigs = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
-			bool hasAppSettings = coreJsonConfigs.Any(f => 
-				f.Contains(Path.Combine("Terrasoft.WebHost", "appsettings.json")));
-
-			if (!hasAppSettings) {
+			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
+			if (!appSettingsFiles.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
 					ErrorMessage = $"appsettings.json not found in Terrasoft.WebHost: {coreWebHostPath}"
@@ -135,11 +132,8 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			}
 
 			// Check app.config exists in Terrasoft.WebHost
-			string[] appConfigs = _fileSystem.GetFiles(coreWebHostPath, "app.config", SearchOption.AllDirectories);
-			bool hasAppConfig = appConfigs.Any(f => 
-				f.Contains(Path.Combine("Terrasoft.WebHost", "app.config")));
-
-			if (!hasAppConfig) {
+			string[] appConfigFiles = _fileSystem.GetFiles(coreWebHostPath, "app.config", SearchOption.AllDirectories);
+			if (!appConfigFiles.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
 					ErrorMessage = $"app.config not found in Terrasoft.WebHost: {coreWebHostPath}"
