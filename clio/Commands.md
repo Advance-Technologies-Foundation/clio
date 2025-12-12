@@ -848,6 +848,68 @@ Notes:
 - Prints a message when no local environments are configured with paths.
 
 
+## clear local env
+
+Clear (remove) local environments that have been deleted from the file system and remove orphaned services. This command identifies deleted environments based on three criteria:
+1. Environment directory doesn't exist
+2. Directory contains only the `Logs` folder
+3. Directory access is denied
+
+Additionally, the command automatically detects and removes **orphaned services** - system services that reference non-existent Terrasoft.WebHost installations.
+
+For each deleted environment found, the command:
+1. Attempts to delete the associated Windows/Linux service
+2. Deletes the environment directory (if it exists)
+3. Removes the environment from clio's configuration
+
+For each orphaned service found, the command:
+1. Verifies the service executable path contains "Terrasoft.WebHost.dll"
+2. Confirms the referenced file does not exist on disk
+3. Deletes the orphaned service using the platform service manager
+
+```bash
+clio clear-local-env [--force]
+```
+
+Options:
+- `-f, --force`: Skip confirmation prompt and delete immediately without asking for user confirmation
+
+Examples:
+```bash
+# Interactive mode (prompts for confirmation)
+clio clear-local-env
+
+# Non-interactive mode (deletes without confirmation)
+clio clear-local-env --force
+
+# Example output:
+# Found 2 deleted environment(s):
+#   - old-app-1
+#   - old-app-2
+# Found 3 orphaned service(s):
+#   - creatio-old-app-1
+#   - creatio-old-app-2
+#   - creatio-legacy-service
+#
+# ✓ Summary: 5 item(s) cleaned up successfully
+#   - 2 environment(s)
+#   - 3 orphaned service(s)
+```
+
+Return codes:
+- `0`: Success - all deleted environments and orphaned services have been cleared
+- `1`: Error - a critical error occurred (e.g., failed to remove from settings)
+- `2`: Cancelled - user declined the confirmation prompt
+
+Notes:
+- The command only processes environments marked as "Deleted" by `show-local-envs`
+- Service deletion may fail for various reasons (permissions, service not found) but does not block directory deletion
+- Orphaned services are automatically discovered and require no manual configuration
+- Uses platform-specific service managers (Windows: Service Control Manager, Linux: systemd)
+- Service names follow the pattern `creatio-{environment-name}`
+- Remote environments (those without local path) are never touched or deleted
+
+
 ## open
 
 For open selected environment in default browser use (Windows only command)
