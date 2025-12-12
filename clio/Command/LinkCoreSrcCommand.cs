@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Xml;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -122,8 +123,8 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			List<string> appSettingsDirs = coreWebHostDirs
 				.Where(dir => _fileSystem.GetFiles(dir, "appsettings.json", SearchOption.AllDirectories).Any())
 				.ToList();
-			List<string> appConfigDirs = coreWebHostDirs
-				.Where(dir => _fileSystem.GetFiles(dir, "app.config", SearchOption.AllDirectories).Any())
+			List<string> dllConfigDirs = coreWebHostDirs
+				.Where(dir => _fileSystem.GetFiles(dir, "Terrasoft.WebHost.dll.config", SearchOption.AllDirectories).Any())
 				.ToList();
 
 			if (!appSettingsDirs.Any()) {
@@ -133,10 +134,10 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				});
 			}
 
-			if (!appConfigDirs.Any()) {
+			if (!dllConfigDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"app.config not found in any Terrasoft.WebHost directory under: {options.CorePath}"
+					ErrorMessage = $"Terrasoft.WebHost.dll.config not found in any Terrasoft.WebHost directory under: {options.CorePath}"
 				});
 			}
 
@@ -147,17 +148,17 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				});
 			}
 
-			if (appConfigDirs.Count > 1) {
+			if (dllConfigDirs.Count > 1) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"app.config found in multiple Terrasoft.WebHost directories: {string.Join(", ", appConfigDirs)}"
+					ErrorMessage = $"Terrasoft.WebHost.dll.config found in multiple Terrasoft.WebHost directories: {string.Join(", ", dllConfigDirs)}"
 				});
 			}
 
-			if (appSettingsDirs.Any() && appConfigDirs.Any() && appSettingsDirs[0] != appConfigDirs[0]) {
+			if (appSettingsDirs.Any() && dllConfigDirs.Any() && appSettingsDirs[0] != dllConfigDirs[0]) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = "appsettings.json and app.config are located in different Terrasoft.WebHost directories"
+					ErrorMessage = "appsettings.json and Terrasoft.WebHost.dll.config are located in different Terrasoft.WebHost directories"
 				});
 			}
 		} catch (Exception ex) {
@@ -247,17 +248,18 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 	#region Methods: Private
 
 	private bool RequestUserConfirmation(LinkCoreSrcOptions options, EnvironmentSettings env) {
-		_logger.WriteInfo("\nLinking Creatio Core Source Code");
-		_logger.WriteInfo("──────────────────────────────────");
-		_logger.WriteInfo($"Environment: {options.Environment}");
-		_logger.WriteInfo($"App Path: {env.EnvironmentPath}");
-		_logger.WriteInfo($"Core Path: {options.CorePath}");
-		_logger.WriteInfo("\nOperations to perform:");
-		_logger.WriteInfo("  1. Synchronize ConnectionStrings.config from app to core");
-		_logger.WriteInfo("  2. Configure ports in appsettings.json");
-		_logger.WriteInfo("  3. Enable LAX mode in app.config");
-		_logger.WriteInfo("  4. Create symlink for Terrasoft.WebHost");
-		_logger.WriteInfo("");
+		Console.WriteLine("\n═════════════════════════════════════════════════════════════════════════════════════");
+		Console.WriteLine("Linking Creatio Core Source Code");
+		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════");
+		Console.WriteLine($"Environment:  {options.Environment}");
+		Console.WriteLine($"App Path:     {env.EnvironmentPath}");
+		Console.WriteLine($"Core Path:    {options.CorePath}");
+		Console.WriteLine("\nOperations to perform:");
+		Console.WriteLine("  1. Synchronize ConnectionStrings.config from app to core");
+		Console.WriteLine("  2. Configure ports in appsettings.json");
+		Console.WriteLine("  3. Enable LAX mode in Terrasoft.WebHost.dll.config");
+		Console.WriteLine("  4. Create symlink for Terrasoft.WebHost");
+		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════\n");
 
 		Console.Write("Continue? (Y/n): ");
 		string response = Console.ReadLine()?.ToLower() ?? "";
@@ -268,16 +270,10 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		_logger.WriteInfo("\n[1/4] Synchronizing ConnectionStrings.config...");
 
 		try {
-			// Find Terrasoft.WebHost in app
-			string appWebHostPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost");
-			if (!_fileSystem.ExistsDirectory(appWebHostPath)) {
-				throw new Exception($"Terrasoft.WebHost directory not found in application: {appWebHostPath}");
-			}
-
-			// Find ConnectionStrings.config in Terrasoft.WebHost (app)
-			string[] appConfigs = _fileSystem.GetFiles(appWebHostPath, "ConnectionStrings.config", SearchOption.AllDirectories);
+			// Find ConnectionStrings.config in application path (no additional subfolder)
+			string[] appConfigs = _fileSystem.GetFiles(env.EnvironmentPath, "ConnectionStrings.config", SearchOption.AllDirectories);
 			if (!appConfigs.Any()) {
-				throw new Exception($"ConnectionStrings.config not found in {appWebHostPath}");
+				throw new Exception($"ConnectionStrings.config not found in {env.EnvironmentPath}");
 			}
 			string connectionStringsFile = appConfigs.FirstOrDefault();
 
@@ -316,58 +312,99 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
 
 			string appSettingsPath = appSettingsFiles[0];
-			string content = _fileSystem.ReadAllText(appSettingsPath);
+		_logger.WriteInfo($"  Processing: {appSettingsPath}");
+		string content = _fileSystem.ReadAllText(appSettingsPath);
 
-			// Try to parse as JSON first, then as XML
-			string updatedContent = UpdateConfigWithPort(content, port);
-
+		// Try to parse as JSON first, then as XML
+		string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath);
 			_fileSystem.WriteAllTextToFile(appSettingsPath, updatedContent);
 			_logger.WriteInfo($"  ✓ Port {port} configured in appsettings.json");
 		} catch (Exception ex) {
-			_logger.WriteError($"  ✗ Error configuring ports: {ex.Message}");
-			throw;
+			_logger.WriteError($"  ✗ Error configuring ports: {ex.Message}");		_logger.WriteError($"     Details: {ex.InnerException?.Message ?? "No additional details"}");			throw;
 		}
 	}
 
-	private string UpdateConfigWithPort(string content, int port) {
-		// Try XML format first
+	private string UpdateConfigWithPort(string content, int port, string filePath) {
+		// Try JSON format first (for appsettings.json)
 		try {
-			XmlDocument doc = new XmlDocument();
-			doc.LoadXml(content);
+			using (var doc = JsonDocument.Parse(content))
+			{
+				var root = doc.RootElement.Clone();
+				var options_json = new JsonSerializerOptions { WriteIndented = true };
 
-			// Look for port setting in appSettings
-			XmlNode portNode = doc.DocumentElement?.SelectSingleNode("//add[@key='Port']") ??
-							   doc.DocumentElement?.SelectSingleNode("//appSettings/add[@key='Port']");
+				// Update port in Kestrel configuration
+				string updatedJson = JsonSerializer.Serialize(root);
+				
+				// Update HTTP port using regex - same as deploy-creatio
+				// Pattern: "Url": "http://[::]:xxxx"
+				updatedJson = System.Text.RegularExpressions.Regex.Replace(
+					updatedJson,
+					@"""Url""\s*:\s*""http://\[\:\:\]:\d+""",
+					$@"""Url"": ""http://[::]:{ port}"""
+				);
 
-			if (portNode != null) {
-				portNode.Attributes["value"].Value = port.ToString();
-			} else {
-				// Create port node if doesn't exist
-				XmlNode appSettingsNode = doc.DocumentElement?.SelectSingleNode("//appSettings");
-				if (appSettingsNode == null) {
-					appSettingsNode = doc.CreateElement("appSettings");
-					doc.DocumentElement?.AppendChild(appSettingsNode);
+				// If no Kestrel Http URL was found, try to insert it
+				if (!updatedJson.Contains("http://[::]:"))
+				{
+					// Fallback: rebuild config with Kestrel section (HTTP only)
+					var existingConfig = JsonSerializer.Deserialize<Dictionary<string, object>>(
+						JsonSerializer.Serialize(root)
+					);
+					
+					existingConfig["Kestrel"] = new
+					{
+						Endpoints = new
+						{
+							Http = new
+							{
+								Url = $"http://[::]:{port}"
+							}
+						}
+					};
+
+					updatedJson = JsonSerializer.Serialize(existingConfig, options_json);
 				}
 
-				XmlElement portElement = doc.CreateElement("add");
-				portElement.SetAttribute("key", "Port");
-				portElement.SetAttribute("value", port.ToString());
-				appSettingsNode.AppendChild(portElement);
+				return updatedJson;
 			}
+		} catch (JsonException jsonEx) {
+			// If not JSON, try XML format
+			try {
+				XmlDocument doc = new XmlDocument();
+				doc.LoadXml(content);
 
-			using (var writer = new StringWriter()) {
-				doc.Save(writer);
-				return writer.ToString();
+				// Look for port setting in appSettings
+				XmlNode portNode = doc.DocumentElement?.SelectSingleNode("//add[@key='Port']") ??
+								   doc.DocumentElement?.SelectSingleNode("//appSettings/add[@key='Port']");
+
+				if (portNode != null) {
+					portNode.Attributes["value"].Value = port.ToString();
+				} else {
+					// Create port node if doesn't exist
+					XmlNode appSettingsNode = doc.DocumentElement?.SelectSingleNode("//appSettings");
+					if (appSettingsNode == null) {
+						appSettingsNode = doc.CreateElement("appSettings");
+						doc.DocumentElement?.AppendChild(appSettingsNode);
+					}
+
+					XmlElement portElement = doc.CreateElement("add");
+					portElement.SetAttribute("key", "Port");
+					portElement.SetAttribute("value", port.ToString());
+					appSettingsNode.AppendChild(portElement);
+				}
+
+				using (var writer = new StringWriter()) {
+					doc.Save(writer);
+					return writer.ToString();
+				}
+			} catch (Exception xmlEx) {
+				string contentPreview = content.Length > 300 ? content.Substring(0, 300) + "..." : content;
+				throw new Exception($"Unable to parse appsettings.json at '{filePath}' (unsupported format).\n" +
+					$"Expected JSON with Kestrel configuration or XML format.\n" +
+					$"File content preview:\n{contentPreview}\n" +
+					$"JSON parsing error: {jsonEx.Message}\n" +
+					$"XML parsing error: {xmlEx.Message}");
 			}
-		} catch {
-			// If not XML, try JSON format
-			if (content.Contains("\"port\"")) {
-				return System.Text.RegularExpressions.Regex.Replace(
-					content,
-					@"""port"":\s*\d+",
-					$"\"port\": {port}");
-			}
-			throw new Exception("Unable to parse appsettings.json (unsupported format)");
 		}
 	}
 
@@ -408,15 +445,15 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 	}
 
 	private void EnableLaxModeInAppConfig(LinkCoreSrcOptions options) {
-		_logger.WriteInfo("\n[3/4] Enabling LAX mode in app.config...");
+		_logger.WriteInfo("\n[3/4] Enabling LAX mode in Terrasoft.WebHost.dll.config...");
 
 		try {
-			// Resolve Terrasoft.WebHost with app.config in core
-			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "app.config");
-			string[] appConfigs = _fileSystem.GetFiles(coreWebHostPath, "app.config", SearchOption.AllDirectories);
+			// Resolve Terrasoft.WebHost with Terrasoft.WebHost.dll.config in core
+			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "Terrasoft.WebHost.dll.config");
+			string[] appConfigs = _fileSystem.GetFiles(coreWebHostPath, "Terrasoft.WebHost.dll.config", SearchOption.AllDirectories);
 
-			string appConfigPath = appConfigs[0];
-			string content = _fileSystem.ReadAllText(appConfigPath);
+			string dllConfigPath = appConfigs[0];
+			string content = _fileSystem.ReadAllText(dllConfigPath);
 
 			XmlDocument doc = new XmlDocument();
 			doc.LoadXml(content);
@@ -440,8 +477,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 				appSettingsNode.AppendChild(cookieElement);
 			}
 
-			doc.Save(appConfigPath);
-			_logger.WriteInfo("  ✓ LAX mode enabled in app.config");
+			doc.Save(dllConfigPath);
+			_logger.WriteInfo("  ✓ LAX mode enabled in Terrasoft.WebHost.dll.config");
 		} catch (Exception ex) {
 			_logger.WriteError($"  ✗ Error enabling LAX mode: {ex.Message}");
 			throw;
@@ -453,8 +490,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 
 		try {
 			// Resolve Terrasoft.WebHost in core (must be unique)
-			string sourceWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json", "app.config");
-			string linkPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost");
+			string sourceWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json", "Terrasoft.WebHost.dll.config");
+			string linkPath = env.EnvironmentPath;
 
 			// Remove existing symlink if it exists
 			if (_fileSystem.ExistsDirectory(linkPath)) {

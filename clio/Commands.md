@@ -1778,8 +1778,8 @@ clio lcs -e dev --core-path "C:\Projects\Core"
 1. **Validates configuration** - Checks that environment is configured, all required files exist, and directories are accessible
 2. **Requests confirmation** - Displays a summary of operations and asks for user confirmation
 3. **Synchronizes ConnectionStrings.config** - Copies database connection configuration from deployed app to core
-4. **Configures ports** - Sets the application port in appsettings.config based on environment settings
-5. **Enables LAX mode** - Enables CookiesSameSiteMode=Lax in app.config for development
+4. **Configures ports** - Sets the application port in appsettings.json based on environment settings
+5. **Enables LAX mode** - Enables CookiesSameSiteMode=Lax in Terrasoft.WebHost.dll.config for development
 6. **Creates symlink** - Links Terrasoft.WebHost from core to deployed application for live code changes
 
 **Behavior:**
@@ -1792,7 +1792,7 @@ clio lcs -e dev --core-path "C:\Projects\Core"
 **Prerequisites:**
 - Environment must be registered in clio settings
 - Environment must have a valid EnvironmentPath configured
-- Core source directory must contain: `app.config`, `appsettings.config`, and `Terrasoft.WebHost` directory
+- Core source directory must contain Terrasoft.WebHost/bin with `appsettings.json`, `Terrasoft.WebHost.dll.config`, and the `Terrasoft.WebHost` directory
 - Application directory must have `ConnectionStrings.config`
 
 **Workflow Example:**
