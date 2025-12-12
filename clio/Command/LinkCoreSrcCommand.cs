@@ -248,21 +248,32 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		_logger.WriteInfo("\n[1/4] Synchronizing ConnectionStrings.config...");
 
 		try {
-			// Find ConnectionStrings.config in app
-			string[] appConfigs = _fileSystem.GetFiles(env.EnvironmentPath, "*.config", SearchOption.AllDirectories);
-			string connectionStringsFile = appConfigs.FirstOrDefault(f =>
-				Path.GetFileName(f).Equals("ConnectionStrings.config", StringComparison.OrdinalIgnoreCase));
-
-			if (string.IsNullOrEmpty(connectionStringsFile)) {
-				throw new Exception("ConnectionStrings.config not found in application");
+			// Find Terrasoft.WebHost in app
+			string appWebHostPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost");
+			if (!_fileSystem.ExistsDirectory(appWebHostPath)) {
+				throw new Exception($"Terrasoft.WebHost directory not found in application: {appWebHostPath}");
 			}
+
+			// Find ConnectionStrings.config in Terrasoft.WebHost (app)
+			string[] appConfigs = _fileSystem.GetFiles(appWebHostPath, "ConnectionStrings.config", SearchOption.AllDirectories);
+			if (!appConfigs.Any()) {
+				throw new Exception($"ConnectionStrings.config not found in {appWebHostPath}");
+			}
+			string connectionStringsFile = appConfigs.FirstOrDefault();
 
 			// Read content from app
 			string content = _fileSystem.ReadAllText(connectionStringsFile);
 
-			// Find or create target file in core
-			string[] coreConfigs = _fileSystem.GetFiles(options.CorePath, "ConnectionStrings.config", SearchOption.AllDirectories);
-			string targetFile = coreConfigs.FirstOrDefault() ?? Path.Combine(options.CorePath, "ConnectionStrings.config");
+			// Find Terrasoft.WebHost in core
+			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
+			if (!coreWebHostDirs.Any()) {
+				throw new Exception($"Terrasoft.WebHost directory not found in core: {options.CorePath}");
+			}
+			string coreWebHostPath = coreWebHostDirs[0];
+
+			// Find or create target file in core Terrasoft.WebHost
+			string[] coreConfigs = _fileSystem.GetFiles(coreWebHostPath, "ConnectionStrings.config", SearchOption.AllDirectories);
+			string targetFile = coreConfigs.FirstOrDefault() ?? Path.Combine(coreWebHostPath, "ConnectionStrings.config");
 
 			// Write to core
 			_fileSystem.WriteAllTextToFile(targetFile, content);
@@ -286,10 +297,17 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 				return;
 			}
 
-			// Find appsettings.json in core
-			string[] appSettingsFiles = _fileSystem.GetFiles(options.CorePath, "appsettings.json", SearchOption.AllDirectories);
+			// Find Terrasoft.WebHost in core
+			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
+			if (!coreWebHostDirs.Any()) {
+				throw new Exception($"Terrasoft.WebHost directory not found in core: {options.CorePath}");
+			}
+			string coreWebHostPath = coreWebHostDirs[0];
+
+			// Find appsettings.json in Terrasoft.WebHost (core)
+			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
 			if (!appSettingsFiles.Any()) {
-				throw new Exception("appsettings.json not found in core");
+				throw new Exception($"appsettings.json not found in {coreWebHostPath}");
 			}
 
 			string appSettingsPath = appSettingsFiles[0];
