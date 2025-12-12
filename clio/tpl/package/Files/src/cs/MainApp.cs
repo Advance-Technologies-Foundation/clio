@@ -75,14 +75,14 @@ namespace #RootNameSpace# {
 
 		#region Methods: Public
 
-		//public T GetKeyedService<T>(object serviceKey) => _serviceProvider.Value.GetKeyedService<T>(serviceKey);
+		public T GetKeyedService<T>(object serviceKey) => _serviceProvider.Value.GetKeyedService<T>(serviceKey);
 
-		// public T GetRequiredKeyedService<T>(object serviceKey) =>
-		// 	_serviceProvider.Value.GetRequiredKeyedService<T>(serviceKey);
+		 public T GetRequiredKeyedService<T>(object serviceKey) =>
+		 	_serviceProvider.Value.GetRequiredKeyedService<T>(serviceKey);
 
 		public T GetRequiredService<T>() => _serviceProvider.Value.GetRequiredService<T>();
 
-		//public T GetService<T>() => _serviceProvider.Value.GetService<T>();
+		public T GetService<T>() => _serviceProvider.Value.GetService<T>();
 
 		public IEnumerable<T> GetServices<T>() => _serviceProvider.Value.GetServices<T>();
 		#endregion

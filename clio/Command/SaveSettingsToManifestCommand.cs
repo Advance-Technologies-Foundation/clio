@@ -77,12 +77,16 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		_logger.WriteInfo($"Operating on environment: {options.Uri}");
 		_logger.WriteInfo("Loading information about webservices");
 		List<CreatioManifestWebService> services = _webServiceManager?.GetCreatioManifestWebServices();
+		
 		_logger.WriteInfo("Loading features");
 		List<Feature> features = GetFeatureValues();
+		
 		_logger.WriteInfo("Loading packages");
 		List<CreatioManifestPackage> packages = GetPackages();
+		
 		_logger.WriteInfo("Loading sys settings");
 		List<CreatioManifestSetting> settings = GetSysSettingsValue();
+		
 		EnvironmentManifest environmentManifest = new() {
 			WebServices = services,
 			Features = features,

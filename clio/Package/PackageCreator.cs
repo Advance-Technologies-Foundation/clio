@@ -134,17 +134,29 @@ namespace Clio.Package
             ApplyMacrosToProjectFiles(packagesPath, packageName);
             RenameTemplatePackageNameCsproj(packagesPath, packageName);
             ApplyMacrosToCsFiles(packagesPath, packageName);
+            ApplyMacrosToCsProjFile(packagesPath, packageName);
             RenameMainAppCs(packagesPath, packageName);
         }
 
+        private void ApplyMacrosToCsProjFile(string packagesPath, string packageName) {
+            string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
+            string csProjPath = Path.Combine(packageFilesPath, $"{packageName}.csproj");
+            string csProjContent = _fileSystem.ReadAllText(csProjPath);
+            string newCsProjContent = csProjContent
+                                      .Replace("#PackageName#", packageName)
+                                      .Replace("#RootNameSpace#", RootNameSpace(packageName));
+            _fileSystem.WriteAllTextToFile(csProjPath, newCsProjContent);
+        }
+        
+        
         private void ApplyMacrosToProjectFiles(string packagesPath, string packageName) {
             string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
             string packageNameTargetPropsPath = Path.Combine(packageFilesPath, "Directory.Build.targets");
             string packageNameTargetPropsContent = _fileSystem.ReadAllText(packageNameTargetPropsPath);
-            string newPackageNameCsprojContent = packageNameTargetPropsContent
+            string newPackageNameTargetPropsContent = packageNameTargetPropsContent
                 .Replace("#PackageName#", packageName)
                 .Replace("#RootNameSpace#", RootNameSpace(packageName));
-            _fileSystem.WriteAllTextToFile(packageNameTargetPropsPath, newPackageNameCsprojContent);
+            _fileSystem.WriteAllTextToFile(packageNameTargetPropsPath, newPackageNameTargetPropsContent);
         }
 
         private void ApplyMacrosToCsFiles(string packagesPath, string packageName) {
@@ -154,8 +166,7 @@ namespace Clio.Package
                 string csFileContent = _fileSystem.ReadAllText(csFilePath);
                 string newCsFileContent = csFileContent
                     .Replace("#PackageName#", packageName)
-                    .Replace("#RootNameSpace#", RootNameSpace(packageName))
-                    ;
+                    .Replace("#RootNameSpace#", RootNameSpace(packageName));
                 _fileSystem.WriteAllTextToFile(csFilePath, newCsFileContent);
             }
         }

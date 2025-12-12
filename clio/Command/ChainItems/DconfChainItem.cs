@@ -28,6 +28,7 @@ public class DconfChainItem(DownloadConfigurationCommand dconf, ILogger logger, 
 		const string question = "Would you like to restore workspace? (y/n)";
 		logger.WriteLine(question);
 		
+		
 		string answer = Console.ReadLine();
 		if (answer == null || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase)) {
 			return 0;

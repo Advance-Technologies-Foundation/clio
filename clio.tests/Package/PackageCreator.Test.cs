@@ -82,6 +82,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		FileSystem.File.Exists(appDescriptorPathThree).Should().BeFalse();
 		
 		_solutionCreatorMock.Received(3).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 		
 	}
 
@@ -102,6 +103,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeTrue();
 		
 		_solutionCreatorMock.Received(2).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -121,6 +123,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
 		
 		_solutionCreatorMock.Received(2).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -140,6 +143,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		FileSystem.File.Exists(appDescriptorPathTwo).Should().BeFalse();
 		
 		_solutionCreatorMock.Received(2).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -162,6 +166,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		appDescriptor.Packages.Count().Should().Be(2);
 		
 		_solutionCreatorMock.Received(3).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -180,6 +185,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		appDescriptor.Packages.Count().Should().Be(2);
 		
 		_solutionCreatorMock.Received(3).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -194,6 +200,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		//Assert
 		act.Should().Throw<InvalidOperationException>("because creating a package with the same name should throw an exception");
 		_solutionCreatorMock.Received(1).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -216,6 +223,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		AppDescriptorJson appDescriptor = JsonSerializer.Deserialize<AppDescriptorJson>(appDescriptorContent);
 		appDescriptor.Packages.Should().HaveCount(2);
 		_solutionCreatorMock.Received(2).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -241,6 +249,29 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		appDescriptor.Packages.First().Name.Should().Be(PackageNameOne);
 		
 		_solutionCreatorMock.Received(1).Create();
+		_solutionCreatorMock.ClearReceivedCalls();
 	}
 
+	[Test]
+	[Description("Ensures that ApplyMacrosToCsProjFile replaces #PackageName# and #RootNameSpace# macros in the .csproj file")]
+	public void Create_Should_Replace_Macros_In_CsProj_File() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		string packageFilesPath = Path.Combine(PackagesPath, PackageNameOne, "Files");
+		string csprojPath = Path.Combine(packageFilesPath, $"{PackageNameOne}.csproj");
+		
+		
+		//Act
+		creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		string resultContent = FileSystem.File.ReadAllText(csprojPath);
+		resultContent.Should().NotContain("#PackageName#", "because the macro should be replaced with the actual package name");
+		resultContent.Should().NotContain("#RootNameSpace#", "because the macro should be replaced with the actual root namespace");
+		resultContent.Should().Contain($"<RootNamespace>{PackageNameOne}App</RootNamespace>", "because the root namespace should be present in the csproj file");
+		resultContent.Should().Contain(PackageNameOne, "because the package name should be present in the csproj file");
+		resultContent.Should().Contain($"{PackageNameOne}App", "because the root namespace should be present in the csproj file");
+	}
+
+	
 }

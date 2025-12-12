@@ -1,14 +1,21 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml;
 using Clio.Common;
 using Clio.UserEnvironment;
+using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;
 
 namespace Clio.Command;
+
+[Verb("link-core-src", Aliases = ["lcs"], HelpText = "Link core source code to environment for development")]
+public class LinkCoreSrcOptions : EnvironmentNameOptions
+{
+	[Option("core-path", Required = true, HelpText = "Path to Creatio core source directory")]
+	public string CorePath { get; set; }
+}
 
 public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions> {
 
