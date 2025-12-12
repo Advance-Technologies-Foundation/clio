@@ -82,11 +82,9 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				return;
 			}
 
-			// Check ConnectionStrings.config exists in root of application
+			// Check ConnectionStrings.config exists in application (recursive search, any depth)
 			string[] configFiles = _fileSystem.GetFiles(env.EnvironmentPath, "ConnectionStrings.config", SearchOption.AllDirectories);
-			bool hasConnectionStringsConfig = configFiles.Any();
-
-			if (!hasConnectionStringsConfig) {
+			if (!configFiles.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.Environment),
 					ErrorMessage = $"ConnectionStrings.config not found in application: {env.EnvironmentPath}"
