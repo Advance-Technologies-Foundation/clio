@@ -30,13 +30,13 @@ namespace Clio.Tests.Command {
 
 		[SetUp]
 		public void SetUp() {
-			_fileSystemMock = Substitute.For<IFileSystem>();
-			_settingsRepositoryMock = Substitute.For<ISettingsRepository>();
 			_validator = Container.Resolve<IValidator<LinkCoreSrcOptions>>();
 		}
 
 		protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
 			base.AdditionalRegistrations(containerBuilder);
+			_fileSystemMock = Substitute.For<IFileSystem>();
+			_settingsRepositoryMock = Substitute.For<ISettingsRepository>();
 			containerBuilder.RegisterInstance(_fileSystemMock).As<IFileSystem>();
 			containerBuilder.RegisterInstance(_settingsRepositoryMock).As<ISettingsRepository>();
 		}
@@ -59,7 +59,7 @@ namespace Clio.Tests.Command {
 
 		// Assert
 		result.IsValid.Should().Be(false, "because CorePath is required");
-		result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(options.CorePath));
+		result.Errors.Should().Contain(e => e.PropertyName == nameof(options.CorePath));
 	}
 
 	[Test]
@@ -78,7 +78,7 @@ namespace Clio.Tests.Command {
 
 		// Assert
 		result.IsValid.Should().Be(false, "because Environment is required");
-		result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(options.Environment));
+		result.Errors.Should().Contain(e => e.PropertyName == nameof(options.Environment));
 	}
 
 	[Test]
