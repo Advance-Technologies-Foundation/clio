@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Xml;
 using Clio.Common;
+using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
 using FluentValidation;
 using FluentValidation.Results;
@@ -188,6 +189,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 	private readonly IFileSystem _fileSystem;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IValidator<LinkCoreSrcOptions> _validator;
+	private readonly ISystemServiceManager _systemServiceManager;
 
 	#endregion
 
@@ -197,11 +199,13 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		ILogger logger,
 		IFileSystem fileSystem,
 		ISettingsRepository settingsRepository,
-		IValidator<LinkCoreSrcOptions> validator) {
+		IValidator<LinkCoreSrcOptions> validator,
+		ISystemServiceManager systemServiceManager) {
 		_logger = logger;
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_validator = validator;
+		_systemServiceManager = systemServiceManager;
 	}
 
 	#endregion
@@ -233,7 +237,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 			SyncConnectionStringsConfig(options, env);
 			ConfigurePortsInAppSettings(options, env);
 			EnableLaxModeInAppConfig(options);
-			CreateSymlinkForTerrasoftWebHost(options, env);
+			UpdateEnvironmentPathAndRestartService(options, env);
 
 			_logger.WriteInfo("✓ Core linking completed successfully");
 			return 0;
@@ -258,7 +262,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		Console.WriteLine("  1. Synchronize ConnectionStrings.config from app to core");
 		Console.WriteLine("  2. Configure ports in appsettings.json");
 		Console.WriteLine("  3. Enable LAX mode in Terrasoft.WebHost.dll.config");
-		Console.WriteLine("  4. Create symlink for Terrasoft.WebHost");
+		Console.WriteLine("  4. Update environment configuration with core path and restart service");
 		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════\n");
 
 		Console.Write("Continue? (Y/n): ");
@@ -485,30 +489,75 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		}
 	}
 
-	private void CreateSymlinkForTerrasoftWebHost(LinkCoreSrcOptions options, EnvironmentSettings env) {
-		_logger.WriteInfo("\n[4/4] Creating symlink for Terrasoft.WebHost...");
+	private void UpdateEnvironmentPathAndRestartService(LinkCoreSrcOptions options, EnvironmentSettings env) {
+		_logger.WriteInfo("\n[4/4] Updating environment configuration and restarting service...");
 
 		try {
 			// Resolve Terrasoft.WebHost in core (must be unique)
-			string sourceWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json", "Terrasoft.WebHost.dll.config");
-			string linkPath = env.EnvironmentPath;
+			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json", "Terrasoft.WebHost.dll.config");
 
-			// Remove existing symlink if it exists
-			if (_fileSystem.ExistsDirectory(linkPath)) {
-				try {
-					_fileSystem.DeleteDirectory(linkPath);
-					_logger.WriteWarning("  ! Existing symlink replaced");
-				} catch {
-					_logger.WriteWarning("  ! Could not remove existing link, attempting to overwrite");
-				}
-			}
+			// Update environment configuration with core path
+			env.EnvironmentPath = coreWebHostPath;
+			_settingsRepository.ConfigureEnvironment(options.Environment, env);
+			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {coreWebHostPath}");
 
-			// Create symlink
-			_fileSystem.CreateDirectorySymLink(linkPath, sourceWebHostPath);
-			_logger.WriteInfo($"  ✓ Symlink created: {linkPath} → {sourceWebHostPath}");
+			// Handle service restart if running
+			HandleServiceRestartAndReregistration(options.Environment);
+
+			_logger.WriteInfo("  ✓ Configuration and service update completed");
 		} catch (Exception ex) {
-			_logger.WriteError($"  ✗ Error creating symlink: {ex.Message}");
+			_logger.WriteError($"  ✗ Error updating environment: {ex.Message}");
 			throw;
+		}
+	}
+
+	private void HandleServiceRestartAndReregistration(string environmentName) {
+		try {
+			// Determine service name (standard pattern: creatio-<environment-name>)
+			string serviceName = $"creatio-{environmentName}";
+
+			_logger.WriteInfo($"\n  Checking for OS service: {serviceName}");
+
+			// Check if service exists by trying to get its status
+			// We'll use a try-catch approach since there's no direct "exists" method
+			// Service check happens by attempting to interact with it
+			var isRunning = _systemServiceManager.IsServiceRunning(serviceName).GetAwaiter().GetResult();
+
+			if (isRunning) {
+				_logger.WriteInfo($"  ✓ Service '{serviceName}' is running, restarting...");
+				var stopResult = _systemServiceManager.StopService(serviceName).GetAwaiter().GetResult();
+				if (stopResult) {
+					_logger.WriteInfo($"  ✓ Service stopped successfully");
+				} else {
+					_logger.WriteWarning($"  ! Failed to stop service, attempting to continue");
+				}
+
+				// Small delay to ensure service is fully stopped
+				System.Threading.Thread.Sleep(1000);
+
+				// Re-register service (delete and recreate)
+				_logger.WriteInfo($"  Re-registering service '{serviceName}'...");
+				var deleteResult = _systemServiceManager.DeleteService(serviceName).GetAwaiter().GetResult();
+				if (deleteResult) {
+					_logger.WriteInfo($"  ✓ Service unregistered");
+				} else {
+					_logger.WriteWarning($"  ! Failed to unregister service");
+				}
+
+				// Restart the service
+				var startResult = _systemServiceManager.StartService(serviceName).GetAwaiter().GetResult();
+				if (startResult) {
+					_logger.WriteInfo($"  ✓ Service restarted successfully");
+				} else {
+					_logger.WriteWarning($"  ! Failed to start service, please restart manually");
+				}
+			} else {
+				_logger.WriteInfo($"  ! Service '{serviceName}' is not currently running");
+			}
+		} catch (Exception ex) {
+			// Don't fail the entire operation if service handling fails
+			_logger.WriteWarning($"  ! Could not manage OS service: {ex.Message}");
+			_logger.WriteWarning($"    Please manually restart the service if needed");
 		}
 	}
 

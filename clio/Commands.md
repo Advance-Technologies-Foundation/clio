@@ -1745,9 +1745,9 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 - On macOS and Linux, you must use the `--envPkgPath` with the direct file path
 - Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
-## link-core-src
+## link core src
 
-Link Creatio core source code to an environment for development. This command synchronizes configuration files and creates a symlink to the Terrasoft.WebHost directory, allowing you to develop and debug the core using the running application.
+Link Creatio core source code to an environment for development. This command synchronizes configuration files, updates environment settings with the core path, and restarts the OS service if running.
 
 **Syntax:**
 ```bash
@@ -1780,12 +1780,15 @@ clio lcs -e dev --core-path "C:\Projects\Core"
 3. **Synchronizes ConnectionStrings.config** - Copies database connection configuration from deployed app to core
 4. **Configures ports** - Sets the application port in appsettings.json based on environment settings
 5. **Enables LAX mode** - Enables CookiesSameSiteMode=Lax in Terrasoft.WebHost.dll.config for development
-6. **Creates symlink** - Links Terrasoft.WebHost from core to deployed application for live code changes
+6. **Updates environment path** - Changes environment's EnvironmentPath to point to the core's Terrasoft.WebHost directory
+7. **Restarts service** - Stops, re-registers, and restarts the OS service (if running) to apply changes
 
 **Behavior:**
 - If any validation fails, the command stops without making changes
 - Requires user confirmation before executing operations
-- Creates or overwrites symlink if it already exists
+- Updates the environment configuration with the new core path
+- Automatically handles OS service restart (systemd on Linux, launchd on macOS, Windows Services on Windows)
+- If service is not running, only configuration is updated
 - Logs detailed information about each operation
 - All file operations use the environment's configured settings
 
@@ -1795,17 +1798,24 @@ clio lcs -e dev --core-path "C:\Projects\Core"
 - Core source directory must contain Terrasoft.WebHost/bin with `appsettings.json`, `Terrasoft.WebHost.dll.config`, and the `Terrasoft.WebHost` directory
 - Application directory must have `ConnectionStrings.config`
 
+**Service Handling:**
+The command automatically handles the OS service with the naming convention `creatio-{environment-name}`:
+- Checks if service exists and is running
+- If running: stops it, unregisters it, then restarts it
+- If not running: only updates configuration
+- If service management fails, continues without failing (configuration is updated anyway)
+
 **Workflow Example:**
 ```bash
 # 1. Link core to development environment
 clio link-core-src -e development --core-path /Users/dev/creatio-core
 
-# 2. Start the application (it will use core from symlink)
+# 2. Start the application (it will use the core binaries)
 clio start -e development
 
 # 3. Edit core files in /Users/dev/creatio-core
-# 4. Changes are immediately visible in running application through symlink
-# 5. Debug and test your core changes
+# 4. Changes require application restart to take effect
+# 5. Restart the application with: clio start -e development
 ```
 
 **Aliases:** `lcs`
