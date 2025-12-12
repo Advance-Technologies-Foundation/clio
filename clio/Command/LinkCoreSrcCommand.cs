@@ -370,10 +370,17 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		_logger.WriteInfo("\n[3/4] Enabling LAX mode in app.config...");
 
 		try {
-			// Find app.config in core
-			string[] appConfigs = _fileSystem.GetFiles(options.CorePath, "app.config", SearchOption.AllDirectories);
+			// Find Terrasoft.WebHost in core
+			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
+			if (!coreWebHostDirs.Any()) {
+				throw new Exception($"Terrasoft.WebHost directory not found in core: {options.CorePath}");
+			}
+			string coreWebHostPath = coreWebHostDirs[0];
+
+			// Find app.config in Terrasoft.WebHost (core)
+			string[] appConfigs = _fileSystem.GetFiles(coreWebHostPath, "app.config", SearchOption.AllDirectories);
 			if (!appConfigs.Any()) {
-				throw new Exception("app.config not found in core");
+				throw new Exception($"app.config not found in {coreWebHostPath}");
 			}
 
 			string appConfigPath = appConfigs[0];
