@@ -108,33 +108,56 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				return;
 			}
 
-			// Find Terrasoft.WebHost starting from CorePath (recursive search)
-			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
+			// Find Terrasoft.WebHost/bin directories
+			var coreWebHostDirs = GetWebHostBinDirectories(options.CorePath).ToList();
 			if (!coreWebHostDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"Terrasoft.WebHost directory not found in core: {options.CorePath}"
+					ErrorMessage = $"Terrasoft.WebHost/bin directory not found in core: {options.CorePath}"
 				});
 				return;
 			}
 
-			string coreWebHostPath = coreWebHostDirs[0];
+			// Locate required files inside Terrasoft.WebHost directories
+			List<string> appSettingsDirs = coreWebHostDirs
+				.Where(dir => _fileSystem.GetFiles(dir, "appsettings.json", SearchOption.AllDirectories).Any())
+				.ToList();
+			List<string> appConfigDirs = coreWebHostDirs
+				.Where(dir => _fileSystem.GetFiles(dir, "app.config", SearchOption.AllDirectories).Any())
+				.ToList();
 
-			// Check appsettings.json exists in Terrasoft.WebHost
-			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
-			if (!appSettingsFiles.Any()) {
+			if (!appSettingsDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"appsettings.json not found in Terrasoft.WebHost: {coreWebHostPath}"
+					ErrorMessage = $"appsettings.json not found in any Terrasoft.WebHost directory under: {options.CorePath}"
 				});
 			}
 
-			// Check app.config exists in Terrasoft.WebHost
-			string[] appConfigFiles = _fileSystem.GetFiles(coreWebHostPath, "app.config", SearchOption.AllDirectories);
-			if (!appConfigFiles.Any()) {
+			if (!appConfigDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"app.config not found in Terrasoft.WebHost: {coreWebHostPath}"
+					ErrorMessage = $"app.config not found in any Terrasoft.WebHost directory under: {options.CorePath}"
+				});
+			}
+
+			if (appSettingsDirs.Count > 1) {
+				context.AddFailure(new ValidationFailure {
+					PropertyName = nameof(options.CorePath),
+					ErrorMessage = $"appsettings.json found in multiple Terrasoft.WebHost directories: {string.Join(", ", appSettingsDirs)}"
+				});
+			}
+
+			if (appConfigDirs.Count > 1) {
+				context.AddFailure(new ValidationFailure {
+					PropertyName = nameof(options.CorePath),
+					ErrorMessage = $"app.config found in multiple Terrasoft.WebHost directories: {string.Join(", ", appConfigDirs)}"
+				});
+			}
+
+			if (appSettingsDirs.Any() && appConfigDirs.Any() && appSettingsDirs[0] != appConfigDirs[0]) {
+				context.AddFailure(new ValidationFailure {
+					PropertyName = nameof(options.CorePath),
+					ErrorMessage = "appsettings.json and app.config are located in different Terrasoft.WebHost directories"
 				});
 			}
 		} catch (Exception ex) {
@@ -143,6 +166,13 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				ErrorMessage = $"Error validating core files: {ex.Message}"
 			});
 		}
+	}
+
+	private IEnumerable<string> GetWebHostBinDirectories(string corePath) {
+		string[] webHostDirs = _fileSystem.GetDirectories(corePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
+		return webHostDirs
+			.Select(dir => Path.Combine(dir, "bin"))
+			.Where(binDir => _fileSystem.ExistsDirectory(binDir));
 	}
 
 	#endregion
@@ -254,14 +284,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 			// Read content from app
 			string content = _fileSystem.ReadAllText(connectionStringsFile);
 
-			// Find Terrasoft.WebHost in core
-			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
-			if (!coreWebHostDirs.Any()) {
-				throw new Exception($"Terrasoft.WebHost directory not found in core: {options.CorePath}");
-			}
-			string coreWebHostPath = coreWebHostDirs[0];
-
-			// Find or create target file in core Terrasoft.WebHost
+			// Resolve target Terrasoft.WebHost with ConnectionStrings.config in core
+			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "ConnectionStrings.config");
 			string[] coreConfigs = _fileSystem.GetFiles(coreWebHostPath, "ConnectionStrings.config", SearchOption.AllDirectories);
 			string targetFile = coreConfigs.FirstOrDefault() ?? Path.Combine(coreWebHostPath, "ConnectionStrings.config");
 
@@ -287,18 +311,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 				return;
 			}
 
-			// Find Terrasoft.WebHost in core
-			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
-			if (!coreWebHostDirs.Any()) {
-				throw new Exception($"Terrasoft.WebHost directory not found in core: {options.CorePath}");
-			}
-			string coreWebHostPath = coreWebHostDirs[0];
-
-			// Find appsettings.json in Terrasoft.WebHost (core)
+			// Resolve Terrasoft.WebHost with appsettings.json in core
+			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json");
 			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
-			if (!appSettingsFiles.Any()) {
-				throw new Exception($"appsettings.json not found in {coreWebHostPath}");
-			}
 
 			string appSettingsPath = appSettingsFiles[0];
 			string content = _fileSystem.ReadAllText(appSettingsPath);
@@ -356,22 +371,49 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		}
 	}
 
+	private string ResolveWebHostDirectory(string corePath, params string[] requiredFiles) {
+		var webHostBinDirs = GetWebHostBinDirectories(corePath).ToList();
+		if (!webHostBinDirs.Any()) {
+			throw new Exception($"Terrasoft.WebHost/bin directory not found in core: {corePath}");
+		}
+
+		// If no specific files required, ensure uniqueness
+		if (requiredFiles == null || requiredFiles.Length == 0) {
+			if (webHostBinDirs.Count > 1) {
+				throw new Exception($"Multiple Terrasoft.WebHost/bin directories found: {string.Join(", ", webHostBinDirs)}");
+			}
+			return webHostBinDirs[0];
+		}
+
+		List<string> matches = webHostBinDirs
+			.Where(dir => requiredFiles.All(file => _fileSystem.GetFiles(dir, file, SearchOption.AllDirectories).Any()))
+			.ToList();
+
+		if (!matches.Any()) {
+			throw new Exception($"Required files ({string.Join(", ", requiredFiles)}) not found under any Terrasoft.WebHost/bin directory in core: {corePath}");
+		}
+
+		if (matches.Count > 1) {
+			throw new Exception($"Required files ({string.Join(", ", requiredFiles)}) found in multiple Terrasoft.WebHost/bin directories: {string.Join(", ", matches)}");
+		}
+
+		return matches[0];
+	}
+
+	private IEnumerable<string> GetWebHostBinDirectories(string corePath) {
+		string[] webHostDirs = _fileSystem.GetDirectories(corePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
+		return webHostDirs
+			.Select(dir => Path.Combine(dir, "bin"))
+			.Where(binDir => _fileSystem.ExistsDirectory(binDir));
+	}
+
 	private void EnableLaxModeInAppConfig(LinkCoreSrcOptions options) {
 		_logger.WriteInfo("\n[3/4] Enabling LAX mode in app.config...");
 
 		try {
-			// Find Terrasoft.WebHost in core
-			string[] coreWebHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
-			if (!coreWebHostDirs.Any()) {
-				throw new Exception($"Terrasoft.WebHost directory not found in core: {options.CorePath}");
-			}
-			string coreWebHostPath = coreWebHostDirs[0];
-
-			// Find app.config in Terrasoft.WebHost (core)
+			// Resolve Terrasoft.WebHost with app.config in core
+			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "app.config");
 			string[] appConfigs = _fileSystem.GetFiles(coreWebHostPath, "app.config", SearchOption.AllDirectories);
-			if (!appConfigs.Any()) {
-				throw new Exception($"app.config not found in {coreWebHostPath}");
-			}
 
 			string appConfigPath = appConfigs[0];
 			string content = _fileSystem.ReadAllText(appConfigPath);
@@ -410,13 +452,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		_logger.WriteInfo("\n[4/4] Creating symlink for Terrasoft.WebHost...");
 
 		try {
-			// Find Terrasoft.WebHost in core
-			string[] webHostDirs = _fileSystem.GetDirectories(options.CorePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
-			if (!webHostDirs.Any()) {
-				throw new Exception("Terrasoft.WebHost directory not found in core");
-			}
-
-			string sourceWebHostPath = webHostDirs[0];
+			// Resolve Terrasoft.WebHost in core (must be unique)
+			string sourceWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json", "app.config");
 			string linkPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost");
 
 			// Remove existing symlink if it exists
