@@ -222,6 +222,12 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 
 	public override int Execute(LinkCoreSrcOptions options) {
 		try {
+			// Convert relative core path to absolute path to avoid working directory dependency
+			if (!Path.IsPathRooted(options.CorePath)) {
+				options.CorePath = Path.GetFullPath(options.CorePath);
+				_logger.WriteInfo($"Resolved relative path to absolute: {options.CorePath}");
+			}
+
 			// Validate options
 			var validationResult = _validator.Validate(options);
 			if (!validationResult.IsValid) {
