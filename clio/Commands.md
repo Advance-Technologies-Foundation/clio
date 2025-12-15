@@ -2573,7 +2573,23 @@ You may need _**Administrator**_ privileges.
 ## deploy-creatio
 
 ```bash
- clio deploy-creatio --ZipFile <Path_To_ZipFile>
+# Simplified syntax using positional argument (recommended)
+clio deploy-creatio <Path_To_ZipFile> -e <EnvironmentName>
+
+# Alternative syntax with named parameter (backward compatible)
+clio deploy-creatio -e <EnvironmentName> --ZipFile <Path_To_ZipFile>
+```
+
+Examples:
+```bash
+# macOS simple deployment
+clio deploy-creatio ~/Downloads/creatio.zip -e dev1
+
+# Windows with parameters
+clio deploy-creatio "C:\creatio.zip" -e production --db mssql --SitePort 8080
+
+# Linux with HTTPS
+clio deploy-creatio "/home/admin/creatio.zip" -e app --use-https --cert-path /certs/app.pem
 ```
 
 ## Technical details

@@ -10,11 +10,20 @@ DESCRIPTION
     deployment with optional HTTPS configuration and automatic service management.
 
 SYNOPSIS
-    clio deploy-creatio [OPTIONS]
+    clio deploy-creatio [ZIP_FILE] [ENVIRONMENT_NAME] [OPTIONS]
+
+POSITIONAL ARGUMENTS
+    ZIP_FILE
+        Path to Creatio zip file for deployment (required)
+        Example: ~/Downloads/Creatio_8.3.zip
+
+    ENVIRONMENT_NAME
+        Application/environment name for the deployment (optional)
+        If not provided, will prompt interactively
 
 OPTIONS
     -e, --environment-name NAME
-        Required. Environment/site name for the deployment
+        Environment/site name for the deployment (can override positional argument)
 
     --db DATABASE_TYPE
         Database type: pg (PostgreSQL) or mssql (MS SQL Server)
@@ -35,7 +44,7 @@ OPTIONS
         Default: 80 (HTTP), 443 (HTTPS)
 
     --ZipFile FILE_PATH
-        Required. Path to Creatio zip file for deployment
+        Path to Creatio zip file for deployment (alternative to positional argument)
 
     --deployment METHOD
         Deployment method: auto, iis, or dotnet
@@ -73,37 +82,37 @@ OPTIONS
 
 EXAMPLES
 
-    1. Basic deployment with default settings (PostgreSQL, port 80, auto-run):
+    1. Basic deployment with positional argument (simplest form):
+       clio deploy-creatio "C:\creatio-app.zip" -e "MyCreatio"
+
+    2. Basic deployment with named parameter (for backward compatibility):
        clio deploy-creatio -e "MyCreatio" --ZipFile "C:\creatio-app.zip"
 
-    2. Deploy with MS SQL and custom port:
-       clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
-           --ZipFile "/path/to/creatio-app.zip"
+    3. Deploy with MS SQL and custom port:
+       clio deploy-creatio "/path/to/creatio-app.zip" -e "Production" --db mssql --SitePort 8080
 
-    3. Deploy with .NET Framework (Windows):
-       clio deploy-creatio -e "LegacyApp" --platform netframework \\
-           --ZipFile "C:\creatio-framework.zip"
+    4. Deploy with .NET Framework (Windows):
+       clio deploy-creatio "C:\creatio-framework.zip" -e "LegacyApp" --platform netframework
 
-    4. Deploy with HTTPS on Windows using dotnet (no IIS):
-       clio deploy-creatio -e "SecureApp" --no-iis --use-https \\
-           --cert-path "C:\certs\app.pem" --ZipFile "C:\creatio-app.zip"
+    5. Deploy with HTTPS on Windows using dotnet (no IIS):
+       clio deploy-creatio "C:\creatio-app.zip" -e "SecureApp" --no-iis --use-https \\
+           --cert-path "C:\certs\app.pem"
 
-    5. Deploy to custom path on macOS:
-       clio deploy-creatio -e "CreatioApp" --app-path "/var/creatio" \\
-           --ZipFile "/Users/downloads/creatio-app.zip"
+    6. Deploy to custom path on macOS:
+       clio deploy-creatio "/Users/downloads/creatio-app.zip" -e "CreatioApp" \\
+           --app-path "/var/creatio"
 
-    6. Deploy on Linux with systemd service management:
-       clio deploy-creatio -e "LinuxApp" --deployment dotnet \\
-           --app-path "/opt/creatio-prod" --ZipFile "/home/admin/creatio-app.zip"
+    7. Deploy on Linux with systemd service management:
+       clio deploy-creatio "/home/admin/creatio-app.zip" -e "LinuxApp" \\
+           --deployment dotnet --app-path "/opt/creatio-prod"
 
-    7. Deploy without auto-launching browser:
-       clio deploy-creatio -e "BackgroundApp" --auto-run=false \\
-           --ZipFile "C:\creatio-app.zip"
+    8. Deploy without auto-launching browser:
+       clio deploy-creatio "C:\creatio-app.zip" -e "BackgroundApp" --auto-run false
 
-    8. Silent deployment with all parameters:
-       clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
-           --SiteName "AutoCreatio" --SitePort 8443 --use-https \\
-           --cert-path "/certs/server.pem" --ZipFile "/app/creatio.zip" --silent
+    9. Silent deployment with all parameters:
+       clio deploy-creatio "/app/creatio.zip" -e "AutoDeploy" \\
+           --db pg --platform net6 --SiteName "AutoCreatio" --SitePort 8443 \\
+           --use-https --cert-path "/certs/server.pem" --silent
 
 BEHAVIOR
 

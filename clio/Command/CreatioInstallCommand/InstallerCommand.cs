@@ -20,6 +20,7 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
 	private CreatioDBType _dbType;
 	private CreatioRuntimePlatform _platform;
+	private string _zipFile;
 
 	#endregion
 
@@ -55,6 +56,18 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
 	#region Properties: Public
 
+	[Value(0, MetaName = "ZipFile", Required = false, HelpText = "Path to Creatio zip file for deployment")]
+	public string ZipFile {
+		get => _zipFile;
+		set => _zipFile = value;
+	}
+
+	[Value(1, MetaName = "EnvironmentName", Required = false, HelpText = "Application name")]
+	public new string EnvironmentName {
+		get => Environment;
+		set => Environment = value;
+	}
+
 	[Option("db", Required = false, HelpText = "DB type: pg|mssql")]
 	public string DB { get; set; }
 
@@ -79,9 +92,6 @@ public class PfInstallerOptions : EnvironmentNameOptions
 
 	[Option("SitePort", Required = false, HelpText = "Site port")]
 	public int SitePort { get; set; }
-
-	[Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
-	public string ZipFile { get; set; }
 
 	[Option("deployment", Required = false, Default = "auto", HelpText = "Deployment method: auto|iis|dotnet")]
 	public string DeploymentMethod { get; set; }
