@@ -2,9 +2,14 @@
 Default Document
 HTTP Errors
 HTTP Redirection
+.NET Framework 4.8
 ASP
 ISAPI extensions
 ISAPI Filters
+.NET Extensibility 4.8
+Application Initialization
+Directory Browsing
+IIS Management Console
 WebSocket Protocol
 WCF-HTTP-Activation
 WCF-NonHTTP-Activation
@@ -19,7 +24,16 @@ HTTP Logging
 Logging Tools
 Request Monitor
 Custom Logging
+ODBC Logging
+Tracing
 Basic Authentication
+Centralized SSL Certificate Support
+Client Certificate Mapping Authentication
+Digest Authentication
+IIS Client Certificate Mapping Authentication
 Request Filtering
 IP Security
 IIS-HttpCompressionDynamic
+Static Content Compression
+URL Authorization
+Windows Authentication
