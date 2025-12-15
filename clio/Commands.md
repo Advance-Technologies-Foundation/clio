@@ -357,6 +357,9 @@ clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME>
 - [Install NuGet package](#install-nuget-pkg)
 - [Check packages updates in NuGet](#check-nuget-update)
 
+# Clio Management
+- [Update clio](#update-cli)
+
 ## pack-nuget-pkg
 
 To pack creatio package to a NuGet package (*.nupkg), use the next command:
@@ -430,6 +433,57 @@ clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
 ```
 
 Default value of 'Source' argument: https://www.nuget.org/api/v2
+
+## update-cli
+
+Update clio to the latest available version from NuGet with interactive confirmation.
+
+This command checks for a newer version of clio and updates the installation if available. By default, it operates in interactive mode, displaying the current and latest versions and prompting the user for confirmation before updating.
+
+```bash
+clio update-cli [OPTIONS]
+clio update [OPTIONS]
+```
+
+### Options:
+
+- `-g, --global` - Install clio globally (default: true). Use `--no-global` to disable.
+- `-y, --no-prompt` - Skip confirmation prompt and proceed with update automatically.
+
+### Examples:
+
+Interactive update (prompts user):
+```bash
+clio update-cli
+```
+
+Automatic update without confirmation:
+```bash
+clio update --no-prompt
+```
+
+Using short alias with auto-confirm:
+```bash
+clio update -y
+```
+
+### Behavior:
+
+1. Checks current installed version and latest version on NuGet.org
+2. If already on latest version, displays message and exits successfully
+3. If update available:
+   - Shows current and latest version information
+   - If `--no-prompt` not specified: prompts user for confirmation (Y/n)
+   - If user declines: cancels and exits without updating
+4. Executes: `dotnet tool update clio -g` (or without `-g` if `--no-global` used)
+5. Verifies new version is installed correctly
+6. Reports success or failure
+
+### Exit Codes:
+
+- `0` - Successful update or already on latest version
+- `1` - User cancelled or update failed
+- `2` - Error checking for updates (network issue, version detection error, etc.)
 
 # Application
 - [Deploy application](#deploy-application)

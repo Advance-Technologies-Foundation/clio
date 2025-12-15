@@ -11,6 +11,7 @@ using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
+using Clio.Command.Update;
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
@@ -175,6 +176,8 @@ public class BindingsModule {
 		containerBuilder.RegisterType<SetPackageVersionCommand>();
 		containerBuilder.RegisterType<GetPackageVersionCommand>();
 		containerBuilder.RegisterType<CheckNugetUpdateCommand>();
+		containerBuilder.RegisterType<UpdateCliCommand>();
+		containerBuilder.RegisterType<UserPromptService>().As<IUserPromptService>();
 		containerBuilder.RegisterType<DeletePackageCommand>();
 		containerBuilder.RegisterType<GetPkgListCommand>();
 		containerBuilder.RegisterType<RestoreWorkspaceCommand>();

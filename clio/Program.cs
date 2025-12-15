@@ -10,6 +10,7 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
+using Clio.Command.Update;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project;
@@ -68,6 +69,7 @@ internal class Program {
 		typeof(SetPackageVersionOptions),
 		typeof(GetPackageVersionOptions),
 		typeof(CheckNugetUpdateOptions),
+		typeof(UpdateCliOptions),
 		// Workspace management
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
@@ -206,6 +208,7 @@ ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Exe
 					SetPackageVersionOptions opts => Resolve<SetPackageVersionCommand>().Execute(opts),
 					GetPackageVersionOptions opts => Resolve<GetPackageVersionCommand>().Execute(opts),
 					CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
+					UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
 					RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 					CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 					PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),

@@ -31,3 +31,4 @@ publish-app: publish workspace
 publish-workspace: publish workspace
 link-package-store:link-package-store
 link-core-src:lsc
+update-cli:## update-cli,## update

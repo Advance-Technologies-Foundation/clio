@@ -1,23 +1,49 @@
 COMMAND TYPE
-    Service commands
+    Application management
 
 NAME
-    update-cli - updates the clio to the latest version
+    update-cli - Update clio to the latest available version
+
+SYNOPSIS
+    update-cli [OPTIONS]
+    update [OPTIONS]
 
 DESCRIPTION
-    update-cli updates the clio to the latest version. Any time when you run
-    any commands by clio it checks the current version, and if it available
-    clio show the message about it.
-    Recommended to use the latest version of clio with fixed bugs and 
-    extended features.
+    Checks for a newer version of clio on NuGet.org and updates the installation
+    if an update is available. By default, the command operates in interactive mode,
+    showing the current and latest versions and prompting the user for confirmation
+    before updating.
+    
+    Recommended to use the latest version of clio for bug fixes and new features.
 
 OPTIONS
+    -g, --global            Install clio globally (default: true)
 
-    --CurrentVersion                   -v          Show current version
+    -y, --no-prompt         Skip confirmation prompt and proceed with update
+                            automatically. Useful for automated scripts.
 
-EXAMPLE
+EXAMPLES
+    # Interactive update (prompts user)
     update-cli
-    update-cli -v
+
+    # Automatic update without confirmation
+    update-cli --no-prompt
+
+    # Using short alias
+    update -y
+
+BEHAVIOR
+    - Checks current installed version and latest version on NuGet.org
+    - If already on latest version, displays confirmation message and exits
+    - If update available and not --no-prompt, displays versions and prompts for confirmation
+    - On user confirmation or with --no-prompt, runs: dotnet tool update clio -g
+    - Verifies the new version is installed correctly
+    - Reports success or failure with appropriate exit codes
+
+EXIT CODES
+    0   Successful update or already on latest version
+    1   User cancelled or update failed
+    2   Error checking for updates (network issue, etc.)
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
