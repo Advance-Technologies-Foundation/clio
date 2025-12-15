@@ -58,9 +58,11 @@
         <Reference Include="UnitTest">
             <HintPath>.\Libs\UnitTest.dll</HintPath>
         </Reference>
+        <Reference Include="Atf.Repository.Mock">
+            <HintPath>.\Libs\Atf.Repository.Mock.dll</HintPath>
+        </Reference>
     </ItemGroup>
     
-    <!-- 
     <ItemGroup Label="Core References">
         <Reference Include="Terrasoft.Common">
             <HintPath>$(TestCoreLibPath)/Terrasoft.Common.dll</HintPath>
@@ -201,7 +203,6 @@
             <Private>True</Private>
         </Reference>
     </ItemGroup>
-     -->
     <ItemGroup>
         <ProjectReference Include="..\..\packages\{{packageUnderTest}}\Files\{{packageUnderTest}}.csproj"/>
     </ItemGroup>

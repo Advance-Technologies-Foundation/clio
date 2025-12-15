@@ -801,7 +801,13 @@
     <None Remove="tpl\UnitTestLibs\Terrasoft.TestFramework.dll" />
     <Content Include="tpl\UnitTestLibs\Terrasoft.TestFramework.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content> 
+    
+    <None Remove="tpl\UnitTestLibs\ATF.Repository.Mock.dll" />
+    <Content Include="tpl\UnitTestLibs\ATF.Repository.Mock.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    
     <None Remove="tpl\UnitTestLibs\UnitTest.dll" />
     <Content Include="tpl\UnitTestLibs\UnitTest.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -862,35 +868,35 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="2.0.2.11" />
-    <PackageReference Include="Autofac" Version="8.4.0" />
+    <PackageReference Include="ATF.Repository" Version="2.0.3.1" />
+    <PackageReference Include="Autofac" Version="9.0.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.7.0" />
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="ErrorOr" Version="2.1.0" />
-    <PackageReference Include="FluentValidation" Version="12.0.0" />
-    <PackageReference Include="KubernetesClient" Version="18.0.5" />
+    <PackageReference Include="FluentValidation" Version="12.1.1" />
+    <PackageReference Include="KubernetesClient" Version="18.0.13" />
     <PackageReference Include="MediatR" Version="[12.5.0]" />
     <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="[12.3.0]" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.2" />
-    <PackageReference Include="Microsoft.Dism" Version="3.3.12" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="9.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.10" />
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="[7.4.11]" /> <!-- 7.4.11 Is the latest supported on .NET8--> 
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.3" />
+    <PackageReference Include="Microsoft.Dism" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.1" />
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="[7.4.13,7.5.0)" /> <!-- 7.4.13 Is the latest supported on .NET8--> 
     <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Npgsql" Version="9.0.4" />
+    <PackageReference Include="Npgsql" Version="10.0.0" />
     <PackageReference Include="NRedisStack" Version="1.1.1" />
     <PackageReference Include="OneOf" Version="3.0.271" />
-    <PackageReference Include="System.IO.Abstractions" Version="22.0.16" />
+    <PackageReference Include="System.IO.Abstractions" Version="22.1.0" />
     <PackageReference Include="System.Json" Version="4.8.0" />
 	<PackageReference Include="Ignore" Version="0.2.1" />
 	<PackageReference Include="YamlDotNet" Version="16.3.0" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
-	<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.14.0" />
+	<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.15.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
