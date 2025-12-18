@@ -868,7 +868,7 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="2.0.3.1" />
+    <PackageReference Include="ATF.Repository" Version="2.0.3.2" />
     <PackageReference Include="Autofac" Version="9.0.0" />
     <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.7.0" />
