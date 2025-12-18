@@ -169,9 +169,36 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	///  Gets data from appcmd.exe
 	/// </summary>
 	private static readonly Func<IEnumerable<SiteBinding>> GetBindings = () => {
-		return XElement.Parse(_appcmd("list sites /xml"))
-			.Elements("SITE")
-			.Select(site => GetSiteBindingFromXmlElement(site));
+		List<SiteBinding> result = [];
+		
+		// Get all top-level sites
+		string sitesXml = _appcmd("list sites /xml");
+		if (!string.IsNullOrWhiteSpace(sitesXml)) {
+			XElement sitesRoot = XElement.Parse(sitesXml);
+			IEnumerable<SiteBinding> topLevelSites = sitesRoot.Elements("SITE")
+				.Select(site => GetSiteBindingFromXmlElement(site));
+			result.AddRange(topLevelSites);
+		}
+		
+		// Get all applications to discover nested sites
+		string appsXml = _appcmd("list app /xml");
+		if (!string.IsNullOrWhiteSpace(appsXml)) {
+			XElement appsRoot = XElement.Parse(appsXml);
+			IEnumerable<SiteBinding> nestedApps = appsRoot.Elements("APP")
+				.Where(app => {
+					string appName = app.Attribute("APP.NAME")?.Value ?? string.Empty;
+					// APP.NAME format is "SiteName/AppPath" or "SiteName/" for root
+					// Skip root applications (ending with "/"), as they're already covered by top-level sites
+					// We only want nested applications like "Default Web Site/MyApp"
+					return !string.IsNullOrEmpty(appName) && 
+					       !appName.EndsWith("/") && 
+					       appName.Contains("/");
+				})
+				.Select(app => GetApplicationBindingFromXmlElement(app));
+			result.AddRange(nestedApps);
+		}
+		
+		return result;
 	};
 
 	/// <summary>
@@ -214,6 +241,52 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 		xmlElement.Attribute("bindings")?.Value,
 		_appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
 	);
+
+	/// <summary>
+	///  Converts Application XElement to SiteBinding for nested applications
+	/// </summary>
+	private static readonly Func<XElement, SiteBinding> GetApplicationBindingFromXmlElement = xmlElement => {
+		string appName = xmlElement.Attribute("APP.NAME")?.Value ?? string.Empty;
+		// APP.NAME format is "SiteName/AppPath" e.g., "Default Web Site/MyApp"
+		string[] parts = appName.Split('/', 2);
+		string siteName = parts.Length > 0 ? parts[0] : string.Empty;
+		string appPath = parts.Length > 1 ? ("/" + parts[1]) : string.Empty;
+		
+		// Get the site's bindings to construct the full URL
+		string siteXml = _appcmd($"list site \"{siteName}\" /xml");
+		string siteBindings = string.Empty;
+		string siteState = string.Empty;
+		
+		if (!string.IsNullOrWhiteSpace(siteXml)) {
+			try {
+				XElement siteElement = XElement.Parse(siteXml).Element("SITE");
+				if (siteElement != null) {
+					siteBindings = siteElement.Attribute("bindings")?.Value ?? string.Empty;
+					siteState = siteElement.Attribute("state")?.Value ?? string.Empty;
+				}
+			} catch {
+				// If parsing fails, continue with empty bindings
+			}
+		}
+		
+		// Get the physical path for this application via vdir query
+		// For nested apps, the vdir path is "SiteName/AppPath/"
+		string vdirPath = string.IsNullOrEmpty(appPath) ? $"{siteName}/" : $"{siteName}{appPath}/";
+		string physicalPath = _appcmd($"list vdir \"{vdirPath}\" /text:physicalPath").Trim();
+		
+		// If vdir query didn't work, try getting it from the app directly
+		if (string.IsNullOrWhiteSpace(physicalPath)) {
+			physicalPath = _appcmd($"list app \"{appName}\" /text:physicalPath").Trim();
+		}
+		
+		// Use the full APP.NAME as the combined name (e.g., "Default Web Site/MyApp")
+		return new SiteBinding(
+			appName,
+			siteState,
+			siteBindings,
+			physicalPath
+		);
+	};
 
 	/// <summary>
 	///  Detect Site Type
@@ -269,13 +342,19 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 					: rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
 				
 				if (Uri.TryCreate(rootUri, newPath, out Uri value)) {
-					result.Add(rootSite.Name + newPath, new App(rootSite.physicalPath, value));
+					// For NetFramework apps, the environment path should be the parent of Terrasoft.WebApp
+					// webApp.PhysicalPath points to "C:\...\Terrasoft.WebApp", we need its parent
+					string environmentPath = Directory.GetParent(webApp.PhysicalPath)?.FullName ?? webApp.PhysicalPath;
+					result.Add(rootSite.Name + newPath, new App(environmentPath, value));
 				}
 			});
 
-		sites.Where(site => !result.ContainsKey(site.Name)).ToList().ForEach(site => {
-			result.Add(site.Name, new App(site.PhysicalPath, site.Uris.FirstOrDefault()));
-		});
+		// Only add top-level sites that are Creatio sites and haven't been added yet
+		sites.Where(site => !result.ContainsKey(site.Name) && DetectSiteType(site.PhysicalPath) != SiteType.NotCreatioSite)
+			.ToList()
+			.ForEach(site => {
+				result.Add(site.Name, new App(site.PhysicalPath, site.Uris.FirstOrDefault()));
+			});
 		
 		return result;
 	};
