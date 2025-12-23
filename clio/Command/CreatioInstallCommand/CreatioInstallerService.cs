@@ -17,6 +17,7 @@ using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using MediatR;
 using StackExchange.Redis;
+using FileSystem = Clio.Common.FileSystem;
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Command.CreatioInstallCommand;
@@ -175,6 +176,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return path;
 		}
 
+		
+		if(path.StartsWith(".\\")){
+			path = Path.GetFullPath(path);
+		}
+		
 		return new DriveInfo(Path.GetPathRoot(path)) switch {
 			{DriveType: DriveType.Network} => CopyZipLocal(path),
 			_ => path
@@ -644,7 +650,15 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
 		string deploymentFolder = DetermineFolderPath(options);
 		_logger.WriteInfo($"[Starting unzipping] - {options.ZipFile} to {deploymentFolder}");
-		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver);
+		//DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver); //TODO: BUG, this no longer creates an unzipped folder as a template
+		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExistingOld(options.ZipFile, _packageArchiver); //TODO: BUG, this no longer creates an unzipped folder as a template
+		
+		if (!_fileSystem.ExistsDirectory(deploymentFolder)) {
+			_fileSystem.CreateDirectory(deploymentFolder);
+		}
+		_fileSystem.CopyDirectory(unzippedDirectory.FullName, deploymentFolder, true);
+		DirectoryInfo deploymentFolderInfo = new DirectoryInfo(deploymentFolder);
+		
 		_logger.WriteInfo($"[Unzip completed] - {unzippedDirectory.FullName}");
 		_logger.WriteLine();
 
@@ -663,12 +677,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		};
 
 		int deploySiteResult = dbRestoreResult switch {
-			0 => DeployApplication(unzippedDirectory, options),
+			0 => DeployApplication(deploymentFolderInfo, options),
 			var _ => ExitWithErrorMessage("Database restore failed")
 		};
 
+		
 		int updateConnectionStringResult = deploySiteResult switch {
-			0 => UpdateConnectionString(unzippedDirectory, options).GetAwaiter().GetResult(),
+			0 => UpdateConnectionString(deploymentFolderInfo, options).GetAwaiter().GetResult(),
 			var _ => ExitWithErrorMessage("Failed to deploy application")
 		};
 
@@ -681,7 +696,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			Login = "Supervisor",
 			Password = "Supervisor",
 			Uri = uri,
-			IsNetCore = InstallerHelper.DetectFramework(unzippedDirectory) == InstallerHelper.FrameworkType.NetCore,
+			IsNetCore = InstallerHelper.DetectFramework(deploymentFolderInfo) == InstallerHelper.FrameworkType.NetCore,
 			EnvironmentPath = deploymentFolder
 		});
 
