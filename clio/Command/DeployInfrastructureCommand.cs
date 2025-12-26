@@ -13,7 +13,7 @@ using StackExchange.Redis;
 
 namespace Clio.Command
 {
-	[Verb("deploy-infrastructure", Aliases = new[] { "di" }, 
+	[Verb("deploy-infrastructure", Aliases = ["di"], 
 		HelpText = "Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin)")]
 	public class DeployInfrastructureOptions
 	{

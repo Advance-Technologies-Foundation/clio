@@ -79,7 +79,7 @@ public class UninstallCreatioCommandOptionsValidator : AbstractValidator<Uninsta
 
 }
 
-[Verb("uninstall-creatio", Aliases = new[] {"uc"}, HelpText = "Uninstall local instance of creatio")]
+[Verb("uninstall-creatio", Aliases = ["uc"], HelpText = "Uninstall local instance of creatio")]
 public class UninstallCreatioCommandOptions : EnvironmentNameOptions
 {
 

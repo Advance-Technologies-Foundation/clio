@@ -21,9 +21,7 @@ namespace #RootNameSpace# {
 		private readonly Lazy<ServiceProvider> _serviceProvider = new Lazy<ServiceProvider>(Init);
 
 		/// <summary>
-		/// User connection. Do not inject an instance of UserConnection via DI.
-		/// Use this property to get the current user connection.
-		/// WARNING MEMORY LEAK - DO NOT STORE USER CONNECTION IN CLASS FIELDS
+		/// Instance of a UserCennection from CLassFactory
 		/// </summary>
 		internal static UserConnection UserConnection => ClassFactory.Get<UserConnection>();
 
@@ -48,7 +46,9 @@ namespace #RootNameSpace# {
 			ServiceCollection serviceCollection = new ServiceCollection();
 
 			serviceCollection.AddSingleton<ILog>(LogManager.GetLogger(Constants.LoggerName));
-
+			
+			// UserConnection is disposable, always register it as scoped
+			serviceCollection.AddScoped<UserConnection>(sp=> UserConnection);
 			
 			InjectedServices?.ToList().ForEach(service => service(serviceCollection));
 			return serviceCollection.BuildServiceProvider();
@@ -62,6 +62,7 @@ namespace #RootNameSpace# {
 		/// <summary>
 		/// This method is meant to be used for testing purposes only.
 		/// WARNING: Not thread-safe. Should not be used in production.
+		/// This allows test bootstrap to reset the instance between tests
 		/// </summary>
 		/// <returns></returns>
 		internal #RootNameSpace# Reset(){
@@ -85,6 +86,17 @@ namespace #RootNameSpace# {
 		public T GetService<T>() => _serviceProvider.Value.GetService<T>();
 
 		public IEnumerable<T> GetServices<T>() => _serviceProvider.Value.GetServices<T>();
+
+		/// <summary>
+		/// Creates a new service scope. Caller is responsible for disposing the scope.
+		/// Use this for scoped services like UserConnection.
+		/// </summary>
+		/// <returns>A new service scope that must be disposed.</returns>
+		public IServiceScope CreateScope() {
+			IServiceScope scope = _serviceProvider.Value.CreateScope();
+			return scope;
+		}
+
 		#endregion
 
 		// Private constructor to prevent external instantiation
