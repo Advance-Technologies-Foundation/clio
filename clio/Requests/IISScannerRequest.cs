@@ -292,6 +292,13 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	///  Detect Site Type
 	/// </summary>
 	private static readonly Func<string, SiteType> DetectSiteType = path => {
+		string normalizedPath = (path ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar,
+			Path.AltDirectorySeparatorChar);
+		bool isTerrasoftWebAppFolder = string.Equals(
+			Path.GetFileName(normalizedPath),
+			"Terrasoft.WebApp",
+			StringComparison.OrdinalIgnoreCase);
+
 		string webapp = Path.Join(path, "Terrasoft.WebApp");
 		string configuration = Path.Join(path, "Terrasoft.Configuration");
 
@@ -299,7 +306,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 			return SiteType.NetFramework;
 		}
 
-		if (new DirectoryInfo(configuration).Exists) {
+		if (!isTerrasoftWebAppFolder && new DirectoryInfo(configuration).Exists) {
 			return SiteType.Core;
 		}
 
