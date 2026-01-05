@@ -2,63 +2,125 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
+using System.Text;
 using Autofac;
 using Clio.Common;
 using Clio.Utilities;
 using CommandLine;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
-namespace Clio
-{
-	class WikiHelpViewer : CustomHelpViewer
-	{
-		public WikiHelpViewer() {
-			var container = new BindingsModule().Register(null);
-			var directoryProvider = container.Resolve<IWorkingDirectoriesProvider>();
-			var anchorFilePath = Path.Combine(directoryProvider.ExecutingDirectory, "Wiki", "WikiAnchors.txt");
-			var fileLines = File.ReadAllLines(anchorFilePath);
-			foreach(var line in fileLines)
-            {
-				var x = line.Split(':');
-				if(x.Length == 2)
-                {
-					WikiAncors[x[0]] = x[1].Split(',').Select(x => x).ToList();
-                }
-            }
+namespace Clio;
+
+internal class LocalHelpViewer(IFileSystem fileSystem, WikiHelpViewer wikiHelpViewer) : CustomHelpViewer{
+	#region Fields: Private
+
+	private string _helpFile = string.Empty;
+	private bool _localHelpFileExists;
+
+	#endregion
+
+	#region Methods: Public
+
+	public bool CheckHelp(string commandName) {
+		string helpDir = Parser.Default.Settings.HelpDirectory;
+
+		if (!fileSystem.Directory.Exists(helpDir)) {
+			_localHelpFileExists = false;
+			return wikiHelpViewer.CheckHelp(commandName);
 		}
 
-		private Dictionary<string, List<string>> WikiAncors = new Dictionary<string, List<string>>();
+		List<string> files = fileSystem.Directory
+									   .EnumerateFiles(helpDir, $"{commandName}.txt", SearchOption.AllDirectories)
+									   .ToList();
+		_localHelpFileExists = files.Count != 0;
 
-		private string GetWikiAnchor(string commandName) {
-			foreach (string anchor in WikiAncors.Keys)
-			{
-				if (WikiAncors[anchor].Contains(commandName))
-                {
-					return anchor;
-                }
-			}
-			return commandName;
+		if (!_localHelpFileExists) {
+			return wikiHelpViewer.CheckHelp(commandName);
 		}
 
-		string baseUrl = "https://github.com/Advance-Technologies-Foundation/clio/blob/master/clio/Commands.md";
+		_helpFile = files.First();
+		return true;
+	}
 
-		private string GetCommandHelpUrl(string commandName) {
-			var wikiAnchor = GetWikiAnchor(commandName);
-			var url = $"{baseUrl}#{wikiAnchor}".TrimEnd('/');
-			return url;
+	public void ViewHelp(string commandName) {
+		if (!_localHelpFileExists) {
+			wikiHelpViewer.ViewHelp(commandName);
 		}
-
-		public void ViewHelp(string commandName) {
-			WebBrowser.OpenUrl(GetCommandHelpUrl(commandName));
+		else {
+			Console.OutputEncoding = Encoding.UTF8;
+			string content = fileSystem.File.ReadAllText(_helpFile);
+			Console.Out.WriteLine(content);
 		}
+	}
 
-		public bool CheckHelp(string commandName) {
-			try {
-				return WebBrowser.Enabled && WebBrowser.CheckUrl(GetCommandHelpUrl(commandName));
-			} catch {
-				return false;
+	#endregion
+}
+
+internal class WikiHelpViewer : CustomHelpViewer{
+	#region Constants: Private
+
+	private const string BaseUrl
+		= "https://github.com/Advance-Technologies-Foundation/clio/blob/master/clio/Commands.md";
+
+	#endregion
+
+	#region Fields: Private
+
+	private readonly Dictionary<string, List<string>> _wikiAncors = new();
+
+	#endregion
+
+	#region Constructors: Public
+
+	public WikiHelpViewer() {
+		IContainer container = new BindingsModule().Register();
+		IWorkingDirectoriesProvider directoryProvider = container.Resolve<IWorkingDirectoriesProvider>();
+		string anchorFilePath = Path.Combine(directoryProvider.ExecutingDirectory, "Wiki", "WikiAnchors.txt");
+		string[] fileLines = File.ReadAllLines(anchorFilePath);
+		foreach (string line in fileLines) {
+			string[] x = line.Split(':');
+			if (x.Length == 2) {
+				_wikiAncors[x[0]] = x[1].Split(',').Select(x => x).ToList();
 			}
 		}
 	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private string GetCommandHelpUrl(string commandName) {
+		string wikiAnchor = GetWikiAnchor(commandName);
+		string url = $"{BaseUrl}#{wikiAnchor}".TrimEnd('/');
+		return url;
+	}
+
+	private string GetWikiAnchor(string commandName) {
+		foreach (string anchor in _wikiAncors.Keys) {
+			if (_wikiAncors[anchor].Contains(commandName)) {
+				return anchor;
+			}
+		}
+
+		return commandName;
+	}
+
+	#endregion
+
+	#region Methods: Public
+
+	public bool CheckHelp(string commandName) {
+		try {
+			return WebBrowser.Enabled && WebBrowser.CheckUrl(GetCommandHelpUrl(commandName));
+		}
+		catch {
+			return false;
+		}
+	}
+
+	public void ViewHelp(string commandName) {
+		WebBrowser.OpenUrl(GetCommandHelpUrl(commandName));
+	}
+
+	#endregion
 }

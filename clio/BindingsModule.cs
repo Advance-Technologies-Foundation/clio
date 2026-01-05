@@ -325,6 +325,9 @@ public class BindingsModule {
 		containerBuilder.RegisterType<Mssql>().As<IMssql>();
 		containerBuilder.RegisterType<Postgres>().As<IPostgres>();
 
+		containerBuilder.RegisterType<LocalHelpViewer>();
+		containerBuilder.RegisterType<WikiHelpViewer>();
+
 		additionalRegistrations?.Invoke(containerBuilder);
 		return containerBuilder.Build();
 	}
