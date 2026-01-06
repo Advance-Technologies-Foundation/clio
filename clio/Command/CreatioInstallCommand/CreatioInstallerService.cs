@@ -651,7 +651,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		string deploymentFolder = DetermineFolderPath(options);
 		_logger.WriteInfo($"[Starting unzipping] - {options.ZipFile} to {deploymentFolder}");
 		//DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver); //TODO: BUG, this no longer creates an unzipped folder as a template
-		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExistingOld(options.ZipFile, _packageArchiver); //TODO: BUG, this no longer creates an unzipped folder as a template
+		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExistingOld(options.ZipFile, _packageArchiver);
 		
 		if (!_fileSystem.ExistsDirectory(deploymentFolder)) {
 			_fileSystem.CreateDirectory(deploymentFolder);
