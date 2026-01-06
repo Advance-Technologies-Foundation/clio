@@ -2611,7 +2611,7 @@ Validates infrastructure and filesystem resources to ensure clio can discover an
 
 **Purpose:**
 
-The assert command ensures that clio can discover and connect to required infrastructure components (databases, Redis) using the same discovery logic that clio uses during normal operations. This validates that if assert passes, clio operations will succeed.
+The assert command ensures that clio can discover and connect to required infrastructure components (databases, Redis, filesystem paths and permissions) using the same discovery logic that clio uses during normal operations. This validates that if assert passes, clio operations will succeed.
 
 **What it validates:**
 
@@ -2621,6 +2621,8 @@ The assert command ensures that clio can discover and connect to required infras
 4. **Pods** - Confirms pods are running and ready
 5. **Network Connectivity** - Tests TCP connections to services
 6. **Service Functionality** - Validates database version queries, Redis PING commands
+7. **Filesystem Paths** - Validates that directories exist and are accessible
+8. **Filesystem Permissions** - Validates user/group permissions on directories (Windows only)
 
 **Detection Method:**
 
@@ -2629,15 +2631,16 @@ Uses label-based discovery matching clio's k8Commands implementation:
 - Services discovered by label selector `app=clio-postgres`, `app=clio-mssql`, `app=clio-redis`
 - Dynamically resolves ports from Service.spec.ports
 - Retrieves credentials from Kubernetes secrets (same as GetPostgresConnectionString/GetMssqlConnectionString)
+- For filesystem: Resolves paths from appsettings.json and validates ACLs on Windows
 
 **Prerequisites:**
-- `kubectl` must be installed and configured
-- Kubernetes cluster must be running
+- For K8 scope: `kubectl` must be installed and configured, Kubernetes cluster must be running
+- For FS scope: Windows for permission checks, appropriate filesystem access
 
 **Usage:**
 
 ```bash
-# Basic context validation
+# Basic context validation (Kubernetes)
 clio assert k8
 
 # Validate specific context
@@ -2662,6 +2665,15 @@ clio assert k8 --redis --redis-connect --redis-ping
 clio assert k8 \
   --db postgres,mssql --db-connect --db-check version \
   --redis --redis-connect --redis-ping
+
+# Filesystem path validation
+clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\"
+clio assert fs --path iis-clio-root-path
+
+# Filesystem path with user permissions (Windows only)
+clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm full-control
+clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\" --user "IIS APPPOOL\MyApp" --perm full-control
+clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm modify
 ```
 
 **Exit Codes:**
@@ -2671,7 +2683,7 @@ clio assert k8 \
 
 **Output Format:**
 
-Success example:
+Success example (Kubernetes):
 ```json
 {
   "status": "pass",
@@ -2695,6 +2707,22 @@ Success example:
       "host": "localhost",
       "port": 6379
     }
+  }
+}
+```
+
+Success example (Filesystem):
+```json
+{
+  "status": "pass",
+  "scope": "Fs",
+  "resolved": {
+    "path": "C:\\inetpub\\wwwroot\\clio",
+    "userIdentity": "BUILTIN\\IIS_IUSRS",
+    "permission": "full-control"
+  },
+  "details": {
+    "requestedPath": "iis-clio-root-path"
   }
 }
 ```
@@ -2733,23 +2761,43 @@ Redis assertions:
 - `--redis-connect` - Validate TCP connectivity to Redis
 - `--redis-ping` - Execute Redis PING command
 
+Filesystem assertions:
+- `--path` - Filesystem path to validate (can be absolute path or setting key like "iis-clio-root-path")
+- `--user` - Windows user/group identity to validate (e.g., "BUILTIN\IIS_IUSRS", "IIS APPPOOL\MyApp")
+- `--perm` - Required permission level: read, write, modify, full-control (requires --user)
+
 **Use Cases:**
 
 1. **Pre-deployment validation** - Verify infrastructure before installing Creatio
 2. **CI/CD pipelines** - Automated infrastructure health checks
 3. **Troubleshooting** - Diagnose connectivity or configuration issues
 4. **Release readiness** - Validate all required services are available
+5. **IIS Setup Validation** - Ensure IIS directories have correct permissions for application pool identities
+6. **Pre-installation checks** - Verify filesystem paths exist before deploying Creatio
 
 **Notes:**
-- All checks are scoped to the `clio-infrastructure` namespace
+- All K8 checks are scoped to the `clio-infrastructure` namespace
 - LoadBalancer services are accessed via `localhost` in local clusters
 - Credentials are retrieved from Kubernetes secrets (not hardcoded)
 - Service names can be anything as long as labels are correct
-- Phase 0 context validation is mandatory and runs first
+- Phase 0 context validation is mandatory for K8 scope and runs first
+- Filesystem permission checks are Windows-only; other platforms will return a failure
+- Setting keys like "iis-clio-root-path" are resolved from appsettings.json
 
 **Troubleshooting:**
 
 If assertions fail:
+1. For K8 scope:
+   - Check Kubernetes context: `kubectl config current-context`
+   - Verify namespace exists: `kubectl get namespace clio-infrastructure`
+   - Check pods status: `kubectl get pods -n clio-infrastructure`
+   - Verify services: `kubectl get services -n clio-infrastructure`
+   - Check labels: `kubectl get statefulset clio-postgres -n clio-infrastructure -o yaml`
+2. For FS scope:
+   - Verify the path exists on disk
+   - Check user identity format is correct (e.g., "BUILTIN\IIS_IUSRS")
+   - On Windows, use File Explorer > Properties > Security to verify ACLs
+   - Ensure you have administrative privileges to check permissions
 1. Check Kubernetes context: `kubectl config current-context`
 2. Verify namespace exists: `kubectl get namespace clio-infrastructure`
 3. Check pods status: `kubectl get pods -n clio-infrastructure`

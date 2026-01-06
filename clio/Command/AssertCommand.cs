@@ -16,19 +16,25 @@ namespace Clio.Command
 		private readonly K8ContextValidator _contextValidator;
 		private readonly K8DatabaseAssertion _databaseAssertion;
 		private readonly K8RedisAssertion _redisAssertion;
+		private readonly FsPathAssertion _fsPathAssertion;
+		private readonly FsPermissionAssertion _fsPermissionAssertion;
 
 		public AssertCommand(
 			ILogger logger, 
 			IKubernetesClient k8sClient, 
 			K8ContextValidator contextValidator,
 			K8DatabaseAssertion databaseAssertion,
-			K8RedisAssertion redisAssertion)
+			K8RedisAssertion redisAssertion,
+			FsPathAssertion fsPathAssertion,
+			FsPermissionAssertion fsPermissionAssertion)
 		{
 			_logger = logger;
 			_k8sClient = k8sClient;
 			_contextValidator = contextValidator;
 			_databaseAssertion = databaseAssertion;
 			_redisAssertion = redisAssertion;
+			_fsPathAssertion = fsPathAssertion;
+			_fsPermissionAssertion = fsPermissionAssertion;
 		}
 
 		public override int Execute(AssertOptions options)
@@ -155,13 +161,52 @@ namespace Clio.Command
 
 		private AssertionResult ExecuteFsAssertions(AssertOptions options)
 		{
-			// Phase 1 placeholder - will implement in Phase 5
-			var result = AssertionResult.Failure(
-				AssertionScope.Fs,
-				AssertionPhase.FsPath,
-				"Filesystem assertions not yet implemented"
-			);
-			return result;
+			// Validate required path parameter
+			if (string.IsNullOrWhiteSpace(options.Path))
+			{
+				return AssertionResult.Failure(
+					AssertionScope.Fs,
+					AssertionPhase.FsPath,
+					"--path parameter is required for filesystem assertions"
+				);
+			}
+
+			// Phase 1: Validate path exists
+			var pathResult = _fsPathAssertion.Execute(options.Path);
+			if (pathResult.Status == "fail")
+			{
+				return pathResult;
+			}
+
+			// Phase 2: Validate permissions if requested
+			if (!string.IsNullOrWhiteSpace(options.User) || !string.IsNullOrWhiteSpace(options.Permission))
+			{
+				// Both user and permission must be specified together
+				if (string.IsNullOrWhiteSpace(options.User))
+				{
+					return AssertionResult.Failure(
+						AssertionScope.Fs,
+						AssertionPhase.FsUser,
+						"--user parameter is required when --perm is specified"
+					);
+				}
+
+				if (string.IsNullOrWhiteSpace(options.Permission))
+				{
+					return AssertionResult.Failure(
+						AssertionScope.Fs,
+						AssertionPhase.FsPerm,
+						"--perm parameter is required when --user is specified"
+					);
+				}
+
+				// Execute permission assertion
+				var permResult = _fsPermissionAssertion.Execute(options.Path, options.User, options.Permission);
+				return permResult;
+			}
+
+			// Success: path exists and no permission check requested
+			return pathResult;
 		}
 
 		private void OutputResult(AssertionResult result) {
@@ -171,7 +216,7 @@ namespace Clio.Command
 			else {
 				_logger.WriteInfo("Assertion passed");
 			}
-			var json = result.ToJson();
+			string json = result.ToJson();
 			_logger.WriteLine(json);
 		}
 	}

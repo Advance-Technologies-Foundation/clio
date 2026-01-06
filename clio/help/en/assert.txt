@@ -10,15 +10,17 @@ DESCRIPTION
     failure attribution and exit codes.
 
     The assert command ensures that clio can discover and connect to the 
-    required infrastructure components (databases, Redis) using the same 
-    discovery logic that clio uses during normal operations. This validates 
-    that:
+    required infrastructure components (databases, Redis, filesystem paths, 
+    and permissions) using the same discovery logic that clio uses during 
+    normal operations. This validates that:
     
     1. StatefulSets/Deployments exist with correct labels
     2. Services are discoverable and have correct labels (app=clio-*)
     3. Pods are running and ready
     4. Network connectivity works (TCP connection tests)
     5. Services are functional (database version queries, Redis PING)
+    6. Filesystem paths exist and are accessible
+    7. Windows ACL permissions are correctly configured
     
     The command uses label-based discovery matching clio's k8Commands 
     implementation, ensuring that if assert passes, clio operations will 
@@ -34,7 +36,7 @@ SYNOPSIS
 
 SCOPES
     k8          Kubernetes resource assertions
-    fs          Filesystem assertions (Windows only)
+    fs          Filesystem path and permission assertions
 
 KUBERNETES OPTIONS
 
@@ -58,11 +60,23 @@ KUBERNETES OPTIONS
     --redis-connect                 Validate Redis connectivity via TCP
     --redis-ping                    Execute Redis PING command
 
-FILESYSTEM OPTIONS (Windows only)
-    --path                          Filesystem path to validate
-    --user                          Windows user identity to validate
-    --perm                          Required permission level
-                                    Supported: read, write, modify, full
+FILESYSTEM OPTIONS
+    --path                          Filesystem path to validate (required)
+                                    Can be an absolute path or a setting key
+                                    Setting keys: iis-clio-root-path
+    
+    --user                          Windows user/group identity to validate
+                                    Format: "BUILTIN\IIS_IUSRS" or "IIS APPPOOL\AppName"
+                                    Requires --perm (Windows only)
+    
+    --perm                          Required permission level (Windows only)
+                                    Valid values:
+                                      read          - Read permissions
+                                      write         - Write permissions
+                                      modify        - Modify permissions (read+write+delete)
+                                      full-control  - Full control permissions
+                                      full          - Alias for full-control
+                                    Requires --user
 
 KUBERNETES EXAMPLES
 
@@ -102,17 +116,28 @@ KUBERNETES EXAMPLES
             --db postgres,mssql --db-min 2 --db-connect --db-check version \
             --redis --redis-connect --redis-ping
 
-FILESYSTEM EXAMPLES (Not yet implemented)
+FILESYSTEM EXAMPLES
 
-    Path validation:
-        clio assert fs --path "C:\inetpub\wwwroot\app\data"
+    Path validation (absolute path):
+        clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\"
 
-    Path with user permissions:
-        clio assert fs --path "C:\data" --user "IIS APPPOOL\MyApp" --perm full
+    Path validation (using setting key):
+        clio assert fs --path iis-clio-root-path
 
+    Path with user permissions (setting key):
+        clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm full-control
+
+    Path with user permissions (absolute path):
+        clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\" --user "BUILTIN\IIS_IUSRS" --perm full-control
+
+    Path with modify permissions:
+        clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm modify
+
+    Path with read permissions:
+        clio assert fs --path "C:\data" --user "BUILTIN\Users" --perm read
 OUTPUT FORMAT
 
-    Success example:
+    Kubernetes success example:
     {
       "status": "pass",
       "context": {
@@ -139,7 +164,21 @@ OUTPUT FORMAT
       }
     }
 
-    Failure example:
+    Filesystem success example:
+    {
+      "status": "pass",
+      "scope": "Fs",
+      "resolved": {
+        "path": "C:\\inetpub\\wwwroot\\clio",
+        "userIdentity": "BUILTIN\\IIS_IUSRS",
+        "permission": "full-control"
+      },
+      "details": {
+        "requestedPath": "iis-clio-root-path"
+      }
+    }
+
+    Kubernetes failure example:
     {
       "status": "fail",
       "scope": "K8",
@@ -149,6 +188,20 @@ OUTPUT FORMAT
         "engine": "postgres",
         "host": "clio-postgres-lb",
         "port": 5432
+      }
+    }
+
+    Filesystem failure example:
+    {
+      "status": "fail",
+      "scope": "Fs",
+      "failedAt": "FsPerm",
+      "reason": "User 'BUILTIN\\IIS_IUSRS' does not have 'full-control' permission on path 'C:\\inetpub\\wwwroot\\clio'",
+      "details": {
+        "requestedPath": "iis-clio-root-path",
+        "resolvedPath": "C:\\inetpub\\wwwroot\\clio",
+        "userIdentity": "BUILTIN\\IIS_IUSRS",
+        "requiredPermission": "full-control"
       }
     }
 
@@ -210,10 +263,28 @@ KUBERNETES DETECTION RULES
 
 NOTES
 
-    - Requires kubectl configured with access to target cluster
+    - Kubernetes assertions require kubectl configured with access to target cluster
     - Database version checks require valid credentials
-    - Filesystem assertions require Windows platform
+    - Filesystem path validation works on all platforms
+    - Filesystem permission checks are Windows-only (use ACLs)
+    - Setting key 'iis-clio-root-path' resolves from appsettings.json
     - All I/O operations have configurable timeouts
+
+USE CASES
+
+    Pre-deployment validation:
+        clio assert k8 --db postgres --redis
+        clio assert fs --path iis-clio-root-path
+
+    IIS setup validation:
+        clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm full-control
+
+    Application directory permissions:
+        clio assert fs --path "C:\inetpub\wwwroot\myapp" --user "IIS APPPOOL\MyAppPool" --perm modify
+
+    CI/CD pipeline checks:
+        clio assert k8 --db postgres --db-connect --redis --redis-ping
+        clio assert fs --path iis-clio-root-path
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
