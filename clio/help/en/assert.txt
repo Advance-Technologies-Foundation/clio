@@ -1,0 +1,219 @@
+COMMAND TYPE
+    Infrastructure validation commands
+
+NAME
+    assert - Validates infrastructure and filesystem resources
+
+DESCRIPTION
+    Provides deterministic assertion mechanism for validating Kubernetes 
+    and filesystem resources. Returns structured JSON output with precise 
+    failure attribution and exit codes.
+
+    The assert command ensures that clio can discover and connect to the 
+    required infrastructure components (databases, Redis) using the same 
+    discovery logic that clio uses during normal operations. This validates 
+    that:
+    
+    1. StatefulSets/Deployments exist with correct labels
+    2. Services are discoverable and have correct labels (app=clio-*)
+    3. Pods are running and ready
+    4. Network connectivity works (TCP connection tests)
+    5. Services are functional (database version queries, Redis PING)
+    
+    The command uses label-based discovery matching clio's k8Commands 
+    implementation, ensuring that if assert passes, clio operations will 
+    succeed in finding the same resources.
+
+    Exit codes:
+        0 - Assertion passed
+        1 - Assertion failed
+        2 - Invalid invocation
+
+SYNOPSIS
+    clio assert <scope> [options]
+
+SCOPES
+    k8          Kubernetes resource assertions
+    fs          Filesystem assertions (Windows only)
+
+KUBERNETES OPTIONS
+
+    Context Validation:
+    --context                       Expected Kubernetes context name (exact match)
+    --context-regex                 Regex pattern for context name
+    --cluster                       Expected Kubernetes cluster name
+    --namespace                     Expected Kubernetes namespace
+
+    Database Assertions:
+    --db                            Database engines to assert (comma-separated)
+                                    Supported: postgres, mssql
+    --db-min                        Minimum number of database engines required
+                                    Default: 1
+    --db-connect                    Validate database connectivity via TCP
+    --db-check                      Database capability check
+                                    Supported: version
+
+    Redis Assertions:
+    --redis                         Assert Redis presence
+    --redis-connect                 Validate Redis connectivity via TCP
+    --redis-ping                    Execute Redis PING command
+
+FILESYSTEM OPTIONS (Windows only)
+    --path                          Filesystem path to validate
+    --user                          Windows user identity to validate
+    --perm                          Required permission level
+                                    Supported: read, write, modify, full
+
+KUBERNETES EXAMPLES
+
+    Basic context validation:
+        clio assert k8
+
+    Context with specific name:
+        clio assert k8 --context rancher-desktop
+
+    Context with regex pattern:
+        clio assert k8 --context-regex "^rancher-.*"
+
+    Database presence check:
+        clio assert k8 --db postgres
+
+    Multiple databases:
+        clio assert k8 --db postgres,mssql --db-min 2
+
+    Database with connectivity:
+        clio assert k8 --db postgres --db-connect
+
+    Database with version check:
+        clio assert k8 --db postgres --db-connect --db-check version
+
+    Redis presence:
+        clio assert k8 --redis
+
+    Redis with connectivity and ping:
+        clio assert k8 --redis --redis-connect --redis-ping
+
+    Combined checks:
+        clio assert k8 --db postgres --db-connect --redis --redis-ping
+
+    Full validation:
+        clio assert k8 \
+            --context dev-cluster \
+            --db postgres,mssql --db-min 2 --db-connect --db-check version \
+            --redis --redis-connect --redis-ping
+
+FILESYSTEM EXAMPLES (Not yet implemented)
+
+    Path validation:
+        clio assert fs --path "C:\inetpub\wwwroot\app\data"
+
+    Path with user permissions:
+        clio assert fs --path "C:\data" --user "IIS APPPOOL\MyApp" --perm full
+
+OUTPUT FORMAT
+
+    Success example:
+    {
+      "status": "pass",
+      "context": {
+        "name": "dev-cluster",
+        "cluster": "dev",
+        "server": "https://10.0.0.1",
+        "namespace": "default"
+      },
+      "resolved": {
+        "databases": [
+          {
+            "engine": "postgres",
+            "name": "clio-postgres-0",
+            "host": "clio-postgres-lb",
+            "port": 5432,
+            "version": "PostgreSQL 14.5"
+          }
+        ],
+        "redis": {
+          "name": "clio-redis",
+          "host": "clio-redis-lb",
+          "port": 6379
+        }
+      }
+    }
+
+    Failure example:
+    {
+      "status": "fail",
+      "scope": "K8",
+      "failedAt": "DbConnect",
+      "reason": "Cannot connect to postgres database at clio-postgres-lb:5432",
+      "details": {
+        "engine": "postgres",
+        "host": "clio-postgres-lb",
+        "port": 5432
+      }
+    }
+
+DESIGN PRINCIPLES
+
+    - All checks are explicit via CLI flags (no hidden validation)
+    - Deterministic behavior (same input produces same output)
+    - Phase 0 context validation is mandatory for all K8 assertions
+    - All checks are scoped to 'clio-infrastructure' namespace
+    - Dynamic service/port resolution (no hardcoded values)
+    - Read-only operations (no mutations)
+    - Time-bounded operations with configurable timeouts
+
+KUBERNETES DETECTION RULES
+
+    Discovery Method:
+    The assert command uses the same discovery logic as clio's k8Commands 
+    class to ensure consistency. Resources are found by:
+    
+    1. Checking StatefulSet/Deployment spec.selector.matchLabels
+    2. Finding Services by label selector (app=clio-*)
+    3. Validating at least one Pod is Running and Ready
+    4. Dynamically resolving ports from Service.spec.ports
+    
+    This ensures that if assert passes, clio's normal operations (database 
+    restore, connection string generation, etc.) will successfully find 
+    and use the same resources.
+
+    Databases:
+    - Detection via authoritative labels and workload kind
+    - Namespace: clio-infrastructure
+    - Workload kind: StatefulSet
+    - StatefulSet selector must have matchLabels:
+        Postgres: app=clio-postgres
+        MSSQL: app=clio-mssql
+    - Services must have labels:
+        Postgres: app=clio-postgres
+        MSSQL: app=clio-mssql
+    - At least one pod must be ready and not permanently failed
+
+    Redis:
+    - Namespace: clio-infrastructure
+    - Workload kind: Deployment
+    - Deployment selector must have matchLabels: app=clio-redis
+    - Service must have label: app=clio-redis
+    - At least one pod must be ready and not permanently failed
+
+    Service Port Resolution:
+    - Ports are discovered dynamically from Service.spec.ports
+    - Uses 'port' (not 'targetPort')
+    - If multiple ports exist, uses the first port
+    - Outside cluster: Prefers LoadBalancer services
+    - Inside cluster: Prefers ClusterIP services
+    
+    Service Naming:
+    Services can have any name (e.g., postgres-service-lb, 
+    mssql-service-internal) as long as they have the correct labels. 
+    The assert command finds services by label, not by name pattern.
+
+NOTES
+
+    - Requires kubectl configured with access to target cluster
+    - Database version checks require valid credentials
+    - Filesystem assertions require Windows platform
+    - All I/O operations have configurable timeouts
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

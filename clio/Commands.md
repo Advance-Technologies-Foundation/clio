@@ -2605,6 +2605,157 @@ If deletion is not completing:
 - Better error handling and status reporting during deletion
 - Step-by-step cleanup process visibility
 
+## assert
+
+Validates infrastructure and filesystem resources to ensure clio can discover and connect to required components. Returns structured JSON output with precise failure attribution and exit codes.
+
+**Purpose:**
+
+The assert command ensures that clio can discover and connect to required infrastructure components (databases, Redis) using the same discovery logic that clio uses during normal operations. This validates that if assert passes, clio operations will succeed.
+
+**What it validates:**
+
+1. **Kubernetes Context** - Validates the active kubectl context matches expectations
+2. **StatefulSets/Deployments** - Verifies workloads exist with correct labels
+3. **Services** - Ensures services are discoverable with correct labels (app=clio-*)
+4. **Pods** - Confirms pods are running and ready
+5. **Network Connectivity** - Tests TCP connections to services
+6. **Service Functionality** - Validates database version queries, Redis PING commands
+
+**Detection Method:**
+
+Uses label-based discovery matching clio's k8Commands implementation:
+- Finds resources by `spec.selector.matchLabels` (not metadata labels)
+- Services discovered by label selector `app=clio-postgres`, `app=clio-mssql`, `app=clio-redis`
+- Dynamically resolves ports from Service.spec.ports
+- Retrieves credentials from Kubernetes secrets (same as GetPostgresConnectionString/GetMssqlConnectionString)
+
+**Prerequisites:**
+- `kubectl` must be installed and configured
+- Kubernetes cluster must be running
+
+**Usage:**
+
+```bash
+# Basic context validation
+clio assert k8
+
+# Validate specific context
+clio assert k8 --context dev-cluster
+clio assert k8 --context-regex "^dev-.*"
+
+# Database validation
+clio assert k8 --db postgres
+clio assert k8 --db postgres,mssql --db-min 2
+
+# Database with connectivity check
+clio assert k8 --db postgres --db-connect
+
+# Database with version check (requires credentials)
+clio assert k8 --db postgres --db-connect --db-check version
+
+# Redis validation
+clio assert k8 --redis
+clio assert k8 --redis --redis-connect --redis-ping
+
+# Full infrastructure validation
+clio assert k8 \
+  --db postgres,mssql --db-connect --db-check version \
+  --redis --redis-connect --redis-ping
+```
+
+**Exit Codes:**
+- `0` - Assertion passed (all checks succeeded)
+- `1` - Assertion failed (at least one check failed)
+- `2` - Invalid invocation (wrong parameters or syntax)
+
+**Output Format:**
+
+Success example:
+```json
+{
+  "status": "pass",
+  "context": {
+    "name": "rancher-desktop",
+    "cluster": "rancher-desktop",
+    "server": "https://127.0.0.1:6443"
+  },
+  "resolved": {
+    "databases": [
+      {
+        "engine": "postgres",
+        "name": "clio-postgres",
+        "host": "localhost",
+        "port": 5432,
+        "version": "PostgreSQL 18.1"
+      }
+    ],
+    "redis": {
+      "name": "clio-redis",
+      "host": "localhost",
+      "port": 6379
+    }
+  }
+}
+```
+
+Failure example:
+```json
+{
+  "status": "fail",
+  "scope": "K8",
+  "failedAt": "DbConnect",
+  "reason": "Cannot connect to postgres database at localhost:5432",
+  "details": {
+    "engine": "postgres",
+    "host": "localhost",
+    "port": 5432
+  }
+}
+```
+
+**Options:**
+
+Context validation:
+- `--context` - Expected Kubernetes context name (exact match)
+- `--context-regex` - Regex pattern for context name validation
+- `--cluster` - Expected Kubernetes cluster name
+- `--namespace` - Expected Kubernetes namespace
+
+Database assertions:
+- `--db` - Database engines to assert (comma-separated): postgres, mssql
+- `--db-min` - Minimum number of database engines required (default: 1)
+- `--db-connect` - Validate TCP connectivity to databases
+- `--db-check` - Database capability check (currently supports: version)
+
+Redis assertions:
+- `--redis` - Assert Redis presence
+- `--redis-connect` - Validate TCP connectivity to Redis
+- `--redis-ping` - Execute Redis PING command
+
+**Use Cases:**
+
+1. **Pre-deployment validation** - Verify infrastructure before installing Creatio
+2. **CI/CD pipelines** - Automated infrastructure health checks
+3. **Troubleshooting** - Diagnose connectivity or configuration issues
+4. **Release readiness** - Validate all required services are available
+
+**Notes:**
+- All checks are scoped to the `clio-infrastructure` namespace
+- LoadBalancer services are accessed via `localhost` in local clusters
+- Credentials are retrieved from Kubernetes secrets (not hardcoded)
+- Service names can be anything as long as labels are correct
+- Phase 0 context validation is mandatory and runs first
+
+**Troubleshooting:**
+
+If assertions fail:
+1. Check Kubernetes context: `kubectl config current-context`
+2. Verify namespace exists: `kubectl get namespace clio-infrastructure`
+3. Check pods status: `kubectl get pods -n clio-infrastructure`
+4. Verify services: `kubectl get services -n clio-infrastructure`
+5. Check labels: `kubectl get statefulset clio-postgres -n clio-infrastructure -o yaml`
+
 ### Prepare IIS Configuration and Launch
 Prepare IIS Configuration and Launch. Clio will set up an IIS site, configure the relevant app pool,
 and then launch Creatio in your default browser.

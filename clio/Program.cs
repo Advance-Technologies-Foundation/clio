@@ -155,7 +155,8 @@ internal class Program {
 		typeof(GetAppHashCommandOptions),
 		typeof(MergeWorkspacesCommandOptions),
 		typeof(GenerateProcessModelCommandOptions),
-		typeof(LinkCoreSrcOptions)
+		typeof(LinkCoreSrcOptions),
+		typeof(AssertOptions)
 		
 	];
 
@@ -293,6 +294,7 @@ ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Exe
 					StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
 					HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
 					LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
+					AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 					var _ => 1
 				};
 	};

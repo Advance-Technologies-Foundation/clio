@@ -17,6 +17,8 @@ using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.SystemServices;
 using Clio.Common.K8;
+using Clio.Common.Kubernetes;
+using Clio.Common.Database;
 using Clio.Common.ScenarioHandlers;
 using Clio.ComposableApplication;
 using Clio.Package;
@@ -118,6 +120,15 @@ public class BindingsModule {
 			}
 			return new Kubernetes(config);
 		}).As<IKubernetes>();
+		
+		containerBuilder.RegisterType<Common.Kubernetes.KubernetesClient>().As<IKubernetesClient>();
+		containerBuilder.RegisterType<K8ContextValidator>();
+		containerBuilder.RegisterType<K8ServiceResolver>().As<IK8ServiceResolver>();
+		containerBuilder.RegisterType<K8DatabaseDiscovery>().As<IK8DatabaseDiscovery>();
+		containerBuilder.RegisterType<DatabaseConnectivityChecker>().As<IDatabaseConnectivityChecker>();
+		containerBuilder.RegisterType<DatabaseCapabilityChecker>().As<IDatabaseCapabilityChecker>();
+		containerBuilder.RegisterType<K8DatabaseAssertion>();
+		containerBuilder.RegisterType<K8RedisAssertion>();
 		containerBuilder.RegisterType<k8Commands>();
 	
 		containerBuilder.RegisterType<InstallerCommand>();
@@ -248,6 +259,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<EnvironmentManager>();
 		containerBuilder.RegisterType<GetWebServiceUrlCommand>();
 		containerBuilder.RegisterType<MockDataCommand>();
+		containerBuilder.RegisterType<AssertCommand>();
 		containerBuilder.RegisterType<ConsoleProgressbar>();
 		containerBuilder.RegisterType<ApplicationLogProvider>();
 		containerBuilder.RegisterType<LastCompilationLogCommand>();
