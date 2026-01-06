@@ -1,0 +1,88 @@
+﻿COMMAND TYPE
+    System configuration
+
+NAME
+    register - Register clio commands in Windows context menu
+
+SYNOPSIS
+    register [OPTIONS]
+
+DESCRIPTION
+    Registers clio commands in the Windows context menu (right-click menu) for
+    folders and files. This provides convenient access to clio commands directly
+    from Windows Explorer without opening a terminal.
+    
+    The command performs the following actions:
+    - Copies clio icon files to the user's AppData folder
+    - Imports Windows registry entries to add clio to context menus
+    - Enables right-click access to clio commands from Windows Explorer
+    
+    REQUIREMENTS:
+    - Windows operating system only
+    - Administrator privileges required
+    - Windows Registry access
+
+OPTIONS
+    -t, --Target            Target environment location for registry entries.
+                            Values: 'u' for user location (default)
+                                   'm' for machine location
+                            Default: u
+
+    -p, --Path              Path where clio is stored. Used to locate icon files
+                            and registry configuration files.
+
+EXAMPLES
+    # Register clio in context menu for current user
+    register
+
+    # Register with specific target location
+    register --Target u
+
+    # Register for all users on machine (requires elevated admin rights)
+    register --Target m
+
+    # Register with custom clio installation path
+    register --Path "C:\Tools\clio"
+
+BEHAVIOR
+    1. Checks if running on Windows operating system
+    2. Verifies administrator privileges
+    3. Creates %APPDATA%\clio folder if it doesn't exist
+    4. Copies all icon files from clio installation img folder to AppData
+    5. Imports unregister registry file to clean previous entries
+    6. Imports register registry file to add new context menu entries
+    7. Displays success or error message
+
+REGISTRY FILES USED
+    - reg\unreg_clio_context_menu_win.reg  (removes existing entries)
+    - reg\clio_context_menu_win.reg        (adds new entries)
+
+EXIT CODES
+    0   Successfully registered context menu
+    1   Failed to register (not Windows, no admin rights, or error occurred)
+
+NOTES
+    - This command only works on Windows operating systems
+    - Administrator privileges are mandatory
+    - Previous context menu entries are automatically removed before registration
+    - Icons are stored in: %APPDATA%\clio\
+    - To remove context menu entries, use the 'unregister' command
+
+SECURITY CONSIDERATIONS
+    - Requires administrator privileges to modify Windows Registry
+    - Modifies HKEY_CLASSES_ROOT registry hive
+    - Copies files to user's AppData directory
+
+TROUBLESHOOTING
+    If registration fails:
+    - Verify you're running as Administrator
+    - Check that registry files exist in clio\reg folder
+    - Ensure icon files exist in clio\img folder
+    - Try unregistering first, then registering again
+
+SEE ALSO
+    unregister - Remove clio from context menu
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+

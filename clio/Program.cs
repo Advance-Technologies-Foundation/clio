@@ -155,7 +155,8 @@ internal class Program {
 		typeof(GetAppHashCommandOptions),
 		typeof(MergeWorkspacesCommandOptions),
 		typeof(GenerateProcessModelCommandOptions),
-		typeof(LinkCoreSrcOptions)
+		typeof(LinkCoreSrcOptions),
+		typeof(AssertOptions)
 		
 	];
 
@@ -293,6 +294,7 @@ ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Exe
 					StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
 					HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
 					LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
+					AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 					var _ => 1
 				};
 	};
@@ -864,12 +866,19 @@ ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Exe
 	/// <returns>Exit code from the executed command, or a parse error code</returns>
 	internal static int ExecuteCommands(string[] args){
 		CreatioEnvironment creatioEnv = new();
-		string helpFolderName = "help";
+		const string helpFolderName = "help";
 		string envPath = creatioEnv.GetAssemblyFolderPath();
 		string helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
-		Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
+		if(args.Length >= 2 && (args[1] == "--HELP" || args[1] == "-H")) {
+			IContainer bm = new BindingsModule().Register();
+			Parser.Default.Settings.CustomHelpViewer = bm.Resolve<LocalHelpViewer>();
+		}
+		else {
+			Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
+		}
+		
 		ParserResult<object> parserResult = Parser.Default.ParseArguments(args, CommandOption);
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);

@@ -21,8 +21,8 @@ OPTIONS
         Default: pg
 
     --platform RUNTIME
-        Runtime platform: net6 or netframework
-        Default: net6 (if available)
+        Runtime platform: NET8, or NetFramework
+        Default: NET8 (if available)
 
     --product PRODUCT_NAME
         Product to deploy (optional)
@@ -80,8 +80,8 @@ OPTIONS
 
 EXAMPLES
 
-    1. Basic deployment with default settings (PostgreSQL, port 80, auto-run):
-       clio deploy-creatio -e "MyCreatio" --ZipFile "C:\creatio-app.zip"
+    1. Basic deployment with default settings (PostgreSQL, port 40001, auto-run):
+       clio deploy-creatio -e "Default" --ZipFile "C:\creatio-app.zip" --SitePort 40001 --silent
 
     2. Deploy with MS SQL and custom port:
        clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\

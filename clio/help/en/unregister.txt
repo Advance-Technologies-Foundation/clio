@@ -1,0 +1,86 @@
+﻿COMMAND TYPE
+    System configuration
+
+NAME
+    unregister - Unregister clio commands from Windows context menu
+
+SYNOPSIS
+    unregister [OPTIONS]
+
+DESCRIPTION
+    Removes clio commands from the Windows context menu (right-click menu) for
+    folders and files. This command cleans up registry entries that were created
+    by the 'register' command.
+    
+    The command performs the following actions:
+    - Removes clio entries from Windows Registry for folders
+    - Removes clio entries from Windows Registry for files
+    - Cleans up context menu integration
+    
+    Note: This command does not remove icon files from %APPDATA%\clio folder.
+    
+    REQUIREMENTS:
+    - Windows operating system only
+    - Administrator privileges required
+    - Windows Registry access
+
+OPTIONS
+    -t, --Target            Target environment location for registry entries.
+                            Values: 'u' for user location (default)
+                                   'm' for machine location
+                            Default: u
+
+    -p, --Path              Path where clio is stored. (Currently not used in
+                            the unregister process)
+
+EXAMPLES
+    # Unregister clio from context menu
+    unregister
+
+    # Unregister with specific target location
+    unregister --Target u
+
+    # Unregister from machine location
+    unregister --Target m
+
+BEHAVIOR
+    1. Executes registry delete command for folder context menu entries
+       HKEY_CLASSES_ROOT\Folder\shell\clio
+    2. Executes registry delete command for file context menu entries
+       HKEY_CLASSES_ROOT\*\shell\clio
+    3. Uses /f flag to force deletion without confirmation
+    4. Displays success or error message
+
+REGISTRY KEYS DELETED
+    - HKEY_CLASSES_ROOT\Folder\shell\clio  (folder context menu)
+    - HKEY_CLASSES_ROOT\*\shell\clio       (file context menu)
+
+EXIT CODES
+    0   Successfully unregistered context menu
+    1   Failed to unregister (error occurred)
+
+NOTES
+    - This command only works on Windows operating systems
+    - Administrator privileges are recommended for reliable operation
+    - Icon files in %APPDATA%\clio\ are not removed
+    - Safe to run multiple times (idempotent operation)
+    - If registry keys don't exist, the command still succeeds
+
+MANUAL CLEANUP
+    To manually remove icon files:
+    - Navigate to: %APPDATA%\clio\
+    - Delete the folder and its contents
+
+TROUBLESHOOTING
+    If unregistration fails:
+    - Verify you're running as Administrator
+    - Check Windows Event Viewer for registry access errors
+    - Manually verify registry keys using regedit.exe
+    - Ensure no other process is accessing the registry keys
+
+SEE ALSO
+    register - Add clio to context menu
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+

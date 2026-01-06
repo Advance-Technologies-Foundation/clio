@@ -55,6 +55,27 @@ public static class InstallerHelper
 		}
 	}
 	
+	
+	/// <summary>
+	/// Represents a function that takes a zip file and a package archiver as parameters,
+	/// checks if a directory with the same name as the zip file (without the extension) exists.
+	/// If it does, it returns the directory info. If not, it unzips the file and returns the info of the new directory.
+	/// </summary>
+	/// <param name="zipFile">The full path of the zip file.</param>
+	/// <param name="packageArchiver">The package archiver instance to be used for the unzipping process.</param>
+	/// <returns>The DirectoryInfo object representing the existing or newly created directory.</returns>
+	[NotNull]
+	public static readonly Func<string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExistingOld =
+		(zipFile, packageArchiver) => {
+			string destinationPath = Path.Join(new FileInfo(zipFile).Directory.FullName, Path.GetFileNameWithoutExtension(new FileInfo(zipFile).FullName));
+			return Directory.Exists(destinationPath) switch {
+					   true => new DirectoryInfo(destinationPath),
+					   false => Unzip(packageArchiver, new FileInfo(zipFile), destinationPath)
+				   };
+		};
+	
+	
+	
 	/// <summary>
 	/// Represents a function that takes a zip file, target folder, and a package archiver as parameters.
 	/// Checks if the target directory exists and contains essential files (db folder).

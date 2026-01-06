@@ -51,11 +51,13 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 	/// </summary>
 	public async Task<int> Deploy(DirectoryInfo appDirectory, PfInstallerOptions options)
 	{
-		if (appDirectory == null)
+		if (appDirectory == null) {
 			throw new ArgumentNullException(nameof(appDirectory));
+		}
 
-		if (options == null)
+		if (options == null) {
 			throw new ArgumentNullException(nameof(options));
+		}
 
 		_logger.WriteInfo("[Create IIS Site] - Started");
 
