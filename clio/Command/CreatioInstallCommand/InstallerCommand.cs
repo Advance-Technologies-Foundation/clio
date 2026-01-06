@@ -104,6 +104,9 @@ public class PfInstallerOptions : EnvironmentNameOptions
 	[Option("auto-run", Required = false, Default = true, HelpText = "Automatically run application after deployment")]
 	public bool AutoRun { get; set; }
 
+	[Option("redis-db", Required = false, Default = -1, HelpText = "Redis database number (optional, auto-detect if not specified)")]
+	public int RedisDb { get; set; }
+
 	#endregion
 
 }

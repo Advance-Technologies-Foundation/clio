@@ -2634,8 +2634,30 @@ You may need _**Administrator**_ privileges.
 ## deploy-creatio
 
 ```bash
- clio deploy-creatio --ZipFile <Path_To_ZipFile>
+ clio deploy-creatio --ZipFile <Path_To_ZipFile> [--redis-db <Database_Number>]
 ```
+
+### Options
+
+- `--ZipFile <Path>` - Path to the Creatio zip file (required)
+- `--redis-db <Number>` - Specify Redis database number (optional, 0-15). If not specified, Clio will auto-detect an empty database. When auto-detection fails or all databases are in use, use this parameter to manually specify which database to use.
+
+### Redis Database Configuration
+
+By default, Clio automatically finds an empty Redis database starting from index 1. If the auto-detection fails or returns an error, you can manually specify the database:
+
+```bash
+# Use specific Redis database
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip --redis-db 5
+
+# Or with other options
+clio deploy-creatio -e MyApp --db pg --redis-db 3 --ZipFile /path/to/creatio.zip
+```
+
+If you see an error like `[Redis Configuration Error] Could not find an empty Redis database`, you have these options:
+1. Clear some existing Redis databases
+2. Increase the number of available Redis databases in your Redis configuration
+3. Use `--redis-db` parameter to specify a database that you know is available
 
 ## Technical details
 

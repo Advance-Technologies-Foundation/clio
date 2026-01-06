@@ -113,25 +113,43 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 0;
 	}
 
-	private int FindEmptyRedisDb(int port){
-		ConfigurationOptions configurationOptions = new ConfigurationOptions() {
-			SyncTimeout = 500000,
-			EndPoints =
-			{
-				{$"{BindingsModule.k8sDns}",port }
-			},
-			AbortOnConnectFail = false // Prevents exceptions when the initial connection to Redis fails, allowing the client to retry connecting.
-		};
-		ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-		IServer server = redis.GetServer($"{BindingsModule.k8sDns}", port);
-		int count = server.DatabaseCount;
-		for (int i = 1; i < count; i++) {
-			long records = server.DatabaseSize(i);
-			if (records == 0) {
-				return i;
+	private (int dbNumber, string errorMessage) FindEmptyRedisDb(int port){
+		try {
+			ConfigurationOptions configurationOptions = new ConfigurationOptions() {
+				SyncTimeout = 500000,
+				EndPoints =
+				{
+					{$"{BindingsModule.k8sDns}",port }
+				},
+				AbortOnConnectFail = false // Prevents exceptions when the initial connection to Redis fails, allowing the client to retry connecting.
+			};
+			ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
+			IServer server = redis.GetServer($"{BindingsModule.k8sDns}", port);
+			int count = server.DatabaseCount;
+			for (int i = 1; i < count; i++) {
+				long records = server.DatabaseSize(i);
+				if (records == 0) {
+					return (i, string.Empty);
+				}
 			}
+			
+			// All databases are occupied
+			string errorMsg = $"[Redis Configuration Error] Could not find an empty Redis database. " +
+				$"All {count - 1} available databases (1-{count - 1}) at {BindingsModule.k8sDns}:{port} are in use. " +
+				$"Please either: " +
+				$"1) Clear some Redis databases, " +
+				$"2) Increase the number of Redis databases, " +
+				$"3) Manually specify a database number using the --redis-db option";
+			
+			return (-1, errorMsg);
+		} catch (Exception ex) {
+			string errorMsg = $"[Redis Connection Error] Could not connect to Redis at {BindingsModule.k8sDns}:{port}. " +
+				$"Error: {ex.Message}. " +
+				$"Make sure Redis is running and accessible. " +
+				$"You can also manually specify a database number using the --redis-db option";
+			
+			return (-1, errorMsg);
 		}
-		return -1;
 	}
 
 	public int StartWebBrowser(PfInstallerOptions options) {
@@ -366,7 +384,24 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
 		};
 
-		int redisDb = FindEmptyRedisDb(csParam.RedisPort);
+		// Determine Redis database number
+		int redisDb;
+		if (options.RedisDb >= 0) {
+			// User specified Redis database
+			redisDb = options.RedisDb;
+			_logger.WriteInfo($"[Redis Configuration] - Using user-specified database: {redisDb}");
+		} else {
+			// Auto-detect empty database
+			var (dbNumber, errorMessage) = FindEmptyRedisDb(csParam.RedisPort);
+			
+			if (dbNumber == -1) {
+				// Error finding empty database
+				return ExitWithErrorMessage(errorMessage);
+			}
+			
+			redisDb = dbNumber;
+			_logger.WriteInfo($"[Redis Configuration] - Auto-detected empty database: {redisDb}");
+		}
 
 		// Determine the folder path based on deployment strategy
 		string folderPath = DetermineFolderPath(options);

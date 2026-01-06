@@ -67,6 +67,13 @@ OPTIONS
         Automatically launch application in browser after deployment
         Default: true
 
+    --redis-db DATABASE_NUMBER
+        Redis database number (optional)
+        If specified, uses this database instead of auto-detecting an empty one
+        Default: auto-detect (finds first empty database starting from 1)
+        Valid range: 0-15 (depending on Redis configuration)
+        Note: Use this when the auto-detection fails or you want to use a specific database
+
     --silent
         Run in silent mode without interactive prompts
         Default: false
@@ -104,6 +111,13 @@ EXAMPLES
        clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
            --SiteName "AutoCreatio" --SitePort 8443 --use-https \\
            --cert-path "/certs/server.pem" --ZipFile "/app/creatio.zip" --silent
+
+    9. Deploy with specific Redis database (when auto-detection fails):
+       clio deploy-creatio -e "RedisApp" --ZipFile "C:\creatio-app.zip" --redis-db 5
+
+    10. Deploy in production with manual Redis DB to avoid conflicts:
+        clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
+            --redis-db 3 --ZipFile "/path/to/creatio-app.zip"
 
 BEHAVIOR
 
