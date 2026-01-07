@@ -10,7 +10,7 @@ public static class ClioTestsSetup
 	private static IServiceScope _scope;
 	
 	private static IServiceScope Init(){
-		Services.AddSingleton<ReadmeChecker>();
+		Services.AddTransient<ReadmeChecker>();
 		return Services.BuildServiceProvider().CreateScope();
 	}
 

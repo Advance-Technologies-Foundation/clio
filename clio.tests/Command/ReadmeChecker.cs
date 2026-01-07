@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Castle.Core.Internal;
 using CommandLine;
+using Terrasoft.Common;
 
 namespace Clio.Tests.Command;
 
@@ -72,6 +73,7 @@ public class ReadmeChecker
 		foreach(string alias in aliases) {
 			_namesToCheck.Add(_convertCommandNameToSection(alias));
 		}
+		_namesToCheck.AddIfNotExists(commandVerbName);
 		foreach (string anchorLine in _wikiAnchorsContent) {
 			string[] commandName = anchorLine.Split(':');
 			if (commandName[0] == commandVerbName) {
