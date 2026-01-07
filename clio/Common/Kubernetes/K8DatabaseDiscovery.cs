@@ -79,7 +79,9 @@ namespace Clio.Common.Kubernetes
 				{
 					continue; // Skip if service not found
 				}
-
+				if (serviceInfo.Host == "localhost") {
+					serviceInfo.Host = "127.0.0.1";
+				}
 				var database = new DiscoveredDatabase
 				{
 					Engine = engine,
