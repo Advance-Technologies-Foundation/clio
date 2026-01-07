@@ -31,11 +31,11 @@ spec:
           imagePullPolicy: "Always"
           resources:
             limits:
-              memory: "2Gi"
-              cpu: "1"
+              memory: "{{MSSQL_LIMIT_MEMORY}}"
+              cpu: "{{MSSQL_LIMIT_CPU}}"
             requests:
-              memory: "512Mi"
-              cpu: "0.25"
+              memory: "{{MSSQL_REQUEST_MEMORY}}"
+              cpu: "{{MSSQL_REQUEST_CPU}}"
           env:
             - name: MSSQL_PID
               value: "Developer"

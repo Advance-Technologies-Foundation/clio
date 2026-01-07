@@ -65,11 +65,11 @@ spec:
             readOnlyRootFilesystem: false
           resources:
             limits:
-              memory: "4Gi"
-              cpu: "2"
+              memory: "{{PG_LIMIT_MEMORY}}"
+              cpu: "{{PG_LIMIT_CPU}}"
             requests:
-              memory: "2Gi"
-              cpu: "1"
+              memory: "{{PG_REQUEST_MEMORY}}"
+              cpu: "{{PG_REQUEST_CPU}}"
           startupProbe:
             exec:
               command:

@@ -2315,20 +2315,151 @@ processors=4 # Makes the WSL  VM use 8 virtual processors
 
 ## create-k8-files
 
-Generates deployment scripts
+Generates deployment scripts for Kubernetes infrastructure with configurable resource limits for PostgreSQL and MSSQL databases.
+
+### Syntax
+
+```bash
+clio create-k8-files [OPTIONS]
+
+# or using alias
+clio ck8f [OPTIONS]
+```
+
+### Options
+
+**PostgreSQL Resource Configuration:**
+- `--pg-limit-memory <SIZE>` - PostgreSQL memory limit (default: 4Gi)
+- `--pg-limit-cpu <NUMBER>` - PostgreSQL CPU limit (default: 2)
+- `--pg-request-memory <SIZE>` - PostgreSQL memory request (default: 2Gi)
+- `--pg-request-cpu <NUMBER>` - PostgreSQL CPU request (default: 1)
+
+**MSSQL Resource Configuration:**
+- `--mssql-limit-memory <SIZE>` - MSSQL memory limit (default: 4Gi)
+- `--mssql-limit-cpu <NUMBER>` - MSSQL CPU limit (default: 2)
+- `--mssql-request-memory <SIZE>` - MSSQL memory request (default: 2Gi)
+- `--mssql-request-cpu <NUMBER>` - MSSQL CPU request (default: 1)
+
+### What it Does
+
+1. Copies Kubernetes YAML template files to `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure` (Windows) or `~/.local/creatio/clio/infrastructure` (macOS/Linux)
+2. Processes templates with variable substitution:
+   - Replaces `{{PG_LIMIT_MEMORY}}`, `{{PG_LIMIT_CPU}}`, etc. with specified or default values
+   - Updates resource limits in `postgres/postgres-stateful-set.yaml`
+   - Updates resource limits in `mssql/mssql-stateful-set.yaml`
+3. Displays information about available services and deployment instructions
+
+### Resource Configuration
+
+**Memory Sizes:** Specify in Kubernetes format (e.g., `4Gi`, `512Mi`, `2G`, `1024M`)
+**CPU Values:** Specify as decimal numbers (e.g., `2`, `0.25`, `1.5`)
+
+### Usage Examples
+
+**Basic usage with defaults:**
 ```bash
 clio create-k8-files
 ```
-Review files in `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure` folder.
-Things to review:
-- `mssql-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
-- `mssql-stateful-set.yaml` - make sure you agree with terms and conditions of Microsoft SQL Server Developer Edition.
-- `mssql-stateful-set.yaml` - will try to allocate 20Gb of disk space for database files. Make sure you have enough space on your disk.
-- `postgres-stateful-set.yaml` - make sure that `resources` section has correct values. Values will depend on your PC's hardware.
-- `postgres-stateful-set.yaml` - will try to allocate 40Gb of disk space for database files and 5Gb for backup files. Make sure you have enough space on your disk.
+Default PostgreSQL resources: 4Gi memory limit, 2 CPU limit, 2Gi memory request, 1 CPU request
+Default MSSQL resources: 4Gi memory limit, 2 CPU limit, 2Gi memory request, 1 CPU request
 
-Deploy necessary components by executing a series of commands from `C:\Users\YOUR_USER\AppData\Local\creatio\clio\`
-or execute command to open directory
+**Custom PostgreSQL resources for high-load environment:**
+```bash
+clio create-k8-files \
+  --pg-limit-memory 8Gi \
+  --pg-limit-cpu 4 \
+  --pg-request-memory 4Gi \
+  --pg-request-cpu 2
+```
+
+**Custom MSSQL resources:**
+```bash
+clio create-k8-files \
+  --mssql-limit-memory 4Gi \
+  --mssql-limit-cpu 2 \
+  --mssql-request-memory 1Gi \
+  --mssql-request-cpu 1
+```
+
+**Configure both databases:**
+```bash
+clio create-k8-files \
+  --pg-limit-memory 8Gi --pg-limit-cpu 4 \
+  --pg-request-memory 4Gi --pg-request-cpu 2 \
+  --mssql-limit-memory 4Gi --mssql-limit-cpu 2 \
+  --mssql-request-memory 1Gi --mssql-request-cpu 1
+```
+
+### Resource Planning Guidelines
+
+**Development Environment:**
+- PostgreSQL: `--pg-limit-memory 2Gi --pg-limit-cpu 1`
+- MSSQL: `--mssql-limit-memory 2Gi --mssql-limit-cpu 1`
+
+**Production Environment:**
+- PostgreSQL: `--pg-limit-memory 8Gi --pg-limit-cpu 4`
+- MSSQL: `--mssql-limit-memory 8Gi --mssql-limit-cpu 4`
+
+**High-Load Environment:**
+- PostgreSQL: `--pg-limit-memory 16Gi --pg-limit-cpu 8`
+- MSSQL: `--mssql-limit-memory 16Gi --mssql-limit-cpu 8`
+
+### Output
+
+The command displays:
+- Location of generated files
+- Important notice about reviewing configuration
+- Table of available services (PostgreSQL, MSSQL, Redis, Email Listener) with versions and ports
+- Instructions for deployment
+
+### Important Files to Review
+
+After generation, review these files:
+- `mssql/mssql-stateful-set.yaml` - MSSQL resource configuration
+- `postgres/postgres-stateful-set.yaml` - PostgreSQL resource configuration
+
+Make sure resource values match your hardware capabilities and workload requirements.
+
+### Deployment
+
+After generating files, deploy using either:
+
+**Automated (recommended):**
+```bash
+clio deploy-infrastructure
+```
+
+**Manual:**
+```bash
+kubectl apply -f C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure
+```
+
+### Integration with deploy-infrastructure
+
+The `deploy-infrastructure` command automatically calls `create-k8-files` with default resource values. To customize resources, generate files manually with `create-k8-files` before running deployment.
+
+### Notes
+
+- Resource limits prevent pods from consuming excessive resources
+- Resource requests are used for scheduling decisions
+- Memory sizes use Kubernetes notation (Ki, Mi, Gi)
+- CPU values are in cores (1 = 1 core, 0.5 = half core)
+- Generated files persist between deployments
+- Regenerating files will overwrite existing configuration
+
+### Troubleshooting
+
+**"Template files not found":**
+- Ensure clio is properly installed
+- Check that template files exist in clio installation directory
+
+**"Out of memory" during deployment:**
+- Reduce memory limits in generated YAML files
+- Increase available memory in your Kubernetes cluster (Docker Desktop/Rancher Desktop settings)
+
+**Pods in "Pending" state:**
+- Check if cluster has enough resources: `kubectl describe pod -n clio-infrastructure`
+- Reduce resource requests to fit available cluster capacity
 
 ## open-k8-files
 
