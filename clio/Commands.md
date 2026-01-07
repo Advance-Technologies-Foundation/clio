@@ -1110,6 +1110,47 @@ clio install-gate -e demo
 clio build-workspace
 ```
 
+## install-tide
+
+Install T.I.D.E. (Terribly Isolated Development Environment) extension to a Creatio environment. T.I.D.E. enables isolated development environments and workspace-based workflows with Git synchronization capabilities.
+
+```bash
+clio install-tide -e <ENVIRONMENT_NAME>
+```
+
+The command performs the following steps:
+1. Installs cliogate package (if not already installed)
+2. Waits for the server to become ready
+3. Installs the T.I.D.E. NuGet package (atftide)
+
+**Aliases:** `tide`, `itide`
+
+**Options:**
+- `-e, --environment <ENVIRONMENT_NAME>` (required): The target Creatio environment name
+
+**Examples:**
+
+```bash
+# Install T.I.D.E. on development environment
+clio install-tide -e dev
+
+# Using alias
+clio tide -e production
+
+# Short alias
+clio itide -e demo
+```
+
+**Prerequisites:**
+- Creatio instance must be accessible
+- Valid credentials for the target environment
+- Sufficient permissions to install packages
+
+**Related commands:**
+- `install-gate` - Install cliogate package
+- `push-workspace` - Push workspace to environment
+- `git-sync` - Synchronize environment with Git repository
+
 ## configure-workspace
 
 To configure workspace settings, such as adding packages and saving environment settings, use the following command:
@@ -1936,12 +1977,53 @@ clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgP
 
 ## mock-data
 
-To mock data for unit tests with using [ATF].[Repository] use the following command
+Generate mock data for unit tests from Creatio OData models. This command extracts schema names from model classes and downloads corresponding data from a Creatio instance, saving it as JSON files for use with ATF.Repository.
 
 ```bash
-clio mock-data --models D:\Projects\MyProject --data D:\Projects\MyProject\Tests\TestsData  -e MyDevCreatio
-
+clio mock-data -m <MODELS_PATH> -d <DATA_PATH> -e <ENVIRONMENT_NAME>
 ```
+
+**How it works:**
+1. Scans model files in the specified directory for `[Schema("")]` attributes
+2. Extracts schema names from the model classes
+3. Downloads data from Creatio OData endpoints for each schema
+4. Saves the data as JSON files in the specified data folder
+
+**Aliases:** `data-mock`
+
+**Options:**
+- `-m, --models <PATH>` (required): Path to the folder containing model classes
+- `-d, --data <PATH>` (required): Path where the JSON data files will be saved
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target Creatio environment name
+- `-x, --exclude-models <PATTERN>` (optional, default: "VwSys"): Pattern to exclude models from data extraction
+
+**Examples:**
+
+```bash
+# Generate mock data from models
+clio mock-data --models D:\Projects\MyProject\Models --data D:\Projects\MyProject\Tests\TestsData -e MyDevCreatio
+
+# Using alias
+clio data-mock -m .\Models -d .\Tests\Data -e dev
+
+# Exclude system models
+clio mock-data -m .\Models -d .\Tests\Data -e prod --exclude-models VwSys
+```
+
+**Prerequisites:**
+- Creatio instance must be accessible
+- Model classes with `[Schema("")]` attributes
+- ATF.Repository for unit testing (recommended)
+
+**Notes:**
+- Processes up to 8 models in parallel for performance
+- System views (VwSys*) are excluded by default
+- Failed extractions log warnings but don't stop execution
+- Data is saved as `<SchemaName>.json` files
+
+**Related commands:**
+- `execute-assembly-code` - Execute code against Creatio
+- `assert` - Run unit tests
 
 ## get-app-hash
 

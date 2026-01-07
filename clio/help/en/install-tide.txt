@@ -1,0 +1,45 @@
+﻿COMMAND TYPE
+    Service commands
+
+NAME
+    install-tide - installs T.I.D.E. (Terribly Isolated Development Environment) extension
+
+DESCRIPTION
+    Installs the T.I.D.E. extension on the selected Creatio environment.
+    T.I.D.E. enables isolated development environments and workspace-based workflows
+    with Git synchronization capabilities.
+    
+    The command performs the following steps:
+    1. Installs cliogate package (if not already installed)
+    2. Waits for the server to become ready
+    3. Installs the T.I.D.E. NuGet package (atftide)
+    
+    This extension is required for advanced workspace development features.
+
+ALIASES
+    tide, itide
+
+EXAMPLE
+    clio install-tide -e <ENVIRONMENT NAME>
+
+    clio tide -e demo
+
+    clio itide -e production
+
+OPTIONS
+    -e, --environment <ENVIRONMENT_NAME>
+        The target Creatio environment name (required)
+
+PREREQUISITES
+    - Creatio instance must be accessible
+    - Valid credentials for the target environment
+    - Sufficient permissions to install packages
+
+RELATED COMMANDS
+    install-gate - installs cliogate package
+    push-workspace - push workspace to environment
+    git-sync - synchronize environment with Git repository
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+

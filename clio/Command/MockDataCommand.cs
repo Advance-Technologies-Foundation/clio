@@ -10,7 +10,7 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("mock-dataFolderPath", Aliases = new[] {"dataFolderPath-mock"}, HelpText = "Setup mock data path")]
+[Verb("mock-data", Aliases = new[] {"data-mock"}, HelpText = "Setup mock data for unit tests")]
 public class MockDataCommandOptions : RemoteCommandOptions
 {
 

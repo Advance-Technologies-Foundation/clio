@@ -16,7 +16,7 @@ set-app-version:set-application-version
 pkg-hotfix:enable/disable-pkg-hotfix-mode
 save-state:create-manifest-from-creatio-instance
 show-diff:show-difference-in-settings-for-two-creatio-intances
-mock-dat:mock-data-for-unit-tests
+mock-dat:mock-data-for-unit-tests,data-mock
 deploy-creatio:run-creatio-installation
 hosts:## hosts,list-hosts
 stop:## stop
@@ -32,3 +32,5 @@ publish-workspace: publish workspace
 link-package-store:link-package-store
 link-core-src:lsc
 update-cli:## update-cli,## update
+download-application:## download-app
+install-tide:tide,itide

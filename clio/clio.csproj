@@ -10,17 +10,17 @@
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <!-- Default version for local development. Will be overridden during release from tag -->
-      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.89</AssemblyVersion>
+      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.92</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
       <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-	  <PackageLicenseUrl></PackageLicenseUrl>
+<!--	  <PackageLicenseUrl></PackageLicenseUrl>-->
 	  <PackageLicense>MIT</PackageLicense>
 	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
 	  <RepositoryType>git</RepositoryType>
 	  <PackageProjectUrl>https://github.com/Advance-Technologies-Foundation/clio</PackageProjectUrl>
-	  <Copyright>ATF ©2024</Copyright>
+	  <Copyright>ATF ©2026</Copyright>
 	  <RootNamespace>Clio</RootNamespace>
 	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -893,7 +893,7 @@
     <PackageReference Include="Microsoft.PowerShell.SDK" Version="[7.4.13,7.5.0)" /> <!-- 7.4.13 Is the latest supported on .NET8--> 
     <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Npgsql" Version="10.0.0" />
+    <PackageReference Include="Npgsql" Version="10.0.1" />
     <PackageReference Include="NRedisStack" Version="1.1.1" />
     <PackageReference Include="OneOf" Version="3.0.271" />
     <PackageReference Include="System.IO.Abstractions" Version="22.1.0" />

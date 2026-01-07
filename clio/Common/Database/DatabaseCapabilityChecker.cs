@@ -67,22 +67,26 @@ namespace Clio.Common.Database
 		{
 			try
 			{
-				using var connection = new SqlConnection(connectionString);
+				await using SqlConnection connection = new SqlConnection(connectionString);
 				await connection.OpenAsync();
+				const string cmdText = """
+									   SELECT CONCAT(
+									          CAST(SERVERPROPERTY('Edition') AS VARCHAR(MAX))
+									          ,' - ',
+									          CAST(SERVERPROPERTY('ProductVersion') AS VARCHAR(MAX))
+									   ) AS Version
+									   """;
+				
+				await using SqlCommand command = new (cmdText, connection);
+				object version = await command.ExecuteScalarAsync();
 
-				using var command = new SqlCommand("SELECT SERVERPROPERTY('ProductVersion') AS Version", connection);
-				var version = await command.ExecuteScalarAsync();
-
-				return new CapabilityCheckResult
-				{
+				return new CapabilityCheckResult {
 					Success = true,
 					Version = version?.ToString()
 				};
 			}
-			catch (Exception ex)
-			{
-				return new CapabilityCheckResult
-				{
+			catch (Exception ex) {
+				return new CapabilityCheckResult {
 					Success = false,
 					Error = ex.Message
 				};
