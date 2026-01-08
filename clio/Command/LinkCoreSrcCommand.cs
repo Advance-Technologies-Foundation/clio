@@ -13,11 +13,20 @@ using FluentValidation.Results;
 
 namespace Clio.Command;
 
+public enum CreatioMode
+{
+	NetCore,
+	NetFramework
+}
+
 [Verb("link-core-src", Aliases = ["lcs"], HelpText = "Link core source code to environment for development")]
 public class LinkCoreSrcOptions : EnvironmentNameOptions
 {
 	[Option("core-path", Required = true, HelpText = "Path to Creatio core source directory")]
 	public string CorePath { get; set; }
+
+	[Option("mode", Required = false, Default = CreatioMode.NetCore, HelpText = "Creatio mode: NetCore (Terrasoft.WebHost) or NetFramework (Terrasoft.WebApp.Loader)")]
+	public CreatioMode Mode { get; set; }
 }
 
 public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions> {
@@ -118,12 +127,13 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 				return;
 			}
 
-			// Find Terrasoft.WebHost/bin directories
-			var coreWebHostDirs = GetWebHostBinDirectories(options.CorePath).ToList();
+			// Find core bin directories based on mode
+			string targetFolder = GetTargetFolderName(options.Mode);
+			var coreWebHostDirs = GetCoreBinDirectories(options.CorePath, targetFolder).ToList();
 			if (!coreWebHostDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"Terrasoft.WebHost/bin directory not found in core: {options.CorePath}"
+					ErrorMessage = $"{targetFolder}/bin directory not found in core: {options.CorePath}"
 				});
 				return;
 			}
@@ -139,35 +149,35 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			if (!appSettingsDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"appsettings.json not found in any Terrasoft.WebHost directory under: {options.CorePath}"
+					ErrorMessage = $"appsettings.json not found in any {targetFolder} directory under: {options.CorePath}"
 				});
 			}
 
 			if (!dllConfigDirs.Any()) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"Terrasoft.WebHost.dll.config not found in any Terrasoft.WebHost directory under: {options.CorePath}"
+					ErrorMessage = $"Terrasoft.WebHost.dll.config not found in any {targetFolder} directory under: {options.CorePath}"
 				});
 			}
 
 			if (appSettingsDirs.Count > 1) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"appsettings.json found in multiple Terrasoft.WebHost directories: {string.Join(", ", appSettingsDirs)}"
+					ErrorMessage = $"appsettings.json found in multiple {targetFolder} directories: {string.Join(", ", appSettingsDirs)}"
 				});
 			}
 
 			if (dllConfigDirs.Count > 1) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = $"Terrasoft.WebHost.dll.config found in multiple Terrasoft.WebHost directories: {string.Join(", ", dllConfigDirs)}"
+					ErrorMessage = $"Terrasoft.WebHost.dll.config found in multiple {targetFolder} directories: {string.Join(", ", dllConfigDirs)}"
 				});
 			}
 
 			if (appSettingsDirs.Any() && dllConfigDirs.Any() && appSettingsDirs[0] != dllConfigDirs[0]) {
 				context.AddFailure(new ValidationFailure {
 					PropertyName = nameof(options.CorePath),
-					ErrorMessage = "appsettings.json and Terrasoft.WebHost.dll.config are located in different Terrasoft.WebHost directories"
+					ErrorMessage = $"appsettings.json and Terrasoft.WebHost.dll.config are located in different {targetFolder} directories"
 				});
 			}
 		} catch (Exception ex) {
@@ -178,11 +188,19 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 		}
 	}
 
-	private IEnumerable<string> GetWebHostBinDirectories(string corePath) {
-		string[] webHostDirs = _fileSystem.GetDirectories(corePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
-		return webHostDirs
+	private IEnumerable<string> GetCoreBinDirectories(string corePath, string targetFolder) {
+		string[] targetDirs = _fileSystem.GetDirectories(corePath, targetFolder, SearchOption.AllDirectories);
+		return targetDirs
 			.Select(dir => Path.Combine(dir, "bin"))
 			.Where(binDir => _fileSystem.ExistsDirectory(binDir));
+	}
+
+	private string GetTargetFolderName(CreatioMode mode) {
+		return mode switch {
+			CreatioMode.NetCore => "Terrasoft.WebHost",
+			CreatioMode.NetFramework => "Terrasoft.WebApp.Loader",
+			_ => throw new ArgumentException($"Unsupported mode: {mode}")
+		};
 	}
 
 	#endregion
@@ -249,8 +267,12 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 
 			// Execute linking operations
 			SyncConnectionStringsConfig(options, env);
-			ConfigurePortsInAppSettings(options, env);
-			EnableLaxModeInAppConfig(options);
+			
+			if (options.Mode == CreatioMode.NetCore) {
+				ConfigurePortsInAppSettings(options, env);
+				EnableLaxModeInAppConfig(options);
+			}
+			
 			UpdateEnvironmentPathAndRestartService(options, env);
 
 			_logger.WriteInfo("✓ Core linking completed successfully");
@@ -270,13 +292,18 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		Console.WriteLine("Linking Creatio Core Source Code");
 		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════");
 		Console.WriteLine($"Environment:  {options.Environment}");
+		Console.WriteLine($"Mode:         {options.Mode}");
 		Console.WriteLine($"App Path:     {env.EnvironmentPath}");
 		Console.WriteLine($"Core Path:    {options.CorePath}");
 		Console.WriteLine("\nOperations to perform:");
 		Console.WriteLine("  1. Synchronize ConnectionStrings.config from app to core");
-		Console.WriteLine("  2. Configure ports in appsettings.json");
-		Console.WriteLine("  3. Enable LAX mode in Terrasoft.WebHost.dll.config");
-		Console.WriteLine("  4. Update environment configuration with core path and restart service");
+		if (options.Mode == CreatioMode.NetCore) {
+			Console.WriteLine("  2. Configure ports in appsettings.json");
+			Console.WriteLine("  3. Enable LAX mode in Terrasoft.WebHost.dll.config");
+			Console.WriteLine("  4. Update environment configuration with core path and restart service");
+		} else {
+			Console.WriteLine("  2. Update environment configuration with core path and restart service");
+		}
 		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════\n");
 
 		Console.Write("Continue? (Y/n): ");
@@ -298,8 +325,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 			// Read content from app
 			string content = _fileSystem.ReadAllText(connectionStringsFile);
 
-			// Resolve target Terrasoft.WebHost with ConnectionStrings.config in core
-			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "ConnectionStrings.config");
+			// Resolve target core directory with ConnectionStrings.config
+			string targetFolder = GetTargetFolderName(options.Mode);
+			string coreWebHostPath = ResolveCoreDirectory(options.CorePath, targetFolder, "ConnectionStrings.config");
 			string[] coreConfigs = _fileSystem.GetFiles(coreWebHostPath, "ConnectionStrings.config", SearchOption.AllDirectories);
 			string targetFile = coreConfigs.FirstOrDefault() ?? Path.Combine(coreWebHostPath, "ConnectionStrings.config");
 
@@ -325,8 +353,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 				return;
 			}
 
-			// Resolve Terrasoft.WebHost with appsettings.json in core
-			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json");
+			// Resolve core directory with appsettings.json
+			string targetFolder = GetTargetFolderName(options.Mode);
+			string coreWebHostPath = ResolveCoreDirectory(options.CorePath, targetFolder, "appsettings.json");
 			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
 
 			string appSettingsPath = appSettingsFiles[0];
@@ -426,48 +455,57 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		}
 	}
 
-	private string ResolveWebHostDirectory(string corePath, params string[] requiredFiles) {
-		var webHostBinDirs = GetWebHostBinDirectories(corePath).ToList();
-		if (!webHostBinDirs.Any()) {
-			throw new Exception($"Terrasoft.WebHost/bin directory not found in core: {corePath}");
+	private string ResolveCoreDirectory(string corePath, string targetFolder, params string[] requiredFiles) {
+		var coreBinDirs = GetCoreBinDirectories(corePath, targetFolder).ToList();
+		if (!coreBinDirs.Any()) {
+			throw new Exception($"{targetFolder}/bin directory not found in core: {corePath}");
 		}
 
 		// If no specific files required, ensure uniqueness
 		if (requiredFiles == null || requiredFiles.Length == 0) {
-			if (webHostBinDirs.Count > 1) {
-				throw new Exception($"Multiple Terrasoft.WebHost/bin directories found: {string.Join(", ", webHostBinDirs)}");
+			if (coreBinDirs.Count > 1) {
+				throw new Exception($"Multiple {targetFolder}/bin directories found: {string.Join(", ", coreBinDirs)}");
 			}
-			return webHostBinDirs[0];
+			return coreBinDirs[0];
 		}
 
-		List<string> matches = webHostBinDirs
+		List<string> matches = coreBinDirs
 			.Where(dir => requiredFiles.All(file => _fileSystem.GetFiles(dir, file, SearchOption.AllDirectories).Any()))
 			.ToList();
 
 		if (!matches.Any()) {
-			throw new Exception($"Required files ({string.Join(", ", requiredFiles)}) not found under any Terrasoft.WebHost/bin directory in core: {corePath}");
+			throw new Exception($"Required files ({string.Join(", ", requiredFiles)}) not found under any {targetFolder}/bin directory in core: {corePath}");
 		}
 
 		if (matches.Count > 1) {
-			throw new Exception($"Required files ({string.Join(", ", requiredFiles)}) found in multiple Terrasoft.WebHost/bin directories: {string.Join(", ", matches)}");
+			throw new Exception($"Required files ({string.Join(", ", requiredFiles)}) found in multiple {targetFolder}/bin directories: {string.Join(", ", matches)}");
 		}
 
 		return matches[0];
 	}
 
-	private IEnumerable<string> GetWebHostBinDirectories(string corePath) {
-		string[] webHostDirs = _fileSystem.GetDirectories(corePath, "Terrasoft.WebHost", SearchOption.AllDirectories);
-		return webHostDirs
+	private IEnumerable<string> GetCoreBinDirectories(string corePath, string targetFolder) {
+		string[] targetDirs = _fileSystem.GetDirectories(corePath, targetFolder, SearchOption.AllDirectories);
+		return targetDirs
 			.Select(dir => Path.Combine(dir, "bin"))
 			.Where(binDir => _fileSystem.ExistsDirectory(binDir));
+	}
+
+	private string GetTargetFolderName(CreatioMode mode) {
+		return mode switch {
+			CreatioMode.NetCore => "Terrasoft.WebHost",
+			CreatioMode.NetFramework => "Terrasoft.WebApp.Loader",
+			_ => throw new ArgumentException($"Unsupported mode: {mode}")
+		};
 	}
 
 	private void EnableLaxModeInAppConfig(LinkCoreSrcOptions options) {
 		_logger.WriteInfo("\n[3/4] Enabling LAX mode in Terrasoft.WebHost.dll.config...");
 
 		try {
-			// Resolve Terrasoft.WebHost with Terrasoft.WebHost.dll.config in core
-			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "Terrasoft.WebHost.dll.config");
+			// Resolve core directory with Terrasoft.WebHost.dll.config
+			string targetFolder = GetTargetFolderName(options.Mode);
+			string coreWebHostPath = ResolveCoreDirectory(options.CorePath, targetFolder, "Terrasoft.WebHost.dll.config");
 			string[] appConfigs = _fileSystem.GetFiles(coreWebHostPath, "Terrasoft.WebHost.dll.config", SearchOption.AllDirectories);
 
 			string dllConfigPath = appConfigs[0];
@@ -507,8 +545,11 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 		_logger.WriteInfo("\n[4/4] Updating environment configuration and restarting service...");
 
 		try {
-			// Resolve Terrasoft.WebHost in core (must be unique)
-			string coreWebHostPath = ResolveWebHostDirectory(options.CorePath, "appsettings.json", "Terrasoft.WebHost.dll.config");
+			// Resolve core directory (must be unique)
+			string targetFolder = GetTargetFolderName(options.Mode);
+			string coreWebHostPath = options.Mode == CreatioMode.NetCore
+				? ResolveCoreDirectory(options.CorePath, targetFolder, "appsettings.json", "Terrasoft.WebHost.dll.config")
+				: ResolveCoreDirectory(options.CorePath, targetFolder, "Terrasoft.WebApp.Loader.dll");
 
 			// Update environment configuration with core path
 			env.EnvironmentPath = coreWebHostPath;
