@@ -1,660 +1,458 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Threading;
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
 using CommandLine;
-using NRedisStack;
 using StackExchange.Redis;
 
-namespace Clio.Command
-{
-	[Verb("deploy-infrastructure", Aliases = ["di"], 
-		HelpText = "Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin)")]
-	public class DeployInfrastructureOptions
-	{
-		[Option('p', "path", Required = false, 
-			HelpText = "Path to infrastructure files (default: auto-detected from clio settings)")]
-		public string InfrastructurePath { get; set; }
-		
-		[Option("no-verify", Required = false, Default = false,
-			HelpText = "Skip connection verification after deployment")]
-		public bool SkipVerification { get; set; }
+namespace Clio.Command;
+
+[Verb("deploy-infrastructure", Aliases = ["di"],
+	HelpText = "Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin)")]
+public class DeployInfrastructureOptions{
+	#region Properties: Public
+
+	[Option('p', "path", Required = false,
+		HelpText = "Path to infrastructure files (default: auto-detected from clio settings)")]
+	public string InfrastructurePath { get; set; }
+
+	[Option("no-verify", Required = false, Default = false,
+		HelpText = "Skip connection verification after deployment")]
+	public bool SkipVerification { get; set; }
+
+	#endregion
+}
+
+public class DeployInfrastructureCommand(IProcessExecutor processExecutor, ILogger logger, IFileSystem fileSystem,
+	Ik8Commands k8Commands, IDbClientFactory dbClientFactory, IInfrastructurePathProvider infrastructurePathProvider)
+	: Command<DeployInfrastructureOptions>{
+
+	#region Class: Nested
+
+	private class DeploymentStep(string name, string path){
+		#region Properties: Public
+
+		public string Name { get; } = name;
+		public string Path { get; } = path;
+
+		#endregion
 	}
 
-	public class DeployInfrastructureCommand : Command<DeployInfrastructureOptions>
-	{
-		private readonly IProcessExecutor _processExecutor;
-		private readonly ILogger _logger;
-		private readonly Clio.Common.IFileSystem _fileSystem;
-		private readonly Ik8Commands _k8Commands;
-		private readonly IDbClientFactory _dbClientFactory;
-		private readonly IInfrastructurePathProvider _infrastructurePathProvider;
+	#endregion
 
-		public DeployInfrastructureCommand(
-			IProcessExecutor processExecutor, 
-			ILogger logger, 
-			Clio.Common.IFileSystem fileSystem,
-			Ik8Commands k8Commands,
-			IDbClientFactory dbClientFactory,
-			IInfrastructurePathProvider infrastructurePathProvider)
-		{
-			_processExecutor = processExecutor;
-			_logger = logger;
-			_fileSystem = fileSystem;
-			_k8Commands = k8Commands;
-			_dbClientFactory = dbClientFactory;
-			_infrastructurePathProvider = infrastructurePathProvider;
-		}
+	internal int CleanupOrphanedPersistentVolumesMaxAttempts = 5;
+	internal int PodDelay = 5_000;
+	internal int RetryDelay = 1000;
+	internal int VerifyPostgresConnectionDelaySeconds = 3;
+	internal int VerifyPostgresConnectionMaxRetryAttempts = 40;
+	internal int VerifyRedisConnectionConnectionTimeout = 5_000;
+	internal int VerifyRedisConnectionDelaySeconds = 3;
+	internal int VerifyRedisConnectionMaxRetryAttempts = 10;
+	internal int VerifyRedisConnectionSyncTimeout = 5_000;
 
-		public override int Execute(DeployInfrastructureOptions options)
-		{
-			try
-			{
-				_logger.WriteInfo("========================================");
-				_logger.WriteInfo("  Deploy Kubernetes Infrastructure");
-				_logger.WriteInfo("========================================");
-				_logger.WriteLine();
+	#region Methods: Private
 
-				// Step 1: Check kubectl
-				if (!CheckKubectlInstalled())
-				{
-					_logger.WriteError("kubectl is not installed or not in PATH");
-					_logger.WriteInfo("Please install kubectl:");
-					_logger.WriteInfo("  macOS:   brew install kubectl");
-					_logger.WriteInfo("  Windows: choco install kubernetes-cli");
-					_logger.WriteInfo("  Linux:   https://kubernetes.io/docs/tasks/tools/");
-					return 1;
-				}
+	private bool CheckAndHandleExistingNamespace(string namespaceName) {
+		logger.WriteInfo("[1/5] Checking for existing namespace...");
 
-			// Step 1.5: Check and handle existing namespace
-			const string namespaceName = "clio-infrastructure";
-			if (!CheckAndHandleExistingNamespace(namespaceName))
-				{
-					_logger.WriteInfo("Infrastructure deployment cancelled by user");
-					return 1;
-				}
+		try {
+			if (!k8Commands.NamespaceExists(namespaceName)) {
+				logger.WriteInfo("✓ No existing namespace found");
 
-				// Step 2: Generate infrastructure files
-				string infrastructurePath = _infrastructurePathProvider.GetInfrastructurePath(options.InfrastructurePath);
-				if (!GenerateInfrastructureFiles(infrastructurePath))
-				{
-					return 1;
-				}
-
-				// Step 3: Deploy infrastructure in order
-				if (!DeployInfrastructure(infrastructurePath))
-				{
-					return 1;
-				}
-
-				// Step 4: Verify connections (unless skipped)
-				if (!options.SkipVerification)
-				{
-					if (!VerifyConnections())
-					{
-						_logger.WriteWarning("Connection verification failed, but infrastructure may still be starting");
-						_logger.WriteInfo("You can manually verify with: kubectl get pods -n clio-infrastructure");
-						return 1;
-					}
-				}
-				else
-				{
-					_logger.WriteInfo("Skipping connection verification (--no-verify)");
-				}
-
-				_logger.WriteLine();
-				_logger.WriteInfo("========================================");
-				_logger.WriteInfo("  Infrastructure deployed successfully!");
-				_logger.WriteInfo("========================================");
-				
-				return 0;
-			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"Deployment failed: {ex.Message}");
-				_logger.WriteError(ex.StackTrace);
-				return 1;
-			}
-		}
-
-	private bool CheckAndHandleExistingNamespace(string namespaceName)
-	{
-		_logger.WriteInfo("[1/5] Checking for existing namespace...");
-		
-		try
-		{
-			if (!_k8Commands.NamespaceExists(namespaceName))
-			{
-				_logger.WriteInfo("✓ No existing namespace found");
-				
 				// Always check for orphaned PersistentVolumes
 				// They can appear after namespace deletion and prevent new PVC binding
 				// Wait a moment for Released PV status to stabilize
-				System.Threading.Thread.Sleep(2000);
-				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
+				Thread.Sleep(2000);
+				logger.WriteInfo("Checking for orphaned PersistentVolumes...");
 				CleanupOrphanedPersistentVolumes();
-				
-				_logger.WriteInfo("Proceeding with deployment");
+
+				logger.WriteInfo("Proceeding with deployment");
 				return true;
 			}
 
 			// Namespace already exists - this is an error
-			_logger.WriteError($"✗ Namespace '{namespaceName}' already exists");
-			_logger.WriteLine();
-			_logger.WriteError("To recreate the infrastructure, first delete it with:");
-			_logger.WriteError("  clio delete-infrastructure [--force]");
-			_logger.WriteLine();
-			_logger.WriteError("Then deploy again:");
-			_logger.WriteError("  clio deploy-infrastructure");
-			_logger.WriteLine();
-			
+			logger.WriteError($"✗ Namespace '{namespaceName}' already exists");
+			logger.WriteLine();
+			logger.WriteError("To recreate the infrastructure, first delete it with:");
+			logger.WriteError("  clio delete-infrastructure [--force]");
+			logger.WriteLine();
+			logger.WriteError("Then deploy again:");
+			logger.WriteError("  clio deploy-infrastructure");
+			logger.WriteLine();
+
 			return false;
 		}
-		catch (Exception ex)
-		{
-			_logger.WriteError($"Error checking namespace: {ex.Message}");
+		catch (Exception ex) {
+			logger.WriteError($"Error checking namespace: {ex.Message}");
 			return false;
 		}
-	}		private void CleanupOrphanedPersistentVolumes()
-		{
-			try
-			{
-				_logger.WriteInfo("Checking for orphaned PersistentVolumes...");
-				
-				int maxAttempts = 5;
-				int attemptCount = 0;
-				var allDeletedPvs = new HashSet<string>();
-				
-				while (attemptCount < maxAttempts)
-				{
-					// Get ALL orphaned PV (not just Released) to handle various states during cleanup
-					var orphanedPvs = _k8Commands.GetOrphanedPersistentVolumes("clio-infrastructure");
-					
-					if (orphanedPvs.Count == 0)
-					{
-						if (allDeletedPvs.Count == 0)
-						{
-							_logger.WriteInfo("✓ No orphaned PersistentVolumes found");
-						}
-						else
-						{
-							_logger.WriteInfo($"✓ All {allDeletedPvs.Count} orphaned PersistentVolume(s) cleaned up successfully");
-						}
-						return;
+	}
+
+	private bool CheckKubectlInstalled() {
+		logger.WriteInfo("[1/5] Checking kubectl installation...");
+		try {
+			processExecutor.Execute("kubectl", "version --client --short", true, showOutput: false);
+			logger.WriteInfo("✓ kubectl is installed");
+			return true;
+		}
+		catch {
+			return false;
+		}
+	}
+
+	private void CleanupOrphanedPersistentVolumes() {
+		try {
+			logger.WriteInfo("Checking for orphaned PersistentVolumes...");
+
+			int maxAttempts = CleanupOrphanedPersistentVolumesMaxAttempts;
+			int attemptCount = 0;
+			HashSet<string> allDeletedPvs = [];
+
+			while (attemptCount < maxAttempts) {
+				// Get ALL orphaned PV (not just Released) to handle various states during cleanup
+				IList<string> orphanedPvs = k8Commands.GetOrphanedPersistentVolumes("clio-infrastructure");
+
+				if (orphanedPvs.Count == 0) {
+					logger.WriteInfo(allDeletedPvs.Count == 0
+						? "✓ No orphaned PersistentVolumes found"
+						: $"✓ All {allDeletedPvs.Count} orphaned PersistentVolume(s) cleaned up successfully");
+					return;
+				}
+
+				if (attemptCount == 0) {
+					logger.WriteInfo($"Found {orphanedPvs.Count} orphaned PersistentVolume(s), cleaning up...");
+				}
+
+				foreach (string pvName in orphanedPvs) {
+					if (k8Commands.DeletePersistentVolume(pvName)) {
+						logger.WriteInfo($"  ✓ {pvName}");
+						allDeletedPvs.Add(pvName);
 					}
-					
-					if (attemptCount == 0)
-					{
-						_logger.WriteInfo($"Found {orphanedPvs.Count} orphaned PersistentVolume(s), cleaning up...");
-					}
-					
-					foreach (var pvName in orphanedPvs)
-					{
-						if (_k8Commands.DeletePersistentVolume(pvName))
-						{
-							_logger.WriteInfo($"  ✓ {pvName}");
-							allDeletedPvs.Add(pvName);
-						}
-						else
-						{
-							_logger.WriteWarning($"  ⚠ Failed to delete {pvName}");
-						}
-					}
-					
-					attemptCount++;
-					if (attemptCount < maxAttempts && orphanedPvs.Count > 0)
-					{
-						System.Threading.Thread.Sleep(1000); // Wait before retrying
+					else {
+						logger.WriteWarning($"  ⚠ Failed to delete {pvName}");
 					}
 				}
-				
-				if (allDeletedPvs.Count > 0)
-				{
-					_logger.WriteInfo($"✓ Cleaned up {allDeletedPvs.Count} orphaned PersistentVolume(s)");
+
+				attemptCount++;
+				if (attemptCount < maxAttempts && orphanedPvs.Count > 0) {
+					// Wait before retrying
+					Thread.Sleep(RetryDelay); // Wait before retrying
 				}
 			}
-			catch (Exception ex)
-			{
-				_logger.WriteWarning($"⚠ Error cleaning up orphaned PersistentVolumes: {ex.Message}");
+
+			if (allDeletedPvs.Count > 0) {
+				logger.WriteInfo($"✓ Cleaned up {allDeletedPvs.Count} orphaned PersistentVolume(s)");
 			}
 		}
+		catch (Exception ex) {
+			logger.WriteWarning($"⚠ Error cleaning up orphaned PersistentVolumes: {ex.Message}");
+		}
+	}
 
-	private bool CheckKubectlInstalled()
-		{
-			_logger.WriteInfo("[1/5] Checking kubectl installation...");
-			try
-			{
-				string result = _processExecutor.Execute("kubectl", "version --client --short", 
-					waitForExit: true, showOutput: false);
-				_logger.WriteInfo("✓ kubectl is installed");
-				return true;
-			}
-			catch
-			{
+	private bool DeployInfrastructure(string infrastructurePath) {
+		logger.WriteInfo("[3/5] Deploying infrastructure to Kubernetes...");
+		logger.WriteLine();
+
+		// Before deploying infrastructure, ensure NO orphaned PV exist from previous deployments
+		// This is critical for PVC binding to work properly
+		logger.WriteInfo("Pre-deployment cleanup: Removing any orphaned PersistentVolumes...");
+		CleanupOrphanedPersistentVolumes();
+		logger.WriteLine();
+
+		// Define deployment order - order matters for dependencies
+		List<DeploymentStep> deploymentSteps = [
+			new("Namespace", Path.Join(infrastructurePath, "clio-namespace.yaml")),
+
+			// Step 2: Create a storage class (required by PersistentVolumes)
+			new("Storage Class", Path.Join(infrastructurePath, "clio-storage-class.yaml")),
+
+			// Step 3: Deploy Redis - workload contains ConfigMap, then Services
+			new("Redis Workload", Path.Join(infrastructurePath, "redis", "redis-workload.yaml")),
+			new("Redis Services", Path.Join(infrastructurePath, "redis", "redis-services.yaml")),
+
+			// Step 4: Deploy Postgres SQL - secrets, volumes (ConfigMap), services, then StatefulSet
+			new("Postgres SQL Secrets", Path.Join(infrastructurePath, "postgres", "postgres-secrets.yaml")),
+			new("Postgres SQL Volumes", Path.Join(infrastructurePath, "postgres", "postgres-volumes.yaml")),
+			new("Postgres SQL Services", Path.Join(infrastructurePath, "postgres", "postgres-services.yaml")),
+			new("Postgres SQL StatefulSet", Path.Join(infrastructurePath, "postgres", "postgres-stateful-set.yaml")),
+
+			// Step 5: Deploy pgAdmin - secrets, volumes (PVC + ConfigMap), services, then workload
+			new("pgAdmin Secrets", Path.Join(infrastructurePath, "pgadmin", "pgadmin-secrets.yaml")),
+			new("pgAdmin Volumes", Path.Join(infrastructurePath, "pgadmin", "pgadmin-volumes.yaml")),
+			new("pgAdmin Services", Path.Join(infrastructurePath, "pgadmin", "pgadmin-services.yaml")),
+			new("pgAdmin Workload", Path.Join(infrastructurePath, "pgadmin", "pgadmin-workload.yaml"))
+		];
+
+		int stepNumber = 1;
+		foreach (DeploymentStep step in deploymentSteps) {
+			if (!DeployStep(step, stepNumber, deploymentSteps.Count)) {
+				logger.WriteError($"Deployment failed at step: {step.Name}");
 				return false;
 			}
+
+			stepNumber++;
 		}
 
-		private bool GenerateInfrastructureFiles(string infrastructurePath)
-		{
-			_logger.WriteInfo("[2/5] Generating infrastructure files...");
-			
-			try
-			{
-				string location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-				string sourcePath = Path.Join(location, "tpl", "k8", "infrastructure");
-				
-				if (!_fileSystem.ExistsDirectory(sourcePath))
-				{
-					_logger.WriteError($"Template files not found at: {sourcePath}");
-					return false;
-				}
+		logger.WriteLine();
+		logger.WriteInfo("✓ All infrastructure components deployed");
+		return true;
+	}
 
-				var options = new CreateInfrastructureOptions {
-					InfrastructurePath = infrastructurePath,
-					PostgresLimitMemory = "4Gi",
-					PostgresLimitCpu = "2",
-					PostgresRequestMemory = "2Gi",
-					PostgresRequestCpu = "1",
-					MssqlLimitMemory = "4Gi",
-					MssqlLimitCpu = "2",
-					MssqlRequestMemory = "2Gi",
-					MssqlRequestCpu = "1",
-				};
-				var createInfrastructureCommand = new CreateInfrastructureCommand(_fileSystem);
-				createInfrastructureCommand.Execute(options);
+	private bool DeployStep(DeploymentStep step, int currentStep, int totalSteps) {
+		logger.WriteInfo($"  [{currentStep}/{totalSteps}] Deploying {step.Name}...");
 
-				_logger.WriteInfo($"✓ Infrastructure files generated at: {infrastructurePath}");
-				return true;
-			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"Failed to generate infrastructure files: {ex.Message}");
-				return false;
-			}
-		}
-
-		private bool DeployInfrastructure(string infrastructurePath)
-		{
-			_logger.WriteInfo("[3/5] Deploying infrastructure to Kubernetes...");
-			_logger.WriteLine();
-
-			// Before deploying infrastructure, ensure NO orphaned PV exist from previous deployments
-			// This is critical for PVC binding to work properly
-			_logger.WriteInfo("Pre-deployment cleanup: Removing any orphaned PersistentVolumes...");
-			CleanupOrphanedPersistentVolumes();
-			_logger.WriteLine();
-
-			// Define deployment order - order matters for dependencies
-			var deploymentSteps = new List<DeploymentStep>
-			{
-				// Step 1: Create namespace first (required by all other resources)
-				new("Namespace", Path.Join(infrastructurePath, "clio-namespace.yaml")),
-				
-				// Step 2: Create storage class (required by PersistentVolumes)
-				new("Storage Class", Path.Join(infrastructurePath, "clio-storage-class.yaml")),
-				
-				// Step 3: Deploy Redis - workload contains ConfigMap, then Services
-				new("Redis Workload", Path.Join(infrastructurePath, "redis", "redis-workload.yaml")),
-				new("Redis Services", Path.Join(infrastructurePath, "redis", "redis-services.yaml")),
-				
-				// Step 4: Deploy PostgreSQL - secrets, volumes (ConfigMap), services, then StatefulSet
-				new("PostgreSQL Secrets", Path.Join(infrastructurePath, "postgres", "postgres-secrets.yaml")),
-				new("PostgreSQL Volumes", Path.Join(infrastructurePath, "postgres", "postgres-volumes.yaml")),
-				new("PostgreSQL Services", Path.Join(infrastructurePath, "postgres", "postgres-services.yaml")),
-				new("PostgreSQL StatefulSet", Path.Join(infrastructurePath, "postgres", "postgres-stateful-set.yaml")),
-				
-				// Step 5: Deploy pgAdmin - secrets, volumes (PVC + ConfigMap), services, then workload
-				new("pgAdmin Secrets", Path.Join(infrastructurePath, "pgadmin", "pgadmin-secrets.yaml")),
-				new("pgAdmin Volumes", Path.Join(infrastructurePath, "pgadmin", "pgadmin-volumes.yaml")),
-				new("pgAdmin Services", Path.Join(infrastructurePath, "pgadmin", "pgadmin-services.yaml")),
-				new("pgAdmin Workload", Path.Join(infrastructurePath, "pgadmin", "pgadmin-workload.yaml"))
-			};
-
-			int stepNumber = 1;
-			foreach (var step in deploymentSteps)
-			{
-				if (!DeployStep(step, stepNumber, deploymentSteps.Count))
-				{
-					_logger.WriteError($"Deployment failed at step: {step.Name}");
-					return false;
-				}
-				stepNumber++;
-			}
-
-			_logger.WriteLine();
-			_logger.WriteInfo("✓ All infrastructure components deployed");
+		if (!fileSystem.ExistsFile(step.Path) && !fileSystem.ExistsDirectory(step.Path)) {
+			logger.WriteWarning($"  ⚠ Skipping {step.Name} - path not found: {step.Path}");
 			return true;
 		}
 
-		private bool DeployStep(DeploymentStep step, int currentStep, int totalSteps)
-		{
-			_logger.WriteInfo($"  [{currentStep}/{totalSteps}] Deploying {step.Name}...");
-
-			if (!_fileSystem.ExistsFile(step.Path) && !_fileSystem.ExistsDirectory(step.Path))
-			{
-				_logger.WriteWarning($"  ⚠ Skipping {step.Name} - path not found: {step.Path}");
-				return true;
-			}
-
-			try
-			{
-				string command = $"apply -f \"{step.Path}\"";
-				string result = _processExecutor.Execute("kubectl", command, 
-					waitForExit: true, showOutput: true);
-				
-				_logger.WriteInfo($"  ✓ {step.Name} deployed successfully");
-				return true;
-			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"  ✗ Failed to deploy {step.Name}: {ex.Message}");
-				return false;
-			}
+		try {
+			string command = $"apply -f \"{step.Path}\"";
+			processExecutor.Execute("kubectl", command, waitForExit: true, showOutput: true);
+			logger.WriteInfo($"  ✓ {step.Name} deployed successfully");
+			return true;
 		}
-
-		private bool VerifyConnections()
-		{
-			_logger.WriteLine();
-			_logger.WriteInfo("[4/5] Verifying service connections...");
-			_logger.WriteInfo("Waiting for services to start (this may take a minute)...");
-			
-			// Wait for pods to be ready
-			System.Threading.Thread.Sleep(5000); // Initial wait
-
-			bool postgresOk = VerifyPostgresConnection();
-			bool redisOk = VerifyRedisConnection();
-
-			_logger.WriteLine();
-			if (postgresOk && redisOk)
-			{
-				_logger.WriteInfo("✓ All service connections verified");
-				return true;
-			}
-			else
-			{
-				_logger.WriteError("✗ Some service connections failed");
-				return false;
-			}
-		}
-
-		private bool VerifyPostgresConnection()
-		{
-			_logger.WriteInfo("  Testing PostgreSQL connection...");
-			
-			const int maxAttempts = 40;
-			const int delaySeconds = 3;
-
-			for (int attempt = 1; attempt <= maxAttempts; attempt++)
-			{
-				   try
-				   {
-					   k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
-					   // Use silent postgres instance to avoid error logging during connection attempts
-					   Postgres postgres = _dbClientFactory.CreatePostgresSilent(
-						   connectionParams.DbPort, 
-						   connectionParams.DbUsername, 
-						   connectionParams.DbPassword);
-
-					   // Try to check if template exists - this will verify connection works
-					   bool exists = postgres.CheckTemplateExists("template0");
-					   if (exists)
-					   {
-						   _logger.WriteInfo($"  ✓ PostgreSQL connection verified (attempt {attempt}/{maxAttempts})");
-						   return true;
-					   }
-				   }
-				   catch (Exception)
-				   {
-					   // Silently catch exceptions during connection attempts
-					   if (attempt == maxAttempts)
-					   {
-						   _logger.WriteError($"  ✗ PostgreSQL connection failed after {maxAttempts} attempts");
-						   _logger.WriteError($"    Please check that PostgreSQL pod is running:");
-						   _logger.WriteError($"    kubectl get pods -n clio-infrastructure");
-						   return false;
-					   }
-					   // Only show a friendly progress indicator, not error spam
-					   if (attempt == 1)
-					   {
-						   _logger.WriteInfo($"  ⏳ Waiting for PostgreSQL to become available...");
-					   }
-					   else if (attempt % 5 == 0)
-					   {
-						   _logger.WriteInfo($"  ⏳ Still waiting for PostgreSQL... (attempt {attempt}/{maxAttempts})");
-					   }
-					   Thread.Sleep(delaySeconds * 1000);
-				   }
-			}
-
+		catch (Exception ex) {
+			logger.WriteError($"  ✗ Failed to deploy {step.Name}: {ex.Message}");
 			return false;
-		}
-
-		private bool VerifyRedisConnection()
-		{
-			_logger.WriteInfo("  Testing Redis connection...");
-			
-			const int maxAttempts = 10;
-			const int delaySeconds = 3;
-
-			for (int attempt = 1; attempt <= maxAttempts; attempt++)
-			{
-				   try
-				   {
-					   k8Commands.ConnectionStringParams connectionParams = _k8Commands.GetPostgresConnectionString();
-               
-					   ConfigurationOptions configurationOptions = new ConfigurationOptions()
-					   {
-						   SyncTimeout = 5000,
-						   ConnectTimeout = 5000,
-						   EndPoints = { { BindingsModule.k8sDns, connectionParams.RedisPort } },
-						   AbortOnConnectFail = false
-					   };
-
-					   // Suppress console output during connection attempts
-					   var originalConsoleOut = Console.Out;
-					   var originalConsoleError = Console.Error;
-					   try
-					   {
-						   // Redirect console output to null during connection attempts
-						   Console.SetOut(System.IO.TextWriter.Null);
-						   Console.SetError(System.IO.TextWriter.Null);
-						   
-						   using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-						   IServer server = redis.GetServer(BindingsModule.k8sDns, connectionParams.RedisPort);
-						   
-						   // Simple ping test
-						   int dbCount = server.DatabaseCount;
-						   if (dbCount >= 0)
-						   {
-							   // Restore console output before logging success
-							   Console.SetOut(originalConsoleOut);
-							   Console.SetError(originalConsoleError);
-							   _logger.WriteInfo($"  ✓ Redis connection verified (attempt {attempt}/{maxAttempts})");
-							   return true;
-						   }
-					   }
-					   finally
-					   {
-						   // Always restore console output
-						   Console.SetOut(originalConsoleOut);
-						   Console.SetError(originalConsoleError);
-					   }
-				   }
-				   catch (Exception)
-				   {
-					   // Silently catch exceptions during connection attempts
-					   if (attempt == maxAttempts)
-					   {
-						   _logger.WriteError($"  ✗ Redis connection failed after {maxAttempts} attempts");
-						   _logger.WriteError($"    Please check that Redis pod is running:");
-						   _logger.WriteError($"    kubectl get pods -n clio-infrastructure");
-						   return false;
-					   }
-					   // Only show a friendly progress indicator, not error spam
-					   if (attempt == 1)
-					   {
-						   _logger.WriteInfo($"  ⏳ Waiting for Redis to become available...");
-					   }
-					   else if (attempt % 3 == 0)
-					   {
-						   _logger.WriteInfo($"  ⏳ Still waiting for Redis... (attempt {attempt}/{maxAttempts})");
-					   }
-					   Thread.Sleep(delaySeconds * 1000);
-				   }
-			}
-
-			return false;
-		}
-
-		private class DeploymentStep
-		{
-			public string Name { get; }
-			public string Path { get; }
-
-			public DeploymentStep(string name, string path)
-			{
-				Name = name;
-				Path = path;
-			}
 		}
 	}
 
-	[Verb("delete-infrastructure", Aliases = new[] { "di-delete", "remove-infrastructure" },
-		HelpText = "Delete Kubernetes infrastructure for Creatio (removes namespace and all resources)")]
-	public class DeleteInfrastructureOptions
-	{
-		[Option("force", Required = false, Default = false,
-			HelpText = "Skip confirmation and delete immediately")]
-		public bool Force { get; set; }
+	private bool GenerateInfrastructureFiles(string infrastructurePath) {
+		logger.WriteInfo("[2/5] Generating infrastructure files...");
+
+		try {
+			string location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+			string sourcePath = Path.Join(location, "tpl", "k8", "infrastructure");
+
+			if (!fileSystem.ExistsDirectory(sourcePath)) {
+				logger.WriteError($"Template files not found at: {sourcePath}");
+				return false;
+			}
+
+			CreateInfrastructureOptions options = new() {
+				InfrastructurePath = infrastructurePath, PostgresLimitMemory = "4Gi", PostgresLimitCpu = "2",
+				PostgresRequestMemory = "2Gi", PostgresRequestCpu = "1", MssqlLimitMemory = "4Gi", MssqlLimitCpu = "2",
+				MssqlRequestMemory = "2Gi", MssqlRequestCpu = "1"
+			};
+			CreateInfrastructureCommand createInfrastructureCommand = new(fileSystem);
+			createInfrastructureCommand.Execute(options);
+
+			logger.WriteInfo($"✓ Infrastructure files generated at: {infrastructurePath}");
+			return true;
+		}
+		catch (Exception ex) {
+			logger.WriteError($"Failed to generate infrastructure files: {ex.Message}");
+			return false;
+		}
 	}
 
-	public class DeleteInfrastructureCommand : Command<DeleteInfrastructureOptions>
-	{
-		private readonly ILogger _logger;
-		private readonly Ik8Commands _k8Commands;
+	private bool VerifyConnections() {
+		logger.WriteLine();
+		logger.WriteInfo("[4/5] Verifying service connections...");
+		logger.WriteInfo("Waiting for services to start (this may take a minute)...");
 
-		public DeleteInfrastructureCommand(
-			ILogger logger,
-			Ik8Commands k8Commands)
-		{
-			_logger = logger;
-			_k8Commands = k8Commands;
+		// Wait for pods to be ready
+		Thread.Sleep(PodDelay); // Initial wait
+
+		bool postgresOk = VerifyPostgresConnection();
+		bool redisOk = VerifyRedisConnection();
+
+		logger.WriteLine();
+		if (postgresOk && redisOk) {
+			logger.WriteInfo("✓ All service connections verified");
+			return true;
 		}
 
-		public override int Execute(DeleteInfrastructureOptions options)
-		{
-			try
-			{
-				_logger.WriteInfo("========================================");
-				_logger.WriteInfo("  Delete Kubernetes Infrastructure");
-				_logger.WriteInfo("========================================");
-				_logger.WriteLine();
+		logger.WriteError("✗ Some service connections failed");
+		return false;
+	}
 
-				const string namespaceName = "clio-infrastructure";
+	private bool VerifyPostgresConnection() {
+		logger.WriteInfo("  Testing Postgres connection...");
 
-				// Check if namespace exists
-				if (!_k8Commands.NamespaceExists(namespaceName))
-				{
-					_logger.WriteInfo($"Namespace '{namespaceName}' does not exist");
-					_logger.WriteInfo("Nothing to delete");
-					return 0;
+		int maxAttempts = VerifyPostgresConnectionMaxRetryAttempts;
+		int delaySeconds = VerifyPostgresConnectionDelaySeconds;
+
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				k8Commands.ConnectionStringParams connectionParams = k8Commands.GetPostgresConnectionString();
+
+				// Use a silent postgres instance to avoid error logging during connection attempts
+				Postgres postgres = dbClientFactory.CreatePostgresSilent(connectionParams.DbPort,
+					connectionParams.DbUsername, connectionParams.DbPassword);
+
+				// Try to check if a template exists - this will verify the connection works
+				bool exists = postgres.CheckTemplateExists("template0");
+				if (exists) {
+					logger.WriteInfo($"  ✓ Postgres SQL connection verified (attempt {attempt}/{maxAttempts})");
+					return true;
 				}
-
-				_logger.WriteWarning($"⚠ This will delete the '{namespaceName}' namespace and all its contents:");
-				_logger.WriteWarning("  - All pods and deployments");
-				_logger.WriteWarning("  - All services and volumes");
-				_logger.WriteWarning("  - All persistent volume claims");
-				_logger.WriteWarning("  - All configuration and secrets");
-				_logger.WriteLine();
-
-				// Ask for confirmation unless --force is used
-				if (!options.Force)
-				{
-					_logger.WriteInfo("Are you sure you want to delete the infrastructure? (y/n)");
-					string answer = Console.ReadLine();
-
-					if (string.IsNullOrWhiteSpace(answer) || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase))
-					{
-						_logger.WriteInfo("Infrastructure deletion cancelled");
-						return 0;
-					}
-				}
-				else
-				{
-					_logger.WriteInfo("Deleting infrastructure (--force flag)...");
-				}
-
-				_logger.WriteLine();
-				_logger.WriteInfo("Deleting namespace and all resources...");
-
-				if (!DeleteInfrastructureNamespace(namespaceName))
-				{
-					return 1;
-				}
-
-				_logger.WriteLine();
-				_logger.WriteInfo("========================================");
-				_logger.WriteInfo("  Infrastructure deleted successfully!");
-				_logger.WriteInfo("========================================");
-
-				return 0;
 			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"Deletion failed: {ex.Message}");
-				_logger.WriteError(ex.StackTrace);
-				return 1;
-			}
-		}
-
-		private bool DeleteInfrastructureNamespace(string namespaceName)
-		{
-			try
-			{
-				_logger.WriteInfo("Step 1: Cleaning up released PersistentVolumes and deleting namespace...");
-
-				var result = _k8Commands.CleanupAndDeleteNamespace(namespaceName, "clio-infrastructure");
-
-				if (result.DeletedPersistentVolumes.Count > 0)
-				{
-					_logger.WriteInfo($"  Found {result.DeletedPersistentVolumes.Count} released PersistentVolume(s)");
-					foreach (var pvName in result.DeletedPersistentVolumes)
-					{
-						_logger.WriteInfo($"  ✓ PV '{pvName}' deleted");
-					}
-				}
-				else
-				{
-					_logger.WriteInfo("  No released PersistentVolumes found");
-				}
-
-				if (!result.Success)
-				{
-					_logger.WriteError(result.Message);
+			catch (Exception) {
+				// Silently catch exceptions during connection attempts
+				if (attempt == maxAttempts) {
+					logger.WriteError($"  ✗ Postgres SQL connection failed after {maxAttempts} attempts");
+					logger.WriteError("    Please check that Postgres SQL pod is running:");
+					logger.WriteError("    kubectl get pods -n clio-infrastructure");
 					return false;
 				}
 
-				if (!result.NamespaceFullyDeleted)
-				{
-					_logger.WriteWarning($"⚠ {result.Message}");
-					_logger.WriteInfo("You can check status with: kubectl get ns clio-infrastructure");
-					return true;
+				// Only show a friendly progress indicator, not error spam
+				if (attempt == 1) {
+					logger.WriteInfo("  ⏳ Waiting for Postgres SQL to become available...");
+				}
+				else if (attempt % 5 == 0) {
+					logger.WriteInfo($"  ⏳ Still waiting for Postgres SQL... (attempt {attempt}/{maxAttempts})");
 				}
 
-				_logger.WriteInfo($"✓ {result.Message}");
-				return true;
-			}
-			catch (Exception ex)
-			{
-				_logger.WriteError($"Error deleting namespace: {ex.Message}");
-				return false;
+				Thread.Sleep(delaySeconds * 1_000);
 			}
 		}
+
+		return false;
 	}
+
+	private bool VerifyRedisConnection() {
+		logger.WriteInfo("  Testing Redis connection...");
+
+		int maxAttempts = VerifyRedisConnectionMaxRetryAttempts;
+		int delaySeconds = VerifyRedisConnectionDelaySeconds;
+		int connectionTimeout = VerifyRedisConnectionConnectionTimeout;
+		int syncTimeout = VerifyRedisConnectionSyncTimeout;
+
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				k8Commands.ConnectionStringParams connectionParams = k8Commands.GetPostgresConnectionString();
+
+				ConfigurationOptions configurationOptions = new() {
+					SyncTimeout = syncTimeout,
+					ConnectTimeout = connectionTimeout,
+					EndPoints = {
+						{ BindingsModule.k8sDns, connectionParams.RedisPort }
+					},
+					AbortOnConnectFail = false
+				};
+
+				// Suppress console output during connection attempts
+				TextWriter originalConsoleOut = Console.Out;
+				TextWriter originalConsoleError = Console.Error;
+				try {
+					// Redirect console output to null during connection attempts
+					Console.SetOut(TextWriter.Null);
+					Console.SetError(TextWriter.Null);
+
+					using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
+					IServer server = redis.GetServer(BindingsModule.k8sDns, connectionParams.RedisPort);
+
+					// Simple ping test
+					if (server.DatabaseCount >= 0) {
+						// Restore console output before logging success
+						Console.SetOut(originalConsoleOut);
+						Console.SetError(originalConsoleError);
+						logger.WriteInfo($"  ✓ Redis connection verified (attempt {attempt}/{maxAttempts})");
+						return true;
+					}
+				}
+				finally {
+					// Always restore console output
+					Console.SetOut(originalConsoleOut);
+					Console.SetError(originalConsoleError);
+				}
+			}
+			catch (Exception) {
+				// Silently catch exceptions during connection attempts
+				if (attempt == maxAttempts) {
+					logger.WriteError($"  ✗ Redis connection failed after {maxAttempts} attempts");
+					logger.WriteError("    Please check that Redis pod is running:");
+					logger.WriteError("    kubectl get pods -n clio-infrastructure");
+					return false;
+				}
+
+				// Only show a friendly progress indicator, not error spam
+				if (attempt == 1) {
+					logger.WriteInfo("  ⏳ Waiting for Redis to become available...");
+				}
+				else if (attempt % 3 == 0) {
+					logger.WriteInfo($"  ⏳ Still waiting for Redis... (attempt {attempt}/{maxAttempts})");
+				}
+
+				Thread.Sleep(delaySeconds * 1_000);
+			}
+		}
+
+		return false;
+	}
+
+	#endregion
+
+	#region Methods: Public
+
+	public override int Execute(DeployInfrastructureOptions options) {
+		try {
+			logger.WriteInfo("========================================");
+			logger.WriteInfo("  Deploy Kubernetes Infrastructure");
+			logger.WriteInfo("========================================");
+			logger.WriteLine();
+
+			// Step 1: Check kubectl
+			if (!CheckKubectlInstalled()) {
+				logger.WriteError("kubectl is not installed or not in PATH");
+				logger.WriteInfo("Please install kubectl:");
+				logger.WriteInfo("  macOS:   brew install kubectl");
+				logger.WriteInfo("  Windows: choco install kubernetes-cli");
+				logger.WriteInfo("  Linux:   https://kubernetes.io/docs/tasks/tools/");
+				return 1;
+			}
+
+			// Step 1.5: Check and handle existing namespace
+			const string namespaceName = "clio-infrastructure";
+			if (!CheckAndHandleExistingNamespace(namespaceName)) {
+				logger.WriteInfo("Infrastructure deployment cancelled by user");
+				return 1;
+			}
+
+			// Step 2: Generate infrastructure files
+			string infrastructurePath = infrastructurePathProvider.GetInfrastructurePath(options.InfrastructurePath);
+			if (!GenerateInfrastructureFiles(infrastructurePath)) {
+				return 1;
+			}
+
+			// Step 3: Deploy infrastructure in order
+			if (!DeployInfrastructure(infrastructurePath)) {
+				return 1;
+			}
+
+			// Step 4: Verify connections (unless skipped)
+			if (!options.SkipVerification) {
+				if (!VerifyConnections()) {
+					logger.WriteWarning("Connection verification failed, but infrastructure may still be starting");
+					logger.WriteInfo("You can manually verify with: kubectl get pods -n clio-infrastructure");
+					return 1;
+				}
+			}
+			else {
+				logger.WriteInfo("Skipping connection verification (--no-verify)");
+			}
+
+			logger.WriteLine();
+			logger.WriteInfo("========================================");
+			logger.WriteInfo("  Infrastructure deployed successfully!");
+			logger.WriteInfo("========================================");
+
+			return 0;
+		}
+		catch (Exception ex) {
+			logger.WriteError($"Deployment failed: {ex.Message}");
+			logger.WriteError(ex.StackTrace);
+			return 1;
+		}
+	}
+
+	#endregion
 }
+
