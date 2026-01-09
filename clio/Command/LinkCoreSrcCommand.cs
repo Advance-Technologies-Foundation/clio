@@ -5,11 +5,13 @@ using System.Linq;
 using System.Text.Json;
 using System.Xml;
 using Clio.Common;
+using Clio.Common.ScenarioHandlers;
 using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
 using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;
+using MediatR;
 
 namespace Clio.Command;
 
@@ -197,12 +199,6 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			return;
 		}
 
-
-		foreach (var dir in directories)
-		{
-			Console.WriteLine($"\n═════════════════════════════════════════════════════════════════════════════════════\nChecking directory: {dir}");
-		}
-
 		// Find directories containing each file
 		var fileDirsMap = new Dictionary<string, List<string>>();
 		foreach (var fileName in fileNames)
@@ -295,6 +291,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IValidator<LinkCoreSrcOptions> _validator;
 	private readonly ISystemServiceManager _systemServiceManager;
+	private readonly IMediator _mediator;
 
 	#endregion
 
@@ -305,13 +302,15 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		IFileSystem fileSystem,
 		ISettingsRepository settingsRepository,
 		IValidator<LinkCoreSrcOptions> validator,
-		ISystemServiceManager systemServiceManager)
+		ISystemServiceManager systemServiceManager,
+		IMediator mediator)
 	{
 		_logger = logger;
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_validator = validator;
 		_systemServiceManager = systemServiceManager;
+		_mediator = mediator;
 	}
 
 	#endregion
@@ -360,7 +359,15 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				EnableLaxModeInAppConfig(options);
 			}
 
-			UpdateEnvironmentPathAndRestartService(options, env);
+			UpdateEnvironmentPath(options, env);
+
+			if (options.Mode == CreatioMode.NetFramework)
+			{
+				UpdateIISPhysicalPath(options, env);
+			}
+
+			// Handle service restart if running
+			HandleServiceRestartAndReregistration(options.Environment);
 
 			_logger.WriteInfo("✓ Core linking completed successfully");
 			return 0;
@@ -370,6 +377,38 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			_logger.WriteError($"Error during core linking: {ex.Message}");
 			return 1;
 		}
+	}
+	private void UpdateIISPhysicalPath(LinkCoreSrcOptions options, EnvironmentSettings env)
+	{
+		_logger.WriteInfo("\n[3/4] Updating IIS's physical path...");
+		// Resolve core directory (must be unique)
+		string targetFolder = GetTargetFolderName(options.Mode);
+		string coreWebHostPath = options.Mode == CreatioMode.NetCore
+			? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "appsettings.json", "Terrasoft.WebHost.dll.config")
+			: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
+		(int code, string message) = _mediator.Send(new UpdateIISSitePhysicalPathRequest()
+			{
+				Arguments = new Dictionary<string, string>()
+				{
+					{"siteName", options.Environment},
+					{"physicalPath", coreWebHostPath}
+				}
+			}).Result.Value switch
+			{
+				(HandlerError error) => (1, error.ErrorDescription),
+				(UpdateIISSitePhysicalPathResponse { Status: BaseHandlerResponse.CompletionStatus.Success } result) 
+					=> (0, result.Description),
+				(UpdateIISSitePhysicalPathResponse { Status: BaseHandlerResponse.CompletionStatus.Failure } result) 
+					=> (1, result.Description),
+				_ => (1, "Unknown error occured")
+			};
+		if(code != 0)
+		{
+			_logger.WriteError($"Failed to update IIS site physical path: {message}");
+			throw new Exception($"Failed to update IIS site physical path: {message}");
+		}
+		
+		_logger.WriteInfo($"Finished updating IIS physical path: {message}");
 	}
 
 	#endregion
@@ -395,7 +434,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 		else
 		{
-			Console.WriteLine("  2. Update environment configuration with core path and restart service");
+			Console.WriteLine("  2. Update environment configuration with core path");
+			Console.WriteLine("  3. Update IIS site physical path to core directory and restart service");
 		}
 		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════\n");
 
@@ -685,9 +725,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 	}
 
-	private void UpdateEnvironmentPathAndRestartService(LinkCoreSrcOptions options, EnvironmentSettings env)
+	private void UpdateEnvironmentPath(LinkCoreSrcOptions options, EnvironmentSettings env)
 	{
-		_logger.WriteInfo("\n[4/4] Updating environment configuration and restarting service...");
+		_logger.WriteInfo("\n[4/4] Updating environment configuration");
 
 		try
 		{
@@ -701,11 +741,6 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			env.EnvironmentPath = coreWebHostPath;
 			_settingsRepository.ConfigureEnvironment(options.Environment, env);
 			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {coreWebHostPath}");
-
-			// Handle service restart if running
-			HandleServiceRestartAndReregistration(options.Environment);
-
-			_logger.WriteInfo("  ✓ Configuration and service update completed");
 		}
 		catch (Exception ex)
 		{
@@ -718,6 +753,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	{
 		try
 		{
+			_logger.WriteInfo("\n[4/4] Restarting service...");
 			// Determine service name (standard pattern: creatio-<environment-name>)
 			string serviceName = $"creatio-{environmentName}";
 
@@ -771,6 +807,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			{
 				_logger.WriteInfo($"  ! Service '{serviceName}' is not currently running");
 			}
+			
+			_logger.WriteInfo("  ✓ Configuration and service update completed");
 		}
 		catch (Exception ex)
 		{
