@@ -74,6 +74,17 @@ OPTIONS
         Valid range: 0-15 (depending on Redis configuration)
         Note: Use this when the auto-detection fails or you want to use a specific database
 
+    --db-server-name NAME
+        Name of database server configuration from appsettings.json
+        When specified, automatically restores database from zip file to local server
+        If not specified, restores database to Kubernetes cluster (default behavior)
+        Requires database server configuration in appsettings.json (see DATABASE RESTORATION)
+
+    --drop-if-exists
+        Automatically drop existing database if present without prompting
+        Only applicable when using --db-server-name for local database restore
+        Default: false (will prompt user)
+
     --silent
         Run in silent mode without interactive prompts
         Default: false
@@ -119,7 +130,31 @@ EXAMPLES
         clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
             --redis-db 3 --ZipFile "/path/to/creatio-app.zip"
 
+    11. Deploy to local database server (automatic database restore):
+        # Configure database server in appsettings.json first (see DATABASE RESTORATION)
+        # Single command deploys everything: extract → restore DB → deploy app → configure
+        clio deploy-creatio -e "LocalDev" --db mssql --SitePort 40001 \\
+            --db-server-name my-local-mssql \\
+            --ZipFile "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip"
+
+    12. Deploy PostgreSQL to local server with automatic DB drop:
+        clio deploy-creatio -e "QA" --db pg --SitePort 8080 \\
+            --db-server-name my-local-postgres --drop-if-exists \\
+            --ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
+
+    13. Silent deployment to local database without browser launch:
+        clio deploy-creatio -e "AutoDeploy" --db mssql --SitePort 8443 \\
+            --db-server-name my-local-mssql --drop-if-exists \\
+            --auto-run=false --silent \\
+            --ZipFile "C:\Creatio\app.zip"
+
 BEHAVIOR
+
+    Database Restoration (Automatic):
+    - WITHOUT --db-server-name: Restores database to Kubernetes cluster
+    - WITH --db-server-name: Restores database to local server from appsettings.json
+    - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
+    - Connection strings are automatically updated to point to target database
 
     Windows (Default - IIS):
     - Creates IIS Application Pool
@@ -150,6 +185,62 @@ DATABASE SETUP
     - Database server is accessible at configured hostname/port
     - Database credentials are configured in appsettings.json
     - Appropriate database exists or will be created during deployment
+
+DATABASE RESTORATION
+    The deploy-creatio command automatically restores the database from the zip file
+    during deployment. The restoration target depends on the --db-server-name flag:
+    
+    AUTOMATIC DATABASE RESTORATION:
+    - If --db-server-name is NOT specified (default):
+      Database is restored to Kubernetes cluster
+    
+    - If --db-server-name IS specified:
+      Database is restored to local database server configured in appsettings.json
+    
+    LOCAL DATABASE SERVER CONFIGURATION:
+    To restore to a local database server, add a 'db' section to appsettings.json:
+    
+    {
+      "db": {
+        "my-local-mssql": {
+          "dbType": "mssql",
+          "hostname": "localhost",
+          "port": 1433,
+          "username": "sa",
+          "password": "YourPassword"
+        },
+        "my-local-postgres": {
+          "dbType": "postgres",
+          "hostname": "localhost",
+          "port": 5432,
+          "username": "postgres",
+          "password": "postgres"
+        }
+      }
+    }
+    
+    Configuration fields:
+    - dbType (required): Database type - 'mssql' or 'postgres'
+    - hostname (required): Database server hostname or IP address
+    - port (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL)
+    - username (required): Database username
+    - password (required): Database password
+    - pgToolsPath (optional, PostgreSQL only): Path to PostgreSQL client tools 
+                                                directory if not in PATH
+    
+    WORKFLOW:
+    1. Configure database server in appsettings.json (if using local database)
+    2. Run deploy-creatio with --db-server-name to automatically restore and deploy:
+       clio deploy-creatio -e "LocalDev" --db mssql --SitePort 40001 \\
+           --db-server-name my-local-mssql --ZipFile "C:\Creatio\app.zip"
+    3. The command will:
+       a. Extract the zip file
+       b. Automatically restore database from db/*.bak or db/*.backup to local server
+       c. Deploy application files
+       d. Update ConnectionStrings to point to the local database
+       e. Launch the application
+    
+    For manual database restore without deployment, use: clio restore-db --help
 
 TROUBLESHOOTING
 
