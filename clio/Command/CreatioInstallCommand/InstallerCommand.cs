@@ -107,6 +107,14 @@ public class PfInstallerOptions : EnvironmentNameOptions
 	[Option("redis-db", Required = false, Default = -1, HelpText = "Redis database number (optional, auto-detect if not specified)")]
 	public int RedisDb { get; set; }
 
+	[Option("db-server-name", Required = false, 
+		HelpText = "Name of database server configuration from appsettings.json for local database restore")]
+	public string DbServerName { get; set; }
+
+	[Option("drop-if-exists", Required = false, Default = false,
+		HelpText = "Automatically drop existing database if present without prompting")]
+	public bool DropIfExists { get; set; }
+
 	#endregion
 
 }

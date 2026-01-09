@@ -11,8 +11,9 @@ public interface IPostgres
 	bool CreateDb(string dbName);
 	bool SetDatabaseAsTemplate(string dbName);
 	bool CheckTemplateExists(string templateName);
+	bool CheckDbExists(string dbName);
 	bool DropDb(string dbName);
-} 
+}
 
 public class Postgres : IPostgres
 {
@@ -22,6 +23,10 @@ public class Postgres : IPostgres
 
 	public Postgres() {
 		_logger = ConsoleLogger.Instance;
+	}
+
+	public Postgres(ILogger logger) {
+		_logger = logger ?? ConsoleLogger.Instance;
 	}
 	
 	public Postgres(int port, string username, string password, ILogger logger = null) {
@@ -33,7 +38,7 @@ public class Postgres : IPostgres
 		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
 	}
 	
-	public bool CreateDbFromTemplate (string templateName, string dbName) {
+	public virtual bool CreateDbFromTemplate (string templateName, string dbName) {
 		_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
 		bool dbExists = CheckDbExists(dbName);
 		_logger.WriteInfo($"Database '{dbName}' exists: {dbExists}");
@@ -73,7 +78,7 @@ public class Postgres : IPostgres
 		}
 	}
 	
-	public bool CreateDb (string dbName) {
+	public virtual bool CreateDb (string dbName) {
 		
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
@@ -96,7 +101,7 @@ public class Postgres : IPostgres
 		}
 	}
 	
-	public bool SetDatabaseAsTemplate( string dbName) {
+	public virtual bool SetDatabaseAsTemplate( string dbName) {
 		try {
 			
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
@@ -119,7 +124,7 @@ public class Postgres : IPostgres
 		}
 	}
 	
-	public bool CheckTemplateExists (string templateName) {
+	public virtual bool CheckTemplateExists (string templateName) {
 		try {
 			string sqlText = @$"
 				SELECT COUNT(datname) 
@@ -147,7 +152,7 @@ public class Postgres : IPostgres
 		}
 	}
 	
-	public bool CheckDbExists (string templateName) {
+	public virtual bool CheckDbExists (string templateName) {
 		try {
 			string sqlText = @$"
 				SELECT COUNT(datname) 
@@ -175,7 +180,7 @@ public class Postgres : IPostgres
 		}
 	}
 	
-	public bool DropDb(string dbName){
+	public virtual bool DropDb(string dbName){
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();

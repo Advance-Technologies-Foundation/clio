@@ -330,11 +330,11 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions> {
 			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
 
 			string appSettingsPath = appSettingsFiles[0];
-		_logger.WriteInfo($"  Processing: {appSettingsPath}");
-		string content = _fileSystem.ReadAllText(appSettingsPath);
+			_logger.WriteInfo($"  Processing: {appSettingsPath}");
+			string content = _fileSystem.ReadAllText(appSettingsPath);
 
-		// Try to parse as JSON first, then as XML
-		string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath);
+			// Try to parse as JSON first, then as XML
+			string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath);
 			_fileSystem.WriteAllTextToFile(appSettingsPath, updatedContent);
 			_logger.WriteInfo($"  ✓ Port {port} configured in appsettings.json");
 		} catch (Exception ex) {

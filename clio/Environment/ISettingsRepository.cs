@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using Clio.Common.db;
 
 namespace Clio.UserEnvironment
 {
@@ -31,5 +32,7 @@ namespace Clio.UserEnvironment
 		string GetIISClioRootPath();
 		string GetCreatioProductsFolder();
 		string GetRemoteArtefactServerPath();
+		LocalDbServerConfiguration GetLocalDbServer(string name);
+		IEnumerable<string> GetLocalDbServerNames();
 	}
 }

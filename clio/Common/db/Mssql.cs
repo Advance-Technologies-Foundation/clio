@@ -17,6 +17,10 @@ public interface IMssql
 
 	void DropDb(string optionsDbName);
 
+	bool TestConnection();
+
+	string GetDataPath();
+
 }
 
 public class Mssql : IMssql
@@ -37,7 +41,7 @@ public class Mssql : IMssql
 	
 	public Mssql(string host, int port, string username, string password) {
 		_builder = new SqlConnectionStringBuilder {
-			DataSource = $"{host},{port}",
+			DataSource = host.Contains("\\") || port == 0 ? host : $"{host},{port}",
 			UserID = username,
 			Password = password,
 			InitialCatalog = "master",
@@ -176,6 +180,22 @@ public class Mssql : IMssql
 			connection.Close();
 		}
 		return new DefaultPaths(dataPath, logPath);
+	}
+
+	public bool TestConnection() {
+		try {
+			using SqlConnection connection = new(_builder.ConnectionString);
+			connection.Open();
+			connection.Close();
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	public string GetDataPath() {
+		DefaultPaths paths = GetInstanceDefaultPaths(true);
+		return paths.dataPath;
 	}
 	
 	record DefaultPaths(string dataPath, string logPath);

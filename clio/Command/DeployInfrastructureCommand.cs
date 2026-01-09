@@ -263,6 +263,19 @@ namespace Clio.Command
 				}
 
 				_fileSystem.CopyDirectory(sourcePath, infrastructurePath, overwrite: true);
+				//Copying files is not enough,
+				// mssql-stateful-set.yaml contains a placeholder for resources, need to replace
+				// {{MSSQL_LIMIT_MEMORY}} with 4Gi
+				// {{MSSQL_LIMIT_MEMORY}} with 2
+				// {{MSSQL_REQUEST_MEMORY}} with 2Gi
+				// {{MSSQL_REQUEST_CPU}} with 1
+				
+				// and postgres-stateful-set.yaml
+				// {{PG_LIMIT_MEMORY}} 4Gi
+				// {{PG_LIMIT_CPU}} 2
+				// {{PG_REQUEST_MEMORY}}
+				// {{PG_REQUEST_CPU}} 1
+				
 				_logger.WriteInfo($"✓ Infrastructure files generated at: {infrastructurePath}");
 				return true;
 			}

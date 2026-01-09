@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Common.db;
 using ConsoleTables;
 using YamlDotNet.Serialization;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -284,6 +285,9 @@ namespace Clio
 		[JsonProperty("dbConnectionStringKeys")]
 		public Dictionary<string, DbServer> DbServers { get; set; }
 
+	[JsonProperty("db")]
+	public Dictionary<string, LocalDbServerConfiguration> LocalDbServers { get; set; }
+
 
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (String.IsNullOrEmpty(ActiveEnvironmentKey)
@@ -557,6 +561,17 @@ namespace Clio
 
 		public string GetRemoteArtefactServerPath() {
 			return _settings.RemoteArtefactServerPath;
+		}
+
+		public LocalDbServerConfiguration GetLocalDbServer(string name) {
+			if (_settings.LocalDbServers == null || !_settings.LocalDbServers.ContainsKey(name)) {
+				return null;
+			}
+			return _settings.LocalDbServers[name];
+		}
+
+		public IEnumerable<string> GetLocalDbServerNames() {
+			return _settings.LocalDbServers?.Keys ?? Enumerable.Empty<string>();
 		}
 
 	}

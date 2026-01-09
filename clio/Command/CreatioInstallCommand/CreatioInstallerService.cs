@@ -67,6 +67,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly ILogger _logger;
 	private readonly DeploymentStrategyFactory _deploymentStrategyFactory;
 	private readonly HealthCheckCommand _healthCheckCommand;
+	private readonly ISettingsRepository _settingsRepository;
+	private readonly IDbClientFactory _dbClientFactory;
+	private readonly IDbConnectionTester _dbConnectionTester;
+	private readonly IBackupFileDetector _backupFileDetector;
+	private readonly IPostgresToolsPathDetector _postgresToolsPathDetector;
 
 	#endregion
 
@@ -82,7 +87,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, ILogger logger, DeploymentStrategyFactory deploymentStrategyFactory,
-		HealthCheckCommand healthCheckCommand) {
+		HealthCheckCommand healthCheckCommand, IDbClientFactory dbClientFactory,
+		IDbConnectionTester dbConnectionTester, IBackupFileDetector backupFileDetector,
+		IPostgresToolsPathDetector postgresToolsPathDetector) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -94,6 +101,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_logger = logger;
 		_deploymentStrategyFactory = deploymentStrategyFactory;
 		_healthCheckCommand = healthCheckCommand;
+		_settingsRepository = settingsRepository;
+		_dbClientFactory = dbClientFactory;
+		_dbConnectionTester = dbConnectionTester;
+		_backupFileDetector = backupFileDetector;
+		_postgresToolsPathDetector = postgresToolsPathDetector;
 	}
 
 	public CreatioInstallerService() {
@@ -354,6 +366,255 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 0;
 	}
 
+	public int RestoreToLocalDb(DirectoryInfo unzippedDirectory, string destDbName, string dbServerName, bool dropIfExists, string zipFilePath = null) {
+		_logger.WriteInfo($"[Restoring database to local server] - Server: {dbServerName}, Database: {destDbName}");
+		
+		// Get local database configuration
+		LocalDbServerConfiguration config = _settingsRepository.GetLocalDbServer(dbServerName);
+		if (config == null) {
+			var availableServers = _settingsRepository.GetLocalDbServerNames().ToList();
+			string availableList = availableServers.Any() 
+				? string.Join(", ", availableServers) 
+				: "(none configured)";
+			_logger.WriteError($"Database server configuration '{dbServerName}' not found in appsettings.json. Available configurations: {availableList}");
+			return 1;
+		}
+
+		// Find backup file
+		FileInfo[] backupFiles = unzippedDirectory.GetFiles("*.backup", SearchOption.AllDirectories)
+			.Concat(unzippedDirectory.GetFiles("*.bak", SearchOption.AllDirectories))
+			.ToArray();
+		
+		if (backupFiles.Length == 0) {
+			_logger.WriteError($"No database backup file found in {unzippedDirectory.FullName}");
+			_logger.WriteInfo("Expected .backup (PostgreSQL) or .bak (MSSQL) file in db/ folder");
+			return 1;
+		}
+
+		string backupFilePath = backupFiles[0].FullName;
+		_logger.WriteInfo($"[Found backup file] - {backupFilePath}");
+
+		// Test connection
+		_logger.WriteInfo($"Testing connection to {config.DbType} server at {config.Hostname}:{config.Port}...");
+		ConnectionTestResult testResult = _dbConnectionTester.TestConnection(config);
+		
+		if (!testResult.Success) {
+			_logger.WriteError($"Connection test failed: {testResult.ErrorMessage}");
+			if (!string.IsNullOrEmpty(testResult.DetailedError)) {
+				_logger.WriteError($"Details: {testResult.DetailedError}");
+			}
+			if (!string.IsNullOrEmpty(testResult.Suggestion)) {
+				_logger.WriteWarning($"Suggestion: {testResult.Suggestion}");
+			}
+			return 1;
+		}
+
+		_logger.WriteInfo("Connection test successful");
+
+		// Detect backup type
+		BackupFileType detectedType = _backupFileDetector.DetectBackupType(backupFilePath);
+		string dbType = config.DbType?.ToLowerInvariant();
+
+		if (detectedType == BackupFileType.Unknown) {
+			_logger.WriteError($"Cannot determine backup file type from {backupFilePath}");
+			return 1;
+		}
+
+		bool isCompatible = (detectedType == BackupFileType.PostgresBackup && (dbType == "postgres" || dbType == "postgresql")) ||
+		                    (detectedType == BackupFileType.MssqlBackup && dbType == "mssql");
+
+		if (!isCompatible) {
+			_logger.WriteError($"Backup file type {detectedType} is not compatible with database type {config.DbType}");
+			return 1;
+		}
+
+		_logger.WriteInfo($"Restoring {detectedType} backup to {config.DbType} server...");
+
+		// Restore based on database type
+		return dbType switch {
+			"mssql" => RestoreMssqlToLocalServer(config, backupFilePath, destDbName, dropIfExists),
+			"postgres" or "postgresql" => RestorePostgresToLocalServer(config, backupFilePath, destDbName, dropIfExists, zipFilePath),
+			_ => HandleUnsupportedDbType(config.DbType)
+		};
+	}
+
+	private int RestoreMssqlToLocalServer(LocalDbServerConfiguration config, string backupPath, string dbName, bool dropIfExists) {
+		try {
+			IMssql mssql = _dbClientFactory.CreateMssql(config.Hostname, config.Port, config.Username, config.Password);
+			
+			if (mssql.CheckDbExists(dbName)) {
+				if (!dropIfExists) {
+					_logger.WriteError($"Database {dbName} already exists. Use --drop-if-exists flag to automatically drop it.");
+					return 1;
+				}
+				_logger.WriteWarning($"Database {dbName} already exists");
+				_logger.WriteWarning("Dropping existing database...");
+				mssql.DropDb(dbName);
+				_logger.WriteInfo($"Dropped existing database {dbName}");
+			}
+
+			string dataPath = mssql.GetDataPath();
+			_logger.WriteInfo($"SQL Server data path: {dataPath}");
+
+			string backupFileName = Path.GetFileName(backupPath);
+			string destinationPath = Path.Combine(dataPath, backupFileName);
+
+			_logger.WriteInfo($"Copying backup file to SQL Server data directory...");
+			_fileSystem.CopyFiles(new[] { backupPath }, dataPath, true);
+			_logger.WriteInfo($"Copied backup file \r\n\tfrom: {backupPath} \r\n\tto  : {destinationPath}");
+
+			_logger.WriteInfo("Starting database restore...");
+			_logger.WriteInfo("This may take several minutes depending on database size. SQL Server will report progress every 5%.");
+			bool success = mssql.CreateDb(dbName, backupFileName);
+			
+			if (success) {
+				_logger.WriteInfo($"Successfully restored database {dbName} from {backupPath}");
+				return 0;
+			} else {
+				_logger.WriteError($"Failed to restore database {dbName}");
+				return 1;
+			}
+		} catch (Exception ex) {
+			_logger.WriteError($"Error restoring MSSQL database: {ex.Message}");
+			return 1;
+		}
+	}
+
+	private int RestorePostgresToLocalServer(LocalDbServerConfiguration config, string backupPath, string dbName, bool dropIfExists, string zipFilePath = null) {
+		string pgRestorePath = _postgresToolsPathDetector.GetPgRestorePath(config.PgToolsPath);
+		
+		if (string.IsNullOrEmpty(pgRestorePath)) {
+			_logger.WriteError("pg_restore not found. Please install PostgreSQL client tools.");
+			_logger.WriteInfo("Download PostgreSQL from: https://www.postgresql.org/download/");
+			return 1;
+		}
+
+		_logger.WriteInfo($"Using pg_restore from: {pgRestorePath}");
+
+		try {
+			Postgres postgres = _dbClientFactory.CreatePostgres(config.Hostname, config.Port, config.Username, config.Password);
+			
+			// Use zip file name if provided, otherwise fall back to backup file name
+			string baseFileName = !string.IsNullOrEmpty(zipFilePath) 
+				? Path.GetFileNameWithoutExtension(zipFilePath) 
+				: Path.GetFileNameWithoutExtension(backupPath);
+			string templateName = "template_" + baseFileName;
+			
+			bool templateExists = postgres.CheckTemplateExists(templateName);
+			if (!templateExists) {
+				_logger.WriteInfo($"Template '{templateName}' does not exist, creating it...");
+				
+				_logger.WriteInfo($"Creating template database {templateName}...");
+				bool templateCreated = postgres.CreateDb(templateName);
+				
+				if (!templateCreated) {
+					_logger.WriteError($"Failed to create template database {templateName}");
+					return 1;
+				}
+
+				_logger.WriteInfo($"Template database {templateName} created successfully");
+				_logger.WriteInfo($"Starting restore from {backupPath}...");
+				if (Program.IsDebugMode) {
+					_logger.WriteInfo("This may take several minutes depending on database size. Detailed progress will be shown below:");
+				} else {
+					_logger.WriteInfo("This may take several minutes depending on database size. Run with --debug flag to see detailed progress.");
+				}
+
+				int exitCode = ExecutePgRestoreCommand(pgRestorePath, config, backupPath, templateName);
+				
+				if (exitCode != 0) {
+					_logger.WriteError($"pg_restore failed with exit code {exitCode}");
+					return 1;
+				}
+				
+				_logger.WriteInfo($"Setting database {templateName} as template...");
+				bool setAsTemplate = postgres.SetDatabaseAsTemplate(templateName);
+				
+				if (!setAsTemplate) {
+					_logger.WriteError($"Failed to set database {templateName} as template");
+					return 1;
+				}
+				
+				_logger.WriteInfo($"Template database {templateName} created successfully");
+			} else {
+				_logger.WriteInfo($"Template '{templateName}' already exists, skipping restore");
+			}
+			
+			if (postgres.CheckDbExists(dbName)) {
+				if (!dropIfExists) {
+					_logger.WriteError($"Database {dbName} already exists. Use --drop-if-exists flag to automatically drop it.");
+					return 1;
+				}
+				_logger.WriteWarning($"Database {dbName} already exists");
+				_logger.WriteWarning("Dropping existing database...");
+				postgres.DropDb(dbName);
+				_logger.WriteInfo($"Dropped existing database {dbName}");
+			}
+			
+			_logger.WriteInfo($"Creating database {dbName} from template {templateName}...");
+			bool dbCreated = postgres.CreateDbFromTemplate(templateName, dbName);
+			
+			if (!dbCreated) {
+				_logger.WriteError($"Failed to create database {dbName} from template");
+				return 1;
+			}
+
+			_logger.WriteInfo($"Successfully created database {dbName} from template {templateName}");
+			return 0;
+		} catch (Exception ex) {
+			_logger.WriteError($"Error restoring PostgreSQL database: {ex.Message}");
+			return 1;
+		}
+	}
+
+	private int ExecutePgRestoreCommand(string pgRestorePath, LocalDbServerConfiguration config, string backupPath, string dbName) {
+		var processInfo = new ProcessStartInfo {
+			FileName = pgRestorePath,
+			Arguments = $"-h {config.Hostname} -p {config.Port} -U {config.Username} -d {dbName} -v \"{backupPath}\" --no-owner --no-privileges",
+			UseShellExecute = false,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			CreateNoWindow = true, 
+			Environment = {
+				["PGPASSWORD"] = config.Password
+			}
+		};
+
+		using Process process = Process.Start(processInfo);
+		
+		if (Program.IsDebugMode) {
+			process.OutputDataReceived += (sender, e) => {
+				if (!string.IsNullOrEmpty(e.Data)) {
+					_logger.WriteDebug(e.Data);
+				}
+			};
+
+			process.ErrorDataReceived += (sender, e) => {
+				if (!string.IsNullOrEmpty(e.Data)) {
+					_logger.WriteDebug(e.Data);
+				}
+			};
+			
+		} else {
+			System.Threading.Tasks.Task.Run(() => {
+				while (!process.HasExited) {
+					_logger.WriteInfo("Restore in progress...");
+					System.Threading.Thread.Sleep(30000);
+				}
+			});
+		}
+		process.BeginOutputReadLine();
+		process.BeginErrorReadLine();
+		process.WaitForExit();
+
+		return process.ExitCode;
+	}
+
+	private int HandleUnsupportedDbType(string dbType) {
+		_logger.WriteError($"Database type '{dbType}' is not supported. Supported types: mssql, postgres");
+		return 1;
+	}
+
 	private Version GetLatestProductVersion(string latestBranchPath, Version latestVersion, string product,
 		CreatioRuntimePlatform platform){
 		string dirPath = Path.Combine(latestBranchPath, latestVersion.ToString(),
@@ -385,59 +646,78 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
 			dbType = InstallerHelper.DatabaseType.Postgres;
 		}
-		k8Commands.ConnectionStringParams csParam = dbType switch {
-			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
-			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
-		};
 
-		// Determine Redis database number
+		string dbConnectionString;
+		string redisConnectionString;
 		int redisDb;
-		if (options.RedisDb >= 0) {
-			// User specified Redis database
-			redisDb = options.RedisDb;
-			_logger.WriteInfo($"[Redis Configuration] - Using user-specified database: {redisDb}");
-		} else {
-			// Auto-detect empty database
-			var (dbNumber, errorMessage) = FindEmptyRedisDb(csParam.RedisPort);
+
+		// Check if using local database server
+		if (!string.IsNullOrEmpty(options.DbServerName)) {
+			_logger.WriteInfo($"[Connection String Mode] - Local database server: {options.DbServerName}");
 			
-			if (dbNumber == -1) {
-				// Error finding empty database
-				return ExitWithErrorMessage(errorMessage);
+			// Get local database configuration
+			LocalDbServerConfiguration dbConfig = _settingsRepository.GetLocalDbServer(options.DbServerName);
+			if (dbConfig == null) {
+				return ExitWithErrorMessage($"Database server configuration '{options.DbServerName}' not found in appsettings.json");
 			}
-			
-			redisDb = dbNumber;
-			_logger.WriteInfo($"[Redis Configuration] - Auto-detected empty database: {redisDb}");
+
+			// Build connection string based on database type
+			dbConnectionString = dbConfig.DbType?.ToLowerInvariant() switch {
+				"postgres" or "postgresql" => $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
+				"mssql" => $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
+				_ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
+			};
+
+			// For local deployment, use localhost Redis or skip if not available
+			redisDb = options.RedisDb >= 0 ? options.RedisDb : 0;
+			redisConnectionString = $"host=localhost;db={redisDb};port=6379";
+			_logger.WriteInfo($"[Redis Configuration] - Using local Redis: database {redisDb}");
+		} else {
+			_logger.WriteInfo($"[Connection String Mode] - Kubernetes cluster");
+			k8Commands.ConnectionStringParams csParam = dbType switch {
+				InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
+				InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
+			};
+
+			// Determine Redis database number
+			if (options.RedisDb >= 0) {
+				// User specified Redis database
+				redisDb = options.RedisDb;
+				_logger.WriteInfo($"[Redis Configuration] - Using user-specified database: {redisDb}");
+			} else {
+				// Auto-detect empty database
+				var (dbNumber, errorMessage) = FindEmptyRedisDb(csParam.RedisPort);
+				
+				if (dbNumber == -1) {
+					// Error finding empty database
+					return ExitWithErrorMessage(errorMessage);
+				}
+				
+				redisDb = dbNumber;
+				_logger.WriteInfo($"[Redis Configuration] - Auto-detected empty database: {redisDb}");
+			}
+
+			// Build Kubernetes connection strings
+			dbConnectionString = dbType switch {
+				InstallerHelper.DatabaseType.Postgres => $"Server={BindingsModule.k8sDns};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
+				InstallerHelper.DatabaseType.MsSql => $"Data Source={BindingsModule.k8sDns},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+			};
+			redisConnectionString = $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}";
 		}
 
 		// Determine the folder path based on deployment strategy
 		string folderPath = DetermineFolderPath(options);
 		_logger.WriteInfo($"[Connection string] - Target folder path: {folderPath}");
 
-		ConfigureConnectionStringRequest request = dbType switch {
-			InstallerHelper.DatabaseType.Postgres => new ConfigureConnectionStringRequest {
-				Arguments = new Dictionary<string, string> {
-					{"folderPath", folderPath}, {
-						"dbString",
-						$"Server={BindingsModule.k8sDns};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
-					},
-					{"redis", $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}"}, {
-						"isNetFramework",
-						(InstallerHelper.DetectFramework(unzippedDirectory) ==
-							InstallerHelper.FrameworkType.NetFramework).ToString()
-					}
-				}
-			},
-			InstallerHelper.DatabaseType.MsSql => new ConfigureConnectionStringRequest {
-				Arguments = new Dictionary<string, string> {
-					{"folderPath", folderPath}, {
-						"dbString",
-						$"Data Source={BindingsModule.k8sDns},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
-					},
-					{"redis", $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}"}, {
-						"isNetFramework",
-						(InstallerHelper.DetectFramework(unzippedDirectory) ==
-							InstallerHelper.FrameworkType.NetFramework).ToString()
-					}
+		ConfigureConnectionStringRequest request = new ConfigureConnectionStringRequest {
+			Arguments = new Dictionary<string, string> {
+				{"folderPath", folderPath},
+				{"dbString", dbConnectionString},
+				{"redis", redisConnectionString},
+				{
+					"isNetFramework",
+					(InstallerHelper.DetectFramework(unzippedDirectory) ==
+						InstallerHelper.FrameworkType.NetFramework).ToString()
 				}
 			}
 		};
@@ -706,10 +986,19 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			dbType = InstallerHelper.DatabaseType.Postgres;
 		}
 
-		int dbRestoreResult = dbType switch {
-			InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
-			var _ => DoPgWork(unzippedDirectory, options.SiteName, Path.GetFileNameWithoutExtension(options.ZipFile))
-		};
+		int dbRestoreResult;
+		
+		// Check if user specified a local database server
+		if (!string.IsNullOrEmpty(options.DbServerName)) {
+			_logger.WriteInfo($"[Database Restore Mode] - Local server: {options.DbServerName}");
+			dbRestoreResult = RestoreToLocalDb(unzippedDirectory, options.SiteName, options.DbServerName, options.DropIfExists, options.ZipFile);
+		} else {
+			_logger.WriteInfo($"[Database Restore Mode] - Kubernetes cluster");
+			dbRestoreResult = dbType switch {
+				InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
+				var _ => DoPgWork(unzippedDirectory, options.SiteName, Path.GetFileNameWithoutExtension(options.ZipFile))
+			};
+		}
 
 		int deploySiteResult = dbRestoreResult switch {
 			0 => DeployApplication(deploymentFolderInfo, options),

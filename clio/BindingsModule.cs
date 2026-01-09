@@ -253,6 +253,9 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ApplicationManager>();
 		containerBuilder.RegisterType<RestoreDbCommand>();
 		containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
+		containerBuilder.RegisterType<DbConnectionTester>().As<IDbConnectionTester>();
+		containerBuilder.RegisterType<BackupFileDetector>().As<IBackupFileDetector>();
+		containerBuilder.RegisterType<PostgresToolsPathDetector>().As<IPostgresToolsPathDetector>().SingleInstance();
 		containerBuilder.RegisterType<SetWebServiceUrlCommand>();
 		containerBuilder.RegisterType<ListInstalledAppsCommand>();
 		containerBuilder.RegisterType<GetCreatioInfoCommand>();
