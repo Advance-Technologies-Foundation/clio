@@ -413,7 +413,7 @@ namespace Clio.Tests.Command
 
 			// Assert
 			result.Should().Be(1, "because an exception occurred");
-			_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("Deletion failed")));
+			_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("Error deleting namespace")));
 		}
 	}
 }
