@@ -16,6 +16,10 @@ namespace Clio.Command
 	[Verb("create-k8-files", Aliases = new string[] { "ck8f" }, HelpText = "Prepare K8 files for deployment")]
 	public class CreateInfrastructureOptions
 	{
+		[Option('p', "path", Required = false,
+			HelpText = "Path to infrastructure files (default: auto-detected from clio settings)")]
+		public string InfrastructurePath { get; set; }
+		
 		[Option("pg-limit-memory", Required = false, Default = "4Gi",
 			HelpText = "PostgreSQL memory limit (default: 4Gi)")]
 		public string PostgresLimitMemory { get; set; }
@@ -58,8 +62,14 @@ namespace Clio.Command
 
 	public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>
 	{
+		private readonly IInfrastructurePathProvider _infrastructurePathProvider;
+		
+		public OpenInfrastructureCommand(IInfrastructurePathProvider infrastructurePathProvider = null) {
+			_infrastructurePathProvider = infrastructurePathProvider ?? new InfrastructurePathProvider();
+		}
+		
 		public override int Execute(OpenInfrastructureOptions options) {
-			string infrsatructureCfgFilesFolder = Path.Join(SettingsRepository.AppSettingsFolderPath, "infrastructure");
+			string infrsatructureCfgFilesFolder = _infrastructurePathProvider.GetInfrastructurePath();
 			try {
 				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
 					Process.Start("explorer.exe", infrsatructureCfgFilesFolder);
@@ -88,30 +98,31 @@ namespace Clio.Command
 	{
 
 		private readonly IFileSystem _fileSystem;
+		private readonly IInfrastructurePathProvider _infrastructurePathProvider;
 
-		public CreateInfrastructureCommand(IFileSystem fileSystem) {
+		public CreateInfrastructureCommand(IFileSystem fileSystem, IInfrastructurePathProvider infrastructurePathProvider = null) {
 			_fileSystem = fileSystem;
+			_infrastructurePathProvider = infrastructurePathProvider ?? new InfrastructurePathProvider();
 		}
 
 		public override int Execute(CreateInfrastructureOptions options) {
-			
-			string to = Path.Join(SettingsRepository.AppSettingsFolderPath, "infrastructure");
+			string to = _infrastructurePathProvider.GetInfrastructurePath(options.InfrastructurePath);
 			string location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 			string from = Path.Join(location, "tpl","k8", "infrastructure");
 			_fileSystem.CopyDirectory(from,to, true);
 			
-		// Process template files with variable substitution
-		var replacements = new Dictionary<string, string>
-		{
-			{ "{{PG_LIMIT_MEMORY}}", options.PostgresLimitMemory },
-			{ "{{PG_LIMIT_CPU}}", options.PostgresLimitCpu },
-			{ "{{PG_REQUEST_MEMORY}}", options.PostgresRequestMemory },
-			{ "{{PG_REQUEST_CPU}}", options.PostgresRequestCpu },
-			{ "{{MSSQL_LIMIT_MEMORY}}", options.MssqlLimitMemory },
-			{ "{{MSSQL_LIMIT_CPU}}", options.MssqlLimitCpu },
-			{ "{{MSSQL_REQUEST_MEMORY}}", options.MssqlRequestMemory },
-			{ "{{MSSQL_REQUEST_CPU}}", options.MssqlRequestCpu }
-		};
+			// Process template files with variable substitution
+			var replacements = new Dictionary<string, string>
+			{
+				{ "{{PG_LIMIT_MEMORY}}", options.PostgresLimitMemory },
+				{ "{{PG_LIMIT_CPU}}", options.PostgresLimitCpu },
+				{ "{{PG_REQUEST_MEMORY}}", options.PostgresRequestMemory },
+				{ "{{PG_REQUEST_CPU}}", options.PostgresRequestCpu },
+				{ "{{MSSQL_LIMIT_MEMORY}}", options.MssqlLimitMemory },
+				{ "{{MSSQL_LIMIT_CPU}}", options.MssqlLimitCpu },
+				{ "{{MSSQL_REQUEST_MEMORY}}", options.MssqlRequestMemory },
+				{ "{{MSSQL_REQUEST_CPU}}", options.MssqlRequestCpu }
+			};
 			
 			// Process PostgreSQL StatefulSet
 			string postgresStatefulSetPath = Path.Join(to, "postgres", "postgres-stateful-set.yaml");
@@ -137,21 +148,21 @@ namespace Clio.Command
 				_fileSystem.WriteAllTextToFile(mssqlStatefulSetPath, content);
 			}
 
-		var color = Console.ForegroundColor;
+			var color = Console.ForegroundColor;
 		
-		// Display resource configuration
-		Console.WriteLine();
-		Console.ForegroundColor = ConsoleColor.Cyan;
-		Console.WriteLine("Resource Configuration:");
-		Console.WriteLine($"  PostgreSQL: Memory Limit={options.PostgresLimitMemory}, CPU Limit={options.PostgresLimitCpu}");
-		Console.WriteLine($"              Memory Request={options.PostgresRequestMemory}, CPU Request={options.PostgresRequestCpu}");
-		Console.WriteLine($"  MSSQL:      Memory Limit={options.MssqlLimitMemory}, CPU Limit={options.MssqlLimitCpu}");
-		Console.WriteLine($"              Memory Request={options.MssqlRequestMemory}, CPU Request={options.MssqlRequestCpu}");
-		Console.ForegroundColor = color;
-		Console.WriteLine();
+			// Display resource configuration
+			Console.WriteLine();
+			Console.ForegroundColor = ConsoleColor.Cyan;
+			Console.WriteLine("Resource Configuration:");
+			Console.WriteLine($"  PostgreSQL: Memory Limit={options.PostgresLimitMemory}, CPU Limit={options.PostgresLimitCpu}");
+			Console.WriteLine($"              Memory Request={options.PostgresRequestMemory}, CPU Request={options.PostgresRequestCpu}");
+			Console.WriteLine($"  MSSQL:      Memory Limit={options.MssqlLimitMemory}, CPU Limit={options.MssqlLimitCpu}");
+			Console.WriteLine($"              Memory Request={options.MssqlRequestMemory}, CPU Request={options.MssqlRequestCpu}");
+			Console.ForegroundColor = color;
+			Console.WriteLine();
 		
-		Console.ForegroundColor = ConsoleColor.DarkRed;
-		Console.WriteLine("****************************  IMPORTANT ****************************");
+			Console.ForegroundColor = ConsoleColor.DarkRed;
+			Console.WriteLine("****************************  IMPORTANT ****************************");
 			Console.ForegroundColor = color;
 			Console.WriteLine($"All files have been copied to:");
 			Console.WriteLine($"\t{to}");

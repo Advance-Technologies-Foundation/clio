@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ATF.Repository.Providers;
@@ -132,6 +132,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<Common.Assertions.FsPathAssertion>();
 		containerBuilder.RegisterType<Common.Assertions.FsPermissionAssertion>();
 		containerBuilder.RegisterType<k8Commands>();
+		containerBuilder.RegisterType<InfrastructurePathProvider>().As<IInfrastructurePathProvider>();
 	
 		containerBuilder.RegisterType<InstallerCommand>();
 

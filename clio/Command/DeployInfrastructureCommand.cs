@@ -33,19 +33,22 @@ namespace Clio.Command
 		private readonly Clio.Common.IFileSystem _fileSystem;
 		private readonly Ik8Commands _k8Commands;
 		private readonly IDbClientFactory _dbClientFactory;
+		private readonly IInfrastructurePathProvider _infrastructurePathProvider;
 
 		public DeployInfrastructureCommand(
 			IProcessExecutor processExecutor, 
 			ILogger logger, 
 			Clio.Common.IFileSystem fileSystem,
 			Ik8Commands k8Commands,
-			IDbClientFactory dbClientFactory)
+			IDbClientFactory dbClientFactory,
+			IInfrastructurePathProvider infrastructurePathProvider)
 		{
 			_processExecutor = processExecutor;
 			_logger = logger;
 			_fileSystem = fileSystem;
 			_k8Commands = k8Commands;
 			_dbClientFactory = dbClientFactory;
+			_infrastructurePathProvider = infrastructurePathProvider;
 		}
 
 		public override int Execute(DeployInfrastructureOptions options)
@@ -77,7 +80,7 @@ namespace Clio.Command
 				}
 
 				// Step 2: Generate infrastructure files
-				string infrastructurePath = GetInfrastructurePath(options);
+				string infrastructurePath = _infrastructurePathProvider.GetInfrastructurePath(options.InfrastructurePath);
 				if (!GenerateInfrastructureFiles(infrastructurePath))
 				{
 					return 1;
@@ -237,16 +240,6 @@ namespace Clio.Command
 			}
 		}
 
-		private string GetInfrastructurePath(DeployInfrastructureOptions options)
-		{
-			if (!string.IsNullOrWhiteSpace(options.InfrastructurePath))
-			{
-				return options.InfrastructurePath;
-			}
-			
-			return Path.Join(SettingsRepository.AppSettingsFolderPath, "infrastructure");
-		}
-
 		private bool GenerateInfrastructureFiles(string infrastructurePath)
 		{
 			_logger.WriteInfo("[2/5] Generating infrastructure files...");
@@ -262,20 +255,20 @@ namespace Clio.Command
 					return false;
 				}
 
-				_fileSystem.CopyDirectory(sourcePath, infrastructurePath, overwrite: true);
-				//Copying files is not enough,
-				// mssql-stateful-set.yaml contains a placeholder for resources, need to replace
-				// {{MSSQL_LIMIT_MEMORY}} with 4Gi
-				// {{MSSQL_LIMIT_MEMORY}} with 2
-				// {{MSSQL_REQUEST_MEMORY}} with 2Gi
-				// {{MSSQL_REQUEST_CPU}} with 1
-				
-				// and postgres-stateful-set.yaml
-				// {{PG_LIMIT_MEMORY}} 4Gi
-				// {{PG_LIMIT_CPU}} 2
-				// {{PG_REQUEST_MEMORY}}
-				// {{PG_REQUEST_CPU}} 1
-				
+				var options = new CreateInfrastructureOptions {
+					InfrastructurePath = infrastructurePath,
+					PostgresLimitMemory = "4Gi",
+					PostgresLimitCpu = "2",
+					PostgresRequestMemory = "2Gi",
+					PostgresRequestCpu = "1",
+					MssqlLimitMemory = "4Gi",
+					MssqlLimitCpu = "2",
+					MssqlRequestMemory = "2Gi",
+					MssqlRequestCpu = "1",
+				};
+				var createInfrastructureCommand = new CreateInfrastructureCommand(_fileSystem);
+				createInfrastructureCommand.Execute(options);
+
 				_logger.WriteInfo($"✓ Infrastructure files generated at: {infrastructurePath}");
 				return true;
 			}
