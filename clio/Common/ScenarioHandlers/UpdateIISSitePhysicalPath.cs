@@ -58,7 +58,7 @@ namespace Clio.Common.ScenarioHandlers {
             _logger = logger;
         }
 
-        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UpdateIISSitePhysicalPathRequest request, CancellationToken cancellationToken) {
+        public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UpdateIISSitePhysicalPathRequest request, CancellationToken cancellationToken) {
             string siteName = request.Arguments["siteName"].Trim();
             string physicalPath = request.Arguments["physicalPath"].Trim();
 
@@ -76,17 +76,32 @@ namespace Clio.Common.ScenarioHandlers {
             {
                 var msg = $"Failed to update physical path for site '{siteName}', {ex.Message}";
                 _logger?.WriteError(msg);
-                return new UpdateIISSitePhysicalPathResponse {
+                return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new UpdateIISSitePhysicalPathResponse {
                     Status = BaseHandlerResponse.CompletionStatus.Failure,
                     Description = msg
-                };
+                });
             }
 
-            return new UpdateIISSitePhysicalPathResponse {
+            // Update Web application '0' virtual directory to point to physicalPath\Terrasoft.WebApp
+            string webAppPath = Path.Combine(physicalPath, "Terrasoft.WebApp");
+            command = $"set vdir /vdir.name:\"{siteName}/0/\" /physicalPath:\"{webAppPath}\"";
+            try {
+                string resultApp = _processExecutor.Execute(appcmdPath, command, true);
+                sb.AppendLine(resultApp);
+            }
+            catch (Exception ex) {
+                var msg = $"Failed to update physical path for application '0' under site '{siteName}', {ex.Message}";
+                _logger?.WriteError(msg);
+                return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new UpdateIISSitePhysicalPathResponse {
+                    Status = BaseHandlerResponse.CompletionStatus.Failure,
+                    Description = msg
+                });
+            }
+
+            return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new UpdateIISSitePhysicalPathResponse {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
                 Description = sb.ToString()
-            };
+            });
         }
     }
 }
-

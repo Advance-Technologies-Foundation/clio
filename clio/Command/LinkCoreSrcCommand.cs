@@ -380,7 +380,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	}
 	private void UpdateIISPhysicalPath(LinkCoreSrcOptions options, EnvironmentSettings env)
 	{
-		_logger.WriteInfo("\n[3/4] Updating IIS's physical path...");
+		_logger.WriteInfo("\n[3/4] Updating IIS's site and web app physical path...");
 		// Resolve core directory (must be unique)
 		string targetFolder = GetTargetFolderName(options.Mode);
 		string coreWebHostPath = options.Mode == CreatioMode.NetCore
@@ -435,7 +435,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		else
 		{
 			Console.WriteLine("  2. Update environment configuration with core path");
-			Console.WriteLine("  3. Update IIS site physical path to core directory and restart service");
+			Console.WriteLine("  3. Update IIS site and web app's physical path to core directory and restart service");
 		}
 		Console.WriteLine("═════════════════════════════════════════════════════════════════════════════════════\n");
 
