@@ -28,7 +28,7 @@
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 	  <LangVersion>Latest</LangVersion>
     <UseAppHost>false</UseAppHost>
-      <NoWarn>NU5119;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
+      <NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">

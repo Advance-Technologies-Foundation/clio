@@ -9,14 +9,11 @@ using OneOf;
 
 namespace Clio.Common.ScenarioHandlers;
 
-public class RestoreBdRequest : BaseHandlerRequest
-{ }
+public class RestoreBdRequest : BaseHandlerRequest{ }
 
-public class RestoreBdResponse : BaseHandlerResponse
-{ }
+public class RestoreBdResponse : BaseHandlerResponse{ }
 
-internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf<BaseHandlerResponse, HandlerError>>
-{
+internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf<BaseHandlerResponse, HandlerError>>{
 
 	#region Properties: Public
 
@@ -106,9 +103,9 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 	public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(RestoreBdRequest request,
 		CancellationToken cancellationToken){
 		Arguments = request.Arguments;
-		string adminConectionString = request.Arguments["adminConectionString"];
+		string adminConnectionString = request.Arguments["adminConectionString"];
 		CopyBackUpFile();
-		ConnectToSQl(adminConectionString);
+		ConnectToSQl(adminConnectionString);
 
 		return new RestoreBdResponse {
 			Status = BaseHandlerResponse.CompletionStatus.Success
