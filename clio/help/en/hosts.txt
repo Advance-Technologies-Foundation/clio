@@ -1,0 +1,195 @@
+﻿COMMAND TYPE
+    Monitoring and Management commands
+
+NAME
+    hosts - list all registered Creatio hosts and their running status
+
+DESCRIPTION
+    hosts command lists all registered Creatio environments that have an
+    EnvironmentPath configured, showing their running status, process IDs,
+    service information, and installation paths.
+
+    This command helps system administrators and developers monitor which
+    Creatio instances are running on the local machine and quickly identify
+    their process details for troubleshooting, monitoring, or management tasks.
+
+    The command automatically detects the hosting method and reports status
+    accordingly:
+
+    On Windows:
+        Detects IIS sites and w3wp.exe worker processes. A site is considered
+        running only when both the IIS site AND application pool are started.
+        Uses three-tier PID detection for reliable process identification.
+
+    On macOS/Linux:
+        Detects systemd (Linux) or launchd (macOS) services, falling back to
+        background process detection if no service is found.
+
+    For all platforms:
+        Can detect background processes (dotnet, creatio, terrasoft, webhost)
+        by scanning running processes and matching against environment paths.
+
+    The command scans all environments in parallel for optimal performance.
+
+SYNOPSIS
+    hosts [options]
+
+OPTIONS
+    --fail-on-error         Return non-zero exit code on errors
+
+    --fail-on-warning       Return non-zero exit code on warnings
+
+EXAMPLE
+    clio hosts
+        lists all registered Creatio environments with their status
+
+    clio list-hosts
+        same as above, using alias
+
+    clio hosts --fail-on-error
+        list hosts, returning error code on failure
+
+    Example output (Windows with IIS):
+    Scanning 3 environment(s) in parallel...
+    Checking production...
+      → production: Found running IIS site: Default Web Site, getting PID...
+      → production: PID: 8432
+    Checking staging...
+      → staging: Found IIS site: CreatioStaging (Stopped)
+    Checking development...
+      → development: No IIS site found, checking for background process...
+      → development: Found process: dotnet (PID: 12456)
+
+    Scan complete. Found 3 host(s).
+
+    === Creatio Hosts ===
+    Environment    Service Name         Status          PID    Path
+    production     Default Web Site     Running (IIS)   8432   C:\inetpub\...
+    staging        CreatioStaging       Stopped (IIS)   -      C:\Apps\...
+    development    creatio-dev          Running (Process) 12456 C:\Dev\...
+
+OUTPUT
+    The command displays a table with the following columns:
+
+    Environment:
+        Name of the registered Creatio environment
+
+    Service Name:
+        IIS site name (Windows), service name (Linux/macOS), or generated
+        service identifier for the environment
+
+    Status:
+        Current running status with hosting method indicator:
+        - Running (IIS): IIS site and app pool both started (Windows)
+        - Stopped (IIS): IIS site or app pool stopped (Windows)
+        - Running (Service): systemd/launchd service running (Linux/macOS)
+        - Running (Process): Background process detected
+        - Stopped: No running process or service found
+
+    PID:
+        Process ID of the running instance. Shows "-" if stopped or if
+        PID cannot be determined. On Windows IIS, shows w3wp.exe PID.
+
+    Environment Path:
+        File system path to the Creatio installation directory.
+        Paths longer than 50 characters are truncated with "..." for display.
+
+    Progress messages show real-time scan status for each environment,
+    including IIS site detection, PID retrieval, and service status checks.
+
+PREREQUISITES
+    Windows (IIS hosting):
+        - IIS must be installed and configured
+        - Administrator privileges recommended for full PID detection
+        - PowerShell available for enhanced PID detection
+
+    macOS/Linux:
+        - systemd (Linux) or launchd (macOS) for service detection
+        - Read permissions on process information
+
+    Environment Configuration:
+        Environments must be registered with EnvironmentPath specified.
+        Use 'clio reg-web-app' to register environments with paths.
+
+EXIT CODES
+    0               Success - hosts listed successfully
+    1               Error - failed to list hosts
+
+TROUBLESHOOTING
+    No hosts found:
+        Ensure environments are registered with EnvironmentPath:
+        clio show-web-app-list
+
+        Register environment with path:
+        clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
+
+    PID not detected on Windows IIS:
+        Enable debug mode to see detailed diagnostics:
+        $env:CLIO_DEBUG_IIS = "true"
+        clio hosts
+
+        Common causes:
+        - Worker process not started yet (on-demand startup)
+        - App pool name mismatch in IIS configuration
+        - Insufficient permissions to query process information
+
+        Manual verification:
+        C:\Windows\System32\inetsrv\appcmd.exe list wp
+        Get-WmiObject Win32_Process -Filter "Name='w3wp.exe'"
+
+    Slow performance:
+        The command scans environments in parallel, but may be slow if:
+        - Many environments registered
+        - Network-mounted paths configured
+        - System under heavy load
+
+        Optimization:
+        - Remove unused environments from configuration
+        - Ensure EnvironmentPath points to local drives
+        - Run as Administrator for faster process queries
+
+    All hosts show stopped on Linux/macOS:
+        Services must be registered with systemd/launchd using pattern:
+        creatio-{environment-name}
+
+        Process names must contain: dotnet, creatio, terrasoft, or webhost
+
+PLATFORM DIFFERENCES
+    Windows:
+        Primary detection via IIS and appcmd.exe
+        Three-tier PID detection (appcmd → PowerShell → WMIC)
+        Detects w3wp.exe worker processes
+        Reports actual IIS site names
+
+    macOS:
+        Primary detection via launchd services
+        Service naming: creatio-{environment-name}
+        Detects dotnet processes
+        No IIS detection available
+
+    Linux:
+        Primary detection via systemd services
+        Service naming: creatio-{environment-name}
+        Detects dotnet processes
+        No IIS detection available
+
+RELATED COMMANDS
+    reg-web-app         Register Creatio environment with EnvironmentPath
+    unreg-web-app       Unregister Creatio environment
+    show-web-app-list   List all registered environments
+    restart-web-app     Restart a Creatio environment
+    healthcheck         Check Creatio application health
+
+ALIASES
+    list-hosts
+
+NOTES
+    - Scans all environments concurrently for better performance
+    - Paths longer than 50 characters are truncated in display
+    - Shows current state at execution time (not cached)
+    - No environment selection needed (auto-discovers all)
+    - On Windows, sites are "Running" only when both site AND app pool started
+    - Set CLIO_DEBUG_IIS=true for detailed IIS detection diagnostics
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

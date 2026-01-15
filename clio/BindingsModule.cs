@@ -339,6 +339,14 @@ public class BindingsModule {
 			return new WindowsSystemServiceManager();
 		}).SingleInstance();
 
+		// Register platform-specific IIS site detector
+		containerBuilder.Register<Common.IIS.IIISSiteDetector>(c =>
+		{
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				return new Common.IIS.WindowsIISSiteDetector();
+			return new Common.IIS.StubIISSiteDetector();
+		}).SingleInstance();
+
 		containerBuilder.RegisterType<ClioGateway>();
 		containerBuilder.RegisterType<CompileConfigurationCommand>();
 

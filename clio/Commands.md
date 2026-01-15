@@ -935,6 +935,54 @@ If no environment is specified or EnvironmentPath is not configured, the command
 
 If any validation fails, an appropriate error message is displayed.
 
+## hosts
+
+List all registered Creatio environments (hosts) with their running status, process IDs, and service information. This command helps monitor which Creatio instances are running on the local machine.
+
+**Aliases**: `list-hosts`
+
+**For complete documentation**, see: [`hosts`](./docs/commands/hosts.md)
+
+### Quick Usage
+
+```bash
+clio hosts
+```
+
+### Example Output
+
+```
+Scanning 3 environment(s) in parallel...
+=== Creatio Hosts ===
+Environment    Service Name         Status          PID    Environment Path
+production     Default Web Site     Running (IIS)   8432   C:\inetpub\wwwroot\Production
+staging        CreatioStaging       Stopped (IIS)   -      C:\Apps\Staging
+development    creatio-dev          Running (Process) 12456 C:\Dev\Creatio
+```
+
+### Status Values
+
+- **Running (IIS)**: IIS site and application pool both running (Windows)
+- **Stopped (IIS)**: IIS site or application pool stopped (Windows)
+- **Running (Service)**: systemd/launchd service running (macOS/Linux)
+- **Running (Process)**: Background process detected
+- **Stopped**: No running process or service found
+
+### Prerequisites
+
+- Environments must be registered with `EnvironmentPath`:
+  ```bash
+  clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
+  ```
+
+### Troubleshooting
+
+If PID is not detected on Windows IIS, enable debug mode:
+```powershell
+$env:CLIO_DEBUG_IIS = "true"
+clio hosts
+```
+
 ## clear-redis-db
 
 To clear Redis database for default application
@@ -1056,7 +1104,7 @@ Aliases: `gwu`
 - [Delete the existing environment](./docs/commands/UnregAppCommand.md)
 - [Ping environment](./docs/commands/PingCommand.md)
 - [View application list](./docs/commands/ShowAppListCommand.md)
-- [Open application](./docs/commands/OpenAppCommand.md)
+- [Open application](#open)
 - [Clone environment](#clone-env)
 - [Healthcheck](./docs/commands/HealthCheckCommand.md)
 - [Get Creatio Info](#get-info)
@@ -1148,56 +1196,6 @@ clio envs --format table
 - **json**: JSON format with environment settings (default)
 - **table**: Formatted table with all environments
 - **raw**: Plain text format with field labels
-
-## open-web-app
-
-Open a registered Creatio environment in your default web browser.
-
-**For detailed documentation, see [OpenAppCommand](./docs/commands/OpenAppCommand.md)**
-
-**Aliases:** `open`
-
-**Synopsis:**
-```bash
-clio open-web-app [-e ENVIRONMENT_NAME]
-clio open <ENVIRONMENT_NAME>
-```
-
-**Description:**
-Opens the configured environment in your system's default web browser. The command loads the environment settings from your clio configuration and opens the browser to the Creatio simple login page (`/Shell/?simplelogin=true`).
-
-The command works cross-platform on Windows, macOS, and Linux.
-
-**Examples:**
-
-Open the active environment:
-```bash
-clio open-web-app
-```
-
-Open a specific environment using alias:
-```bash
-clio open my-dev-env
-```
-
-Open environment with explicit option:
-```bash
-clio open-web-app -e production
-```
-
-**Options:**
-- `-e, --Environment <ENVIRONMENT_NAME>`: Environment name to open. If not specified, uses the active environment.
-
-**Error Handling:**
-- Returns error if environment has empty URL
-- Returns error if environment URL format is invalid
-- Provides helpful messages suggesting [`reg-web-app`](#reg-web-app) or [`cfg`](#cfg) commands to fix configuration issues
-
-**See Also:**
-- [`reg-web-app`](#reg-web-app) - Register environment settings
-- [`show-web-app-list`](#show-web-app-list) - List registered environments
-- [`ping`](#ping) - Validate environment connectivity
-- [Detailed Documentation](./docs/commands/OpenAppCommand.md) - Full command reference
 
 Fields included: uri, dbName, backupFilePath, login, password (masked), maintainer, isNetCore,
 clientId, clientSecret (masked), authAppUri, simpleLoginUri, safe, developerModeEnabled,
@@ -2708,8 +2706,7 @@ Check Windows system for required components needed for Creatio installation.
 
 **Note**: This command is only available on Windows operating system. When executed on macOS or Linux, it will return an error message with exit code 1.
 
-**Description**: Automated check of Windows features and .NET Framework version required for Creatio installation. This command will:
-- Check if .NET Framework 4.7.2 or higher is installed
+**Description**: Automated check of Windows features required for Creatio installation. This command will:
 - List all required Windows features
 - Display which components are installed
 - Display which components are missing
@@ -2720,13 +2717,12 @@ clio check-windows-features
 ```
 
 **Exit codes**:
-- `0` - All required components are installed (including .NET Framework 4.7.2+)
+- `0` - All required components are installed
 - `1` - Some components are missing or command execution failed
 
 **Example output**:
 ```
 [INF] Check started:
-[INF] .NET Framework 4.7.2 or higher: ✓ Installed (Detected: 4.8)
 [INF] OK : NET-Framework-Core
 [INF] Not installed : NET-Framework-45-Core
 [ERR] Windows has missed components:
@@ -2738,8 +2734,6 @@ clio check-windows-features
 ## manage-windows-features (Windows only)
 
 Manage Windows features required for Creatio installation. Install, uninstall, or check the status of required Windows features.
-
-**Aliases**: `mwf`, `mng-win-features`
 
 **Note**: This command is only available on Windows operating system. Administrator rights are required for install and uninstall operations. When executed on macOS or Linux, it will return an error message with exit code 1.
 
@@ -2781,9 +2775,8 @@ clio manage-windows-features -i
 clio manage-windows-features -u
 ```
 
-**For complete documentation** including full list of managed features, detailed examples, and troubleshooting, see: [`manage-windows-features`](./docs/commands/manage-windows-features.md)
-
-**Additional resources**:
+**Troubleshooting**:
+- If you see "This command is only available on Windows operating system" - the command only works on Windows
 - For detailed information about Windows features, visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components
 ## Installing Creatio using Clio
 

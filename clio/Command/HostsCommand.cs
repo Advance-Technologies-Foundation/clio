@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.IIS;
 using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -16,7 +17,11 @@ namespace Clio.Command;
 [Verb("hosts", Aliases = ["list-hosts"], HelpText = "List all Creatio hosts and their status")]
 public class HostsOptions : BaseCommandOptions{ }
 
-public class HostsCommand(ISettingsRepository settingsRepository, ISystemServiceManager serviceManager, ILogger logger)
+public class HostsCommand(
+	ISettingsRepository settingsRepository, 
+	ISystemServiceManager serviceManager, 
+	IIISSiteDetector iisSiteDetector,
+	ILogger logger)
 	: Command<HostsOptions>{
 	
 	#region Class: Nested
@@ -92,44 +97,103 @@ public class HostsCommand(ISettingsRepository settingsRepository, ISystemService
 	}
 
 	private async Task<List<HostInfo>> GetAllHosts() {
-		List<HostInfo> hosts = new();
 		List<EnvironmentSettings> environments = GetAllEnvironmentsWithPath();
 
-		foreach (EnvironmentSettings env in environments) {
-			string envName = GetEnvironmentName(env);
-			string serviceName = $"creatio-{GetServiceName(envName, env.EnvironmentPath)}";
-
-			// Check for OS service
-			bool serviceRunning = await serviceManager.IsServiceRunning(serviceName);
-			string serviceStatus = serviceRunning ? "Service Running" : "Service Stopped";
-
-			// Check for background process
-			(int pid, string processName)? processInfo = GetBackgroundProcess(env.EnvironmentPath);
-
-			string status;
-			int? pid = null;
-
-			if (serviceRunning) {
-				status = "Running (Service)";
-			}
-			else if (processInfo != null) {
-				status = "Running (Process)";
-				pid = processInfo.Value.pid;
-			}
-			else {
-				status = "Stopped";
-			}
-
-			hosts.Add(new HostInfo {
-				Environment = envName,
-				ServiceName = serviceName,
-				Status = status,
-				PID = pid,
-				EnvironmentPath = env.EnvironmentPath
-			});
+		if (environments.Count == 0) {
+			logger.WriteInfo("No environments with paths found.");
+			return new List<HostInfo>();
 		}
 
-		return hosts;
+		logger.WriteInfo($"Scanning {environments.Count} environment(s) in parallel...");
+
+		// Create tasks for all environments to scan in parallel
+		Task<HostInfo>[] scanTasks = environments.Select(env => ScanEnvironmentAsync(env)).ToArray();
+
+		// Wait for all scans to complete
+		HostInfo[] hosts = await Task.WhenAll(scanTasks);
+
+		logger.WriteInfo($"\nScan complete. Found {hosts.Length} host(s).\n");
+		return hosts.ToList();
+	}
+
+	private async Task<HostInfo> ScanEnvironmentAsync(EnvironmentSettings env) {
+		string envName = GetEnvironmentName(env);
+		logger.WriteInfo($"Checking {envName}...");
+		
+		string serviceName = $"creatio-{GetServiceName(envName, env.EnvironmentPath)}";
+		string status;
+		int? pid = null;
+
+		// On Windows, check for IIS sites
+		if (OperationSystem.Current.IsWindows) {
+			List<IISSiteInfo> iisSites = await iisSiteDetector.GetSitesByPath(env.EnvironmentPath);
+			
+			if (iisSites.Any()) {
+				// Found IIS site(s) for this environment
+				IISSiteInfo primarySite = iisSites.First();
+				
+				if (primarySite.IsRunning) {
+					status = "Running (IIS)";
+					// Get w3wp.exe PID for the site
+					logger.WriteInfo($"  → {envName}: Found running IIS site: {primarySite.SiteName}, getting PID...");
+					pid = await iisSiteDetector.GetSiteProcessId(primarySite.SiteName);
+					if (pid.HasValue) {
+						logger.WriteInfo($"  → {envName}: PID: {pid.Value}");
+					} else {
+						logger.WriteWarning($"  → {envName}: Could not determine PID for site {primarySite.SiteName}");
+					}
+				} else {
+					status = "Stopped (IIS)";
+					logger.WriteInfo($"  → {envName}: Found IIS site: {primarySite.SiteName} (Stopped)");
+				}
+				
+				// Use actual IIS site name as service name
+				serviceName = primarySite.SiteName;
+			} else {
+				// No IIS site found, check for background process
+				logger.WriteInfo($"  → {envName}: No IIS site found, checking for background process...");
+				(int pid, string processName)? processInfo = GetBackgroundProcess(env.EnvironmentPath);
+				
+				if (processInfo != null) {
+					status = "Running (Process)";
+					pid = processInfo.Value.pid;
+					logger.WriteInfo($"  → {envName}: Found process: {processInfo.Value.processName} (PID: {pid})");
+				} else {
+					status = "Stopped";
+					logger.WriteInfo($"  → {envName}: No running process found");
+				}
+			}
+		} else {
+			// On macOS/Linux, check for systemd/launchd service
+			logger.WriteInfo($"  → {envName}: Checking service: {serviceName}...");
+			bool serviceRunning = await serviceManager.IsServiceRunning(serviceName);
+			
+			if (serviceRunning) {
+				status = "Running (Service)";
+				logger.WriteInfo($"  → {envName}: Service is running");
+			} else {
+				// Check for background process
+				logger.WriteInfo($"  → {envName}: Service not running, checking for background process...");
+				(int pid, string processName)? processInfo = GetBackgroundProcess(env.EnvironmentPath);
+				
+				if (processInfo != null) {
+					status = "Running (Process)";
+					pid = processInfo.Value.pid;
+					logger.WriteInfo($"  → {envName}: Found process: {processInfo.Value.processName} (PID: {pid})");
+				} else {
+					status = "Stopped";
+					logger.WriteInfo($"  → {envName}: No running process found");
+				}
+			}
+		}
+
+		return new HostInfo {
+			Environment = envName,
+			ServiceName = serviceName,
+			Status = status,
+			PID = pid,
+			EnvironmentPath = env.EnvironmentPath
+		};
 	}
 
 	private (int pid, string processName)? GetBackgroundProcess(string targetPath) {
