@@ -7,6 +7,9 @@ NAME
 SYNOPSIS
     get-info [OPTIONS]
 
+ALIASES
+    describe, describe-creatio, instance-info
+
 DESCRIPTION
     Retrieves comprehensive information about the Creatio instance including
     version, underlying runtime, database type, and product name. This command
@@ -28,10 +31,23 @@ DESCRIPTION
 OPTIONS
     -e, --Environment       Environment name from the registered configuration
                             The environment must be registered using 
-                            'reg-web-app' command
+                            'reg-web-app' command (RECOMMENDED)
+    
+    Alternative authentication (when not using -e):
+    -u, --uri               Creatio application URI
+    -l, --login             Username for basic authentication
+    -p, --password          Password for basic authentication
+    
+    OR for OAuth authentication:
+    --clientid              OAuth Client ID
+    --clientsecret          OAuth Client Secret
+    --authappuri            OAuth Authentication App URI
+    
+    Additional options:
+    --timeout               Request timeout in milliseconds (default: 100000)
 
 EXAMPLES
-    # Get information for registered environment
+    # Get information for registered environment (RECOMMENDED)
     clio get-info -e MyEnvironment
 
     # Short form using environment as positional argument
@@ -42,10 +58,18 @@ EXAMPLES
     clio instance-info -e MyEnvironment
     clio describe-creatio MyEnvironment
 
-ALIASES
-    - describe
-    - describe-creatio
-    - instance-info
+    # Using direct authentication with username/password
+    clio get-info -u "https://myapp.creatio.com" -l "admin" -p "password"
+
+    # Using OAuth authentication
+    clio get-info -u "https://myapp.creatio.com" \
+        --clientid "your-client-id" \
+        --clientsecret "your-secret" \
+        --authappuri "https://oauth.creatio.com"
+
+    # With custom timeout (60 seconds)
+    clio get-info -e MyEnvironment --timeout 60000
+
 
 BEHAVIOR
     1. Validates that cliogate is installed on the target environment

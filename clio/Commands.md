@@ -1279,16 +1279,43 @@ clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
 
 ## get-info
 
-This command is designed to retrieve information about the Creatio instance, version,
-underlying runtime and database type and product name.
+This command retrieves comprehensive system information about a Creatio instance, including version, runtime environment, database type, and product name. The command communicates with the Creatio instance through the cliogate API gateway.
 
+**Aliases:** `describe`, `describe-creatio`, `instance-info`
+
+**Requirements:**
+- cliogate must be installed on the target Creatio instance
+- Minimum cliogate version: 2.0.0.32
+
+**Usage:**
 ```bash
 clio get-info -e <ENVIRONMENT_NAME>
 
-//OR
-
+# OR using short form
 clio get-info <ENVIRONMENT_NAME>
-````
+
+# Using aliases
+clio describe -e <ENVIRONMENT_NAME>
+clio instance-info <ENVIRONMENT_NAME>
+```
+
+**Information Retrieved:**
+- Creatio version
+- Runtime environment (.NET version)
+- Database type (MSSQL, PostgreSQL, Oracle)
+- Product name and configuration
+- System settings and configuration details
+
+**Examples:**
+```bash
+# Get information for registered environment
+clio get-info -e MyEnvironment
+
+# Using describe alias
+clio describe -e Production
+```
+
+**For detailed documentation, see:** [`get-info`](./docs/commands/GetCreatioInfoCommand.md)
 
 ## CustomizeDataProtection
 Adjusts `CustomizeDataProtection` in appsettings. Useful for development on Net8

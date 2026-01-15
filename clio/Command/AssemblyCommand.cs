@@ -7,10 +7,8 @@ namespace Clio.Command;
 
 using System.Text.Json;
 
-[Verb("execute-assembly-code",
-	Aliases = new[] { "exec" },
-	HelpText = "Execute an assembly code which implements the IExecutor interface",
-	Hidden = true)]
+[Verb("execute-assembly-code", Aliases = ["exec"], Hidden = true,
+	HelpText = "Execute an assembly code which implements the IExecutor interface")]
 public class ExecuteAssemblyOptions : RemoteCommandOptions
 {
 	[Value(0, MetaName = "Name", Required = true, HelpText = "Path to executed assembly")]
