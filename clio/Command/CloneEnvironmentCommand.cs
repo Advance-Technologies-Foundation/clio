@@ -98,25 +98,25 @@ namespace Clio.Command
 					pullPkgOptions.Name = package.Name;
 					pullPkgOptions.DestPath = sourceZipPackagePath;
 					string progress = $"({number++} from {packagesCount})";
-					_logger.WriteInfo($"Start pull package: {package.Name} {progress}");
+					Logger.WriteInfo($"Start pull package: {package.Name} {progress}");
 					pullPkgCommand.Execute(pullPkgOptions);
-					_logger.WriteInfo($"Done pull package: {package.Name} {progress}");
+					Logger.WriteInfo($"Done pull package: {package.Name} {progress}");
 				}
 				string sourceGzPackages = Path.Combine(workingDirectoryPath, "SourceGzPackages");
 				number = 1;
 				foreach (var package in diffPackages) {
 					string packageZipPath = Path.Combine(sourceZipPackagePath, $"{package.Name}.zip");
 					string progress = $"({number++} from {packagesCount})";
-					_logger.WriteInfo($"Start unzip package: {package.Name} {progress}");
+					Logger.WriteInfo($"Start unzip package: {package.Name} {progress}");
 					_compressionUtilities.Unzip(packageZipPath, sourceGzPackages);
-					_logger.WriteInfo($"Done unzip package: {package.Name} {progress}");
+					Logger.WriteInfo($"Done unzip package: {package.Name} {progress}");
 				}
 				_fileSystem.CreateDirectory(sourceGzPackages);
-				_logger.WriteInfo($"Start zip packages");
+				Logger.WriteInfo($"Start zip packages");
 				string commonPackagesZipPath = Path.Combine(workingDirectoryPath,
 					$"from_{options.Source}_to_{options.Target}.zip");
 				_compressionUtilities.Zip(sourceGzPackages, commonPackagesZipPath);
-				_logger.WriteInfo($"Done zip packages");
+				Logger.WriteInfo($"Done zip packages");
 				var pushPackageOptions = new PushPkgOptions() {
 					Environment = options.Target,
 					Name = commonPackagesZipPath
@@ -136,7 +136,7 @@ namespace Clio.Command
 					_workingDirectoriesProvider.DeleteDirectoryIfExists(workingDirectoryPath);
 				}
 			}
-			_logger.WriteInfo("Done");
+			Logger.WriteInfo("Done");
 			return 0;
 		}
 

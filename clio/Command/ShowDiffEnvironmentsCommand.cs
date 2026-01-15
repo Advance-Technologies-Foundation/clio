@@ -69,7 +69,7 @@ namespace Clio.Command
 
 		public override int Execute(ShowDiffEnvironmentsOptions options){
 			if(options.Target == options.Source) {
-				_logger.WriteInfo("No differences found.");
+				Logger.WriteInfo("No differences found.");
 				return 0;
 			}
 			Target = options.Target;
@@ -81,7 +81,7 @@ namespace Clio.Command
 			}else {
 				InternalExecute(options.WorkingDirectory);
 			}
-			_logger.WriteInfo("Done");
+			Logger.WriteInfo("Done");
 			return 0;
 		}
 
@@ -100,21 +100,21 @@ namespace Clio.Command
 			EnvironmentManifest diffManifest = _environmentManager.GetDiffManifest(sourceManifest, targetManifest);
 
 			if (string.IsNullOrEmpty(FileName)) {
-				_logger.WriteInfo("Result diff manifest:");
+				Logger.WriteInfo("Result diff manifest:");
 				var result = _serializer.Serialize(diffManifest);
 				if (string.IsNullOrEmpty(result) || result.Trim() == "{}") {
-					_logger.WriteInfo("No differences found.");
+					Logger.WriteInfo("No differences found.");
 				} else {
-					_logger.WriteInfo(_serializer.Serialize(diffManifest));
+					Logger.WriteInfo(_serializer.Serialize(diffManifest));
 				}
 			} else {
-				_logger.WriteInfo($"Diff manifest saved to {manifestFileName}");
+				Logger.WriteInfo($"Diff manifest saved to {manifestFileName}");
 				_environmentManager.SaveManifestToFile(manifestFileName, diffManifest, Overwrite);
 			}
 		}
 
 		private void SaveEnvironmentManifest(string environmentName, string manifestFilePath){
-			_logger.WriteInfo($"Loading environments manifest from {environmentName}");
+			Logger.WriteInfo($"Loading environments manifest from {environmentName}");
 			var sourceEnv = _settingsRepository.GetEnvironment(environmentName);
 			var container = new BindingsModule().Register(sourceEnv);
 			var command = container.Resolve<SaveSettingsToManifestCommand>();

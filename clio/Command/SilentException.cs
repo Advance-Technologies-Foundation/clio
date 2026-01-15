@@ -14,8 +14,5 @@ namespace Clio.Command
 
 		public SilentException(string message, Exception innerException) : base(message, innerException) {
 		}
-
-		protected SilentException(SerializationInfo info, StreamingContext context) : base(info, context) {
-		}
 	}
 }

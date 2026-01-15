@@ -1,57 +1,70 @@
-﻿using System;
-using System.Net;
+﻿using System.Net;
 using ATF.Repository.Providers;
 using Clio.Common;
 
-namespace Clio.Command
-{
-	public abstract class BaseDataContextCommand<T>: Command<T>
-	{
-		#region Fields: Internal
+namespace Clio.Command;
 
-		internal readonly IDataProvider _provider;
-		internal readonly ILogger _logger;
-        private readonly IApplicationClient _applicationClient;
-        private readonly EnvironmentSettings _environmentSettings;
+public abstract class BaseDataContextCommand<T> : Command<T>{
+	#region Fields: Private
 
-        #endregion
+	private readonly IApplicationClient _applicationClient;
+	private readonly EnvironmentSettings _environmentSettings;
 
-        internal BaseDataContextCommand()
-        {
-            
-        }
+	#endregion
 
-        public BaseDataContextCommand(IDataProvider provider, ILogger logger) {
-            _provider = provider;
-            _logger = logger;
-        }
+	#region Constructors: Protected
 
-        public BaseDataContextCommand(IDataProvider provider, ILogger logger,
-                IApplicationClient applicationClient, EnvironmentSettings environmentSettings) {
-			_provider = provider;
-			_logger = logger;
-            _applicationClient = applicationClient;
-            _environmentSettings = environmentSettings;
-        }
+	protected BaseDataContextCommand(IDataProvider provider, ILogger logger) {
+		Provider = provider;
+		Logger = logger;
+	}
 
-        protected void Login() {
-            try {
-                _logger.WriteInfo($"Try login to {_environmentSettings.Uri} with {_environmentSettings.Login} credentials...");
-                _applicationClient.Login();
-                _logger.WriteInfo("Login done");
-            } catch (WebException we) {
-                HttpWebResponse errorResponse = we.Response as HttpWebResponse;
-                if (errorResponse.StatusCode == HttpStatusCode.NotFound) {
-                    _logger.WriteError($"Application {_environmentSettings.Uri} not found");
-                }
-                throw we;
-            }
-        }
+	protected BaseDataContextCommand(IDataProvider provider, ILogger logger,
+		IApplicationClient applicationClient, EnvironmentSettings environmentSettings) {
+		Provider = provider;
+		Logger = logger;
+		_applicationClient = applicationClient;
+		_environmentSettings = environmentSettings;
+	}
 
-        public override int Execute(T options) {
-            Login();
-            return 0;
-        }
+	#endregion
 
-    }
+	#region Constructors: Internal
+
+	internal BaseDataContextCommand() { }
+
+	#endregion
+
+	internal readonly ILogger Logger;
+
+	internal readonly IDataProvider Provider;
+
+	#region Methods: Private
+
+	private void Login() {
+		try {
+			Logger.WriteInfo(
+				$"Try login to {_environmentSettings.Uri} with {_environmentSettings.Login} credentials...");
+			_applicationClient.Login();
+			Logger.WriteInfo("Login done");
+		}
+		catch (WebException we) {
+			HttpWebResponse errorResponse = we.Response as HttpWebResponse;
+			if (errorResponse.StatusCode == HttpStatusCode.NotFound) {
+				Logger.WriteError($"Application {_environmentSettings.Uri} not found");
+			}
+			throw we;
+		}
+	}
+
+	#endregion
+
+	#region Methods: Public
+
+	public override int Execute(T options) {
+		Login();
+		return 0;
+	}
+
+	#endregion
 }

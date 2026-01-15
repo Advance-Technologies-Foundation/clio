@@ -676,7 +676,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			_logger.WriteInfo($"[Connection String Mode] - Kubernetes cluster");
 			k8Commands.ConnectionStringParams csParam = dbType switch {
 				InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
-				InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString()
+				InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
+				_ => throw new NotSupportedException($"Database type '{dbType}' is not supported")
 			};
 
 			// Determine Redis database number
@@ -700,7 +701,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			// Build Kubernetes connection strings
 			dbConnectionString = dbType switch {
 				InstallerHelper.DatabaseType.Postgres => $"Server={BindingsModule.k8sDns};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
-				InstallerHelper.DatabaseType.MsSql => $"Data Source={BindingsModule.k8sDns},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+				InstallerHelper.DatabaseType.MsSql => $"Data Source={BindingsModule.k8sDns},{csParam.DbPort};Initial Catalog={options.SiteName};User Id={csParam.DbUsername}; Password={csParam.DbPassword};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
+				_ => throw new NotSupportedException($"Database type '{dbType}' is not supported")
 			};
 			redisConnectionString = $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}";
 		}

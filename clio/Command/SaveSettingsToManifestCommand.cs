@@ -74,17 +74,17 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	#region Methods: Public
 
 	public override int Execute(SaveSettingsToManifestOptions options){
-		_logger.WriteInfo($"Operating on environment: {options.Uri}");
-		_logger.WriteInfo("Loading information about webservices");
+		Logger.WriteInfo($"Operating on environment: {options.Uri}");
+		Logger.WriteInfo("Loading information about webservices");
 		List<CreatioManifestWebService> services = _webServiceManager?.GetCreatioManifestWebServices();
 		
-		_logger.WriteInfo("Loading features");
+		Logger.WriteInfo("Loading features");
 		List<Feature> features = GetFeatureValues();
 		
-		_logger.WriteInfo("Loading packages");
+		Logger.WriteInfo("Loading packages");
 		List<CreatioManifestPackage> packages = GetPackages();
 		
-		_logger.WriteInfo("Loading sys settings");
+		Logger.WriteInfo("Loading sys settings");
 		List<CreatioManifestSetting> settings = GetSysSettingsValue();
 		
 		EnvironmentManifest environmentManifest = new() {
@@ -96,11 +96,11 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 		if (options.Uri != null) {
 			environmentManifest.EnvironmentSettings = new EnvironmentSettings() { Uri = options.Uri };
 		}
-		_logger.WriteInfo($"Saving file {options.ManifestFileName}");
+		Logger.WriteInfo($"Saving file {options.ManifestFileName}");
 		_environmentManager.SaveManifestToFile(options.ManifestFileName, environmentManifest, options.Overwrite);
 		
 		if(!options.SkipDone) {
-			_logger.WriteInfo("Done");
+			Logger.WriteInfo("Done");
 		}
 		return 0;
 	}
@@ -126,7 +126,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 
 	private List<CreatioManifestPackage> GetPackages() {
 		List<CreatioManifestPackage> packages = new List<CreatioManifestPackage>();
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_provider);
+		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(Provider);
 		List<SysPackage> sysPackages = ctx.Models<SysPackage>().ToList();
         foreach (var sysPackage in sysPackages.OrderBy(p => p.Name)) {
 			var manifestPackages = new CreatioManifestPackage() {
@@ -179,7 +179,7 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 	}
 
 	private List<Feature> GetFeatureValues(){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_provider);
+		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(Provider);
 		List<Feature> resultList = new();
 		List<AppFeature> features = ctx.Models<AppFeature>().ToList();
 		int count = 0;
@@ -216,9 +216,9 @@ internal class SaveSettingsToManifestCommand : BaseDataContextCommand<SaveSettin
 			}else {
 				resultList.Add(f);
 			}
-			_logger.Write($"Loaded {count} out of {features.Count} features.\r ");
+			Logger.Write($"Loaded {count} out of {features.Count} features.\r ");
 		}
-		_logger.WriteLine(string.Empty);
+		Logger.WriteLine(string.Empty);
 		return resultList;
 	}
 	
