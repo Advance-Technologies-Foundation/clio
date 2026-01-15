@@ -2,7 +2,6 @@
 Default Document
 HTTP Errors
 HTTP Redirection
-.NET Framework 4.8
 ASP
 ISAPI extensions
 ISAPI Filters

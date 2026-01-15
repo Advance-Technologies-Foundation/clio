@@ -2708,7 +2708,8 @@ Check Windows system for required components needed for Creatio installation.
 
 **Note**: This command is only available on Windows operating system. When executed on macOS or Linux, it will return an error message with exit code 1.
 
-**Description**: Automated check of Windows features required for Creatio installation. This command will:
+**Description**: Automated check of Windows features and .NET Framework version required for Creatio installation. This command will:
+- Check if .NET Framework 4.7.2 or higher is installed
 - List all required Windows features
 - Display which components are installed
 - Display which components are missing
@@ -2719,12 +2720,13 @@ clio check-windows-features
 ```
 
 **Exit codes**:
-- `0` - All required components are installed
+- `0` - All required components are installed (including .NET Framework 4.7.2+)
 - `1` - Some components are missing or command execution failed
 
 **Example output**:
 ```
 [INF] Check started:
+[INF] .NET Framework 4.7.2 or higher: ✓ Installed (Detected: 4.8)
 [INF] OK : NET-Framework-Core
 [INF] Not installed : NET-Framework-45-Core
 [ERR] Windows has missed components:
@@ -2736,6 +2738,8 @@ clio check-windows-features
 ## manage-windows-features (Windows only)
 
 Manage Windows features required for Creatio installation. Install, uninstall, or check the status of required Windows features.
+
+**Aliases**: `mwf`, `mng-win-features`
 
 **Note**: This command is only available on Windows operating system. Administrator rights are required for install and uninstall operations. When executed on macOS or Linux, it will return an error message with exit code 1.
 
@@ -2777,8 +2781,9 @@ clio manage-windows-features -i
 clio manage-windows-features -u
 ```
 
-**Troubleshooting**:
-- If you see "This command is only available on Windows operating system" - the command only works on Windows
+**For complete documentation** including full list of managed features, detailed examples, and troubleshooting, see: [`manage-windows-features`](./docs/commands/manage-windows-features.md)
+
+**Additional resources**:
 - For detailed information about Windows features, visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components
 ## Installing Creatio using Clio
 

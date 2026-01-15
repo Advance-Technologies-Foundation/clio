@@ -52,24 +52,27 @@ EXAMPLE
     clio manage-windows-features -u
         uninstalls Windows features required for Creatio (run as administrator)
 
-    Example output for check mode:
+    Example output for check mode (all features installed):
     Check started:
-    IIS-WebServerRole: Enabled
-    IIS-WebServer: Enabled
-    IIS-CommonHttpFeatures: Enabled
-    IIS-HttpErrors: Enabled
-    IIS-ApplicationDevelopment: Enabled
-    IIS-NetFxExtensibility45: Enabled
-    IIS-HealthAndDiagnostics: Enabled
-    IIS-HttpLogging: Enabled
-    IIS-Security: Enabled
-    IIS-RequestFiltering: Enabled
-    IIS-Performance: Enabled
-    IIS-WebServerManagementTools: Enabled
-    IIS-ManagementConsole: Enabled
-    IIS-ASPNET45: Enabled
+    OK : Static Content
+    OK : Default Document
+    OK : HTTP Errors
+    OK : ASP.NET 4.8
+    OK : .NET Extensibility 4.8
+    OK : IIS Management Console
+    OK : Windows Authentication
 
     All required components installed
+
+    Example output for check mode (missing features):
+    Check started:
+    OK : Static Content
+    Not installed : ASP.NET 4.8
+    Not installed : IIS Management Console
+
+    Windows has missed components:
+    Not installed : ASP.NET 4.8
+    Not installed : IIS Management Console
 
 EXIT CODES
     0               Operation completed successfully

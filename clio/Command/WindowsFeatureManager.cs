@@ -23,17 +23,21 @@ public interface IWindowsFeatureManager
 
 	int GetActionMaxLength(IEnumerable<string> items);
 
+	bool IsNetFramework472OrHigherInstalled();
+	string GetNetFrameworkVersion();
 }
 
 public class WindowsFeatureManager : IWindowsFeatureManager
 {
 
 	public WindowsFeatureManager(IWorkingDirectoriesProvider workingDirectoriesProvider,
-		ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider, ILogger logger) {
+		ConsoleProgressbar consoleProgressBar, IWindowsFeatureProvider windowsFeatureProvider, ILogger logger,
+		INetFrameworkVersionChecker netFrameworkVersionChecker) {
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_consoleProgressBar = consoleProgressBar;
 		_windowsFeatureProvider = windowsFeatureProvider;
 		_logger = logger;
+		_netFrameworkVersionChecker = netFrameworkVersionChecker;
 	}
 
 
@@ -168,4 +172,9 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 	ConsoleProgressbar _consoleProgressBar;
 	private IWindowsFeatureProvider _windowsFeatureProvider;
 	private readonly ILogger _logger;
+	private readonly INetFrameworkVersionChecker _netFrameworkVersionChecker;
+
+	public bool IsNetFramework472OrHigherInstalled() => _netFrameworkVersionChecker.IsNetFramework472OrHigherInstalled();
+	
+	public string GetNetFrameworkVersion() => _netFrameworkVersionChecker.GetInstalledVersion();
 }

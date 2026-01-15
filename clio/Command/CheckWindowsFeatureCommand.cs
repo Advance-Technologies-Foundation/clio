@@ -38,22 +38,44 @@ public class CheckWindowsFeaturesCommand : Command<CheckWindowsFeaturesOptions>{
 			return 1;
 		}
 
-		List<WindowsFeature> missedComponents = _windowsFeatureManager.GetMissedComponents();
-		IEnumerable<WindowsFeature> requiredComponentStates = _windowsFeatureManager.GetRequiredComponent();
+		// Check .NET Framework version
+		bool hasRequiredNetFramework = _windowsFeatureManager.IsNetFramework472OrHigherInstalled();
+		string netFrameworkVersion = _windowsFeatureManager.GetNetFrameworkVersion();
+		
 		_logger.WriteLine(
 			"For detailed information visit: https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components");
 		_logger.WriteInfo($"{Environment.NewLine}Check started:");
+		
+		// Display .NET Framework check
+		_logger.WriteInfo($".NET Framework 4.7.2 or higher: {(hasRequiredNetFramework ? "✓ Installed" : "✗ Not installed")} (Detected: {netFrameworkVersion})");
+		
+		// Check Windows features
+		List<WindowsFeature> missedComponents = _windowsFeatureManager.GetMissedComponents();
+		IEnumerable<WindowsFeature> requiredComponentStates = _windowsFeatureManager.GetRequiredComponent();
+		
 		foreach (WindowsFeature item in requiredComponentStates) {
 			_logger.WriteInfo($"{item}");
 		}
 
 		_logger.WriteLine("");
+		
+		bool hasErrors = false;
+		
+		if (!hasRequiredNetFramework) {
+			_logger.WriteError($".NET Framework 4.7.2 or higher is required but not installed. Detected version: {netFrameworkVersion}");
+			_logger.WriteInfo("Download from: https://dotnet.microsoft.com/download/dotnet-framework");
+			hasErrors = true;
+		}
+		
 		if (missedComponents.Count > 0) {
 			_logger.WriteError("Windows has missed components:");
 			foreach (WindowsFeature item in missedComponents) {
 				_logger.WriteInfo($"{item}");
 			}
+			hasErrors = true;
+		}
 
+		if (hasErrors) {
 			return 1;
 		}
 
