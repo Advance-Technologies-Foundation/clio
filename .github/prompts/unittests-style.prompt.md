@@ -5,6 +5,7 @@ model: Claude Sonnet 4.5 (copilot)
 tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'context7/*', 'agent', 'todo']
 ---
 Given a unit test class name ${input:class_name}, locate the corresponding unit test file in the codebase.
+When a class name is is not provided, then use ${file}
 
 - Every test must be decorated with Description attribute that clearly states what the test is verifying.
 - Every Test Must have 3 areas (Arrange, Act, Assert) for better readability. Use comment to clearly separate these areas.
