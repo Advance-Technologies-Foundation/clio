@@ -9,7 +9,7 @@ namespace Clio.Command
 
 	//clio get-info -e work
 
-	[Verb("get-info", Aliases = new[] {"describe", "describe-creatio", "instance-info"},
+	[Verb("get-info", Aliases = ["describe", "describe-creatio", "instance-info"],
 		HelpText = "Gets system information for Creatio instance.")]
 	public sealed class GetCreatioInfoCommandOptions : RemoteCommandOptions
 	{ }

@@ -1,17 +1,66 @@
-﻿COMMAND TYPE
-    Service commands
+﻿NAME
+    install-gate - Install clio API gateway package to Creatio environment
 
-NAME
-    install-gate - installs a service package that expands clio commands
+SYNOPSIS
+    clio install-gate [OPTIONS]
+    clio update-gate [OPTIONS]
+    clio gate [OPTIONS]
+    clio installgate [OPTIONS]
 
 DESCRIPTION
-    Installs on the selected web application(website) a service package 
-    "cliogate" that makes available all Creatio's commands.
+    Installs the "cliogate" service package to a Creatio environment. This 
+    package expands clio's capabilities by enabling advanced remote commands 
+    and operations on the Creatio instance.
 
-EXAMPLE
-    clio install-gate
+    The cliogate package is required for:
+    - Workspace operations (push-workspace, restore-workspace)
+    - T.I.D.E. (Terribly Isolated Development Environment) functionality
+    - Advanced remote operations and extended API access
+    - Database and configuration management commands
 
-    clio install-gate -e <ENVIRONMENT NAME>
+    The command automatically restarts the Creatio application after 
+    installation to apply the changes.
+
+OPTIONS
+    -e, --environment <ENVIRONMENT_NAME>
+        Target environment name from your configuration
+
+    Environment options (can be used instead of -e):
+        -u, --uri <URI>
+            Application URI
+        
+        -l, --Login <LOGIN>
+            User login (administrator permission required)
+        
+        -p, --Password <PASSWORD>
+            User password
+
+EXAMPLES
+    Install cliogate using configured environment:
+        clio install-gate -e dev
+
+    Install cliogate with direct credentials:
+        clio gate -u https://myapp.creatio.com -l administrator -p password
+
+    Update existing cliogate installation:
+        clio update-gate -e production
+
+    Using shortest alias:
+        clio gate -e demo
+
+NOTES
+    - The command installs the version of cliogate bundled with your current 
+      clio installation
+    - After installation, the Creatio application will automatically restart
+    - Administrator permissions are required on the target environment
+    - Use 'clio info --gate' to check the cliogate version included with clio
+    - Use 'clio get-info -e <ENV>' to verify the installed cliogate version
+
+SEE ALSO
+    install-tide - Install T.I.D.E. extension
+    push-workspace - Push workspace to environment
+    get-info - Get information about a Creatio instance
+    info - Display clio version information
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

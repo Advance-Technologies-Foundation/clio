@@ -1,0 +1,86 @@
+COMMAND TYPE
+    Information commands
+
+NAME
+    get-info - Get system information for Creatio instance
+
+SYNOPSIS
+    get-info [OPTIONS]
+
+DESCRIPTION
+    Retrieves comprehensive information about the Creatio instance including
+    version, underlying runtime, database type, and product name. This command
+    communicates with the Creatio instance through the cliogate API gateway to
+    collect system details.
+    
+    The command returns information such as:
+    - Creatio version
+    - Runtime environment (.NET version)
+    - Database type (MSSQL, PostgreSQL, Oracle)
+    - Product name and configuration
+    - System settings and configuration details
+    
+    REQUIREMENTS:
+    - cliogate must be installed on the target Creatio instance
+    - Minimum cliogate version: 2.0.0.32
+    - Valid environment configuration with proper credentials
+
+OPTIONS
+    -e, --Environment       Environment name from the registered configuration
+                            The environment must be registered using 
+                            'reg-web-app' command
+
+EXAMPLES
+    # Get information for registered environment
+    clio get-info -e MyEnvironment
+
+    # Short form using environment as positional argument
+    clio get-info MyEnvironment
+
+    # Using an alias command
+    clio describe -e MyEnvironment
+    clio instance-info -e MyEnvironment
+    clio describe-creatio MyEnvironment
+
+ALIASES
+    - describe
+    - describe-creatio
+    - instance-info
+
+BEHAVIOR
+    1. Validates that cliogate is installed on the target environment
+    2. Checks cliogate version meets minimum requirement (2.0.0.32)
+    3. Sends GET request to /rest/CreatioApiGateway/GetSysInfo endpoint
+    4. Parses the JSON response
+    5. Displays system information in formatted output
+
+EXIT CODES
+    0   Successfully retrieved and displayed system information
+    1   Failed to retrieve information (environment not found, connection error,
+        or cliogate not installed/outdated)
+
+NOTES
+    - This command requires cliogate extension to be installed on Creatio
+    - If cliogate is not installed, you will receive an error message with
+      installation instructions
+    - The command uses GET HTTP method for the API call
+    - Response is returned as formatted JSON with system details
+
+TROUBLESHOOTING
+    If command fails:
+    - Verify environment is registered: clio show-web-app-list
+    - Check cliogate is installed: clio install-gate -e <ENVIRONMENT>
+    - Ensure cliogate version is 2.0.0.32 or higher
+    - Verify network connectivity to Creatio instance
+    - Check credentials are valid for the registered environment
+
+SEE ALSO
+    install-gate       - Install cliogate on Creatio instance
+    reg-web-app        - Register environment configuration
+    show-web-app-list  - Show registered environments
+    get-pkg-list       - Get list of packages in environment
+    get-build-info     - Get build information
+    info               - Get clio version information
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

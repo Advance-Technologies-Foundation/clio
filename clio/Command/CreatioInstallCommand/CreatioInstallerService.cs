@@ -939,7 +939,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 						string choice = (Console.ReadLine() ?? string.Empty).ToLower().Trim();
 						if (choice == "1") {
 							continue; // Loop back to ask for port again
-						} else {
+						} 
+						else {
 							continue; // Also loop back
 						}
 					}
@@ -950,7 +951,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 			
 			// Ensure we have a valid port
-			if (options.SitePort <= 0 || options.SitePort > 65535) {
+			if (options.SitePort is <= 0 or > 65535) {
 				options.SitePort = 8080;
 			}
 		}

@@ -80,27 +80,82 @@ To display command help use:
 clio <COMMAND_NAME> --help
 ```
 
-#
+## ver
 
-Get versions of all known components
+Display version information for clio and related components.
+
+**Aliases:** `info`, `get-version`, `i`
+
+### Synopsis
+```bash
+clio ver [OPTIONS]
+```
+
+### Description
+Displays version information for clio, cliogate, and the .NET runtime environment. By default (without options), displays all component versions and the path to the settings file.
+
+This command is useful for troubleshooting, verifying installations, and checking component versions for compatibility.
+
+### Options
+- `--all` - Display all component versions (default behavior)
+- `--clio` - Display clio version only
+- `--gate` - Display cliogate version only (shows version included with clio)
+- `--runtime` - Display .NET runtime version only
+- `-s, --settings-file` - Display path to settings file
+
+### Examples
+
+Display all versions (default):
 ```bash
 clio ver
 ```
 
-Get current clio version
+Display only clio version:
 ```bash
 clio ver --clio
 ```
 
-Get current cliogate version
+Display only cliogate version:
 ```bash
 clio ver --gate
 ```
 
-Get dotnet runtime that executes clio
+Display .NET runtime version:
 ```bash
 clio ver --runtime
 ```
+
+Display settings file path:
+```bash
+clio ver -s
+```
+
+Using aliases:
+```bash
+clio info
+clio get-version
+clio i
+```
+
+### Output Format
+**Default output (all versions):**
+```
+clio:   8.0.1.97
+gate:   2.0.0.38
+dotnet: 8.0.0
+settings file path: C:\Users\username\.clio\appsettings.json
+```
+
+**Individual component output:**
+```
+clio:   8.0.1.97
+```
+
+### Notes
+- The cliogate version shown is the version included with current clio installation
+- This may differ from the version installed on a specific Creatio instance
+- Use `get-info` command to check the actual cliogate version on an environment
+
 
 # Package Management
 - [Create a new package](#new-pkg)
@@ -446,17 +501,64 @@ clio restore-db --dbServerName custom-postgres --dbName creatiodev --backupPath 
 
 ## get-pkg-list
 
-To get packages list in selected environment, use the next command:
+Get list of packages installed in Creatio environment.
 
-```
-clio get-pkg-list
+**Aliases:** `packages`
+
+### Synopsis
+```bash
+clio get-pkg-list [OPTIONS]
 ```
 
-for filter results, use -f option
+### Description
+Retrieves and displays a list of all packages installed in the specified Creatio environment. The command returns package information including name, version, and maintainer for each installed package.
 
+The command can filter results by package name and return data in either table format (default) or JSON format for programmatic use.
+
+### Options
+- `-e, --Environment` - Environment name from registered configuration
+- `-f, --Filter` - Filter packages by name (case-insensitive partial match)
+- `-j, --Json` - Return results in JSON format (default: false)
+
+Standard environment options (`-u`, `-l`, `-p`) are also available.
+
+### Examples
+
+Get all packages from registered environment:
+```bash
+clio get-pkg-list -e MyEnvironment
 ```
-clio get-pkg-list -f clio
+
+Filter packages by name:
+```bash
+clio get-pkg-list -e MyEnvironment -f clio
 ```
+
+Get packages in JSON format:
+```bash
+clio get-pkg-list -e MyEnvironment -j
+```
+
+Filter and return as JSON:
+```bash
+clio get-pkg-list -e MyEnvironment -f Custom -j
+```
+
+Using alias:
+```bash
+clio packages -e MyEnvironment
+```
+
+### Output Format
+**Table format (default):**
+```
+Name                Version         Maintainer
+──────────────────────────────────────────────
+PackageName1        1.0.0          Company
+PackageName2        2.1.3          Developer
+```
+
+**JSON format** (`-j` flag): Returns an array of package objects with detailed information.
 
 ## set-pkg-version
 
@@ -1277,6 +1379,64 @@ clio install-gate -e demo
 ```bash
 clio build-workspace
 ```
+
+## install-gate
+
+Install the cliogate service package to a Creatio environment. This package expands clio's capabilities by enabling advanced remote commands and operations.
+
+```bash
+clio install-gate -e <ENVIRONMENT_NAME>
+```
+
+**Aliases:** `update-gate`, `gate`, `installgate`
+
+### Description
+
+The cliogate package is a service package that enables advanced clio functionality on Creatio instances. It provides:
+- Extended API access for remote operations
+- Workspace management capabilities
+- Database and configuration management
+- Support for T.I.D.E. (Terribly Isolated Development Environment)
+
+After installation, the command automatically restarts the Creatio application to apply changes.
+
+### Options
+
+- `-e, --environment <ENVIRONMENT_NAME>` (required if not using direct credentials): Target environment name from configuration
+- `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
+- `-l, --Login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --Password <PASSWORD>` (optional): User password
+
+### Examples
+
+Install using configured environment:
+```bash
+clio install-gate -e dev
+```
+
+Install with direct credentials:
+```bash
+clio gate -u https://myapp.creatio.com -l administrator -p password
+```
+
+Update existing installation:
+```bash
+clio update-gate -e production
+```
+
+### Notes
+
+- Administrator permissions are required on the target environment
+- The installed version matches the cliogate bundled with your clio installation
+- Use `clio info --gate` to check the cliogate version included with clio
+- Use `clio get-info -e <ENV>` to verify the installed cliogate version on an environment
+- The application will automatically restart after installation
+
+### Related Commands
+
+- [`install-tide`](#install-tide) - Install T.I.D.E. extension (requires cliogate)
+- [`push-workspace`](#push-workspace) - Push workspace to environment (requires cliogate)
+- [`get-info`](#get-info) - Get information about a Creatio instance
 
 ## install-tide
 

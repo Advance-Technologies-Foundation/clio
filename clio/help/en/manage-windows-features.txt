@@ -1,0 +1,84 @@
+COMMAND TYPE
+    Installation and Setup commands
+
+NAME
+    manage-windows-features - manage Windows features required for Creatio
+
+DESCRIPTION
+    manage-windows-features command allows you to check, install, or uninstall
+    Windows features required for running Creatio on Windows Server or Windows
+    desktop operating systems.
+
+    This command is only available on Windows operating system. Administrator
+    rights are required for install and uninstall operations. When executed on
+    macOS or Linux, the command will return an error message with exit code 1.
+
+    The command operates in three modes:
+
+    Check mode (-c):
+        Verifies the installation status of all required Windows features and
+        reports which features are missing or properly installed.
+
+    Install mode (-i):
+        Installs all missing Windows features required for Creatio. Requires
+        administrator privileges.
+
+    Uninstall mode (-u):
+        Removes all Windows features required for Creatio. Requires
+        administrator privileges.
+
+    For detailed information about required Windows components, visit:
+    https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components
+
+SYNOPSIS
+    manage-windows-features [options]
+
+OPTIONS
+    --Check         -c          Check status of required Windows features
+
+    --Install       -i          Install all missing required features
+                                (requires administrator rights)
+
+    --Uninstall     -u          Uninstall all required features
+                                (requires administrator rights)
+
+EXAMPLE
+    clio manage-windows-features -c
+        checks which Windows features are installed and which are missing
+
+    clio manage-windows-features -i
+        installs all missing Windows features (run as administrator)
+
+    clio manage-windows-features -u
+        uninstalls Windows features required for Creatio (run as administrator)
+
+    Example output for check mode:
+    Check started:
+    IIS-WebServerRole: Enabled
+    IIS-WebServer: Enabled
+    IIS-CommonHttpFeatures: Enabled
+    IIS-HttpErrors: Enabled
+    IIS-ApplicationDevelopment: Enabled
+    IIS-NetFxExtensibility45: Enabled
+    IIS-HealthAndDiagnostics: Enabled
+    IIS-HttpLogging: Enabled
+    IIS-Security: Enabled
+    IIS-RequestFiltering: Enabled
+    IIS-Performance: Enabled
+    IIS-WebServerManagementTools: Enabled
+    IIS-ManagementConsole: Enabled
+    IIS-ASPNET45: Enabled
+
+    All required components installed
+
+EXIT CODES
+    0               Operation completed successfully
+    1               Operation failed (missing features detected in check mode,
+                    command run on non-Windows OS, or error during
+                    install/uninstall)
+
+ALIASES
+    mwf, mng-win-features
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

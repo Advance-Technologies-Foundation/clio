@@ -1,0 +1,48 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    healthcheck - Healthcheck monitoring
+
+DESCRIPTION
+    The healthcheck command performs health monitoring of Creatio web 
+    applications by checking the availability and responsiveness of WebHost 
+    and/or WebAppLoader endpoints. This command is useful for monitoring 
+    application status in CI/CD pipelines or during development.
+
+SYNOPSIS
+    healthcheck [options]
+
+ALIASES
+    hc
+
+OPTIONS
+    --WebHost               -h          Check web-host endpoint 
+                                        (/0/api/HealthCheck/Ping)
+
+    --WebApp                -a          Check web-app endpoint 
+                                        (/api/HealthCheck/Ping)
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+EXAMPLE
+    clio healthcheck -a true
+        checks WebAppLoader health status
+
+    clio healthcheck -h true
+        checks WebHost health status
+
+    clio healthcheck -a true -h true
+        checks both WebAppLoader and WebHost health status
+
+    clio hc -a true -e myenv
+        checks WebAppLoader health status for environment named myenv
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
