@@ -55,9 +55,9 @@ public class HostsCommand(
 		}
 
 		logger.WriteLine("=== Creatio Hosts ===");
-		logger.PrintTable(table);
-		//logger.WriteInfo(table.ToMinimalString());
-		//logger.WriteInfo($"\nTotal: {hosts.Count} host(s)");
+		//logger.PrintTable(table);
+		logger.WriteInfo(table.ToMinimalString());
+		logger.WriteInfo($"\nTotal: {hosts.Count} host(s)");
 	}
 
 	private List<EnvironmentSettings> GetAllEnvironmentsWithPath() {
