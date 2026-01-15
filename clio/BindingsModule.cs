@@ -327,6 +327,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<IISDeploymentStrategy>();
 		containerBuilder.RegisterType<DotNetDeploymentStrategy>();
 		containerBuilder.RegisterType<DeploymentStrategyFactory>();
+		containerBuilder.RegisterType<OpenAppCommand>();
 
 		// Register platform-specific system service managers
 		containerBuilder.Register<ISystemServiceManager>(c =>

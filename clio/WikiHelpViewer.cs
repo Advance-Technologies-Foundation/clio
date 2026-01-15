@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Autofac;
 using Clio.Common;
 using Clio.Utilities;
 using CommandLine;
@@ -66,21 +65,21 @@ internal class WikiHelpViewer : CustomHelpViewer{
 
 	#region Fields: Private
 
-	private readonly Dictionary<string, List<string>> _wikiAncors = new();
+	private readonly Dictionary<string, List<string>> _wikiAnchors = new();
+	private readonly IWebBrowser _webBrowser;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public WikiHelpViewer() {
-		IContainer container = new BindingsModule().Register();
-		IWorkingDirectoriesProvider directoryProvider = container.Resolve<IWorkingDirectoriesProvider>();
+	public WikiHelpViewer(IWorkingDirectoriesProvider directoryProvider, IFileSystem fileSystem, IWebBrowser webBrowser) {
+		_webBrowser = webBrowser;
 		string anchorFilePath = Path.Combine(directoryProvider.ExecutingDirectory, "Wiki", "WikiAnchors.txt");
-		string[] fileLines = File.ReadAllLines(anchorFilePath);
+		string[] fileLines = fileSystem.File.ReadAllLines(anchorFilePath);
 		foreach (string line in fileLines) {
-			string[] x = line.Split(':');
-			if (x.Length == 2) {
-				_wikiAncors[x[0]] = x[1].Split(',').Select(x => x).ToList();
+			string[] parts = line.Split(':');
+			if (parts.Length == 2) {
+				_wikiAnchors[parts[0]] = parts[1].Split(',').Select(anchor => anchor).ToList();
 			}
 		}
 	}
@@ -96,8 +95,8 @@ internal class WikiHelpViewer : CustomHelpViewer{
 	}
 
 	private string GetWikiAnchor(string commandName) {
-		foreach (string anchor in _wikiAncors.Keys) {
-			if (_wikiAncors[anchor].Contains(commandName)) {
+		foreach (string anchor in _wikiAnchors.Keys) {
+			if (_wikiAnchors[anchor].Contains(commandName)) {
 				return anchor;
 			}
 		}
@@ -111,7 +110,7 @@ internal class WikiHelpViewer : CustomHelpViewer{
 
 	public bool CheckHelp(string commandName) {
 		try {
-			return WebBrowser.Enabled && WebBrowser.CheckUrl(GetCommandHelpUrl(commandName));
+			return _webBrowser.Enabled && _webBrowser.CheckUrl(GetCommandHelpUrl(commandName));
 		}
 		catch {
 			return false;
@@ -119,7 +118,7 @@ internal class WikiHelpViewer : CustomHelpViewer{
 	}
 
 	public void ViewHelp(string commandName) {
-		WebBrowser.OpenUrl(GetCommandHelpUrl(commandName));
+		_webBrowser.OpenUrl(GetCommandHelpUrl(commandName));
 	}
 
 	#endregion

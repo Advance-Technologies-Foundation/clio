@@ -197,7 +197,7 @@ internal class Program {
 					FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
 					UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 					PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
-					OpenAppOptions opts => CreateRemoteCommandWithoutClient<OpenAppCommand>(opts).Execute(opts),
+					OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
 					PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
 ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
@@ -876,7 +876,8 @@ ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Exe
 			Parser.Default.Settings.CustomHelpViewer = bm.Resolve<LocalHelpViewer>();
 		}
 		else {
-			Parser.Default.Settings.CustomHelpViewer = new WikiHelpViewer();
+			IContainer bm = new BindingsModule().Register();
+			Parser.Default.Settings.CustomHelpViewer = bm.Resolve<WikiHelpViewer>();
 		}
 		
 		ParserResult<object> parserResult = Parser.Default.ParseArguments(args, CommandOption);

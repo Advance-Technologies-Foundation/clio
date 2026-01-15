@@ -1,0 +1,40 @@
+﻿COMMAND TYPE
+    Environment Management
+
+NAME
+    open-web-app - open application in web browser
+
+DESCRIPTION
+    Opens a registered Creatio environment in your default web browser.
+    The command uses the stored environment settings from 'reg-web-app'
+    and navigates to the Creatio simple login page.
+    
+    Works cross-platform on Windows, macOS, and Linux.
+
+SYNOPSIS
+    clio open-web-app [options]
+    clio open <ENVIRONMENT_NAME>
+
+OPTIONS
+    --Environment           -e          Environment name to open
+                                        (uses stored environment settings from reg-web-app)
+
+EXAMPLE
+    clio open-web-app
+        opens the active environment in default web browser
+
+    clio open my-dev-env
+        opens environment named 'my-dev-env' in default web browser
+    
+    clio open-web-app -e production
+        opens the production environment in default web browser
+
+NOTES
+    - The environment must be registered using 'reg-web-app' command first
+    - Uses the stored environment URI from configuration
+    - Opens browser to: {environment-uri}/Shell/?simplelogin=true
+    - If environment URL is empty or invalid, an error message will be displayed
+    - User must login manually after browser opens
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

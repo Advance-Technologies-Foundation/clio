@@ -1056,7 +1056,7 @@ Aliases: `gwu`
 - [Delete the existing environment](./docs/commands/UnregAppCommand.md)
 - [Ping environment](./docs/commands/PingCommand.md)
 - [View application list](./docs/commands/ShowAppListCommand.md)
-- [Open application](#open)
+- [Open application](./docs/commands/OpenAppCommand.md)
 - [Clone environment](#clone-env)
 - [Healthcheck](./docs/commands/HealthCheckCommand.md)
 - [Get Creatio Info](#get-info)
@@ -1148,6 +1148,56 @@ clio envs --format table
 - **json**: JSON format with environment settings (default)
 - **table**: Formatted table with all environments
 - **raw**: Plain text format with field labels
+
+## open-web-app
+
+Open a registered Creatio environment in your default web browser.
+
+**For detailed documentation, see [OpenAppCommand](./docs/commands/OpenAppCommand.md)**
+
+**Aliases:** `open`
+
+**Synopsis:**
+```bash
+clio open-web-app [-e ENVIRONMENT_NAME]
+clio open <ENVIRONMENT_NAME>
+```
+
+**Description:**
+Opens the configured environment in your system's default web browser. The command loads the environment settings from your clio configuration and opens the browser to the Creatio simple login page (`/Shell/?simplelogin=true`).
+
+The command works cross-platform on Windows, macOS, and Linux.
+
+**Examples:**
+
+Open the active environment:
+```bash
+clio open-web-app
+```
+
+Open a specific environment using alias:
+```bash
+clio open my-dev-env
+```
+
+Open environment with explicit option:
+```bash
+clio open-web-app -e production
+```
+
+**Options:**
+- `-e, --Environment <ENVIRONMENT_NAME>`: Environment name to open. If not specified, uses the active environment.
+
+**Error Handling:**
+- Returns error if environment has empty URL
+- Returns error if environment URL format is invalid
+- Provides helpful messages suggesting [`reg-web-app`](#reg-web-app) or [`cfg`](#cfg) commands to fix configuration issues
+
+**See Also:**
+- [`reg-web-app`](#reg-web-app) - Register environment settings
+- [`show-web-app-list`](#show-web-app-list) - List registered environments
+- [`ping`](#ping) - Validate environment connectivity
+- [Detailed Documentation](./docs/commands/OpenAppCommand.md) - Full command reference
 
 Fields included: uri, dbName, backupFilePath, login, password (masked), maintainer, isNetCore,
 clientId, clientSecret (masked), authAppUri, simpleLoginUri, safe, developerModeEnabled,
