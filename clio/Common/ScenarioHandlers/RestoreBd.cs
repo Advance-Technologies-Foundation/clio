@@ -1,10 +1,10 @@
 ﻿using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.Data.SqlClient;
 using OneOf;
 
 namespace Clio.Common.ScenarioHandlers;
@@ -17,14 +17,14 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 
 	#region Properties: Public
 
-	public Dictionary<string, string> Arguments { get; set; }
+	private Dictionary<string, string> Arguments { get; set; }
 
 	#endregion
 
 	#region Methods: Private
 
 	private void ConnectToSQl(string connectionString){
-		using SqlConnection connection = new SqlConnection(connectionString);
+		using SqlConnection connection = new (connectionString);
 		connection.Open();
 		RestoreDbFromFile(connection);
 		CreateDbUser(connection);
@@ -45,16 +45,15 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 	private void CreateDbUser(SqlConnection connection){
 		string dbUserName = Arguments["dbUserName"];
 		string dbPassword = Arguments["dbPassword"];
-		string query = @$"
-                if not Exists (select loginname from master.dbo.syslogins where name = '{dbUserName}')
-                Begin
-	                declare @SqlStatement as nvarchar(max) = 'USE [master]'
-	                EXEC sp_executesql @SqlStatement
-	                select @SqlStatement = 'CREATE LOGIN [{dbUserName}] WITH PASSWORD=N'+'''{dbPassword}'''+', DEFAULT_DATABASE=[master], CHECK_EXPIRATION=OFF, CHECK_POLICY=OFF'
-	                EXEC sp_executesql @SqlStatement
-                End
-            ";
-
+		string query = $"""
+                           if not Exists (select loginname from master.dbo.syslogins where name = '{dbUserName}')
+                           Begin
+                               declare @SqlStatement as nvarchar(max) = 'USE [master]'
+                               EXEC sp_executesql @SqlStatement
+                               select @SqlStatement = 'CREATE LOGIN [{dbUserName}] WITH PASSWORD=N'+'''{dbPassword}'''+', DEFAULT_DATABASE=[master], CHECK_EXPIRATION=OFF, CHECK_POLICY=OFF'
+                               EXEC sp_executesql @SqlStatement
+                           End
+                       """;
 		SqlCommand sqlCommand = new(query, connection);
 		sqlCommand.ExecuteNonQuery();
 	}
@@ -62,10 +61,11 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 	private void GrantPermissionToUser(SqlConnection connection){
 		string dbName = Arguments["dbName"];
 		string dbUserName = Arguments["dbUserName"];
-		string query = @$"USE [{dbName}]
-                CREATE USER [{dbUserName}] FOR LOGIN [{dbUserName}];
-                ALTER ROLE [db_owner] ADD MEMBER [{dbUserName}];
-                ";
+		string query = $"""
+                        USE [{dbName}]
+                        CREATE USER [{dbUserName}] FOR LOGIN [{dbUserName}];
+                        ALTER ROLE [db_owner] ADD MEMBER [{dbUserName}];
+                        """;
 		SqlCommand sqlCommand = new(query, connection);
 		sqlCommand.ExecuteNonQuery();
 	}
@@ -84,13 +84,13 @@ internal class RestoreBdRequestHandler : IRequestHandler<RestoreBdRequest, OneOf
 		string mdf = Path.Join(dataFolderPath, dbName + ".mdf");
 		string ldf = Path.Join(dataFolderPath, dbName + ".ldf");
 
-		string query = @$"
-                USE [master] RESTORE DATABASE [{dbName}] 
-                FROM  DISK = N'{backupFileName}' WITH  FILE = 1, 
-                MOVE N'TSOnline_Data' TO N'{mdf}', 
-                MOVE N'TSOnline_Log' TO N'{ldf}', 
-                NOUNLOAD,  STATS = 5
-            ";
+		string query = $"""
+                    USE [master] RESTORE DATABASE [{dbName}] 
+                    FROM  DISK = N'{backupFileName}' WITH  FILE = 1, 
+                    MOVE N'TSOnline_Data' TO N'{mdf}', 
+                    MOVE N'TSOnline_Log' TO N'{ldf}', 
+                    NOUNLOAD,  STATS = 5
+                """;
 		
 		SqlCommand sqlCommand = new(query, connection);
 		sqlCommand.ExecuteNonQuery();
