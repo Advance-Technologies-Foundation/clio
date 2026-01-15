@@ -1,24 +1,167 @@
 COMMAND TYPE
-    Service
+    Configuration Management
 
 NAME
-    show-web-app-list - show applications options list
-
-DESCRIPTION
-    View list of all web applications
+    show-web-app-list - Display registered Creatio environment configurations
 
 SYNOPSIS
-    clio show-web-app-list
+    show-web-app-list [NAME] [OPTIONS]
+
+ALIASES
+    env, envs, show-web-app
+
+DESCRIPTION
+    Lists registered Creatio environment configurations stored in your local
+    clio settings. Use this command to view connection details for environments
+    you've registered with 'reg-web-app', check which environments are 
+    available, and verify configuration settings before using other clio 
+    commands.
+    
+    This command operates entirely on local configuration files and does not
+    require network connectivity to Creatio instances. It displays stored
+    connection settings, not live environment status.
+    
+    WARNING: When displaying all environments with default format, passwords
+    and secrets are shown in plain text. Use specific environment query with
+    --format option for masked output.
 
 OPTIONS
-    Name (pos. 0)    Environment(application) name
+    Environment Selection:
+        NAME                        Specific environment name (positional argument)
+        -e, --env <NAME>            Environment name (option alias)
+    
+    Display Format:
+        -f, --format <FORMAT>       Output format: json, table, or raw
+                                    Default: json
+        --raw                       Raw output (shorthand for --format raw)
+        -s, --short                 Show abbreviated list format (table view)
 
-EXAMPLE
+OUTPUT FORMATS
+    json    - Full JSON format with all environment settings (default)
+              Includes all fields from EnvironmentSettings
+    
+    table   - Formatted table with columns: Name, Url, Login, IsNetCore
+              Best for quick overview of multiple environments
+    
+    raw     - Plain text format with field labels
+              Useful for scripting and parsing
+
+FIELDS DISPLAYED
+    The following fields are included in output (when available):
+    - uri                    - Creatio application URL
+    - dbName                 - Database name
+    - backupFilePath         - Path to backup file
+    - login                  - Username (basic authentication)
+    - password               - Password (PLAIN TEXT in default output,
+                               masked when querying specific environment)
+    - maintainer             - Maintainer password
+    - isNetCore              - .NET Core flag (true/false)
+    - clientId               - OAuth Client ID
+    - clientSecret           - OAuth Client Secret (PLAIN TEXT in default,
+                               masked when querying specific environment)
+    - authAppUri             - OAuth Authentication App URI
+    - simpleLoginUri         - Simple login URI
+    - safe                   - Safe mode flag
+    - developerModeEnabled   - Developer mode status
+    - isDevMode              - Development mode flag
+    - workspacePathes        - Workspace paths
+    - environmentPath        - Environment file system path
+    - dbServerKey            - Database server key
+    - dbServer               - Nested database server object:
+        - uri                - Database server URI
+        - workingFolder      - Database working folder
+        - login              - Database username
+        - password           - Database password (masking varies)
+
+EXAMPLES
+    # List all registered environments (JSON format)
     clio show-web-app-list
-        shows all applications options list
-        
-    clio show-web-app-list <ENVIRONMENT_NAME>
-            shows <ENVIRONMENT_NAME> application options list
+    
+    # List all environments in short table format
+    clio show-web-app-list --short
+    clio envs -s
+    
+    # Show specific environment details
+    clio show-web-app-list production
+    clio show-web-app-list --env production
+    
+    # Show all environments in table format
+    clio show-web-app-list --format table
+    clio envs -f table
+    
+    # Show environment in raw text format
+    clio show-web-app-list production --format raw
+    clio envs production --raw
+    
+    # Using command aliases
+    clio envs                           # List all environments
+    clio env production                 # Show specific environment
+    clio show-web-app -s                # Short format
+
+BEHAVIOR
+    When NAME is not specified:
+        - Default JSON format shows passwords in PLAIN TEXT
+        - --short flag shows table view (no passwords displayed)
+        - --format table shows table without sensitive data
+        - --format raw shows all data with masking
+    
+    When NAME is specified:
+        - Shows details for the specified environment only
+        - JSON and raw formats mask sensitive fields (*****)
+        - Returns error if environment not found
+    
+    Security Considerations:
+        - Default output (all environments, JSON) shows PLAIN TEXT passwords
+        - Use specific environment query for masked output
+        - Use --short or --format table to avoid displaying passwords
+        - Be cautious when sharing terminal output or logs
+        - Safe for display in logs and terminal history
+
+EXIT CODES
+    0   Successfully displayed environment information
+    1   Error occurred (environment not found, invalid format, etc.)
+
+NOTES
+    - This is a local-only command requiring no network access
+    - Does not verify if Creatio instances are accessible or running
+    - Shows stored configuration, not live environment state
+    - Settings file location displayed with --short format
+    - Cross-platform compatible (Windows, macOS, Linux)
+    - Output includes all fields to support AI assistants and scripting
+
+WORKFLOW INTEGRATION
+    Before using other commands, check available environments:
+        clio show-web-app-list
+    
+    Verify specific environment configuration:
+        clio show-web-app-list production
+    
+    Quick check of registered environments:
+        clio envs -s
+    
+    Export environment configuration for documentation:
+        clio show-web-app-list production > production-config.json
+
+TROUBLESHOOTING
+    No environments shown:
+        - No environments registered yet
+        - Use 'clio reg-web-app' to register an environment
+    
+    Environment not found:
+        - Check spelling of environment name
+        - Use 'clio show-web-app-list' to see available environments
+        - Environment names are case-sensitive
+    
+    Invalid format specified:
+        - Valid formats are: json, table, raw
+        - Check for typos in format name
+
+SEE ALSO
+    reg-web-app        - Register new environment configuration
+    unreg-web-app      - Unregister environment configuration
+    show-local-envs    - Display local environment health status
+    get-info           - Get live system information from Creatio instance
+    ping               - Check if Creatio application is responding
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

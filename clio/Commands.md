@@ -1154,7 +1154,11 @@ clientId, clientSecret (masked), authAppUri, simpleLoginUri, safe, developerMode
 isDevMode, workspacePathes, environmentPath, dbServerKey, and nested dbServer { uri, workingFolder,
 login, password (masked) }.
 
-Note: Sensitive fields like Password and ClientSecret are masked in all formats.
+⚠️ **Security Note**: Passwords and ClientSecret are ONLY masked when:
+- Querying a specific environment: `clio show-web-app-list <ENV_NAME>`
+- Using `--format raw` for all environments
+- NOT masked when listing all environments with default JSON format
+- Use `--short` or query specific environments to avoid exposing passwords
 
 For comprehensive documentation, see: [`show-web-app-list`](./docs/commands/ShowAppListCommand.md)
 

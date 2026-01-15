@@ -18,7 +18,7 @@
     <PackageReference Include="NUnit3TestAdapter" Version="6.1.0" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="22.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->

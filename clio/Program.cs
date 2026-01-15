@@ -173,7 +173,7 @@ internal class Program {
 					ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
 					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
-					AppListOptions opts => CreateCommand<ShowAppListCommand>(new SettingsRepository()).Execute(opts),
+					AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
 					UnregAppOptions opts => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
 					GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
 					PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),

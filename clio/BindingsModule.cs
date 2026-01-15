@@ -273,6 +273,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
 		containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
 		containerBuilder.RegisterType<GetAppHashCommand>();
+		containerBuilder.RegisterType<ShowAppListCommand>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
 		containerBuilder.RegisterType<LinkPackageStoreCommand>();

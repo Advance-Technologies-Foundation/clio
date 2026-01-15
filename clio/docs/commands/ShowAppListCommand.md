@@ -36,13 +36,18 @@ None - all arguments are optional.
 
 ## Specification
 
-- Outputs **all** fields from `EnvironmentSettings`, with secrets masked:
-  - `uri`, `dbName`, `backupFilePath`, `login`, `password (masked)`, `maintainer`, `isNetCore`
-  - `clientId`, `clientSecret (masked)`, `authAppUri`, `simpleLoginUri`
+- Outputs **all** fields from `EnvironmentSettings`
+- **Password masking behavior varies by query type:**
+  - **Specific environment** (with name): Passwords/secrets MASKED in json and raw formats
+  - **All environments** (no name): Passwords shown in PLAIN TEXT in default json format
+  - **All environments with --format raw**: Passwords MASKED
+  - **--short or --format table**: Passwords not displayed
+- Fields output: `uri`, `dbName`, `backupFilePath`, `login`, `password`, `maintainer`, `isNetCore`
+  - `clientId`, `clientSecret`, `authAppUri`, `simpleLoginUri`
   - `safe`, `developerModeEnabled`, `isDevMode`
   - `workspacePathes`, `environmentPath`
   - `dbServerKey`
-  - `dbServer` object: `uri`, `workingFolder`, `login`, `password (masked)`
+  - `dbServer` object: `uri`, `workingFolder`, `login`, `password`
 - `-e|--env` is a first-class alias for the positional `name` argument; both are interchangeable.
 - `--short` renders a table view (Name, Url, Login, IsNetCore) using `ISettingsRepository.ShowSettingsTo`.
 - `--format table` and `--format raw` apply to single-environment and all-environment outputs.
@@ -102,7 +107,10 @@ clio envs production
 
 ### Full Format (Default)
 
-Shows complete JSON configuration for each environment, including database info and paths (secrets are masked):
+Shows complete JSON configuration for each environment, including database info and paths.
+
+⚠️ **WARNING**: When listing all environments (no specific name), passwords are shown in PLAIN TEXT.
+For masked output, query a specific environment or use --format raw.
 ```json
 {
   "production": {
@@ -148,7 +156,7 @@ Shows a concise table format:
 
 ### Specific Environment
 
-Shows all fields for the requested environment (masked where appropriate):
+Shows all fields for the requested environment with passwords and secrets masked:
 ```json
 {
   "uri": "https://myapp.creatio.com",
@@ -201,7 +209,7 @@ Environment 'nonexistent' not found in settings.
 
 **Connection Details**:
 - **URI**: Application URL
-- **Authentication**: Login/OAuth settings (credentials masked)
+- **Authentication**: Login/OAuth settings (credentials masked only when querying specific environment)
 - **Maintainer**: Maintainer mode settings
 
 **Platform Configuration**:
@@ -211,7 +219,7 @@ Environment 'nonexistent' not found in settings.
 
 **Development Settings**:
 - **WorkspacePathes**: Configured workspace paths
-- **ClientId/ClientSecret**: OAuth configuration (secrets masked)
+- **ClientId/ClientSecret**: OAuth configuration (secrets masked when querying specific environment)
 - **AuthAppUri**: OAuth authentication URI
 
 ### Common Use Cases
@@ -219,7 +227,7 @@ Environment 'nonexistent' not found in settings.
 - **Environment inventory**: See all configured environments at a glance
 - **Before connecting**: Verify environment exists and settings are correct
 - **Troubleshooting**: Check if environment configuration is the issue
-- **Team coordination**: Share environment names and URIs (safely, with masked credentials)
+- **Team coordination**: Share environment names and URIs (⚠️ use specific environment query or --short to avoid exposing passwords)
 - **Configuration validation**: Confirm settings match expected values
 - **Cleanup planning**: See which environments can be removed with [`unreg-web-app`](UnregAppCommand.md)
 
@@ -279,5 +287,8 @@ clio push-pkg MyPackage -e production
 - **Output selection**:
   - `--short` delegates to `ISettingsRepository.ShowSettingsTo` for a compact table across environments.
   - Otherwise chooses `json`, `table`, or `raw` formatting for single or multiple environments.
-- **Safety**: `MaskSensitiveData` masks `Password` and `ClientSecret` (including nested `DbServer`).
+- **Safety**: `MaskSensitiveData` masks `Password` and `ClientSecret` (including nested `DbServer`) ONLY when:
+  - Querying a specific environment (all formats)
+  - Listing all environments with `--format raw`
+  - NOT masked when listing all environments with default JSON format (uses `ISettingsRepository.ShowSettingsTo`)
 - **I/O**: All output flows to `Console.Out` with UTF-8 encoding; no network calls (local config only).
