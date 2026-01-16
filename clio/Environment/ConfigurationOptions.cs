@@ -427,12 +427,12 @@ namespace Clio
 		}
 
 		public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false) {
-			JsonSerializer serializer = new JsonSerializer() {
+			JsonSerializer serializer = new () {
 				Formatting = Formatting.Indented,
 				NullValueHandling = NullValueHandling.Ignore
 			};
 			
-			if (String.IsNullOrEmpty(environment) && showShort) {
+			if (string.IsNullOrEmpty(environment) && showShort) {
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				
 				ConsoleTable t = new () {
@@ -446,9 +446,10 @@ namespace Clio
 					t.Rows.Add([e.name, e.url]);
 				});
 				ConsoleLogger.Instance.PrintTable(t);
+				return;
 			}
 			
-			if (String.IsNullOrEmpty(environment) && !showShort) {
+			if (string.IsNullOrEmpty(environment) && !showShort) {
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				serializer.Serialize(streamWriter, _settings);
 			} else {
