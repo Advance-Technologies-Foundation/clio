@@ -39,7 +39,7 @@ public class Postgres : IPostgres
 	}
 	
 	public virtual bool CreateDbFromTemplate (string templateName, string dbName) {
-		_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
+		//_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
 		bool dbExists = CheckDbExists(dbName);
 		_logger.WriteInfo($"Database '{dbName}' exists: {dbExists}");
 		if (dbExists) {
@@ -61,6 +61,7 @@ public class Postgres : IPostgres
 			killConnectionCmd.ExecuteNonQuery();
 			
 			using NpgsqlCommand cmd = dataSource.CreateCommand($"CREATE DATABASE \"{dbName}\" TEMPLATE=\"{templateName}\" ENCODING UTF8 CONNECTION LIMIT -1");
+			cmd.CommandTimeout = 600; // 10 minutes
 			cmd.ExecuteNonQuery();
 			cnn.Close();
 			return true;
@@ -69,7 +70,7 @@ public class Postgres : IPostgres
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			_logger.WriteError(ne.Message);
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
 			return false;
 		}
 		catch(Exception e) {
@@ -89,10 +90,10 @@ public class Postgres : IPostgres
 			return true;
 		} catch (Exception e)  when (e is PostgresException pe){
 			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
-			return false;
+			return false; // 3 minutes should be enough time to restore from template
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			_logger.WriteError(ne.Message);
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
 			return false;
 		}
 		catch(Exception e) {
@@ -115,7 +116,7 @@ public class Postgres : IPostgres
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			_logger.WriteError(ne.Message);
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
 			return false;
 		}
 		catch(Exception e) {
@@ -135,7 +136,7 @@ public class Postgres : IPostgres
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
-			var result = cmd.ExecuteScalar();
+			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			return result is long and 1;
 		} catch (Exception e)  when (e is PostgresException pe){
@@ -143,7 +144,7 @@ public class Postgres : IPostgres
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			_logger.WriteError(ne.Message);
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
 			return false;
 		}
 		catch(Exception e) {
@@ -163,7 +164,7 @@ public class Postgres : IPostgres
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
-			var result = cmd.ExecuteScalar();
+			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			return result is long and 1;
 		} catch (Exception e)  when (e is PostgresException pe){
@@ -171,7 +172,7 @@ public class Postgres : IPostgres
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			_logger.WriteError(ne.Message);
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
 			return false;
 		}
 		catch(Exception e) {
@@ -201,7 +202,7 @@ public class Postgres : IPostgres
 			return false;
 		}
 		catch(Exception e) when (e is NpgsqlException ne) {
-			_logger.WriteError(ne.Message);
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
 			return false;
 		}
 		catch(Exception e) {

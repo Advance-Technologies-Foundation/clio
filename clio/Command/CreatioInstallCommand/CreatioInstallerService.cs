@@ -550,7 +550,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				postgres.DropDb(dbName);
 				_logger.WriteInfo($"Dropped existing database {dbName}");
 			}
-			
+		
 			_logger.WriteInfo($"Creating database {dbName} from template {templateName}...");
 			bool dbCreated = postgres.CreateDbFromTemplate(templateName, dbName);
 			
