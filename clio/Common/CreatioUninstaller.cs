@@ -10,6 +10,8 @@ using Clio.Requests;
 using Clio.UserEnvironment;
 using DocumentFormat.OpenXml.Wordprocessing;
 using MediatR;
+using Microsoft.Data.SqlClient;
+using Npgsql;
 using OneOf;
 using OneOf.Types;
 
@@ -78,20 +80,6 @@ public class CreatioUninstaller : ICreatioUninstaller
 	private readonly IMssql _mssql;
 	private readonly IPostgres _postgres;
 
-	private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IPostgres> _dropPgDbByName
-		= (dbName, cn, logger, db) => {
-			db.Init($"{BindingsModule.k8sDns}", cn.DbPort, cn.DbUsername, cn.DbPassword);
-			db.DropDb(dbName);
-			logger.WriteInfo($"Postgres DB: {dbName} dropped");
-		};
-
-	private readonly Action<string, k8Commands.ConnectionStringParams, ILogger, IMssql> _dropMsDbByName
-		= (dbName, cn, logger, db) => {
-			db.Init($"{BindingsModule.k8sDns}", cn.DbPort, cn.DbUsername, cn.DbPassword);
-			db.DropDb(dbName);
-			logger.WriteInfo($"MsSQL DB: {dbName} dropped");
-		};
-
 	#endregion
 
 	#region Constructors: Public
@@ -141,7 +129,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 									Match match = Regex.Match(connectionString, pattern);
 									if (match.Success) {
 										string dbName = match.Groups[1].Value;
-										return new DbInfo(dbName, "PostgreSql");
+										return new DbInfo(dbName, "PostgreSql", connectionString);
 									}
 									return new Error();
 								}
@@ -150,7 +138,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 									Match match = Regex.Match(connectionString, pattern);
 									if (match.Success) {
 										string dbName = match.Groups[1].Value;
-										return new DbInfo(dbName, "MsSql");
+										return new DbInfo(dbName, "MsSql", connectionString);
 									}
 									return new Error();
 								}
@@ -178,6 +166,54 @@ public class CreatioUninstaller : ICreatioUninstaller
 			return new Error();
 		}
 		return GetDbInfoFromXmlContent(csContent);
+	}
+
+	private k8Commands.ConnectionStringParams ParseConnectionStringToParams(string connectionString, string dbType){
+		if (dbType == "PostgreSql") {
+			NpgsqlConnectionStringBuilder builder = new(connectionString);
+			string host = builder.Host ?? "localhost";
+			int port = builder.Port != 0 ? builder.Port : 5432;
+			string username = builder.Username ?? "postgres";
+			string password = builder.Password ?? "";
+			
+			_logger.WriteInfo($"Parsed PostgreSQL connection: Host={host}, Port={port}, User={username}");
+			
+			// Return with 0 for Redis ports as they're not used in this context
+			return new k8Commands.ConnectionStringParams(port, port, 0, 0, username, password);
+		}
+		
+		if (dbType == "MsSql") {
+			SqlConnectionStringBuilder builder = new(connectionString);
+			string dataSource = builder.DataSource ?? "localhost";
+			
+			// Parse host and port from DataSource (e.g., "server,1433" or "server\instance")
+			string host = dataSource;
+			int port = 1433; // Default MSSQL port
+			
+			// Check if DataSource contains port (e.g., "server,1433")
+			if (dataSource.Contains(',')) {
+				string[] parts = dataSource.Split(',');
+				host = parts[0];
+				if (parts.Length > 1 && int.TryParse(parts[1], out int parsedPort)) {
+					port = parsedPort;
+				}
+			}
+			
+			string username = builder.UserID ?? "";
+			string password = builder.Password ?? "";
+			
+			// Log if using Integrated Security
+			if (builder.IntegratedSecurity) {
+				_logger.WriteInfo($"Parsed MSSQL connection: Host={host}, Port={port}, Using Integrated Security");
+			} else {
+				_logger.WriteInfo($"Parsed MSSQL connection: Host={host}, Port={port}, User={username}");
+			}
+			
+			// Return with 0 for Redis ports as they're not used in this context
+			return new k8Commands.ConnectionStringParams(port, port, 0, 0, username, password);
+		}
+		
+		throw new ArgumentException($"Unsupported database type: {dbType}");
 	}
 
 	#endregion
@@ -260,23 +296,55 @@ public class CreatioUninstaller : ICreatioUninstaller
 		DbInfo info = dbInfo.Value as DbInfo;
 		_logger.WriteInfo($"Found db: {info!.DbName}, Server: {info!.DbType}");
 
-		k8Commands.ConnectionStringParams cn = info.DbType switch {
-			"MsSql" => _k8Commands.GetMssqlConnectionString(),
-			"PostgreSql" => _k8Commands.GetPostgresConnectionString(),
-			var _ => throw new Exception("Unknown db type")
-		};
+		// Try to parse local connection string first, fallback to K8s if parsing fails
+		k8Commands.ConnectionStringParams cn;
+		string host;
+		try {
+			cn = ParseConnectionStringToParams(info.ConnectionString, info.DbType);
+			_logger.WriteInfo("Using local database connection from ConnectionStrings.config");
+			
+			// Extract host from connection string for Init call
+			if (info.DbType == "PostgreSql") {
+				NpgsqlConnectionStringBuilder builder = new(info.ConnectionString);
+				host = builder.Host ?? "localhost";
+			} else {
+				SqlConnectionStringBuilder builder = new(info.ConnectionString);
+				string dataSource = builder.DataSource ?? "localhost";
+				// Extract just the host part (before comma or backslash for named instances)
+				if (dataSource.Contains(',')) {
+					host = dataSource.Split(',')[0];
+				} else if (dataSource.Contains('\\')) {
+					host = dataSource; // Keep full instance name
+				} else {
+					host = dataSource;
+				}
+			}
+		} catch (Exception ex) {
+			_logger.WriteWarning($"Failed to parse connection string, falling back to K8s: {ex.Message}");
+			cn = info.DbType switch {
+				"MsSql" => _k8Commands.GetMssqlConnectionString(),
+				"PostgreSql" => _k8Commands.GetPostgresConnectionString(),
+				var _ => throw new Exception("Unknown db type")
+			};
+			host = BindingsModule.k8sDns;
+		}
 
 		if(info.DbType == "MsSql") {
-			_dropMsDbByName(info.DbName, cn, _logger, _mssql);
+			_mssql.Init(host, cn.DbPort, cn.DbUsername, cn.DbPassword);
+			_mssql.DropDb(info.DbName);
+			_logger.WriteInfo($"MsSQL DB: {info.DbName} dropped");
 		} else {
-			_dropPgDbByName(info.DbName, cn, _logger, _postgres);
+			_postgres.Init(host, cn.DbPort, cn.DbUsername, cn.DbPassword);
+			_postgres.DropDb(info.DbName);
+			_logger.WriteInfo($"Postgres DB: {info.DbName} dropped");
 		}
+		
 		_fileSystem.DeleteDirectory(creatioDirectoryPath, true);
 		_logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
 	}
 
 	#endregion
 
-	private record DbInfo(string DbName, string DbType);
+	private record DbInfo(string DbName, string DbType, string ConnectionString);
 
 }

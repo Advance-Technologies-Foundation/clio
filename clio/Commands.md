@@ -3820,11 +3820,58 @@ dc2          creatio-dc2     Stopped             -       /Users/admin/creatio/dc
 
 ## Uninstall Creatio
 
-Uninstall Creatio from your local machine by executing the following command:
+Completely remove a local Creatio instance from your machine, including IIS site, application pool, files, and database.
 
+**Aliases:** `uc`
+
+**Platform Requirements:** Windows with IIS, administrator privileges required
+
+**Warning:** This is a destructive operation that permanently deletes data. Ensure you have backups before proceeding.
+
+For complete documentation, see [`uninstall-creatio`](./docs/commands/uninstall-creatio.md)
+
+### Synopsis
 ```bash
-clio uninstall-creatio -e <ENV_NAME>
+clio uninstall-creatio [options]
 ```
+
+### Options
+- `-e`, `--environment` - Name of registered environment to uninstall
+- `-d`, `--physicalPath` - Physical path to Creatio installation folder (e.g., C:\inetpub\wwwroot\mysite)
+
+**Note:** You must provide either `-e` or `-d`, but not both.
+
+### Examples
+```bash
+# Uninstall by environment name (recommended)
+clio uninstall-creatio -e production
+clio uc -e development
+
+# Uninstall by physical path
+clio uninstall-creatio -d C:\inetpub\wwwroot\mysite
+```
+
+### What Gets Removed
+- IIS site and application pool
+- All files in the installation directory
+- Application pool user profile directory (C:\Users\{AppPoolUser})
+- **Database** (both local and containerized)
+  - Local PostgreSQL (reads connection from ConnectionStrings.config)
+  - Local MSSQL with username/password or Integrated Security
+  - Kubernetes/Rancher databases (fallback if local parsing fails)
+
+### Database Support
+The command reads `ConnectionStrings.config` and parses connection parameters to drop databases. Supports:
+- PostgreSQL with username/password
+- MSSQL with username/password
+- MSSQL with Integrated Security (Windows Auth)
+- MSSQL named instances (e.g., `server\instance`)
+
+### Related Commands
+- [`deploy-creatio`](#deploy-creatio) - Deploy a new Creatio instance
+- [`unreg-web-app`](./docs/commands/UnregAppCommand.md) - Unregister environment from clio
+- [`hosts`](./docs/commands/hosts.md) - Monitor running instances
+- `clear-local-env` - Clear data without destroying instance
 
 ## Set File-System Mode configuration
 
