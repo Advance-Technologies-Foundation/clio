@@ -37,6 +37,9 @@ public interface ICreatioInstallerService
 
 public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInstallerService
 {
+	
+	string[] excludedExtensions = [".bak", ".backup"];
+	string[] excludedDirectories = ["db"];
 
 	#region Fields: Private
 
@@ -126,18 +129,18 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 0;
 	}
 
-	private (int dbNumber, string errorMessage) FindEmptyRedisDb(int port){
+	private static (int dbNumber, string errorMessage) FindEmptyRedisDb(string hostname = "localhost", int port = 6379) {
 		try {
-			ConfigurationOptions configurationOptions = new ConfigurationOptions() {
+			ConfigurationOptions configurationOptions = new() {
 				SyncTimeout = 500000,
 				EndPoints =
 				{
-					{$"{BindingsModule.k8sDns}",port }
+					{hostname,port }
 				},
 				AbortOnConnectFail = false // Prevents exceptions when the initial connection to Redis fails, allowing the client to retry connecting.
 			};
 			ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-			IServer server = redis.GetServer($"{BindingsModule.k8sDns}", port);
+			IServer server = redis.GetServer($"{hostname}", port);
 			int count = server.DatabaseCount;
 			for (int i = 1; i < count; i++) {
 				long records = server.DatabaseSize(i);
@@ -148,7 +151,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			
 			// All databases are occupied
 			string errorMsg = $"[Redis Configuration Error] Could not find an empty Redis database. " +
-				$"All {count - 1} available databases (1-{count - 1}) at {BindingsModule.k8sDns}:{port} are in use. " +
+				$"All {count - 1} available databases (1-{count - 1}) at {hostname}:{port} are in use. " +
 				$"Please either: " +
 				$"1) Clear some Redis databases, " +
 				$"2) Increase the number of Redis databases, " +
@@ -156,7 +159,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			
 			return (-1, errorMsg);
 		} catch (Exception ex) {
-			string errorMsg = $"[Redis Connection Error] Could not connect to Redis at {BindingsModule.k8sDns}:{port}. " +
+			string errorMsg = $"[Redis Connection Error] Could not connect to Redis at {hostname}:{port}. " +
 				$"Error: {ex.Message}. " +
 				$"Make sure Redis is running and accessible. " +
 				$"You can also manually specify a database number using the --redis-db option";
@@ -277,7 +280,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return strategy;
 	}
 
-	private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName){
+	private void CreatePgTemplate(DirectoryInfo unzippedDirectory, string tmpDbName, string sourceFileName){
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
 		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
@@ -317,6 +320,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		postgres.CreateDb(tmpDbName);
 		_k8.RestorePgDatabase(src.Name, tmpDbName);
 		postgres.SetDatabaseAsTemplate(tmpDbName);
+		
+		// Set metadata comment
+		string metadata = $"sourceFile:{sourceFileName}|createdDate:{DateTime.UtcNow:o}|version:1.0";
+		postgres.SetDatabaseComment(tmpDbName, metadata);
+		_logger.WriteInfo($"[Template metadata] - {metadata}");
+		
 		_k8.DeleteBackupImage(k8Commands.PodType.Postgres, src.Name);
 		_logger.WriteInfo($"[Completed Database restore] - {DateTime.Now:hh:mm:ss}");
 	}
@@ -356,24 +365,40 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	public int DoPgWork(DirectoryInfo unzippedDirectory, string destDbName, string templateName = "") {
 
-		string tmpDbName = string.IsNullOrWhiteSpace(templateName) ? "template_" + unzippedDirectory.Name : "template_"+templateName;
+		// Use templateName for metadata if provided, otherwise use directory name
+		string actualSourceName = string.IsNullOrWhiteSpace(templateName) 
+			? unzippedDirectory.Name 
+			: templateName;
+		
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
 		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
-
-		CreatePgTemplate(unzippedDirectory, tmpDbName);
+		
+		// Try to find existing template by source file
+		string existingTemplate = postgres.FindTemplateBySourceFile(actualSourceName);
+		
+		string tmpDbName;
+		if (!string.IsNullOrEmpty(existingTemplate)) {
+			_logger.WriteInfo($"[Database restore] - Found existing template '{existingTemplate}' for source '{actualSourceName}'");
+			tmpDbName = existingTemplate;
+		} else {
+			// Generate new GUID-based name
+			tmpDbName = $"template_{Guid.NewGuid():N}";
+			CreatePgTemplate(unzippedDirectory, tmpDbName, actualSourceName);
+		}
+		
 		postgres.CreateDbFromTemplate(tmpDbName, destDbName);
 		_logger.WriteInfo($"[Database created] - {destDbName}");
 		return 0;
 	}
 
-	public int RestoreToLocalDb(DirectoryInfo unzippedDirectory, string destDbName, string dbServerName, bool dropIfExists, string zipFilePath = null) {
+	private int RestoreToLocalDb(DirectoryInfo unzippedDirectory, string destDbName, string dbServerName, bool dropIfExists, string zipFilePath = null) {
 		_logger.WriteInfo($"[Restoring database to local server] - Server: {dbServerName}, Database: {destDbName}");
 		
 		// Get local database configuration
 		LocalDbServerConfiguration config = _settingsRepository.GetLocalDbServer(dbServerName);
 		if (config == null) {
-			var availableServers = _settingsRepository.GetLocalDbServerNames().ToList();
-			string availableList = availableServers.Any() 
+			List<string> availableServers = _settingsRepository.GetLocalDbServerNames().ToList();
+			string availableList = availableServers.Count != 0
 				? string.Join(", ", availableServers) 
 				: "(none configured)";
 			_logger.WriteError($"Database server configuration '{dbServerName}' not found in appsettings.json. Available configurations: {availableList}");
@@ -434,7 +459,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return dbType switch {
 			"mssql" => RestoreMssqlToLocalServer(config, backupFilePath, destDbName, dropIfExists),
 			"postgres" or "postgresql" => RestorePostgresToLocalServer(config, backupFilePath, destDbName, dropIfExists, zipFilePath),
-			_ => HandleUnsupportedDbType(config.DbType)
+			var _ => HandleUnsupportedDbType(config.DbType)
 		};
 	}
 
@@ -494,15 +519,18 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		try {
 			Postgres postgres = _dbClientFactory.CreatePostgres(config.Hostname, config.Port, config.Username, config.Password);
 			
-			// Use zip file name if provided, otherwise fall back to backup file name
-			string baseFileName = !string.IsNullOrEmpty(zipFilePath) 
-				? Path.GetFileNameWithoutExtension(zipFilePath) 
-				: Path.GetFileNameWithoutExtension(backupPath);
-			string templateName = "template_" + baseFileName;
+			string sourceFileName = !string.IsNullOrEmpty(zipFilePath) ?
+				Directory.Exists(zipFilePath) ? new DirectoryInfo(zipFilePath).Name : Path.GetFileNameWithoutExtension(zipFilePath)
+				:Path.GetFileNameWithoutExtension(backupPath);
 			
-			bool templateExists = postgres.CheckTemplateExists(templateName);
-			if (!templateExists) {
-				_logger.WriteInfo($"Template '{templateName}' does not exist, creating it...");
+			// Try to find existing template by source file
+			string templateName = postgres.FindTemplateBySourceFile(sourceFileName);
+			
+			if (string.IsNullOrEmpty(templateName)) {
+				// No existing template found, create new one with GUID-based name
+				templateName = $"template_{Guid.NewGuid():N}";
+				
+				_logger.WriteInfo($"Template for '{sourceFileName}' does not exist, creating '{templateName}'...");
 				
 				_logger.WriteInfo($"Creating template database {templateName}...");
 				bool templateCreated = postgres.CreateDb(templateName);
@@ -535,9 +563,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 					return 1;
 				}
 				
-				_logger.WriteInfo($"Template database {templateName} created successfully");
+				// Set metadata comment
+				string metadata = $"sourceFile:{sourceFileName}|createdDate:{DateTime.UtcNow:o}|version:1.0";
+				postgres.SetDatabaseComment(templateName, metadata);
+				
+				_logger.WriteInfo($"Template database {templateName} created successfully with source reference: {sourceFileName}");
 			} else {
-				_logger.WriteInfo($"Template '{templateName}' already exists, skipping restore");
+				_logger.WriteInfo($"Found existing template '{templateName}' for source '{sourceFileName}', skipping restore");
 			}
 			
 			if (postgres.CheckDbExists(dbName)) {
@@ -641,7 +673,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		InstallerHelper.DatabaseType dbType;
 		try {
 			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
-		} catch (Exception ex) {
+		} 
+		catch (Exception ex) {
 			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
 			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
 			dbType = InstallerHelper.DatabaseType.Postgres;
@@ -665,19 +698,20 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			dbConnectionString = dbConfig.DbType?.ToLowerInvariant() switch {
 				"postgres" or "postgresql" => $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
 				"mssql" => $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
-				_ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
+				var _ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
 			};
 
 			// For local deployment, use localhost Redis or skip if not available
-			redisDb = options.RedisDb >= 0 ? options.RedisDb : 0;
+			(int dbNumber, string errorMessage) emptyDb = FindEmptyRedisDb();
+			redisDb = options.RedisDb >= 0 ? options.RedisDb : emptyDb.dbNumber;
 			redisConnectionString = $"host=localhost;db={redisDb};port=6379";
 			_logger.WriteInfo($"[Redis Configuration] - Using local Redis: database {redisDb}");
 		} else {
-			_logger.WriteInfo($"[Connection String Mode] - Kubernetes cluster");
+			_logger.WriteInfo("[Connection String Mode] - Kubernetes cluster");
 			k8Commands.ConnectionStringParams csParam = dbType switch {
 				InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
 				InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
-				_ => throw new NotSupportedException($"Database type '{dbType}' is not supported")
+				var _ => throw new NotSupportedException($"Database type '{dbType}' is not supported")
 			};
 
 			// Determine Redis database number
@@ -687,7 +721,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				_logger.WriteInfo($"[Redis Configuration] - Using user-specified database: {redisDb}");
 			} else {
 				// Auto-detect empty database
-				var (dbNumber, errorMessage) = FindEmptyRedisDb(csParam.RedisPort);
+				(int dbNumber, string errorMessage) = FindEmptyRedisDb(BindingsModule.k8sDns, csParam.RedisPort);
 				
 				if (dbNumber == -1) {
 					// Error finding empty database
@@ -697,7 +731,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				redisDb = dbNumber;
 				_logger.WriteInfo($"[Redis Configuration] - Auto-detected empty database: {redisDb}");
 			}
-
+			
 			// Build Kubernetes connection strings
 			dbConnectionString = dbType switch {
 				InstallerHelper.DatabaseType.Postgres => $"Server={BindingsModule.k8sDns};Port={csParam.DbPort};Database={options.SiteName};User ID={csParam.DbUsername};password={csParam.DbPassword};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
@@ -844,11 +878,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	#region Methods: Public
 
-	public override int Execute(PfInstallerOptions options){
+	public override int Execute(PfInstallerOptions options) {
+		
 		if (string.IsNullOrEmpty(options.ZipFile) && !string.IsNullOrEmpty(options.Product)) {
 			options.ZipFile = GetBuildFilePathFromOptions(options.Product, options.DBType, options.RuntimePlatform);
 		}
-		if (!File.Exists(options.ZipFile)) {
+		if (!File.Exists(options.ZipFile) && !Directory.Exists(options.ZipFile)) {
 			_logger.WriteInfo($"Could not find zip file: {options.ZipFile}");
 			return 1;
 		}
@@ -967,23 +1002,37 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
 		string deploymentFolder = DetermineFolderPath(options);
-		_logger.WriteInfo($"[Starting unzipping] - {options.ZipFile} to {deploymentFolder}");
-		//DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExisting(options.ZipFile, deploymentFolder, _packageArchiver); //TODO: BUG, this no longer creates an unzipped folder as a template
-		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExistingOld(options.ZipFile, _packageArchiver);
 		
+		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExistingOld(options.ZipFile, _packageArchiver);
 		if (!_fileSystem.ExistsDirectory(deploymentFolder)) {
+			_logger.WriteInfo($"[Creating deployment folder] - {deploymentFolder}");
 			_fileSystem.CreateDirectory(deploymentFolder);
 		}
-		_fileSystem.CopyDirectory(unzippedDirectory.FullName, deploymentFolder, true);
-		DirectoryInfo deploymentFolderInfo = new DirectoryInfo(deploymentFolder);
-		
-		_logger.WriteInfo($"[Unzip completed] - {unzippedDirectory.FullName}");
-		_logger.WriteLine();
 
+		string str = $"""
+					  [Copy deployment files]
+					      From: {unzippedDirectory.FullName} 
+					      To:   {deploymentFolder}
+					  """;
+		_logger.WriteInfo(str);
+		_fileSystem.CopyDirectoryWithFilter(unzippedDirectory.FullName, deploymentFolder, true, (source) => {
+
+			if (Directory.Exists(source)) {
+				return excludedDirectories.Contains(new DirectoryInfo(source).Name.ToLower());
+			}
+			
+			if (File.Exists(source)) {
+				return excludedExtensions.Contains(Path.GetExtension(source)?.ToLower());
+			}
+			return true;
+		});
+		
+		
 		InstallerHelper.DatabaseType dbType;
 		try {
 			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
-		} catch (Exception ex) {
+		} 
+		catch (Exception ex) {
 			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
 			_logger.WriteInfo("[DetectDataBase] - Defaulting to Postgres");
 			dbType = InstallerHelper.DatabaseType.Postgres;
@@ -995,14 +1044,16 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		if (!string.IsNullOrEmpty(options.DbServerName)) {
 			_logger.WriteInfo($"[Database Restore Mode] - Local server: {options.DbServerName}");
 			dbRestoreResult = RestoreToLocalDb(unzippedDirectory, options.SiteName, options.DbServerName, options.DropIfExists, options.ZipFile);
-		} else {
-			_logger.WriteInfo($"[Database Restore Mode] - Kubernetes cluster");
+		} 
+		else {
+			_logger.WriteInfo("[Database Restore Mode] - Kubernetes cluster");
 			dbRestoreResult = dbType switch {
 				InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectory, options.SiteName),
 				var _ => DoPgWork(unzippedDirectory, options.SiteName, Path.GetFileNameWithoutExtension(options.ZipFile))
 			};
 		}
-
+		
+		DirectoryInfo deploymentFolderInfo = new (deploymentFolder);
 		int deploySiteResult = dbRestoreResult switch {
 			0 => DeployApplication(deploymentFolderInfo, options),
 			var _ => ExitWithErrorMessage("Database restore failed")
@@ -1043,6 +1094,42 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 0;
 	}
 
+
+
+
+	public async Task<int> CreateDeployDirectory(PfInstallerOptions options, string deploymentFolder) {
+		DirectoryInfo unzippedDirectory = InstallerHelper.UnzipOrTakeExistingOld(options.ZipFile, _packageArchiver);
+		if (!_fileSystem.ExistsDirectory(deploymentFolder)) {
+			_logger.WriteInfo($"[Creating deployment folder] - {deploymentFolder}");
+			_fileSystem.CreateDirectory(deploymentFolder);
+		}
+
+		string str = $"""
+					  [Copy deployment files]
+					      From: {unzippedDirectory.FullName} 
+					      To:   {deploymentFolder}
+					  """;
+		_logger.WriteInfo(str);
+		_fileSystem.CopyDirectoryWithFilter(unzippedDirectory.FullName, deploymentFolder, true, (source) => {
+			
+			string[] excludedExtensions = [".bak", ".backup"];
+			string[] excludedDirectories = ["db"];
+
+			if (Directory.Exists(source)) {
+				return excludedDirectories.Contains(new DirectoryInfo(source).Name.ToLower());
+			}
+			
+			if (!File.Exists(source)) {
+				return excludedExtensions.Contains(Path.GetExtension(source)?.ToLower());
+			}
+			
+			return true;
+		});
+		return 0;
+	}
+	
+	
+	
 	private int DeployApplication(DirectoryInfo unzippedDirectory, PfInstallerOptions options) {
 		try {
 			IDeploymentStrategy strategy = SelectDeploymentStrategy(options);

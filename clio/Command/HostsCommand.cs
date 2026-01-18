@@ -101,13 +101,13 @@ public class HostsCommand(
 
 		if (environments.Count == 0) {
 			logger.WriteInfo("No environments with paths found.");
-			return new List<HostInfo>();
+			return [];
 		}
 
 		logger.WriteInfo($"Scanning {environments.Count} environment(s) in parallel...");
 
 		// Create tasks for all environments to scan in parallel
-		Task<HostInfo>[] scanTasks = environments.Select(env => ScanEnvironmentAsync(env)).ToArray();
+		Task<HostInfo>[] scanTasks = environments.Select(ScanEnvironmentAsync).ToArray();
 
 		// Wait for all scans to complete
 		HostInfo[] hosts = await Task.WhenAll(scanTasks);

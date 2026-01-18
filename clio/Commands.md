@@ -3461,7 +3461,7 @@ clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
 ### Options
 
 **Required:**
-- `--ZipFile <Path>` - Path to the Creatio zip file
+- `--ZipFile <Path>` - Path to Creatio zip file or directory (both accepted; directory skips extraction for better performance)
 
 **Database Options:**
 - `--db-server-name <Name>` - Name of database server configuration from appsettings.json for local database deployment
@@ -3469,9 +3469,13 @@ clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
 - `--drop-if-exists` - Automatically drop existing database if present without prompting (works with local databases)
 
 **Redis Configuration:**
-- `--redis-db <Number>` - Specify Redis database number (optional, 0-15)
-  - For Kubernetes: auto-detects empty database if not specified
-  - For local deployment: uses database 0 by default
+- `--redis-db <Number>` - Specify Redis database number (optional)
+  - Default: -1 (auto-detect empty database)
+  - Auto-Detection: Scans Redis databases starting from 1 to find an empty database
+  - Supports custom Redis configurations with more than 16 databases
+  - Works for both Kubernetes and local deployments
+  - Manual override: Specify a number (0-15 or higher) to use a specific database
+  - Error handling: Provides detailed messages if all databases are occupied or Redis is unreachable
 
 **Deployment Options:**
 - `--SiteName <Name>` - Application site name
@@ -3553,10 +3557,24 @@ clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
 
 ### Error Handling
 
+**Redis Configuration Errors:**
+
 If you see `[Redis Configuration Error] Could not find an empty Redis database`:
-1. Clear some existing Redis databases
-2. Increase available Redis databases in your Redis configuration  
-3. Use `--redis-db` parameter to specify an available database
+- **Cause**: All available Redis databases contain data (auto-detection scans from database 1 onwards)
+- **Solutions**:
+  1. Clear existing Redis databases: `clio clear-redis-db -e <environment>`
+  2. Increase available Redis databases in redis.conf `databases` setting
+  3. Use `--redis-db <number>` to manually specify an available database
+
+If you see `[Redis Connection Error] Could not connect to Redis`:
+- **Cause**: Redis server is not running or not accessible
+- **Solutions**:
+  1. Verify Redis is running: `redis-cli ping`
+  2. Check Redis configuration and network connectivity
+  3. For Kubernetes: Check Redis pod status (`kubectl get pods`)
+  4. Manually specify a database number as fallback: `--redis-db 0`
+
+**Database Errors:**
 
 If database already exists without `--drop-if-exists`:
 - The deployment will fail with an error message

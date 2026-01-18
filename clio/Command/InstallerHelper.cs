@@ -67,13 +67,20 @@ public static class InstallerHelper
 	[NotNull]
 	public static readonly Func<string, IPackageArchiver, DirectoryInfo> UnzipOrTakeExistingOld =
 		(zipFile, packageArchiver) => {
+
+
+			//Already unzipped
+			if (Directory.Exists(zipFile)) {
+				return TakeExisting(zipFile);
+			}
+			
+			
 			string destinationPath = Path.Join(new FileInfo(zipFile).Directory.FullName, Path.GetFileNameWithoutExtension(new FileInfo(zipFile).FullName));
 			return Directory.Exists(destinationPath) switch {
-					   true => new DirectoryInfo(destinationPath),
+					   true => TakeExisting(destinationPath),
 					   false => Unzip(packageArchiver, new FileInfo(zipFile), destinationPath)
 				   };
 		};
-	
 	
 	
 	/// <summary>
@@ -178,20 +185,24 @@ public static class InstallerHelper
 	
 	
 	#region Fields: Private
-	
+
+	[NotNull]
+	private static readonly Func<string, DirectoryInfo> TakeExisting =
+		(destinationPath) => new DirectoryInfo(destinationPath);
 	
 	[NotNull]
 	private static readonly Func<IPackageArchiver, FileInfo, string, DirectoryInfo> Unzip =
-		(packageArchiver, sourceFile, destingationPath) => {
+		(packageArchiver, sourceFile, destinationPath) => {
 			ILogger logger = ConsoleLogger.Instance;
-			logger.WriteDebug($"Unzip - Creating directory: {destingationPath}");
-			Directory.CreateDirectory(destingationPath);
+			logger.WriteDebug($"Unzip - Creating directory: {destinationPath}");
+			Directory.CreateDirectory(destinationPath);
 			logger.WriteDebug("Unzip - Directory created successfully");
-			logger.WriteDebug($"Unzip - Extracting zip: {sourceFile.FullName} to {destingationPath}");
-			packageArchiver.UnZip(sourceFile.FullName, false, destingationPath);
+			logger.WriteInfo($"Unzip - Extracting zip: {sourceFile.FullName} to {destinationPath}");
+			packageArchiver.UnZip(sourceFile.FullName, false, destinationPath);
 			logger.WriteDebug("Unzip - Extraction completed successfully");
-			DirectoryInfo resultDir = new (destingationPath);
+			DirectoryInfo resultDir = new (destinationPath);
 			logger.WriteDebug($"Unzip - Result directory: {resultDir.FullName}, Exists: {resultDir.Exists}, Files count: {resultDir.GetFiles().Length}");
+			logger.WriteInfo($"[Unzip completed] - {destinationPath}");
 			return resultDir;
 		};
 

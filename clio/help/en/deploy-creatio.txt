@@ -35,7 +35,11 @@ OPTIONS
         Default: 80 (HTTP), 443 (HTTPS)
 
     --ZipFile FILE_PATH
-        Required. Path to Creatio zip file for deployment
+        Required. Path to Creatio zip file or directory
+        - If zip file: Will be automatically extracted
+        - If directory: Used directly as already-extracted Creatio application
+        Note: Accepts both zip files and directories. Using a directory path prevents 
+        unnecessary unzip operations when you have already extracted the application.
 
     --deployment METHOD
         Deployment method: auto, iis, or dotnet
@@ -69,10 +73,24 @@ OPTIONS
 
     --redis-db DATABASE_NUMBER
         Redis database number (optional)
-        If specified, uses this database instead of auto-detecting an empty one
-        Default: auto-detect (finds first empty database starting from 1)
-        Valid range: 0-15 (depending on Redis configuration)
-        Note: Use this when the auto-detection fails or you want to use a specific database
+        Default: -1 (auto-detect empty database)
+        
+        Behavior:
+        - Automatically scans Redis for an empty database (starting from database 1)
+        - Checks database size to find unused databases
+        - Supports custom Redis database counts (not limited to default 16)
+        - Works for both Kubernetes and local deployments
+        
+        Manual Override:
+        - Specify a number (0-15 or higher) to use a specific database
+        - Use this when auto-detection fails or you need a specific database
+        - Kubernetes mode: --redis-db 5
+        - Local mode: --redis-db 2
+        
+        Error Handling:
+        - If all databases are occupied, provides detailed error with suggestions
+        - If Redis is unreachable, suggests checking Redis availability
+        - Provides actionable recovery steps in error messages
 
     --db-server-name NAME
         Name of database server configuration from appsettings.json
@@ -148,6 +166,17 @@ EXAMPLES
             --auto-run=false --silent \\
             --ZipFile "C:\Creatio\app.zip"
 
+    14. Deploy PostgreSQL with long filename (template reuse):
+        # First deployment: Creates template from backup (slower)
+        clio deploy-creatio -e "Dev" --db pg --SitePort 8080 \\
+            --db-server-name my-local-postgres \\
+            --ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
+        
+        # Subsequent deployments: Reuses template (faster)
+        clio deploy-creatio -e "Dev2" --db pg --SitePort 8081 \\
+            --db-server-name my-local-postgres \\
+            --ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
+
 BEHAVIOR
 
     Database Restoration (Automatic):
@@ -196,6 +225,30 @@ DATABASE RESTORATION
     
     - If --db-server-name IS specified:
       Database is restored to local database server configured in appsettings.json
+    
+    POSTGRESQL TEMPLATE-BASED RESTORATION:
+    For PostgreSQL databases, clio uses an efficient template-based restoration approach:
+    
+    1. First Deployment:
+       - Creates a template database with GUID-based name (e.g., template_abc123...)
+       - Stores original zip filename in database comment metadata
+       - Template is reusable for future deployments
+    
+    2. Subsequent Deployments:
+       - Searches for existing template by zip filename in metadata
+       - If found, creates new database from template (fast operation)
+       - If not found, creates new template from backup file
+    
+    Benefits:
+    - Faster deployments after first restore (template reuse)
+    - Handles long filenames (PostgreSQL 63-char limit)
+    - Automatic template discovery and reuse
+    
+    Template Management:
+    - Templates are named: template_<guid> (max 41 characters)
+    - Original filename stored in database comment
+    - Multiple templates can coexist for different versions
+    - Templates persist across deployments for reuse
     
     LOCAL DATABASE SERVER CONFIGURATION:
     To restore to a local database server, add a 'db' section to appsettings.json:
@@ -255,6 +308,18 @@ TROUBLESHOOTING
 
     Q: "Service not starting on macOS/Linux"
     A: Check /var/log/system.log (macOS) or journalctl (Linux) for error details
+
+    Q: "PostgreSQL database name too long" or template creation errors
+    A: This is handled automatically. Clio uses GUID-based template names (max 41 chars)
+       to comply with PostgreSQL's 63-character database name limit. The original
+       filename is stored in database metadata for template lookup and reuse.
+
+    Q: "Template already exists" or "Template not found" warnings
+    A: Normal behavior. Clio automatically manages PostgreSQL templates:
+       - First deployment creates a template (stored for reuse)
+       - Subsequent deployments with same zip file reuse the template
+       - Templates are identified by original zip filename in metadata
+       - You can safely ignore these informational messages
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
