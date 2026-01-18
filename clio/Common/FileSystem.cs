@@ -231,6 +231,23 @@ public class FileSystem : IFileSystem
 		}
 	}
 
+	public void CopyDirectoryWithFilter(string source, string destination, bool overwrite, Func<string, bool> filter) {
+		source.CheckArgumentNullOrWhiteSpace(nameof(source));
+		destination.CheckArgumentNullOrWhiteSpace(nameof(destination));
+		CreateOrOverwriteExistsDirectoryIfNeeded(destination, overwrite);
+		foreach (string filePath in _msFileSystem.Directory.GetFiles(source)) {
+			if (!filter(filePath)) {
+				_msFileSystem.File.Copy(filePath, Path.Combine(destination, Path.GetFileName(filePath)), true);
+			}
+		}
+		foreach (string directoryPath in _msFileSystem.Directory.GetDirectories(source)) {
+			if (!filter(directoryPath)) {
+				CopyDirectory(directoryPath, Path.Combine(destination, Path.GetFileName(directoryPath)), overwrite);
+			}
+		}
+	}
+	
+
 	public Ms.IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false) {
 		if(throwWhenExists && ExistsDirectory(directoryPath)) {
 			throw new ArgumentException($"Directory {directoryPath} already exists");

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.Text;
@@ -165,6 +166,16 @@ namespace Clio.Common
 		void ClearDirectory(string directoryPath);
 
 		void CopyDirectory(string source, string destination, bool overwrite);
+
+		/// <summary>
+		/// Copies a directory from source to destination with a custom filter to include/exclude files.
+		/// </summary>
+		/// <param name="source">The path of the source directory to copy from.</param>
+		/// <param name="destination">The path of the destination directory to copy to.</param>
+		/// <param name="overwrite">If true, overwrites existing files in the destination; otherwise, skips existing files.</param>
+		/// <param name="filter">A function that determines whether a file should be included in the copy operation. Returns true to include the file, false to exclude it.</param>
+		public void CopyDirectoryWithFilter(string source, string destination, bool overwrite,
+			Func<string, bool> filter); 
 
 		/// <inheritdoc cref="System.IO.Abstractions.IDirectory.CreateDirectory(string)"/>
 		IDirectoryInfo CreateDirectory(string directoryPath, bool throwWhenExists = false);

@@ -13,6 +13,9 @@ public interface IPostgres
 	bool CheckTemplateExists(string templateName);
 	bool CheckDbExists(string dbName);
 	bool DropDb(string dbName);
+	bool SetDatabaseComment(string dbName, string comment);
+	string GetDatabaseComment(string dbName);
+	string FindTemplateBySourceFile(string sourceFileName);
 }
 
 public class Postgres : IPostgres
@@ -208,6 +211,98 @@ public class Postgres : IPostgres
 		catch(Exception e) {
 			_logger.WriteError(e.Message);
 			return false;
+		}
+	}
+	
+	public virtual bool SetDatabaseComment(string dbName, string comment){
+		try {
+			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+			using NpgsqlConnection cnn = dataSource.OpenConnection();
+			string escapedComment = comment.Replace("'", "''");
+			using NpgsqlCommand cmd = dataSource.CreateCommand($"COMMENT ON DATABASE \"{dbName}\" IS '{escapedComment}'");
+			cmd.ExecuteNonQuery();
+			cnn.Close();
+			return true;
+		} catch (Exception e)  when (e is PostgresException pe){
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
+			return false;
+		}
+		catch(Exception e) when (e is NpgsqlException ne) {
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
+			return false;
+		}
+		catch(Exception e) {
+			_logger.WriteError(e.Message);
+			return false;
+		}
+	}
+	
+	public virtual string GetDatabaseComment(string dbName){
+		try {
+			string sqlText = @$"
+				SELECT obj_description(oid, 'pg_database') 
+				FROM pg_database 
+				WHERE datname = '{dbName}'
+			";
+			
+			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+			using NpgsqlConnection cnn = dataSource.OpenConnection();
+			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			object result = cmd.ExecuteScalar();
+			cnn.Close();
+			return result?.ToString();
+		} catch (Exception e)  when (e is PostgresException pe){
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
+			return null;
+		}
+		catch(Exception e) when (e is NpgsqlException ne) {
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
+			return null;
+		}
+		catch(Exception e) {
+			_logger.WriteError(e.Message);
+			return null;
+		}
+	}
+	
+	public virtual string FindTemplateBySourceFile(string sourceFileName){
+		try {
+			string sqlText = @$"
+				SELECT datname 
+				FROM pg_database 
+				WHERE datistemplate = true 
+				  AND shobj_description(oid, 'pg_database') LIKE '%sourceFile:{sourceFileName}%'
+				LIMIT 1
+			";
+			
+			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+			using NpgsqlConnection cnn = dataSource.OpenConnection();
+			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			object result = cmd.ExecuteScalar();
+			cnn.Close();
+			
+			if (result != null && result != DBNull.Value) {
+				return result.ToString();
+			}
+			
+			// Backward compatibility: try old naming pattern
+			string oldStyleTemplateName = $"template_{sourceFileName}";
+			if (CheckTemplateExists(oldStyleTemplateName)) {
+				return oldStyleTemplateName;
+			}
+			
+			return null;
+		} catch (Exception e)  when (e is PostgresException pe){
+			_logger.WriteError($"[{pe.Severity}] - {pe.MessageText}");
+			return null;
+		}
+		catch(Exception e) when (e is NpgsqlException ne) {
+			_logger.WriteError(ne.Message + ": " + ne.InnerException?.Message);
+			return null;
+		}
+		catch(Exception e) {
+			_logger.WriteError(e.Message);
+			return null;
 		}
 	}
 }
