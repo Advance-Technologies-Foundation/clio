@@ -5,29 +5,37 @@ NAME
     execute-sql-script - Execute SQL script on a web application
 
 DESCRIPTION
-    Executes custom SQL script on a web application.
+    Executes custom SQL script on a web application. You can pass the script directly or via a file. 
+    Output can be formatted as a table, CSV, or XLSX, and saved to a file. 
+    Silent mode is supported to suppress console output.
+    
+    This command requires cliogate to be installed on the target Creatio environment. 
+    If cliogate is not installed or is an incompatible version, the command will display an error message and exit.
 
 OPTIONS
-    Value (pos. 0)   Sql script
+    Value (pos. 0)   Sql script to execute
+    --File           -f          Path to the SQL script file
+    --View           -v          Output format: table, csv, xlsx (default: table)
+    --DestinationPath -d         Path to save the result file
+    --silent                     Suppress console output
+    --uri            -u          Application uri
+    --Password       -p          User password
+    --Login          -l          User login (administrator permission required)
+    --Environment    -e          Environment name
+    --Maintainer     -m          Maintainer name
 
-    --uri                   -u          Application uri
-
-    --Password              -p          User password
-
-    --Login                 -l          User login (administrator permission required)
-
-    --Environment           -e          Environment name
-
-    --Maintainer            -m          Maintainer name
-
-    --File                  -f          Path to the sql script file
-
-    --View                  -v          View type
-
-    --DestinationPath       -d          Path to results file
-
-EXAMPLE
+EXAMPLES
     execute-sql-script "SELECT Id FROM SysSettings WHERE Code = 'CustomPackageId'"
+    execute-sql-script -f c:\Path\to\file.sql
+    execute-sql-script -f c:\Path\to\file.sql -v csv -d result.csv
+    execute-sql-script -f c:\Path\to\file.sql -v xlsx -d result.xlsx
+
+NOTES
+    If both Script and File are omitted, the command prompts for SQL input.
+    Output is shown in the console unless --silent is specified.
+    Results can be saved to a file in the chosen format.
+    
+    cliogate must be installed and compatible on the target environment for this command to work.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

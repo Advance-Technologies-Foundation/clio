@@ -11,7 +11,7 @@ using Newtonsoft.Json;
 
 namespace Clio.Command.SqlScriptCommand
 {
-	[Verb("execute-sql-script", Aliases = new string[] { "sql" }, HelpText = "Execute script on web application")]
+	[Verb("execute-sql-script", Aliases = ["sql"], HelpText = "Execute script on web application")]
 	public class ExecuteSqlScriptOptions : RemoteCommandOptions
 	{
 		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
@@ -39,11 +39,13 @@ namespace Clio.Command.SqlScriptCommand
 		private readonly ISqlScriptExecutor _sqlScriptExecutor;
 
 		public SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-				ISqlScriptExecutor sqlScriptExecutor)
+				ISqlScriptExecutor sqlScriptExecutor,IClioGateway clioGateway)
 			: base(applicationClient, settings) {
 			_sqlScriptExecutor = sqlScriptExecutor;
+			ClioGateWay = clioGateway;
 		}
 
+		protected override string ClioGateMinVersion { get; } = "2.0.0.32";
 		private static string GetSqlScriptResult(string serverResponse, string viewType, string filePath) {
 			if (serverResponse == "[]") {
 				return string.Empty;
@@ -105,43 +107,46 @@ namespace Clio.Command.SqlScriptCommand
 		}
 
 		static void SaveDataTableToXlsx(DataTable dataTable, string filePath) {
-			using (SpreadsheetDocument spreadsheetDocument = SpreadsheetDocument.Create(filePath,
-					SpreadsheetDocumentType.Workbook)) {
-				WorkbookPart workbookPart = spreadsheetDocument.AddWorkbookPart();
-				workbookPart.Workbook = new Workbook();
-				WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
-				worksheetPart.Worksheet = new Worksheet(new SheetData());
-				Sheets sheets = spreadsheetDocument.WorkbookPart.Workbook.AppendChild(new Sheets());
-				string sheetName = "Sheet1";
-				uint sheetId = 1;
-				Sheet sheet = new Sheet() { Id = spreadsheetDocument.WorkbookPart.GetIdOfPart(worksheetPart),
-					SheetId = sheetId, Name = sheetName };
-				sheets.Append(sheet);
-				SheetData sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
-				Row headerRow = new Row();
-				foreach (DataColumn column in dataTable.Columns) {
+			using SpreadsheetDocument spreadsheetDocument = SpreadsheetDocument.Create(filePath,
+				SpreadsheetDocumentType.Workbook);
+			WorkbookPart workbookPart = spreadsheetDocument.AddWorkbookPart();
+			workbookPart.Workbook = new Workbook();
+			WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
+			worksheetPart.Worksheet = new Worksheet(new SheetData());
+			Sheets sheets = spreadsheetDocument.WorkbookPart.Workbook.AppendChild(new Sheets());
+			string sheetName = "Sheet1";
+			uint sheetId = 1;
+			Sheet sheet = new Sheet() { Id = spreadsheetDocument.WorkbookPart.GetIdOfPart(worksheetPart),
+				SheetId = sheetId, Name = sheetName };
+			sheets.Append(sheet);
+			SheetData sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
+			Row headerRow = new Row();
+			foreach (DataColumn column in dataTable.Columns) {
+				Cell cell = new Cell();
+				cell.DataType = CellValues.String;
+				cell.CellValue = new CellValue(column.ColumnName);
+				headerRow.AppendChild(cell);
+			}
+			sheetData.AppendChild(headerRow);
+			foreach (DataRow row in dataTable.Rows) {
+				Row dataRow = new Row();
+				foreach (var item in row.ItemArray) {
 					Cell cell = new Cell();
 					cell.DataType = CellValues.String;
-					cell.CellValue = new CellValue(column.ColumnName);
-					headerRow.AppendChild(cell);
+					cell.CellValue = new CellValue(item.ToString());
+					dataRow.AppendChild(cell);
 				}
-				sheetData.AppendChild(headerRow);
-				foreach (DataRow row in dataTable.Rows) {
-					Row dataRow = new Row();
-					foreach (var item in row.ItemArray) {
-						Cell cell = new Cell();
-						cell.DataType = CellValues.String;
-						cell.CellValue = new CellValue(item.ToString());
-						dataRow.AppendChild(cell);
-					}
-					sheetData.AppendChild(dataRow);
-				}
-				workbookPart.Workbook.Save();
-				spreadsheetDocument.Close();
+				sheetData.AppendChild(dataRow);
 			}
+			workbookPart.Workbook.Save();
+			spreadsheetDocument.Close();
 		}
 
 		public override int Execute(ExecuteSqlScriptOptions opts) {
+			
+			ClioGateWay.CheckCompatibleVersion(ClioGateMinVersion);
+			
+			
 			try {
 				string result = string.Empty;
 				if (!string.IsNullOrEmpty(opts.Script)) {
