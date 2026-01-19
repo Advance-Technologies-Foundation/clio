@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Clio.Common;
 using CommandLine;
 using Common.Logging;
+using k8s;
 
 namespace Clio.Command.CreatioInstallCommand;
 
@@ -126,14 +127,16 @@ public class InstallerCommand : Command<PfInstallerOptions>
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
 	private readonly ILogger _logger;
+	private readonly IKubernetes _kubernetes;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public InstallerCommand(ICreatioInstallerService creatioInstallerService, ILogger logger) {
+	public InstallerCommand(ICreatioInstallerService creatioInstallerService, ILogger logger, IKubernetes kubernetes) {
 		_creatioInstallerService = creatioInstallerService;
 		_logger = logger;
+		_kubernetes = kubernetes;
 	}
 
 	#endregion
@@ -141,6 +144,12 @@ public class InstallerCommand : Command<PfInstallerOptions>
 	#region Methods: Public
 
 	public override int Execute(PfInstallerOptions options){
+
+		if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
+			_logger.WriteError("Could not detect kubectl config, and db server name (db-server-name) is not specified.");
+			return 1;
+		}
+		
 		int result = _creatioInstallerService.Execute(options);
 		if (!options.IsSilent) {
 			_logger.WriteLine("Press enter to exit...");

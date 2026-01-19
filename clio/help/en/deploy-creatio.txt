@@ -38,7 +38,7 @@ OPTIONS
         Required. Path to Creatio zip file or directory
         - If zip file: Will be automatically extracted
         - If directory: Used directly as already-extracted Creatio application
-        Note: Accepts both zip files and directories. Using a directory path prevents 
+        Note: Accepts both zip files and directories. Using a directory path prevents
         unnecessary unzip operations when you have already extracted the application.
 
     --deployment METHOD
@@ -97,6 +97,10 @@ OPTIONS
         When specified, automatically restores database from zip file to local server
         If not specified, restores database to Kubernetes cluster (default behavior)
         Requires database server configuration in appsettings.json (see DATABASE RESTORATION)
+        
+        IMPORTANT: If kubectl is not detected (no Kubernetes cluster available),
+        then --db-server-name is REQUIRED. The command will fail with an error
+        if neither kubectl config nor db-server-name is available
 
     --drop-if-exists
         Automatically drop existing database if present without prompting
@@ -296,6 +300,13 @@ DATABASE RESTORATION
     For manual database restore without deployment, use: clio restore-db --help
 
 TROUBLESHOOTING
+
+    Q: "Could not detect kubectl config, and db server name (db-server-name) is not specified"
+    A: This error occurs when Kubernetes is not available and no local database server is configured.
+       Solutions:
+       1. Install and configure kubectl for Kubernetes deployment
+       2. Add --db-server-name parameter with a configured local database server
+       3. Configure database server in appsettings.json (see DATABASE RESTORATION section)
 
     Q: "The type or namespace name could not be found"
     A: Ensure IIS is installed (Windows) or dotnet SDK is available

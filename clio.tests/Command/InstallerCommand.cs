@@ -3,6 +3,7 @@ using System.IO;
 using Autofac;
 using Clio.Command.CreatioInstallCommand;
 using FluentAssertions;
+using k8s;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,11 +15,12 @@ namespace Clio.Tests.Command;
 internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 {
 
-	
+	IKubernetes _testKubernetesMock = Substitute.For<IKubernetes>();
 	ICreatioInstallerService _creatioInstallerServiceMock = Substitute.For<ICreatioInstallerService>();
 	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.RegisterInstance(_creatioInstallerServiceMock);
+		containerBuilder.RegisterInstance(_testKubernetesMock);
 		
 	}
 

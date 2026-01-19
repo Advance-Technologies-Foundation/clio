@@ -1,4 +1,4 @@
-﻿# Deploy Creatio
+﻿﻿# Deploy Creatio
 
 ## Purpose
 
@@ -20,9 +20,9 @@ clio deploy-creatio [options]
 
 ### Required Arguments
 
-| Argument  | Short | Description                                                                                       | Example                          |
-|-----------|-------|---------------------------------------------------------------------------------------------------|----------------------------------|
-| --ZipFile |       | Path to Creatio zip file or directory (accepts both; directory prevents unnecessary extraction)   | `--ZipFile "C:\Creatio\app.zip"` |
+| Argument  | Short | Description                                          | Example                          |
+|-----------|-------|------------------------------------------------------|----------------------------------|
+| --ZipFile |       | Path to Creatio zip file (must be zip, not directory) | `--ZipFile "C:\Creatio\app.zip"` |
 
 ### Optional Arguments - Deployment Configuration
 
@@ -43,6 +43,8 @@ clio deploy-creatio [options]
 | --db             |       | pg      | Database type: pg or mssql                   | `--db mssql`                   |
 | --db-server-name |       |         | Local DB server config from appsettings.json | `--db-server-name my-postgres` |
 | --drop-if-exists |       | false   | Auto-drop existing database without prompt   | `--drop-if-exists`             |
+
+**Important:** If kubectl is not detected (no Kubernetes cluster available), then `--db-server-name` is **REQUIRED**. The command will fail with an error if neither kubectl configuration nor `--db-server-name` is provided.
 
 ### Optional Arguments – Platform Configuration
 
@@ -516,6 +518,14 @@ The command provides detailed progress information:
 ## Error Handling
 
 ### Common Errors
+
+**"Could not detect kubectl config, and db server name (db-server-name) is not specified"**
+- **Cause**: Kubernetes cluster is not available and no local database server is configured
+- **Solutions**:
+  1. Install and configure kubectl for Kubernetes deployment
+  2. Add `--db-server-name` parameter with a configured local database server
+  3. Configure database server in appsettings.json (see "Local Database Server Configuration" section)
+- **Example**: `clio deploy-creatio --ZipFile "app.zip" --db-server-name my-local-postgres`
 
 **"Database server configuration not found in appsettings.json"**
 - Verify the database server name matches configuration in appsettings.json
