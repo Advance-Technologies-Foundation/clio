@@ -10,14 +10,14 @@ Clio Command Reference
 - [Application Management](#application)
 - [Environment Settings](#environment-settings)
 - [Workspaces](#workspaces)
-  - [Package Filtering](#package-filtering-in-workspace)
+    - [Package Filtering](#package-filtering-in-workspace)
 - [Download Configuration](#download-configuration)
 - [Development](#development)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Web farm deployments](#web-farm-deployments)
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
-  - [🚀 Quick Start Guide for macOS](#-quick-start-guide-for-macos)
+    - [🚀 Quick Start Guide for macOS](#-quick-start-guide-for-macos)
 
 # Running Clio
 The general syntax for running clio:
@@ -161,7 +161,6 @@ clio:   8.0.1.97
 - [Create a new package](#new-pkg)
 - [Add a new package to workspace](#add-package)
 - [Install package](#push-pkg)
-- [Deploy package via ALM](#alm-deploy)
 - [Compile package](#compile-package)
 - [Pull package from remote application](#pull-pkg)
 - [Delete package](#delete-pkg-remote)
@@ -250,53 +249,6 @@ clio push-app C:\Packages\package.gz --check-configuration-errors true
 ```
 
 The `--check-configuration-errors` flag enables validation of compilation and configuration errors during installation. If the flag is set and there are compilation or configuration errors, the installation will stop and return an error with detailed information about the problems. If the flag is not set, the installation will proceed without checking for configuration errors.
-
-## alm-deploy
-
-Deploy and install a package to a Creatio environment using the Application Lifecycle Management (ALM) service.
-
-**Aliases:** `deploy`
-
-**Synopsis:**
-```bash
-clio alm-deploy <FILE_PATH> --site <SITE_NAME> [OPTIONS]
-```
-
-**Description:**
-The `alm-deploy` command uploads a package file to a Creatio environment and triggers installation through the ALM service. This command is designed for controlled deployments to specific sites/environments managed by ALM.
-
-**Required Arguments:**
-- `FILE_PATH` - Path to the package file (typically .gz format)
-- `--site` or `-t` - Target site/environment name in ALM
-
-**Authentication Options:**
-- Environment-based (recommended): `-e <ENVIRONMENT_NAME>`
-- Direct credentials: `--uri`, `--Login`, `--Password`
-- OAuth: `--uri`, `--clientId`, `--clientSecret`, `--authAppUri`
-
-**Additional Options:**
-- `--general` or `-g` - Use non-SSP user for deployment (default: false)
-- `--timeout` - Request timeout in milliseconds (default: 100000)
-
-**Examples:**
-
-Deploy using registered environment:
-```bash
-clio alm-deploy MyPackage.gz --site Production -e prod-env
-```
-
-Deploy with direct credentials:
-```bash
-clio deploy MyPackage.gz --site Production -u https://myapp.creatio.com -l admin -p pass
-```
-
-Deploy using OAuth:
-```bash
-clio alm-deploy MyPackage.gz --site Production -u https://myapp.creatio.com --clientId abc123 --clientSecret xyz789 --authAppUri https://auth.app.com
-```
-
-**📖 For complete documentation, see: [alm-deploy command](./docs/commands/alm-deploy.md)**
-
 ## compile-package
 
 To compile package
@@ -448,26 +400,26 @@ clio restore-db --dbServerName my-local-mssql --dbName mydb --backupPath /path/t
 ### Options
 - `--dbName` (required): Name of the database to create/restore
 - `--backupPath` (required when using `--dbServerName`): Path to the backup file
-  - `.backup` extension for PostgreSQL backups
-  - `.bak` extension for MSSQL backups
+    - `.backup` extension for PostgreSQL backups
+    - `.bak` extension for MSSQL backups
 - `--dbServerName` (optional): Name of the database server configuration from `appsettings.json`
-  - If specified, restores to the configured local server
-  - If not specified, uses existing Kubernetes/environment-based behavior
+    - If specified, restores to the configured local server
+    - If not specified, uses existing Kubernetes/environment-based behavior
 - `--drop-if-exists` (optional): Automatically drops existing database if present without prompting
-  - By default, if a database with the same name exists, the restore operation will fail
-  - Use this flag to automatically remove the existing database before restore
+    - By default, if a database with the same name exists, the restore operation will fail
+    - Use this flag to automatically remove the existing database before restore
 
 ### Features
 - **Connection Testing**: Tests database connectivity before attempting restore
 - **Automatic Type Detection**: Determines backup type from file extension
 - **Type Validation**: Ensures backup file type matches database server type
-- **Real-time Progress Feedback**: 
-  - PostgreSQL (Debug Mode): Shows verbose output with detailed progress information using `--debug` flag
-  - PostgreSQL (Normal Mode): Shows periodic "Restore in progress..." messages every 30 seconds
-  - MSSQL: Reports progress every 5% during restore operation
-- **Existing Database Handling**: 
-  - By default, fails if database already exists
-  - With `--drop-if-exists` flag, automatically drops existing database before restore
+- **Real-time Progress Feedback**:
+    - PostgreSQL (Debug Mode): Shows verbose output with detailed progress information using `--debug` flag
+    - PostgreSQL (Normal Mode): Shows periodic "Restore in progress..." messages every 30 seconds
+    - MSSQL: Reports progress every 5% during restore operation
+- **Existing Database Handling**:
+    - By default, fails if database already exists
+    - With `--drop-if-exists` flag, automatically drops existing database before restore
 - **PostgreSQL Tools Detection**: Automatically finds `pg_restore` in PATH or common installation locations
 - **Comprehensive Error Messages**: Provides detailed error messages with actionable suggestions
 
@@ -526,7 +478,1149 @@ clio restore-db --dbServerName my-local-postgres --dbName creatiodev --backupPat
 clio restore-db --dbServerName custom-postgres --dbName creatiodev --backupPath database.backup
 ```
 
-# Package Filtering in Workspace
+### Troubleshooting
+
+**PostgreSQL: "pg_restore not found"**
+- Install PostgreSQL client tools
+- Add PostgreSQL bin directory to PATH environment variable
+- Or specify `pgToolsPath` in configuration
+
+**Connection test failed**
+- Verify database server is running
+- Check hostname and port are correct
+- Verify username and password
+- Check firewall settings
+
+**Backup type mismatch**
+- Ensure `.backup` files are used with PostgreSQL servers
+- Ensure `.bak` files are used with MSSQL servers
+
+**Database already exists**
+- Use `--drop-if-exists` flag to automatically drop the existing database
+- Or manually drop the database before running the restore command
+
+## get-pkg-list
+
+Get list of packages installed in Creatio environment.
+
+**Aliases:** `packages`
+
+### Synopsis
+```bash
+clio get-pkg-list [OPTIONS]
+```
+
+### Description
+Retrieves and displays a list of all packages installed in the specified Creatio environment. The command returns package information including name, version, and maintainer for each installed package.
+
+The command can filter results by package name and return data in either table format (default) or JSON format for programmatic use.
+
+### Options
+- `-e, --Environment` - Environment name from registered configuration
+- `-f, --Filter` - Filter packages by name (case-insensitive partial match)
+- `-j, --Json` - Return results in JSON format (default: false)
+
+Standard environment options (`-u`, `-l`, `-p`) are also available.
+
+### Examples
+
+Get all packages from registered environment:
+```bash
+clio get-pkg-list -e MyEnvironment
+```
+
+Filter packages by name:
+```bash
+clio get-pkg-list -e MyEnvironment -f clio
+```
+
+Get packages in JSON format:
+```bash
+clio get-pkg-list -e MyEnvironment -j
+```
+
+Filter and return as JSON:
+```bash
+clio get-pkg-list -e MyEnvironment -f Custom -j
+```
+
+Using alias:
+```bash
+clio packages -e MyEnvironment
+```
+
+### Output Format
+**Table format (default):**
+```
+Name                Version         Maintainer
+──────────────────────────────────────────────
+PackageName1        1.0.0          Company
+PackageName2        2.1.3          Developer
+```
+
+**JSON format** (`-j` flag): Returns an array of package objects with detailed information.
+
+## set-pkg-version
+
+Set a specified package version into descriptor.json by specified package path.
+
+```
+clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
+```
+
+## set-application-version
+
+Set a specified composable application version into application-descriptor.json by specified workspace or package path.
+
+```
+clio set-app-version <WORKSPACE PATH> -v <APP VERSION>
+
+// or
+
+clio set-app-versin -f <PACKAGE FOLDER PATH> -v <APP VERSION>
+
+```
+
+
+## set-app-icon
+
+The `set-app-icon` command is used to set the icon for a specified application
+by updating the `app-descriptor.json` file.
+
+### Usage
+
+```bash
+clio set-app-icon [options]
+```
+-p, --app-name (required): The name or code of the application.
+-i, --app-icon (required): The path to the SVG icon file to be set.
+-f, --app-path (required): Path to application package folder or archive.
+
+Examples
+Set the icon for an application with a specified name:
+
+```bash
+clio set-app-icon -p MyAppName -i /path/to/icon.svg -f /path/to/app 
+```
+
+
+## pkg-hotfix
+
+Enable/Disable pkg hotfix mode. To see full description about Hot Fix mode visit [Creatio Academy](https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/development-tools/delivery/hotfix-mode
+)
+
+```bash
+
+# To enable hot-fix mode for a package  
+clio pkg-hotfix <PACKAGE_NAME> true -e <ENVIRONMENT_NAME> 
+
+# To disable hot-fix mode for a package 
+clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME> 
+
+
+```
+
+# NuGet Packages
+- [Pack NuGet package](#pack-nuget-pkg)
+- [Push NuGet package](#push-nuget-pkg)
+- [Restore NuGet package](#restore-nuget-pkg)
+- [Install NuGet package](#install-nuget-pkg)
+- [Check packages updates in NuGet](#check-nuget-update)
+
+# Clio Management
+- [Update clio](#update-cli)
+
+## pack-nuget-pkg
+
+To pack creatio package to a NuGet package (*.nupkg), use the next command:
+
+```
+pack-nuget-pkg <CREATIO_PACKAGE_PATH> [--Dependencies <PACKAGE_NAME_1>[:<PACKAGE_VERSION_1>][,<PACKAGE_NAME_2>[:<PACKAGE_VERSION_2>],...]>] [--NupkgDirectory <NUGET_PACKAGE_PATH>]
+```
+
+Default value of 'PACKAGE_VERSION' argument it's last package version.
+
+Default value of 'NupkgDirectory' argument it's current directory.
+
+## push-nuget-pkg
+
+To push NuGet package (*.nupkg) to a NuGet repository, use the next command:
+
+```
+push-nuget-pkg <NUGET_PACKAGE_PATH> --ApiKey <APIKEY_NUGET_REPOSITORY> --Source <URL_NUGET_REPOSITORY>
+```
+
+## restore-nuget-pkg
+
+To restore NuGet package (*.nupkg) to destination restoring package directory , use the next command:
+
+```
+restore-nuget-pkg  <PACKAGE_NAME>[:<PACKAGE_VERSION>] [--DestinationDirectory <DESTINATION_DIRECTORY>] [--Source <URL_NUGET_REPOSITORY>]
+```
+
+Default value of 'PACKAGE_VERSION' argument it's last package version.
+
+Default value of 'DestinationDirectory' argument it's current directory.
+
+Default value of 'Source' argument: https://www.nuget.org/api/v2
+
+## install-nuget-pkg
+
+To install NuGet package to a web application Creatio, use the next command:
+
+```
+clio install-nuget-pkg <PACKAGE_NAME>[:<PACKAGE_VERSION>] [--Source <URL_NUGET_REPOSITORY>]
+```
+
+you can install NuGet package of last version:
+
+```
+clio install-nuget-pkg <PACKAGE_NAME> [--Source <URL_NUGET_REPOSITORY>]
+```
+
+for install several NuGet packages:
+
+```
+clio install-nuget-pkg <PACKAGE_NAME_1>[:<PACKAGE_VERSION_1>][,<PACKAGE_NAME_2>[:<PACKAGE_VERSION_2>],...]> [--Source <URL_NUGET_REPOSITORY>]
+```
+
+or you can install several NuGet packages of last versions:
+
+``
+clio install-nuget-pkg <PACKAGE_NAME_1>[,<PACKAGE_NAME_2>,...]> [--Source <URL_NUGET_REPOSITORY>]
+```
+
+Default value of 'PACKAGE_VERSION' argument it's last package version.
+
+Default value of 'Source' argument: https://www.nuget.org/api/v2
+
+## check-nuget-update
+
+To check Creatio packages updates in a NuGet repository, use the next command:
+
+```bash
+clio check-nuget-update [--Source <URL_NUGET_REPOSITORY>]
+```
+
+Default value of 'Source' argument: https://www.nuget.org/api/v2
+
+## update-cli
+
+Update clio to the latest available version from NuGet with interactive confirmation.
+
+This command checks for a newer version of clio and updates the installation if available. By default, it operates in interactive mode, displaying the current and latest versions and prompting the user for confirmation before updating.
+
+```bash
+clio update-cli [OPTIONS]
+clio update [OPTIONS]
+```
+
+### Options:
+
+- `-g, --global` - Install clio globally (default: true). Use `--no-global` to disable.
+- `-y, --no-prompt` - Skip confirmation prompt and proceed with update automatically.
+
+### Examples:
+
+Interactive update (prompts user):
+```bash
+clio update-cli
+```
+
+Automatic update without confirmation:
+```bash
+clio update --no-prompt
+```
+
+Using short alias with auto-confirm:
+```bash
+clio update -y
+```
+
+### Behavior:
+
+1. Checks current installed version and latest version on NuGet.org
+2. If already on latest version, displays message and exits successfully
+3. If update available:
+    - Shows current and latest version information
+    - If `--no-prompt` not specified: prompts user for confirmation (Y/n)
+    - If user declines: cancels and exits without updating
+4. Executes: `dotnet tool update clio -g` (or without `-g` if `--no-global` used)
+5. Verifies new version is installed correctly
+6. Reports success or failure
+
+### Exit Codes:
+
+- `0` - Successful update or already on latest version
+- `1` - User cancelled or update failed
+- `2` - Error checking for updates (network issue, version detection error, etc.)
+
+# Application
+- [Deploy application](#deploy-application)
+- [Uninstall application](#uninstall-app-remote)
+- [List installed applications](#get-app-list)
+- [Upload Licenses](#lic)
+- [Restart application](./docs/commands/RestartCommand.md)
+- [Clear Redis database](./docs/commands/RedisCommand.md)
+- [Compile configuration](#compile-configuration)
+- [Get compilation log](#last-compilation-log)
+- [Set system setting](#set-syssetting)
+- [Get system setting](#get-syssetting)
+- [Features](#set-feature)
+- [Set base web service url](#set-webservice-url)
+- [Get base web service url](#get-webservice-url)
+- [Set FileSystemMode](#set-fsm-config)
+
+## download-app
+
+```bash
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> 
+#or
+clio download-app <APP_NAME|APP_CODE> -e <ENVIRONMENT_NAME> --FilePath <FILE_PATH.ZIP>
+```
+
+## deploy-application
+
+Deploy application from one environment to another
+
+```bash
+clio deploy-application <APP_NAME|APP_CODE> -e <SOURCE_ENVIRONMENT_NAME> -d <DESTINATION_ENVIRONMENT_NAME>
+
+#or omit -e argument to take application from default environment
+
+clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
+````
+
+
+
+## uninstall-app-remote
+
+To uninstall application, use the next command:
+
+```
+clio uninstall-app-remote <APP_NAME|APP_CODE>
+```
+
+
+## get-app-list
+
+The `get-app-list` command, also short alias as `apps`,
+is used to list all the installed applications in the selected environment.
+This command is useful when you want to check which applications are currently
+installed in your Creatio environment.
+
+```bash
+clio get-app-list
+
+#or 
+
+clio apps
+```
+
+## Upload licenses
+
+To upload licenses to Creatio application, use the next command for default environment:
+
+```bash
+clio lic <File Path>
+```
+
+```bash
+clio lic <File Path> -e <ENVIRONMENT_NAME>
+```
+
+## restart-web-app
+
+To restart Creatio application, use the next command for default environment:
+
+```bash
+clio restart-web-app
+```
+
+or for register application
+
+```bash
+clio restart-web-app <ENVIRONMENT_NAME>
+```
+
+## start
+
+Start a local Creatio application using dotnet. By default, runs as a background service (same as deployment). Use `--terminal` or `-w` option to launch in a new terminal window with visible logs.
+
+**Aliases**: `start-server`, `start-creatio`, `sc`
+
+### Usage
+
+Start application as background service (default):
+
+```bash
+clio start -e <ENVIRONMENT_NAME>
+```
+
+Start application in terminal window with logs:
+
+```bash
+clio start -e <ENVIRONMENT_NAME> --terminal
+clio start -e <ENVIRONMENT_NAME> -w
+```
+
+Start default environment:
+
+```bash
+clio start
+clio start --terminal
+```
+
+Using aliases:
+
+```bash
+clio start-server -e <ENVIRONMENT_NAME>
+clio start-creatio -e <ENVIRONMENT_NAME> -w
+clio sc -e <ENVIRONMENT_NAME> --terminal
+```
+
+### Prerequisites
+
+1. The environment must be registered with `EnvironmentPath` configured:
+   ```bash
+   clio reg-web-app my_env --ep /path/to/creatio
+   ```
+
+2. The `EnvironmentPath` must contain `Terrasoft.WebHost.dll`
+
+3. .NET runtime must be installed and available in PATH
+
+### Examples
+
+```bash
+# Start as background service (default)
+clio start -e local_dev
+
+# Start with terminal window to see logs
+clio start -e local_dev -w
+clio start -e local_dev --terminal
+
+# Start default environment
+clio start
+
+# Using aliases
+clio sc -e local_dev
+clio start-creatio -e local_dev --terminal
+```
+
+### Behavior
+
+**Default Mode (Background Service)**:
+- Launches the Creatio application as a background process
+- No terminal window or logs visible (consistent with deployment)
+- Returns control to the original terminal immediately with success message and process ID
+- The application continues running independently
+- Use this mode for automated deployments or when logs are not needed
+
+**Terminal Mode (`--terminal` or `-w`)**:
+- Launches the Creatio application in a new terminal window
+- Shows application logs in the new terminal
+- Returns control to the original terminal immediately with a success message
+- The application continues running independently
+- Use this mode when you need to see application logs
+
+### Error Handling
+
+The command validates:
+- EnvironmentPath is configured for the environment
+- The specified path exists on the file system
+- `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+
+If no environment is specified or EnvironmentPath is not configured, the command displays a list of available environments with configured paths.
+
+If any validation fails, an appropriate error message is displayed.
+
+## hosts
+
+List all registered Creatio environments (hosts) with their running status, process IDs, and service information. This command helps monitor which Creatio instances are running on the local machine.
+
+**Aliases**: `list-hosts`
+
+**For complete documentation**, see: [`hosts`](./docs/commands/hosts.md)
+
+### Quick Usage
+
+```bash
+clio hosts
+```
+
+### Example Output
+
+```
+Scanning 3 environment(s) in parallel...
+=== Creatio Hosts ===
+Environment    Service Name         Status          PID    Environment Path
+production     Default Web Site     Running (IIS)   8432   C:\inetpub\wwwroot\Production
+staging        CreatioStaging       Stopped (IIS)   -      C:\Apps\Staging
+development    creatio-dev          Running (Process) 12456 C:\Dev\Creatio
+```
+
+### Status Values
+
+- **Running (IIS)**: IIS site and application pool both running (Windows)
+- **Stopped (IIS)**: IIS site or application pool stopped (Windows)
+- **Running (Service)**: systemd/launchd service running (macOS/Linux)
+- **Running (Process)**: Background process detected
+- **Stopped**: No running process or service found
+
+### Prerequisites
+
+- Environments must be registered with `EnvironmentPath`:
+  ```bash
+  clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
+  ```
+
+### Troubleshooting
+
+If PID is not detected on Windows IIS, enable debug mode:
+```powershell
+$env:CLIO_DEBUG_IIS = "true"
+clio hosts
+```
+
+## clear-redis-db
+
+To clear Redis database for default application
+
+```bash
+clio clear-redis-db
+```
+
+or non default application
+
+```bash
+clio clear-redis-db <ENVIRONMENT_NAME>
+```
+
+## compile-configuration
+
+For compile configuration
+
+```bash
+clio compile-configuration
+```
+or
+```bash
+clio compile-configuration <ENVIRONMENT_NAME>
+```
+
+for compile all
+
+```bash
+clio compile-configuration --all
+```
+
+## last-compilation-log
+
+Get last compilation log. Requires CanManageSolution operation permission
+
+```bash
+# Display last compilation log, in format similar to IDE
+clio last-compilation-log -e <ENVIRONMENT_NAME>
+```
+
+```bash
+# Display raw output (json)
+clio last-compilation-log -e <ENVIRONMENT_NAME> --raw
+```
+
+```bash
+# Save creatio compilation log to file, 
+# --log option can be used jointly with --raw
+clio last-compilation-log -e <ENVIRONMENT_NAME> --log "C:\log.txt"
+```
+
+## set-syssetting
+
+To set system settings value
+
+```bash
+clio set-syssetting <CODE> <VALUE>
+```
+
+## get-syssetting
+
+To read system settings value
+
+```bash
+get-syssetting <CODE> --GET -e <ENVIRONMENT_NAME>
+```
+
+## set-feature
+
+To enable feature
+
+```bash
+clio set-feature <CODE> 1
+```
+
+To disable feature
+
+```bash
+clio set-feature <CODE> 0
+```
+
+To specify User or Role, use SysAdminUnitName options
+
+```bash
+clio set-feature <CODE> 1 --SysAdminUnitName Supervisor
+```
+
+## set-webservice-url
+
+To configure a base url of a web service, in an environment use the following command.
+It may be useful when you need to change the base url of a web service in a development or
+testing environment.
+
+```bash
+clio set-webservice-url <WEB_SERVICE_NAME> <BASE_URL> -e <ENVIRONMENT_NAME>
+
+```
+
+## get-webservice-url
+
+To get the base URL of existing web services in an environment, use the following command:
+
+```bash
+clio get-webservice-url -e <ENVIRONMENT_NAME>
+```
+
+To get the base URL of a specific web service:
+
+```bash
+clio get-webservice-url <WEB_SERVICE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+Aliases: `gwu`
+
+
+# Environment settings
+- [Create/Update an environment](./docs/commands/RegAppCommand.md)
+- [Delete the existing environment](./docs/commands/UnregAppCommand.md)
+- [Ping environment](./docs/commands/PingCommand.md)
+- [View application list](./docs/commands/ShowAppListCommand.md)
+- [Open application](#open)
+- [Clone environment](#clone-env)
+- [Healthcheck](./docs/commands/HealthCheckCommand.md)
+- [Get Creatio Info](#get-info)
+- [CustomizeDataProtection](#CustomizeDataProtection)
+
+Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
+
+## reg-web-app
+
+Register new application settings
+
+```powershell
+clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password
+```
+Register new application settings (NET8)
+
+```powershell
+clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password -i true
+```
+
+Register an application with path to the application root, this will help with dconf command
+```powershell
+clio reg-web-app <ENVIRONMENT_NAME> -u https://mysite.creatio.com -l administrator -p password --ep C:\inetpub\wwwroot\clio\s_n8
+```
+
+### Update existing settings
+
+```bash
+clio reg-web-app <ENVIRONMENT_NAME> -l administrator -p password
+```
+
+### Set the active environment
+```
+clio reg-web-app -a <ENVIRONMENT_NAME>
+```
+
+## unreg-web-app
+
+```bash
+clio unreg-web-app <ENVIRONMENT_NAME>
+```
+
+## ping
+
+For validation existing environment setting you can use ping command
+
+```bash
+clio ping <ENVIRONMENT_NAME>
+```
+
+## show-web-app-list
+
+Display registered environment configurations from local clio settings. Use this to view all environments you've registered with `reg-web-app` command.
+
+```bash
+# List all environments with full details (JSON format)
+clio show-web-app-list
+
+# Show concise table format (Name, URL)
+clio show-web-app-list --short
+
+# Show specific environment details
+clio show-web-app-list <ENVIRONMENT_NAME>
+
+# Show all environments in table format
+clio show-web-app-list --format table
+
+# Show environment with raw output (plain text)
+clio show-web-app-list --format raw
+clio show-web-app-list <ENVIRONMENT_NAME> --format raw
+
+# Using raw flag as shorthand
+clio show-web-app-list --raw
+
+# Using aliases
+clio envs -s
+clio show-web-app <ENVIRONMENT_NAME>
+clio envs --format table
+```
+
+**Options:**
+- `-f, --format <FORMAT>`: Output format (json, table, raw). Default: json
+- `--raw`: Raw output shorthand (equivalent to --format raw)
+- `-s, --short`: Show short list (backward compatible, overrides other format options)
+- `-e, --env <ENVIRONMENT_NAME>`: Environment name (alias for positional argument)
+- `<ENVIRONMENT_NAME>`: Optional - show details for specific environment, or all if omitted
+
+**Output Formats:**
+- **json**: JSON format with environment settings (default)
+- **table**: Formatted table with all environments
+- **raw**: Plain text format with field labels
+
+Fields included: uri, dbName, backupFilePath, login, password (masked), maintainer, isNetCore,
+clientId, clientSecret (masked), authAppUri, simpleLoginUri, safe, developerModeEnabled,
+isDevMode, workspacePathes, environmentPath, dbServerKey, and nested dbServer { uri, workingFolder,
+login, password (masked) }.
+
+⚠️ **Security Note**: Passwords and ClientSecret are ONLY masked when:
+- Querying a specific environment: `clio show-web-app-list <ENV_NAME>`
+- Using `--format raw` for all environments
+- NOT masked when listing all environments with default JSON format
+- Use `--short` or query specific environments to avoid exposing passwords
+
+For comprehensive documentation, see: [`show-web-app-list`](./docs/commands/ShowAppListCommand.md)
+
+
+## show-local-envs
+
+Display local environments that have an `environmentPath` configured and show their health in a styled table (Name, Status, Url, Path, Reason). Status values are colored in the console.
+
+```bash
+clio show-local-envs
+```
+
+Statuses:
+- `OK`: ping succeeded and login succeeded.
+- `Error Auth data`: ping succeeded but login failed.
+- `Deleted`: environment directory is missing or contains only the `Logs` folder (or access is denied).
+- `Not runned`: ping failed but the environment directory exists and has content beyond `Logs`.
+
+Notes:
+- Uses settings abstraction (no direct file reads) to discover environments and their paths.
+- Uses existing clio connectivity logic for ping/login checks.
+- Prints a message when no local environments are configured with paths.
+
+
+## clear local env
+
+Clear (remove) local environments that have been deleted from the file system and remove orphaned services. This command identifies deleted environments based on three criteria:
+1. Environment directory doesn't exist
+2. Directory contains only the `Logs` folder
+3. Directory access is denied
+
+Additionally, the command automatically detects and removes **orphaned services** - system services that reference non-existent Terrasoft.WebHost installations.
+
+For each deleted environment found, the command:
+1. Attempts to delete the associated Windows/Linux service
+2. Deletes the environment directory (if it exists)
+3. Removes the environment from clio's configuration
+
+For each orphaned service found, the command:
+1. Verifies the service executable path contains "Terrasoft.WebHost.dll"
+2. Confirms the referenced file does not exist on disk
+3. Deletes the orphaned service using the platform service manager
+
+```bash
+clio clear-local-env [--force]
+```
+
+Options:
+- `-f, --force`: Skip confirmation prompt and delete immediately without asking for user confirmation
+
+Examples:
+```bash
+# Interactive mode (prompts for confirmation)
+clio clear-local-env
+
+# Non-interactive mode (deletes without confirmation)
+clio clear-local-env --force
+
+# Example output:
+# Found 2 deleted environment(s):
+#   - old-app-1
+#   - old-app-2
+# Found 3 orphaned service(s):
+#   - creatio-old-app-1
+#   - creatio-old-app-2
+#   - creatio-legacy-service
+#
+# ✓ Summary: 5 item(s) cleaned up successfully
+#   - 2 environment(s)
+#   - 3 orphaned service(s)
+```
+
+Return codes:
+- `0`: Success - all deleted environments and orphaned services have been cleared
+- `1`: Error - a critical error occurred (e.g., failed to remove from settings)
+- `2`: Cancelled - user declined the confirmation prompt
+
+Notes:
+- The command only processes environments marked as "Deleted" by `show-local-envs`
+- Service deletion may fail for various reasons (permissions, service not found) but does not block directory deletion
+- Orphaned services are automatically discovered and require no manual configuration
+- Uses platform-specific service managers (Windows: Service Control Manager, Linux: systemd)
+- Service names follow the pattern `creatio-{environment-name}`
+- Remote environments (those without local path) are never touched or deleted
+
+
+## open
+
+For open selected environment in default browser use (Windows only command)
+
+```bash
+clio open <ENVIRONMENT NAME>
+```
+
+## clone-env
+
+For clone environment use next command.
+
+```bash
+clio clone-env --source Dev --target QA --working-directory [OPTIONAL PATH TO STORE]
+```
+
+The command creates a manifest from the source and target, calculates the difference between them, downloads the changed package from the source environment to the working directory (optional parameter), and installs it in the source environment.
+
+
+## healthcheck
+
+Check application health
+
+
+```bash
+clio hc <ENVIRONMENT NAME>
+```
+
+```bash
+clio healthcheck <ENVIRONMENT NAME> -a true -h true
+```
+
+```bash
+clio healthcheck <ENVIRONMENT NAME> --WebApp true --WebHost true
+```
+
+## get-info
+
+This command retrieves comprehensive system information about a Creatio instance, including version, runtime environment, database type, and product name. The command communicates with the Creatio instance through the cliogate API gateway.
+
+**Aliases:** `describe`, `describe-creatio`, `instance-info`
+
+**Requirements:**
+- cliogate must be installed on the target Creatio instance
+- Minimum cliogate version: 2.0.0.32
+
+**Usage:**
+```bash
+clio get-info -e <ENVIRONMENT_NAME>
+
+# OR using short form
+clio get-info <ENVIRONMENT_NAME>
+
+# Using aliases
+clio describe -e <ENVIRONMENT_NAME>
+clio instance-info <ENVIRONMENT_NAME>
+```
+
+**Information Retrieved:**
+- Creatio version
+- Runtime environment (.NET version)
+- Database type (MSSQL, PostgreSQL, Oracle)
+- Product name and configuration
+- System settings and configuration details
+
+**Examples:**
+```bash
+# Get information for registered environment
+clio get-info -e MyEnvironment
+
+# Using describe alias
+clio describe -e Production
+```
+
+**For detailed documentation, see:** [`get-info`](./docs/commands/GetCreatioInfoCommand.md)
+
+## CustomizeDataProtection
+Adjusts `CustomizeDataProtection` in appsettings. Useful for development on Net8
+```bash
+
+clio cdp true -e <ENVIRONMENT_NAME>
+
+#or
+
+clio cdp false -e <ENVIRONMENT_NAME>
+```
+
+
+# Workspaces
+- [Create workspace](#create-workspace)
+- [Restore workspace](#restore-workspace)
+- [Push code to an environment](#push-workspace)
+- [Build workspace](#build-workspace)
+- [Configure workspace](#configure-workspace)
+- [Publish workspace](#publish-workspace)
+- [Merge workspaces](#merge-workspaces)
+- [Package Filtering](#package-filtering-in-workspace)
+- [Configure workspace](#configure-workspace)
+
+## Workspaces
+
+To connect professional developer tools and Creatio no-code designers, you can organize development flow in you local file system in **workspace.**
+Workspace associates local folder with source code and local or remote Creatio environment (application).
+See [Environment options](#environment-options) for list of all options.
+
+## create-workspace
+
+Create workspace in local directory, execute create-workspace command
+
+```bash
+clio create-workspace
+```
+
+In directory **.clio** specify you packages
+
+Create workspace in local directory with all editable packages from environment, execute create-workspace command with argument -e <Environment name>
+
+```bash
+clio create-workspace -e demo
+```
+
+Create workspace in local directory with packages in app, execute create-workspace command
+To get list of app codes execute `clio lia -e <ENVIRONMENT>`
+
+```bash
+clio create-workspace --AppCode <APP_CODE>
+```
+
+## restore-workspace
+
+Restore packages in you file system via command from selected environment
+
+```powershell
+clio restore-workspace -e demo
+```
+
+Workspace supports Package assembly. Clio creates, ready to go solution that you can work on
+in a professional IDE of your choice. To open solution execute command
+
+```powershell
+OpenSolution.cmd
+```
+
+## push-workspace
+
+Push code to an environment via command, then work with it from Creatio
+
+```bash
+clio push-workspace -e demo
+```
+
+Options:
+- `--unlock` (optional): Unlock workspace package after installing workspace to the environment.
+- `--use-application-installer` (optional): Use application installation flow instead of package installation flow.
+
+**IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install additional system package **cliogate** to you environment.
+
+```bash
+clio install-gate -e demo
+```
+
+## build-workspace
+```bash
+clio build-workspace
+```
+
+## install-gate
+
+Install the cliogate service package to a Creatio environment. This package expands clio's capabilities by enabling advanced remote commands and operations.
+
+```bash
+clio install-gate -e <ENVIRONMENT_NAME>
+```
+
+**Aliases:** `update-gate`, `gate`, `installgate`
+
+### Description
+
+The cliogate package is a service package that enables advanced clio functionality on Creatio instances. It provides:
+- Extended API access for remote operations
+- Workspace management capabilities
+- Database and configuration management
+- Support for T.I.D.E. (Terribly Isolated Development Environment)
+
+After installation, the command automatically restarts the Creatio application to apply changes.
+
+### Options
+
+- `-e, --environment <ENVIRONMENT_NAME>` (required if not using direct credentials): Target environment name from configuration
+- `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
+- `-l, --Login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --Password <PASSWORD>` (optional): User password
+
+### Examples
+
+Install using configured environment:
+```bash
+clio install-gate -e dev
+```
+
+Install with direct credentials:
+```bash
+clio gate -u https://myapp.creatio.com -l administrator -p password
+```
+
+Update existing installation:
+```bash
+clio update-gate -e production
+```
+
+### Notes
+
+- Administrator permissions are required on the target environment
+- The installed version matches the cliogate bundled with your clio installation
+- Use `clio info --gate` to check the cliogate version included with clio
+- Use `clio get-info -e <ENV>` to verify the installed cliogate version on an environment
+- The application will automatically restart after installation
+
+### Related Commands
+
+- [`install-tide`](#install-tide) - Install T.I.D.E. extension (requires cliogate)
+- [`push-workspace`](#push-workspace) - Push workspace to environment (requires cliogate)
+- [`get-info`](#get-info) - Get information about a Creatio instance
+
+## install-tide
+
+Install T.I.D.E. (Terribly Isolated Development Environment) extension to a Creatio environment. T.I.D.E. enables isolated development environments and workspace-based workflows with Git synchronization capabilities.
+
+```bash
+clio install-tide -e <ENVIRONMENT_NAME>
+```
+
+The command performs the following steps:
+1. Installs cliogate package (if not already installed)
+2. Waits for the server to become ready
+3. Installs the T.I.D.E. NuGet package (atftide)
+
+**Aliases:** `tide`, `itide`
+
+**Options:**
+- `-e, --environment <ENVIRONMENT_NAME>` (required): The target Creatio environment name
+
+**Examples:**
+
+```bash
+# Install T.I.D.E. on development environment
+clio install-tide -e dev
+
+# Using alias
+clio tide -e production
+
+# Short alias
+clio itide -e demo
+```
+
+**Prerequisites:**
+- Creatio instance must be accessible
+- Valid credentials for the target environment
+- Sufficient permissions to install packages
+
+**Related commands:**
+- `install-gate` - Install cliogate package
+- `push-workspace` - Push workspace to environment
+- `git-sync` - Synchronize environment with Git repository
+
+## configure-workspace
+
+To configure workspace settings, such as adding packages and saving environment settings, use the following command:
+
+```bash
+clio cfgw --Packages <PACKAGE_NAME_1>,<PACKAGE_NAME_2>,... -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `--Packages` (optional): Comma-separated list of package names to add to the workspace
+
+Aliases: `cfgw`
+
+## merge-workspaces
+
+To merge packages from multiple workspaces and optionally install them to the environment, use the following command:
+
+```bash
+# Merge and install packages to the environment
+clio merge-workspaces --workspaces <WORKSPACE_PATH_1>,<WORKSPACE_PATH_2> -e <ENVIRONMENT_NAME>
+
+# Merge and save packages as a ZIP file
+clio merge-workspaces --workspaces <WORKSPACE_PATH_1>,<WORKSPACE_PATH_2> --output <OUTPUT_PATH> --name <ZIP_FILE_NAME>
+```
+
+Options:
+- `--workspaces` (required): Comma-separated list of workspace paths to merge
+- `--output` (optional): Path where to save the merged ZIP file. If not specified, ZIP will not be saved
+- `--name` (optional, default: "MergedCreatioPackages"): Name for the resulting ZIP file (without .zip extension)
+- `--install` (optional, default: true): Whether to install the merged packages into Creatio
+
+Aliases: `mergew`
+
+## publish-workspace
+
+To publish a workspace to a ZIP file or an application hub, use the following command:
+
+```bash
+# Publish to file with version
+clio publish-workspace --file <FILE_PATH> --app-version <VERSION> --repo-path <WORKSPACE_PATH>
+
+# Publish to file without version (version will be omitted)
+clio publish-workspace --file <FILE_PATH> --repo-path <WORKSPACE_PATH>
+
+# Publish to application hub
+clio publish-workspace --app-name <APP_NAME> --app-version <VERSION> --app-hub <APP_HUB_PATH> --repo-path <WORKSPACE_PATH> -e <ENVIRONMENT_NAME>
+```
+
+Options:
+- `-a`, `--app-name` (required for hub mode): Application name
+- `-v`, `--app-version` (optional): Application version. When not specified in file mode, no version will be included in the archive
+- `-h`, `--app-hub` (required for hub mode): Path to application hub
+- `-f`, `--file` (required for file mode): Path where to save the workspace ZIP file
+- `-r`, `--repo-path` (required): Path to application workspace folder
+- `-b`, `--branch` (optional): Branch name
+
+**Modes:**
+- **File Mode**: Use `--file` to publish workspace to a ZIP file on the local file system
+- **Hub Mode**: Use `--app-hub` and `--app-name` to publish to an application hub
+
+Aliases: `publishw`, `publish-hub`, `ph`, `publish-app`
+
+## Package Filtering in Workspace
 
 Clio supports package filtering functionality that allows you to exclude specific packages from workspace operations through configuration settings. This is useful for ignoring test packages, demo content, or development utilities during production operations.
 
@@ -550,7 +1644,7 @@ Create or edit the `.clio/workspaceSettings.json` file in your workspace root:
 
 - **Exact match**: `TestPackage` - matches package with exact name
 - **Wildcard prefix**: `Demo*` - matches all packages starting with "Demo"
-- **Wildcard suffix**: `*Test` - matches all packages ending with "Test"  
+- **Wildcard suffix**: `*Test` - matches all packages ending with "Test"
 - **Wildcard contains**: `*Test*` - matches all packages containing "Test"
 - **Single character**: `?Debug` - matches any single character followed by "Debug"
 
@@ -682,33 +1776,33 @@ The command automatically detects whether you provided a ZIP file or a directory
 ### How it Works
 
 1. **Input Detection:**
-   - Checks file extension to determine if input is ZIP (`.zip`) or directory
+    - Checks file extension to determine if input is ZIP (`.zip`) or directory
 
 2. **Creatio Type Detection:**
-   - **NetFramework**: Detected by presence of `Terrasoft.WebApp` folder
-   - **NetCore (NET8)**: Used when `Terrasoft.WebApp` folder is not present
+    - **NetFramework**: Detected by presence of `Terrasoft.WebApp` folder
+    - **NetCore (NET8)**: Used when `Terrasoft.WebApp` folder is not present
 
 3. **File Copying:**
 
    **For NetFramework:**
-   - Core binaries from `Terrasoft.WebApp\bin` → `.application\net-framework\core-bin\`
-   - Libraries from `Terrasoft.WebApp\Terrasoft.Configuration\Lib` → `.application\net-framework\bin\`
-   - Configuration DLLs from latest `Terrasoft.WebApp\conf\bin\{NUMBER}` → `.application\net-framework\bin\`
-     - Files copied: `Terrasoft.Configuration.dll`, `Terrasoft.Configuration.ODataEntities.dll`
-   - Packages from `Terrasoft.WebApp\Terrasoft.Configuration\Pkg` → `.application\net-framework\packages\{PackageName}\`
-     - Only packages with `Files\bin` folder are copied
+    - Core binaries from `Terrasoft.WebApp\bin` → `.application\net-framework\core-bin\`
+    - Libraries from `Terrasoft.WebApp\Terrasoft.Configuration\Lib` → `.application\net-framework\bin\`
+    - Configuration DLLs from latest `Terrasoft.WebApp\conf\bin\{NUMBER}` → `.application\net-framework\bin\`
+        - Files copied: `Terrasoft.Configuration.dll`, `Terrasoft.Configuration.ODataEntities.dll`
+    - Packages from `Terrasoft.WebApp\Terrasoft.Configuration\Pkg` → `.application\net-framework\packages\{PackageName}\`
+        - Only packages with `Files\bin` folder are copied
 
    **For NetCore (NET8):**
-   - Root DLL and PDB files from root directory → `.application\net-core\core-bin\`
-   - Libraries from `Terrasoft.Configuration\Lib` → `.application\net-core\bin\`
-   - Configuration DLLs from latest `conf\bin\{NUMBER}` → `.application\net-core\bin\`
-     - Files copied: `Terrasoft.Configuration.dll`, `Terrasoft.Configuration.ODataEntities.dll`
-   - Packages from `Terrasoft.Configuration\Pkg` → `.application\net-core\packages\{PackageName}\`
-     - Only packages with `Files\bin` folder are copied
+    - Root DLL and PDB files from root directory → `.application\net-core\core-bin\`
+    - Libraries from `Terrasoft.Configuration\Lib` → `.application\net-core\bin\`
+    - Configuration DLLs from latest `conf\bin\{NUMBER}` → `.application\net-core\bin\`
+        - Files copied: `Terrasoft.Configuration.dll`, `Terrasoft.Configuration.ODataEntities.dll`
+    - Packages from `Terrasoft.Configuration\Pkg` → `.application\net-core\packages\{PackageName}\`
+        - Only packages with `Files\bin` folder are copied
 
 4. **Cleanup:**
-   - **ZIP mode**: Temporary directory is automatically deleted after processing
-   - **Directory mode**: Source directory is preserved for reuse
+    - **ZIP mode**: Temporary directory is automatically deleted after processing
+    - **Directory mode**: Source directory is preserved for reuse
 
 ### Requirements
 
@@ -743,8 +1837,7 @@ clio dconf --build C:\extracted\creatio --debug
 - Numbered folder detection and latest folder selection
 - Each file being copied with source and destination paths
 - Summary of copied/skipped files and packages
-- Root assembly files (DLL/PDB) being copied
-- Directory structure creation
+- Cleanup confirmation (for ZIP mode)
 
 **Example debug output:**
 ```
@@ -759,12 +1852,28 @@ clio dconf --build C:\extracted\creatio --debug
 [DEBUG]   Selected latest folder: 3
 [DEBUG] CopyPackages: NetFramework packages summary: Copied=15, Skipped=3
 ```
+- Package filtering decisions (which packages are copied and which are skipped)
+- Operation summaries (e.g., "Copied 45 packages, Skipped 12 packages")
+- Root assembly files (DLL/PDB) being copied
+- Directory structure creation
+
+**Example debug output:**
+```
+[DEBUG] Starting extraction from ZIP: C:\downloads\creatio.zip
+[DEBUG] Workspace root: C:\workspace
+[DEBUG] Temp directory: C:\Users\user\AppData\Local\Temp\xyz
+[DEBUG] Found numbered folders in conf/bin: 1, 2, 3, 4 (Total: 4)
+[DEBUG] Selected latest folder: 4
+[DEBUG] Copying file: tempPath\Terrasoft.Core.dll -> workspace\.application\net-framework\core-bin\Terrasoft.Core.dll
+[DEBUG] Packages: Source=tempPath\Terrasoft.WebApp\Packages, Destination=workspace\.application\net-framework\packages
+[DEBUG] Copying package: CrtBase (has Files/Bin folder)
+[DEBUG] Skipping package: SomePackage (no Files/Bin folder)
+[DEBUG] Package copy summary: Copied 45 packages, Skipped 12 packages
+```
 
 This helps troubleshoot file path issues and understand the extraction process.
 
-**Aliases:** `dconf`
-
-**📖 For complete documentation, see: [download-configuration command](./docs/commands/download-configuration.md)**
+Aliases: `dconf`
 
 # Development
 - [Convert package](#convert)
@@ -793,7 +1902,6 @@ Convert package to project.
 ```bash
 clio convert <PACKAGE_NAMES>
 ```
-
 Arguments:
 
 <PACKAGE_NAMES> (string): Name of the convert instance (or comma separated names).
@@ -836,30 +1944,121 @@ clio ref-to bin
 
 ## execute-sql-script
 
-Execute custom SQL script on a web application.
-
-### Parameters
-
-| Key                | Short | Value         | Description                                                      |
-|:------------------:|:-----:|:-------------|:-----------------------------------------------------------------|
-| Script             |       | string       | SQL script to execute (positional argument)                      |
-| --File             | -f    | File path    | Path to the SQL script file                                      |
-| --View             | -v    | table/csv/xlsx| Output format (default: table)                                   |
-| --DestinationPath  | -d    | File path    | Path to save the result file                                     |
-| --silent           |       |              | Suppress console output                                          |
-
-### Usage Examples
+Execute custom SQL script on a web application
 
 ```bash
 execute-sql-script "SELECT Id FROM SysSettings WHERE Code = 'CustomPackageId'"
-execute-sql-script -f c:\Path\to\file.sql
-execute-sql-script -f c:\Path\to\file.sql -v csv -d result.csv
-execute-sql-script -f c:\Path\to\file.sql -v xlsx -d result.xlsx
 ```
 
-- If both `Script` and `File` are omitted, the command prompts for SQL input.
-- Output is shown in the console unless `--silent` is specified.
-- Results can be saved to a file in the chosen format.
+Executes custom SQL script from specified file
+
+```bash
+execute-sql-script -f c:\Path to file\file.sql
+```
+
+## call service
+
+Makes HTTP call to specified service endpoint. Supports both file-based and inline JSON request bodies.
+
+### Parameters
+
+| Key | Short | Value | Description |
+|:---:|:-----:|:------|:------------|
+| --service-path | | Path | Route service path (required) |
+| --method | -m | GET\|POST\|DELETE | HTTP method (default: POST) |
+| --input | -f | File path | Request body from file (path to JSON file) |
+| --body | -b | JSON string | Request body inline (JSON as string) |
+| --destination | -d | File path | Save result to file |
+| --variables | -v | key=value pairs | Variable substitution in body (separated by `;`) |
+| --silent | | | Suppress console output |
+
+**Note:** `--body` and `--input` are mutually exclusive. If both provided, `--body` takes precedence.
+
+### Basic Usage - GET Request
+
+```bash
+clio call-service --service-path ServiceModel/ApplicationInfoService.svc/GetApplicationInfo -e myEnv
+```
+
+### Usage - POST with File (Backward Compatible)
+
+```bash
+clio call-service --service-path ServiceModel/YourService.svc/YourMethod \
+  --input request.json \
+  --destination result.json \
+  -e myEnv
+```
+
+### Usage - POST with Inline Body (New)
+
+**Simple inline JSON:**
+```bash
+clio call-service --service-path ServiceModel/YourService.svc/YourMethod \
+  --body '{"key":"value","number":123}' \
+  --destination result.json \
+  -e myEnv
+```
+
+### Usage - Different HTTP Methods
+
+**DELETE request:**
+```bash
+clio call-service --service-path ServiceModel/DeleteService.svc/RemoveItem \
+  --method DELETE \
+  --body '{"id":123}' \
+  -e myEnv
+```
+
+### Usage - Variable Substitution with Inline Body
+
+**Single variable:**
+```bash
+clio call-service --service-path ServiceModel/UserService.svc/GetUser \
+  --body '{"userId":"{{userId}}"}' \
+  --variables userId=12345 \
+  -e myEnv
+```
+
+**Multiple variables:**
+```bash
+clio call-service --service-path ServiceModel/SearchService.svc/Search \
+  --body '{"firstName":"{{firstName}}","lastName":"{{lastName}}","age":"{{age}}"}' \
+  --variables firstName=John;lastName=Doe;age=30 \
+  -e myEnv
+```
+
+### Cross-Platform Shell Notes
+
+**Linux/macOS (Bash, Zsh):**
+```bash
+# Use single quotes to preserve JSON
+clio call-service --body '{"key":"value"}' --service-path ServicePath -e env
+```
+
+**PowerShell (Windows):**
+```powershell
+# Option 1: Use single quotes (works in PowerShell 7+)
+clio call-service --body '{"key":"value"}' --service-path ServicePath -e env
+
+# Option 2: Escape double quotes with backticks
+clio call-service --body "{`"key`":`"value`"}" --service-path ServicePath -e env
+```
+
+### Use Cases
+
+**When to use `--body` (inline):**
+- Small JSON payloads
+- Quick testing and validation
+- AI agents testing code without file management
+- CI/CD pipelines with dynamic content
+
+**When to use `--input` (file):**
+- Large or complex JSON structures
+- Reusable request templates
+- Requests with many variables
+- Sensitive data (credentials, etc.)
+
+
 
 ## DataService
 
@@ -1042,7 +2241,7 @@ clio l4r -e MyEnvironment -p * -r .\packages
 
 macOS/Linux with direct path:
 ```bash
-clio l4r --envPkgPath /path/to/creatio/Terrasoft.Configuration/Pkg --repoPath ./packages --packages "*"
+clio l4r --envPkgPath /path/to/Creatio/Terrasoft.Configuration/Pkg --repoPath ./packages --packages "*"
 ```
 
 Windows with direct path:
@@ -1053,7 +2252,7 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 **Notes:**
 - On Windows, you can use environment name if it's registered in clio settings
 - On macOS and Linux, you must use the `--envPkgPath` with the direct file path
-- Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2)
+- Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
 ## link core src
 
@@ -1098,7 +2297,7 @@ clio lcs -e dev --core-path "C:\Projects\Core"
 - Requires user confirmation before executing operations
 - Updates the environment configuration with the new core path
 - Automatically handles OS service restart (systemd on Linux, launchd on macOS, Windows Services on Windows)
-- If service is not running, only updates configuration
+- If service is not running, only configuration is updated
 - Logs detailed information about each operation
 - All file operations use the environment's configured settings
 
@@ -1136,7 +2335,7 @@ To link packages from PackageStore to environment packages with version control 
 
 **Syntax:**
 ```
-clio link-package-store --packageStorePath {Path to PackageStore} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
+clio link-package-store --packageStorePath {Path to PackageStore} --envPkgPath {Path to environment package folder}
 ```
 
 **Examples:**
@@ -1154,6 +2353,33 @@ clio link-package-store --packageStorePath "C:\PackageStore" --envPkgPath "C:\Cr
 Windows with environment name:
 ```ps
 clio link-package-store --packageStorePath "C:\PackageStore" -e MyEnvironment
+```
+
+**Options:**
+- `--packageStorePath` (required): Path to PackageStore root directory
+- `--envPkgPath` (optional): Path to environment package folder. Can be omitted if using `-e`
+- `-e`, `--Environment` (optional): Environment name registered in clio settings (Windows only, alternative to `--envPkgPath`)
+
+**Notes:**
+- PackageStore expected structure: `{Package_name}/{branches}/{version}/{content}` (3-level hierarchy)
+- Only packages existing in both PackageStore and environment will be linked
+- Package version is determined from `descriptor.json` in the environment package
+- If package versions don't match, package will be skipped
+- Creates symbolic links for package content (efficient disk usage)
+- Works on Windows, macOS, and Linux
+- If a symbolic link already exists, it will be removed and recreated
+- Missing packages in store are logged and skipped (not added to environment)
+- Missing packages in environment are not modified
+
+**Return codes:**
+- `0` - linking completed successfully
+- `1` - errors occurred during linking or validation failed
+
+## link-to-repository
+
+To connect your local system in file design mode use command to workspace
+```bash
+clio link-to-repository --repoPath {Path to workspace packages folder} --envPkgPath {Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)}
 ```
 
 ## mock-data
@@ -1427,6 +2653,7 @@ steps:
       Password: {{secrets.Password}}
 ```
 
+See more examples in [samples](https://github.com/Advance-Technologies-Foundation/clio-docs/tree/main/clio/Samples/Scenarios)
 
 # Installation of Creatio using Clio
 
@@ -1454,7 +2681,7 @@ clio hosts
 clio start -e <ENV_NAME>
 
 # Stop environment
-clio stop -e <ENVIRONMENT_NAME>
+clio stop -e <ENV_NAME>
 
 # Stop all environments
 clio stop --all
@@ -1606,9 +2833,9 @@ clio ck8f [OPTIONS]
 
 1. Copies Kubernetes YAML template files to `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure` (Windows) or `~/.local/creatio/clio/infrastructure` (macOS/Linux)
 2. Processes templates with variable substitution:
-   - Replaces `{{PG_LIMIT_MEMORY}}`, `{{PG_LIMIT_CPU}}`, etc. with specified or default values
-   - Updates resource limits in `postgres/postgres-stateful-set.yaml`
-   - Updates resource limits in `mssql/mssql-stateful-set.yaml`
+    - Replaces `{{PG_LIMIT_MEMORY}}`, `{{PG_LIMIT_CPU}}`, etc. with specified or default values
+    - Updates resource limits in `postgres/postgres-stateful-set.yaml`
+    - Updates resource limits in `mssql/mssql-stateful-set.yaml`
 3. Displays information about available services and deployment instructions
 
 ### Resource Configuration
@@ -1773,6 +3000,19 @@ kubectl apply -f pgadmin/pgadmin-workload.yaml
 
 Deploys Kubernetes infrastructure for Creatio automatically. This command generates K8s YAML files and applies them to your Kubernetes cluster in the correct order. If infrastructure already exists, it can automatically recreate it and cleanup old PersistentVolumes.
 
+**What it does:**
+1. Checks if `clio-infrastructure` namespace already exists
+2. If it exists, prompts to recreate it (or uses `--force` to skip confirmation)
+3. Cleans up any released PersistentVolumes from previous deployments
+4. Generates infrastructure files from templates
+5. Applies K8s manifests in correct order:
+    - Namespace (`clio-infrastructure`)
+    - Storage class
+    - Redis service
+    - PostgreSQL database
+    - pgAdmin management tool
+6. Verifies connections to PostgreSQL and Redis
+
 **Prerequisites:**
 - `kubectl` must be installed and configured
 - Kubernetes cluster must be running (Docker Desktop, Minikube, Rancher Desktop, etc.)
@@ -1783,7 +3023,10 @@ Deploys Kubernetes infrastructure for Creatio automatically. This command genera
 # Deploy with default settings (prompts if namespace exists)
 clio deploy-infrastructure
 
-# Delete existing infrastructure and deploy
+# or using alias
+clio di
+
+# Force recreation without prompting (will delete existing namespace and cleanup volumes)
 clio deploy-infrastructure --force
 
 # Specify custom path for infrastructure files
@@ -1800,6 +3043,9 @@ clio deploy-infrastructure --force --no-verify
 - `-p, --path` - Custom path for infrastructure files (default: auto-detected from clio settings)
 - `--force` - Force recreation of namespace without prompting if it already exists
 - `--no-verify` - Skip connection verification after deployment
+
+**Important note about PersistentVolumes:**
+When deleting and recreating infrastructure, the command automatically cleans up any "Released" PersistentVolumes from previous deployments. This prevents "unbound PersistentVolumeClaim" errors during new deployments.
 
 **Example output:**
 
@@ -1890,10 +3136,10 @@ Deletes the Kubernetes infrastructure for Creatio. This command removes the `cli
 1. Checks if `clio-infrastructure` namespace exists
 2. Prompts for confirmation (unless `--force` is used)
 3. Deletes the namespace and all its contents:
-   - All pods and deployments
-   - All services and load balancers
-   - All persistent volumes and claims
-   - All configuration maps and secrets
+    - All pods and deployments
+    - All services and load balancers
+    - All persistent volumes and claims
+    - All configuration maps and secrets
 4. Cleans up any released PersistentVolumes from the previous deployment
 5. Waits for complete deletion
 
@@ -2162,13 +3408,567 @@ Filesystem assertions:
 
 If assertions fail:
 1. For K8 scope:
-   - Check Kubernetes context: `kubectl config current-context`
-   - Verify namespace exists: `kubectl get namespace clio-infrastructure`
-   - Check pods status: `kubectl get pods -n clio-infrastructure`
-   - Verify services: `kubectl get services -n clio-infrastructure`
-   - Check labels: `kubectl get statefulset clio-postgres -n clio-infrastructure -o yaml`
+    - Check Kubernetes context: `kubectl config current-context`
+    - Verify namespace exists: `kubectl get namespace clio-infrastructure`
+    - Check pods status: `kubectl get pods -n clio-infrastructure`
+    - Verify services: `kubectl get services -n clio-infrastructure`
+    - Check labels: `kubectl get statefulset clio-postgres -n clio-infrastructure -o yaml`
 2. For FS scope:
-   - Verify the path exists on disk
-   - Check user identity format is correct (e.g., "BUILTIN\IIS_IUSRS")
-   - On Windows, use File Explorer > Properties > Security to verify ACLs
-   - Ensure you have administrative privileges to check permissions
+    - Verify the path exists on disk
+    - Check user identity format is correct (e.g., "BUILTIN\IIS_IUSRS")
+    - On Windows, use File Explorer > Properties > Security to verify ACLs
+    - Ensure you have administrative privileges to check permissions
+1. Check Kubernetes context: `kubectl config current-context`
+2. Verify namespace exists: `kubectl get namespace clio-infrastructure`
+3. Check pods status: `kubectl get pods -n clio-infrastructure`
+4. Verify services: `kubectl get services -n clio-infrastructure`
+5. Check labels: `kubectl get statefulset clio-postgres -n clio-infrastructure -o yaml`
+
+### Prepare IIS Configuration and Launch
+Prepare IIS Configuration and Launch. Clio will set up an IIS site, configure the relevant app pool,
+and then launch Creatio in your default browser.
+You can override default location in of an IIS folder in `appsetting.json` `iis-clio-root-path` property.
+
+
+- Enable required [Windows components for NET Framework](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components)
+- Enable required [Windows components for .NET 6](https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components#title-252-3)
+
+For automated check you can execute command
+```bash
+clio check-windows-features
+```
+
+### Run Creatio Installation
+
+To get a Windows (only) context menu for `.zip` file execute
+```ps
+  clio register
+```
+
+You may need to close all Explorer windows and open them again. Find Creatio installation `zip` file and right-click on it.
+You should see `clio: deploy Creatio` menu item. Click on the menu item and follow the prompts.
+You may need _**Administrator**_ privileges.
+> Other OS use command to install Creatio
+
+## deploy-creatio
+
+Deploy Creatio from a zip file to either a Kubernetes cluster or a local database server (PostgreSQL or MSSQL).
+
+```bash
+clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
+```
+
+### Options
+
+**Required:**
+- `--ZipFile <Path>` - Path to Creatio zip file or directory (both accepted; directory skips extraction for better performance)
+
+**Database Options:**
+- `--db-server-name <Name>` - Name of database server configuration from appsettings.json for local database deployment
+    - If not specified, uses Kubernetes cluster database (default behavior)
+- `--drop-if-exists` - Automatically drop existing database if present without prompting (works with local databases)
+
+**Redis Configuration:**
+- `--redis-db <Number>` - Specify Redis database number (optional)
+    - Default: -1 (auto-detect empty database)
+    - Auto-Detection: Scans Redis databases starting from 1 to find an empty database
+    - Supports custom Redis configurations with more than 16 databases
+    - Works for both Kubernetes and local deployments
+    - Manual override: Specify a number (0-15 or higher) to use a specific database
+    - Error handling: Provides detailed messages if all databases are occupied or Redis is unreachable
+
+**Deployment Options:**
+- `--SiteName <Name>` - Application site name
+- `--SitePort <Port>` - Site port number
+- `--deployment <Method>` - Deployment method: `auto|iis|dotnet` (default: auto)
+- `--no-iis` - Don't use IIS on Windows, use dotnet run instead
+- `--app-path <Path>` - Application installation path
+- `--auto-run` - Automatically run application after deployment (default: true)
+
+### Deployment Modes
+
+#### 1. **Kubernetes Cluster Database** (Default)
+Deploys to a PostgreSQL or MSSQL database running in Kubernetes:
+
+```bash
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip
+```
+
+#### 2. **Local Database Server**
+Deploys to a local PostgreSQL or MSSQL server configured in appsettings.json:
+
+```bash
+# Deploy to local PostgreSQL
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
+  --db-server-name my-local-postgres \
+  --drop-if-exists
+
+# Deploy to local MSSQL
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
+  --db-server-name my-local-mssql \
+  --drop-if-exists
+```
+
+### Local Database Configuration
+
+To use local database deployment, add a `db` section to your `$HOME/.clio/appsettings.json`:
+
+```json
+{
+  "db": {
+    "my-local-postgres": {
+      "dbType": "postgres",
+      "hostname": "localhost",
+      "port": 5432,
+      "username": "postgres",
+      "password": "your_password",
+      "description": "Local PostgreSQL Server",
+      "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin"
+    },
+    "my-local-mssql": {
+      "dbType": "mssql",
+      "hostname": "localhost",
+      "port": 1433,
+      "username": "sa",
+      "password": "your_password",
+      "description": "Local MSSQL Server"
+    }
+  }
+}
+```
+
+### Redis Database Configuration
+
+**Kubernetes Deployment:**
+By default, Clio automatically finds an empty Redis database starting from index 1. If auto-detection fails:
+
+```bash
+# Manually specify Redis database
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip --redis-db 5
+```
+
+**Local Deployment:**
+Redis connection defaults to `localhost:6379` database 0. You can specify a different database:
+
+```bash
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
+  --db-server-name my-local-postgres \
+  --redis-db 2
+```
+
+### Error Handling
+
+**Redis Configuration Errors:**
+
+If you see `[Redis Configuration Error] Could not find an empty Redis database`:
+- **Cause**: All available Redis databases contain data (auto-detection scans from database 1 onwards)
+- **Solutions**:
+    1. Clear existing Redis databases: `clio clear-redis-db -e <environment>`
+    2. Increase available Redis databases in redis.conf `databases` setting
+    3. Use `--redis-db <number>` to manually specify an available database
+
+If you see `[Redis Connection Error] Could not connect to Redis`:
+- **Cause**: Redis server is not running or not accessible
+- **Solutions**:
+    1. Verify Redis is running: `redis-cli ping`
+    2. Check Redis configuration and network connectivity
+    3. For Kubernetes: Check Redis pod status (`kubectl get pods`)
+    4. Manually specify a database number as fallback: `--redis-db 0`
+
+**Database Errors:**
+
+If database already exists without `--drop-if-exists`:
+- The deployment will fail with an error message
+- Use `--drop-if-exists` flag to automatically drop and recreate the database
+
+### Examples
+
+**Complete local deployment with database drop:**
+```bash
+clio deploy-creatio \
+  --ZipFile ~/Downloads/8.3.3_StudioNet8_PostgreSQL.zip \
+  --db-server-name my-local-postgres \
+  --SiteName MyCreatioApp \
+  --SitePort 5000 \
+  --drop-if-exists \
+  --redis-db 0
+```
+
+**Kubernetes deployment with custom Redis:**
+```bash
+clio deploy-creatio \
+  --ZipFile ~/Downloads/creatio.zip \
+  --redis-db 3
+```
+
+### Technical Details
+
+- Automatically detects database type (PostgreSQL/MSSQL) from zip file
+- For local deployment, automatically configures connection strings for the specified database server
+- Extracts database backup from zip and restores it using the same logic as `restore-db` command
+- Deploys application files using IIS (Windows) or dotnet run (macOS/Linux)
+- Registers the environment in clio for easy management
+
+## Technical details
+
+Clio will automatically determine if the zip file is stored remotely.
+If the file isn't on your local machine, Clio will copy it to a predefined local working folder location,
+You can change the default location in `appsetting.json` file `creatio-products` property.
+To see your `appsetting.json` file execute
+```bash
+clio cfg open
+```
+If the zip file already exists in your working directory, Clio will skip this step.
+
+### For IIS deployment
+Make sure that iis working directory defined in `appsettings.json` file `iis-clio-root-path` has allow `Full Control` for IIS_IUSRS
+
+![](https://academy.creatio.com/sites/en/files/documentation/sdk/en/BPMonlineWebSDK/Screenshots/WorkingWithIDE/permissions.png)
+
+### Extracting the Zip File
+Clio will extract the zip file to the same directory where the original zip file is located.
+If the folder already exists, Clio will skip this step.
+
+
+### Constructing the Connection String
+The connection string will be generated based on your existing cluster configuration.
+
+
+### Database Restoration
+Initially, the backup file will be copied to a folder that is accessible to the database server.
+Scripts suitable for both Microsoft SQL and Postgres deployment within a Kubernetes cluster are provided.
+Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and
+copy files as needed.
+Once files are copied, Clio will proceed to restore the database.
+By default, database will be available on default port
+
+- Postgres: localhost:5432 (root/root)
+- PG Admin: localhost:1080 (root@creatio.com/root)
+- MSSQL: localhost:5432 (sa/$Zarelon01$Zarelon01)
+
+> Postgres - clio will create a template database, and then a real database from the template. If Database or template already exists, Clio will skip this step.
+
+> You can change port and secrets in configuration files `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure`
+
+
+## Restore database for Creatio environments
+
+To restore database for Creatio environments, you can use the next command:
+
+```bash
+clio restore-db --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> --backup-file <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
+#use --force to overwrite existing database without prompt
+```
+
+You can register db-servers in clio config file (`appsetting.json`) see example below
+
+```json
+{
+  "dbConnectionStringKeys": {
+    "k8-mssql": {
+      "uri": "mssql://username:password@127.0.0.1:1433",
+      "workingFolder": "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
+    }
+  }
+}
+```
+To link environment with a db server use `DbServerKey` property in environment settings.
+You can also specify `DbName` and `BackupFilePath` properties to simplify command.
+```json
+{
+  "Environments": {
+    "apollo-bundle-framework": {
+      "DbServerKey": "k8-mssql",
+      "DbName": "mydb10",
+      "BackupFilePath": "D:\\Projects\\CreatioProductBuild\\8.1.2.2482_Studio_Softkey_MSSQL_ENU\\db\\BPMonline812Studio.bak"
+    }
+  },
+  "dbConnectionStringKeys": {
+    "k8-mssql": {
+      "uri": "mssql://username:password@127.0.0.1:1433",
+      "workingFolder": "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
+    }
+  }
+}
+```
+
+```bash
+clio restore-db -e <ENVIRONMENT_NAME>
+```
+
+## hosts
+
+Lists all registered Creatio environments and their current runtime status.
+
+### Syntax
+```bash
+clio hosts
+# or
+clio list-hosts
+```
+
+### Output
+
+Displays a table with the following information:
+
+| Environment | Service Name | Status | PID | Environment Path |
+|-------------|--------------|--------|-----|------------------|
+| dev1 | creatio-dev1 | Running (Service) | - | /path/to/creatio |
+| dev2 | creatio-dev2 | Stopped | - | /path/to/creatio2 |
+
+**Column Descriptions:**
+- **Environment** - Environment name from clio configuration
+- **Service Name** - OS service name (format: `creatio-<env>`)
+- **Status** - Current runtime status:
+    - `Running (Service)` - Running as an OS service
+    - `Running (Process)` - Running as a background process
+    - `Stopped` - Not currently running
+- **PID** - Process ID (shown when running as a background process)
+- **Environment Path** - Physical path to the Creatio installation
+
+### Notes
+- Lists environments from clio configuration file that have an `EnvironmentPath` defined
+- Checks both OS services and background processes
+- Helps identify which environments are currently active
+
+### Example
+```bash
+clio hosts
+```
+
+Output:
+```
+Environment  Service Name    Status              PID     Environment Path
+-----------  --------------  ------------------  ------  ---------------------
+dc1          creatio-dc1     Running (Service)   -       /Users/admin/creatio/dc1
+dc2          creatio-dc2     Stopped             -       /Users/admin/creatio/dc2
+```
+
+## stop
+
+Stops Creatio services and background processes for one or more environments.
+
+### Syntax
+```bash
+# Stop specific environment
+clio stop -e <ENV_NAME>
+
+# Stop all registered environments
+clio stop --all
+```
+
+### Options
+- `-e, --environment <ENV_NAME>` - Stop specific environment
+- `--all` - Stop all registered Creatio environments
+- `-q, --quiet` - Skip confirmation prompt
+
+### Behavior
+
+The command performs the following actions:
+
+1. **Service Stopping** - Stops and disables OS services:
+    - macOS: Uses `launchctl stop` and `launchctl unload`
+    - Linux: Uses `systemctl stop` and `systemctl disable`
+    - Windows: Stops and disables Windows services
+
+2. **Process Termination** - Kills background processes:
+    - Finds dotnet processes running `Terrasoft.WebHost.dll`
+    - Verifies process working directory matches environment path
+    - Terminates matching processes
+
+3. **Confirmation** - Prompts user to confirm unless `--quiet` flag is used
+
+4. **Error Handling** - Continues processing all environments even if some fail
+
+5. **Exit Code** - Returns non-zero if any environment fails to stop
+
+### Environment Detection
+
+An environment is considered active if either:
+- An OS service named `creatio-<env>` is running, OR
+- A dotnet process running from the `EnvironmentPath` directory is found
+
+### Notes
+- Services are unloaded but service definition files (.plist, .service) are **not deleted**
+- Environment configuration remains in clio settings after stop
+- Use `clio uninstall-creatio` to completely remove an environment including files and configuration
+
+### Examples
+
+Stop a specific environment with confirmation:
+```bash
+clio stop -e dev1
+```
+
+Stop a specific environment without confirmation:
+```bash
+clio stop -e dev1 --quiet
+```
+
+Stop all registered environments:
+```bash
+clio stop --all --quiet
+```
+
+### Example Output
+
+```bash
+$ clio hosts
+Environment  Service Name    Status              PID     Environment Path
+-----------  --------------  ------------------  ------  ---------------------
+dc1          creatio-dc1     Running (Process)   96498   /Users/admin/creatio/dc1
+dc2          creatio-dc2     Running (Service)   -       /Users/admin/creatio/dc2
+
+$ clio stop --all --quiet
+Stopping environment: dc1
+Stopped background process with PID: 96498
+Successfully stopped environment: dc1
+
+Stopping environment: dc2
+Stopped service: creatio-dc2
+Successfully stopped environment: dc2
+
+All environments stopped.
+
+$ clio hosts
+Environment  Service Name    Status              PID     Environment Path
+-----------  --------------  ------------------  ------  ---------------------
+dc1          creatio-dc1     Stopped             -       /Users/admin/creatio/dc1
+dc2          creatio-dc2     Stopped             -       /Users/admin/creatio/dc2
+```
+
+## Uninstall Creatio
+
+Completely remove a local Creatio instance from your machine, including IIS site, application pool, files, and database.
+
+**Aliases:** `uc`
+
+**Platform Requirements:** Windows with IIS, administrator privileges required
+
+**Warning:** This is a destructive operation that permanently deletes data. Ensure you have backups before proceeding.
+
+For complete documentation, see [`uninstall-creatio`](./docs/commands/uninstall-creatio.md)
+
+### Synopsis
+```bash
+clio uninstall-creatio [options]
+```
+
+### Options
+- `-e`, `--environment` - Name of registered environment to uninstall
+- `-d`, `--physicalPath` - Physical path to Creatio installation folder (e.g., C:\inetpub\wwwroot\mysite)
+
+**Note:** You must provide either `-e` or `-d`, but not both.
+
+### Examples
+```bash
+# Uninstall by environment name (recommended)
+clio uninstall-creatio -e production
+clio uc -e development
+
+# Uninstall by physical path
+clio uninstall-creatio -d C:\inetpub\wwwroot\mysite
+```
+
+### What Gets Removed
+- IIS site and application pool
+- All files in the installation directory
+- Application pool user profile directory (C:\Users\{AppPoolUser})
+- **Database** (both local and containerized)
+    - Local PostgreSQL (reads connection from ConnectionStrings.config)
+    - Local MSSQL with username/password or Integrated Security
+    - Kubernetes/Rancher databases (fallback if local parsing fails)
+
+### Database Support
+The command reads `ConnectionStrings.config` and parses connection parameters to drop databases. Supports:
+- PostgreSQL with username/password
+- MSSQL with username/password
+- MSSQL with Integrated Security (Windows Auth)
+- MSSQL named instances (e.g., `server\instance`)
+
+### Related Commands
+- [`deploy-creatio`](#deploy-creatio) - Deploy a new Creatio instance
+- [`unreg-web-app`](./docs/commands/UnregAppCommand.md) - Unregister environment from clio
+- [`hosts`](./docs/commands/hosts.md) - Monitor running instances
+- `clear-local-env` - Clear data without destroying instance
+
+## Set File-System Mode configuration
+
+The `set-fsm-config` command is used to configure the file system mode properties
+in the configuration file of a Creatio application.
+
+### Syntax
+```bash
+clio set-fsm-config [options]
+```
+
+### Options
+- `--physicalPath` (optional): Specifies the path to the application.
+- `--environmentName` (optional): Specifies the environment name.
+- `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Examples
+Enable file system mode for a specific environment:
+```bash
+clio set-fsm-config --environmentName MyEnvironment on
+```
+
+Specify a physical path to configure file system mode:
+```bash
+clio set-fsm-config --physicalPath "C:\\inetpub\\wwwroot\\MyApp" off
+```
+
+## Turn File-System Mode On/Off
+
+The `turn-fsm` command is used to toggle the file system mode (FSM) on or off for a Creatio environment. When FSM is turned on, it configures the environment and loads packages to the file system. When FSM is turned off, it loads packages to the database and then configures the environment.
+
+### Syntax
+```bash
+clio turn-fsm [options]
+```
+
+### Options
+- `--physicalPath` (optional): Specifies the path to the application.
+- `--environmentName` (optional): Specifies the environment name.
+- `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Examples
+Turn on file system mode for a specific environment:
+```bash
+clio turn-fsm --environmentName MyEnvironment on
+```
+
+Turn off file system mode for a specific environment:
+```bash
+clio turn-fsm --environmentName MyEnvironment off
+```
+
+## Workspace Solution Generation (.slnx)
+- The `createw` (or `create-workspace`) command now generates a solution file in `.slnx` format instead of `.sln`.
+  The generated solution file will be located in the `.solution` folder and named `CreatioPackages.slnx`.
+
+# Backend Unit Testing
+
+Learn how to create and run backend unit tests for Creatio development, including usage of the `new-test-project` command and .slnx solution files:
+- [Backend Unit Test Guide](../docs/BackEndUnitTest.md)
+
+## ver
+Reference section for version command. See earlier examples in Help and examples.
+
+## extract-package
+Alias heading for extract-pkg-zip. Use extract-pkg-zip command section above.
+
+## set-application-icon
+Alias heading for set-app-icon. Refer to set-app-icon for usage.
+
+## lic
+Alias heading for Upload licenses. See Upload licenses section.
+
+## set-fsm-config
+Alias heading for Set File-System Mode configuration. See that section for details.
+
+## callservice
+Alias heading for call-Service command. Refer to call-Service for usage examples.
+
+## create-manifest
+Alias heading: creating a manifest is performed by save-state command; see save-state section.
