@@ -161,6 +161,7 @@ clio:   8.0.1.97
 - [Create a new package](#new-pkg)
 - [Add a new package to workspace](#add-package)
 - [Install package](#push-pkg)
+- [Deploy package via ALM](#alm-deploy)
 - [Compile package](#compile-package)
 - [Pull package from remote application](#pull-pkg)
 - [Delete package](#delete-pkg-remote)
@@ -249,6 +250,53 @@ clio push-app C:\Packages\package.gz --check-configuration-errors true
 ```
 
 The `--check-configuration-errors` flag enables validation of compilation and configuration errors during installation. If the flag is set and there are compilation or configuration errors, the installation will stop and return an error with detailed information about the problems. If the flag is not set, the installation will proceed without checking for configuration errors.
+
+## alm-deploy
+
+Deploy and install a package to a Creatio environment using the Application Lifecycle Management (ALM) service.
+
+**Aliases:** `deploy`
+
+**Synopsis:**
+```bash
+clio alm-deploy <FILE_PATH> --site <SITE_NAME> [OPTIONS]
+```
+
+**Description:**
+The `alm-deploy` command uploads a package file to a Creatio environment and triggers installation through the ALM service. This command is designed for controlled deployments to specific sites/environments managed by ALM.
+
+**Required Arguments:**
+- `FILE_PATH` - Path to the package file (typically .gz format)
+- `--site` or `-t` - Target site/environment name in ALM
+
+**Authentication Options:**
+- Environment-based (recommended): `-e <ENVIRONMENT_NAME>`
+- Direct credentials: `--uri`, `--Login`, `--Password`
+- OAuth: `--uri`, `--clientId`, `--clientSecret`, `--authAppUri`
+
+**Additional Options:**
+- `--general` or `-g` - Use non-SSP user for deployment (default: false)
+- `--timeout` - Request timeout in milliseconds (default: 100000)
+
+**Examples:**
+
+Deploy using registered environment:
+```bash
+clio alm-deploy MyPackage.gz --site Production -e prod-env
+```
+
+Deploy with direct credentials:
+```bash
+clio deploy MyPackage.gz --site Production -u https://myapp.creatio.com -l admin -p pass
+```
+
+Deploy using OAuth:
+```bash
+clio alm-deploy MyPackage.gz --site Production -u https://myapp.creatio.com --clientId abc123 --clientSecret xyz789 --authAppUri https://auth.app.com
+```
+
+**📖 For complete documentation, see: [alm-deploy command](./docs/commands/alm-deploy.md)**
+
 ## compile-package
 
 To compile package
@@ -714,7 +762,9 @@ clio dconf --build C:\extracted\creatio --debug
 
 This helps troubleshoot file path issues and understand the extraction process.
 
-Aliases: `dconf`
+**Aliases:** `dconf`
+
+**📖 For complete documentation, see: [download-configuration command](./docs/commands/download-configuration.md)**
 
 # Development
 - [Convert package](#convert)

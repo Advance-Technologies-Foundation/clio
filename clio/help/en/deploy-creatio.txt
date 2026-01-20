@@ -257,22 +257,23 @@ DATABASE RESTORATION
     LOCAL DATABASE SERVER CONFIGURATION:
     To restore to a local database server, add a 'db' section to appsettings.json:
     
-    {
-      "db": {
-        "my-local-mssql": {
-          "dbType": "mssql",
-          "hostname": "localhost",
-          "port": 1433,
-          "username": "sa",
-          "password": "YourPassword"
-        },
-        "my-local-postgres": {
-          "dbType": "postgres",
-          "hostname": "localhost",
-          "port": 5432,
-          "username": "postgres",
-          "password": "postgres"
-        }
+    "db": {
+      "my-local-mssql": {
+        "DbType": "mssql",
+        "Hostname": "LOCALHOST\\SQLEXPRESS",
+        "Port": 1433,
+        "Username": "Supervisor",
+        "Password": "Supervisor",
+        "Description": "Local MSSQL Server for development"
+      },
+      "my-local-postgres": {
+        "DbType": "postgres",
+        "Hostname": "localhost",
+        "Port": 5433,
+        "Username": "postgres",
+        "Password": "PASSWORD",
+        "Description": "Local PostgreSQL Server for development",
+        "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin"
       }
     }
     
