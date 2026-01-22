@@ -82,6 +82,7 @@
 				<Reference Include="System.ServiceModel.Activation" />
 				<Reference Include="System.ServiceModel.Web" />
 				<Reference Include="System.Web" />
+				<Reference Include="System.Net.Http" />
 			</ItemGroup>
 			<ItemGroup Label="Core References">
 				<Reference Include="Terrasoft.Reports">
@@ -301,13 +302,22 @@
 			<Private>False</Private>
 		</Reference>
 		<PackageReference Condition="'$(TargetFramework)' == 'netstandard2.0'" Include="Microsoft.Extensions.Http" Version="8.0.0" />
-
-		<!--<PackageReference Include="ATF.Repository" Version="2.0.2.11" />-->
+		<Reference Condition="'$(TargetFramework)' == 'net472'" Include="Microsoft.Extensions.Http">
+			<HintPath>$(CoreLibPath)/Microsoft.Extensions.Http.dll</HintPath>
+			<SpecificVersion>False</SpecificVersion>
+			<Private>False</Private>
+		</Reference>
+		<PackageReference Condition="'$(TargetFramework)' == 'netstandard2.0'" Include="System.Text.Json" Version="8.0.0" />
+		<Reference Condition="'$(TargetFramework)' == 'net472'" Include="System.Text.Json">
+			<HintPath>$(CoreLibPath)/System.Text.Json.dll</HintPath>
+			<SpecificVersion>False</SpecificVersion>
+			<Private>False</Private>
+		</Reference>
+		<!--<PackageReference Include="ATF.Repository" Version="2.0.3.3" />-->
 		<Reference Include="ATF.Repository">
 			<HintPath>Libs/ATF.Repository.dll</HintPath>
 		</Reference>
-
-		<!--<PackageReference Include="ErrorOr" Version="2.1.0" />-->
+		<!--<PackageReference Include="ErrorOr" Version="2.0.1" />-->
 		<Reference Include="ErrorOr">
 			<HintPath>Libs/ErrorOr.dll</HintPath>
 		</Reference>
