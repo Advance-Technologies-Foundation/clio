@@ -668,17 +668,17 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return $"_{product}{creatioRuntimePlatform.ToRuntimePlatformString()}_Softkey_{creatioDBType}_ENU.zip";
 	}
 
-	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options){
+	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options, InstallerHelper.DatabaseType dbType){
 		_logger.WriteInfo("[CheckUpdate connection string] - Started");
-		InstallerHelper.DatabaseType dbType;
-		try {
-			dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
-		} 
-		catch (Exception ex) {
-			_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
-			_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
-			dbType = InstallerHelper.DatabaseType.Postgres;
-		}
+		//InstallerHelper.DatabaseType dbType;
+		// try {
+		// 	dbType = InstallerHelper.DetectDataBase(unzippedDirectory);
+		// } 
+		// catch (Exception ex) {
+		// 	_logger.WriteWarning($"[DetectDataBase] - Could not detect database type: {ex.Message}");
+		// 	_logger.WriteInfo("[DetectDataBase] - Defaulting to PostgreSQL");
+		// 	dbType = InstallerHelper.DatabaseType.Postgres;
+		// }
 
 		string dbConnectionString;
 		string redisConnectionString;
@@ -1061,7 +1061,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		
 		int updateConnectionStringResult = deploySiteResult switch {
-			0 => UpdateConnectionString(deploymentFolderInfo, options).GetAwaiter().GetResult(),
+			0 => UpdateConnectionString(deploymentFolderInfo, options, dbType).GetAwaiter().GetResult(),
 			var _ => ExitWithErrorMessage("Failed to deploy application")
 		};
 

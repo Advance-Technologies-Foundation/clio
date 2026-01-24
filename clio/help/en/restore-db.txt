@@ -46,7 +46,7 @@ CONFIGURATION
           "port": 5432,
           "username": "postgres",
           "password": "postgres",
-          "pgToolsPath": "",
+          "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
           "description": "Local PostgreSQL Server for development"
         }
       }
