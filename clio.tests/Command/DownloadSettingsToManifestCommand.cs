@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Reflection;
@@ -262,10 +263,10 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 	public void TestFormatDateTime() {
 		DateTime dateTime = new(2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
 		const string expectedString = "12/10/2024 12:00:00 AM";
-		expectedString.Should().Be(dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpperInvariant());
+		expectedString.Should().Be(dateTime.ToString("M/dd/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture).ToUpperInvariant());
 	}
 
-	private void MockSysPackage(DataProviderMock providerMock, bool packageAccending, bool withSchemas = false, bool schemaAscending = false) {
+	private void MockSysPackage(DataProviderMock providerMock, bool packageAscending, bool withSchemas = false, bool schemaAscending = false) {
 		IItemsMock mock = providerMock.MockItems(nameof(SysPackage));
 		Guid packageId1 = Guid.NewGuid();
 		Guid packageId2 = Guid.NewGuid();
@@ -284,7 +285,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 				{ "Maintainer", "ATF" }
 			}
 		];
-		if (!packageAccending) {
+		if (!packageAscending) {
 			list.Reverse();
 		}
 		mock.Returns(list);
