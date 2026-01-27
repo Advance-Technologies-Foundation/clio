@@ -183,7 +183,7 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectDecimalValue(string value){
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		decimal sysSettingValue = decimal.Parse(value);
+		decimal sysSettingValue = decimal.Parse(value, CultureInfo.InvariantCulture);
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();

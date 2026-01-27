@@ -260,36 +260,37 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 	[Test]
 	public void TestFormatDateTime() {
-		var dateTime = new DateTime(2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
-		string expectedString = "12/10/2024 12:00:00 AM";
-		expectedString.Should().Be(dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpper());
+		DateTime dateTime = new(2024, 12, 10, 0, 0, 0, DateTimeKind.Utc);
+		const string expectedString = "12/10/2024 12:00:00 AM";
+		expectedString.Should().Be(dateTime.ToString("M/dd/yyyy hh:mm:ss tt").ToUpperInvariant());
 	}
 
-	private void MockSysPackage(DataProviderMock providerMock, bool packageAccending, bool withSchemas = false, bool schemaAccending = false) {
-		var mock = providerMock.MockItems(nameof(SysPackage));
+	private void MockSysPackage(DataProviderMock providerMock, bool packageAccending, bool withSchemas = false, bool schemaAscending = false) {
+		IItemsMock mock = providerMock.MockItems(nameof(SysPackage));
 		Guid packageId1 = Guid.NewGuid();
 		Guid packageId2 = Guid.NewGuid();
-		var list = new List<Dictionary<string, object>>() {
-			new Dictionary<string, object>() {
-				{"Id", packageId1},
-				{"Name", "CrtBase"},
-				{"ModifiedOn", new DateTime(2024,5,10, 0, 0, 0, DateTimeKind.Utc)},
-				{"Maintainer", "Creatio" }
+		List<Dictionary<string, object>> list = [
+			new() {
+				{ "Id", packageId1 },
+				{ "Name", "CrtBase" },
+				{ "ModifiedOn", new DateTime(2024, 5, 10, 0, 0, 0, DateTimeKind.Utc) },
+				{ "Maintainer", "Creatio" }
 			},
-			new Dictionary<string, object>() {
-				{"Id", packageId2},
-				{"Name", "CrtUI"},
-				{"ModifiedOn", new DateTime(2024,5,10, 0, 0, 0, DateTimeKind.Utc)},
-				{"Maintainer", "ATF" }
+
+			new() {
+				{ "Id", packageId2 },
+				{ "Name", "CrtUI" },
+				{ "ModifiedOn", new DateTime(2024, 5, 10, 0, 0, 0, DateTimeKind.Utc) },
+				{ "Maintainer", "ATF" }
 			}
-		};
+		];
 		if (!packageAccending) {
 			list.Reverse();
 		}
 		mock.Returns(list);
 		if (withSchemas) {
-			MockSysSchemasForPackage(packageId1, providerMock, 2, schemaAccending);
-			MockSysSchemasForPackage(packageId2, providerMock, 2, schemaAccending);
+			MockSysSchemasForPackage(packageId1, providerMock, 2, schemaAscending);
+			MockSysSchemasForPackage(packageId2, providerMock, 2, schemaAscending);
 		}
 
 	}
