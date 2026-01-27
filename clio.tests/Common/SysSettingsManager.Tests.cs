@@ -98,7 +98,7 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectDateTimeValue(string dateValue, string format){
 		//Arrange
 		DateTime.TryParseExact(dateValue, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dtValue);
-		string stringDateTimeValue = dtValue.ToString();
+		string stringDateTimeValue = dtValue.ToString(CultureInfo.InvariantCulture);
 		const string sysSettingCode = "nonExistingCode";
 		string sysSettingValue = stringDateTimeValue;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -107,7 +107,7 @@ public class SysSettingsManagerTests
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+        ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
 			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
@@ -183,7 +183,7 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectDecimalValue(string value){
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		decimal sysSettingValue = decimal.Parse(value);
+		decimal sysSettingValue = decimal.Parse(value, CultureInfo.InvariantCulture);
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
