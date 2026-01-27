@@ -12,7 +12,7 @@ namespace Clio.Command
 
 	#region Class: PushWorkspaceCommandOptions
 
-	[Verb("push-workspace", Aliases = new string[] { "pushw" }, HelpText = "Push workspace to selected environment")]
+	[Verb("push-workspace", Aliases = ["pushw"], HelpText = "Push workspace to selected environment")]
 	public class PushWorkspaceCommandOptions : EnvironmentOptions
 	{
 		[Option("unlock", Required = false, HelpText = "Unlock workspace package after install workspace to the environment")]

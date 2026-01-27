@@ -145,6 +145,7 @@ namespace Clio.Workspaces
 				_applicationInstaller.Install(applicationZip, _environmentSettings);
 				_logger.WriteInfo("Installation completed successfully.");
 			} else {
+				_logger.WriteInfo($"Installing workspace packages using PackageInstaller...");
 				_packageInstaller.Install(applicationZip, _environmentSettings);
 			}
 		}
