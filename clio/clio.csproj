@@ -896,6 +896,7 @@
     <PackageReference Include="Npgsql" Version="10.0.1" />
     <PackageReference Include="NRedisStack" Version="1.2.0" />
     <PackageReference Include="OneOf" Version="3.0.271" />
+    <PackageReference Include="Spectre.Console" Version="0.54.0" />
     <PackageReference Include="System.IO.Abstractions" Version="22.1.0" />
     <PackageReference Include="System.Json" Version="4.8.0" />
 	<PackageReference Include="Ignore" Version="0.2.1" />

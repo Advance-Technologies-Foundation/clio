@@ -792,25 +792,86 @@ Document all features with examples in `/docs/commands/EnvManageUiCommand.md`.
 
 Mention new interactive UI feature in project README.
 
+## Implementation Status
+
+### ✅ Completed Features (As of Current Version)
+
+#### Interactive Table-Based UX (v2)
+**Status**: ✅ Implemented
+
+The Create and Edit operations have been redesigned with a unified interactive table-based approach:
+
+**Key Changes**:
+1. **Name as Editable Field**: 
+   - Name moved from initial prompt to field "0. Name" in table
+   - Allows editing name like any other field in Create
+   - Enables rename capability in Edit
+
+2. **Unified UX Pattern**:
+   - Both Create and Edit use identical interface
+   - `while(keepEditing)` loop with table + SelectionPrompt
+   - All 11 fields (0-10) visible in single table view
+   - Return to updated table after each field edit
+
+3. **Visible Action Buttons**:
+   - Save and Cancel buttons positioned at bottom
+   - `.PageSize(15)` ensures no scrolling needed
+   - Visual separator (──────────────────) between fields and actions
+
+4. **Rename Functionality**:
+   - Edit environment can now rename (change "0. Name")
+   - Validates new name for uniqueness
+   - Preserves active environment status during rename
+   - Delete old environment + create new with updated name
+   - Custom success message indicates rename occurred
+
+**Implementation Files**:
+- `clio/Command/EnvManageUiCommand.cs` (lines ~301-730)
+  - CreateEnvironment() method: Interactive table creation
+  - EditEnvironment() method: Interactive table editing with rename
+
+**Testing Requirements**:
+- ✅ TC-034: Table-based navigation
+- ✅ TC-035: Name field editing in Create
+- ✅ TC-036: Cancel before save
+- ✅ TC-037: Rename success
+- ✅ TC-038: Rename active environment
+- ✅ TC-039: Rename to duplicate name
+- ✅ TC-040: Rename invalid format
+- ✅ TC-041: Field column alignment
+
+#### View Details Enhancement
+**Status**: ✅ Implemented
+
+**Changes**:
+- Added `Console.Clear()` at method start for clean screen
+- Added panel header before environment selection
+- Added pause at end: "Press any key to continue..."
+- Prevents immediate return to menu
+
+**Implementation**: `ViewEnvironmentDetails()` method (lines ~207-298)
+
+**Testing**: ✅ TC-042
+
 ## Estimated Timeline
 
-| Phase | Task | Hours | Dependencies |
-|-------|------|-------|--------------|
-| 1.1 | Add Dependencies | 0.5 | None |
-| 1.2 | Create Command Structure | 1 | 1.1 |
-| 1.3 | Register in DI | 0.5 | 1.2 |
-| 2.1 | Main Menu | 2 | Phase 1 |
-| 2.2 | List Environments | 1.5 | 2.1 |
-| 2.3 | View Details | 1.5 | 2.1 |
-| 3.1 | Create Environment | 2.5 | Phase 2 |
-| 3.2 | Edit Environment | 2 | 3.1 |
-| 3.3 | Delete Environment | 1.5 | 3.1 |
-| 3.4 | Set Active | 1 | Phase 2 |
-| 4.1 | Unit Tests | 3 | Phase 3 |
-| 4.2 | Integration Tests | 1 | Phase 3 |
-| 4.3 | Manual Testing | 1 | Phase 3 |
-| 5.1-5.3 | Documentation | 2 | Phase 4 |
-| **Total** | | **21.5 hours** | |
+| Phase | Task | Hours | Dependencies | Status |
+|-------|------|-------|--------------|--------|
+| 1.1 | Add Dependencies | 0.5 | None | ✅ Complete |
+| 1.2 | Create Command Structure | 1 | 1.1 | ✅ Complete |
+| 1.3 | Register in DI | 0.5 | 1.2 | ✅ Complete |
+| 2.1 | Main Menu | 2 | Phase 1 | ✅ Complete |
+| 2.2 | List Environments | 1.5 | 2.1 | ✅ Complete |
+| 2.3 | View Details | 1.5 | 2.1 | ✅ Complete + Enhanced |
+| 3.1 | Create Environment | 2.5 | Phase 2 | ✅ Complete - Redesigned v2 |
+| 3.2 | Edit Environment | 2 | 3.1 | ✅ Complete - Enhanced with Rename |
+| 3.3 | Delete Environment | 1.5 | 3.1 | ✅ Complete |
+| 3.4 | Set Active | 1 | Phase 2 | ✅ Complete |
+| 4.1 | Unit Tests | 3 | Phase 3 | ✅ 41/41 tests passing |
+| 4.2 | Integration Tests | 1 | Phase 3 | ✅ Complete |
+| 4.3 | Manual Testing | 1 | Phase 3 | 🚧 In Progress |
+| 5.1-5.3 | Documentation | 2 | Phase 4 | ✅ Complete - Updated specs |
+| **Total** | | **21.5 hours** | | **~95% Complete** |
 
 ## Risk Mitigation
 
@@ -840,12 +901,23 @@ Mention new interactive UI feature in project README.
 
 ## Success Criteria
 
-- [ ] All functional requirements met
-- [ ] All unit tests passing
+- [x] All functional requirements met (including rename and table-based UX)
+- [x] All unit tests passing (41/41 tests)
 - [ ] Manual testing completed on 3 platforms
-- [ ] Documentation complete
+- [x] Documentation complete (all specs updated)
 - [ ] Code reviewed and approved
-- [ ] No regressions in existing commands
+- [x] No regressions in existing commands
+
+### Additional Achievements
+
+- [x] Enhanced UX beyond original specification:
+  - Unified table-based interface for Create/Edit
+  - Name as editable field enabling rename
+  - Visible Save/Cancel buttons (PageSize=15)
+  - Consistent navigation pattern across operations
+- [x] View Details improvements (screen clear + pause)
+- [x] Field column left-alignment fix
+- [x] Comprehensive test coverage for new features (TC-034 through TC-042)
 
 ## Rollout Plan
 

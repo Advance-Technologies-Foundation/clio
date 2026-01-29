@@ -699,7 +699,222 @@
 
 ---
 
-### TC-033: Regression - Existing Commands
+### TC-034: Create Environment - Table-Based Navigation
+**Objective**: Verify interactive table-based creation UX
+
+**Preconditions**: None
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Create New Environment"
+3. Observe table with 11 fields (0. Name through 10. Developer Mode)
+4. Verify all fields visible simultaneously
+5. Use arrow keys to navigate field selection
+6. Verify Save & Cancel buttons visible at bottom
+
+**Expected Result**:
+- Table displays all 11 editable fields
+- Field column aligned to left
+- SelectionPrompt shows all fields followed by separator then Save/Cancel
+- Can navigate with arrow keys
+- PageSize=15 ensures Save/Cancel visible without scrolling
+- Returns to updated table after editing each field
+
+**Priority**: Critical
+
+---
+
+### TC-035: Create Environment - Name Field Editing
+**Objective**: Verify Name can be edited as field 0
+
+**Preconditions**: None
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Create New Environment"
+3. Select "0. Name" from field list
+4. Enter environment name: "new-test-env"
+5. Press Enter
+6. Verify table updates with entered name
+
+**Expected Result**:
+- "0. Name" appears as first field in list
+- Can edit name like any other field
+- Table updates to show entered name
+- Name validation occurs on save, not during input
+
+**Priority**: Critical
+
+---
+
+### TC-036: Create Environment - Cancel Before Save
+**Objective**: Verify cancel works without saving partial data
+
+**Preconditions**: None
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Create New Environment"
+3. Edit several fields (Name, URL, Login)
+4. Select "❌ Cancel" instead of Save
+
+**Expected Result**:
+- Returns to main menu
+- No environment created
+- No data saved to appsettings.json
+- No error messages
+
+**Priority**: High
+
+---
+
+### TC-037: Edit Environment - Rename Success
+**Objective**: Successfully rename an environment
+
+**Preconditions**: Environment "old-name" exists and is not active
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Edit Environment"
+3. Select "old-name"
+4. Observe table with "0. Name" field showing "old-name"
+5. Select "0. Name"
+6. Enter new name: "new-name"
+7. Select "💾 Save Changes"
+
+**Expected Result**:
+- Name validation passes (unique, valid format)
+- Old environment "old-name" deleted
+- New environment "new-name" created with all settings
+- Success message: "Environment renamed from 'old-name' to 'new-name' and updated successfully!"
+- Environment appears in list with new name
+
+**Priority**: Critical
+
+---
+
+### TC-038: Edit Environment - Rename Active Environment
+**Objective**: Rename active environment and preserve active status
+
+**Preconditions**: Environment "active-env" exists and is active (marked with *)
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Edit Environment"
+3. Select "active-env" (marked with *)
+4. Select "0. Name"
+5. Enter new name: "renamed-active"
+6. Select "💾 Save Changes"
+
+**Expected Result**:
+- Old environment deleted
+- New environment created with new name
+- Active status preserved (new environment marked with *)
+- ActiveEnvironmentKey in config updated to "renamed-active"
+- Success message indicates rename occurred
+
+**Priority**: Critical
+
+---
+
+### TC-039: Edit Environment - Rename to Existing Name
+**Objective**: Prevent renaming to duplicate name
+
+**Preconditions**: Environments "env-a" and "env-b" exist
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Edit Environment"
+3. Select "env-a"
+4. Select "0. Name"
+5. Enter existing name: "env-b"
+6. Attempt to save
+
+**Expected Result**:
+- Validation error: "Environment 'env-b' already exists"
+- Name not changed
+- Prompted to enter different name or press Enter to keep current
+- Original environment unchanged
+- No duplicate created
+
+**Priority**: High
+
+---
+
+### TC-040: Edit Environment - Rename Invalid Format
+**Objective**: Validate name format during rename
+
+**Preconditions**: Environment "test-env" exists
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Edit Environment"
+3. Select "test-env"
+4. Select "0. Name"
+5. Try invalid names:
+   - "test env" (with space)
+   - "test@env" (special character)
+   - Empty string
+6. Observe validation errors
+
+**Expected Result**:
+- Each invalid name rejected with specific error
+- Pattern validation: `^[a-zA-Z0-9_-]+$`
+- Original name retained
+- Can try again or cancel
+
+**Priority**: High
+
+---
+
+### TC-041: Edit Environment - Field Column Alignment
+**Objective**: Verify Field column left-aligned in table
+
+**Preconditions**: Environment exists
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "Edit Environment"
+3. Select any environment
+4. Observe table with Field and Value columns
+
+**Expected Result**:
+- Field column aligned to left (not centered)
+- "0. Name" appears at top of field list
+- All field names left-aligned
+- Value column displays current values
+
+**Priority**: Low
+
+---
+
+### TC-042: View Environment Details - Screen Clear and Pause
+**Objective**: Verify proper screen clearing and pause behavior
+
+**Preconditions**: At least one environment configured
+
+**Steps**:
+1. Run `clio env-ui`
+2. Select "View Environment Details"
+3. Observe screen clearing
+4. Observe panel header: "Select an environment to view details:"
+5. Select an environment
+6. View all details
+7. Observe pause message at end
+
+**Expected Result**:
+- Console.Clear() called at method start (clean screen)
+- Panel header displayed before environment selection
+- All environment details shown
+- Message at end: "[yellow]Press any key to continue...[/]"
+- Returns to main menu after any key press
+- No immediate return to menu without pause
+
+**Priority**: Medium
+
+---
+
+### TC-043: Regression - Existing Commands
 **Objective**: Ensure no impact on existing commands
 
 **Preconditions**: Previous clio version available
@@ -727,6 +942,16 @@
 | TC-001  | ⬜      | ⬜    | ⬜    |        |       |
 | TC-002  | ⬜      | ⬜    | ⬜    |        |       |
 | TC-003  | ⬜      | ⬜    | ⬜    |        |       |
+| TC-034  | ⬜      | ⬜    | ⬜    |        | Table-based navigation |
+| TC-035  | ⬜      | ⬜    | ⬜    |        | Name field editing |
+| TC-036  | ⬜      | ⬜    | ⬜    |        | Cancel before save |
+| TC-037  | ⬜      | ⬜    | ⬜    |        | Rename success |
+| TC-038  | ⬜      | ⬜    | ⬜    |        | Rename active env |
+| TC-039  | ⬜      | ⬜    | ⬜    |        | Rename to duplicate |
+| TC-040  | ⬜      | ⬜    | ⬜    |        | Rename invalid format |
+| TC-041  | ⬜      | ⬜    | ⬜    |        | Field column alignment |
+| TC-042  | ⬜      | ⬜    | ⬜    |        | View details pause |
+| TC-043  | ⬜      | ⬜    | ⬜    |        | Regression tests |
 | ...     | ...     | ...   | ...   | ...    | ...   |
 
 Legend: ✅ Pass | ❌ Fail | ⬜ Not Tested | 🚧 In Progress

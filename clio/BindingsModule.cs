@@ -286,6 +286,8 @@ public class BindingsModule {
 		containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
 		containerBuilder.RegisterType<GetAppHashCommand>();
 		containerBuilder.RegisterType<ShowAppListCommand>();
+		containerBuilder.RegisterType<EnvManageUiCommand>();
+		containerBuilder.RegisterType<EnvManageUiService>().As<IEnvManageUiService>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
 		containerBuilder.RegisterType<LinkPackageStoreCommand>();

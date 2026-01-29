@@ -57,6 +57,7 @@ internal class Program {
 		typeof(FeatureOptions),
 		typeof(PingAppOptions),
 		typeof(ShowLocalEnvironmentsOptions),
+		typeof(EnvManageUiOptions),
 		typeof(ClearLocalEnvironmentOptions),
 		typeof(OpenAppOptions),
 		// Package development
@@ -200,7 +201,8 @@ internal class Program {
 					OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
 					PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
-ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
+				EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
+				ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
 					CompileOptions opts => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					PushNuGetPkgsOptions opts => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					PackNuGetPkgOptions opts => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),

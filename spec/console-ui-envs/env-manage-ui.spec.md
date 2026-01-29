@@ -119,28 +119,94 @@ Database Configuration:
 Press any key to return to main menu...
 ```
 
-### Create/Edit Environment
+### Create New Environment
 
-Interactive prompts using Spectre.Console components:
+Interactive table-based editor with all fields visible:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │           Create New Environment                         │
 └─────────────────────────────────────────────────────────┘
 
-Environment name: [new-env____________]
+Current Values:
+┌─────────────────────┬──────────────────────────────────┐
+│ Field               │ Value                            │
+├─────────────────────┼──────────────────────────────────┤
+│ 0. Name             │                                  │
+│ 1. URL              │ https://                         │
+│ 2. Login            │ Supervisor                       │
+│ 3. Password         │                                  │
+│ 4. Maintainer       │                                  │
+│ 5. IsNetCore        │ False                            │
+│ 6. ClientId         │                                  │
+│ 7. ClientSecret     │                                  │
+│ 8. AuthAppUri       │                                  │
+│ 9. Safe Mode        │ False                            │
+│ 10. Developer Mode  │ False                            │
+└─────────────────────┴──────────────────────────────────┘
 
-URL: [https://___________________]
+Select a field to edit:
+  > 0. Name
+    1. URL
+    2. Login
+    3. Password
+    4. Maintainer
+    5. IsNetCore
+    6. ClientId
+    7. ClientSecret
+    8. AuthAppUri
+    9. Safe Mode
+    10. Developer Mode
+    ──────────────────
+    💾 Save & Create
+    ❌ Cancel
 
-Login: [admin_____________________]
+↑/↓: Navigate | Enter: Select
+```
 
-Password: [****___________________]
+### Edit Environment
 
-Is this a .NET Core environment? (Y/n): [Y]
+Interactive table-based editor with rename capability:
 
-Configure advanced settings? (y/N): [N]
+```
+┌─────────────────────────────────────────────────────────┐
+│           Edit Environment: dev                          │
+└─────────────────────────────────────────────────────────┘
 
-[Create] [Cancel]
+Current Values:
+┌─────────────────────┬──────────────────────────────────┐
+│ Field               │ Value                            │
+├─────────────────────┼──────────────────────────────────┤
+│ 0. Name             │ dev                              │
+│ 1. URL              │ https://dev.creatio.com          │
+│ 2. Login            │ admin                            │
+│ 3. Password         │ ****                             │
+│ 4. Maintainer       │ John Doe                         │
+│ 5. IsNetCore        │ True                             │
+│ 6. ClientId         │ abc123                           │
+│ 7. ClientSecret     │ ****                             │
+│ 8. AuthAppUri       │ https://dev.creatio.com/auth     │
+│ 9. Safe Mode        │ False                            │
+│ 10. Developer Mode  │ True                             │
+└─────────────────────┴──────────────────────────────────┘
+
+Select a field to edit:
+  > 0. Name
+    1. URL
+    2. Login
+    3. Password
+    4. Maintainer
+    5. IsNetCore
+    6. ClientId
+    7. ClientSecret
+    8. AuthAppUri
+    9. Safe Mode
+    10. Developer Mode
+    ──────────────────
+    💾 Save Changes
+    ❌ Cancel
+
+↑/↓: Navigate | Enter: Select
 ```
 
 ### Delete Environment
@@ -190,50 +256,90 @@ Are you sure? (y/N): [N]
 **Description**: Display all properties of a selected environment
 
 **Acceptance Criteria**:
+- Clears screen before displaying details (Console.Clear())
+- Shows panel header for environment selection
 - Shows all `EnvironmentSettings` properties
 - Masks sensitive data (passwords, secrets)
 - Groups related settings (Basic, Auth, Advanced, Database)
 - Handles null/empty values
-- Returns to main menu on any key press
+- Pauses at end with "Press any key to continue..." message
+- Returns to main menu after key press
 
 **Implementation**:
-- Use `Spectre.Console.Panel` for grouping
+- Call `Console.Clear()` at method start
+- Display panel with "Select an environment to view details:" message
+- Use `Spectre.Console.SelectionPrompt<string>` for environment selection
+- Use `Spectre.Console.Panel` for grouping details
 - Use reflection to get all properties
 - Apply masking logic similar to `ShowAppListCommand`
+- Add pause at end: `AnsiConsole.MarkupLine("[yellow]Press any key to continue...[/]"); Console.ReadKey(true);`
 
 ### FR-3: Create Environment
 
-**Description**: Add new environment through interactive prompts
+**Description**: Add new environment through interactive table-based editor
 
 **Acceptance Criteria**:
-- Validates environment name uniqueness
-- Validates URL format
-- Validates required fields (name, URL, login)
-- Supports optional advanced configuration
-- Saves to `appsettings.json`
+- Displays all 11 editable fields in a table (0. Name through 10. Developer Mode)
+- Name field (field 0) is editable like all other fields
+- All fields are visible simultaneously in the table
+- Uses arrow key navigation through SelectionPrompt
+- Save & Create and Cancel buttons are visible at bottom (PageSize=15)
+- Validates environment name uniqueness before saving
+- Validates URL format before saving
+- Validates required fields (name, URL, login) before saving
+- Allows canceling at any time without saving
+- Returns to updated table after each field edit
+- Saves to `appsettings.json` on Save & Create
 - Shows success/error messages
 
 **Implementation**:
-- Use `Spectre.Console.Prompt<T>` for inputs
-- Use `ISettingsRepository.ConfigureEnvironment(name, settings)`
-- Validate inputs before saving
+- Initialize empty name string and default EnvironmentSettings
+- Use `while(keepEditing)` loop with Spectre.Console.Table showing all 11 fields
+- Use `Spectre.Console.SelectionPrompt<string>` with `.PageSize(15)` for field selection
+- Field list: "0. Name" through "10. Developer Mode", separator, "💾 Save & Create", "❌ Cancel"
+- Use `Spectre.Console.TextPrompt<T>` for text inputs
+- Use `Spectre.Console.Confirm` for boolean inputs
+- Validate on Save: name uniqueness via `ValidateEnvironmentName()`, URL via `ValidateUrl()`, Login non-empty
+- Use `ISettingsRepository.ConfigureEnvironment(name, settings)` to save
+- Field column aligned to left (no `.Centered()` on TableColumn)
 
 ### FR-4: Edit Environment
 
-**Description**: Modify existing environment settings
+**Description**: Modify existing environment settings with rename capability
 
 **Acceptance Criteria**:
 - Allows selecting environment from list
-- Pre-fills current values
-- Allows changing individual fields
-- Validates changes
+- Displays all 11 editable fields in a table (0. Name through 10. Developer Mode)
+- Name field (field 0) is editable, enabling environment rename
+- Pre-fills all current values in the table
+- All fields are visible simultaneously
+- Uses arrow key navigation through SelectionPrompt
+- Save Changes and Cancel buttons are visible at bottom (PageSize=15)
+- Returns to updated table after each field edit
+- Allows changing individual fields including name
+- Validates name uniqueness if renamed (excluding current environment)
+- Validates URL format changes
+- Handles rename operation: deletes old environment, creates with new name
+- Preserves active environment status during rename
 - Saves updates to `appsettings.json`
-- Shows what changed
+- Shows appropriate message: "renamed and updated" vs "updated successfully"
 
 **Implementation**:
 - Load current values from `ISettingsRepository.FindEnvironment(name)`
-- Use `Spectre.Console.Prompt<T>` with default values
-- Save using `ISettingsRepository.ConfigureEnvironment(name, settings)`
+- Track name changes separately with `editedName` variable
+- Use `while(keepEditing)` loop with Spectre.Console.Table showing all 11 fields
+- Use `Spectre.Console.SelectionPrompt<string>` with `.PageSize(15)` for field selection
+- Field list: "0. Name" through "10. Developer Mode", separator, "💾 Save Changes", "❌ Cancel"
+- Use `Spectre.Console.TextPrompt<T>` with default values for text inputs
+- Use `Spectre.Console.Confirm` with default values for boolean inputs
+- On save, detect rename: if `editedName != envName`, perform rename operation:
+  - Check if environment is active: `isActive = GetDefaultEnvironmentName() == envName`
+  - Delete old: `RemoveEnvironment(envName)`
+  - Create new: `ConfigureEnvironment(editedName, editedEnv)`
+  - Restore active status: if `isActive`, call `SetActiveEnvironment(editedName)`
+  - Show "renamed from 'X' to 'Y' and updated successfully" message
+- If no rename, use `ISettingsRepository.ConfigureEnvironment(name, settings)` directly
+- Field column aligned to left (no `.Centered()` on TableColumn)
 
 ### FR-5: Delete Environment
 
@@ -308,19 +414,33 @@ Are you sure? (y/N): [N]
 - Must be unique
 - Pattern: `^[a-zA-Z0-9_-]+$`
 - Max length: 50 characters
+- Validated via `IEnvManageUiService.ValidateEnvironmentName(name, repository)`
+- For rename: validates uniqueness excluding current environment name
 
 ### URL
 - Required
 - Must be valid HTTP/HTTPS URL
 - Must not end with trailing slash (auto-trim)
+- Validated via `IEnvManageUiService.ValidateUrl(url)`
 
 ### Login
 - Required
 - Min length: 1 character
+- Cannot be empty or whitespace
 
 ### Password
 - Optional (can use OAuth)
 - If provided, must be non-empty
+
+## Rename Operation
+
+When renaming an environment in Edit mode:
+1. Detect name change: `if (editedName != envName)`
+2. Check if environment is currently active: `isActive = GetDefaultEnvironmentName() == envName`
+3. Delete old environment: `RemoveEnvironment(envName)`
+4. Create with new name: `ConfigureEnvironment(editedName, editedEnv)`
+5. Restore active status if needed: `if (isActive) SetActiveEnvironment(editedName)`
+6. Display appropriate success message indicating rename occurred
 
 ## Security Considerations
 
@@ -365,8 +485,10 @@ See [env-manage-ui-plan.md](./env-manage-ui-plan.md) for detailed implementation
 - Import/export environments
 - Environment templates
 - Environment validation/health check
-- Clone environment
+- Clone environment (with automatic name suggestion)
 - Environment comparison
+- Undo/redo for edit operations
+- Edit history tracking
 
 ## References
 

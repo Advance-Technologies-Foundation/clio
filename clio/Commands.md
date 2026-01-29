@@ -1100,6 +1100,7 @@ Aliases: `gwu`
 
 
 # Environment settings
+- [Interactive Environment Manager](#env-ui) - **NEW!** Visual console UI for environment management
 - [Create/Update an environment](./docs/commands/RegAppCommand.md)
 - [Delete the existing environment](./docs/commands/UnregAppCommand.md)
 - [Ping environment](./docs/commands/PingCommand.md)
@@ -1111,6 +1112,70 @@ Aliases: `gwu`
 - [CustomizeDataProtection](#CustomizeDataProtection)
 
 Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
+
+## env-ui
+
+**Interactive console UI for managing Creatio environments**
+
+Launch visual, menu-driven interface for environment management with real-time validation and guided workflows.
+
+```bash
+clio env-ui
+# or use alias
+clio ui
+```
+
+### Features
+
+- ✅ **List Environments** - View all environments in a formatted table
+- ✅ **View Details** - Inspect complete environment configuration
+- ✅ **Create** - Add new environments with guided prompts and validation
+- ✅ **Edit** - Modify existing settings interactively
+- ✅ **Delete** - Remove environments with confirmation dialogs
+- ✅ **Set Active** - Change default environment
+- ✅ **Security** - Automatic password masking and secure input
+
+### Why Use env-ui?
+
+**Perfect for:**
+- Setting up new development environments
+- Exploring and managing multiple environments
+- When you don't remember exact CLI syntax
+- Complex configuration with many fields
+
+**Use CLI commands for:**
+- Automation and scripts
+- CI/CD pipelines
+- Quick single-field updates
+
+### Example Session
+
+```
+┌─────────────────────────────────────────────────────────┐
+│           Clio Environment Manager                       │
+│ Config File: /Users/user/.clio/appsettings.json        │
+└─────────────────────────────────────────────────────────┘
+
+┌───┬──────────┬─────────────────────────┬──────────┐
+│ # │ Name     │ URL                     │ IsNetCore│
+├───┼──────────┼─────────────────────────┼──────────┤
+│ 1*│ dev      │ https://dev.creatio.com │ ✓        │
+│ 2 │ prod     │ https://app.creatio.com │ ✓        │
+└───┴──────────┴─────────────────────────┴──────────┘
+
+What would you like to do?
+  > Create New Environment
+    Edit Environment
+    Delete Environment
+    Exit
+```
+
+**Navigation:**
+- ↑/↓ - Navigate menu
+- Enter - Select
+- Esc - Cancel/Back
+
+For complete documentation, see [env-ui command reference](./docs/commands/EnvManageUiCommand.md).
 
 ## reg-web-app
 
