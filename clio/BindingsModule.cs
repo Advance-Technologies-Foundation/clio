@@ -361,6 +361,14 @@ public class BindingsModule {
 			return new Common.IIS.StubIISSiteDetector();
 		}).SingleInstance();
 
+		// Register platform-specific IIS app pool manager
+		containerBuilder.Register<Common.IIS.IIISAppPoolManager>(c =>
+		{
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				return new Common.IIS.WindowsIISAppPoolManager();
+			return new Common.IIS.StubIISAppPoolManager();
+		}).SingleInstance();
+
 		containerBuilder.RegisterType<ClioGateway>();
 		containerBuilder.RegisterType<CompileConfigurationCommand>();
 

@@ -5,7 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.IIS;
 using Clio.UserEnvironment;
 using CommandLine;
 
@@ -25,17 +27,26 @@ namespace Clio.Command
 		private readonly ILogger _logger;
 		private readonly IFileSystem _fileSystem;
 		private readonly ICreatioHostService _creatioHostService;
+		private readonly IIISAppPoolManager _iisAppPoolManager;
+		private readonly IIISSiteDetector _iisSiteDetector;
 
 		public StartCommand(ISettingsRepository settingsRepository, IDotnetExecutor dotnetExecutor,
-			ILogger logger, IFileSystem fileSystem, ICreatioHostService creatioHostService) {
+			ILogger logger, IFileSystem fileSystem, ICreatioHostService creatioHostService,
+			IIISAppPoolManager iisAppPoolManager, IIISSiteDetector iisSiteDetector) {
 			_settingsRepository = settingsRepository;
 			_dotnetExecutor = dotnetExecutor;
 			_logger = logger;
 			_fileSystem = fileSystem;
 			_creatioHostService = creatioHostService;
+			_iisAppPoolManager = iisAppPoolManager;
+			_iisSiteDetector = iisSiteDetector;
 		}
 
 		public override int Execute(StartOptions options) {
+			return ExecuteAsync(options).GetAwaiter().GetResult();
+		}
+
+		private async Task<int> ExecuteAsync(StartOptions options) {
 			try {
 				// If no environment specified, try to get the default or show available environments
 				if (string.IsNullOrWhiteSpace(options.Environment)) {
@@ -64,13 +75,25 @@ namespace Clio.Command
 					return 1;
 				}
 
+				string envName = options.Environment ?? "default";
+
+				// Check if this is an IIS deployment
+				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				{
+					var iisSites = await _iisSiteDetector.GetSitesByPath(env.EnvironmentPath);
+					if (iisSites.Count > 0)
+					{
+						return await StartIISAppPool(envName, iisSites[0].AppPoolName);
+					}
+				}
+
+				// Fall back to .NET Core deployment
 				string dllPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost.dll");
 				if (!_fileSystem.ExistsFile(dllPath)) {
 					_logger.WriteError($"Terrasoft.WebHost.dll not found at: {dllPath}");
+					_logger.WriteInfo("This environment does not appear to be a .NET deployment.");
 					return 1;
 				}
-
-			string envName = options.Environment ?? "default";
 			
 			if (options.Terminal) {
 				_logger.WriteInfo($"Starting Creatio application '{envName}' in a new terminal window...");
@@ -92,6 +115,39 @@ namespace Clio.Command
 			}
 			catch (Exception ex) {
 				_logger.WriteError($"Failed to start application: {ex.Message}");
+				return 1;
+			}
+		}
+
+		private async Task<int> StartIISAppPool(string envName, string appPoolName)
+		{
+			_logger.WriteInfo($"Starting IIS application pool '{appPoolName}' for environment '{envName}'...");
+
+			try
+			{
+				bool isRunning = await _iisAppPoolManager.IsAppPoolRunning(appPoolName);
+				if (isRunning)
+				{
+					_logger.WriteInfo($"Application pool '{appPoolName}' is already running.");
+					return 0;
+				}
+
+				bool started = await _iisAppPoolManager.StartAppPool(appPoolName);
+				if (started)
+				{
+					_logger.WriteInfo($"✓ IIS application pool '{appPoolName}' started successfully!");
+					return 0;
+				}
+				else
+				{
+					_logger.WriteError($"Failed to start IIS application pool '{appPoolName}'.");
+					_logger.WriteInfo("You may need to run this command with Administrator privileges.");
+					return 1;
+				}
+			}
+			catch (Exception ex)
+			{
+				_logger.WriteError($"Error starting IIS application pool: {ex.Message}");
 				return 1;
 			}
 		}
