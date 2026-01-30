@@ -1,0 +1,195 @@
+COMMAND TYPE
+    Application Management commands
+
+NAME
+    start - start local Creatio application
+
+DESCRIPTION
+    start command starts a local Creatio application by automatically detecting
+    the deployment type (IIS or .NET Core) and using the appropriate start
+    method.
+
+    The command supports multiple deployment scenarios:
+
+    IIS Deployment (Windows only):
+        Detects if the environment is hosted in IIS by physical path.
+        Starts the IIS application pool using appcmd.exe.
+        IIS manages the process lifecycle - no additional process management.
+        The --terminal flag is ignored for IIS deployments.
+
+    .NET Core Deployment:
+        Used when no IIS site is detected or on non-Windows platforms.
+        Starts using 'dotnet Terrasoft.WebHost.dll' command.
+        Can run as background service (default) or in terminal window.
+        Background service runs detached with no visible logs.
+        Terminal mode opens new window with application logs visible.
+
+    Deployment type detection is fully automatic - no manual configuration
+    required. The command checks for IIS first (Windows), then falls back
+    to .NET Core method if IIS site not found.
+
+SYNOPSIS
+    start [options]
+
+OPTIONS
+    -e, --environment <NAME>
+        Environment name to start. Uses default environment if not specified.
+
+    -w, --terminal
+        Start in a new terminal window with visible logs (.NET Core only).
+        Default is background service mode. Ignored for IIS deployments.
+
+EXAMPLE
+    clio start
+        start default environment (auto-detects deployment type)
+
+    clio start -e production
+        start production environment
+
+    clio start -e dev --terminal
+        start dev environment in terminal window (.NET Core only)
+
+    clio start -e dev -w
+        same as above (short form)
+
+    Example output (IIS deployment on Windows):
+    Starting IIS application pool 'production' for environment 'production'...
+    ? IIS application pool 'production' started successfully!
+
+    Example output (.NET Core background service):
+    Starting Creatio application 'dev' as a background service...
+    Path: C:\Creatio\Development
+    ? Creatio application started successfully as background service (PID: 12345)!
+    Use 'clio start -w' to start with terminal window for logs.
+
+    Example output (.NET Core terminal mode):
+    Starting Creatio application 'dev' in a new terminal window...
+    Path: C:\Creatio\Development
+    ? Creatio application started successfully!
+    Check the new terminal window for application logs.
+
+PREREQUISITES
+    General requirements:
+        Environment must be registered with EnvironmentPath configured:
+        clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
+
+        The EnvironmentPath must exist on the file system.
+
+    IIS deployment (Windows only):
+        IIS must be installed and configured
+        Environment path must be configured as an IIS site
+        IIS application pool must exist
+        Administrator privileges may be required to start app pools
+
+    .NET Core deployment:
+        Terrasoft.WebHost.dll must exist in the EnvironmentPath
+        .NET runtime must be installed and available in PATH
+        Appropriate file system permissions required
+
+EXIT CODES
+    0               Success - application started successfully
+    1               Error - failed to start (see error message)
+
+ERROR HANDLING
+    No default environment configured:
+        Error: No default environment configured with EnvironmentPath.
+
+        Available environments with EnvironmentPath:
+          - dev: C:\Creatio\Development
+          - prod: C:\inetpub\wwwroot\Production
+
+        Use: clio start -e <environment_name>
+
+        Solution: Specify environment with -e flag
+
+    EnvironmentPath not configured:
+        Error: EnvironmentPath is not configured for this environment.
+
+        Available environments with EnvironmentPath:
+          - dev: C:\Creatio\Development
+
+        Use: clio reg-web-app <env> --ep <path>
+
+        Solution: Register environment with valid path
+
+    Environment path does not exist:
+        Error: Environment path does not exist: C:\Creatio\Missing
+
+        Solution: Verify path exists or update environment configuration
+
+    IIS app pool start failed (Windows):
+        Error: Failed to start IIS application pool 'myapp'.
+        You may need to run this command with Administrator privileges.
+
+        Solutions:
+        - Run Command Prompt or PowerShell as Administrator
+        - Verify IIS is installed and appcmd.exe is accessible
+        - Check app pool exists and is not in faulted state
+
+    No deployment type detected:
+        Error: Terrasoft.WebHost.dll not found at: C:\Path\Terrasoft.WebHost.dll
+        This environment does not appear to be a .NET deployment.
+
+        Solutions:
+        - Verify EnvironmentPath points to correct Creatio installation
+        - Check if this is an IIS deployment (Windows only)
+        - Ensure Creatio is properly installed at specified path
+
+PLATFORM DIFFERENCES
+    Windows:
+        Primary method: IIS application pool (if site detected)
+        Fallback: .NET Core background service or terminal
+        Privileges: May require Administrator for IIS operations
+        Terminal mode: Opens new cmd.exe window for .NET Core
+
+    macOS:
+        Method: .NET Core only (IIS not available)
+        Terminal mode: Opens new Terminal.app window
+        Service integration: Can use launchd for persistent services
+
+    Linux:
+        Method: .NET Core only (IIS not available)
+        Terminal mode: Opens new terminal (xterm, gnome-terminal, etc.)
+        Service integration: Can use systemd for persistent services
+
+TROUBLESHOOTING
+    IIS app pool won't start:
+        Check app pool status in IIS Manager
+        Review IIS logs: C:\inetpub\logs\LogFiles\
+        Verify app pool identity has correct permissions
+        Check for port conflicts
+        Ensure .NET runtime installed for app pool's CLR version
+
+    .NET Core application crashes on start:
+        Use terminal mode to see error logs: clio start -e env --terminal
+        Check Logs folder in environment path
+        Verify database connection string in ConnectionStrings.config
+        Ensure Redis is accessible
+        Check port availability (usually 5000 or 5001)
+
+    Application doesn't respond after start:
+        Verify running with: clio hosts
+        Check process logs (terminal mode or IIS logs)
+        Test connectivity: clio ping -e env
+        Verify firewall settings
+        Check if another process is using the port
+
+RELATED COMMANDS
+    stop                Stop a running Creatio environment
+    hosts               List running Creatio environments
+    restart-web-app     Restart a Creatio environment
+    reg-web-app         Register environment with EnvironmentPath
+
+ALIASES
+    start-server, start-creatio, sc
+
+NOTES
+    - IIS detection only available on Windows; falls back to .NET Core elsewhere
+    - Terminal flag ignored for IIS deployments (IIS manages process lifecycle)
+    - Background service is default for .NET Core (no visible logs)
+    - Process ID only displayed for .NET Core background services
+    - Deployment type detection is automatic - no manual configuration needed
+    - Administrator privileges may be required on Windows for IIS operations
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
