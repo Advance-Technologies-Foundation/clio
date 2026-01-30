@@ -1,3 +1,9 @@
+# Documentation structure for commands
+
+- `clio\Commands.md` - Overview of all commands (displayed when user types `clio help`)
+- `clio\help\en\*.txt` - Command-line help (displayed when user types `clio <command> -H`)
+- `clio\docs\commands\*.md` - Detailed markdown documentation (displayed on GitHub)
+
 # Feature documentation naming convention
 
 To keep feature docs consistent:
