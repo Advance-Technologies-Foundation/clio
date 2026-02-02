@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -22,6 +23,7 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 	private ICreatioHostService _creatioHostService;
 	private IIISAppPoolManager _iisAppPoolManager;
 	private IIISSiteDetector _iisSiteDetector;
+	private IApplicationClient _applicationClient;
 	private StartCommand _command;
 
 	[SetUp]
@@ -34,6 +36,7 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 		_creatioHostService = Substitute.For<ICreatioHostService>();
 		_iisAppPoolManager = Substitute.For<IIISAppPoolManager>();
 		_iisSiteDetector = Substitute.For<IIISSiteDetector>();
+		_applicationClient = Substitute.For<IApplicationClient>();
 
 		_command = new StartCommand(
 			_settingsRepository,
@@ -42,12 +45,13 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 			_fileSystem,
 			_creatioHostService,
 			_iisAppPoolManager,
-			_iisSiteDetector);
+			_iisSiteDetector,
+			_applicationClient);
 	}
 
 	[Test]
-	[Description("Starts IIS app pool when IIS site is detected for the environment")]
-	public void Execute_StartsIISAppPool_WhenIISSiteDetected()
+	[Description("Starts IIS site and app pool when IIS site is detected for the environment")]
+	public void Execute_StartsIISSiteAndAppPool_WhenIISSiteDetected()
 	{
 		// Arrange
 		string envPath = @"C:\inetpub\wwwroot\Creatio";
@@ -64,28 +68,31 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 				SiteName = "Production",
 				AppPoolName = "production",
 				PhysicalPath = envPath,
-				State = "Started",
+				State = "Stopped",
 				AppPoolState = "Stopped"
 			}
 		};
 
 		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(iisSites));
+		_iisAppPoolManager.IsSiteRunning("Production").Returns(Task.FromResult(false));
 		_iisAppPoolManager.IsAppPoolRunning("production").Returns(Task.FromResult(false));
 		_iisAppPoolManager.StartAppPool("production").Returns(Task.FromResult(true));
+		_iisAppPoolManager.StartSite("Production").Returns(Task.FromResult(true));
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
-		result.Should().Be(0, because: "starting IIS app pool should succeed");
+		result.Should().Be(0, because: "starting IIS site and app pool should succeed");
 		_iisAppPoolManager.Received(1).StartAppPool("production");
-		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("IIS application pool")));
-		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("started successfully")));
+		_iisAppPoolManager.Received(1).StartSite("Production");
+		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("Application pool")));
+		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("IIS site")));
 	}
 
 	[Test]
-	[Description("Reports success when IIS app pool is already running")]
-	public void Execute_ReportsSuccess_WhenIISAppPoolAlreadyRunning()
+	[Description("Reports success when IIS site and app pool are already running")]
+	public void Execute_ReportsSuccess_WhenIISSiteAndAppPoolAlreadyRunning()
 	{
 		// Arrange
 		string envPath = @"C:\inetpub\wwwroot\Creatio";
@@ -97,18 +104,20 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 
 		var iisSites = new List<IISSiteInfo>
 		{
-			new IISSiteInfo { AppPoolName = "production", PhysicalPath = envPath }
+			new IISSiteInfo { SiteName = "Production", AppPoolName = "production", PhysicalPath = envPath }
 		};
 
 		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(iisSites));
+		_iisAppPoolManager.IsSiteRunning("Production").Returns(Task.FromResult(true));
 		_iisAppPoolManager.IsAppPoolRunning("production").Returns(Task.FromResult(true));
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
-		result.Should().Be(0, because: "app pool is already running");
+		result.Should().Be(0, because: "site and app pool are already running");
 		_iisAppPoolManager.DidNotReceive().StartAppPool(Arg.Any<string>());
+		_iisAppPoolManager.DidNotReceive().StartSite(Arg.Any<string>());
 		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("already running")));
 	}
 
@@ -239,10 +248,11 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 
 		var iisSites = new List<IISSiteInfo>
 		{
-			new IISSiteInfo { AppPoolName = "production", PhysicalPath = envPath }
+			new IISSiteInfo { SiteName = "Production", AppPoolName = "production", PhysicalPath = envPath }
 		};
 
 		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(iisSites));
+		_iisAppPoolManager.IsSiteRunning("Production").Returns(Task.FromResult(false));
 		_iisAppPoolManager.IsAppPoolRunning("production").Returns(Task.FromResult(false));
 		_iisAppPoolManager.StartAppPool("production").Returns(Task.FromResult(false));
 
@@ -279,4 +289,178 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 		result.Should().Be(0, because: "default environment should be used");
 		_creatioHostService.Received(1).StartInBackground(envPath);
 	}
+
+	[Test]
+	[Description("Pings site after starting IIS site successfully")]
+	public void Execute_PingsSite_AfterStartingIISSite()
+	{
+		// Arrange
+		string envPath = @"C:\inetpub\wwwroot\Creatio";
+		string uri = "https://mysite.com";
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = uri };
+		StartOptions options = new() { Environment = "production" };
+
+		_settingsRepository.GetEnvironment("production").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+
+		var iisSites = new List<IISSiteInfo>
+		{
+			new IISSiteInfo { SiteName = "Production", AppPoolName = "production", PhysicalPath = envPath }
+		};
+
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(iisSites));
+		_iisAppPoolManager.IsSiteRunning("Production").Returns(Task.FromResult(false));
+		_iisAppPoolManager.IsAppPoolRunning("production").Returns(Task.FromResult(false));
+		_iisAppPoolManager.StartAppPool("production").Returns(Task.FromResult(true));
+		_iisAppPoolManager.StartSite("Production").Returns(Task.FromResult(true));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "site started and ping succeeded");
+		_applicationClient.Received(1).ExecuteGetRequest($"{uri}/ping", 30000, 3, 2);
+	}
+
+	[Test]
+	[Description("Pings site after starting .NET Core background service")]
+	public void Execute_PingsSite_AfterStartingDotNetCoreBackgroundService()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Development";
+		string uri = "https://localhost:5000";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = uri };
+		StartOptions options = new() { Environment = "development" };
+
+		_settingsRepository.GetEnvironment("development").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+		_creatioHostService.StartInBackground(envPath).Returns(12345);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "background service started and ping succeeded");
+		_creatioHostService.Received(1).StartInBackground(envPath);
+		_applicationClient.Received(1).ExecuteGetRequest($"{uri}/ping", 30000, 3, 2);
+	}
+
+	[Test]
+	[Description("Pings site after starting .NET Core in terminal mode")]
+	public void Execute_PingsSite_AfterStartingDotNetCoreInTerminal()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Development";
+		string uri = "https://localhost:5000";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = uri };
+		StartOptions options = new() { Environment = "development", Terminal = true };
+
+		_settingsRepository.GetEnvironment("development").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "terminal started and ping succeeded");
+		_creatioHostService.Received(1).StartInNewTerminal(envPath, "development");
+		_applicationClient.Received(1).ExecuteGetRequest($"{uri}/ping", 30000, 3, 2);
+	}
+
+	[Test]
+	[Description("Skips ping when environment URI is not configured")]
+	public void Execute_SkipsPing_WhenEnvironmentUriNotConfigured()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Development";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = null };
+		StartOptions options = new() { Environment = "development" };
+
+		_settingsRepository.GetEnvironment("development").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+		_creatioHostService.StartInBackground(envPath).Returns(12345);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "service started successfully, ping skipped");
+		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("Skipping ping")));
+	}
+
+	[Test]
+	[Description("Returns success when ping fails but logs warning")]
+	public void Execute_ReturnsSuccess_WhenPingFailsButSiteStarted()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Development";
+		string uri = "https://localhost:5000";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = uri };
+		StartOptions options = new() { Environment = "development" };
+
+		_settingsRepository.GetEnvironment("development").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+		_creatioHostService.StartInBackground(envPath).Returns(12345);
+		
+		// Make ping fail
+		_applicationClient.When(x => x.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()))
+			.Do(x => throw new Exception("Connection refused"));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "service started successfully even though ping failed");
+		_logger.Received().WriteWarning(Arg.Is<string>(s => s.Contains("Site started but ping failed")));
+		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("may still be starting up")));
+	}
+
+	[Test]
+	[Description("Pings site with correct retry parameters")]
+	public void Execute_PingsSiteWithCorrectRetryParameters()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Development";
+		string uri = "https://mysite.com";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = uri };
+		StartOptions options = new() { Environment = "development" };
+
+		_settingsRepository.GetEnvironment("development").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+		_creatioHostService.StartInBackground(envPath).Returns(12345);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		_applicationClient.Received(1).ExecuteGetRequest(
+			$"{uri}/ping",
+			30000,  // 30 second timeout
+			3,      // 3 retries
+			2       // 2 second delay between retries
+		);
+	}
 }
+

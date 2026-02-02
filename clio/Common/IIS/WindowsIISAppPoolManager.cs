@@ -138,4 +138,52 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			return !string.IsNullOrWhiteSpace(result) && !result.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
 		});
 	}
+
+	public async Task<bool> StartSite(string siteName)
+	{
+		return await Task.Run(() =>
+		{
+			if (string.IsNullOrWhiteSpace(siteName))
+			{
+				return false;
+			}
+
+			string result = ExecuteAppCmd($"start site \"{siteName}\"");
+			return !string.IsNullOrWhiteSpace(result) && !result.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
+		});
+	}
+
+	public async Task<bool> IsSiteRunning(string siteName)
+	{
+		return await Task.Run(() =>
+		{
+			if (string.IsNullOrWhiteSpace(siteName))
+			{
+				return false;
+			}
+
+			string siteXml = ExecuteAppCmd($"list site \"{siteName}\" /xml");
+			if (string.IsNullOrWhiteSpace(siteXml))
+			{
+				return false;
+			}
+
+			try
+			{
+				XElement siteRoot = XElement.Parse(siteXml);
+				XElement siteElement = siteRoot.Element("SITE");
+				if (siteElement != null)
+				{
+					string state = siteElement.Attribute("state")?.Value ?? "Unknown";
+					return state == "Started";
+				}
+			}
+			catch
+			{
+				return false;
+			}
+
+			return false;
+		});
+	}
 }

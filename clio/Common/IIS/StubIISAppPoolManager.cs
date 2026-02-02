@@ -23,4 +23,15 @@ public class StubIISAppPoolManager : IIISAppPoolManager
 	{
 		return Task.FromResult(false);
 	}
+
+	public Task<bool> StartSite(string siteName)
+	{
+		return Task.FromResult(false);
+	}
+
+	public Task<bool> IsSiteRunning(string siteName)
+	{
+		return Task.FromResult(false);
+	}
 }
+
