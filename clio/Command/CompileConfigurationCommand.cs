@@ -36,7 +36,7 @@ public interface ICompileConfigurationCommand {
 	
 public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOptions>, ICompileConfigurationCommand {
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		
+
 	private bool _compileAll;
 
 	private bool _isSuccess = false;

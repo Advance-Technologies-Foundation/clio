@@ -853,15 +853,17 @@ Start a local Creatio application. Automatically detects deployment type (IIS or
 
 The command automatically detects how Creatio is deployed:
 
-1. **IIS Deployment** (Windows only):
-   - Detects if the environment path is configured as an IIS site
-   - Starts the IIS application pool
-   - No additional process management needed
+  1. **IIS Deployment** (Windows only):
+     - Detects if the environment path is configured as an IIS site
+     - Starts the IIS application pool and site
+     - Pings the site to verify accessibility
+     - No additional process management needed
 
-2. **.NET Core Deployment**:
-   - Used when no IIS site is detected
-   - Starts using `dotnet` command
-   - Can run as background service (default) or in terminal window
+  2. **.NET Core Deployment**:
+     - Used when no IIS site is detected
+     - Starts using `dotnet` command
+     - Pings the site to verify accessibility
+     - Can run as background service (default) or in terminal window
 
 ### Usage
 
@@ -911,14 +913,26 @@ clio sc -e <ENVIRONMENT_NAME> --terminal
 
 ### Examples
 
-```bash
-# Start IIS-hosted environment (Windows)
-clio start -e production
-# Output: Starting IIS application pool 'production'...
+  ```bash
+  # Start IIS-hosted environment (Windows)
+  clio start -e production
+  # Output: 
+  # Starting IIS site 'Production' and application pool 'production'...
+  # Starting application pool 'production'...
+  # ✓ Application pool 'production' started successfully!
+  # Starting IIS site 'Production'...
+  # ✓ IIS site 'Production' started successfully!
+  # ✓ Creatio application 'production' is now running!
+  # Pinging https://mysite.com/ping to verify accessibility...
+  # ✓ Site is accessible and responding!
 
-# Start .NET Core environment as background service
-clio start -e local_dev
-# Output: Starting Creatio application 'local_dev' as a background service...
+  # Start .NET Core environment as background service
+  clio start -e local_dev
+  # Output: 
+  # Starting Creatio application 'local_dev' as a background service...
+  # ✓ Creatio application started successfully as background service (PID: 12345)!
+  # Pinging https://localhost:5000/ping to verify accessibility...
+  # ✓ Site is accessible and responding!
 
 # Start .NET Core environment with terminal window to see logs
 clio start -e local_dev -w
@@ -934,36 +948,45 @@ clio start-creatio -e local_dev --terminal
 
 ### Behavior by Deployment Type
 
-**IIS Deployment (Windows)**:
-- Checks if the IIS application pool is already running
-- Starts the application pool if stopped
-- Displays success message with app pool name
-- IIS manages the process lifecycle
-- `--terminal` flag is ignored (not applicable for IIS)
+  **IIS Deployment (Windows)**:
+  - Checks if the IIS application pool is already running
+  - Checks if the IIS site is already running
+  - Starts the application pool if stopped
+  - Starts the IIS site if stopped
+  - Pings the site to verify accessibility
+  - Displays success message with app pool and site names
+  - IIS manages the process lifecycle
+  - `--terminal` flag is ignored (not applicable for IIS)
 
-**.NET Core Background Service** (default for non-IIS):
-- Launches the Creatio application as a background process
-- No terminal window or logs visible
-- Returns control to the original terminal immediately with success message and process ID
-- The application continues running independently
-- Use this mode for automated deployments or when logs are not needed
+  **.NET Core Background Service** (default for non-IIS):
+  - Launches the Creatio application as a background process
+  - No terminal window or logs visible
+  - Returns control to the original terminal immediately with success message and process ID
+  - Pings the site to verify accessibility
+  - The application continues running independently
+  - Use this mode for automated deployments or when logs are not needed
 
-**.NET Core Terminal Mode** (`--terminal` or `-w`):
-- Launches the Creatio application in a new terminal window
-- Shows application logs in the new terminal
-- Returns control to the original terminal immediately with a success message
-- The application continues running independently
-- Use this mode when you need to see application logs
+  **.NET Core Terminal Mode** (`--terminal` or `-w`):
+  - Launches the Creatio application in a new terminal window
+  - Shows application logs in the new terminal
+  - Returns control to the original terminal immediately with a success message
+  - Pings the site to verify accessibility
+  - The application continues running independently
+  - Use this mode when you need to see application logs
 
 ### Error Handling
 
-The command validates:
-- EnvironmentPath is configured for the environment
-- The specified path exists on the file system
-- For .NET Core: `Terrasoft.WebHost.dll` exists in the EnvironmentPath
-- For IIS: Application pool exists and can be started
+  The command validates:
+  - EnvironmentPath is configured for the environment
+  - The specified path exists on the file system
+  - For .NET Core: `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+  - For IIS: Application pool and site exist and can be started
+  
+  **Site Verification:**
+  After starting, pings `{Uri}/ping` to verify accessibility (waits 2s, 30s timeout, 3 retries).
+  Ping failure logs warning but does not prevent command success.
 
-**Common Errors**:
+  **Common Errors**:
 
 1. **IIS Application Pool Start Failure**:
    ```

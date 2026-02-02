@@ -13,13 +13,15 @@ DESCRIPTION
 
     IIS Deployment (Windows only):
         Detects if the environment is hosted in IIS by physical path.
-        Starts the IIS application pool using appcmd.exe.
+        Starts both IIS application pool and site using appcmd.exe.
+        Pings the site to verify accessibility after starting.
         IIS manages the process lifecycle - no additional process management.
         The --terminal flag is ignored for IIS deployments.
 
     .NET Core Deployment:
         Used when no IIS site is detected or on non-Windows platforms.
         Starts using 'dotnet Terrasoft.WebHost.dll' command.
+        Pings the site to verify accessibility after starting.
         Can run as background service (default) or in terminal window.
         Background service runs detached with no visible logs.
         Terminal mode opens new window with application logs visible.
@@ -53,14 +55,22 @@ EXAMPLE
         same as above (short form)
 
     Example output (IIS deployment on Windows):
-    Starting IIS application pool 'production' for environment 'production'...
-    ? IIS application pool 'production' started successfully!
+    Starting IIS site 'Production' and application pool 'production'...
+    Starting application pool 'production'...
+    ? Application pool 'production' started successfully!
+    Starting IIS site 'Production'...
+    ? IIS site 'Production' started successfully!
+    ? Creatio application 'production' is now running!
+    Pinging https://mysite.com/ping to verify accessibility...
+    ? Site is accessible and responding!
 
     Example output (.NET Core background service):
     Starting Creatio application 'dev' as a background service...
     Path: C:\Creatio\Development
     ? Creatio application started successfully as background service (PID: 12345)!
     Use 'clio start -w' to start with terminal window for logs.
+    Pinging https://localhost:5000/ping to verify accessibility...
+    ? Site is accessible and responding!
 
     Example output (.NET Core terminal mode):
     Starting Creatio application 'dev' in a new terminal window...
@@ -153,26 +163,36 @@ PLATFORM DIFFERENCES
         Service integration: Can use systemd for persistent services
 
 TROUBLESHOOTING
-    IIS app pool won't start:
-        Check app pool status in IIS Manager
-        Review IIS logs: C:\inetpub\logs\LogFiles\
-        Verify app pool identity has correct permissions
-        Check for port conflicts
-        Ensure .NET runtime installed for app pool's CLR version
+IIS app pool won't start:
+    Check app pool status in IIS Manager
+    Review IIS logs: C:\inetpub\logs\LogFiles\
+    Verify app pool identity has correct permissions
+    Check for port conflicts
+    Ensure .NET runtime installed for app pool's CLR version
 
-    .NET Core application crashes on start:
-        Use terminal mode to see error logs: clio start -e env --terminal
-        Check Logs folder in environment path
-        Verify database connection string in ConnectionStrings.config
-        Ensure Redis is accessible
-        Check port availability (usually 5000 or 5001)
+IIS site won't start:
+    Check site bindings are not in use by another site
+    Verify site path exists and has correct permissions
+    Run command as Administrator
 
-    Application doesn't respond after start:
-        Verify running with: clio hosts
-        Check process logs (terminal mode or IIS logs)
-        Test connectivity: clio ping -e env
-        Verify firewall settings
-        Check if another process is using the port
+.NET Core application crashes on start:
+    Use terminal mode to see error logs: clio start -e env --terminal
+    Check Logs folder in environment path
+    Verify database connection string in ConnectionStrings.config
+    Ensure Redis is accessible
+    Check port availability (usually 5000 or 5001)
+
+Application doesn't respond after start:
+    Verify running with: clio hosts
+    Check process logs (terminal mode or IIS logs)
+    Test connectivity: clio ping -e env
+    Verify firewall settings
+    Check if another process is using the port
+        
+Site ping fails (warning only):
+    The site may still be starting up
+    Ping failure does not prevent command success
+    Verify manually: open {Uri} in browser
 
 RELATED COMMANDS
     stop                Stop a running Creatio environment
@@ -184,12 +204,15 @@ ALIASES
     start-server, start-creatio, sc
 
 NOTES
-    - IIS detection only available on Windows; falls back to .NET Core elsewhere
-    - Terminal flag ignored for IIS deployments (IIS manages process lifecycle)
-    - Background service is default for .NET Core (no visible logs)
-    - Process ID only displayed for .NET Core background services
-    - Deployment type detection is automatic - no manual configuration needed
-    - Administrator privileges may be required on Windows for IIS operations
+- IIS detection only available on Windows; falls back to .NET Core elsewhere
+- IIS: Starts both app pool and site; verifies accessibility with ping
+- Terminal flag ignored for IIS deployments (IIS manages process lifecycle)
+- Background service is default for .NET Core (no visible logs)
+- Process ID only displayed for .NET Core background services
+- Deployment type detection is automatic - no manual configuration needed
+- After starting, site is pinged at {Uri}/ping to verify accessibility
+- Ping failure logs warning but does not prevent command success
+- Administrator privileges may be required on Windows for IIS operations
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
