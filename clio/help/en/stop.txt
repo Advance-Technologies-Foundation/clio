@@ -1,0 +1,219 @@
+COMMAND TYPE
+    Application Management commands
+
+NAME
+    stop - stop Creatio services and background processes
+
+DESCRIPTION
+    stop command stops Creatio services and background processes for one or
+    more environments. The command automatically detects deployment type (IIS,
+    OS service, or background process) and uses appropriate stop methods.
+
+    The command performs stop actions in order, attempting multiple methods
+    to ensure the environment is stopped:
+
+    1. IIS Application Pool (Windows only):
+        Detects if environment is hosted in IIS by physical path.
+        Stops the IIS application pool using appcmd.exe.
+        No process termination needed (IIS manages this).
+
+    2. OS Service:
+        Checks for systemd service (Linux), launchd service (macOS),
+        or Windows service with naming pattern: creatio-{environment-name}
+        Stops and disables the service.
+        Attempts to delete service configuration.
+
+    3. Background Process:
+        Searches for running dotnet processes with Terrasoft.WebHost.dll.
+        Verifies process working directory matches environment path.
+        Terminates matching processes.
+
+    The command continues trying all methods even if one fails, ensuring
+    maximum chance of successfully stopping the environment.
+
+SYNOPSIS
+    stop [options]
+
+OPTIONS
+    -e, --environment <NAME>
+        Stop specific environment by name.
+
+    --all
+        Stop all registered Creatio environments.
+
+    -q, --quiet
+        Skip confirmation prompt and proceed immediately.
+
+EXAMPLE
+    clio stop -e production
+        stop production environment with confirmation
+
+    clio stop -e production --quiet
+        stop production without confirmation
+
+    clio stop -e production -q
+        same as above (short form)
+
+    clio stop --all
+        stop all environments with confirmation
+
+    clio stop --all --quiet
+        stop all environments without confirmation
+
+    Example output (IIS deployment):
+    Stopping environment: prod
+    Stopping IIS application pool: prod
+    ? IIS application pool 'prod' stopped successfully
+
+    === Summary ===
+    Stopped: 1
+
+    Example output (background process):
+    Stopping environment: dev
+    Killing process dotnet (PID: 12345)
+    ? Background process stopped
+    ? Successfully stopped 'dev'
+
+    === Summary ===
+    Stopped: 1
+
+    Example output (multiple environments):
+    Stopping environment: dev
+    ? IIS application pool 'dev' stopped successfully
+    ? Successfully stopped 'dev'
+
+    Stopping environment: qa
+    ? Service 'creatio-qa' stopped and removed
+    ? Successfully stopped 'qa'
+
+    Stopping environment: prod
+    No running service or process found for 'prod'
+
+    === Summary ===
+    Stopped: 2
+    Not found/Failed: 1
+
+CONFIRMATION PROMPT
+    By default, the command prompts for confirmation before stopping:
+
+    This will stop 1 Creatio service(s)/process(es):
+      - dev (C:\Creatio\Development)
+
+    Continue? [y/N]: y
+
+    Use --quiet or -q flag to skip confirmation and proceed immediately.
+
+ENVIRONMENT DETECTION
+    An environment is considered active if any of the following are true:
+
+    - IIS: Application pool with matching name is running (Windows only)
+    - OS Service: Service named 'creatio-<env>' is running
+    - Background Process: dotnet process running Terrasoft.WebHost.dll
+      from the EnvironmentPath directory
+
+STOP METHODS BY PLATFORM
+    Windows:
+        IIS application pools: Yes
+        Windows Services: Yes
+        Background processes: Yes
+
+    macOS:
+        launchd services: Yes
+        Background processes: Yes
+        IIS: Not available
+
+    Linux:
+        systemd services: Yes
+        Background processes: Yes
+        IIS: Not available
+
+PREREQUISITES
+    General requirements:
+        Environments must be registered with EnvironmentPath configured:
+        clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
+
+    Windows (IIS):
+        Administrator privileges may be required to stop IIS app pools
+        IIS must be installed if stopping IIS-hosted environments
+
+    macOS/Linux:
+        Appropriate permissions to stop services and processes
+        sudo may be required for systemd/launchd service operations
+
+EXIT CODES
+    0               Success - all environments stopped successfully
+    1               Partial failure - some stop operations failed
+    2               Cancelled - user declined confirmation prompt
+
+ERROR HANDLING
+    Graceful degradation:
+        The command continues trying all stop methods even if one fails.
+        For example, if IIS app pool stop fails, it still attempts to
+        stop OS service and background processes.
+
+        If one environment fails, it continues with remaining environments.
+
+    Common errors:
+
+    Permission denied (IIS):
+        Error: Failed to stop IIS application pool 'myapp'
+        You may need Administrator privileges
+
+        Solution: Run as Administrator
+
+    Service not found:
+        No running service or process found for 'myenv'
+
+        This is expected if the environment is not running.
+
+    Process access denied:
+        The command logs a warning but continues with other environments.
+
+TROUBLESHOOTING
+    IIS app pool won't stop:
+        Check app pool status in IIS Manager
+        Verify Administrator privileges
+        Check if worker process (w3wp.exe) is hung
+        Try stopping manually: appcmd stop apppool /apppool.name:"myapp"
+
+    Service won't stop:
+        Check service status manually:
+        Windows: sc query "creatio-myenv"
+        Linux: systemctl status creatio-myenv
+        macOS: launchctl list | grep creatio-myenv
+
+        Try stopping with elevated privileges:
+        Windows: Run as Administrator
+        Linux/macOS: sudo clio stop -e myenv
+
+    Process keeps restarting:
+        Check if there's a monitoring service restarting the process
+        Verify no scheduled tasks are starting Creatio
+        Check systemd/launchd configuration for restart policies
+
+    Can't find process to stop:
+        Verify environment is actually running: clio hosts
+        Check EnvironmentPath is correct: clio show-web-app-list
+        Process may be running under different user account
+
+RELATED COMMANDS
+    start               Start a Creatio environment
+    hosts               List running Creatio environments
+    restart-web-app     Restart a Creatio environment
+    uninstall-creatio   Completely remove environment
+
+ALIASES
+    stop-creatio
+
+NOTES
+    - Service configuration files are removed after stopping
+      (Windows Services, systemd, launchd)
+    - IIS application pools are stopped but not removed from IIS
+    - Environment configuration remains in clio settings after stop
+    - For complete removal use: clio uninstall-creatio or clio unreg-web-app
+    - Command is safe to run even if environment is not running
+    - Multiple stop methods ensure maximum chance of success
+    - Partial failures do not prevent other environments from stopping
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -845,19 +845,35 @@ clio restart-web-app <ENVIRONMENT_NAME>
 
 ## start
 
-Start a local Creatio application using dotnet. By default, runs as a background service (same as deployment). Use `--terminal` or `-w` option to launch in a new terminal window with visible logs.
+Start a local Creatio application. Automatically detects deployment type (IIS or .NET Core) and starts accordingly.
 
 **Aliases**: `start-server`, `start-creatio`, `sc`
 
+### Deployment Type Detection
+
+The command automatically detects how Creatio is deployed:
+
+  1. **IIS Deployment** (Windows only):
+     - Detects if the environment path is configured as an IIS site
+     - Starts the IIS application pool and site
+     - Pings the site to verify accessibility
+     - No additional process management needed
+
+  2. **.NET Core Deployment**:
+     - Used when no IIS site is detected
+     - Starts using `dotnet` command
+     - Pings the site to verify accessibility
+     - Can run as background service (default) or in terminal window
+
 ### Usage
 
-Start application as background service (default):
+Start application (auto-detects deployment type):
 
 ```bash
 clio start -e <ENVIRONMENT_NAME>
 ```
 
-Start application in terminal window with logs:
+Start with terminal window (for .NET Core deployments):
 
 ```bash
 clio start -e <ENVIRONMENT_NAME> --terminal
@@ -886,17 +902,39 @@ clio sc -e <ENVIRONMENT_NAME> --terminal
    clio reg-web-app my_env --ep /path/to/creatio
    ```
 
-2. The `EnvironmentPath` must contain `Terrasoft.WebHost.dll`
+2. **For IIS deployments** (Windows):
+   - IIS must be installed and configured
+   - Environment path must be configured as an IIS site
+   - IIS application pool must exist
 
-3. .NET runtime must be installed and available in PATH
+3. **For .NET Core deployments**:
+   - The `EnvironmentPath` must contain `Terrasoft.WebHost.dll`
+   - .NET runtime must be installed and available in PATH
 
 ### Examples
 
-```bash
-# Start as background service (default)
-clio start -e local_dev
+  ```bash
+  # Start IIS-hosted environment (Windows)
+  clio start -e production
+  # Output: 
+  # Starting IIS site 'Production' and application pool 'production'...
+  # Starting application pool 'production'...
+  # ✓ Application pool 'production' started successfully!
+  # Starting IIS site 'Production'...
+  # ✓ IIS site 'Production' started successfully!
+  # ✓ Creatio application 'production' is now running!
+  # Pinging https://mysite.com/ping to verify accessibility...
+  # ✓ Site is accessible and responding!
 
-# Start with terminal window to see logs
+  # Start .NET Core environment as background service
+  clio start -e local_dev
+  # Output: 
+  # Starting Creatio application 'local_dev' as a background service...
+  # ✓ Creatio application started successfully as background service (PID: 12345)!
+  # Pinging https://localhost:5000/ping to verify accessibility...
+  # ✓ Site is accessible and responding!
+
+# Start .NET Core environment with terminal window to see logs
 clio start -e local_dev -w
 clio start -e local_dev --terminal
 
@@ -908,80 +946,260 @@ clio sc -e local_dev
 clio start-creatio -e local_dev --terminal
 ```
 
-### Behavior
+### Behavior by Deployment Type
 
-**Default Mode (Background Service)**:
-- Launches the Creatio application as a background process
-- No terminal window or logs visible (consistent with deployment)
-- Returns control to the original terminal immediately with success message and process ID
-- The application continues running independently
-- Use this mode for automated deployments or when logs are not needed
+  **IIS Deployment (Windows)**:
+  - Checks if the IIS application pool is already running
+  - Checks if the IIS site is already running
+  - Starts the application pool if stopped
+  - Starts the IIS site if stopped
+  - Pings the site to verify accessibility
+  - Displays success message with app pool and site names
+  - IIS manages the process lifecycle
+  - `--terminal` flag is ignored (not applicable for IIS)
 
-**Terminal Mode (`--terminal` or `-w`)**:
-- Launches the Creatio application in a new terminal window
-- Shows application logs in the new terminal
-- Returns control to the original terminal immediately with a success message
-- The application continues running independently
-- Use this mode when you need to see application logs
+  **.NET Core Background Service** (default for non-IIS):
+  - Launches the Creatio application as a background process
+  - No terminal window or logs visible
+  - Returns control to the original terminal immediately with success message and process ID
+  - Pings the site to verify accessibility
+  - The application continues running independently
+  - Use this mode for automated deployments or when logs are not needed
+
+  **.NET Core Terminal Mode** (`--terminal` or `-w`):
+  - Launches the Creatio application in a new terminal window
+  - Shows application logs in the new terminal
+  - Returns control to the original terminal immediately with a success message
+  - Pings the site to verify accessibility
+  - The application continues running independently
+  - Use this mode when you need to see application logs
 
 ### Error Handling
 
-The command validates:
-- EnvironmentPath is configured for the environment
-- The specified path exists on the file system
-- `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+  The command validates:
+  - EnvironmentPath is configured for the environment
+  - The specified path exists on the file system
+  - For .NET Core: `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+  - For IIS: Application pool and site exist and can be started
+  
+  **Site Verification:**
+  After starting, pings `{Uri}/ping` to verify accessibility (waits 2s, 30s timeout, 3 retries).
+  Ping failure logs warning but does not prevent command success.
+
+  **Common Errors**:
+
+1. **IIS Application Pool Start Failure**:
+   ```
+   Failed to start IIS application pool 'myapp'.
+   You may need to run this command with Administrator privileges.
+   ```
+   Solution: Run command prompt or PowerShell as Administrator
+
+2. **No Deployment Type Detected**:
+   ```
+   Terrasoft.WebHost.dll not found at: C:\path\to\app
+   This environment does not appear to be a .NET deployment.
+   ```
+   Solution: Verify EnvironmentPath points to valid Creatio installation
+
+3. **EnvironmentPath Not Configured**:
+   ```
+   EnvironmentPath is not configured for this environment.
+   
+   Available environments with EnvironmentPath:
+     - dev: C:\Creatio\Development
+     - prod: C:\inetpub\wwwroot\Production
+   
+   Use: clio reg-web-app <env> --ep <path>
+   ```
 
 If no environment is specified or EnvironmentPath is not configured, the command displays a list of available environments with configured paths.
 
-If any validation fails, an appropriate error message is displayed.
+## stop
 
-## hosts
+Stops Creatio services and background processes for one or more environments. Automatically detects deployment type (IIS, OS service, or background process) and stops accordingly.
 
-List all registered Creatio environments (hosts) with their running status, process IDs, and service information. This command helps monitor which Creatio instances are running on the local machine.
+**Aliases**: `stop-creatio`
 
-**Aliases**: `list-hosts`
-
-**For complete documentation**, see: [`hosts`](./docs/commands/hosts.md)
-
-### Quick Usage
+### Usage
 
 ```bash
-clio hosts
+# Stop specific environment
+clio stop -e <ENV_NAME>
+
+# Stop all registered environments
+clio stop --all
+
+# Stop without confirmation prompt
+clio stop -e <ENV_NAME> --quiet
+clio stop --all -q
+```
+
+### Options
+- `-e, --environment <ENV_NAME>` - Stop specific environment
+- `--all` - Stop all registered Creatio environments
+- `-q, --quiet` - Skip confirmation prompt
+
+### Behavior
+
+The command performs stop actions in the following order:
+
+1. **IIS Application Pool** (Windows only):
+   - Detects if the environment is hosted in IIS
+   - Stops the IIS application pool
+   - No process termination needed (IIS manages this)
+
+2. **OS Service**:
+   - Checks for systemd service (Linux) or launchd service (macOS) or Windows service
+   - Service name pattern: `creatio-{environment-name}`
+   - Stops and disables the service
+   - Attempts to delete service configuration
+
+3. **Background Process**:
+   - Searches for running dotnet processes with `Terrasoft.WebHost.dll`
+   - Verifies process working directory matches environment path
+   - Terminates matching processes
+
+### Stop Methods by Platform
+
+| Platform | IIS | OS Service | Background Process |
+|----------|-----|------------|-------------------|
+| **Windows** | ✅ Yes | ✅ Yes (Windows Services) | ✅ Yes |
+| **macOS**   | ❌ No | ✅ Yes (launchd) | ✅ Yes |
+| **Linux**   | ❌ No | ✅ Yes (systemd) | ✅ Yes |
+
+### Confirmation Prompt
+
+**With confirmation** (default):
+```bash
+$ clio stop -e dev
+
+This will stop 1 Creatio service(s)/process(es):
+  - dev (C:\Creatio\Development)
+
+Continue? [y/N]: y
+```
+
+**Without confirmation** (`--quiet` flag):
+```bash
+$ clio stop -e dev --quiet
+Stopping environment: dev
+✓ IIS application pool 'dev' stopped and removed
+✓ Successfully stopped 'dev'
+```
+
+### Examples
+
+Stop a specific environment with confirmation:
+```bash
+clio stop -e production
+```
+
+Stop a specific environment without confirmation:
+```bash
+clio stop -e production --quiet
+clio stop -e production -q
+```
+
+Stop all registered environments:
+```bash
+clio stop --all --quiet
+```
+
+Using alias:
+```bash
+clio stop-creatio -e dev
 ```
 
 ### Example Output
 
+**IIS Deployment (Windows)**:
+```bash
+$ clio stop -e prod --quiet
+
+Stopping environment: prod
+Stopping IIS application pool: prod
+✓ IIS application pool 'prod' stopped successfully
+
+=== Summary ===
+Stopped: 1
 ```
-Scanning 3 environment(s) in parallel...
-=== Creatio Hosts ===
-Environment    Service Name         Status          PID    Environment Path
-production     Default Web Site     Running (IIS)   8432   C:\inetpub\wwwroot\Production
-staging        CreatioStaging       Stopped (IIS)   -      C:\Apps\Staging
-development    creatio-dev          Running (Process) 12456 C:\Dev\Creatio
+
+**Background Process**:
+```bash
+$ clio stop -e dev --quiet
+
+Stopping environment: dev
+Killing process dotnet (PID: 12345)
+✓ Background process stopped
+✓ Successfully stopped 'dev'
+
+=== Summary ===
+Stopped: 1
 ```
 
-### Status Values
+**Multiple Environments**:
+```bash
+$ clio stop --all --quiet
 
-- **Running (IIS)**: IIS site and application pool both running (Windows)
-- **Stopped (IIS)**: IIS site or application pool stopped (Windows)
-- **Running (Service)**: systemd/launchd service running (macOS/Linux)
-- **Running (Process)**: Background process detected
-- **Stopped**: No running process or service found
+Stopping environment: dev
+✓ IIS application pool 'dev' stopped successfully
+✓ Successfully stopped 'dev'
 
-### Prerequisites
+Stopping environment: qa
+✓ Service 'creatio-qa' stopped and removed
+✓ Successfully stopped 'qa'
 
-- Environments must be registered with `EnvironmentPath`:
-  ```bash
-  clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
-  ```
+Stopping environment: prod
+No running service or process found for 'prod'
 
-### Troubleshooting
-
-If PID is not detected on Windows IIS, enable debug mode:
-```powershell
-$env:CLIO_DEBUG_IIS = "true"
-clio hosts
+=== Summary ===
+Stopped: 2
+Not found/Failed: 1
 ```
+
+### Environment Detection
+
+An environment is considered active if any of the following are true:
+- **IIS**: Application pool with matching name is running (Windows only)
+- **OS Service**: Service named `creatio-<env>` is running
+- **Background Process**: A dotnet process running `Terrasoft.WebHost.dll` from the `EnvironmentPath` directory
+
+### Return Codes
+- `0` - Success: all environments stopped successfully
+- `1` - Partial failure: some stop operations failed
+- `2` - Cancelled: user declined the confirmation prompt
+
+### Error Handling
+
+**Graceful Degradation**: The command continues trying all stop methods even if one fails. For example:
+- If IIS app pool stop fails, it still attempts to stop OS service and background processes
+- If one environment fails, it continues with remaining environments
+
+**Common Issues**:
+
+1. **Permission Denied (IIS)**:
+   ```
+   Failed to stop IIS application pool 'myapp'
+   You may need Administrator privileges
+   ```
+   Solution: Run as Administrator
+
+2. **Service Not Found**:
+   ```
+   No running service or process found for 'myenv'
+   ```
+   This is expected if the environment is not running
+
+3. **Process Access Denied**:
+   The command will log a warning but continue with other environments
+
+### Notes
+- Service configuration files are removed after stopping (Windows Services, systemd, launchd)
+- IIS application pools are stopped but not removed from IIS
+- Environment configuration remains in clio settings after stop
+- For complete environment removal, use `clio uninstall-creatio` or `clio unreg-web-app`
+- The command is safe to run even if the environment is not running
 
 ## clear-redis-db
 
