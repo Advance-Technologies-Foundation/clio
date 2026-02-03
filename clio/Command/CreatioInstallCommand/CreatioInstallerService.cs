@@ -761,6 +761,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 			// For local deployment, use localhost Redis or skip if not available
 			(int dbNumber, string errorMessage) emptyDb = FindEmptyRedisDb();
+
+			if (!string.IsNullOrEmpty(emptyDb.errorMessage)) {
+				_logger.WriteError(emptyDb.errorMessage);
+			}
+			
 			redisDb = options.RedisDb >= 0 ? options.RedisDb : emptyDb.dbNumber;
 			redisConnectionString = $"host=localhost;db={redisDb};port=6379";
 			_logger.WriteInfo($"[Redis Configuration] - Using local Redis: database {redisDb}");
