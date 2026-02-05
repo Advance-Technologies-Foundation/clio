@@ -1351,6 +1351,7 @@ clio ui
 - ✅ **Edit** - Modify existing settings interactively
 - ✅ **Delete** - Remove environments with confirmation dialogs
 - ✅ **Set Active** - Change default environment
+- ✅ **Actions in Main Menu** - Restart, clear Redis, open in browser, ping, healthcheck, get info, compile configuration, open configuration file
 - ✅ **Security** - Automatic password masking and secure input
 
 ### Why Use env-ui?

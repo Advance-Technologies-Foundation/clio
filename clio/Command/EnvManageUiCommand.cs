@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
 using Clio.UserEnvironment;
+using Clio.Utilities;
 using CommandLine;
 using Spectre.Console;
 
@@ -45,16 +46,31 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger _logger;
 	private readonly IEnvManageUiService _service;
+	private readonly IApplicationClientFactory _applicationClientFactory;
+	private readonly IClioGateway _clioGateway;
+	private readonly IWebBrowser _webBrowser;
+	private readonly IProcessExecutor _processExecutor;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public EnvManageUiCommand(ISettingsRepository settingsRepository, ILogger logger, IEnvManageUiService service)
+	public EnvManageUiCommand(
+		ISettingsRepository settingsRepository,
+		ILogger logger,
+		IEnvManageUiService service,
+		IApplicationClientFactory applicationClientFactory,
+		IClioGateway clioGateway,
+		IWebBrowser webBrowser,
+		IProcessExecutor processExecutor)
 	{
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_service = service ?? throw new ArgumentNullException(nameof(service));
+		_applicationClientFactory = applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
+		_clioGateway = clioGateway ?? throw new ArgumentNullException(nameof(clioGateway));
+		_webBrowser = webBrowser ?? throw new ArgumentNullException(nameof(webBrowser));
+		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
 	}
 
 	#endregion
@@ -82,6 +98,14 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 						MenuChoice.Edit => EditEnvironment(),
 						MenuChoice.Delete => DeleteEnvironment(),
 						MenuChoice.SetActive => SetActiveEnvironment(),
+						MenuChoice.Restart => ExecuteActionWithEnvironment(EnvironmentAction.Restart),
+						MenuChoice.ClearRedis => ExecuteActionWithEnvironment(EnvironmentAction.ClearRedis),
+						MenuChoice.Open => ExecuteActionWithEnvironment(EnvironmentAction.Open),
+						MenuChoice.Ping => ExecuteActionWithEnvironment(EnvironmentAction.Ping),
+						MenuChoice.Healthcheck => ExecuteActionWithEnvironment(EnvironmentAction.Healthcheck),
+						MenuChoice.GetInfo => ExecuteActionWithEnvironment(EnvironmentAction.GetInfo),
+						MenuChoice.CompileConfiguration => ExecuteActionWithEnvironment(EnvironmentAction.CompileConfiguration),
+						MenuChoice.OpenSettings => ExecuteOpenSettings(),
 						MenuChoice.Refresh => 0, // Just refresh the list
 						MenuChoice.Exit => -1, // Exit signal
 						_ => 1
@@ -198,6 +222,14 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 					MenuChoice.Edit => "Edit Environment",
 					MenuChoice.Delete => "Delete Environment",
 					MenuChoice.SetActive => "Set Active Environment",
+					MenuChoice.Restart => "Restart environment",
+					MenuChoice.ClearRedis => "Clear Redis database",
+					MenuChoice.Open => "Open environment in browser",
+					MenuChoice.Ping => "Ping environment",
+					MenuChoice.Healthcheck => "Healthcheck",
+					MenuChoice.GetInfo => "Get environment info",
+					MenuChoice.CompileConfiguration => "Compile configuration",
+					MenuChoice.OpenSettings => "Open configuration file",
 					MenuChoice.Refresh => "Refresh List",
 					MenuChoice.Exit => "Exit",
 					_ => choice.ToString()
@@ -908,6 +940,165 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		}
 	}
 
+	private int ExecuteActionWithEnvironment(EnvironmentAction action)
+	{
+		Console.Clear();
+
+		var environments = _settingsRepository.GetAllEnvironments();
+		if (!environments.Any())
+		{
+			AnsiConsole.Write(new Panel("[bold]Environment Action[/]")
+			{
+				Border = BoxBorder.Double
+			});
+			AnsiConsole.WriteLine();
+			AnsiConsole.MarkupLine("[yellow]No environments configured.[/]");
+			return 0;
+		}
+
+		AnsiConsole.Write(new Panel($"[bold]{GetActionLabel(action)}[/]")
+		{
+			Border = BoxBorder.Double
+		});
+		AnsiConsole.WriteLine();
+
+		var envName = AnsiConsole.Prompt(
+			new SelectionPrompt<string>()
+				.Title("[green]Select environment:[/]")
+				.AddChoices(environments.Keys)
+		);
+
+		var environmentSettings = environments[envName];
+		var result = ExecuteEnvironmentAction(action, envName, environmentSettings);
+
+		AnsiConsole.WriteLine();
+		if (result == 0)
+		{
+			AnsiConsole.MarkupLine($"[green]✓[/] {GetActionLabel(action)} completed.");
+		}
+		else
+		{
+			AnsiConsole.MarkupLine($"[red]✗[/] {GetActionLabel(action)} failed.");
+		}
+
+		return result;
+	}
+
+	private int ExecuteOpenSettings()
+	{
+		var command = new OpenCfgCommand(_logger);
+		return command.Execute(new OpenCfgOptions());
+	}
+
+	private int ExecuteEnvironmentAction(EnvironmentAction action, string envName, EnvironmentSettings environmentSettings)
+	{
+		if (environmentSettings == null)
+		{
+			AnsiConsole.MarkupLine("[red]Selected environment settings not found.[/]");
+			return 1;
+		}
+
+		return action switch
+		{
+			EnvironmentAction.Restart => ExecuteRestart(envName, environmentSettings),
+			EnvironmentAction.ClearRedis => ExecuteClearRedis(envName, environmentSettings),
+			EnvironmentAction.Open => ExecuteOpen(envName, environmentSettings),
+			EnvironmentAction.Ping => ExecutePing(envName, environmentSettings),
+			EnvironmentAction.Healthcheck => ExecuteHealthcheck(envName, environmentSettings),
+			EnvironmentAction.GetInfo => ExecuteGetInfo(envName, environmentSettings),
+			EnvironmentAction.CompileConfiguration => ExecuteCompileConfiguration(envName, environmentSettings),
+			_ => 0
+		};
+	}
+
+	private int ExecuteRestart(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings);
+		var command = new RestartCommand(_applicationClientFactory.CreateClient(settings), settings);
+		return command.Execute(new RestartOptions { Environment = envName });
+	}
+
+	private int ExecuteClearRedis(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings);
+		var command = new RedisCommand(_applicationClientFactory.CreateClient(settings), settings);
+		return command.Execute(new ClearRedisOptions { Environment = envName });
+	}
+
+	private int ExecuteOpen(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings);
+		var command = new OpenAppCommand(
+			_applicationClientFactory.CreateClient(settings),
+			settings,
+			_webBrowser,
+			_processExecutor,
+			_settingsRepository);
+		return command.Execute(new OpenAppOptions { Environment = envName });
+	}
+
+	private int ExecutePing(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings);
+		var command = new PingAppCommand(_applicationClientFactory.CreateClient(settings), settings);
+		return command.Execute(new PingAppOptions { Environment = envName });
+	}
+
+	private int ExecuteHealthcheck(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings, forceNetCore: true);
+		var command = new HealthCheckCommand(_applicationClientFactory.CreateClient(settings), settings);
+		return command.Execute(new HealthCheckOptions {
+			Environment = envName,
+			WebApp = "true",
+			WebHost = "true"
+		});
+	}
+
+	private int ExecuteGetInfo(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings);
+		var command = new GetCreatioInfoCommand(_applicationClientFactory.CreateClient(settings), settings, _clioGateway);
+		return command.Execute(new GetCreatioInfoCommandOptions { Environment = envName });
+	}
+
+	private int ExecuteCompileConfiguration(string envName, EnvironmentSettings environmentSettings)
+	{
+		var settings = CloneEnvironmentSettings(environmentSettings);
+		var serviceUrlBuilder = new ServiceUrlBuilder(settings);
+		var command = new CompileConfigurationCommand(
+			_applicationClientFactory.CreateClient(settings),
+			settings,
+			serviceUrlBuilder);
+		return command.Execute(new CompileConfigurationOptions { Environment = envName });
+	}
+
+	private static EnvironmentSettings CloneEnvironmentSettings(EnvironmentSettings environmentSettings, bool forceNetCore = false)
+	{
+		var settings = new EnvironmentSettings();
+		settings.Merge(environmentSettings);
+		if (forceNetCore)
+		{
+			settings.IsNetCore = true;
+		}
+		return settings;
+	}
+
+	private static string GetActionLabel(EnvironmentAction action)
+	{
+		return action switch
+		{
+			EnvironmentAction.Restart => "Restart environment",
+			EnvironmentAction.ClearRedis => "Clear Redis database",
+			EnvironmentAction.Open => "Open environment in browser",
+			EnvironmentAction.Ping => "Ping environment",
+			EnvironmentAction.Healthcheck => "Healthcheck",
+			EnvironmentAction.GetInfo => "Get environment info",
+			EnvironmentAction.CompileConfiguration => "Compile configuration",
+			_ => action.ToString()
+		};
+	}
+
 	private int SetActiveEnvironment()
 	{
 		var environments = _settingsRepository.GetAllEnvironments();
@@ -957,8 +1148,27 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		Edit,
 		Delete,
 		SetActive,
+		Restart,
+		ClearRedis,
+		Open,
+		Ping,
+		Healthcheck,
+		GetInfo,
+		CompileConfiguration,
+		OpenSettings,
 		Refresh,
 		Exit
+	}
+
+	private enum EnvironmentAction
+	{
+		Restart,
+		ClearRedis,
+		Open,
+		Ping,
+		Healthcheck,
+		GetInfo,
+		CompileConfiguration
 	}
 
 	#endregion

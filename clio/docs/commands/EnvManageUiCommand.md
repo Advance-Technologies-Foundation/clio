@@ -209,6 +209,22 @@ Main Menu
 │   └── If Active: Select New Active
 ├── Set Active Environment
 │   └── Select Environment
+├── Restart environment
+│   └── Select Environment
+├── Clear Redis database
+│   └── Select Environment
+├── Open environment in browser
+│   └── Select Environment
+├── Ping environment
+│   └── Select Environment
+├── Healthcheck
+│   └── Select Environment
+├── Get environment info
+│   └── Select Environment
+├── Compile configuration
+│   └── Select Environment
+├── Open configuration file
+│   └── Open appsettings.json
 ├── Refresh List
 │   └── Reload Configuration
 └── Exit

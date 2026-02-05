@@ -33,6 +33,14 @@ FEATURES
         - Edit Environment            Modify existing environment settings
         - Delete Environment          Remove environment with confirmation
         - Set Active Environment      Change default environment
+        - Restart environment         Restart Creatio application
+        - Clear Redis database        Clear Redis cache for environment
+        - Open environment            Open environment in browser
+        - Ping environment            Ping environment endpoint
+        - Healthcheck                 Run web app and web host checks
+        - Get environment info        Show Creatio instance info
+        - Compile configuration       Run remote configuration compile
+        - Open configuration file     Open appsettings.json
         - Refresh List                Reload configuration from disk
         - Exit                        Close the application
 
