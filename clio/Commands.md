@@ -18,6 +18,7 @@ Clio Command Reference
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
     - [🚀 Quick Start Guide for macOS](#-quick-start-guide-for-macos)
+- [Additional Commands](#additional-commands)
 
 # Running Clio
 The general syntax for running clio:
@@ -170,8 +171,13 @@ clio:   8.0.1.97
 - [Restore database](#restore-db)
 - [Get package list](#get-pkg-list)
 - [Set package version](#set-pkg-version)
+- [Get package version](#get-pkg-version)
 - [Set application version](#set-application-version)
 - [Set application icon](#set-application-icon)
+- [Lock package](#lock-package)
+- [Unlock package](#unlock-package)
+- [Activate package](#activate-pkg)
+- [Deactivate package](#deactivate-pkg)
 
 ## new-pkg
 
@@ -568,6 +574,22 @@ Set a specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
+## get-pkg-version
+
+Get the current version of a package from its descriptor.json file.
+
+```bash
+clio get-pkg-version <PACKAGE_PATH>
+```
+
+### Examples
+
+Get version of a package in current directory, for specific package:
+```bash
+clio get-pkg-version .
+clio get-pkg-version C:\Workspace\MyPackage
+```
+
 ## set-application-version
 
 Set a specified composable application version into application-descriptor.json by specified workspace or package path.
@@ -619,6 +641,90 @@ clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME>
 
 
 ```
+
+## lock-package
+
+**Aliases:** `lp`
+
+Lock a package to prevent modifications. When a package is locked, it cannot be modified or deleted from the environment.
+
+```bash
+clio lock-package <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Lock a package on an environment:
+```bash
+clio lock-package MyCustomPackage -e production
+```
+
+Using alias:
+```bash
+clio lp MyCustomPackage -e production
+```
+
+## unlock-package
+
+**Aliases:** `up`
+
+Unlock a previously locked package to allow modifications.
+
+```bash
+clio unlock-package <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Unlock a package on an environment:
+```bash
+clio unlock-package MyCustomPackage -e production
+```
+
+Using alias:
+```bash
+clio up MyCustomPackage -e production
+```
+
+## activate-pkg
+
+Activate a package in a Creatio environment. This command will be available in Creatio version 8.1.2 and later.
+
+```bash
+clio activate-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Activate a package:
+```bash
+clio activate-pkg MyCustomPackage -e development
+```
+
+### Notes
+- This command requires Creatio version 8.1.2 or later
+- Package must already be installed in the environment
+- Activating a package makes it active in the application
+
+## deactivate-pkg
+
+Deactivate a package in a Creatio environment. This command will be available in Creatio version 8.1.2 and later.
+
+```bash
+clio deactivate-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Deactivate a package:
+```bash
+clio deactivate-pkg MyCustomPackage -e development
+```
+
+### Notes
+- This command requires Creatio version 8.1.2 or later
+- Deactivating a package disables it without uninstalling
+- Useful for temporarily disabling functionality
 
 # NuGet Packages
 - [Pack NuGet package](#pack-nuget-pkg)
@@ -756,20 +862,27 @@ clio update -y
 - `2` - Error checking for updates (network issue, version detection error, etc.)
 
 # Application
+- [Download application](#download-app)
 - [Deploy application](#deploy-application)
+- [Install application](#install-application)
+- [Publish application](#publish-app)
+- [Compress application](#compressapp)
 - [Uninstall application](#uninstall-app-remote)
 - [List installed applications](#get-app-list)
-- [Upload Licenses](#lic)
+- [Upload License](#upload-license)
 - [Restart application](./docs/commands/RestartCommand.md)
 - [Clear Redis database](./docs/commands/RedisCommand.md)
 - [Compile configuration](#compile-configuration)
 - [Get compilation log](#last-compilation-log)
 - [Set system setting](#set-syssetting)
 - [Get system setting](#get-syssetting)
+- [Set developer mode](#set-dev-mode)
 - [Features](#set-feature)
 - [Set base web service url](#set-webservice-url)
 - [Get base web service url](#get-webservice-url)
 - [Set FileSystemMode](#set-fsm-config)
+- [Load packages to file system](#pkg-to-file-system)
+- [Load packages to database](#pkg-to-db)
 
 ## download-app
 
@@ -792,6 +905,73 @@ clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
 ````
 
 
+
+## install-application
+
+Install an application package on a web application from a local file or marketplace.
+
+**Aliases:** `install-app`
+
+```bash
+# Install from local file
+clio install-application <FILE_PATH> -e <ENVIRONMENT_NAME>
+
+# Install from marketplace by ID
+clio install-application --id <APP_ID> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Install from local .gz file:
+```bash
+clio install-application C:\Apps\MyApp.gz -e development
+```
+
+Install from marketplace:
+```bash
+clio install-application --id 12345 -e development
+```
+
+### Notes
+- Use this command for composable applications
+- For regular packages, use `push-pkg` instead
+
+## publish-app
+
+**Aliases:** `publish-workspace`
+
+Publish workspace to a zip file for distribution or deployment.
+
+```bash
+clio publish-app -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Publish current workspace:
+```bash
+clio publish-app
+```
+
+Publish to specific environment:
+```bash
+clio publish-app -e production
+```
+
+## compressApp
+
+Compress an application into an archive file for distribution or backup.
+
+```bash
+clio compressApp -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Compress application:
+```bash
+clio compressApp -e production
+```
 
 ## uninstall-app-remote
 
@@ -817,17 +997,29 @@ clio get-app-list
 clio apps
 ```
 
-## Upload licenses
 
-To upload licenses to Creatio application, use the next command for default environment:
+## upload-license
+
+**Aliases:** `lic`
+
+Upload licenses to a Creatio environment. License file must be in valid Creatio license format.
 
 ```bash
-clio lic <File Path>
+clio upload-license <File Path> -e <ENVIRONMENT_NAME>
 ```
 
+### Examples
+
+Upload license file to default environment:
 ```bash
-clio lic <File Path> -e <ENVIRONMENT_NAME>
+clio upload-license license.lic
 ```
+
+Upload to specific environment:
+```bash
+clio lic license.lic -e dev
+```
+
 
 ## restart-web-app
 
@@ -1269,6 +1461,26 @@ To read system settings value
 get-syssetting <CODE> --GET -e <ENVIRONMENT_NAME>
 ```
 
+## set-dev-mode
+
+Activate or deactivate developer mode for a selected environment.
+
+```bash
+clio set-dev-mode <true|false> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Enable developer mode:
+```bash
+clio set-dev-mode true -e development
+```
+
+### Notes
+- Developer mode enables additional debugging and development features
+- Typically enabled on development environments and disabled on production
+- Requires administrative permissions
+
 ## set-feature
 
 To enable feature
@@ -1315,6 +1527,46 @@ clio get-webservice-url <WEB_SERVICE_NAME> -e <ENVIRONMENT_NAME>
 ```
 
 Aliases: `gwu`
+
+## pkg-to-file-system
+
+Load packages from database to the file system on a web application. This is useful when switching to file system mode or restoring package files.
+
+```bash
+clio pkg-to-file-system -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Load packages to file system:
+```bash
+clio pkg-to-file-system -e development
+```
+
+### Notes
+- Extracts package content from the database to file system
+- Required when enabling file system development mode
+- May take time depending on the number and size of packages
+
+## pkg-to-db
+
+Load packages from file system to the database on a web application. This is the reverse operation of `pkg-to-file-system`.
+
+```bash
+clio pkg-to-db -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Load packages to database:
+```bash
+clio pkg-to-db -e production
+```
+
+### Notes
+- Stores package content from file system into the database
+- Used when switching from file system mode to database mode
+- Typically used before deploying to production environments
 
 
 # Environment settings
@@ -2821,11 +3073,75 @@ clio restart -u https://mysite.creatio.com -l administrator -p password
 
 # Web farm deployments
 
-To ensure proper functioning of Creatio in Web Farm mode, it is crucial that all nodes are identical. Clio provides the following command to verify this:
+Manage and verify Creatio deployments across multiple web farm nodes.
+
+## check-web-farm-node
+
+Verify that all nodes in a Creatio web farm deployment are identical. This command compares files and configurations across multiple nodes to ensure consistency.
 
 ```bash
-clio check-web-farm-node "\\Node1\Creatio,\\Node2\Creatio" -d
+clio check-web-farm-node <NODE_PATHS> [OPTIONS]
 ```
+
+### Examples
+
+Check two nodes for differences:
+```bash
+clio check-web-farm-node "\\\\Node1\\Creatio,\\\\Node2\\Creatio" -d
+```
+
+Compare local nodes:
+```bash
+clio check-web-farm-node "C:\\inetpub\\node1,C:\\inetpub\\node2" -d
+```
+
+### Options
+- `-d`, `--detailed` - Show detailed comparison results
+
+### Notes
+- Multiple node paths should be comma-separated
+- Supports UNC paths for network locations
+- Supports local file paths
+
+## turn-farm-mode
+
+Configure IIS site for Creatio web farm deployment. This command sets up the necessary configuration for running Creatio in a web farm (multi-server) environment.
+
+```bash
+clio turn-farm-mode -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Enable farm mode:
+```bash
+clio turn-farm-mode -e production
+```
+
+### Notes
+- Windows and IIS only
+- Required for load-balanced Creatio deployments
+- Configures session state and file synchronization
+
+## compare-web-farm-node
+
+Compare web farm node content to identify differences between nodes in a web farm deployment.
+
+```bash
+clio compare-web-farm-node <NODE1_PATH> <NODE2_PATH>
+```
+
+### Examples
+
+Compare two farm nodes:
+```bash
+clio compare-web-farm-node C:\inetpub\node1 C:\inetpub\node2
+```
+
+### Notes
+- Useful for troubleshooting web farm deployments
+- Identifies file and configuration differences between nodes
+- Helps ensure all nodes are synchronized
 
 # GitOps
 
@@ -4235,6 +4551,124 @@ clio turn-fsm --environmentName MyEnvironment off
 
 Learn how to create and run backend unit tests for Creatio development, including usage of the `new-test-project` command and .slnx solution files:
 - [Backend Unit Test Guide](../docs/BackEndUnitTest.md)
+
+# Additional Commands
+
+## externalLink
+
+**Aliases:** `link`
+
+Handle external deep-links for integration with external tools and systems.
+
+```bash
+clio externalLink <LINK_URL>
+```
+
+## open-settings
+
+Open the clio configuration file (appsettings.json) in the default text editor.
+
+```bash
+clio open-settings
+```
+
+### Notes
+- Opens the settings file in your system's default JSON/text editor
+- Useful for quickly editing environment configurations
+- Settings file location is typically: `~/.clio/appsettings.json`
+
+## new-ui-project
+
+Create a new UI project for Creatio development (Angular-based Freedom UI components).
+
+```bash
+clio new-ui-project <PROJECT_NAME>
+```
+
+### Examples
+
+Create new UI project:
+```bash
+clio new-ui-project MyUIProject
+```
+
+### Notes
+- Creates Angular project structure for Freedom UI development
+- Includes necessary configuration for Creatio integration
+- See [UI Development docs](../docs/UIProjectCommand.md) for more details
+
+## alm-deploy
+
+**Aliases:** `deploy`
+
+Deploy packages to a selected environment using Application Lifecycle Management (ALM) workflow.
+
+```bash
+clio alm-deploy <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Deploy package:
+```bash
+clio alm-deploy MyPackage -e staging
+```
+
+Using alias:
+```bash
+clio deploy MyPackage -e production
+```
+
+## cfg-worspace
+
+**Aliases:** `cfgw`
+
+Configure workspace settings for the current project.
+
+```bash
+clio cfg-worspace
+```
+
+### Examples
+
+Configure workspace:
+```bash
+clio cfg-worspace
+```
+
+Using alias:
+```bash
+clio cfgw
+```
+
+## register
+
+Register clio commands in Windows context menu for easy access from File Explorer.
+
+```bash
+clio register
+```
+
+### Notes
+- Windows only
+- Requires administrator privileges
+- Adds clio commands to right-click context menu
+- Makes it easier to run clio commands from File Explorer
+
+## unregister
+
+Remove clio commands from Windows context menu.
+
+```bash
+clio unregister
+```
+
+### Notes
+- Windows only
+- Requires administrator privileges
+- Removes previously registered context menu entries
+
+# Command Aliases and References
 
 ## ver
 Reference section for version command. See earlier examples in Help and examples.
