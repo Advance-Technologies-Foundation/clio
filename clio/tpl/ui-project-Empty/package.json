@@ -42,6 +42,6 @@
     "ngx-build-plus": "^17.0.0",
     "ts-node": "^10.9.2",
     "typescript": "~5.3.3",
-    "webpack": "5.94.0"
+    "webpack": "5.104.1"
   }
 }
