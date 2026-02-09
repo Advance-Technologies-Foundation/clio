@@ -686,6 +686,9 @@ Using alias:
 clio up MyCustomPackage -e production
 ```
 
+### Notes
+- This command requires cliogate to be installed on the target environment. See `install-gate` command.
+
 ## activate-pkg
 
 Activate a package in a Creatio environment. This command will be available in Creatio version 8.1.2 and later.
