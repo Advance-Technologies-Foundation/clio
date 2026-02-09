@@ -33,23 +33,23 @@
     </ItemGroup>
 
     <ItemGroup Label="Nuget packages">
-        <PackageReference Include="coverlet.msbuild" Version="3.2.0">
+        <PackageReference Include="coverlet.msbuild" Version="6.0.4">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="FluentAssertions" Version="[7.2.0]"/>
+        <PackageReference Include="FluentAssertions" Version="[7.2.0]" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0"/>
         <PackageReference Include="NUnit" Version="4.4.0" />
-        <PackageReference Include="NUnit3TestAdapter" Version="5.1.0" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-        <PackageReference Include="Castle.Core" version="5.2.1"/>
-        <PackageReference Include="Ninject" version="3.3.6"/>
+        <PackageReference Include="NUnit3TestAdapter" Version="6.1.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+        <PackageReference Include="Castle.Core" version="5.2.1" />
+        <PackageReference Include="Ninject" Version="3.3.6" />
         <PackageReference Condition="'$(TargetFramework)' == 'net8.0'" Include="System.Net.Http.Json" Version="8.0.1" />
         <Reference Condition="'$(TargetFramework)' == 'net472'" Include="System.Net.Http.Json" Version="8.0.1">
             <HintPath>$(TestCoreLibPath)/System.Net.Http.Json.dll</HintPath>
         </Reference>
-        <PackageReference Include="NSubstitute" version="3.1.0"/>
+        <PackageReference Include="NSubstitute" version="5.3.0" />
         <PackageReference Include="System.Runtime" version="4.3.1"/>
         <PackageReference Include="System.Threading.Tasks.Extensions" version="4.5.4"/>
         <Reference Include="*">
@@ -60,6 +60,25 @@
         </Reference>
         <Reference Include="Atf.Repository.Mock">
             <HintPath>.\Libs\Atf.Repository.Mock.dll</HintPath>
+        </Reference>
+        
+        <!-- Included in NET472 Build-->
+        <Reference Condition="'$(TargetFramework)' == 'net472'" Include="Creatio.FeatureToggling.TestKit">
+            <HintPath>$(TestCoreLibPath)/Creatio.FeatureToggling.TestKit.dll</HintPath>
+        </Reference>
+        
+        <!-- NOT Included in NET8 Build -->
+        <Reference Condition="'$(TargetFramework)' != 'net472'" Include="Creatio.FeatureToggling.TestKit">
+            <HintPath>.\Libs\Creatio.FeatureToggling.TestKit.dll</HintPath>
+        </Reference>
+
+        <!-- Included in NET472 Build-->
+        <Reference Condition="'$(TargetFramework)' == 'net472'" Include="Creatio.FeatureToggling.TestKit.NUnit">
+            <HintPath>$(TestCoreLibPath)/Creatio.FeatureToggling.TestKit.NUnit.dll</HintPath>
+        </Reference>
+        <!-- NOT Included in NET8 Build -->
+        <Reference Condition="'$(TargetFramework)' != 'net472'" Include="Creatio.FeatureToggling.TestKit.NUnit">
+            <HintPath>.\Libs\Creatio.FeatureToggling.TestKit.NUnit.dll</HintPath>
         </Reference>
     </ItemGroup>
     

@@ -1673,6 +1673,8 @@ clio cdp false -e <ENVIRONMENT_NAME>
 - [Configure workspace](#configure-workspace)
 - [Publish workspace](#publish-workspace)
 - [Merge workspaces](#merge-workspaces)
+- [Unlock packages](#unlock-package)
+- [Lock packages](#lock-package)
 - [Package Filtering](#package-filtering-in-workspace)
 - [Configure workspace](#configure-workspace)
 
@@ -1854,6 +1856,110 @@ Options:
 - `--Packages` (optional): Comma-separated list of package names to add to the workspace
 
 Aliases: `cfgw`
+
+## unlock-package
+
+Unlocks one or more packages in a Creatio environment to enable editing and modifications. This command is essential for development workflows where packages need to be edited, updated, or synchronized with workspace changes.
+
+```bash
+clio unlock-package [package-names] -e <ENVIRONMENT_NAME>
+```
+
+**Aliases:** `up`
+
+**Arguments:**
+- `package-names` (optional): Comma-separated list of package names to unlock. If omitted, unlocks all packages in the environment
+
+**Options:**
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment name from configuration
+- `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
+- `-l, --Login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --Password <PASSWORD>` (optional): User password
+
+**Examples:**
+
+Unlock a single package:
+```bash
+clio unlock-package MyPackage -e dev
+```
+
+Unlock multiple packages:
+```bash
+clio unlock-package MyPackage,AnotherPackage,ThirdPackage -e dev
+```
+
+Unlock all packages in the environment:
+```bash
+clio unlock-package -e dev
+```
+
+Using the short alias:
+```bash
+clio up MyPackage -e dev
+```
+
+**Requirements:**
+- Requires cliogate package version **2.0.0.0 or higher** installed on the target Creatio environment
+- To install cliogate: `clio install-gate -e <ENVIRONMENT_NAME>`
+
+**Notes:**
+- Package names are case-sensitive and must match exactly
+- Remember to lock packages with [`lock-package`](#lock-package) after completing your changes
+- Administrator permissions required on target environment
+
+**For detailed documentation, see:** [`unlock-package`](./docs/commands/unlock-package.md)
+
+## lock-package
+
+Locks one or more packages in a Creatio environment to prevent modifications. This command is used to protect packages from unintended changes and should be used after completing development work.
+
+```bash
+clio lock-package [package-names] -e <ENVIRONMENT_NAME>
+```
+
+**Aliases:** `lp`
+
+**Arguments:**
+- `package-names` (optional): Comma-separated list of package names to lock. If omitted, locks all packages in the environment
+
+**Options:**
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment name from configuration
+- `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
+- `-l, --Login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --Password <PASSWORD>` (optional): User password
+
+**Examples:**
+
+Lock a single package:
+```bash
+clio lock-package MyPackage -e dev
+```
+
+Lock multiple packages:
+```bash
+clio lock-package MyPackage,AnotherPackage,ThirdPackage -e dev
+```
+
+Lock all packages in the environment:
+```bash
+clio lock-package -e dev
+```
+
+Using the short alias:
+```bash
+clio lp MyPackage -e dev
+```
+
+**Requirements:**
+- Requires cliogate package version **2.0.0.0 or higher** installed on the target Creatio environment
+- To install cliogate: `clio install-gate -e <ENVIRONMENT_NAME>`
+
+**Notes:**
+- Package names are case-sensitive and must match exactly
+- Use in conjunction with [`unlock-package`](#unlock-package) for controlled development workflows
+- Administrator permissions required on target environment
+
+**For detailed documentation, see:** [`lock-package`](./docs/commands/lock-package.md)
 
 ## merge-workspaces
 
