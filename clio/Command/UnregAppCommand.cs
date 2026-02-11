@@ -4,7 +4,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("unreg-web-app", Aliases = new string[] { "unreg" }, HelpText = "Unregister application's settings from the list")]
+	[Verb("unreg-web-app", Aliases = ["unreg"], HelpText = "Unregister application's settings from the list")]
 	public class UnregAppOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Application name")]

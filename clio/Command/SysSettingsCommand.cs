@@ -4,7 +4,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("set-syssetting", Aliases = new[] { "syssetting", "sys-setting", "get-syssetting"}, HelpText = "Set setting value")]
+	[Verb("set-syssetting", Aliases = ["syssettin", "sys-setting", "get-syssetting"], HelpText = "Set setting value")]
 	public class SysSettingsOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Syssetting code")]

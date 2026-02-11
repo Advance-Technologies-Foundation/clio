@@ -4,6 +4,9 @@
     <File Path="README.md" />
     <File Path="clio/Commands.md" />
   </Folder>
+  <Project Path="../commandline/src/CommandLine/CommandLine.csproj" />
+  <Project Path="../creatioclient/creatioclient/creatioclient.csproj" />
+  <Project Path="../repository/ATF.Repository/ATF.Repository.csproj" />
   <Project Path="clio.tests\clio.tests.csproj" />
   <Project Path="cliogate.tests\cliogate.tests.csproj">
     <Configuration Solution="Release|Any CPU" Project="Release|Any CPU|NoBuild" />

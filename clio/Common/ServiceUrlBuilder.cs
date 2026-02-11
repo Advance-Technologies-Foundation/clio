@@ -65,7 +65,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// </summary>
 		ProcessSchemaRequest = 18,
 		StartLogBroadcast = 19,
-		StopLogBroadcast = 20
+		StopLogBroadcast = 20,
+		ClearRedisDb = 21
 
 	}
 
@@ -100,6 +101,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ProcessSchemaRequest, "DataService/json/SyncReply/ProcessSchemaRequest"},
 		{KnownRoute.StartLogBroadcast, "/rest/ATFLogService/StartLogBroadcast"},
 		{KnownRoute.StopLogBroadcast, "/rest/ATFLogService/ResetConfiguration"},
+		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

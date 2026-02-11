@@ -1,11 +1,12 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using ConsoleTables;
 using FluentValidation.Results;
 
 namespace Clio.Common
 {
-	public interface ILogger
-	{
+	public interface ILogger{
+		
 		/// <summary>
 		/// Starts the logging process.
 		/// </summary>

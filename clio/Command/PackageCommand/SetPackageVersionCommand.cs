@@ -9,7 +9,7 @@ namespace Clio.Command.PackageCommand
 
 	#region Class: SetPackageVersionOptions
 
-	[Verb("set-pkg-version", Aliases = new string[] { "pkgversion" }, HelpText = "Set package version")]
+	[Verb("set-pkg-version", Aliases = ["spv"], HelpText = "Set package version")]
 	public class SetPackageVersionOptions
 	{
 		[Value(0, MetaName = "PackagePath", Required = true, HelpText = "Package path")]

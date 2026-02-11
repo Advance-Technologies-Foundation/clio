@@ -11,7 +11,7 @@ using Terrasoft.Common;
 namespace Clio.Command.ApplicationCommand
 {
 
-	[Verb("set-app-version", Aliases = new string[] { "appversion" }, HelpText = "Set application version")]
+	[Verb("set-app-version", Aliases = ["appversion"], HelpText = "Set application version")]
 	internal class SetApplicationVersionOption
 	{
 		[Option('v', "app-version", Required = true, HelpText = "Application version")]

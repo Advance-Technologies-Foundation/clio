@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -25,6 +26,8 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	private IWebBrowser _webBrowser;
 	private IProcessExecutor _processExecutor;
 	private EnvManageUiCommand _command;
+	private IServiceUrlBuilder _serviceUrlBuilder;
+	private IDataProvider _dataProvider;
 
 	#endregion
 
@@ -40,6 +43,8 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 		_clioGateway = Substitute.For<IClioGateway>();
 		_webBrowser = Substitute.For<IWebBrowser>();
 		_processExecutor = Substitute.For<IProcessExecutor>();
+		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_dataProvider = Substitute.For<IDataProvider>();
 		
 		_command = new EnvManageUiCommand(
 			_settingsRepository,
@@ -48,7 +53,7 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 			_applicationClientFactory,
 			_clioGateway,
 			_webBrowser,
-			_processExecutor);
+			_processExecutor, _serviceUrlBuilder, _dataProvider);
 		
 		// Default setup
 		_settingsRepository.AppSettingsFilePath.Returns("/test/path/appsettings.json");
@@ -72,7 +77,7 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 			_applicationClientFactory,
 			_clioGateway,
 			_webBrowser,
-			_processExecutor);
+			_processExecutor, _serviceUrlBuilder, _dataProvider);
 		
 		// Assert
 		command.Should().NotBeNull(because: "command should be created with valid dependencies");
@@ -83,13 +88,13 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	public void Constructor_WithNullDependencies_ShouldThrow()
 	{
 		// Arrange & Act & Assert
-		Action actNullRepo = () => new EnvManageUiCommand(null, _logger, _service, _applicationClientFactory, _clioGateway, _webBrowser, _processExecutor);
-		Action actNullLogger = () => new EnvManageUiCommand(_settingsRepository, null, _service, _applicationClientFactory, _clioGateway, _webBrowser, _processExecutor);
-		Action actNullService = () => new EnvManageUiCommand(_settingsRepository, _logger, null, _applicationClientFactory, _clioGateway, _webBrowser, _processExecutor);
-		Action actNullClientFactory = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, null, _clioGateway, _webBrowser, _processExecutor);
-		Action actNullGateway = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, _applicationClientFactory, null, _webBrowser, _processExecutor);
-		Action actNullWebBrowser = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, _applicationClientFactory, _clioGateway, null, _processExecutor);
-		Action actNullProcessExecutor = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, _applicationClientFactory, _clioGateway, _webBrowser, null);
+		Action actNullRepo = () => new EnvManageUiCommand(null, _logger, _service, _applicationClientFactory, _clioGateway, _webBrowser, _processExecutor, _serviceUrlBuilder, _dataProvider);
+		Action actNullLogger = () => new EnvManageUiCommand(_settingsRepository, null, _service, _applicationClientFactory, _clioGateway, _webBrowser, _processExecutor, _serviceUrlBuilder, _dataProvider);
+		Action actNullService = () => new EnvManageUiCommand(_settingsRepository, _logger, null, _applicationClientFactory, _clioGateway, _webBrowser, _processExecutor, _serviceUrlBuilder, _dataProvider);
+		Action actNullClientFactory = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, null, _clioGateway, _webBrowser, _processExecutor, _serviceUrlBuilder, _dataProvider);
+		Action actNullGateway = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, _applicationClientFactory, null, _webBrowser, _processExecutor, _serviceUrlBuilder, _dataProvider);
+		Action actNullWebBrowser = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, _applicationClientFactory, _clioGateway, null, _processExecutor, _serviceUrlBuilder, _dataProvider);
+		Action actNullProcessExecutor = () => new EnvManageUiCommand(_settingsRepository, _logger, _service, _applicationClientFactory, _clioGateway, _webBrowser, null, _serviceUrlBuilder, _dataProvider);
 		
 		actNullRepo.Should().Throw<ArgumentNullException>(because: "settings repository is required");
 		actNullLogger.Should().Throw<ArgumentNullException>(because: "logger is required");

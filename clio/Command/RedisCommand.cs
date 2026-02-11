@@ -4,18 +4,20 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("clear-redis-db", Aliases = new string[] { "flushdb" }, HelpText = "Clear redis database")]
+	[Verb("clear-redis-db", Aliases = ["flushdb"], HelpText = "Clear redis database")]
 	public class ClearRedisOptions : RemoteCommandOptions
 	{
 	}
 
 	public class RedisCommand : RemoteCommand<ClearRedisOptions>
 	{
-		public RedisCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+		private readonly IServiceUrlBuilder _urlBuilder;
+
+		public RedisCommand(IApplicationClient applicationClient, EnvironmentSettings settings, IServiceUrlBuilder urlBuilder)
 			: base(applicationClient, settings) {
+			_urlBuilder = urlBuilder;
 		}
 
-		protected override string ServicePath =>  @"/ServiceModel/AppInstallerService.svc/ClearRedisDb";
-
+		protected override string ServicePath => _urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ClearRedisDb);
 	}
 }

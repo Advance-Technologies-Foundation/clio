@@ -3,10 +3,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
 using FluentValidation;
+using FluentValidation.Results;
 using Terrasoft.Common;
 
 #endregion
@@ -15,7 +17,7 @@ namespace Clio.Command;
 
 #region Class: CreateTestProjectCommand
 
-internal class CreateTestProjectCommand{
+internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 	#region Constants: Private
 
 	private const string TestsDirectoryName = "tests";
@@ -96,7 +98,14 @@ internal class CreateTestProjectCommand{
 
 	#region Methods: Public
 
-	public int Execute(CreateTestProjectOptions options) {
+	public override int Execute(CreateTestProjectOptions options) {
+		
+		ValidationResult validationResult = _optionsValidator.Validate(options);
+		if (validationResult.Errors.Count != 0) {
+			PrintErrors(validationResult.Errors);
+			return 1;
+		}
+		
 		try {
 			IList<string> packages = options.PackageName.IsNullOrEmpty()
 				? _workspace.WorkspaceSettings.Packages
@@ -145,7 +154,7 @@ internal class CreateTestProjectCommand{
 
 #region Class: CreateTestProjectOptions
 
-[Verb("new-test-project", Aliases = ["create-test-project"], HelpText = "Add new test project")]
+[Verb("new-test-project", Aliases = ["unit-test","create-test-project"], HelpText = "Add new test project")]
 public class CreateTestProjectOptions : EnvironmentOptions{
 	#region Properties: Public
 

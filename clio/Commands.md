@@ -762,7 +762,7 @@ clio update -y
 - [Upload Licenses](#lic)
 - [Restart application](./docs/commands/RestartCommand.md)
 - [Clear Redis database](./docs/commands/RedisCommand.md)
-- [Compile configuration](#compile-configuration)
+- [Compile configuration](./docs/commands/CompileConfigurationCommand.md)
 - [Get compilation log](#last-compilation-log)
 - [Set system setting](#set-syssetting)
 - [Get system setting](#get-syssetting)
@@ -1217,21 +1217,51 @@ clio clear-redis-db <ENVIRONMENT_NAME>
 
 ## compile-configuration
 
-For compile configuration
+Compiles the Creatio configuration remotely with real-time progress monitoring. Tracks each project being compiled, displays compilation duration, and reports any errors or warnings.
 
+**Aliases:** `cc`, `compile-remote`
+
+**Detailed Documentation:** [`compile-configuration`](./docs/commands/CompileConfigurationCommand.md)
+
+### Synopsis
 ```bash
-clio compile-configuration
-```
-or
-```bash
-clio compile-configuration <ENVIRONMENT_NAME>
+clio compile-configuration [options]
 ```
 
-for compile all
+### Options
+- `--all` - Perform full rebuild (compile all configurations). Default: `false`
+- `-e`, `--Environment` - Environment name from configuration
+- `--timeout` - Request timeout in milliseconds. Default: Infinite
 
+### Examples
+
+Basic compilation with progress tracking:
 ```bash
-clio compile-configuration --all
+clio compile-configuration -e development
 ```
+
+Using short alias:
+```bash
+clio cc -e production
+```
+
+Full rebuild of all configurations:
+```bash
+clio compile-configuration --all -e staging
+```
+
+### Output
+Provides detailed real-time output including:
+- Compilation start time and progress updates for each project
+- Duration of each project compilation (color-coded: green < 5s, yellow 5-10s, red > 10s)
+- Highlighted output for OData and Dev projects
+- Errors and warnings with file locations and line numbers
+- Total compilation time and final status
+
+### Prerequisites
+- Valid Creatio environment with accessible web services
+- Administrator credentials
+- cliogate must be installed on the target environment
 
 ## last-compilation-log
 

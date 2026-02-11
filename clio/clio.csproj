@@ -10,7 +10,7 @@
 	  <PackageTags>cli ATF clio creatio</PackageTags>
 	  <NeutralLanguage>en</NeutralLanguage>
 	  <!-- Default version for local development. Will be overridden during release from tag -->
-      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.112</AssemblyVersion>
+      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.113</AssemblyVersion>
 	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(AssemblyVersion)</Version>
 	  <Description>CLI interface for Creatio</Description>
@@ -878,10 +878,35 @@
       </ItemGroup>
     </Otherwise>
   </Choose>
+  
+  <Choose>
+    <When Condition="Exists('..\..\commandline\src\CommandLine\CommandLine.csproj')">
+      <ItemGroup>
+        <ProjectReference Include="..\..\commandline\src\CommandLine\CommandLine.csproj" />
+      </ItemGroup>
+    </When>
+    <Otherwise>
+      <ItemGroup>
+        <PackageReference Include="CommandLineSDK" Version="1.0.11" />
+      </ItemGroup>
+    </Otherwise>
+  </Choose>
+  
+  <Choose>
+    <When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
+      <ItemGroup>
+        <ProjectReference Include="..\..\repository\ATF.Repository\ATF.Repository.csproj" />
+      </ItemGroup>
+    </When>
+    <Otherwise>
+      <ItemGroup>
+        <PackageReference Include="ATF.Repository" Version="2.0.3.3" />
+      </ItemGroup>
+    </Otherwise>
+  </Choose>
+  
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="2.0.3.3" />
     <PackageReference Include="Autofac" Version="9.0.0" />
-    <PackageReference Include="CommandLineSDK" Version="1.0.11" />
     <PackageReference Include="ConsoleTables" Version="2.7.0" />
     <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
     <PackageReference Include="ErrorOr" Version="2.1.0" />
@@ -1001,5 +1026,7 @@
     <Compile Update="SetWebServiceUrlCommand.cs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
   </ItemGroup>
 </Project>

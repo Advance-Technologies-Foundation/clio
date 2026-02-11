@@ -96,11 +96,11 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
 	#region Methods: Private
 
-	private static void PrintErrors(IEnumerable<ValidationFailure> errors) {
-		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
-			.ToList().ForEach(e => Console
-				.WriteLine($"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}"));
-	}
+	// private static void PrintErrors(IEnumerable<ValidationFailure> errors) {
+	// 	errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
+	// 		.ToList().ForEach(e => Console
+	// 			.WriteLine($"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}"));
+	// }
 
 	#endregion
 
