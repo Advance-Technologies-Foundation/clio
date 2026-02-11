@@ -5,7 +5,7 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("generate-pkg-zip", Aliases = ["compress"], HelpText = "Prepare an archive of creatio package")]
+	[Verb("generate-pkg-zip", Aliases = ["comp-pkg","compress"], HelpText = "Prepare an archive of creatio package")]
 	public class GeneratePkgZipOptions
 	{
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]

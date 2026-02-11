@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
+using ATF.Repository.Providers;
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.Utilities;
@@ -50,6 +52,9 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private readonly IClioGateway _clioGateway;
 	private readonly IWebBrowser _webBrowser;
 	private readonly IProcessExecutor _processExecutor;
+	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IDataProvider _dataProvider;
+	private readonly IDataAdapter _dataAdapter;
 
 	#endregion
 
@@ -62,7 +67,8 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		IApplicationClientFactory applicationClientFactory,
 		IClioGateway clioGateway,
 		IWebBrowser webBrowser,
-		IProcessExecutor processExecutor)
+		IProcessExecutor processExecutor, IServiceUrlBuilder serviceUrlBuilder, 
+		IDataProvider dataProvider)
 	{
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -71,6 +77,8 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		_clioGateway = clioGateway ?? throw new ArgumentNullException(nameof(clioGateway));
 		_webBrowser = webBrowser ?? throw new ArgumentNullException(nameof(webBrowser));
 		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
+		_serviceUrlBuilder = serviceUrlBuilder;
+		_dataProvider = dataProvider;
 	}
 
 	#endregion
@@ -1021,7 +1029,7 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private int ExecuteClearRedis(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var command = new RedisCommand(_applicationClientFactory.CreateClient(settings), settings);
+		var command = new RedisCommand(_applicationClientFactory.CreateClient(settings), settings, _serviceUrlBuilder);
 		return command.Execute(new ClearRedisOptions { Environment = envName });
 	}
 
@@ -1069,7 +1077,7 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		var command = new CompileConfigurationCommand(
 			_applicationClientFactory.CreateClient(settings),
 			settings,
-			serviceUrlBuilder);
+			serviceUrlBuilder, _dataProvider, _logger);
 		return command.Execute(new CompileConfigurationOptions { Environment = envName });
 	}
 

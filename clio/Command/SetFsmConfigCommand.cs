@@ -93,17 +93,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	}
 
 	#endregion
-
-	#region Methods: Private
-
-	private static void PrintErrors(IEnumerable<ValidationFailure> errors) {
-		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
-			.ToList().ForEach(e => Console
-				.WriteLine($"{e.Severity.ToString().ToUpper(CultureInfo.InvariantCulture)} ({e.ErrorCode}) - {e.ErrorMessage}"));
-	}
-
-	#endregion
-
+	
 	#region Methods: Public
 	public override int Execute(SetFsmConfigOptions options) {
 

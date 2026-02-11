@@ -62,18 +62,6 @@ namespace CreatioModel
 		public string Branch { get;  set; }
 	}
 
-	[ExcludeFromCodeCoverage]
-	[Schema("Contact")]
-	public class Contact : BaseModel
-	{
-
-		[SchemaProperty("Name")]
-		public string Name {
-			get; set;
-		}
-
-	}
-
 }
 
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.

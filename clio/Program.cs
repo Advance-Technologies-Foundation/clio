@@ -41,6 +41,7 @@ internal class Program {
 		typeof(AppListOptions),
 		typeof(ExecuteAssemblyOptions),
 		// Package management
+		typeof(CompressAppOptions),
 		typeof(GeneratePkgZipOptions),
 		typeof(UnzipPkgOptions),
 		typeof(PushPkgOptions),
@@ -84,6 +85,7 @@ internal class Program {
 		typeof(LockPackageOptions),
 		typeof(DeactivatePkgOptions),
 		typeof(CompilePackageOptions),
+		typeof(CompileConfigurationOptions),
 		// Development
 		typeof(DataServiceQueryOptions),
 		typeof(CallServiceCommandOptions),
@@ -94,7 +96,6 @@ internal class Program {
 		typeof(InfoCommandOptions),
 		typeof(ExternalLinkOptions),
 		typeof(OpenCfgOptions),
-		typeof(CompileConfigurationOptions),
 		typeof(Link2RepoOptions),
 		typeof(Link4RepoOptions),
 		typeof(LinkPackageStoreOptions),
@@ -102,7 +103,6 @@ internal class Program {
 		typeof(TurnFarmModeOptions),
 		typeof(SetFsmConfigOptions),
 		typeof(ScenarioRunnerOptions),
-		typeof(CompressAppOptions),
 		typeof(InstallApplicationOptions),
 		typeof(ConfigureWorkspaceOptions),
 		typeof(GitSyncOptions),

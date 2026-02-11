@@ -9,7 +9,7 @@ namespace Clio.Command;
 
 #region Class: CreateUiProjectOptions
 
-[Verb("new-ui-project", Aliases = new[] {"create-ui-project", "new-ui", "createup", "uiproject", "ui"},
+[Verb("new-ui-project", Aliases = ["ui", "create-ui-project", "new-ui", "createup", "uiproject"],
 	HelpText = "Add new UI project")]
 public class CreateUiProjectOptions : EnvironmentOptions {
 

@@ -5,7 +5,7 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("compile-package", HelpText = "Build package command")]
+[Verb("compile-package", Aliases = ["comp-pkg"], HelpText = "Build package command")]
 public class CompilePackageOptions : EnvironmentNameOptions
 {
 

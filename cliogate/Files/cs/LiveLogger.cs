@@ -21,7 +21,7 @@ namespace cliogate.Files.cs {
 		public LiveLogger(IWebSocket webSocket) {
 			_webSocket = webSocket;
 		}
-
+		
 		public void Log(string message) {
 			if (message.StartsWith("[INF]")) {
 				LogInfo(message.Substring(5).TrimStart('-', ' ')); // Remove the log type and any leading dash or space
