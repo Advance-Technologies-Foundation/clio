@@ -18,7 +18,7 @@ namespace Clio.Command;
 
 #region Class: CompileConfigurationOptions
 
-[Verb("compile-configuration", Aliases = ["cc","compile=remote"], HelpText = "Compile configuration")]
+[Verb("compile-configuration", Aliases = ["cc","compile-remote"], HelpText = "Compile configuration")]
 public class CompileConfigurationOptions : RemoteCommandOptions
 {
 
@@ -88,7 +88,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		_logger.WriteInfo($"At: {DateTime.Now:HH:mm:ss} Starting compilation...");
 		_logger.WriteLine();
 		
-		CancellationTokenSource cts = new ();
+		using CancellationTokenSource cts = new ();
 		Thread thread = new (()=> {
 			GetLatestCompilationHistory(lastRecord?.CreatedOn ?? DateTime.MinValue, cts.Token);
 		});
@@ -140,8 +140,9 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				}
 			});
 			lastRecord = records.Count > 0 ? records.Max(x => x.CreatedOn) : lastRecord;
-			Thread.Sleep(1_000);
-			GetLatestCompilationHistory(lastRecord, cancellationToken);
+			if (cancellationToken.WaitHandle.WaitOne(1_000)) {
+				break;
+			}
 		}
 	}
 
@@ -178,7 +179,6 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			if (!model.Success) {
 				Logger.WriteError($"{model.ErrorInfo.ErrorCode}: {model.ErrorInfo.Message}");
 			}
-			string x = $"{TimeSpan.FromMicroseconds(234562345)}";
 		}
 		catch (Exception e) {
 			Logger.WriteError(e.Message);
