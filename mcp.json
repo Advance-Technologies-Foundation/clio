@@ -20,6 +20,16 @@
       "args": [
         "mcp-server-kubernetes"
       ]
+    },
+    "clio-mcp-server": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "/Users/v.nikonov/Documents/GitHub/clio/clio.mcp.server/bin/Debug/net8.0/clio-mcp-server.dll"
+      ],
+      "env": {
+        "CLIO_MCP_HOME": "/Users/v.nikonov/Documents/GitHub/clio/.clio"
+      }
     }
   }
 }

@@ -1,24 +1,26 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 
 namespace Clio.McpServer;
 
 internal static class Program {
-	private static async Task<int> Main() {
+	private static async Task Main(string[] args) {
 		ApplyOptionalSettingsHomeOverride();
 
-		JsonSerializerOptions jsonOptions = new() {
-			PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-			WriteIndented = false
-		};
+		HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+		builder.Logging.AddConsole(options => {
+			options.LogToStandardErrorThreshold = LogLevel.Trace;
+		});
 
-		ClioFacade facade = new();
-		McpToolRegistry toolRegistry = new(facade, jsonOptions);
-		StdioJsonRpcTransport transport = new(jsonOptions);
-		McpServer server = new(toolRegistry, transport, jsonOptions);
+		builder.Services.AddSingleton<ClioFacade>();
+		builder.Services
+			.AddMcpServer()
+			.WithStdioServerTransport()
+			.WithToolsFromAssembly();
 
-		await server.RunAsync(CancellationToken.None);
-		return 0;
+		await builder.Build().RunAsync();
 	}
 
 	private static void ApplyOptionalSettingsHomeOverride() {

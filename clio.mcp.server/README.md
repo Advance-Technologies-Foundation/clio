@@ -1,6 +1,6 @@
-# clio-mcp-server (PoC)
+# clio-mcp-server
 
-Minimal MCP server over stdio that exposes AI-friendly tools on top of `clio`.
+MCP server for `clio`, implemented with the Microsoft C# MCP SDK (`ModelContextProtocol`).
 
 ## Run
 
@@ -17,3 +17,8 @@ dotnet run --project /Users/v.nikonov/Documents/GitHub/clio/clio.mcp.server/clio
 - `creatio.ping`
 - `creatio.get_info`
 - `creatio.call_service`
+
+## Notes
+
+- Uses `stdio` transport via SDK (`WithStdioServerTransport`).
+- Optional env var: `CLIO_MCP_HOME` to override where clio settings are stored.

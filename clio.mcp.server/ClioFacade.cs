@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace Clio.McpServer;
 
-internal sealed class ClioFacade {
+public sealed class ClioFacade {
 	private readonly ISettingsRepository _settingsRepository = new SettingsRepository();
 
 	public ToolExecutionResult ListEnvironments(JsonElement args) {
