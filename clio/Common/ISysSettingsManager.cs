@@ -76,6 +76,10 @@ public class SysSettingsManager : ISysSettingsManager
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 	};
 
+	private sealed record UpdateSysSettingResponse(
+		[property: JsonPropertyName("success")] bool Success,
+		[property: JsonPropertyName("responseStatus")] ResponseStatus ResponseStatus);
+
 	#endregion
 
 	#region Constructors: Public
@@ -254,8 +258,24 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		var result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
-		return true;
+		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+		if (string.IsNullOrWhiteSpace(result)) {
+			_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
+			return false;
+		}
+		try {
+			UpdateSysSettingResponse response = JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
+			bool hasError = !string.IsNullOrWhiteSpace(response?.ResponseStatus?.ErrorCode)
+				|| !string.IsNullOrWhiteSpace(response?.ResponseStatus?.Message);
+			if (response is null || !response.Success || hasError) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated.");
+				return false;
+			}
+			return true;
+		} catch (JsonException) {
+			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
+			return false;
+		}
 	}
 
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
