@@ -15,4 +15,5 @@
     <Configuration Solution="Release|Any CPU" Project="Release|Any CPU|NoBuild" />
   </Project>
   <Project Path="clio\clio.csproj" />
+  <Project Path="clio.mcp.server\clio.mcp.server.csproj" />
 </Solution>

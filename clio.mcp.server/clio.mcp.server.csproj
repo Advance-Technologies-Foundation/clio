@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Clio.McpServer</RootNamespace>
+    <AssemblyName>clio-mcp-server</AssemblyName>
+    <Company>creatio</Company>
+    <Product>clio</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../clio/clio.csproj" />
+  </ItemGroup>
+
+</Project>
