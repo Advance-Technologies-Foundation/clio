@@ -1,4 +1,4 @@
-﻿# unlock-package
+﻿﻿﻿# unlock-package
 
 ## Purpose
 
@@ -24,6 +24,7 @@ clio up [package-names] [options]
 | Argument | Short | Default | Description | Example |
 |----------|-------|---------|-------------|---------|
 | `--environment` | `-e` | - | Environment name from configuration | `--environment dev` |
+| `--maintainer` | `-m` | - | Maintainer value used to set `Maintainer` system setting and clear `SchemaNamePrefix` before unlock-all flow. Required when `package-names` is omitted | `--maintainer Creatio` |
 
 #### Direct Connection (Alternative to Environment)
 | Argument | Short | Default | Description | Example |
@@ -55,7 +56,7 @@ clio unlock-package MyPackage,AnotherPackage,ThirdPackage -e dev
 
 Unlock all packages in the environment:
 ```bash
-clio unlock-package -e dev
+clio unlock-package -m Creatio -e dev
 ```
 
 ### Using Short Alias
@@ -91,13 +92,16 @@ clio push-workspace -e dev
 
 Unlock all packages for maintenance:
 ```bash
-clio unlock-package -e dev
+clio unlock-package -m Creatio -e dev
 ```
 
 ## Output
 
 ### Successful Unlock
 ```
+Setting Maintainer sys setting to 'Creatio'.
+Setting SchemaNamePrefix sys setting to an empty value.
+Unlocking all packages in environment 'dev' for maintainer 'Creatio'.
 Done
 ```
 
@@ -126,6 +130,9 @@ To install cliogate use the following command: clio install-gate -e dev
 - **Single package**: Provide the exact package name as it appears in Creatio
 - **Multiple packages**: Separate package names with commas (no spaces recommended)
 - **All packages**: Omit the package name argument to unlock all packages in the environment
+- **Unlock all requirement**: When omitting package names, pass `-m/--maintainer` so command can:
+  - Set `Maintainer` system setting to the specified value
+  - Clear `SchemaNamePrefix` system setting (set to empty string)
 - Package names are case-sensitive and must match exactly
 
 ### Authentication Priority

@@ -1,4 +1,4 @@
-﻿unlock-package - Unlock packages in Creatio environment
+﻿﻿unlock-package - Unlock packages in Creatio environment
 
 SYNOPSIS
     clio unlock-package [package-names] [options]
@@ -16,6 +16,11 @@ ARGUMENTS
         Example: MyPackage,AnotherPackage,ThirdPackage
 
 OPTIONS
+    -m, --maintainer <NAME>
+        Maintainer value used to set Maintainer system setting and clear 
+        SchemaNamePrefix before unlocking all packages.
+        Required when unlocking all packages (without package-names).
+
     -e, --environment <NAME>
         Environment name from configuration (recommended)
 
@@ -46,7 +51,13 @@ EXAMPLES
         clio unlock-package Package1,Package2,Package3 -e dev
 
     Unlock all packages:
-        clio unlock-package -e dev
+        clio unlock-package -m Creatio -e dev
+        
+        Output:
+        Setting Maintainer sys setting to 'Creatio'.
+        Setting SchemaNamePrefix sys setting to an empty value.
+        Unlocking all packages in environment 'dev' for maintainer 'Creatio'.
+        Done
 
     Using direct authentication:
         clio unlock-package MyPackage --uri https://myapp.com -l admin -p pass
