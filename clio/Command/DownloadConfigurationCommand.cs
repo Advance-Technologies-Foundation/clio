@@ -1,29 +1,28 @@
-﻿using Clio.Workspace;
+﻿using System;
+using System.IO.Abstractions;
+using System.Linq;
+using Clio.Common;
+using Clio.UserEnvironment;
+using Clio.Workspace;
+using Clio.Workspaces;
+using CommandLine;
+using FluentValidation;
+using FluentValidation.Results;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
-using System;
-using System.IO.Abstractions;
-using System.Linq;
-using CommandLine;
-using Common;
-using FluentValidation;
-using FluentValidation.Results;
-using Workspaces;
-
 #region Class: DownloadConfigurationCommandOptionsValidator
 
-public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<DownloadConfigurationCommandOptions>
-{
-	public DownloadConfigurationCommandOptionsValidator(System.IO.Abstractions.IFileSystem fileSystem)
-	{
-		System.IO.Abstractions.IFileSystem fileSystem1 = fileSystem;
-			
+public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<DownloadConfigurationCommandOptions>{
+	#region Constructors: Public
+
+	public DownloadConfigurationCommandOptionsValidator(IFileSystem fileSystem) {
+		IFileSystem fileSystem1 = fileSystem;
+
 		RuleFor(o => o.BuildZipPath)
-			.Custom((value, context) =>
-			{
-				if (string.IsNullOrWhiteSpace(value))
-				{
+			.Custom((value, context) => {
+				if (string.IsNullOrWhiteSpace(value)) {
 					// If BuildZipPath is not provided, no validation needed (will use environment)
 					return;
 				}
@@ -32,62 +31,56 @@ public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<Do
 				bool isFile = fileSystem1.File.Exists(value);
 				bool isDirectory = fileSystem1.Directory.Exists(value);
 
-				if (!isFile && !isDirectory)
-				{
-					context.AddFailure(new ValidationFailure
-					{
+				if (!isFile && !isDirectory) {
+					context.AddFailure(new ValidationFailure {
 						ErrorCode = "FILE001",
 						ErrorMessage = $"Path not found: {value}",
 						Severity = Severity.Error,
-						AttemptedValue = value,
+						AttemptedValue = value
 					});
 					return;
 				}
 
 				// If it's a file, check if it has .zip extension
-				if (isFile)
-				{
+				if (isFile) {
 					string extension = fileSystem1.Path.GetExtension(value);
-					if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
-					{
-						context.AddFailure(new ValidationFailure
-						{
+					if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) {
+						context.AddFailure(new ValidationFailure {
 							ErrorCode = "FILE002",
 							ErrorMessage = $"File must have .zip extension. Current extension: {extension}",
 							Severity = Severity.Error,
-							AttemptedValue = value,
+							AttemptedValue = value
 						});
 						return;
 					}
 
 					// Check if the file is not empty
 					IFileInfo fileInfo = fileSystem1.FileInfo.New(value);
-					if (fileInfo.Length == 0)
-					{
-						context.AddFailure(new ValidationFailure
-						{
+					if (fileInfo.Length == 0) {
+						context.AddFailure(new ValidationFailure {
 							ErrorCode = "FILE003",
 							ErrorMessage = $"Zip file is empty: {value}",
 							Severity = Severity.Error,
-							AttemptedValue = value,
+							AttemptedValue = value
 						});
 					}
 				}
+
 				// If it's a directory, check if it's not empty
 				else {
-					if (!fileSystem1.Directory.EnumerateFileSystemEntries(value).Any())
-					{
-						context.AddFailure(new ValidationFailure
-						{
+					if (!fileSystem1.Directory.EnumerateFileSystemEntries(value).Any()) {
+						context.AddFailure(new ValidationFailure {
 							ErrorCode = "FILE004",
 							ErrorMessage = $"Directory is empty: {value}",
 							Severity = Severity.Error,
-							AttemptedValue = value,
+							AttemptedValue = value
 						});
 					}
 				}
 			});
 	}
+
+	#endregion
 }
 
 #endregion
@@ -95,38 +88,40 @@ public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<Do
 #region Class: DownloadLibsCommandOptions
 
 [Verb("download-configuration", Aliases = ["dconf"], HelpText = "Download libraries from web-application")]
-public class DownloadConfigurationCommandOptions : EnvironmentOptions
-{
-	[Option('b', "build", Required = false, 
+public class DownloadConfigurationCommandOptions : EnvironmentOptions{
+	#region Properties: Public
+
+	[Option('b', "build", Required = false,
 		HelpText = "Path to Creatio zip file or extracted directory to get configuration from")]
 	public string BuildZipPath { get; set; }
+
+	#endregion
 }
 
 #endregion
 
 #region Class: DownloadLibsCommand
 
-public class DownloadConfigurationCommand : Command<DownloadConfigurationCommandOptions>
-{
-		
+public class DownloadConfigurationCommand : Command<DownloadConfigurationCommandOptions>{
 	#region Fields: Private
 
 	private readonly IApplicationDownloader _applicationDownloader;
-	private readonly IZipBasedApplicationDownloader _zipBasedApplicationDownloader;
-	private readonly IWorkspace _workspace;
-	private readonly ILogger _logger;
-	private readonly Common.IFileSystem _fileSystem;
 	private readonly EnvironmentSettings _environmentSettings;
+	private readonly Common.IFileSystem _fileSystem;
+	private readonly ISettingsRepository _settingsRepository;
+	private readonly ILogger _logger;
+	private readonly IWorkspace _workspace;
+	private readonly IZipBasedApplicationDownloader _zipBasedApplicationDownloader;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public DownloadConfigurationCommand(
-		IApplicationDownloader applicationDownloader, 
+		IApplicationDownloader applicationDownloader,
 		IZipBasedApplicationDownloader zipBasedApplicationDownloader,
-		IWorkspace workspace, 
-		ILogger logger, Common.IFileSystem fileSystem) {
+		IWorkspace workspace,
+		ILogger logger, Common.IFileSystem fileSystem, ISettingsRepository settingsRepository) {
 		applicationDownloader.CheckArgumentNull(nameof(applicationDownloader));
 		zipBasedApplicationDownloader.CheckArgumentNull(nameof(zipBasedApplicationDownloader));
 		workspace.CheckArgumentNull(nameof(workspace));
@@ -135,55 +130,70 @@ public class DownloadConfigurationCommand : Command<DownloadConfigurationCommand
 		_workspace = workspace;
 		_logger = logger;
 		_fileSystem = fileSystem;
+		_settingsRepository = settingsRepository;
 	}
+
 	#endregion
-		
+
+	#region Methods: Private
+
+	private int DownloadFromDefaultEnv() {
+		if (Program.IsDebugMode) {
+			_logger.WriteDebug($"DownloadConfigurationCommand: Using {ConsoleLogger.WrapRed("default environment")} mode");
+		}
+		_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
+		return 0;
+	}
+
+	private int DownloadFromNamedEnv(DownloadConfigurationCommandOptions options) {
+		if (Program.IsDebugMode) {
+			_logger.WriteDebug($"DownloadConfigurationCommand: Using {ConsoleLogger.WrapRed("named env mode")} with path={options.Environment}");
+		}
+		EnvironmentSettings env = _settingsRepository.FindEnvironment(options.Environment);
+		if (!string.IsNullOrWhiteSpace(env?.EnvironmentPath) && _fileSystem.ExistsDirectory(env.EnvironmentPath)) {
+			_zipBasedApplicationDownloader.DownloadFromPath(env.EnvironmentPath);
+		}
+
+		return 0;
+	}
+
+	private int DownloadFromPath(DownloadConfigurationCommandOptions options) {
+		// Download from the zip file or directory (auto-detected)
+		if (Program.IsDebugMode) {
+			_logger.WriteDebug($"DownloadConfigurationCommand: Using {ConsoleLogger.WrapRed("build mode")} with path={options.BuildZipPath}");
+		}
+		_zipBasedApplicationDownloader.DownloadFromPath(options.BuildZipPath);
+		return 0;
+	}
+
+	#endregion
+
 	#region Methods: Public
 
 	public override int Execute(DownloadConfigurationCommandOptions options) {
 		try {
+			// Download from the build zip file
 			if (!string.IsNullOrWhiteSpace(options.BuildZipPath)) {
-				// Download from the zip file or directory (auto-detected)
-				if (Program.IsDebugMode) {
-					_logger.WriteDebug($"DownloadConfigurationCommand: Using build mode with path={options.BuildZipPath}");
-				}
-				_zipBasedApplicationDownloader.DownloadFromPath(options.BuildZipPath);
-				_logger.WriteLine("Done");
-				return 0;
+				return DownloadFromPath(options);
 			}
-			
+
+			// Download from the environment in options
 			if (!string.IsNullOrWhiteSpace(options.Environment)) {
-				SettingsRepository sr = new();
-				EnvironmentSettings env = sr.FindEnvironment(options.Environment);
-				if (!string.IsNullOrWhiteSpace(env?.EnvironmentPath) && _fileSystem.ExistsDirectory(env.EnvironmentPath)) {
-					_zipBasedApplicationDownloader.DownloadFromPath(env.EnvironmentPath);
-					_logger.WriteLine("Done");
-					return 0;
-				}
+				return DownloadFromNamedEnv(options);
 			}
-			
-			// Download from the live environment
-			if (Program.IsDebugMode) {
-				_logger.WriteDebug("DownloadConfigurationCommand: Using environment mode");
-			}
-			_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
-			
-			_logger.WriteLine("Done");
-			return 0;
+			return DownloadFromDefaultEnv();
 		}
-		catch (Exception ex)
-		{
+		catch (Exception ex) {
 			_logger.WriteError(ex.Message);
-			
 			if (Program.IsDebugMode) {
 				_logger.WriteError($"Stack trace: {ex.StackTrace}");
 			}
+
 			return 1;
 		}
 	}
 
 	#endregion
-
 }
 
 #endregion
