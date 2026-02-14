@@ -446,4 +446,90 @@ public class SysSettingsManagerTests
 
 	#endregion
 
+	#region Method : UpdateSysSetting
+
+	[Test]
+	public void UpdateSysSetting_ReturnsTrue_WhenApiResponseSuccessIsTrue(){
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
+			workingDirectoriesProvider, filesystem, logger);
+
+		string segment = EnvironmentSettings.IsNetCore switch {
+			true => "/DataService/json/SyncReply/PostSysSettingsValues",
+			false => "/0/DataService/json/SyncReply/PostSysSettingsValues"
+		};
+		string expectedUrl = EnvironmentSettings.Uri + segment;
+
+		applicationClient.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
+			.Returns(
+				"""
+				{
+				  "responseStatus": {
+				    "ErrorCode": "",
+				    "Message": "",
+				    "Errors": []
+				  },
+				  "rowsAffected": 1,
+				  "nextPrcElReady": false,
+				  "success": true
+				}
+				"""
+			);
+
+		// Act
+		bool actual = sut.UpdateSysSetting("Maintainer", "Creatio");
+
+		// Assert
+		actual.Should().BeTrue();
+	}
+
+	[Test]
+	public void UpdateSysSetting_ReturnsFalse_WhenApiResponseSuccessIsFalse(){
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
+			workingDirectoriesProvider, filesystem, logger);
+
+		string segment = EnvironmentSettings.IsNetCore switch {
+			true => "/DataService/json/SyncReply/PostSysSettingsValues",
+			false => "/0/DataService/json/SyncReply/PostSysSettingsValues"
+		};
+		string expectedUrl = EnvironmentSettings.Uri + segment;
+
+		applicationClient.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
+			.Returns(
+				"""
+				{
+				  "responseStatus": {
+				    "ErrorCode": "DbOperationException",
+				    "Message": "Could not update setting",
+				    "Errors": []
+				  },
+				  "rowsAffected": -1,
+				  "nextPrcElReady": false,
+				  "success": false
+				}
+				"""
+			);
+
+		// Act
+		bool actual = sut.UpdateSysSetting("Maintainer", "Creatio");
+
+		// Assert
+		actual.Should().BeFalse();
+	}
+
+	#endregion
+
 }

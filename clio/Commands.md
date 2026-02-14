@@ -1901,10 +1901,14 @@ clio unlock-package [package-names] -e <ENVIRONMENT_NAME>
 - `package-names` (optional): Comma-separated list of package names to unlock. If omitted, unlocks all packages in the environment
 
 **Options:**
-- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment name from configuration
+- `-e, --environment <ENVIRONMENT_NAME>` (recommended): Target environment name from configuration
+- `-m, --maintainer <NAME>` (required when `package-names` is omitted): Sets `Maintainer` system setting and clears `SchemaNamePrefix` before unlock-all flow
 - `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
-- `-l, --Login <LOGIN>` (optional): User login (administrator permission required)
-- `-p, --Password <PASSWORD>` (optional): User password
+- `-l, --login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --password <PASSWORD>` (optional): User password
+- `--clientid <ID>` (optional): OAuth Client ID (alternative authentication)
+- `--clientsecret <SECRET>` (optional): OAuth Client Secret (alternative authentication)
+- `--authappuri <URI>` (optional): OAuth Authentication App URI (alternative authentication)
 
 **Examples:**
 
@@ -1920,7 +1924,7 @@ clio unlock-package MyPackage,AnotherPackage,ThirdPackage -e dev
 
 Unlock all packages in the environment:
 ```bash
-clio unlock-package -e dev
+clio unlock-package -m Creatio -e dev
 ```
 
 Using the short alias:
