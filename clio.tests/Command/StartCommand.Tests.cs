@@ -27,7 +27,7 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 	private StartCommand _command;
 
 	[SetUp]
-	public void Setup()
+	public override void Setup()
 	{
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_dotnetExecutor = Substitute.For<IDotnetExecutor>();
