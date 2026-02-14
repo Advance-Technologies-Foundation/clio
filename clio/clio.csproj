@@ -1,1032 +1,150 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-	  <OutputType>Exe</OutputType>
-	  <TargetFramework>net8.0</TargetFramework>
-	  <PackAsTool>true</PackAsTool>
-	  <PackageId>clio</PackageId>
-	  <Company>creatio</Company>
-	  <Authors>creatio rnd team</Authors>
-	  <PackageTags>cli ATF clio creatio</PackageTags>
-	  <NeutralLanguage>en</NeutralLanguage>
-	  <!-- Default version for local development. Will be overridden during release from tag -->
-      <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.113</AssemblyVersion>
-	  <FileVersion>$(AssemblyVersion)</FileVersion>
-	  <Version>$(AssemblyVersion)</Version>
-	  <Description>CLI interface for Creatio</Description>
-      <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-<!--	  <PackageLicenseUrl></PackageLicenseUrl>-->
-	  <PackageLicense>MIT</PackageLicense>
-	  <RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
-	  <RepositoryType>git</RepositoryType>
-	  <PackageProjectUrl>https://github.com/Advance-Technologies-Foundation/clio</PackageProjectUrl>
-	  <Copyright>ATF ©2026</Copyright>
-	  <RootNamespace>Clio</RootNamespace>
-	  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
-	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
-	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <LangVersion>Latest</LangVersion>
-    <UseAppHost>false</UseAppHost>
-      <NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<PackAsTool>true</PackAsTool>
+		<PackageId>clio</PackageId>
+		<Company>creatio</Company>
+		<Authors>creatio rnd team</Authors>
+		<PackageTags>cli ATF clio creatio</PackageTags>
+		<NeutralLanguage>en</NeutralLanguage>
+		<!-- Default version for local development. Will be overridden during release from tag -->
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.1.115</AssemblyVersion>
+		<FileVersion>$(AssemblyVersion)</FileVersion>
+		<Version>$(AssemblyVersion)</Version>
+		<Description>CLI interface for Creatio</Description>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageLicense>MIT</PackageLicense>
+		<RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
+		<Copyright>ATF ©2026</Copyright>
+		<RootNamespace>Clio</RootNamespace>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
+		<LangVersion>Latest</LangVersion>
+		<UseAppHost>false</UseAppHost>
+		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <ErrorReport>prompt</ErrorReport>
-    <DebugType>none</DebugType>
-    <DebugSymbols>false</DebugSymbols>
-  </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+		<ErrorReport>prompt</ErrorReport>
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+	</PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+		<PlatformTarget>AnyCPU</PlatformTarget>
+	</PropertyGroup>
+	<ItemGroup>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+			<_Parameter1>clio.tests</_Parameter1>
+		</AssemblyAttribute>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-  </PropertyGroup>
-	
-  <ItemGroup>
-      <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-          <_Parameter1>clio.tests</_Parameter1>
-      </AssemblyAttribute>
-      <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-          <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
-      </AssemblyAttribute>
-  </ItemGroup>
+	<ItemGroup Label="AdditionalFiles">
+		<AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml"/>
+		<None Include="reg\**"/>
+		<Compile Remove="reg\**"/>
+		<Content Include="reg\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
 
-  <ItemGroup>
-    <None Remove="reg\clio_context_menu_win.reg" />
-    <None Remove="reg\unreg_clio_context_menu_win.reg" />
-    <None Remove="tpl\packages.config.tpl" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\.browserslistrc" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\.editorconfig" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\angular.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\karma.conf.js" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\package.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\README.md" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\app\app.module.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\app\view-elements\.gitkeep" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\assets\.gitkeep" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\bootstrap.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.prod.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\favicon.ico" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\index.html" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\main.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\polyfills.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\styles.scss" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\src\test.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\tsconfig.app.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\tsconfig.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\tsconfig.spec.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\webpack.config.js" />
-    <None Remove="tpl\ui\8.0.10\ui-project-Empty\webpack.prod.config.js" />
-    <None Remove="tpl\ui\8.0.10\ui-project\.browserslistrc" />
-    <None Remove="tpl\ui\8.0.10\ui-project\.editorconfig" />
-    <None Remove="tpl\ui\8.0.10\ui-project\angular.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project\karma.conf.js" />
-    <None Remove="tpl\ui\8.0.10\ui-project\package.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project\README.md" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\app\app.module.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo-icon.svg" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo.component.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\index.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\app\view-elements\index.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\assets\.gitkeep" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\bootstrap.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\environments\environment.prod.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\environments\environment.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\favicon.ico" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\index.html" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\main.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\polyfills.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\styles.scss" />
-    <None Remove="tpl\ui\8.0.10\ui-project\src\test.ts" />
-    <None Remove="tpl\ui\8.0.10\ui-project\tsconfig.app.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project\tsconfig.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project\tsconfig.spec.json" />
-    <None Remove="tpl\ui\8.0.10\ui-project\webpack.config.js" />
-    <None Remove="tpl\ui\8.0.10\ui-project\webpack.prod.config.js" />
-    <None Remove="tpl\workspace\.gitignore" />
-    <None Remove="tpl\workspace\.gitlab-ci.yml" />
-    <None Remove="tpl\workspace\Jenkinsfile" />
-    <None Remove="tpl\workspace\tasks\git-init-dev-branch.cmd" />
-    <None Remove="tpl\workspace\tasks\git-init-workspace.cmd" />
-    <None Remove="tpl\workspace\tasks\git-push.cmd" />
-    <None Remove="Wiki\WikiAnchors.txt" />
-    <None Update="cliogate\cliogate.gz">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="cliogate\cliogate_netcore.gz">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\app\view-elements\demo\demo-icon.svg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\app\view-elements\demo\demo.component.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\app\view-elements\demo\index.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\app\view-elements\index.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\environments\environment.prod.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\bootstrap.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\index.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\main.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\polyfills.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\styles.scss">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\test.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\.browserslistrc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\.editorconfig">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\angular.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\karma.conf.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\package.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\tsconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\tsconfig.app.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\tsconfig.spec.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\webpack.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\environments\environment.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project\src\assets\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\environments\environment.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\environments\environment.prod.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\bootstrap.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\index.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\main.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\polyfills.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\styles.scss">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\test.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\.browserslistrc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\.editorconfig">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\angular.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\karma.conf.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\package.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\tsconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\tsconfig.app.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\tsconfig.spec.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\webpack.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\assets\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\app\view-elements\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.3\ui-project-Empty\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\environments\environment.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\environments\environment.prod.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\bootstrap.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\index.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\main.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\polyfills.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\styles.scss">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\test.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\.browserslistrc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\.editorconfig">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\angular.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\karma.conf.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\package.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\tsconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\tsconfig.app.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\tsconfig.spec.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\webpack.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\webpack.prod.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\assets\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\assets\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\environments\environment.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\environments\environment.prod.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\app\view-elements\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\bootstrap.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\index.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\main.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\polyfills.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\styles.scss">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\src\test.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\.browserslistrc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\.editorconfig">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\angular.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\karma.conf.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\package.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\tsconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\tsconfig.app.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\tsconfig.spec.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\webpack.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project-Empty\webpack.prod.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\app\view-elements\index.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\app\view-elements\demo\index.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\app\view-elements\demo\demo.component.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\ui\8.0.8\ui-project\src\app\view-elements\demo\demo-icon.svg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\UnitTest.csproj.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\NugetProject.csproj.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\propItem-net472.xml.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\propItem-netstandard.xml.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\dataservice-requests\selectIdByDisplayValue.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    
-    
-    <Content Include="help\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    
-    
-    <None Update="tpl\UnitTestLibs\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    
-  </ItemGroup>
+		<None Include="tpl\**"/>
+		<Compile Remove="tpl\**"/>
+		<Content Include="tpl\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
 
-  <ItemGroup>
-    <Content Include="tpl\ui-project-Empty\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui-project\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+		<None Include="cliogate\**"/>
+		<Content Include="cliogate\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+		
+		<Compile Remove="Wiki\**" />
+		<Content Include="Wiki\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+		
+		<Compile Remove="help\**"/>
+		<Content Include="help\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+		
+	</ItemGroup>
 
-  <ItemGroup>
-    <AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml" />
-    <Content Include="reg\clio_context_menu_win.reg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="reg\unreg_clio_context_menu_win.reg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\packages.config.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\.browserslistrc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\.editorconfig">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\angular.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\karma.conf.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\package.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\app\view-elements\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\assets\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\bootstrap.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.prod.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\environments\environment.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\index.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\main.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\polyfills.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\styles.scss">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\src\test.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\tsconfig.app.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\tsconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\tsconfig.spec.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\webpack.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project-Empty\webpack.prod.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\.browserslistrc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\.editorconfig">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\angular.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\karma.conf.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\package.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\app\app.module.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo-icon.svg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\demo.component.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\demo\index.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\app\view-elements\index.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\assets\.gitkeep">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\bootstrap.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\environments\environment.prod.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\environments\environment.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\index.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\main.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\polyfills.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\styles.scss">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\src\test.ts">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\tsconfig.app.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\tsconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\tsconfig.spec.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\webpack.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\ui\8.0.10\ui-project\webpack.prod.config.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.application\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.clio\clioignore">
-		<Pack>true</Pack>
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.gitignore">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.gitlab-ci.yml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.nuget\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.solution\set-framework-environment.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.solution\set-netcore-environment.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.solution\set-netcore-environment.sh">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\.vscode\keybinding.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\Jenkinsfile">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\build-framework.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\build-netcore.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\build-netcore.sh">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\git-to-env.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\env-to-git.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\git-init-dev-branch.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\git-init-workspace.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\open-solution-framework.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\open-solution-netcore.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\workspace\tasks\run-all-platfrom-build.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+	<Choose>
+		<When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
+			<ItemGroup>
+				<ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj"/>
+			</ItemGroup>
+		</When>
+		<Otherwise>
+			<ItemGroup>
+				<PackageReference Include="creatio.client" Version="1.0.33"/>
+			</ItemGroup>
+		</Otherwise>
+	</Choose>
 
-    <None Remove="tpl\workspace\tasks\open-main-solution-framework.cmd" />
-    <Content Include="tpl\workspace\tasks\open-main-solution-framework.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\open-main-solution-netcore.cmd" />
-    <Content Include="tpl\workspace\tasks\open-main-solution-netcore.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+	<Choose>
+		<When Condition="Exists('..\..\commandline\src\CommandLine\CommandLine.csproj')">
+			<ItemGroup>
+				<ProjectReference Include="..\..\commandline\src\CommandLine\CommandLine.csproj"/>
+			</ItemGroup>
+		</When>
+		<Otherwise>
+			<ItemGroup>
+				<PackageReference Include="CommandLineSDK" Version="1.0.11"/>
+			</ItemGroup>
+		</Otherwise>
+	</Choose>
 
-    <None Remove="tpl\workspace\packages\Files\Libs\**" />
-    <Content Include="tpl\workspace\packages\Files\Libs\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    
-    <Content Include="tpl\workspace\packages\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\Assemblies\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\Data\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\Resources\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\Schemas\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="tpl\package\SqlScripts\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\open-solution-framework-sdk.cmd" />
-    <Content Include="tpl\workspace\tasks\open-solution-framework-sdk.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\open-solution-netcore-sdk.cmd" />
-    <Content Include="tpl\workspace\tasks\open-solution-netcore-sdk.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\run-all-platfrom-build-sdk.cmd" />
-    <Content Include="tpl\workspace\tasks\run-all-platfrom-build-sdk.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\build-netcore-sdk.sh" />
-    <Content Include="tpl\workspace\tasks\build-netcore-sdk.sh">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\build-netcore-sdk.cmd" />
-    <Content Include="tpl\workspace\tasks\build-netcore-sdk.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\build-framework-sdk.cmd" />
-    <Content Include="tpl\workspace\tasks\build-framework-sdk.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+	<Choose>
+		<When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
+			<ItemGroup>
+				<ProjectReference Include="..\..\repository\ATF.Repository\ATF.Repository.csproj"/>
+			</ItemGroup>
+		</When>
+		<Otherwise>
+			<ItemGroup>
+				<PackageReference Include="ATF.Repository" Version="2.0.3.3"/>
+			</ItemGroup>
+		</Otherwise>
+	</Choose>
 
-    <None Remove="tpl\k8\infrastructure\.codex\**" />
-    <Content Include="tpl\k8\infrastructure\.codex\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+	<ItemGroup>
+		<PackageReference Include="Autofac" Version="9.0.0"/>
+		<PackageReference Include="ConsoleTables" Version="2.7.0"/>
+		<PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
+		<PackageReference Include="ErrorOr" Version="2.1.0"/>
+		<PackageReference Include="FluentValidation" Version="12.1.1"/>
+		<PackageReference Include="KubernetesClient" Version="18.0.13"/>
+		<PackageReference Include="MediatR" Version="[12.5.0]"/>
+		<PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="[12.3.0]"/>
+		<PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4"/>
+		<PackageReference Include="Microsoft.Dism" Version="4.0.7"/>
+		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.3" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.3" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.3" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.3" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.3" />
+		<PackageReference Include="Microsoft.PowerShell.SDK" Version="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
+		<PackageReference Include="Microsoft.Web.Administration" Version="11.1.0"/>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4"/>
+		<PackageReference Include="Npgsql" Version="10.0.1"/>
+		<PackageReference Include="NRedisStack" Version="1.3.0" />
+		<PackageReference Include="OneOf" Version="3.0.271"/>
+		<PackageReference Include="Spectre.Console" Version="0.54.0"/>
+		<PackageReference Include="System.IO.Abstractions" Version="22.1.0"/>
+		<PackageReference Include="System.Json" Version="4.8.0"/>
+		<PackageReference Include="Ignore" Version="0.2.1"/>
+		<PackageReference Include="YamlDotNet" Version="16.3.0"/>
+		<PackageReference Include="SharpZipLib" Version="1.4.2"/>
+		<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.16.0" />
+	</ItemGroup>
 
-    <None Remove="tpl\k8\infrastructure\.vscode\**" />
-    <Content Include="tpl\k8\infrastructure\.vscode\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-
-    <None Remove="tpl\k8\infrastructure\.github\**" />
-    <Content Include="tpl\k8\infrastructure\.github\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    
-    
-    <None Remove="tpl\k8\infrastructure\email-listener\email-listener-services.yaml" />
-    <Content Include="tpl\k8\infrastructure\email-listener\email-listener-services.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\email-listener\email-listener-workload.yaml" />
-    <Content Include="tpl\k8\infrastructure\email-listener\email-listener-workload.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\mssql\mssq-secrets.yaml" />
-    <Content Include="tpl\k8\infrastructure\mssql\mssq-secrets.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\mssql\mssql-services.yaml" />
-    <Content Include="tpl\k8\infrastructure\mssql\mssql-services.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\mssql\mssql-stateful-set.yaml" />
-    <Content Include="tpl\k8\infrastructure\mssql\mssql-stateful-set.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\mssql\mssql-volumes.yaml" />
-    <Content Include="tpl\k8\infrastructure\mssql\mssql-volumes.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\redis\redis-services.yaml" />
-    <Content Include="tpl\k8\infrastructure\redis\redis-services.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\redis\redis-workload.yaml" />
-    <Content Include="tpl\k8\infrastructure\redis\redis-workload.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\clio-namespace.yaml" />
-    <Content Include="tpl\k8\infrastructure\clio-namespace.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\clio-storage-class.yaml" />
-    <Content Include="tpl\k8\infrastructure\clio-storage-class.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\postgres\postgres-volumes.yaml" />
-    <Content Include="tpl\k8\infrastructure\postgres\postgres-volumes.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\postgres\postgres-stateful-set.yaml" />
-    <Content Include="tpl\k8\infrastructure\postgres\postgres-stateful-set.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\postgres\postgres-services.yaml" />
-    <Content Include="tpl\k8\infrastructure\postgres\postgres-services.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\postgres\postgres-secrets.yaml" />
-    <Content Include="tpl\k8\infrastructure\postgres\postgres-secrets.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-workload.yaml" />
-    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-workload.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-volumes.yaml" />
-    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-volumes.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-services.yaml" />
-    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-services.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\k8\infrastructure\pgadmin\pgadmin-secrets.yaml" />
-    <Content Include="tpl\k8\infrastructure\pgadmin\pgadmin-secrets.yaml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\README.md" Pack="true" PackagePath="\">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\UnitTestLibs\Terrasoft.TestFramework.dll" />
-    <Content Include="tpl\UnitTestLibs\Terrasoft.TestFramework.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content> 
-    
-    <None Remove="tpl\UnitTestLibs\ATF.Repository.Mock.dll" />
-    <Content Include="tpl\UnitTestLibs\ATF.Repository.Mock.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    
-    <None Remove="tpl\UnitTestLibs\UnitTest.dll" />
-    <Content Include="tpl\UnitTestLibs\UnitTest.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\open-test-solution-framework.cmd" />
-    <Content Include="tpl\workspace\tasks\open-test-solution-framework.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\open-test-solution-netcore.cmd" />
-    <Content Include="tpl\workspace\tasks\open-test-solution-netcore.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Wiki\WikiAnchors.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Update="tpl\workspace\tests\placeholder.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Update="tpl\workspace\tasks\set-clio-working-directory.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\workspace\tasks\set-clio-working-directory.cmd" />
-    <Content Include="tpl\workspace\tasks\set-clio-working-directory.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\package\Files\app-descriptor.json" />
-    <None Remove="tpl\schemas-template\source-code\Resources\resource.en-US.xml.tpl" />
-    <Content Include="tpl\schemas-template\source-code\Resources\resource.en-US.xml.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\schemas-template\source-code\Schema\[SCHEMA_NAME].cs.tpl" />
-    <Content Include="tpl\schemas-template\source-code\Schema\[SCHEMA_NAME].cs.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\schemas-template\source-code\Schema\descriptor.json.tpl" />
-    <Content Include="tpl\schemas-template\source-code\Schema\descriptor.json.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\schemas-template\source-code\Schema\metadata.json.tpl" />
-    <Content Include="tpl\schemas-template\source-code\Schema\metadata.json.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <None Remove="tpl\schemas-template\source-code\Schema\properties.json.tpl" />
-    <Content Include="tpl\schemas-template\source-code\Schema\properties.json.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <Choose>
-    <When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
-      <ItemGroup>
-        <ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj" />
-      </ItemGroup>
-    </When>
-    <Otherwise>
-      <ItemGroup>
-        <PackageReference Include="creatio.client" Version="1.0.33" />
-      </ItemGroup>
-    </Otherwise>
-  </Choose>
-  
-  <Choose>
-    <When Condition="Exists('..\..\commandline\src\CommandLine\CommandLine.csproj')">
-      <ItemGroup>
-        <ProjectReference Include="..\..\commandline\src\CommandLine\CommandLine.csproj" />
-      </ItemGroup>
-    </When>
-    <Otherwise>
-      <ItemGroup>
-        <PackageReference Include="CommandLineSDK" Version="1.0.11" />
-      </ItemGroup>
-    </Otherwise>
-  </Choose>
-  
-  <Choose>
-    <When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
-      <ItemGroup>
-        <ProjectReference Include="..\..\repository\ATF.Repository\ATF.Repository.csproj" />
-      </ItemGroup>
-    </When>
-    <Otherwise>
-      <ItemGroup>
-        <PackageReference Include="ATF.Repository" Version="2.0.3.3" />
-      </ItemGroup>
-    </Otherwise>
-  </Choose>
-  
-  <ItemGroup>
-    <PackageReference Include="Autofac" Version="9.0.0" />
-    <PackageReference Include="ConsoleTables" Version="2.7.0" />
-    <PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0" />
-    <PackageReference Include="ErrorOr" Version="2.1.0" />
-    <PackageReference Include="FluentValidation" Version="12.1.1" />
-    <PackageReference Include="KubernetesClient" Version="18.0.13" />
-    <PackageReference Include="MediatR" Version="[12.5.0]" />
-    <PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="[12.3.0]" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
-    <PackageReference Include="Microsoft.Dism" Version="4.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="[7.4.13,7.5.0)" /> <!-- 7.4.13 Is the latest supported on .NET8--> 
-    <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Npgsql" Version="10.0.1" />
-    <PackageReference Include="NRedisStack" Version="1.2.0" />
-    <PackageReference Include="OneOf" Version="3.0.271" />
-    <PackageReference Include="Spectre.Console" Version="0.54.0" />
-    <PackageReference Include="System.IO.Abstractions" Version="22.1.0" />
-    <PackageReference Include="System.Json" Version="4.8.0" />
-	<PackageReference Include="Ignore" Version="0.2.1" />
-	<PackageReference Include="YamlDotNet" Version="16.3.0" />
-    <PackageReference Include="SharpZipLib" Version="1.4.2" />
-	<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.15.0" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="cliogate\netstandard\cliogate.gz">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="cliogate\version.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-   
-    <None Update="img\creatio_favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\entity-listener-template.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\jsonschema\schema.json.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\set-environment.cmd.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\service-template.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="clio">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\AssemblyInfo.cs.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\EditProj.csproj.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\Proj.csproj.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\descriptor.json.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\Package.nuspec.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\NugetPackProj.csproj.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\windows_features\RequirmentNet6Features.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\windows_features\RequirmentNetFramework.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\workspace\.gitlab-ci.yml">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="updater.runtimeconfig.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\NugetRestoreProj.csproj.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tpl\OpenSolution.cmd.tpl">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="tpl\package\Files\src\cs\RssFeedApp.cs" />
-    <Folder Include="tpl\package\Data" />
-    <Folder Include="tpl\package\Resources" />
-    <Folder Include="tpl\package\Schemas" />
-    <Folder Include="tpl\package\SqlScripts" />
-    <Folder Include="tpl\schemas-template\source-code\Resources\" />
-    <Folder Include="tpl\schemas-template\source-code\Schema\" />
-    <Folder Include="tpl\ui\8.0.3\" />
-    <Folder Include="tpl\ui\8.0.8\" />
-
-    <Compile Remove="tpl\package\**" />
-    <Content Include="tpl\package\**" >
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    
-    
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="tpl\workspace\.clio\clioignore" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="SetWebServiceUrlCommand.cs">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Compile>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
 </Project>

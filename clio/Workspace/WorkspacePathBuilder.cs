@@ -110,7 +110,6 @@ namespace Clio.Workspaces
 			string currentDirectory = _workingDirectoriesProvider.CurrentDirectory;
 
 			var directoryInfo = _fileSystem.GetDirectoryInfo(currentDirectory);
-			//DirectoryInfo directoryInfo = new DirectoryInfo(currentDirectory);
 			while (true) {
 				string presumablyClioDirectoryPath = BuildClioDirectoryPath(directoryInfo.FullName);
 				if (_fileSystem.ExistsDirectory(presumablyClioDirectoryPath)) {

@@ -11,7 +11,7 @@ namespace #RootNameSpace# {
 
 	/// <summary>
 	/// This is a class that provides access to the application services.
-	/// This is the MAIN entry point into the RssFeedApp package.
+	/// This is the MAIN entry point into the #RootNameSpace# package.
 	/// </summary>
 	public sealed class #RootNameSpace# {
 

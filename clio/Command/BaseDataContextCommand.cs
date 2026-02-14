@@ -50,10 +50,10 @@ public abstract class BaseDataContextCommand<T> : Command<T>{
 		}
 		catch (WebException we) {
 			HttpWebResponse errorResponse = we.Response as HttpWebResponse;
-			if (errorResponse.StatusCode == HttpStatusCode.NotFound) {
+			if (errorResponse?.StatusCode == HttpStatusCode.NotFound) {
 				Logger.WriteError($"Application {_environmentSettings.Uri} not found");
 			}
-			throw we;
+			throw;
 		}
 	}
 

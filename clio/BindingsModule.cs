@@ -127,7 +127,7 @@ public class BindingsModule {
 				k8Instance = new Kubernetes(config);
 				return k8Instance;
 			}
-			catch (Exception e) {
+			catch {
 				k8Instance = new FakeKubernetes();
 				return k8Instance;
 			}

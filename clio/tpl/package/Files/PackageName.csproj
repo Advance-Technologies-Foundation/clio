@@ -1,10 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\..\..\.build-props\env.$(Configuration).props"  Condition="Exists('..\..\..\.build-props\env.$(Configuration).props')" />
 	<PropertyGroup>
 		<LangVersion>7.3</LangVersion>
 		<RootNamespace>#RootNameSpace#</RootNamespace>
 		<AppendTargetFrameworkToOutputPath>False</AppendTargetFrameworkToOutputPath>
 		<CoreTargetFramework Condition="'$(CoreTargetFramework)' == ''">net472</CoreTargetFramework>
 		<TargetFramework>$(CoreTargetFramework)</TargetFramework>
+		<Configurations>Debug;Release;dev-n8;dev-nf</Configurations>
 	</PropertyGroup>
 	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
 		<DebugSymbols>true</DebugSymbols>
@@ -328,7 +330,10 @@
 			<_Parameter1>$(MSBuildProjectName).Tests</_Parameter1>
 		</AssemblyAttribute>
 	</ItemGroup>
-
+	<ItemGroup Label="Exclude JS files from compilation and packaging">
+		<Compile Remove="src/js/**" />
+		<None Remove="src/js/**" />
+	</ItemGroup>
 	<ItemGroup Label="Package References">
 	</ItemGroup>
 	<Target Name="Paths" BeforeTargets="BeforeCompile">
