@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
+using Clio.Workspace;
 using Clio.Workspaces;
 
 namespace Clio.Package;
@@ -275,7 +276,6 @@ public class PackageCreator : IPackageCreator{
 		else {
 			UpdateAppDescriptorIfExists(packagesPath, packageName);
 		}
-
 		_workspaceSolutionCreator.Create();
 	}
 

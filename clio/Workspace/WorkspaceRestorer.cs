@@ -1,3 +1,5 @@
+using Clio.Workspace;
+
 namespace Clio.Workspaces
 {
 	using System;

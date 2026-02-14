@@ -8,6 +8,7 @@ using Clio.Common;
 using Clio.Package;
 using Clio.Tests.Command;
 using Clio.Tests.Extensions;
+using Clio.Workspace;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
