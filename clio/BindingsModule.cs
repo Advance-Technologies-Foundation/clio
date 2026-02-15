@@ -288,6 +288,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ShowAppListCommand>();
 		containerBuilder.RegisterType<EnvManageUiCommand>();
 		containerBuilder.RegisterType<EnvManageUiService>().As<IEnvManageUiService>();
+		containerBuilder.RegisterType<InstalledApplication>().As<IInstalledApplication>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
 		containerBuilder.RegisterType<LinkPackageStoreCommand>();
