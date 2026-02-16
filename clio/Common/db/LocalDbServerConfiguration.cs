@@ -9,6 +9,7 @@ public class LocalDbServerConfiguration
 	public int Port { get; set; }
 	public string Username { get; set; }
 	public string Password { get; set; }
+	public bool UseWindowsAuth { get; set; }
 	public string Description { get; set; }
 	public string PgToolsPath { get; set; }
 }

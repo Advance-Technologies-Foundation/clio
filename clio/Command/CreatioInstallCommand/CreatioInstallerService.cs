@@ -696,8 +696,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 			// Build connection string based on database type
 			dbConnectionString = dbConfig.DbType?.ToLowerInvariant() switch {
-				"postgres" or "postgresql" => $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
-				"mssql" => $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
+				"postgres" or "postgresql" => dbConfig.UseWindowsAuth
+					? $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};Integrated Security=true;Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
+					: $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
+				"mssql" => dbConfig.UseWindowsAuth
+					? $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};Integrated Security=True;MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
+					: $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
 				var _ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
 			};
 
