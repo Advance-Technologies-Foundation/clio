@@ -755,8 +755,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 					? $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};Integrated Security=true;Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
 					: $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
 				"mssql" => dbConfig.UseWindowsAuth
-					? $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};Integrated Security=true;MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100"
-					: $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
+					? $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};Integrated Security=true;MultipleActiveResultSets=true;Pooling=true;Max Pool Size=100"
+					: $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=true;Pooling=true;Max Pool Size=100",
 				var _ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
 			};
 
