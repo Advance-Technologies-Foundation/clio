@@ -76,6 +76,10 @@ public class SysSettingsManager : ISysSettingsManager
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 	};
 
+	private sealed record UpdateSysSettingResponse(
+		[property: JsonPropertyName("success")] bool Success,
+		[property: JsonPropertyName("responseStatus")] ResponseStatus ResponseStatus);
+
 	#endregion
 
 	#region Constructors: Public
@@ -106,24 +110,24 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	private static object ConvertToDateTime(string value){
-		bool isDateTime = DateTime.TryParse(value, out DateTime dtValue);
+		bool isDateTime = DateTime.TryParse(value, CultureInfo.InvariantCulture, out DateTime dtValue);
 		return isDateTime ? (object)dtValue
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
 	}
 	private static object ConvertToDate(string value){
-		bool isDateTime = DateTime.TryParse(value, out DateTime dateValue);
+		bool isDateTime = DateTime.TryParse(value, CultureInfo.InvariantCulture, out DateTime dateValue);
 		return isDateTime ? (object)dateValue.Date
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Boolean)}");
 	}
 
 	private static object ConvertToDecimal(string value){
-		bool isDecimal = decimal.TryParse(value, out decimal decValue);
+		bool isDecimal = decimal.TryParse(value, CultureInfo.InvariantCulture, out decimal decValue);
 		return isDecimal ? (object)decValue
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Decimal)}");
 	}
 
 	private static object ConvertToGuid(string value){
-		bool isGuid = Guid.TryParse(value, out Guid decValue);
+		bool isGuid = Guid.TryParse(value, CultureInfo.InvariantCulture, out Guid decValue);
 		return isGuid ? (object)decValue
 			: throw new InvalidCastException($"Could not convert {value} to {nameof(Guid)}");
 	}
@@ -160,7 +164,6 @@ public class SysSettingsManager : ISysSettingsManager
 			.ToList().FirstOrDefault();
 		return sysSchema.Name;
 	}
-	
 	
 
 	private SysSettings GetSysSettingByCode(string code){
@@ -255,8 +258,24 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		var result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
-		return true;
+		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+		if (string.IsNullOrWhiteSpace(result)) {
+			_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
+			return false;
+		}
+		try {
+			UpdateSysSettingResponse response = JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
+			bool hasError = !string.IsNullOrWhiteSpace(response?.ResponseStatus?.ErrorCode)
+				|| !string.IsNullOrWhiteSpace(response?.ResponseStatus?.Message);
+			if (response is null || !response.Success || hasError) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated.");
+				return false;
+			}
+			return true;
+		} catch (JsonException) {
+			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
+			return false;
+		}
 	}
 
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){

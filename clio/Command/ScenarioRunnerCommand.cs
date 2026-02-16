@@ -9,7 +9,7 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
-[Verb("run", Aliases = ["run-scenario"], HelpText = "Run scenario")]
+[Verb("run", Aliases = ["scenario","run-scenario"], HelpText = "Run scenario")]
 public class ScenarioRunnerOptions : EnvironmentOptions{
     [Option("file-name", Required = true, HelpText = "Scenario file name")]
     public string FileName { get; set; }

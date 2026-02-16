@@ -98,7 +98,7 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectDateTimeValue(string dateValue, string format){
 		//Arrange
 		DateTime.TryParseExact(dateValue, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dtValue);
-		string stringDateTimeValue = dtValue.ToString();
+		string stringDateTimeValue = dtValue.ToString(CultureInfo.InvariantCulture);
 		const string sysSettingCode = "nonExistingCode";
 		string sysSettingValue = stringDateTimeValue;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -107,7 +107,7 @@ public class SysSettingsManagerTests
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.Resolve<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+        ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
 			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
@@ -183,7 +183,7 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectDecimalValue(string value){
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		decimal sysSettingValue = decimal.Parse(value);
+		decimal sysSettingValue = decimal.Parse(value, CultureInfo.InvariantCulture);
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
@@ -442,6 +442,92 @@ public class SysSettingsManagerTests
 		actual.Success.Should().BeFalse();
 		actual.ResponseStatus.ErrorCode.Should().Be("DbOperationException");
 		actual.ResponseStatus.Message.Should().StartWith("Violation of PRIMARY KEY constraint");
+	}
+
+	#endregion
+
+	#region Method : UpdateSysSetting
+
+	[Test]
+	public void UpdateSysSetting_ReturnsTrue_WhenApiResponseSuccessIsTrue(){
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
+			workingDirectoriesProvider, filesystem, logger);
+
+		string segment = EnvironmentSettings.IsNetCore switch {
+			true => "/DataService/json/SyncReply/PostSysSettingsValues",
+			false => "/0/DataService/json/SyncReply/PostSysSettingsValues"
+		};
+		string expectedUrl = EnvironmentSettings.Uri + segment;
+
+		applicationClient.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
+			.Returns(
+				"""
+				{
+				  "responseStatus": {
+				    "ErrorCode": "",
+				    "Message": "",
+				    "Errors": []
+				  },
+				  "rowsAffected": 1,
+				  "nextPrcElReady": false,
+				  "success": true
+				}
+				"""
+			);
+
+		// Act
+		bool actual = sut.UpdateSysSetting("Maintainer", "Creatio");
+
+		// Assert
+		actual.Should().BeTrue();
+	}
+
+	[Test]
+	public void UpdateSysSetting_ReturnsFalse_WhenApiResponseSuccessIsFalse(){
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
+			workingDirectoriesProvider, filesystem, logger);
+
+		string segment = EnvironmentSettings.IsNetCore switch {
+			true => "/DataService/json/SyncReply/PostSysSettingsValues",
+			false => "/0/DataService/json/SyncReply/PostSysSettingsValues"
+		};
+		string expectedUrl = EnvironmentSettings.Uri + segment;
+
+		applicationClient.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
+			.Returns(
+				"""
+				{
+				  "responseStatus": {
+				    "ErrorCode": "DbOperationException",
+				    "Message": "Could not update setting",
+				    "Errors": []
+				  },
+				  "rowsAffected": -1,
+				  "nextPrcElReady": false,
+				  "success": false
+				}
+				"""
+			);
+
+		// Act
+		bool actual = sut.UpdateSysSetting("Maintainer", "Creatio");
+
+		// Assert
+		actual.Should().BeFalse();
 	}
 
 	#endregion

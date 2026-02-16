@@ -18,6 +18,7 @@ Clio Command Reference
 - [GitOps](#gitops)
 - [Installation of Creatio](#installation-of-creatio-using-clio)
     - [🚀 Quick Start Guide for macOS](#-quick-start-guide-for-macos)
+- [Additional Commands](#additional-commands)
 
 # Running Clio
 The general syntax for running clio:
@@ -170,8 +171,13 @@ clio:   8.0.1.97
 - [Restore database](#restore-db)
 - [Get package list](#get-pkg-list)
 - [Set package version](#set-pkg-version)
+- [Get package version](#get-pkg-version)
 - [Set application version](#set-application-version)
 - [Set application icon](#set-application-icon)
+- [Lock package](#lock-package)
+- [Unlock package](#unlock-package)
+- [Activate package](#activate-pkg)
+- [Deactivate package](#deactivate-pkg)
 
 ## new-pkg
 
@@ -568,6 +574,22 @@ Set a specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
+## get-pkg-version
+
+Get the current version of a package from its descriptor.json file.
+
+```bash
+clio get-pkg-version <PACKAGE_PATH>
+```
+
+### Examples
+
+Get version of a package in current directory, for specific package:
+```bash
+clio get-pkg-version .
+clio get-pkg-version C:\Workspace\MyPackage
+```
+
 ## set-application-version
 
 Set a specified composable application version into application-descriptor.json by specified workspace or package path.
@@ -619,6 +641,93 @@ clio pkg-hotfix <PACKAGE_NAME> false -e <ENVIRONMENT_NAME>
 
 
 ```
+
+## lock-package
+
+**Aliases:** `lp`
+
+Lock a package to prevent modifications. When a package is locked, it cannot be modified or deleted from the environment.
+
+```bash
+clio lock-package <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Lock a package on an environment:
+```bash
+clio lock-package MyCustomPackage -e production
+```
+
+Using alias:
+```bash
+clio lp MyCustomPackage -e production
+```
+
+## unlock-package
+
+**Aliases:** `up`
+
+Unlock a previously locked package to allow modifications.
+
+```bash
+clio unlock-package <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Unlock a package on an environment:
+```bash
+clio unlock-package MyCustomPackage -e production
+```
+
+Using alias:
+```bash
+clio up MyCustomPackage -e production
+```
+
+### Notes
+- This command requires cliogate to be installed on the target environment. See `install-gate` command.
+
+## activate-pkg
+
+Activate a package in a Creatio environment. This command will be available in Creatio version 8.1.2 and later.
+
+```bash
+clio activate-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Activate a package:
+```bash
+clio activate-pkg MyCustomPackage -e development
+```
+
+### Notes
+- This command requires Creatio version 8.1.2 or later
+- Package must already be installed in the environment
+- Activating a package makes it active in the application
+
+## deactivate-pkg
+
+Deactivate a package in a Creatio environment. This command will be available in Creatio version 8.1.2 and later.
+
+```bash
+clio deactivate-pkg <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Deactivate a package:
+```bash
+clio deactivate-pkg MyCustomPackage -e development
+```
+
+### Notes
+- This command requires Creatio version 8.1.2 or later
+- Deactivating a package disables it without uninstalling
+- Useful for temporarily disabling functionality
 
 # NuGet Packages
 - [Pack NuGet package](#pack-nuget-pkg)
@@ -756,20 +865,27 @@ clio update -y
 - `2` - Error checking for updates (network issue, version detection error, etc.)
 
 # Application
+- [Download application](#download-app)
 - [Deploy application](#deploy-application)
+- [Install application](#install-application)
+- [Publish application](#publish-app)
+- [Compress application](#compressapp)
 - [Uninstall application](#uninstall-app-remote)
 - [List installed applications](#get-app-list)
-- [Upload Licenses](#lic)
+- [Upload License](#upload-license)
 - [Restart application](./docs/commands/RestartCommand.md)
 - [Clear Redis database](./docs/commands/RedisCommand.md)
-- [Compile configuration](#compile-configuration)
+- [Compile configuration](./docs/commands/CompileConfigurationCommand.md)
 - [Get compilation log](#last-compilation-log)
 - [Set system setting](#set-syssetting)
 - [Get system setting](#get-syssetting)
+- [Set developer mode](#set-dev-mode)
 - [Features](#set-feature)
 - [Set base web service url](#set-webservice-url)
 - [Get base web service url](#get-webservice-url)
 - [Set FileSystemMode](#set-fsm-config)
+- [Load packages to file system](#pkg-to-file-system)
+- [Load packages to database](#pkg-to-db)
 
 ## download-app
 
@@ -792,6 +908,73 @@ clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
 ````
 
 
+
+## install-application
+
+Install an application package on a web application from a local file or marketplace.
+
+**Aliases:** `install-app`
+
+```bash
+# Install from local file
+clio install-application <FILE_PATH> -e <ENVIRONMENT_NAME>
+
+# Install from marketplace by ID
+clio install-application --id <APP_ID> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Install from local .gz file:
+```bash
+clio install-application C:\Apps\MyApp.gz -e development
+```
+
+Install from marketplace:
+```bash
+clio install-application --id 12345 -e development
+```
+
+### Notes
+- Use this command for composable applications
+- For regular packages, use `push-pkg` instead
+
+## publish-app
+
+**Aliases:** `publish-workspace`
+
+Publish workspace to a zip file for distribution or deployment.
+
+```bash
+clio publish-app -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Publish current workspace:
+```bash
+clio publish-app
+```
+
+Publish to specific environment:
+```bash
+clio publish-app -e production
+```
+
+## compressApp
+
+Compress an application into an archive file for distribution or backup.
+
+```bash
+clio compressApp -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Compress application:
+```bash
+clio compressApp -e production
+```
 
 ## uninstall-app-remote
 
@@ -817,17 +1000,29 @@ clio get-app-list
 clio apps
 ```
 
-## Upload licenses
 
-To upload licenses to Creatio application, use the next command for default environment:
+## upload-license
+
+**Aliases:** `lic`
+
+Upload licenses to a Creatio environment. License file must be in valid Creatio license format.
 
 ```bash
-clio lic <File Path>
+clio upload-license <File Path> -e <ENVIRONMENT_NAME>
 ```
 
+### Examples
+
+Upload license file to default environment:
 ```bash
-clio lic <File Path> -e <ENVIRONMENT_NAME>
+clio upload-license license.lic
 ```
+
+Upload to specific environment:
+```bash
+clio lic license.lic -e dev
+```
+
 
 ## restart-web-app
 
@@ -845,19 +1040,35 @@ clio restart-web-app <ENVIRONMENT_NAME>
 
 ## start
 
-Start a local Creatio application using dotnet. By default, runs as a background service (same as deployment). Use `--terminal` or `-w` option to launch in a new terminal window with visible logs.
+Start a local Creatio application. Automatically detects deployment type (IIS or .NET Core) and starts accordingly.
 
 **Aliases**: `start-server`, `start-creatio`, `sc`
 
+### Deployment Type Detection
+
+The command automatically detects how Creatio is deployed:
+
+  1. **IIS Deployment** (Windows only):
+     - Detects if the environment path is configured as an IIS site
+     - Starts the IIS application pool and site
+     - Pings the site to verify accessibility
+     - No additional process management needed
+
+  2. **.NET Core Deployment**:
+     - Used when no IIS site is detected
+     - Starts using `dotnet` command
+     - Pings the site to verify accessibility
+     - Can run as background service (default) or in terminal window
+
 ### Usage
 
-Start application as background service (default):
+Start application (auto-detects deployment type):
 
 ```bash
 clio start -e <ENVIRONMENT_NAME>
 ```
 
-Start application in terminal window with logs:
+Start with terminal window (for .NET Core deployments):
 
 ```bash
 clio start -e <ENVIRONMENT_NAME> --terminal
@@ -886,17 +1097,39 @@ clio sc -e <ENVIRONMENT_NAME> --terminal
    clio reg-web-app my_env --ep /path/to/creatio
    ```
 
-2. The `EnvironmentPath` must contain `Terrasoft.WebHost.dll`
+2. **For IIS deployments** (Windows):
+   - IIS must be installed and configured
+   - Environment path must be configured as an IIS site
+   - IIS application pool must exist
 
-3. .NET runtime must be installed and available in PATH
+3. **For .NET Core deployments**:
+   - The `EnvironmentPath` must contain `Terrasoft.WebHost.dll`
+   - .NET runtime must be installed and available in PATH
 
 ### Examples
 
-```bash
-# Start as background service (default)
-clio start -e local_dev
+  ```bash
+  # Start IIS-hosted environment (Windows)
+  clio start -e production
+  # Output: 
+  # Starting IIS site 'Production' and application pool 'production'...
+  # Starting application pool 'production'...
+  # ✓ Application pool 'production' started successfully!
+  # Starting IIS site 'Production'...
+  # ✓ IIS site 'Production' started successfully!
+  # ✓ Creatio application 'production' is now running!
+  # Pinging https://mysite.com/ping to verify accessibility...
+  # ✓ Site is accessible and responding!
 
-# Start with terminal window to see logs
+  # Start .NET Core environment as background service
+  clio start -e local_dev
+  # Output: 
+  # Starting Creatio application 'local_dev' as a background service...
+  # ✓ Creatio application started successfully as background service (PID: 12345)!
+  # Pinging https://localhost:5000/ping to verify accessibility...
+  # ✓ Site is accessible and responding!
+
+# Start .NET Core environment with terminal window to see logs
 clio start -e local_dev -w
 clio start -e local_dev --terminal
 
@@ -908,80 +1141,260 @@ clio sc -e local_dev
 clio start-creatio -e local_dev --terminal
 ```
 
-### Behavior
+### Behavior by Deployment Type
 
-**Default Mode (Background Service)**:
-- Launches the Creatio application as a background process
-- No terminal window or logs visible (consistent with deployment)
-- Returns control to the original terminal immediately with success message and process ID
-- The application continues running independently
-- Use this mode for automated deployments or when logs are not needed
+  **IIS Deployment (Windows)**:
+  - Checks if the IIS application pool is already running
+  - Checks if the IIS site is already running
+  - Starts the application pool if stopped
+  - Starts the IIS site if stopped
+  - Pings the site to verify accessibility
+  - Displays success message with app pool and site names
+  - IIS manages the process lifecycle
+  - `--terminal` flag is ignored (not applicable for IIS)
 
-**Terminal Mode (`--terminal` or `-w`)**:
-- Launches the Creatio application in a new terminal window
-- Shows application logs in the new terminal
-- Returns control to the original terminal immediately with a success message
-- The application continues running independently
-- Use this mode when you need to see application logs
+  **.NET Core Background Service** (default for non-IIS):
+  - Launches the Creatio application as a background process
+  - No terminal window or logs visible
+  - Returns control to the original terminal immediately with success message and process ID
+  - Pings the site to verify accessibility
+  - The application continues running independently
+  - Use this mode for automated deployments or when logs are not needed
+
+  **.NET Core Terminal Mode** (`--terminal` or `-w`):
+  - Launches the Creatio application in a new terminal window
+  - Shows application logs in the new terminal
+  - Returns control to the original terminal immediately with a success message
+  - Pings the site to verify accessibility
+  - The application continues running independently
+  - Use this mode when you need to see application logs
 
 ### Error Handling
 
-The command validates:
-- EnvironmentPath is configured for the environment
-- The specified path exists on the file system
-- `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+  The command validates:
+  - EnvironmentPath is configured for the environment
+  - The specified path exists on the file system
+  - For .NET Core: `Terrasoft.WebHost.dll` exists in the EnvironmentPath
+  - For IIS: Application pool and site exist and can be started
+  
+  **Site Verification:**
+  After starting, pings `{Uri}/ping` to verify accessibility (waits 2s, 30s timeout, 3 retries).
+  Ping failure logs warning but does not prevent command success.
+
+  **Common Errors**:
+
+1. **IIS Application Pool Start Failure**:
+   ```
+   Failed to start IIS application pool 'myapp'.
+   You may need to run this command with Administrator privileges.
+   ```
+   Solution: Run command prompt or PowerShell as Administrator
+
+2. **No Deployment Type Detected**:
+   ```
+   Terrasoft.WebHost.dll not found at: C:\path\to\app
+   This environment does not appear to be a .NET deployment.
+   ```
+   Solution: Verify EnvironmentPath points to valid Creatio installation
+
+3. **EnvironmentPath Not Configured**:
+   ```
+   EnvironmentPath is not configured for this environment.
+   
+   Available environments with EnvironmentPath:
+     - dev: C:\Creatio\Development
+     - prod: C:\inetpub\wwwroot\Production
+   
+   Use: clio reg-web-app <env> --ep <path>
+   ```
 
 If no environment is specified or EnvironmentPath is not configured, the command displays a list of available environments with configured paths.
 
-If any validation fails, an appropriate error message is displayed.
+## stop
 
-## hosts
+Stops Creatio services and background processes for one or more environments. Automatically detects deployment type (IIS, OS service, or background process) and stops accordingly.
 
-List all registered Creatio environments (hosts) with their running status, process IDs, and service information. This command helps monitor which Creatio instances are running on the local machine.
+**Aliases**: `stop-creatio`
 
-**Aliases**: `list-hosts`
-
-**For complete documentation**, see: [`hosts`](./docs/commands/hosts.md)
-
-### Quick Usage
+### Usage
 
 ```bash
-clio hosts
+# Stop specific environment
+clio stop -e <ENV_NAME>
+
+# Stop all registered environments
+clio stop --all
+
+# Stop without confirmation prompt
+clio stop -e <ENV_NAME> --quiet
+clio stop --all -q
+```
+
+### Options
+- `-e, --environment <ENV_NAME>` - Stop specific environment
+- `--all` - Stop all registered Creatio environments
+- `-q, --quiet` - Skip confirmation prompt
+
+### Behavior
+
+The command performs stop actions in the following order:
+
+1. **IIS Application Pool** (Windows only):
+   - Detects if the environment is hosted in IIS
+   - Stops the IIS application pool
+   - No process termination needed (IIS manages this)
+
+2. **OS Service**:
+   - Checks for systemd service (Linux) or launchd service (macOS) or Windows service
+   - Service name pattern: `creatio-{environment-name}`
+   - Stops and disables the service
+   - Attempts to delete service configuration
+
+3. **Background Process**:
+   - Searches for running dotnet processes with `Terrasoft.WebHost.dll`
+   - Verifies process working directory matches environment path
+   - Terminates matching processes
+
+### Stop Methods by Platform
+
+| Platform | IIS | OS Service | Background Process |
+|----------|-----|------------|-------------------|
+| **Windows** | ✅ Yes | ✅ Yes (Windows Services) | ✅ Yes |
+| **macOS**   | ❌ No | ✅ Yes (launchd) | ✅ Yes |
+| **Linux**   | ❌ No | ✅ Yes (systemd) | ✅ Yes |
+
+### Confirmation Prompt
+
+**With confirmation** (default):
+```bash
+$ clio stop -e dev
+
+This will stop 1 Creatio service(s)/process(es):
+  - dev (C:\Creatio\Development)
+
+Continue? [y/N]: y
+```
+
+**Without confirmation** (`--quiet` flag):
+```bash
+$ clio stop -e dev --quiet
+Stopping environment: dev
+✓ IIS application pool 'dev' stopped and removed
+✓ Successfully stopped 'dev'
+```
+
+### Examples
+
+Stop a specific environment with confirmation:
+```bash
+clio stop -e production
+```
+
+Stop a specific environment without confirmation:
+```bash
+clio stop -e production --quiet
+clio stop -e production -q
+```
+
+Stop all registered environments:
+```bash
+clio stop --all --quiet
+```
+
+Using alias:
+```bash
+clio stop-creatio -e dev
 ```
 
 ### Example Output
 
+**IIS Deployment (Windows)**:
+```bash
+$ clio stop -e prod --quiet
+
+Stopping environment: prod
+Stopping IIS application pool: prod
+✓ IIS application pool 'prod' stopped successfully
+
+=== Summary ===
+Stopped: 1
 ```
-Scanning 3 environment(s) in parallel...
-=== Creatio Hosts ===
-Environment    Service Name         Status          PID    Environment Path
-production     Default Web Site     Running (IIS)   8432   C:\inetpub\wwwroot\Production
-staging        CreatioStaging       Stopped (IIS)   -      C:\Apps\Staging
-development    creatio-dev          Running (Process) 12456 C:\Dev\Creatio
+
+**Background Process**:
+```bash
+$ clio stop -e dev --quiet
+
+Stopping environment: dev
+Killing process dotnet (PID: 12345)
+✓ Background process stopped
+✓ Successfully stopped 'dev'
+
+=== Summary ===
+Stopped: 1
 ```
 
-### Status Values
+**Multiple Environments**:
+```bash
+$ clio stop --all --quiet
 
-- **Running (IIS)**: IIS site and application pool both running (Windows)
-- **Stopped (IIS)**: IIS site or application pool stopped (Windows)
-- **Running (Service)**: systemd/launchd service running (macOS/Linux)
-- **Running (Process)**: Background process detected
-- **Stopped**: No running process or service found
+Stopping environment: dev
+✓ IIS application pool 'dev' stopped successfully
+✓ Successfully stopped 'dev'
 
-### Prerequisites
+Stopping environment: qa
+✓ Service 'creatio-qa' stopped and removed
+✓ Successfully stopped 'qa'
 
-- Environments must be registered with `EnvironmentPath`:
-  ```bash
-  clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
-  ```
+Stopping environment: prod
+No running service or process found for 'prod'
 
-### Troubleshooting
-
-If PID is not detected on Windows IIS, enable debug mode:
-```powershell
-$env:CLIO_DEBUG_IIS = "true"
-clio hosts
+=== Summary ===
+Stopped: 2
+Not found/Failed: 1
 ```
+
+### Environment Detection
+
+An environment is considered active if any of the following are true:
+- **IIS**: Application pool with matching name is running (Windows only)
+- **OS Service**: Service named `creatio-<env>` is running
+- **Background Process**: A dotnet process running `Terrasoft.WebHost.dll` from the `EnvironmentPath` directory
+
+### Return Codes
+- `0` - Success: all environments stopped successfully
+- `1` - Partial failure: some stop operations failed
+- `2` - Cancelled: user declined the confirmation prompt
+
+### Error Handling
+
+**Graceful Degradation**: The command continues trying all stop methods even if one fails. For example:
+- If IIS app pool stop fails, it still attempts to stop OS service and background processes
+- If one environment fails, it continues with remaining environments
+
+**Common Issues**:
+
+1. **Permission Denied (IIS)**:
+   ```
+   Failed to stop IIS application pool 'myapp'
+   You may need Administrator privileges
+   ```
+   Solution: Run as Administrator
+
+2. **Service Not Found**:
+   ```
+   No running service or process found for 'myenv'
+   ```
+   This is expected if the environment is not running
+
+3. **Process Access Denied**:
+   The command will log a warning but continue with other environments
+
+### Notes
+- Service configuration files are removed after stopping (Windows Services, systemd, launchd)
+- IIS application pools are stopped but not removed from IIS
+- Environment configuration remains in clio settings after stop
+- For complete environment removal, use `clio uninstall-creatio` or `clio unreg-web-app`
+- The command is safe to run even if the environment is not running
 
 ## clear-redis-db
 
@@ -999,21 +1412,51 @@ clio clear-redis-db <ENVIRONMENT_NAME>
 
 ## compile-configuration
 
-For compile configuration
+Compiles the Creatio configuration remotely with real-time progress monitoring. Tracks each project being compiled, displays compilation duration, and reports any errors or warnings.
 
+**Aliases:** `cc`, `compile-remote`
+
+**Detailed Documentation:** [`compile-configuration`](./docs/commands/CompileConfigurationCommand.md)
+
+### Synopsis
 ```bash
-clio compile-configuration
-```
-or
-```bash
-clio compile-configuration <ENVIRONMENT_NAME>
+clio compile-configuration [options]
 ```
 
-for compile all
+### Options
+- `--all` - Perform full rebuild (compile all configurations). Default: `false`
+- `-e`, `--Environment` - Environment name from configuration
+- `--timeout` - Request timeout in milliseconds. Default: Infinite
 
+### Examples
+
+Basic compilation with progress tracking:
 ```bash
-clio compile-configuration --all
+clio compile-configuration -e development
 ```
+
+Using short alias:
+```bash
+clio cc -e production
+```
+
+Full rebuild of all configurations:
+```bash
+clio compile-configuration --all -e staging
+```
+
+### Output
+Provides detailed real-time output including:
+- Compilation start time and progress updates for each project
+- Duration of each project compilation (color-coded: green < 5s, yellow 5-10s, red > 10s)
+- Highlighted output for OData and Dev projects
+- Errors and warnings with file locations and line numbers
+- Total compilation time and final status
+
+### Prerequisites
+- Valid Creatio environment with accessible web services
+- Administrator credentials
+- cliogate must be installed on the target environment
 
 ## last-compilation-log
 
@@ -1050,6 +1493,26 @@ To read system settings value
 ```bash
 get-syssetting <CODE> --GET -e <ENVIRONMENT_NAME>
 ```
+
+## set-dev-mode
+
+Activate or deactivate developer mode for a selected environment.
+
+```bash
+clio set-dev-mode <true|false> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Enable developer mode:
+```bash
+clio set-dev-mode true -e development
+```
+
+### Notes
+- Developer mode enables additional debugging and development features
+- Typically enabled on development environments and disabled on production
+- Requires administrative permissions
 
 ## set-feature
 
@@ -1098,8 +1561,49 @@ clio get-webservice-url <WEB_SERVICE_NAME> -e <ENVIRONMENT_NAME>
 
 Aliases: `gwu`
 
+## pkg-to-file-system
+
+Load packages from database to the file system on a web application. This is useful when switching to file system mode or restoring package files.
+
+```bash
+clio pkg-to-file-system -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Load packages to file system:
+```bash
+clio pkg-to-file-system -e development
+```
+
+### Notes
+- Extracts package content from the database to file system
+- Required when enabling file system development mode
+- May take time depending on the number and size of packages
+
+## pkg-to-db
+
+Load packages from file system to the database on a web application. This is the reverse operation of `pkg-to-file-system`.
+
+```bash
+clio pkg-to-db -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Load packages to database:
+```bash
+clio pkg-to-db -e production
+```
+
+### Notes
+- Stores package content from file system into the database
+- Used when switching from file system mode to database mode
+- Typically used before deploying to production environments
+
 
 # Environment settings
+- [Interactive Environment Manager](#env-ui) - **NEW!** Visual console UI for environment management
 - [Create/Update an environment](./docs/commands/RegAppCommand.md)
 - [Delete the existing environment](./docs/commands/UnregAppCommand.md)
 - [Ping environment](./docs/commands/PingCommand.md)
@@ -1111,6 +1615,71 @@ Aliases: `gwu`
 - [CustomizeDataProtection](#CustomizeDataProtection)
 
 Environment is the set of configuration options. It consist of name, Creatio application URL, login, and password. See [Environment options](#environment-options) for list of all options.
+
+## env-ui
+
+**Interactive console UI for managing Creatio environments**
+
+Launch visual, menu-driven interface for environment management with real-time validation and guided workflows.
+
+```bash
+clio env-ui
+# or use alias
+clio ui
+```
+
+### Features
+
+- ✅ **List Environments** - View all environments in a formatted table
+- ✅ **View Details** - Inspect complete environment configuration
+- ✅ **Create** - Add new environments with guided prompts and validation
+- ✅ **Edit** - Modify existing settings interactively
+- ✅ **Delete** - Remove environments with confirmation dialogs
+- ✅ **Set Active** - Change default environment
+- ✅ **Actions in Main Menu** - Restart, clear Redis, open in browser, ping, healthcheck, get info, compile configuration, open configuration file
+- ✅ **Security** - Automatic password masking and secure input
+
+### Why Use env-ui?
+
+**Perfect for:**
+- Setting up new development environments
+- Exploring and managing multiple environments
+- When you don't remember exact CLI syntax
+- Complex configuration with many fields
+
+**Use CLI commands for:**
+- Automation and scripts
+- CI/CD pipelines
+- Quick single-field updates
+
+### Example Session
+
+```
+┌─────────────────────────────────────────────────────────┐
+│           Clio Environment Manager                       │
+│ Config File: /Users/user/.clio/appsettings.json        │
+└─────────────────────────────────────────────────────────┘
+
+┌───┬──────────┬─────────────────────────┬──────────┐
+│ # │ Name     │ URL                     │ IsNetCore│
+├───┼──────────┼─────────────────────────┼──────────┤
+│ 1*│ dev      │ https://dev.creatio.com │ ✓        │
+│ 2 │ prod     │ https://app.creatio.com │ ✓        │
+└───┴──────────┴─────────────────────────┴──────────┘
+
+What would you like to do?
+  > Create New Environment
+    Edit Environment
+    Delete Environment
+    Exit
+```
+
+**Navigation:**
+- ↑/↓ - Navigate menu
+- Enter - Select
+- Esc - Cancel/Back
+
+For complete documentation, see [env-ui command reference](./docs/commands/EnvManageUiCommand.md).
 
 ## reg-web-app
 
@@ -1389,6 +1958,8 @@ clio cdp false -e <ENVIRONMENT_NAME>
 - [Configure workspace](#configure-workspace)
 - [Publish workspace](#publish-workspace)
 - [Merge workspaces](#merge-workspaces)
+- [Unlock packages](#unlock-package)
+- [Lock packages](#lock-package)
 - [Package Filtering](#package-filtering-in-workspace)
 - [Configure workspace](#configure-workspace)
 
@@ -1570,6 +2141,114 @@ Options:
 - `--Packages` (optional): Comma-separated list of package names to add to the workspace
 
 Aliases: `cfgw`
+
+## unlock-package
+
+Unlocks one or more packages in a Creatio environment to enable editing and modifications. This command is essential for development workflows where packages need to be edited, updated, or synchronized with workspace changes.
+
+```bash
+clio unlock-package [package-names] -e <ENVIRONMENT_NAME>
+```
+
+**Aliases:** `up`
+
+**Arguments:**
+- `package-names` (optional): Comma-separated list of package names to unlock. If omitted, unlocks all packages in the environment
+
+**Options:**
+- `-e, --environment <ENVIRONMENT_NAME>` (recommended): Target environment name from configuration
+- `-m, --maintainer <NAME>` (required when `package-names` is omitted): Sets `Maintainer` system setting and clears `SchemaNamePrefix` before unlock-all flow
+- `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
+- `-l, --login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --password <PASSWORD>` (optional): User password
+- `--clientid <ID>` (optional): OAuth Client ID (alternative authentication)
+- `--clientsecret <SECRET>` (optional): OAuth Client Secret (alternative authentication)
+- `--authappuri <URI>` (optional): OAuth Authentication App URI (alternative authentication)
+
+**Examples:**
+
+Unlock a single package:
+```bash
+clio unlock-package MyPackage -e dev
+```
+
+Unlock multiple packages:
+```bash
+clio unlock-package MyPackage,AnotherPackage,ThirdPackage -e dev
+```
+
+Unlock all packages in the environment:
+```bash
+clio unlock-package -m Creatio -e dev
+```
+
+Using the short alias:
+```bash
+clio up MyPackage -e dev
+```
+
+**Requirements:**
+- Requires cliogate package version **2.0.0.0 or higher** installed on the target Creatio environment
+- To install cliogate: `clio install-gate -e <ENVIRONMENT_NAME>`
+
+**Notes:**
+- Package names are case-sensitive and must match exactly
+- Remember to lock packages with [`lock-package`](#lock-package) after completing your changes
+- Administrator permissions required on target environment
+
+**For detailed documentation, see:** [`unlock-package`](./docs/commands/unlock-package.md)
+
+## lock-package
+
+Locks one or more packages in a Creatio environment to prevent modifications. This command is used to protect packages from unintended changes and should be used after completing development work.
+
+```bash
+clio lock-package [package-names] -e <ENVIRONMENT_NAME>
+```
+
+**Aliases:** `lp`
+
+**Arguments:**
+- `package-names` (optional): Comma-separated list of package names to lock. If omitted, locks all packages in the environment
+
+**Options:**
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment name from configuration
+- `-u, --uri <URI>` (optional): Application URI (alternative to environment name)
+- `-l, --Login <LOGIN>` (optional): User login (administrator permission required)
+- `-p, --Password <PASSWORD>` (optional): User password
+
+**Examples:**
+
+Lock a single package:
+```bash
+clio lock-package MyPackage -e dev
+```
+
+Lock multiple packages:
+```bash
+clio lock-package MyPackage,AnotherPackage,ThirdPackage -e dev
+```
+
+Lock all packages in the environment:
+```bash
+clio lock-package -e dev
+```
+
+Using the short alias:
+```bash
+clio lp MyPackage -e dev
+```
+
+**Requirements:**
+- Requires cliogate package version **2.0.0.0 or higher** installed on the target Creatio environment
+- To install cliogate: `clio install-gate -e <ENVIRONMENT_NAME>`
+
+**Notes:**
+- Package names are case-sensitive and must match exactly
+- Use in conjunction with [`unlock-package`](#unlock-package) for controlled development workflows
+- Administrator permissions required on target environment
+
+**For detailed documentation, see:** [`lock-package`](./docs/commands/lock-package.md)
 
 ## merge-workspaces
 
@@ -2537,11 +3216,75 @@ clio restart -u https://mysite.creatio.com -l administrator -p password
 
 # Web farm deployments
 
-To ensure proper functioning of Creatio in Web Farm mode, it is crucial that all nodes are identical. Clio provides the following command to verify this:
+Manage and verify Creatio deployments across multiple web farm nodes.
+
+## check-web-farm-node
+
+Verify that all nodes in a Creatio web farm deployment are identical. This command compares files and configurations across multiple nodes to ensure consistency.
 
 ```bash
-clio check-web-farm-node "\\Node1\Creatio,\\Node2\Creatio" -d
+clio check-web-farm-node <NODE_PATHS> [OPTIONS]
 ```
+
+### Examples
+
+Check two nodes for differences:
+```bash
+clio check-web-farm-node "\\\\Node1\\Creatio,\\\\Node2\\Creatio" -d
+```
+
+Compare local nodes:
+```bash
+clio check-web-farm-node "C:\\inetpub\\node1,C:\\inetpub\\node2" -d
+```
+
+### Options
+- `-d`, `--detailed` - Show detailed comparison results
+
+### Notes
+- Multiple node paths should be comma-separated
+- Supports UNC paths for network locations
+- Supports local file paths
+
+## turn-farm-mode
+
+Configure IIS site for Creatio web farm deployment. This command sets up the necessary configuration for running Creatio in a web farm (multi-server) environment.
+
+```bash
+clio turn-farm-mode -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Enable farm mode:
+```bash
+clio turn-farm-mode -e production
+```
+
+### Notes
+- Windows and IIS only
+- Required for load-balanced Creatio deployments
+- Configures session state and file synchronization
+
+## compare-web-farm-node
+
+Compare web farm node content to identify differences between nodes in a web farm deployment.
+
+```bash
+clio compare-web-farm-node <NODE1_PATH> <NODE2_PATH>
+```
+
+### Examples
+
+Compare two farm nodes:
+```bash
+clio compare-web-farm-node C:\inetpub\node1 C:\inetpub\node2
+```
+
+### Notes
+- Useful for troubleshooting web farm deployments
+- Identifies file and configuration differences between nodes
+- Helps ensure all nodes are synchronized
 
 # GitOps
 
@@ -3951,6 +4694,124 @@ clio turn-fsm --environmentName MyEnvironment off
 
 Learn how to create and run backend unit tests for Creatio development, including usage of the `new-test-project` command and .slnx solution files:
 - [Backend Unit Test Guide](../docs/BackEndUnitTest.md)
+
+# Additional Commands
+
+## externalLink
+
+**Aliases:** `link`
+
+Handle external deep-links for integration with external tools and systems.
+
+```bash
+clio externalLink <LINK_URL>
+```
+
+## open-settings
+
+Open the clio configuration file (appsettings.json) in the default text editor.
+
+```bash
+clio open-settings
+```
+
+### Notes
+- Opens the settings file in your system's default JSON/text editor
+- Useful for quickly editing environment configurations
+- Settings file location is typically: `~/.clio/appsettings.json`
+
+## new-ui-project
+
+Create a new UI project for Creatio development (Angular-based Freedom UI components).
+
+```bash
+clio new-ui-project <PROJECT_NAME>
+```
+
+### Examples
+
+Create new UI project:
+```bash
+clio new-ui-project MyUIProject
+```
+
+### Notes
+- Creates Angular project structure for Freedom UI development
+- Includes necessary configuration for Creatio integration
+- See [UI Development docs](../docs/UIProjectCommand.md) for more details
+
+## alm-deploy
+
+**Aliases:** `deploy`
+
+Deploy packages to a selected environment using Application Lifecycle Management (ALM) workflow.
+
+```bash
+clio alm-deploy <PACKAGE_NAME> -e <ENVIRONMENT_NAME>
+```
+
+### Examples
+
+Deploy package:
+```bash
+clio alm-deploy MyPackage -e staging
+```
+
+Using alias:
+```bash
+clio deploy MyPackage -e production
+```
+
+## cfg-worspace
+
+**Aliases:** `cfgw`
+
+Configure workspace settings for the current project.
+
+```bash
+clio cfg-worspace
+```
+
+### Examples
+
+Configure workspace:
+```bash
+clio cfg-worspace
+```
+
+Using alias:
+```bash
+clio cfgw
+```
+
+## register
+
+Register clio commands in Windows context menu for easy access from File Explorer.
+
+```bash
+clio register
+```
+
+### Notes
+- Windows only
+- Requires administrator privileges
+- Adds clio commands to right-click context menu
+- Makes it easier to run clio commands from File Explorer
+
+## unregister
+
+Remove clio commands from Windows context menu.
+
+```bash
+clio unregister
+```
+
+### Notes
+- Windows only
+- Requires administrator privileges
+- Removes previously registered context menu entries
+
+# Command Aliases and References
 
 ## ver
 Reference section for version command. See earlier examples in Help and examples.

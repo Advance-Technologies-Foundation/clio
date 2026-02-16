@@ -27,7 +27,7 @@
 
 	#region Class: InstallApplicationOptions
 
-	[Verb("install-application", Aliases = new string[] { "install-app", "push-app" }, HelpText = "Install application on a web application")]
+	[Verb("install-application", Aliases = ["push-app", "install-app"], HelpText = "Install application on a web application")]
 	public class InstallApplicationOptions : InstallOptions
 	{
 		[Option("check-compilation-errors", Required = false, HelpText = "Check compilation errors", Hidden = false)]

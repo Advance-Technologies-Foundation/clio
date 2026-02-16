@@ -10,7 +10,7 @@ namespace Clio.Command
 
 	#region Class: PkgListOptions
 
-	[Verb("get-pkg-list", Aliases = new[] { "packages" }, HelpText = "Get environments packages")]
+	[Verb("get-pkg-list", Aliases = ["packages"], HelpText = "Get environments packages")]
 	public class PkgListOptions : EnvironmentNameOptions
 	{
 
@@ -41,6 +41,7 @@ namespace Clio.Command
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IJsonResponseFormater _jsonResponseFormater;
 		private readonly ILogger _logger;
+		private readonly IClioGateway _clioGateway;
 
 		#endregion
 
@@ -49,7 +50,7 @@ namespace Clio.Command
 		public GetPkgListCommand(EnvironmentSettings environmentSettings, 
 				IApplicationPackageListProvider applicationPackageListProvider,
 				IJsonResponseFormater jsonResponseFormater,
-				ILogger logger) {
+				ILogger logger, IClioGateway clioGateway) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			jsonResponseFormater.CheckArgumentNull(nameof(jsonResponseFormater));
@@ -57,6 +58,7 @@ namespace Clio.Command
 			_applicationPackageListProvider = applicationPackageListProvider;
 			_jsonResponseFormater= jsonResponseFormater;
 			_logger = logger;
+			_clioGateway = clioGateway;
 		}
 
 		#endregion
@@ -115,6 +117,19 @@ namespace Clio.Command
 		#region Methods: Public
 
 		public override int Execute(PkgListOptions options) {
+			
+			const string minClioGateVersion = "2.0.0.0";
+			if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
+				_logger.WriteError($"To view packages feature requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
+
+				_logger.WriteInfo(string.IsNullOrWhiteSpace(options.Environment)
+					?  "To install cliogate use the following command: clio install-gate"
+					: $"To install cliogate use the following command: clio install-gate -e {options.Environment}");
+				return 0;
+			}
+			
+			
+			
 			try {
 				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
 				var filteredPackages = FilterPackages(packages, options.SearchPattern);

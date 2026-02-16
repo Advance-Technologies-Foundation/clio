@@ -142,7 +142,29 @@ namespace Clio.Common.ScenarioHandlers {
             string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:{InstallerHelper.FetFQDN()}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
             
             var result =  _processExecutor.Execute(appcmdPath, command, true);
-            return result;
+
+            // Enable Basic Authentication for the created site (moved to helper)
+            var basicResult = EnableBasicAuthentication(siteName);
+
+            // Return combined output so caller sees both results
+            return result + Environment.NewLine + "EnableBasicAuthentication: " + basicResult;
+        }
+
+        private string EnableBasicAuthentication(string siteName) {
+            string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+            // appcmd syntax: set config "<siteName>" -section:system.webServer/security/authentication/basicAuthentication /enabled:true
+            string section = "system.webServer/security/authentication/basicAuthentication";
+
+            // Always try to unlock the section first (idempotent)
+            string unlockCmd = $"unlock config -section:{section}";
+            var unlockResult = _processExecutor.Execute(appcmdPath, unlockCmd, true);
+
+            // Now try to enable basic auth for the site
+            string enableBasicCmd = $"set config \"{siteName}\" -section:{section} /enabled:true";
+            var basicResult = _processExecutor.Execute(appcmdPath, enableBasicCmd, true);
+
+            // Return both outputs so caller can see the unlock and enable results
+            return "UnlockResult: " + unlockResult + Environment.NewLine + "EnableResult: " + basicResult;
         }
 
         private string CreateWebApplication(string siteName, string physicalPath) {

@@ -9,7 +9,7 @@ using System.Linq;
 namespace Clio
 {
 
-	[Verb("compressApp", HelpText = "Compress application command")]
+	[Verb("compressApp", Aliases = ["comp-app"],HelpText = "Compress application into zip file")]
 	internal class CompressAppOptions
 	{
 		[Option('s', "SourcePath", Required = true, HelpText = "Folder path to package repository")]

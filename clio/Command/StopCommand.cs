@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.IIS;
 using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -29,14 +30,18 @@ namespace Clio.Command
 		private readonly ISystemServiceManager _serviceManager;
 		private readonly ILogger _logger;
 		private readonly IFileSystem _fileSystem;
+		private readonly IIISAppPoolManager _iisAppPoolManager;
+		private readonly IIISSiteDetector _iisSiteDetector;
 
 		public StopCommand(ISettingsRepository settingsRepository, ISystemServiceManager serviceManager,
-			ILogger logger, IFileSystem fileSystem)
+			ILogger logger, IFileSystem fileSystem, IIISAppPoolManager iisAppPoolManager, IIISSiteDetector iisSiteDetector)
 		{
 			_settingsRepository = settingsRepository;
 			_serviceManager = serviceManager;
 			_logger = logger;
 			_fileSystem = fileSystem;
+			_iisAppPoolManager = iisAppPoolManager;
+			_iisSiteDetector = iisSiteDetector;
 	}
 
 	public override int Execute(StopOptions options)
@@ -71,7 +76,13 @@ namespace Clio.Command
 
 					bool stopped = false;
 
-					// Try to stop OS service first
+					// Try to stop IIS app pool first (Windows only)
+					if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && await StopIISAppPool(env, envName))
+					{
+						stopped = true;
+					}
+
+					// Try to stop OS service
 					if (await StopOSService(env, envName))
 					{
 						stopped = true;
@@ -306,6 +317,48 @@ namespace Clio.Command
 		catch (Exception ex)
 		{
 			_logger.WriteWarning($"Error stopping background process: {ex.Message}");
+			return false;
+		}
+	}
+
+	private async Task<bool> StopIISAppPool(EnvironmentSettings env, string envName)
+	{
+		try
+		{
+			if (string.IsNullOrWhiteSpace(env.EnvironmentPath))
+			{
+				return false;
+			}
+
+			var iisSites = await _iisSiteDetector.GetSitesByPath(env.EnvironmentPath);
+			if (iisSites.Count == 0)
+			{
+				return false;
+			}
+
+			string appPoolName = iisSites[0].AppPoolName;
+			if (string.IsNullOrWhiteSpace(appPoolName) || appPoolName == "Unknown")
+			{
+				return false;
+			}
+
+			_logger.WriteInfo($"Stopping IIS application pool: {appPoolName}");
+
+			bool stopped = await _iisAppPoolManager.StopAppPool(appPoolName);
+			if (stopped)
+			{
+				_logger.WriteInfo($"✓ IIS application pool '{appPoolName}' stopped successfully");
+				return true;
+			}
+			else
+			{
+				_logger.WriteWarning($"Failed to stop IIS application pool '{appPoolName}'");
+				return false;
+			}
+		}
+		catch (Exception ex)
+		{
+			_logger.WriteWarning($"Error stopping IIS application pool: {ex.Message}");
 			return false;
 		}
 	}

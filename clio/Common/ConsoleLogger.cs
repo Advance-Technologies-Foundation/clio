@@ -307,6 +307,14 @@ public class ConsoleLogger : ILogger, IDisposable
 
 	#endregion
 
+	public static readonly Func<object, string> WrapRed = s => $"\e[31m{s}\e[0m";
+	public static readonly Func<object, string> WrapYellow = s => $"\e[33m{s}\e[0m";
+	public static readonly Func<object, string> WrapBlue = s => $"\e[34m{s}\e[0m";
+	public static readonly Func<object, string> WrapGreen = s => $"\e[32m{s}\e[0m";
+	public static readonly Func<object, string> WrapBold = s => $"\e[1m{s}\e[0m";
+	public static readonly Func<object, string> WrapUnderline = s => $"\e[4m{s}\e[0m";
+	public static readonly Func<object, string> WrapItalic = s => $"\e[3m{s}\e[0m";
+	public static readonly Func<object, string> WrapStrikeThrough = s => $"\e[9m{s}\e[0m";
 }
 
 #endregion

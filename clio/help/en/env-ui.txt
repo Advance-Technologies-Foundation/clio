@@ -1,0 +1,314 @@
+COMMAND TYPE
+    Configuration Management
+
+NAME
+    env-ui - Interactive console UI for environment management
+
+SYNOPSIS
+    clio env-ui
+
+ALIASES
+    gui, far
+
+DESCRIPTION
+    Launches an interactive, menu-driven console interface for managing Creatio
+    environment configurations. Unlike command-line arguments, this tool provides
+    a visual, user-friendly approach with real-time validation, guided workflows,
+    and masked display of sensitive data.
+    
+    The interface allows you to create, view, edit, delete, and manage Creatio
+    environments stored in your local clio configuration file through a keyboard-
+    driven menu system. All operations are performed interactively with immediate
+    feedback and validation.
+    
+    This command requires no arguments - all interaction happens within the UI.
+
+OPTIONS
+    None - This command is fully interactive and takes no command-line options.
+
+FEATURES
+    Main Menu Operations:
+        - View Environment Details    View complete configuration for any environment
+        - Create New Environment      Interactive prompts for new environment setup
+        - Edit Environment            Modify existing environment settings
+        - Delete Environment          Remove environment with confirmation
+        - Set Active Environment      Change default environment
+        - Restart environment         Restart Creatio application
+        - Clear Redis database        Clear Redis cache for environment
+        - Open environment            Open environment in browser
+        - Ping environment            Ping environment endpoint
+        - Healthcheck                 Run web app and web host checks
+        - Get environment info        Show Creatio instance info
+        - Compile configuration       Run remote configuration compile
+        - Open configuration file     Open appsettings.json
+        - Refresh List                Reload configuration from disk
+        - Exit                        Close the application
+
+    Environment Display:
+        - Lists all registered environments in formatted table
+        - Shows URL, login, platform type for each environment
+        - Indicates active environment with asterisk (*)
+        - Displays configuration file path
+
+    Interactive Features:
+        - Real-time input validation
+        - Masked password and secret display (****)
+        - Arrow key navigation (↑/↓)
+        - Multi-select for editing multiple fields
+        - Visual confirmation dialogs for destructive actions
+        - Clear error messages with guidance
+
+    Security:
+        - All passwords and secrets displayed as ****
+        - Password fields use masked input during entry
+        - Sensitive data never written to logs
+        - Uses existing clio secure storage mechanisms
+
+NAVIGATION
+    Keyboard Controls:
+        ↑/↓             Navigate menu options and lists
+        Enter           Select highlighted option
+        Space           Toggle checkboxes (in multi-select)
+        Esc             Return to previous screen / Cancel operation
+        Any Key         Continue after viewing information
+
+    Menu Structure:
+        Main Menu → Select Operation → Follow Prompts → Return to Main Menu
+
+ENVIRONMENT FIELDS
+    When creating or editing environments, the following fields are available:
+    
+    Basic Configuration:
+        Name            Unique environment identifier
+        URL             Creatio application URL (http:// or https://)
+        Login           Username for authentication
+        Password        User password (optional for OAuth)
+        IsNetCore       Platform type (.NET Core or Framework)
+    
+    Optional Settings:
+        Maintainer      Maintainer contact information
+        Client ID       OAuth Client ID
+        Client Secret   OAuth Client Secret  
+        Safe Mode       Enable/disable safe mode
+        Developer Mode  Enable/disable developer mode
+        Workspace Paths Custom workspace directories
+
+VALIDATION RULES
+    Environment Name:
+        - Required (cannot be empty)
+        - Maximum 50 characters
+        - Letters, numbers, underscores, and hyphens only
+        - Must be unique across all environments
+    
+    URL:
+        - Required (cannot be empty)
+        - Must start with http:// or https://
+        - Must be valid URL format
+    
+    Login:
+        - Required (cannot be empty)
+    
+    Password:
+        - Optional (can be empty for OAuth authentication)
+
+WORKFLOW EXAMPLES
+    Creating a New Environment:
+        1. Launch: clio env-ui
+        2. Select: Create New Environment
+        3. Enter environment name: staging
+        4. Enter URL: https://staging.creatio.com
+        5. Enter login credentials
+        6. Select platform type
+        7. Optionally set as active
+        8. Done - environment created
+    
+    Editing an Environment:
+        1. Launch: clio env-ui
+        2. Select: Edit Environment
+        3. Choose environment from list
+        4. Select fields to modify
+        5. Update selected fields
+        6. Changes saved automatically
+    
+    Viewing Environment Details:
+        1. Launch: clio env-ui
+        2. Select: View Environment Details
+        3. Choose environment from list
+        4. Review complete configuration
+        5. Press any key to return
+    
+    Deleting an Environment:
+        1. Launch: clio env-ui
+        2. Select: Delete Environment
+        3. Choose environment to delete
+        4. Review warning with details
+        5. Confirm deletion (yes/no)
+        6. If active, select new active environment
+        7. Done - environment removed
+
+OUTPUT
+    The command displays:
+        - Main menu with header showing configuration file path
+        - Environment list in formatted table
+        - Configuration details for selected environments
+        - Interactive prompts with real-time validation
+        - Success/error messages with clear guidance
+        - Warning dialogs for destructive operations
+    
+    All output uses ANSI colors and Unicode box-drawing characters for
+    visual clarity (requires modern terminal with UTF-8 support).
+
+EXAMPLES
+    # Launch interactive UI
+    clio env-ui
+    
+    # Using shorter alias
+    clio gui
+    
+    # Using FAR commander inspired alias  
+    clio far
+
+EXIT CODES
+    0   Success - normal exit via Exit menu option
+    1   Error occurred during operation
+
+PLATFORM SUPPORT
+    Tested Platforms:
+        - Windows: PowerShell, Command Prompt
+        - macOS: Terminal, iTerm2
+        - Linux: bash, zsh, fish
+    
+    Terminal Requirements:
+        - Minimum: ANSI color support
+        - Recommended: Unicode support for best visual experience
+        - Encoding: UTF-8 recommended
+    
+    Known Limitations:
+        - Requires minimum terminal width of 80 characters
+        - Color output may not work in very old terminal emulators
+        - Some special characters may not render in Windows Command Prompt
+
+ERROR HANDLING
+    Configuration File Issues:
+        - File not found: Creates default configuration
+        - Invalid JSON: Offers to reset to defaults
+        - Permission denied: Shows file permission instructions
+    
+    Validation Errors:
+        - Real-time validation with clear error messages
+        - Prevents invalid input from being saved
+        - Guidance on how to correct errors
+    
+    Runtime Errors:
+        - Unexpected errors caught and displayed
+        - Error message with description shown
+        - Press any key to return to main menu
+        - Operation can be retried
+
+COMPARISON WITH CLI COMMANDS
+    Interactive UI (env-ui):
+        + Visual, guided experience
+        + Real-time validation
+        + Multi-field editing in single workflow
+        + Best for manual configuration
+        - Cannot be scripted or automated
+    
+    CLI Commands (reg-web-app, unreg-web-app):
+        + Scriptable and automatable
+        + Fast for single operations
+        + Suitable for CI/CD pipelines
+        + Remote administration friendly
+        - Requires remembering command syntax
+        - Validation only after submission
+    
+    Use env-ui when:
+        - Setting up new development environment
+        - Exploring available environments
+        - Making complex configuration changes
+        - You don't remember exact command syntax
+    
+    Use CLI commands when:
+        - Writing automation scripts
+        - Building CI/CD pipelines
+        - Quick single-field updates
+        - Remote or headless administration
+
+TIPS
+    Efficient Usage:
+        - Use shorter alias 'clio gui' or 'clio far'
+        - Press Refresh to reload without restarting
+        - Use ↑/↓ keys quickly for long environment lists
+        - Edit multiple fields at once using multi-select
+        - Keep backup of appsettings.json before major changes
+    
+    Safety:
+        - Always review warning messages before deleting
+        - Test new environments with 'clio ping <env>' after creation
+        - Backup configuration: cp ~/.clio/appsettings.json ~/.clio/appsettings.json.backup
+
+TROUBLESHOOTING
+    UI doesn't display correctly:
+        Problem: Strange characters instead of boxes/tables
+        Solution: Ensure terminal supports UTF-8
+            # macOS/Linux
+            export LANG=en_US.UTF-8
+            
+            # Windows PowerShell
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    
+    Colors not working:
+        Problem: No colors, only plain text
+        Solution: Enable ANSI colors in terminal settings or use modern terminal
+    
+    Cannot save changes:
+        Problem: Permission denied error
+        Solution: Check file permissions
+            # macOS/Linux
+            chmod 644 ~/.clio/appsettings.json
+            
+            # Windows: Right-click file → Properties → Security → Edit
+    
+    Environment not showing:
+        Problem: Created environment doesn't appear
+        Solution: Press "Refresh List" or restart UI, verify appsettings.json
+
+NOTES
+    - All operations modify the local clio configuration file
+    - No network access required (operates on local settings only)
+    - Configuration changes take effect immediately
+    - Settings file location shown in UI header
+    - Cross-platform compatible with modern terminals
+    - Supports both .NET Core and .NET Framework platforms
+    - Password masking provides visual security but does not encrypt storage
+    - Changes are persistent and affect all clio commands
+
+SECURITY CONSIDERATIONS
+    - Passwords and secrets displayed as **** in UI
+    - Actual storage security depends on clio's configuration mechanism
+    - File permissions should restrict access to configuration file
+    - Be cautious when screen sharing or recording terminal sessions
+    - Consider using OAuth (clientId/clientSecret) instead of passwords
+
+RELATED COMMANDS
+    Configuration:
+        reg-web-app         Register/update environment (CLI)
+        unreg-web-app       Remove environment (CLI)
+        show-web-app-list   List environments (non-interactive)
+    
+    Environment Testing:
+        ping                Test environment connection
+        get-info            Get system information from environment
+        show-local-envs     Display local environment health status
+
+SEE ALSO
+    Full documentation:
+        clio/docs/commands/EnvManageUiCommand.md
+    
+    Environment configuration guide:
+        clio/Environment.md
+    
+    Configuration file format:
+        clio/ConfigurationFormat.md
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

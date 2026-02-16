@@ -11,7 +11,7 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command
 {
-	[Verb("show-local-envs", HelpText = "Show local environments with filesystem and auth status")]
+	[Verb("show-local-envs", Aliases = ["localenvs"], HelpText = "Show local environments with filesystem and auth status")]
 	public class ShowLocalEnvironmentsOptions
 	{
 	}
@@ -49,16 +49,16 @@ namespace Clio.Command
 			List<string[]> rows = new();
 			foreach (KeyValuePair<string, EnvironmentSettings> environment in localEnvironments) {
 				LocalEnvironmentResult result = EvaluateEnvironment(environment.Value);
-				rows.Add(new[] {
+				rows.Add([
 					environment.Key,
 					FormatStatus(result.Status),
 					environment.Value.Uri ?? string.Empty,
 					environment.Value.EnvironmentPath ?? string.Empty,
 					result.Reason
-				});
+				]);
 			}
 
-			string table = RenderAnsiAwareTable(new[] { "Name", "Status", "Url", "Path", "Reason" }, rows);
+			string table = RenderAnsiAwareTable(["Name", "Status", "Url", "Path", "Reason"], rows);
 			_logger.Write(table);
 			return 0;
 		}

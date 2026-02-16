@@ -34,5 +34,6 @@ namespace Clio.UserEnvironment
 		string GetRemoteArtefactServerPath();
 		LocalDbServerConfiguration GetLocalDbServer(string name);
 		IEnumerable<string> GetLocalDbServerNames();
+		string GetDefaultEnvironmentName();
 	}
 }

@@ -80,10 +80,11 @@
     <None Include="YAML\Script\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <Compile Remove="Examples\**\*.cs" />
     <Compile Remove="Examples\WebFarm\**" />
     <Compile Remove="Examples\WebFarm\Node1-Main\**" />
     <Compile Remove="Examples\WebFarm\Node1-Main\ErrorPage.aspx" />
-    <Compile Remove="samplefiles\AssemblyInfo.cs" />
+    <Compile Remove="samplefiles\**\*.cs" />
 
     <None Include="Examples\Sites\N8_Site\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

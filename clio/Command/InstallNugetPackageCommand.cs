@@ -10,7 +10,7 @@ namespace Clio.Command
 
 	#region Class: InstallNugetPkgOptions
 
-	[Verb("install-nuget-pkg", Aliases = new string[] { "installng" }, HelpText = "Install NuGet package to a web application (website)")]
+	[Verb("install-nuget-pkg", Aliases = ["installng"], HelpText = "Install NuGet package to a web application (website)")]
 	public class InstallNugetPkgOptions : EnvironmentOptions
 	{
 

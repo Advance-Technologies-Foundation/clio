@@ -286,6 +286,8 @@ public class BindingsModule {
 		containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
 		containerBuilder.RegisterType<GetAppHashCommand>();
 		containerBuilder.RegisterType<ShowAppListCommand>();
+		containerBuilder.RegisterType<EnvManageUiCommand>();
+		containerBuilder.RegisterType<EnvManageUiService>().As<IEnvManageUiService>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
 		containerBuilder.RegisterType<LinkPackageStoreCommand>();
@@ -357,6 +359,14 @@ public class BindingsModule {
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 				return new Common.IIS.WindowsIISSiteDetector();
 			return new Common.IIS.StubIISSiteDetector();
+		}).SingleInstance();
+
+		// Register platform-specific IIS app pool manager
+		containerBuilder.Register<Common.IIS.IIISAppPoolManager>(c =>
+		{
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				return new Common.IIS.WindowsIISAppPoolManager();
+			return new Common.IIS.StubIISAppPoolManager();
 		}).SingleInstance();
 
 		containerBuilder.RegisterType<ClioGateway>();

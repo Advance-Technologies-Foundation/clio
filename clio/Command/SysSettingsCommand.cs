@@ -4,19 +4,19 @@ using CommandLine;
 
 namespace Clio.Command
 {
-	[Verb("set-syssetting", Aliases = new[] { "syssetting", "sys-setting", "get-syssetting"}, HelpText = "Set setting value")]
+	[Verb("set-syssetting", Aliases = ["ss", "syssetting", "sys-setting", "get-syssetting"], HelpText = "Set setting value")]
 	public class SysSettingsOptions : EnvironmentOptions
 	{
-		[Value(0, MetaName = "Code", Required = true, HelpText = "Syssetting code")]
+		[Value(0, MetaName = "Code", Required = true, HelpText = "Sys-setting code")]
 		public string Code { get; set; }
 
-		[Value(1, MetaName = "Value", Required = false, HelpText = "Syssetting Value")]
+		[Value(1, MetaName = "Value", Required = false, HelpText = "Sys-setting Value")]
 		public string Value { get; set; }
 
 		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Text")]
 		public string Type { get; set; }
 		
-		[Option("GET", Required = false, HelpText = "", Default = false)]
+		[Option("GET", Required = false, HelpText = "Use GET to retrieve sys-setting", Default = false)]
 		public bool IsGet { get; set; }
 
 	}

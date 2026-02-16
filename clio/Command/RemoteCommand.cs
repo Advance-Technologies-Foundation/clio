@@ -11,8 +11,8 @@ namespace Clio.Command
     /// <summary>
     /// Options for remote command execution.
     /// </summary>
-    public class RemoteCommandOptions : EnvironmentOptions
-    {
+    public class RemoteCommandOptions : EnvironmentOptions{
+
         private int? _timeOut;
         protected virtual int DefaultTimeout { get; set; } = 100_000;
 
@@ -36,6 +36,8 @@ namespace Clio.Command
     {
         #region Constructors: Protected
 
+        protected virtual bool CommandSuccess { get; set; } = true;
+        
         protected RemoteCommand(IApplicationClient applicationClient,
             EnvironmentSettings environmentSettings)
             : this(environmentSettings)
@@ -171,8 +173,13 @@ namespace Clio.Command
                 DelaySec = options.RetryDelay;
                 ExecuteRemoteCommand(options);
                 string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;
-                Logger.WriteInfo($"Done {commandName}");
-                return 0;
+
+                if (CommandSuccess) {
+                    Logger.WriteInfo($"Done {commandName}");
+                    return 0;
+                }
+
+                return 1;
             }
             catch (SilentException)
             {

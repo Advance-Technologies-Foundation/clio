@@ -3,11 +3,6 @@ using System.Linq;
 
 namespace Clio.Command
 {
-	
-}
-
-namespace Clio.Command
-{
 	using System;
 	using CommandLine;
 	using Clio.Package;
@@ -39,14 +34,16 @@ namespace Clio.Command
 
 		private readonly IPackageLockManager _packageLockManager;
 		private readonly ILogger _logger;
+		private readonly IClioGateway _clioGateway;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger) {
+		public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger, IClioGateway clioGateway) {
 			_packageLockManager = packageLockManager;
 			_logger = logger;
+			_clioGateway = clioGateway;
 		}
 
 		#endregion
@@ -64,8 +61,17 @@ namespace Clio.Command
 
 		public override int Execute(LockPackageOptions options) {
 			try {
+				
+				const string minClioGateVersion = "2.0.0.0";
+				if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
+					_logger.WriteError($"lock package feature requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
+					_logger.WriteInfo(string.IsNullOrWhiteSpace(options.Environment)
+						?  "To install cliogate use the following command: clio install-gate"
+						: $"To install cliogate use the following command: clio install-gate -e {options.Environment}");
+					return 0;
+				}
+				
 				_packageLockManager.Lock(GetPackagesNames(options));
-				_logger.WriteLine();
 				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
