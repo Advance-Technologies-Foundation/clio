@@ -111,6 +111,12 @@ internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 		string newContent = csprojContent.Replace(packageNameTemplate, packageName);
 		_fileSystem.WriteAllTextToFile(csprojPath, newContent);
 	}
+	private void UpdateBaseFixture(string fixturePath, string packageName) {
+		string csprojContent = _fileSystem.ReadAllText(fixturePath);
+		const string packageNameTemplate = "{{packageUnderTest}}";
+		string newContent = csprojContent.Replace(packageNameTemplate, packageName);
+		_fileSystem.WriteAllTextToFile(fixturePath, newContent);
+	}
 
 	#endregion
 
@@ -149,7 +155,7 @@ internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 					"UnitTestLibs",
 					Path.Combine(unitTestDirectoryName, "Libs"));
 				UpdateCsProj(csprojFilePath, packageName);
-				
+				UpdateBaseFixture(fixtureFilePath, packageName);
 				string relativeTestProjectPath = Path.Combine(packageName, unitTestProjFileName);
 				ExecuteDotnetCommand($"sln {solutionName}.sln add {relativeTestProjectPath}", TestsPath);
 

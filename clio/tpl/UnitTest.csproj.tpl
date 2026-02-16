@@ -16,6 +16,7 @@
     </Choose>
 
     <PropertyGroup>
+        <LangVersion>7.3</LangVersion>
         <IsPackable>false</IsPackable>
         <RootNamespace>{{packageUnderTest}}.Tests</RootNamespace>
         <PlatformTarget>x64</PlatformTarget>

@@ -1,8 +1,10 @@
-﻿**/.application
+﻿**/.vscode
+**/.vs
+**/.idea
+
+**/.application
 **/.solution
 **/.nuget
-
-**/.idea/
 **/*.user
 
 **/[O-o]bj

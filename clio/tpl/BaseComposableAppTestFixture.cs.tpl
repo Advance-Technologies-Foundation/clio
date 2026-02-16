@@ -16,7 +16,7 @@ using Terrasoft.Core.Entities;
 using Terrasoft.UnitTest;
 using Terrasoft.Web.Http.Abstractions;
 
-namespace AtfTIDE.Tests {
+namespace {{packageUnderTest}}.Tests {
 	#region Class: BaseComposableAppTestFixture
 
 	[TestFixture(Category = "UnitTests")]
