@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.IO.Abstractions;
+using System.Linq;
 using System.Xml;
 using Clio.Command;
 using Clio.Common;
@@ -19,6 +21,7 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 	private readonly IEnvironmentScriptCreator _environmentScriptCreator;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly ITemplateProvider _templateProvider;
 
 	private readonly INuGetManager _nugetManager;
 	private readonly IPackageDownloader _packageDownloader;
@@ -31,7 +34,7 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 
 	public WorkspaceRestorer(INuGetManager nugetManager, IWorkspacePathBuilder workspacePathBuilder,
 		IEnvironmentScriptCreator environmentScriptCreator, IWorkspaceSolutionCreator workspaceSolutionCreator,
-		IPackageDownloader packageDownloader, ICreatioSdk creatioSdk, IFileSystem fileSystem, ILogger logger) {
+		IPackageDownloader packageDownloader, ICreatioSdk creatioSdk, IFileSystem fileSystem, ILogger logger, ITemplateProvider templateProvider) {
 		nugetManager.CheckArgumentNull(nameof(nugetManager));
 		workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 		environmentScriptCreator.CheckArgumentNull(nameof(environmentScriptCreator));
@@ -46,6 +49,7 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 		_creatioSdk = creatioSdk;
 		_fileSystem = fileSystem;
 		_logger = logger;
+		_templateProvider = templateProvider;
 	}
 
 	#endregion
@@ -149,12 +153,40 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 			string[] csProjPaths
 				= _fileSystem.Directory.GetFiles(_workspacePathBuilder.PackagesFolderPath, "*.csproj", options);
 
+			CreateBuildPropsIfNotExists();
+			
 			foreach (string csProjPath in csProjPaths) {
 				AppendProps(csProjPath);
 			}
 		}
 	}
 
+	private void CreateBuildPropsIfNotExists() {
+		
+		string propsPath = Path.Join(_workspacePathBuilder.RootPath, ".build-props");
+		bool exists = _fileSystem.Directory.Exists(propsPath);
+		if (exists) {
+			return;
+		}
+		string tplWsDirPath = _templateProvider.GetTemplateDirectories("workspace")
+											   .FirstOrDefault(s=> s.EndsWith(".build-props"));
+		
+		if (string.IsNullOrWhiteSpace(tplWsDirPath)) {
+			_logger.WriteWarning("No workspace template found, did not create build-props");
+			return;
+		}
+		
+		IDirectoryInfo propsDir = _fileSystem.Directory.CreateDirectory(propsPath);
+
+		string[] files = _fileSystem.Directory.GetFiles(tplWsDirPath);
+		
+		foreach (string propFile in files) {
+			_fileSystem.File.Copy(propFile, Path.Join(propsDir.FullName, Path.GetFileName(propFile)));
+		}
+
+
+
+	}
 	#endregion
 }
 

@@ -107,6 +107,13 @@ public class WorkingDirectoriesProvider : IWorkingDirectoriesProvider
 			? tplPath 
 			: Path.Combine(TemplateDirectory, templateName);
 	}
+	public string GetTemplatePathWithoutTpl(string templateName){
+		templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
+		string tplPath = Path.Combine(TemplateDirectory, $"{templateName}");
+		return _fileSystem.File.Exists(tplPath) 
+			? tplPath 
+			: Path.Combine(TemplateDirectory, templateName);
+	}
 	
 
 	#endregion

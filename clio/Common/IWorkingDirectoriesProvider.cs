@@ -17,6 +17,7 @@ namespace Clio.Common
 		#region Methods: Public
 
 		string GetTemplatePath(string templateName);
+		public string GetTemplatePathWithoutTpl(string templateName);
 		string GetTemplateFolderPath(string templateFolderName);
 		string CreateTempDirectory();
 		void CreateTempDirectory(Action<string> onCreated);

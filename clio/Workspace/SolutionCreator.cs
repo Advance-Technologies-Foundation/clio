@@ -23,15 +23,17 @@ public class SolutionCreator : ISolutionCreator{
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly ITemplateProvider _templateProvider;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public SolutionCreator(IFileSystem fileSystem, ILogger logger) {
+	public SolutionCreator(IFileSystem fileSystem, ILogger logger, ITemplateProvider templateProvider) {
 		fileSystem.CheckArgumentNull(nameof(fileSystem));
 		_fileSystem = fileSystem;
 		_logger = logger;
+		_templateProvider = templateProvider;
 	}
 
 	#endregion
@@ -41,8 +43,7 @@ public class SolutionCreator : ISolutionCreator{
 	public void AddProjectToSolution(string solutionPath, IEnumerable<SolutionProject> solutionProjects) {
 
 		if (!_fileSystem.ExistsFile(solutionPath)) {
-			_logger.WriteWarning($"[WARNING] Solution file {solutionPath} does not exist.");
-			return;
+			CreateNewMainSolution(solutionPath);
 		}
 		
 		string slnxContent = _fileSystem.ReadAllText(solutionPath);
@@ -74,6 +75,12 @@ public class SolutionCreator : ISolutionCreator{
 		}
 
 		doc.Save(solutionPath);
+	}
+
+	private void CreateNewMainSolution(string solutionPath) {
+		string solutionContent = _templateProvider.GetTemplate("workspace/MainSolution.slnx");
+		_fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
+		_logger.WriteWarning($"[WARNING] Solution file {solutionPath} does not exist, created new MainSolution.slnx");
 	}
 
 	#endregion
