@@ -42,11 +42,7 @@ public class DconfChainItem(DownloadConfigurationCommand dconf, ILogger logger, 
 			return Restore(environment as string, true);
 		}
 
-		if (isBuild) {
-			return Restore(buildZipPath as string, false);
-		}
-		
-		return 0;
+		return Restore(buildZipPath as string, false);
 	}
 
 	private ErrorOr<int> Restore(string value, bool isEnv) {

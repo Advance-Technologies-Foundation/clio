@@ -8,9 +8,6 @@ namespace Clio.Workspace;
 
 public interface ISolutionCreator{
 	#region Methods: Public
-
-	// void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects);
-
 	void AddProjectToSolution(string solutionPath, IEnumerable<SolutionProject> solutionProjects);
 
 	#endregion

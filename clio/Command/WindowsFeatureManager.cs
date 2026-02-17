@@ -132,7 +132,7 @@ public class WindowsFeatureManager : IWindowsFeatureManager
 		}
 	}
 
-	public int GetActionMaxLength(IEnumerable<string> action) => action.Max(s=> s.Length);
+	public int GetActionMaxLength(IEnumerable<string> items) => items.Max(s=> s.Length);
 	
 	
 	private void SetFeatureState(string featureName, bool state) {
