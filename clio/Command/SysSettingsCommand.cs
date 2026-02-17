@@ -66,10 +66,8 @@ namespace Clio.Command
 			
 			if(opts.IsGet) {
 				const string minClioGateVersion = "2.0.0.0";
-				
 				if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
 					_logger.WriteError($"To view SysSetting value by code requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
-
 					_logger.WriteInfo(string.IsNullOrWhiteSpace(opts.Environment)
 						?  "To install cliogate use the following command: clio install-gate"
 						: $"To install cliogate use the following command: clio install-gate -e {opts.Environment}");

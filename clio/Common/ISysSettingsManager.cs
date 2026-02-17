@@ -230,7 +230,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = "Text"){
 		string requestData = string.Empty;
-		var sysSetting = GetSysSettingByCode(code);
+		SysSettings sysSetting = GetSysSettingByCode(code);
 		string optionsType = sysSetting is not null
 			? sysSetting.ValueTypeName : valueTypeName;
 		if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Time") || optionsType.Contains("Lookup")) {
@@ -242,42 +242,74 @@ public class SysSettingsManager : ISysSettingsManager
 					Guid entityId = GetEntityIdByDisplayValue(entityName, value.ToString());
 					value = entityId.ToString();
 				}
+				else {
+					value = id.ToString();
+				}
 			}
 			if (new[] { "Date", "DateTime", "Time" }.Contains(optionsType)) {
-				value = DateTime.Parse(value.ToString(), CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss.fff");
+				bool isDate = DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, out DateTime dtValue);
+				if (isDate) {
+					value = dtValue.ToString("yyyy-MM-ddTHH:mm:ss.fff");
+				}
+				else {
+					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid date format.");
+					return false;
+				}
 			}
-
 			//Enclosed opts.Value in "", otherwise update fails for all text settings
 			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
-		} else {
+		} 
+		else {
 			if (optionsType.Contains("Boolean")) {
-				value = bool.Parse(value.ToString()).ToString().ToLower(CultureInfo.InvariantCulture);
+				
+				bool isBool = bool.TryParse(value.ToString(), out bool boolValue);
+				if (isBool) {
+					value = boolValue.ToString().ToLower(CultureInfo.InvariantCulture);
+				}
+				else {
+					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid boolean format.");
+					return false;
+				}
 			}
 
+			if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")) {
+				bool isDecimal = decimal.TryParse(value.ToString(), CultureInfo.InvariantCulture, out decimal decimalValue);
+				if (isDecimal) {
+					value = decimalValue.ToString(CultureInfo.InvariantCulture);
+				}
+				else {
+					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid decimal format.");
+					return false;
+				}
+			}
+			if (optionsType.Contains("Integer")) {
+				bool isInt = int.TryParse(value.ToString(), out int intValue);
+				if (isInt) {
+					value = intValue;
+				}
+				else {
+					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid integer format.");
+				}
+			}
 			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":{value}" + "}}";
 		}
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
-		if (string.IsNullOrWhiteSpace(result)) {
-			_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
-			return false;
-		}
 		try {
-			UpdateSysSettingResponse response = JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
-			bool hasError = !string.IsNullOrWhiteSpace(response?.ResponseStatus?.ErrorCode)
-				|| !string.IsNullOrWhiteSpace(response?.ResponseStatus?.Message);
-			if (response is null || !response.Success || hasError) {
-				_logger.WriteError($"SysSettings with code: {code} is not updated.");
+			
+			string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+			if (string.IsNullOrWhiteSpace(result)) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
 				return false;
 			}
-			return true;
+			string afterUpdateValue = GetSysSettingValueByCode(code).TrimStart('"').TrimEnd('"');
+			return afterUpdateValue.Equals(value.ToString(), StringComparison.OrdinalIgnoreCase);
 		} catch (JsonException) {
 			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
 			return false;
 		}
 	}
-
+	
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
 		
 		var sysSetting = GetSysSettingByCode(code); 
