@@ -6,7 +6,7 @@ namespace Clio.Common.db;
 
 public interface IPostgres
 {
-	void Init(string host, int port, string username, string password);
+	void Init(string host, int port, string username, string password, bool isWindowsAuth = false);
 	bool CreateDbFromTemplate(string templateName, string dbName);
 	bool CreateDb(string dbName);
 	bool SetDatabaseAsTemplate(string dbName);
@@ -37,8 +37,10 @@ public class Postgres : IPostgres
 		_logger = logger ?? ConsoleLogger.Instance;
 	}
 	
-	public void Init(string host, int port, string username, string password){
-		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
+	public void Init(string host, int port, string username, string password, bool isWindowsAuth)
+	{
+		_connectionString = isWindowsAuth ? $"Host={host};Port={port};Username={username};Integrated Security=true;Database=postgres" 
+			: $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
 	}
 	
 	public virtual bool CreateDbFromTemplate (string templateName, string dbName) {

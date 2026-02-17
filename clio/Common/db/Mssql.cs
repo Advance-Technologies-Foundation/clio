@@ -7,7 +7,7 @@ namespace Clio.Common.db;
 
 public interface IMssql
 {
-	void Init(string host, int port, string username, string password);
+	void Init(string host, int port, string username, string password, bool isWindowsAuth = false);
 	
 	bool CreateDb (string dbName, string backupFileName);
 
@@ -29,24 +29,32 @@ public class Mssql : IMssql
 	private SqlConnectionStringBuilder _builder;
 
 	public Mssql(){}
-	public void Init(string host, int port, string username, string password){
+	public void Init(string host, int port, string username, string password, bool isWindowsAuth = false){
+		ConsoleLogger.Instance.Write("Auth type1: " + (isWindowsAuth ? "Windows Authentication" : "SQL Server Authentication"));
 		_builder = new SqlConnectionStringBuilder {
-			DataSource = $"{host},{port}",
-			UserID = username,
-			Password = password,
+			DataSource = !isWindowsAuth ? $"{host},{port}" : host,
 			InitialCatalog = "master",
-			Encrypt = false
+			Encrypt = false,
+			IntegratedSecurity = isWindowsAuth,
 		};
+		if(!isWindowsAuth) {
+			_builder.UserID = username;
+			_builder.Password = password;
+		}
 	}
 	
-	public Mssql(string host, int port, string username, string password) {
+	public Mssql(string host, int port, string username, string password, bool isWindowsAuth = false) {
+		ConsoleLogger.Instance.Write("Auth type2: " + (isWindowsAuth ? "Windows Authentication" : "SQL Server Authentication"));
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = host.Contains("\\") || port == 0 ? host : $"{host},{port}",
-			UserID = username,
-			Password = password,
 			InitialCatalog = "master",
-			Encrypt = false
+			Encrypt = false,
+			IntegratedSecurity = isWindowsAuth
 		};
+		if(!isWindowsAuth) {
+			_builder.UserID = username;
+			_builder.Password = password;
+		}
 	}
 	
 	public Mssql(int port, string username, string password) {
@@ -185,6 +193,7 @@ public class Mssql : IMssql
 	public bool TestConnection() {
 		try {
 			using SqlConnection connection = new(_builder.ConnectionString);
+			ConsoleLogger.Instance.Write($"Testing connection to {_builder.ConnectionString}");
 			connection.Open();
 			connection.Close();
 			return true;

@@ -6,8 +6,8 @@ namespace Clio.Common.db;
 public interface IDbConnectionTester
 {
 	ConnectionTestResult TestConnection(LocalDbServerConfiguration config);
-	ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password);
-	ConnectionTestResult TestPostgresConnection(string host, int port, string username, string password);
+	ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password, bool isWindowsAuth = false);
+	ConnectionTestResult TestPostgresConnection(string host, int port, string username, string password, bool isWindowsAuth = false);
 }
 
 public class ConnectionTestResult
@@ -30,8 +30,8 @@ public class DbConnectionTester : IDbConnectionTester
 		string dbType = config.DbType?.ToLowerInvariant();
 
 		return dbType switch {
-			"mssql" => TestMssqlConnection(config.Hostname, config.Port, config.Username, config.Password),
-			"postgres" or "postgresql" => TestPostgresConnection(config.Hostname, config.Port, config.Username, config.Password),
+			"mssql" => TestMssqlConnection(config.Hostname, config.Port, config.Username, config.Password, config.UseWindowsAuth),
+			"postgres" or "postgresql" => TestPostgresConnection(config.Hostname, config.Port, config.Username, config.Password, config.UseWindowsAuth),
 			_ => new ConnectionTestResult {
 				Success = false,
 				ErrorMessage = $"Unsupported database type: {config.DbType}",
@@ -40,9 +40,10 @@ public class DbConnectionTester : IDbConnectionTester
 		};
 	}
 
-	public ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password) {
+	public ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password, 
+			bool isWindowsAuth = false) {
 		try {
-			IMssql mssql = _dbClientFactory.CreateMssql(host, port, username, password);
+			IMssql mssql = _dbClientFactory.CreateMssql(host, port, username, password, isWindowsAuth);
 			bool canConnect = mssql.TestConnection();
 
 			if (canConnect) {
@@ -61,9 +62,10 @@ public class DbConnectionTester : IDbConnectionTester
 		}
 	}
 
-	public ConnectionTestResult TestPostgresConnection(string host, int port, string username, string password) {
+	public ConnectionTestResult TestPostgresConnection(string host, int port, string username, string password, 
+			bool isWindowsAuth = false) {
 		try {
-			Postgres postgres = _dbClientFactory.CreatePostgresSilent(host, port, username, password);
+			Postgres postgres = _dbClientFactory.CreatePostgresSilent(host, port, username, password, isWindowsAuth);
 			
 			string connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres;Timeout=5";
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);

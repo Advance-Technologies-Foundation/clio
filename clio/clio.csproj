@@ -26,7 +26,7 @@
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <LangVersion>Latest</LangVersion>
+	  <LangVersion>preview</LangVersion>
     <UseAppHost>false</UseAppHost>
       <NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
