@@ -34,8 +34,7 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	#region Methods: Setup
 
 	[SetUp]
-	public void Setup()
-	{
+	public override void Setup() {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_logger = Substitute.For<ILogger>();
 		_service = new EnvManageUiService();

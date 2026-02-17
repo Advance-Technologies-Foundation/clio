@@ -8,6 +8,7 @@ using Clio.Command;
 using Clio.Common;
 using Clio.ComposableApplication;
 using Clio.Package;
+using Clio.Workspace;
 
 #endregion
 

@@ -110,6 +110,15 @@ public class TemplateProvider : ITemplateProvider
 		}
 		return File.ReadAllText(templatePath);
 	}
+	
+	public string GetTemplateWithoutTpl(string templateName){
+		templateName.CheckArgumentNullOrWhiteSpace(nameof(templateName));
+		string templatePath = _workingDirectoriesProvider.GetTemplatePathWithoutTpl(templateName);
+		if (!File.Exists(templatePath)) {
+			throw new InvalidOperationException($"Invalid template file path '{templatePath}'");
+		}
+		return File.ReadAllText(templatePath);
+	}
 
 	public string[] GetTemplateDirectories(string templateCode){
 		string templateFolder = _workingDirectoriesProvider.GetTemplateFolderPath(templateCode);

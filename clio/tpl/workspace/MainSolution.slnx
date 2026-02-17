@@ -1,0 +1,8 @@
+﻿<Solution>
+	<Configurations>
+		<BuildType Name="Debug" />
+		<BuildType Name="Release" />
+		<BuildType Name="dev-n8" />
+		<BuildType Name="dev-nf" />
+	</Configurations>
+</Solution>

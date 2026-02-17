@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using CreatioModel;
+using DocumentFormat.OpenXml.Office2010.Excel;
 using Newtonsoft.Json.Linq;
 using Terrasoft.Core;
 using static CreatioModel.SysSettings;
@@ -311,14 +312,14 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 	
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
-		
-		var sysSetting = GetSysSettingByCode(code); 
+		SysSettings sysSetting = GetSysSettingByCode(code); 
 		if(sysSetting is null) {
-			var result = InsertSysSetting(optsCode, code, optsType);
+			InsertSysSettingResponse result = InsertSysSetting(optsCode, code, optsType);
 			string text = result switch {
 				{Success: true, Id: var id} when id != Guid.Empty => $"SysSettings with code: {code} created.",
-				{Success: false, Id: var id} when id == Guid.Empty =>
-					$"SysSettings with code: {code} already exists."
+				{Success: false, Id: var id} when id == Guid.Empty => $"SysSettings with code: {code} already exists.",
+				{Success: false}  => $"SysSettings with code: {code} already exists.",
+				{Success: true}  => $"SysSettings with code: {code} created.",
 			};
 			_logger.WriteInfo(text);
 		}

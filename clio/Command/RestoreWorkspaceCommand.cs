@@ -14,6 +14,7 @@ namespace Clio.Command
 		public WorkspaceOptions() {
 			IsNugetRestore = true;
 			IsCreateSolution = true;
+			AddBuildProps = true;
 		}
 
 		[Option( "IsNugetRestore", Required = false, HelpText = "True if you need to restore nugget package SDK", Default = true)]
@@ -26,9 +27,13 @@ namespace Clio.Command
 		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
 		public string AppCode { get; set; }
 
+		[Option("AddBuildProps", Required = false, Default =true, HelpText = "Add build props for dll paths in the project file")]
+		public bool AddBuildProps { get; set; }
+
+		
 	}
 
-	[Verb("restore-workspace", Aliases = new string[] { "restorew", "pullw", "pull-workspace" },
+	[Verb("restore-workspace", Aliases = ["restorew", "pullw", "pull-workspace"],
 		HelpText = "Restore clio workspace")]
 	public class RestoreWorkspaceOptions : WorkspaceOptions
 	{
@@ -80,8 +85,8 @@ namespace Clio.Command
 			}
 		}
 
-		private CreateWorkspaceCommandOptions CloneFromRestoreOptions(RestoreWorkspaceOptions options) {
-			return new CreateWorkspaceCommandOptions {
+		private static CreateWorkspaceCommandOptions CloneFromRestoreOptions(RestoreWorkspaceOptions options) =>
+			new() {
 				IsNugetRestore = options.IsNugetRestore,
 				IsCreateSolution = options.IsCreateSolution,
 				AppCode = options.AppCode,
@@ -107,9 +112,9 @@ namespace Clio.Command
 				DbWorknigFolder = options.DbWorknigFolder,
 				DbName = options.DbName,
 				Force = options.Force,
-				CallbackProcess = options.CallbackProcess
+				CallbackProcess = options.CallbackProcess,
+				AddBuildProps = options.AddBuildProps
 			};
-		}
 
 		#endregion
 

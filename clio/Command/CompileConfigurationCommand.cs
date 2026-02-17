@@ -166,7 +166,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			
 		}
 		// Could not parse errors, return original json
-		catch (Exception e) {
+		catch {
 			return json;
 		}
 	};

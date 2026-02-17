@@ -127,7 +127,7 @@ public class BindingsModule {
 				k8Instance = new Kubernetes(config);
 				return k8Instance;
 			}
-			catch (Exception e) {
+			catch {
 				k8Instance = new FakeKubernetes();
 				return k8Instance;
 			}
@@ -288,6 +288,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<ShowAppListCommand>();
 		containerBuilder.RegisterType<EnvManageUiCommand>();
 		containerBuilder.RegisterType<EnvManageUiService>().As<IEnvManageUiService>();
+		containerBuilder.RegisterType<InstalledApplication>().As<IInstalledApplication>();
 		
 		containerBuilder.RegisterType<Link4RepoCommand>();
 		containerBuilder.RegisterType<LinkPackageStoreCommand>();

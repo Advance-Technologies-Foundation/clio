@@ -1994,18 +1994,37 @@ clio create-workspace --AppCode <APP_CODE>
 
 ## restore-workspace
 
-Restore packages in you file system via command from selected environment
+Restore packages in your file system from a selected Creatio environment. This command downloads package source code, restores NuGet dependencies, creates solution files, and configures build properties.
+
+**Key Features:**
+- Downloads all packages from Creatio environment to local `packages/` directory
+- Creates **MainSolution.slnx** file in workspace root for IDE integration
+- Creates **.build-props/** directory with environment-specific build configurations
+- Automatically updates all package .csproj files with build props imports
+- Restores CreatioSDK NuGet package (optional, enabled by default)
 
 ```powershell
 clio restore-workspace -e demo
 ```
 
-Workspace supports Package assembly. Clio creates, ready to go solution that you can work on
-in a professional IDE of your choice. To open solution execute command
+**Aliases:** `restorew`, `pullw`, `pull-workspace`
+
+**Prerequisites:** Requires cliogate package version 2.0.0.0 or higher installed on Creatio instance.
+
+**Options:**
+- `--IsNugetRestore` (default: true): Restore CreatioSDK NuGet package
+- `--IsCreateSolution` (default: true): Create MainSolution.slnx file
+- `--AddBuildProps` (default: true): Create .build-props directory and update project files
+- `--AppCode`: Application code for package filtering
+
+Workspace supports package assembly. Clio creates a ready-to-go solution that you can work on
+in a professional IDE of your choice. To open solution execute command:
 
 ```powershell
 OpenSolution.cmd
 ```
+
+For detailed documentation, see [`restore-workspace`](./docs/commands/restore-workspace.md).
 
 ## push-workspace
 

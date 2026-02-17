@@ -1,4 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+    <Import Project="..\..\.build-props\env.$(Configuration).props" Condition="Exists('..\..\.build-props\env.$(Configuration).props')" />
     <Choose>
         <When Condition="'$(CoreTargetFramework)' == 'net472'">
             <PropertyGroup>
@@ -15,9 +16,11 @@
     </Choose>
 
     <PropertyGroup>
+        <LangVersion>7.3</LangVersion>
         <IsPackable>false</IsPackable>
         <RootNamespace>{{packageUnderTest}}.Tests</RootNamespace>
         <PlatformTarget>x64</PlatformTarget>
+        <Configurations>Debug;Release;dev-n8;dev-nf</Configurations>
     </PropertyGroup>
 
     <PropertyGroup Label="SonarQube">

@@ -1,58 +1,86 @@
+using System.Collections.Generic;
 using System.Linq;
+using System.Xml;
+using Clio.Common;
+using Clio.Workspaces;
 
-namespace Clio.Workspaces
-{
-	using System.Collections.Generic;
-	using System.Text;
-	using Clio.Common;
+namespace Clio.Workspace;
 
-	#region Class: SolutionCreator
+public interface ISolutionCreator{
+	#region Methods: Public
+	void AddProjectToSolution(string solutionPath, IEnumerable<SolutionProject> solutionProjects);
 
-	public class SolutionCreator : ISolutionCreator
-	{
+	#endregion
+}
 
-		#region Fields: Private
+#region Class: SolutionCreator
 
-		private readonly IFileSystem _fileSystem;
+public class SolutionCreator : ISolutionCreator{
+	#region Fields: Private
 
-		#endregion
+	private readonly IFileSystem _fileSystem;
+	private readonly ILogger _logger;
+	private readonly ITemplateProvider _templateProvider;
 
-		#region Constructors: Public
+	#endregion
 
-		public SolutionCreator(IFileSystem fileSystem) {
-			fileSystem.CheckArgumentNull(nameof(fileSystem));
-			_fileSystem = fileSystem;
-		}
+	#region Constructors: Public
 
-		#endregion
-
-		#region Methods: Private
-
-		public string BuildSolutionContent(IEnumerable<SolutionProject> solutionProjects) {
-			// Build .slnx as XML
-			var sortedProjects = solutionProjects.OrderBy(p => p.Path).ToList();
-			var sb = new StringBuilder();
-			sb.AppendLine("<Solution>");
-			foreach (var sp in sortedProjects) {
-				sb.AppendLine($"    <Project Path=\"{System.Security.SecurityElement.Escape(sp.Path)}\" />");
-			}
-			sb.AppendLine("</Solution>");
-			return sb.ToString();
-		}
-
-		#endregion
-
-		#region Methods: Public
-
-		public void Create(string solutionPath, IEnumerable<SolutionProject> solutionProjects) {
-			string solutionContent = BuildSolutionContent(solutionProjects);
-			_fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
-		}
-
-		#endregion
-
+	public SolutionCreator(IFileSystem fileSystem, ILogger logger, ITemplateProvider templateProvider) {
+		fileSystem.CheckArgumentNull(nameof(fileSystem));
+		_fileSystem = fileSystem;
+		_logger = logger;
+		_templateProvider = templateProvider;
 	}
 
 	#endregion
 
+	#region Methods: Public
+	
+	public void AddProjectToSolution(string solutionPath, IEnumerable<SolutionProject> solutionProjects) {
+
+		if (!_fileSystem.ExistsFile(solutionPath)) {
+			CreateNewMainSolution(solutionPath);
+		}
+		
+		string slnxContent = _fileSystem.ReadAllText(solutionPath);
+		XmlDocument doc = new();
+		doc.LoadXml(slnxContent);
+
+		XmlNode solutionNode = doc.SelectSingleNode("Solution");
+		if (solutionNode == null) {
+			_logger.WriteWarning($"[WARNING] Solution file {solutionPath} does not contain a root <Solution> node.");
+			return;
+		}
+		XmlNodeList existingProjects = solutionNode.SelectNodes("Project");
+		List<string> paths = [];
+		if (existingProjects != null) {
+			foreach (XmlNode existingProject in existingProjects) {
+				if (existingProject.Attributes != null) {
+					string path = existingProject.Attributes["Path"].Value;
+					paths.Add(path);
+				}
+			}
+		}
+		foreach (SolutionProject sp in solutionProjects) {
+			if (!paths.Contains(sp.Path)) {
+				XmlElement projectNode = doc.CreateElement("Project");
+				projectNode.SetAttribute("Path", sp.Path);
+				solutionNode.AppendChild(projectNode);
+				paths.Add(sp.Path);
+			}
+		}
+
+		doc.Save(solutionPath);
+	}
+
+	private void CreateNewMainSolution(string solutionPath) {
+		string solutionContent = _templateProvider.GetTemplate("workspace/MainSolution.slnx");
+		_fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
+		_logger.WriteWarning($"[WARNING] Solution file {solutionPath} does not exist, created new MainSolution.slnx");
+	}
+
+	#endregion
 }
+
+#endregion

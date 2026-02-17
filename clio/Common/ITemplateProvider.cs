@@ -10,6 +10,7 @@ namespace Clio.Common
 		#region Methods: Public
 
 		string GetTemplate(string templateName);
+		string GetTemplateWithoutTpl(string templateName);
 
 		void CopyTemplateFolder(string templateCode, string destinationPath, string creatioVersion = "",
 			string group = "", bool overrideFolder = true);

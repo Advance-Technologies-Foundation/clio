@@ -61,12 +61,20 @@
   </Choose>
   
   <ItemGroup>
-    <PackageReference Include="ATF.Repository" Version="2.0.3.2" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+    <PackageReference Include="ATF.Repository" Version="2.0.3.3" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="Npgsql" Version="7.0.6" />
-    <PackageReference Include="System.CodeDom" Version="5.0.0.0" />
-    <PackageReference Include="System.IO.Compression" Version="4.1.0" />
+    
+    <!-- 5.2.1 Is the version in the Core -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+    
+    <!-- 8.0.3 Is the version in the Core -->
+    <PackageReference Include="Npgsql" Version="8.0.3" />
+
+    <!-- 8.0.0 Is the version in the Core -->
+    <PackageReference Include="System.CodeDom" Version="8.0.0" />
+
+    <!-- 4.3.0 Is the version in the Core -->
+    <PackageReference Include="System.IO.Compression" Version="4.3.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="NLogExt">

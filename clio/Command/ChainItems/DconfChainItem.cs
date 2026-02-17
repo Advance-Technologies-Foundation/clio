@@ -13,7 +13,20 @@ public class DconfChainItem(DownloadConfigurationCommand dconf, ILogger logger, 
 	}
 
 	public ErrorOr<int> Execute(IDictionary<string, object> context) {
+
+		bool isEnv = context.TryGetValue(nameof(DownloadConfigurationCommandOptions.Environment),
+			out object environment);
+
+		bool isBuild = context.TryGetValue(nameof(DownloadConfigurationCommandOptions.BuildZipPath),
+			out object buildZipPath);
+
+	
+		// Early exist when no environment or build path provided
+		if (!(isEnv || isBuild)) {
+			return 0;
+		}
 		
+		// Early exist when directories already exist and are not empty
 		string ncDir = Path.Combine(workspacePathBuilder.RootPath, ".application", "net-core");
 		string nfDir = Path.Combine(workspacePathBuilder.RootPath, ".application", "net-framework");
 		
@@ -24,58 +37,39 @@ public class DconfChainItem(DownloadConfigurationCommand dconf, ILogger logger, 
 		if (!restoreRequired) {
 			return 0;
 		}
-		
-		const string question = "Would you like to restore workspace? (y/n)";
-		logger.WriteLine(question);
-		
-		
-		string answer = Console.ReadLine();
-		if (answer == null || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase)) {
+
+		if (isEnv) {
+			return Restore(environment as string, true);
+		}
+
+		return Restore(buildZipPath as string, false);
+	}
+
+	private ErrorOr<int> Restore(string value, bool isEnv) {
+		if (string.IsNullOrWhiteSpace(value)) {
 			return 0;
 		}
-		
-		if (context.TryGetValue(nameof(DownloadConfigurationCommandOptions.Environment), out object environment)) {
-			string value = environment as string;
-			if (!string.IsNullOrWhiteSpace(value)) {
-				string[] envs = value.Split(',');
-				int i = 0;
-				foreach (string env in envs) {
-					DownloadConfigurationCommandOptions options = new () {
-						Environment = env
-					};
-					try {
-						i+=dconf.Execute(options);
-					}
-					catch (Exception ex) {
-						var message = $"Failed to download configuration from environment {env}";
-						return Error.Failure("Failed.Dconf", $"{message}{Environment.NewLine}{ex.Message}");
-					}
-				}
-				return i;
+
+		string[] buildPaths = value.Split(',');
+		int i = 0;
+		foreach (string buildPath in buildPaths) {
+			DownloadConfigurationCommandOptions options = isEnv 
+				? new DownloadConfigurationCommandOptions { Environment = buildPath }
+				: new DownloadConfigurationCommandOptions { BuildZipPath = buildPath };
+			
+			try {
+				i+= dconf.Execute(options);
+			}
+			catch (Exception ex) {
+				string from = isEnv ? "environment" : "build path";
+				string message = $"Failed to download configuration from {ConsoleLogger.WrapRed(from)} {value}";
+				return Error.Failure("Failed.Dconf", $"{message}{Environment.NewLine}{ex.Message}");
 			}
 		}
-		
-		
-		if (context.TryGetValue(nameof(DownloadConfigurationCommandOptions.BuildZipPath), out object buildZipPath)) {
-			string value = buildZipPath as string;
-			if (!string.IsNullOrWhiteSpace(value)) {
-				string[] buildPaths = value.Split(',');
-				int i = 0;
-				foreach (string buildPath in buildPaths) {
-					DownloadConfigurationCommandOptions options = new () {
-						BuildZipPath = buildPath
-					};
-					try {
-						i+=dconf.Execute(options);
-					}
-					catch (Exception ex) {
-						var message = $"Failed to download configuration from environment {buildPath}";
-						return ErrorOr.Error.Failure("Failed.Dconf", $"{message}{Environment.NewLine}{ex.Message}");
-					}
-				}
-				return i;
-			}
-		}
-		return 0;
+		return i;
 	}
+	
+	
+	
+	
 }

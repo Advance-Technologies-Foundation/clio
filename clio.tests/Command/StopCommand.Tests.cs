@@ -24,7 +24,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 	private StopCommand _command;
 
 	[SetUp]
-	public void Setup()
+	public override void Setup()
 	{
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_serviceManager = Substitute.For<ISystemServiceManager>();
