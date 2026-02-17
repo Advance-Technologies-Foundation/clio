@@ -365,6 +365,13 @@ To restore to a local database server, add a `db` section to your `appsettings.j
       "password": "YourPassword",
       "description": "Local MSSQL Server for development"
     },
+    "my-local-mssql-windows-auth": {
+      "dbType": "mssql",
+      "hostname": "localhos",
+      "port": 0,
+      "useWindowsAuth": true,
+      "description": "Local MSSQL Server with Windows Authentication"
+    },
     "my-local-postgres": {
       "dbType": "postgres",
       "hostname": "localhost",
@@ -380,12 +387,18 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 
 **Configuration Fields:**
 - `dbType` (required): Database type - `mssql` or `postgres`
-- `hostname` (required): Database server hostname or IP address
-- `port` (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL)
-- `username` (required): Database username
-- `password` (required): Database password
+- `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
+- `port` (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `username` (required for SQL Authentication): Database username. Not required when using Windows Authentication
+- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication
+- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication. Default is `false`
 - `description` (optional): Description for documentation
 - `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
+
+**Note on Windows Authentication:**
+- When `useWindowsAuth` is `true`, clio connects using the Windows identity of the current user
+- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
+- Username and password fields are ignored when Windows Authentication is enabled
 
 ### Usage
 
@@ -4275,10 +4288,33 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
       "username": "sa",
       "password": "your_password",
       "description": "Local MSSQL Server"
+    },
+    "my-local-mssql-windows-auth": {
+      "dbType": "mssql",
+      "hostname": "localhost",
+      "port": 0,
+      "useWindowsAuth": true,
+      "description": "Local MSSQL Server with Windows Authentication"
     }
   }
 }
 ```
+
+**Configuration Fields:**
+- `dbType` (required): Database type - `postgres` or `mssql`
+- `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
+- `port` (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `username` (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication
+- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication
+- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`
+- `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
+- `description` (optional): Human-readable description
+
+**Note on Windows Authentication:**
+- When `useWindowsAuth` is `true`, clio will connect using the Windows identity of the current user
+- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
+- For named instances with Windows Auth, set `port` to `0` and specify full instance name in `hostname` (e.g., `localhost\SQLEXPRESS`)
+- Username and password fields are ignored when Windows Authentication is enabled
 
 ### Redis Database Configuration
 
