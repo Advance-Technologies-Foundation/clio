@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Autofac.Core;
 
@@ -13,6 +13,7 @@ internal static class ExceptionReadableMessageExtension
 		{
 			FileNotFoundException ex => $"{ex.Message}{ex.FileName}",
 			DependencyResolutionException ex => ex.InnerException?.Message ?? ex.Message,
+			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
 			_ => exception.Message
 		};
 	}

@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using Autofac;
 using Clio.Common;
 using Clio.Package;
 using Clio.Tests.Command;

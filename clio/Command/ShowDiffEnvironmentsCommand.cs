@@ -10,10 +10,10 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using Autofac;
 using Clio.UserEnvironment;
 using DocumentFormat.OpenXml.Drawing;
 using k8s.Models;
+using Microsoft.Extensions.DependencyInjection;
 using YamlDotNet.Serialization;
 
 namespace Clio.Command
@@ -117,7 +117,7 @@ namespace Clio.Command
 			Logger.WriteInfo($"Loading environments manifest from {environmentName}");
 			var sourceEnv = _settingsRepository.GetEnvironment(environmentName);
 			var container = new BindingsModule().Register(sourceEnv);
-			var command = container.Resolve<SaveSettingsToManifestCommand>();
+			var command = container.GetRequiredService<SaveSettingsToManifestCommand>();
 			command.Execute(new SaveSettingsToManifestOptions() {
 				EnvironmentName = environmentName,
 				ManifestFileName = manifestFilePath,

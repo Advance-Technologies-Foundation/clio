@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Autofac;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
@@ -18,6 +17,7 @@ using Clio.Query;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -354,7 +354,7 @@ internal class Program {
 
 	#region Properties: Internal
 
-	internal static IContainer Container { get; set; }
+	internal static IServiceProvider Container { get; set; }
 
 	#endregion
 
@@ -365,7 +365,7 @@ internal class Program {
 	public static IAppUpdater AppUpdater {
 		get {
 			if (_appUpdater == null) {
-				_appUpdater = Container.Resolve<IAppUpdater>();
+				_appUpdater = Container.GetRequiredService<IAppUpdater>();
 			}
 			return _appUpdater;
 		}
@@ -874,12 +874,12 @@ internal class Program {
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 		if(args.Length >= 2 && (args[1] == "--HELP" || args[1] == "-H")) {
-			IContainer bm = new BindingsModule().Register();
-			Parser.Default.Settings.CustomHelpViewer = bm.Resolve<LocalHelpViewer>();
+			IServiceProvider bm = new BindingsModule().Register();
+			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
 		}
 		else {
-			IContainer bm = new BindingsModule().Register();
-			Parser.Default.Settings.CustomHelpViewer = bm.Resolve<WikiHelpViewer>();
+			IServiceProvider bm = new BindingsModule().Register();
+			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<WikiHelpViewer>();
 		}
 		
 		ParserResult<object> parserResult = Parser.Default.ParseArguments(args, CommandOption);
@@ -917,9 +917,9 @@ internal class Program {
 			Container = new BindingsModule().Register(settings);
 		}
 		if (useCreatioLogStreamer) {
-			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.Resolve<ILogStreamer>());
+			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.GetRequiredService<ILogStreamer>());
 		}
-		return Container.Resolve<T>();
+		return Container.GetRequiredService<T>();
 	}
 
 	#endregion

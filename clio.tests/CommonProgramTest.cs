@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.IO;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Command;

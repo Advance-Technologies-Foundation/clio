@@ -11,9 +11,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using Autofac;
 using Clio.UserEnvironment;
 using k8s.Models;
+using Microsoft.Extensions.DependencyInjection;
 using YamlDotNet.Serialization;
 using Clio.Command.PackageCommand;
 
@@ -69,12 +69,12 @@ namespace Clio.Command
 					: options.WorkingDirectory;
 			if (this.settingsRepository != null) {
 				var sourceBindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Source));
-				this.showDiffEnvironmentsCommand = sourceBindingModule.Resolve<ShowDiffEnvironmentsCommand>();
-				this.pullPkgCommand = sourceBindingModule.Resolve<PullPkgCommand>();
+				this.showDiffEnvironmentsCommand = sourceBindingModule.GetRequiredService<ShowDiffEnvironmentsCommand>();
+				this.pullPkgCommand = sourceBindingModule.GetRequiredService<PullPkgCommand>();
 				var targetBindingModule = new BindingsModule().Register(settingsRepository.GetEnvironment(options.Target));
-				this.pushPackageCommand = targetBindingModule.Resolve<PushPackageCommand>();
-				this.applyEnvironmentManifestCommand = targetBindingModule.Resolve<ApplyEnvironmentManifestCommand>();
-				this.pingAppCommand = targetBindingModule.Resolve<PingAppCommand>();
+				this.pushPackageCommand = targetBindingModule.GetRequiredService<PushPackageCommand>();
+				this.applyEnvironmentManifestCommand = targetBindingModule.GetRequiredService<ApplyEnvironmentManifestCommand>();
+				this.pingAppCommand = targetBindingModule.GetRequiredService<PingAppCommand>();
 			}
 			var selectedMaintainers = string.IsNullOrWhiteSpace(options.Maintainer) ? null : options.Maintainer.Split(',',StringSplitOptions.TrimEntries);
 			var excludedMaintainers = string.IsNullOrWhiteSpace(options.ExcludeMaintainer) ? null : options.ExcludeMaintainer.Split(',',StringSplitOptions.TrimEntries);

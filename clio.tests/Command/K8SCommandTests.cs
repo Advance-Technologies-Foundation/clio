@@ -22,7 +22,9 @@ internal class K8SCommandTests : BaseClioModuleTests
 	[Test]
 	public void CreateK8SCommand_shouldthrowexception_ifKubernetesCannotBeRecognized() {
 		Action act = () => Container.Resolve<k8Commands>();
-		act.Should().Throw<Exception>().WithInnerException<KubeConfigException>()
-			.Which.Message.Should().BeEquivalentTo("Kubernetes cannot be recognized.");
+		var exceptionAssertions = act.Should().Throw<Exception>();
+		var thrown = exceptionAssertions.Which;
+		var message = thrown.InnerException is KubeConfigException inner ? inner.Message : thrown.Message;
+		message.Should().BeEquivalentTo("Kubernetes cannot be recognized.");
 	}
 }

@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using ATF.Repository.Providers;
-using Autofac;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.ChainItems;
@@ -35,10 +34,10 @@ using Clio.Workspace;
 using Clio.Workspaces;
 using Clio.YAML;
 using Creatio.Client;
+using FluentValidation;
 using k8s;
 using MediatR;
-using MediatR.Extensions.Autofac.DependencyInjection;
-using MediatR.Extensions.Autofac.DependencyInjection.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -65,322 +64,299 @@ public class BindingsModule {
 
 	#region Methods: Public
 
-	public IContainer Register(EnvironmentSettings settings = null, Action<ContainerBuilder> additionalRegistrations = null){
-		ContainerBuilder containerBuilder = new();
+	public Autofac.IContainer Register(EnvironmentSettings settings = null,
+		Action<Autofac.ContainerBuilder> additionalRegistrations = null){
+		return RegisterInternal(settings, additionalRegistrations is null
+			? null
+			: services => additionalRegistrations(new Autofac.ContainerBuilder(services)));
+	}
 
-		containerBuilder
-			.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
-			.Where(t => t != typeof(ConsoleLogger))
-			.AsImplementedInterfaces();
+	private Autofac.IContainer RegisterInternal(EnvironmentSettings settings, Action<IServiceCollection> additionalRegistrations){
+		IServiceCollection services = new ServiceCollection();
+		RegisterAssemblyInterfaceTypes(services);
+		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 
-		containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
-
-		if (settings != null) {
-			containerBuilder.Register(provider => {
-				IApplicationClient creatioClientInstance = new ApplicationClientFactory().CreateClient(settings);
-				containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
-				IDataProvider dataProvider = string.IsNullOrEmpty(settings.ClientId) switch {
-												false => new RemoteDataProvider(settings.Uri, settings.AuthAppUri,
-													settings.ClientId, settings.ClientSecret, settings.IsNetCore),
-												true => new RemoteDataProvider(settings.Uri, settings.Login,
-													settings.Password, settings.IsNetCore)
-											};
-				return dataProvider;
-			});
-			containerBuilder.RegisterInstance(settings);
-		}
-		else {
-
-			SettingsRepository sr = new SettingsRepository(_fileSystem);
-			string envName = sr.GetDefaultEnvironmentName();
-			EnvironmentSettings defSettings = sr.FindEnvironment(envName);
-			
-			if (defSettings is not null) {
-				containerBuilder.Register(provider => {
-					IApplicationClient creatioClientInstance = new ApplicationClientFactory().CreateClient(defSettings);
-					containerBuilder.RegisterInstance(creatioClientInstance).As<IApplicationClient>();
-					IDataProvider dataProvider = string.IsNullOrEmpty(defSettings.ClientId) switch {
-						false => new RemoteDataProvider(defSettings.Uri, defSettings.AuthAppUri,
-							defSettings.ClientId, defSettings.ClientSecret, defSettings.IsNetCore),
-						true => new RemoteDataProvider(defSettings.Uri, defSettings.Login,
-							defSettings.Password, defSettings.IsNetCore)
-					};
-					return dataProvider;
-				});
-				settings = defSettings;
-				containerBuilder.RegisterInstance(defSettings);
-			}
+		EnvironmentSettings activeSettings = settings;
+		if (activeSettings is null) {
+			SettingsRepository settingsRepository = new(_fileSystem);
+			string envName = settingsRepository.GetDefaultEnvironmentName();
+			activeSettings = settingsRepository.FindEnvironment(envName);
 		}
 
-		containerBuilder.Register(provider => {
+		if (activeSettings is not null) {
+			services.AddSingleton(activeSettings);
+			services.AddTransient<IDataProvider>(_ => string.IsNullOrEmpty(activeSettings.ClientId)
+				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
+					activeSettings.IsNetCore)
+				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
+					activeSettings.ClientSecret, activeSettings.IsNetCore));
+			CreatioClient creatioClient = string.IsNullOrEmpty(activeSettings.ClientId)
+				? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
+					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
+				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
+					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore);
+			services.AddSingleton<IApplicationClient>(new CreatioClientAdapter(creatioClient));
+			services.AddTransient<SysSettingsManager>();
+		}
 
-			IKubernetes k8Instance;
+		services.AddTransient<IKubernetes>(_ => {
 			try {
 				KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
-				Uri.TryCreate(config.Host, UriKind.Absolute, out var uriResult);
-				if (uriResult != null && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps)) {
-					k8sDns = uriResult.Host;
-				}
-				else {
+				Uri.TryCreate(config.Host, UriKind.Absolute, out Uri uriResult);
+				if (uriResult is null || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps)) {
 					throw new InvalidOperationException("Invalid Kubernetes configuration host.");
 				}
-				k8Instance = new Kubernetes(config);
-				return k8Instance;
+				k8sDns = uriResult.Host;
+				return new Kubernetes(config);
 			}
 			catch {
-				k8Instance = new FakeKubernetes();
-				return k8Instance;
+				return new FakeKubernetes();
 			}
-		}).As<IKubernetes>();
-		
-		containerBuilder.RegisterType<Common.Kubernetes.KubernetesClient>().As<IKubernetesClient>();
-		containerBuilder.RegisterType<K8ContextValidator>();
-		containerBuilder.RegisterType<K8ServiceResolver>().As<IK8ServiceResolver>();
-		containerBuilder.RegisterType<K8DatabaseDiscovery>().As<IK8DatabaseDiscovery>();
-		containerBuilder.RegisterType<DatabaseConnectivityChecker>().As<IDatabaseConnectivityChecker>();
-		containerBuilder.RegisterType<DatabaseCapabilityChecker>().As<IDatabaseCapabilityChecker>();
-		containerBuilder.RegisterType<K8DatabaseAssertion>();
-		containerBuilder.RegisterType<K8RedisAssertion>();
-		containerBuilder.RegisterType<Common.Assertions.FsPathAssertion>();
-		containerBuilder.RegisterType<Common.Assertions.FsPermissionAssertion>();
-		containerBuilder.RegisterType<k8Commands>();
-		containerBuilder.RegisterType<InfrastructurePathProvider>().As<IInfrastructurePathProvider>();
-	
-		containerBuilder.RegisterType<InstallerCommand>();
+		});
+
+		services.AddTransient<IKubernetesClient, Common.Kubernetes.KubernetesClient>();
+		services.AddTransient<K8ContextValidator>();
+		services.AddTransient<IK8ServiceResolver, K8ServiceResolver>();
+		services.AddTransient<IK8DatabaseDiscovery, K8DatabaseDiscovery>();
+		services.AddTransient<IDatabaseConnectivityChecker, DatabaseConnectivityChecker>();
+		services.AddTransient<IDatabaseCapabilityChecker, DatabaseCapabilityChecker>();
+		services.AddTransient<K8DatabaseAssertion>();
+		services.AddTransient<K8RedisAssertion>();
+		services.AddTransient<Common.Assertions.FsPathAssertion>();
+		services.AddTransient<Common.Assertions.FsPermissionAssertion>();
+		services.AddTransient<k8Commands>();
+		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
+		services.AddTransient<InstallerCommand>();
 
 		if (_fileSystem is not null) {
-			containerBuilder.RegisterInstance(_fileSystem).As<IFileSystem>();
+			services.AddSingleton(_fileSystem);
 		}
 		else {
-			containerBuilder.RegisterType<FileSystem>().As<IFileSystem>();
+			services.AddTransient<IFileSystem, FileSystem>();
 		}
 
 		IDeserializer deserializer = new DeserializerBuilder()
-									.WithNamingConvention(UnderscoredNamingConvention.Instance)
-									.IgnoreUnmatchedProperties()
-									.Build();
-
+			.WithNamingConvention(UnderscoredNamingConvention.Instance)
+			.IgnoreUnmatchedProperties()
+			.Build();
 		ISerializer serializer = new SerializerBuilder()
-								.WithNamingConvention(UnderscoredNamingConvention.Instance)
-								.ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults |
-									DefaultValuesHandling.OmitEmptyCollections)
-								.Build();
+			.WithNamingConvention(UnderscoredNamingConvention.Instance)
+			.ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults | DefaultValuesHandling.OmitEmptyCollections)
+			.Build();
+		services.AddSingleton(deserializer);
+		services.AddSingleton(serializer);
 
-		#region Epiremental CreatioCLient
+		services.AddTransient<DconfChainItem>();
+		services.AddTransient<IFollowUpChain, FollowUpChain>();
+		services.AddTransient<FeatureCommand>();
+		services.AddTransient<SysSettingsCommand>();
+		services.AddTransient<BuildInfoCommand>();
+		services.AddTransient<PushPackageCommand>();
+		services.AddTransient<InstallApplicationCommand>();
+		services.AddTransient<OpenCfgCommand>();
+		services.AddTransient<InstallGatePkgCommand>();
+		services.AddTransient<PingAppCommand>();
+		services.AddTransient<SqlScriptCommand>();
+		services.AddTransient<CompressPackageCommand>();
+		services.AddTransient<PushNuGetPackagesCommand>();
+		services.AddTransient<PackNuGetPackageCommand>();
+		services.AddTransient<RestoreNugetPackageCommand>();
+		services.AddTransient<InstallNugetPackageCommand>();
+		services.AddTransient<SetPackageVersionCommand>();
+		services.AddTransient<GetPackageVersionCommand>();
+		services.AddTransient<CheckNugetUpdateCommand>();
+		services.AddTransient<UpdateCliCommand>();
+		services.AddTransient<IUserPromptService, UserPromptService>();
+		services.AddTransient<DeletePackageCommand>();
+		services.AddTransient<GetPkgListCommand>();
+		services.AddTransient<RestoreWorkspaceCommand>();
+		services.AddTransient<CreateWorkspaceCommand>();
+		services.AddTransient<PushWorkspaceCommand>();
+		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
+		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
+		services.AddTransient<MergeWorkspacesCommand>();
+		services.AddTransient<LoadPackagesToFileSystemCommand>();
+		services.AddTransient<LoadPackagesToDbCommand>();
+		services.AddTransient<UploadLicensesCommand>();
+		services.AddTransient<HealthCheckCommand>();
+		services.AddTransient<ShowLocalEnvironmentsCommand>();
+		services.AddTransient<ClearLocalEnvironmentCommand>();
+		services.AddTransient<AddPackageCommand>();
+		services.AddTransient<UnlockPackageCommand>();
+		services.AddTransient<LockPackageCommand>();
+		services.AddTransient<DataServiceQuery>();
+		services.AddTransient<CallServiceCommand>();
+		services.AddTransient<RestoreFromPackageBackupCommand>();
+		services.AddTransient<Marketplace>();
+		services.AddTransient<CreateUiProjectCommand>();
+		services.AddTransient<CreateUiProjectOptionsValidator>();
+		services.AddTransient<SetIconParametersValidator>();
+		services.AddTransient<DownloadConfigurationCommand>();
+		services.AddTransient<DeployCommand>();
+		services.AddTransient<InfoCommand>();
+		services.AddTransient<ExtractPackageCommand>();
+		services.AddTransient<ExternalLinkCommand>();
+		services.AddTransient<PowerShellFactory>();
+		services.AddTransient<RegAppCommand>();
+		services.AddTransient<RestartCommand>();
+		services.AddTransient<StartCommand>();
+		services.AddTransient<StopCommand>();
+		services.AddTransient<HostsCommand>();
+		services.AddTransient<RedisCommand>();
+		services.AddTransient<SetFsmConfigCommand>();
+		services.AddTransient<TurnFsmCommand>();
+		services.AddTransient<TurnFarmModeCommand>();
+		services.AddTransient<ScenarioRunnerCommand>();
+		services.AddTransient<CompressAppCommand>();
+		services.AddTransient<Scenario>();
+		services.AddTransient<ConfigureWorkspaceCommand>();
+		services.AddTransient<CreateInfrastructureCommand>();
+		services.AddTransient<DeployInfrastructureCommand>();
+		services.AddTransient<DeleteInfrastructureCommand>();
+		services.AddTransient<OpenInfrastructureCommand>();
+		services.AddTransient<CheckWindowsFeaturesCommand>();
+		services.AddTransient<ManageWindowsFeaturesCommand>();
+		services.AddTransient<CreateTestProjectCommand>();
+		services.AddTransient<ListenCommand>();
+		services.AddTransient<ShowPackageFileContentCommand>();
+		services.AddTransient<CompilePackageCommand>();
+		services.AddTransient<SwitchNugetToDllCommand>();
+		services.AddTransient<NugetMaterializer>();
+		services.AddTransient<PropsBuilder>();
+		services.AddTransient<UninstallAppCommand>();
+		services.AddTransient<DownloadAppCommand>();
+		services.AddTransient<DeployAppCommand>();
+		services.AddTransient<ApplicationManager>();
+		services.AddTransient<RestoreDbCommand>();
+		services.AddTransient<IDbClientFactory, DbClientFactory>();
+		services.AddTransient<IDbConnectionTester, DbConnectionTester>();
+		services.AddTransient<IBackupFileDetector, BackupFileDetector>();
+		services.AddSingleton<IPostgresToolsPathDetector, PostgresToolsPathDetector>();
+		services.AddTransient<SetWebServiceUrlCommand>();
+		services.AddTransient<ListInstalledAppsCommand>();
+		services.AddTransient<GetCreatioInfoCommand>();
+		services.AddTransient<SetApplicationVersionCommand>();
+		services.AddTransient<ApplyEnvironmentManifestCommand>();
+		services.AddTransient<EnvironmentManager>();
+		services.AddTransient<GetWebServiceUrlCommand>();
+		services.AddTransient<MockDataCommand>();
+		services.AddTransient<AssertCommand>();
+		services.AddTransient<ConsoleProgressbar>();
+		services.AddTransient<ApplicationLogProvider>();
+		services.AddTransient<LastCompilationLogCommand>();
+		services.AddTransient<LinkWorkspaceWithTideRepositoryCommand>();
+		services.AddTransient<CheckWebFarmNodeConfigurationsCommand>();
+		services.AddTransient<GetAppHashCommand>();
+		services.AddTransient<ShowAppListCommand>();
+		services.AddTransient<EnvManageUiCommand>();
+		services.AddTransient<IEnvManageUiService, EnvManageUiService>();
+		services.AddTransient<IInstalledApplication, InstalledApplication>();
+		services.AddTransient<Link4RepoCommand>();
+		services.AddTransient<LinkPackageStoreCommand>();
+		services.AddTransient<LinkCoreSrcCommand>();
 
-		if (settings is not null) {
-			CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId)
-				? new CreatioClient(settings.Uri ?? "http://localhost", settings.Login ?? "Supervisor", settings.Password ?? "Supervisor", true, settings.IsNetCore)
-				: CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId,
-					settings.ClientSecret, settings.IsNetCore);
-			IApplicationClient clientAdapter = new CreatioClientAdapter(creatioClient);
-			containerBuilder.RegisterInstance(clientAdapter).As<IApplicationClient>();
+		services.AddMediatR(cfg => {
+			cfg.RegisterServicesFromAssembly(typeof(BindingsModule).Assembly);
+			cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
+		});
 
-			containerBuilder.RegisterType<SysSettingsManager>();
+		services.AddTransient<ExternalLinkOptionsValidator>();
+		services.AddTransient<SetFsmConfigOptionsValidator>();
+		services.AddTransient<TurnFarmModeOptionsValidator>();
+		services.AddTransient<UninstallCreatioCommandOptionsValidator>();
+		services.AddTransient<Link4RepoOptionsValidator>();
+		services.AddTransient<LinkPackageStoreOptionsValidator>();
+		services.AddTransient<DownloadConfigurationCommandOptionsValidator>();
+		services.AddTransient<ICreatioUninstaller, CreatioUninstaller>();
+		services.AddTransient<UnzipRequestValidator>();
+		services.AddTransient<GitSyncCommand>();
+		services.AddTransient<DeactivatePackageCommand>();
+		services.AddTransient<PublishWorkspaceCommand>();
+		services.AddTransient<ActivatePackageCommand>();
+		services.AddTransient<PackageHotFixCommand>();
+		services.AddTransient<PackageEditableMutator>();
+		services.AddTransient<SaveSettingsToManifestCommand>();
+		services.AddTransient<ShowDiffEnvironmentsCommand>();
+		services.AddTransient<CloneEnvironmentCommand>();
+		services.AddTransient<PullPkgCommand>();
+		services.AddTransient<AssemblyCommand>();
+		services.AddTransient<UninstallCreatioCommand>();
+		services.AddTransient<InstallTideCommand>();
+		services.AddTransient<AddSchemaCommand>();
+		services.AddTransient<CreatioInstallerService>();
+		services.AddTransient<SetApplicationIconCommand>();
+		services.AddTransient<CustomizeDataProtectionCommand>();
+		services.AddTransient<GenerateProcessModelCommand>();
+		services.AddTransient<IZipFile, ZipFileWrapper>();
+		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();
+		services.AddTransient<IProcessModelWriter, ProcessModelWriter>();
+		services.AddTransient<IZipBasedApplicationDownloader, ZipBasedApplicationDownloader>();
+		services.AddTransient<ICreatioHostService, CreatioHostService>();
+		services.AddTransient<IISDeploymentStrategy>();
+		services.AddTransient<DotNetDeploymentStrategy>();
+		services.AddTransient<DeploymentStrategyFactory>();
+		services.AddTransient<OpenAppCommand>();
+		services.AddSingleton<ISystemServiceManager>(_ =>
+			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager() :
+			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager() :
+			new WindowsSystemServiceManager());
+		services.AddSingleton<Common.IIS.IIISSiteDetector>(_ =>
+			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+				? new Common.IIS.WindowsIISSiteDetector()
+				: new Common.IIS.StubIISSiteDetector());
+		services.AddSingleton<Common.IIS.IIISAppPoolManager>(_ =>
+			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+				? new Common.IIS.WindowsIISAppPoolManager()
+				: new Common.IIS.StubIISAppPoolManager());
+		services.AddTransient<ClioGateway>();
+		services.AddTransient<CompileConfigurationCommand>();
+		services.AddTransient<IMssql, Mssql>();
+		services.AddTransient<IPostgres, Postgres>();
+		services.AddTransient<LocalHelpViewer>();
+		services.AddTransient<WikiHelpViewer>();
+		RegisterFluentValidators(services);
+
+		additionalRegistrations?.Invoke(services);
+		IServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
+			ValidateOnBuild = false,
+			ValidateScopes = true
+		});
+		return new Autofac.Container(provider);
+	}
+
+	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
+		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
+		foreach (Type type in types) {
+			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
+				continue;
+			}
+			foreach (Type implementedInterface in type.GetInterfaces()) {
+				if (implementedInterface.Namespace is null
+					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
+					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)) {
+					continue;
+				}
+				services.AddTransient(implementedInterface, type);
+			}
 		}
+	}
 
-		#endregion
-
-		containerBuilder.RegisterType<DconfChainItem>().As<DconfChainItem>();
-		containerBuilder.RegisterType<FollowUpChain>().As<IFollowUpChain>();
-		containerBuilder.RegisterInstance(deserializer).As<IDeserializer>();
-		containerBuilder.RegisterInstance(serializer).As<ISerializer>();
-		containerBuilder.RegisterType<FeatureCommand>();
-		containerBuilder.RegisterType<SysSettingsCommand>();
-		containerBuilder.RegisterType<BuildInfoCommand>();
-		containerBuilder.RegisterType<PushPackageCommand>();
-		containerBuilder.RegisterType<InstallApplicationCommand>();
-		containerBuilder.RegisterType<OpenCfgCommand>();
-		containerBuilder.RegisterType<InstallGatePkgCommand>();
-		containerBuilder.RegisterType<PingAppCommand>();
-		containerBuilder.RegisterType<SqlScriptCommand>();
-		containerBuilder.RegisterType<CompressPackageCommand>();
-		containerBuilder.RegisterType<PushNuGetPackagesCommand>();
-		containerBuilder.RegisterType<PackNuGetPackageCommand>();
-		containerBuilder.RegisterType<RestoreNugetPackageCommand>();
-		containerBuilder.RegisterType<InstallNugetPackageCommand>();
-		containerBuilder.RegisterType<SetPackageVersionCommand>();
-		containerBuilder.RegisterType<GetPackageVersionCommand>();
-		containerBuilder.RegisterType<CheckNugetUpdateCommand>();
-		containerBuilder.RegisterType<UpdateCliCommand>();
-		containerBuilder.RegisterType<UserPromptService>().As<IUserPromptService>();
-		containerBuilder.RegisterType<DeletePackageCommand>();
-		containerBuilder.RegisterType<GetPkgListCommand>();
-		containerBuilder.RegisterType<RestoreWorkspaceCommand>();
-		containerBuilder.RegisterType<CreateWorkspaceCommand>();
-		containerBuilder.RegisterType<PushWorkspaceCommand>();
-		containerBuilder.RegisterType<WorkspaceMerger>().As<IWorkspaceMerger>();
-		containerBuilder.RegisterType<WorkspacePackageFilter>().As<IWorkspacePackageFilter>();
-		containerBuilder.RegisterType<MergeWorkspacesCommand>();
-		containerBuilder.RegisterType<LoadPackagesToFileSystemCommand>();
-		containerBuilder.RegisterType<LoadPackagesToDbCommand>();
-		containerBuilder.RegisterType<UploadLicensesCommand>();
-		containerBuilder.RegisterType<HealthCheckCommand>();
-		containerBuilder.RegisterType<ShowLocalEnvironmentsCommand>();
-		containerBuilder.RegisterType<ClearLocalEnvironmentCommand>();
-		containerBuilder.RegisterType<AddPackageCommand>();
-		containerBuilder.RegisterType<UnlockPackageCommand>();
-		containerBuilder.RegisterType<LockPackageCommand>();
-		containerBuilder.RegisterType<DataServiceQuery>();
-		containerBuilder.RegisterType<CallServiceCommand>();
-		containerBuilder.RegisterType<RestoreFromPackageBackupCommand>();
-		containerBuilder.RegisterType<Marketplace>();
-		containerBuilder.RegisterType<CreateUiProjectCommand>();
-		containerBuilder.RegisterType<CreateUiProjectOptionsValidator>();
-		containerBuilder.RegisterType<SetIconParametersValidator>();
-		containerBuilder.RegisterType<DownloadConfigurationCommand>();
-		containerBuilder.RegisterType<DeployCommand>();
-		containerBuilder.RegisterType<InfoCommand>();
-		containerBuilder.RegisterType<ExtractPackageCommand>();
-		containerBuilder.RegisterType<ExternalLinkCommand>();
-		containerBuilder.RegisterType<PowerShellFactory>();
-		containerBuilder.RegisterType<RegAppCommand>();
-		containerBuilder.RegisterType<RestartCommand>();
-		containerBuilder.RegisterType<StartCommand>();
-		containerBuilder.RegisterType<StopCommand>();
-		containerBuilder.RegisterType<HostsCommand>();
-		containerBuilder.RegisterType<RedisCommand>();
-		containerBuilder.RegisterType<SetFsmConfigCommand>();
-		containerBuilder.RegisterType<TurnFsmCommand>();
-		containerBuilder.RegisterType<TurnFarmModeCommand>();
-		containerBuilder.RegisterType<ScenarioRunnerCommand>();
-		containerBuilder.RegisterType<CompressAppCommand>();
-		containerBuilder.RegisterType<Scenario>();
-		containerBuilder.RegisterType<ConfigureWorkspaceCommand>();
-		containerBuilder.RegisterType<CreateInfrastructureCommand>();
-		containerBuilder.RegisterType<DeployInfrastructureCommand>();
-		containerBuilder.RegisterType<DeleteInfrastructureCommand>();
-		containerBuilder.RegisterType<OpenInfrastructureCommand>();
-		containerBuilder.RegisterType<CheckWindowsFeaturesCommand>();
-		containerBuilder.RegisterType<ManageWindowsFeaturesCommand>();
-		containerBuilder.RegisterType<CreateTestProjectCommand>();
-		containerBuilder.RegisterType<ListenCommand>();
-		containerBuilder.RegisterType<ShowPackageFileContentCommand>();
-		containerBuilder.RegisterType<CompilePackageCommand>();
-		containerBuilder.RegisterType<SwitchNugetToDllCommand>();
-		containerBuilder.RegisterType<NugetMaterializer>();
-		containerBuilder.RegisterType<PropsBuilder>();
-		containerBuilder.RegisterType<UninstallAppCommand>();
-		containerBuilder.RegisterType<DownloadAppCommand>();
-		containerBuilder.RegisterType<DeployAppCommand>();
-		containerBuilder.RegisterType<ApplicationManager>();
-		containerBuilder.RegisterType<RestoreDbCommand>();
-		containerBuilder.RegisterType<DbClientFactory>().As<IDbClientFactory>();
-		containerBuilder.RegisterType<DbConnectionTester>().As<IDbConnectionTester>();
-		containerBuilder.RegisterType<BackupFileDetector>().As<IBackupFileDetector>();
-		containerBuilder.RegisterType<PostgresToolsPathDetector>().As<IPostgresToolsPathDetector>().SingleInstance();
-		containerBuilder.RegisterType<SetWebServiceUrlCommand>();
-		containerBuilder.RegisterType<ListInstalledAppsCommand>();
-		containerBuilder.RegisterType<GetCreatioInfoCommand>();
-		containerBuilder.RegisterType<SetApplicationVersionCommand>();
-		containerBuilder.RegisterType<ApplyEnvironmentManifestCommand>();
-		containerBuilder.RegisterType<EnvironmentManager>();
-		containerBuilder.RegisterType<GetWebServiceUrlCommand>();
-		containerBuilder.RegisterType<MockDataCommand>();
-		containerBuilder.RegisterType<AssertCommand>();
-		containerBuilder.RegisterType<ConsoleProgressbar>();
-		containerBuilder.RegisterType<ApplicationLogProvider>();
-		containerBuilder.RegisterType<LastCompilationLogCommand>();
-		//containerBuilder.RegisterType<CreateEntityCommand>();
-		containerBuilder.RegisterType<LinkWorkspaceWithTideRepositoryCommand>();
-		containerBuilder.RegisterType<CheckWebFarmNodeConfigurationsCommand>();
-		containerBuilder.RegisterType<GetAppHashCommand>();
-		containerBuilder.RegisterType<ShowAppListCommand>();
-		containerBuilder.RegisterType<EnvManageUiCommand>();
-		containerBuilder.RegisterType<EnvManageUiService>().As<IEnvManageUiService>();
-		containerBuilder.RegisterType<InstalledApplication>().As<IInstalledApplication>();
-		
-		containerBuilder.RegisterType<Link4RepoCommand>();
-		containerBuilder.RegisterType<LinkPackageStoreCommand>();
-		containerBuilder.RegisterType<LinkCoreSrcCommand>();
-		
-
-		MediatRConfiguration configuration = MediatRConfigurationBuilder
-											.Create(typeof(BindingsModule).Assembly)
-											.WithAllOpenGenericHandlerTypesRegistered()
-											.Build();
-		containerBuilder.RegisterMediatR(configuration);
-
-		containerBuilder.RegisterGeneric(typeof(ValidationBehaviour<,>)).As(typeof(IPipelineBehavior<,>));
-
-		//Validators
-		containerBuilder.RegisterType<ExternalLinkOptionsValidator>();
-		containerBuilder.RegisterType<SetFsmConfigOptionsValidator>();
-		containerBuilder.RegisterType<TurnFarmModeOptionsValidator>();
-		containerBuilder.RegisterType<UninstallCreatioCommandOptionsValidator>();
-		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
-		containerBuilder.RegisterType<LinkPackageStoreOptionsValidator>();
-		containerBuilder.RegisterType<DownloadConfigurationCommandOptionsValidator>();
-
-		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
-		containerBuilder.RegisterType<UnzipRequestValidator>();
-		containerBuilder.RegisterType<GitSyncCommand>();
-		containerBuilder.RegisterType<DeactivatePackageCommand>();
-		containerBuilder.RegisterType<PublishWorkspaceCommand>();
-		containerBuilder.RegisterType<ActivatePackageCommand>();
-		containerBuilder.RegisterType<PackageHotFixCommand>();
-		containerBuilder.RegisterType<PackageEditableMutator>();
-		containerBuilder.RegisterType<SaveSettingsToManifestCommand>();
-		containerBuilder.RegisterType<ShowDiffEnvironmentsCommand>();
-		containerBuilder.RegisterType<CloneEnvironmentCommand>();
-		containerBuilder.RegisterType<PullPkgCommand>();
-		containerBuilder.RegisterType<AssemblyCommand>();
-		containerBuilder.RegisterType<UninstallCreatioCommand>();
-		containerBuilder.RegisterType<InstallTideCommand>();
-		containerBuilder.RegisterType<AddSchemaCommand>();
-		containerBuilder.RegisterType<CreatioInstallerService>();
-		containerBuilder.RegisterType<SetApplicationIconCommand>();
-		containerBuilder.RegisterType<CustomizeDataProtectionCommand>();
-		containerBuilder.RegisterType<GenerateProcessModelCommand>();
-		containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
-		containerBuilder.RegisterType<ProcessModelGenerator>().As<IProcessModelGenerator>();
-		containerBuilder.RegisterType<ProcessModelWriter>().As<IProcessModelWriter>();
-		containerBuilder.RegisterType<ZipBasedApplicationDownloader>().As<IZipBasedApplicationDownloader>();
-
-		// Register deployment strategies and system service managers
-		containerBuilder.RegisterType<CreatioHostService>().As<ICreatioHostService>();
-		containerBuilder.RegisterType<IISDeploymentStrategy>();
-		containerBuilder.RegisterType<DotNetDeploymentStrategy>();
-		containerBuilder.RegisterType<DeploymentStrategyFactory>();
-		containerBuilder.RegisterType<OpenAppCommand>();
-
-		// Register platform-specific system service managers
-		containerBuilder.Register<ISystemServiceManager>(c =>
-		{
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-				return new LinuxSystemServiceManager();
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-				return new MacOSSystemServiceManager();
-			return new WindowsSystemServiceManager();
-		}).SingleInstance();
-
-		// Register platform-specific IIS site detector
-		containerBuilder.Register<Common.IIS.IIISSiteDetector>(c =>
-		{
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				return new Common.IIS.WindowsIISSiteDetector();
-			return new Common.IIS.StubIISSiteDetector();
-		}).SingleInstance();
-
-		// Register platform-specific IIS app pool manager
-		containerBuilder.Register<Common.IIS.IIISAppPoolManager>(c =>
-		{
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				return new Common.IIS.WindowsIISAppPoolManager();
-			return new Common.IIS.StubIISAppPoolManager();
-		}).SingleInstance();
-
-		containerBuilder.RegisterType<ClioGateway>();
-		containerBuilder.RegisterType<CompileConfigurationCommand>();
-
-		containerBuilder.RegisterType<Mssql>().As<IMssql>();
-		containerBuilder.RegisterType<Postgres>().As<IPostgres>();
-
-		containerBuilder.RegisterType<LocalHelpViewer>();
-		containerBuilder.RegisterType<WikiHelpViewer>();
-
-		additionalRegistrations?.Invoke(containerBuilder);
-		return containerBuilder.Build();
+	private static void RegisterFluentValidators(IServiceCollection services){
+		Type validatorInterfaceType = typeof(IValidator<>);
+		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
+		foreach (Type type in types) {
+			if (!type.IsClass || type.IsAbstract) {
+				continue;
+			}
+			Type[] validatorInterfaces = type.GetInterfaces();
+			foreach (Type validatorInterface in validatorInterfaces) {
+				if (!validatorInterface.IsGenericType
+					|| validatorInterface.GetGenericTypeDefinition() != validatorInterfaceType) {
+					continue;
+				}
+				services.AddTransient(validatorInterface, type);
+			}
+		}
 	}
 
 	#endregion
@@ -503,3 +479,4 @@ public class FakeKubernetes : IKubernetes
 	public IWellKnownOperations WellKnown { get; }
 	public IOpenidOperations Openid { get; }
 }
+

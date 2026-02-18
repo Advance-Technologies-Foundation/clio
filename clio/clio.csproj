@@ -117,14 +117,13 @@
 	</Choose>
 
 	<ItemGroup>
-		<PackageReference Include="Autofac" Version="9.0.0"/>
 		<PackageReference Include="ConsoleTables" Version="2.7.0"/>
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
 		<PackageReference Include="ErrorOr" Version="2.1.0"/>
 		<PackageReference Include="FluentValidation" Version="12.1.1"/>
 		<PackageReference Include="KubernetesClient" Version="18.0.13"/>
 		<PackageReference Include="MediatR" Version="[12.5.0]"/>
-		<PackageReference Include="MediatR.Extensions.Autofac.DependencyInjection" Version="[12.3.0]"/>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
 		<PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4"/>
 		<PackageReference Include="Microsoft.Dism" Version="4.0.7"/>
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.3" />

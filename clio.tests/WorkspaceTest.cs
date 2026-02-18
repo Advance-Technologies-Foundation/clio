@@ -1,4 +1,3 @@
-﻿using Autofac;
 using Clio.Package;
 using Clio.Workspaces;
 using FluentAssertions;

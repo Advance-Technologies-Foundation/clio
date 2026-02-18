@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Linq;
-using Autofac;
 using Clio.Common;
 using Clio.YAML;
 using CommandLine;
+using Microsoft.Extensions.DependencyInjection;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 
@@ -41,20 +41,20 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions>{
                     if (!string.IsNullOrWhiteSpace(stepOptions.Environment)) {
                         SettingsRepository settingsRepository = new(FileSystem);
                         EnvironmentSettings settings = settingsRepository.FindEnvironment(stepOptions.Environment);
-                        IContainer container = new BindingsModule().Register(settings);
+                        IServiceProvider container = new BindingsModule().Register(settings);
                         Program.Container = container;
                     }
                     else if (!string.IsNullOrWhiteSpace(options.Environment)) {
                         SettingsRepository settingsRepository = new(FileSystem);
                         stepOptions.Environment = options.Environment;
                         EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment);
-                        IContainer container = new BindingsModule().Register(settings);
+                        IServiceProvider container = new BindingsModule().Register(settings);
                         Program.Container = container;
                     }
                     else {
                         SettingsRepository settingsRepository = new(FileSystem);
                         EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment);
-                        IContainer container = new BindingsModule().Register(settings);
+                        IServiceProvider container = new BindingsModule().Register(settings);
                         Program.Container = container;
                     }
                 }
