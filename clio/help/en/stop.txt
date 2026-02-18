@@ -41,23 +41,20 @@ OPTIONS
     --all
         Stop all registered Creatio environments.
 
-    -q, --quiet
+    --silent
         Skip confirmation prompt and proceed immediately.
 
 EXAMPLE
     clio stop -e production
         stop production environment with confirmation
 
-    clio stop -e production --quiet
+    clio stop -e production --silent
         stop production without confirmation
-
-    clio stop -e production -q
-        same as above (short form)
 
     clio stop --all
         stop all environments with confirmation
 
-    clio stop --all --quiet
+    clio stop --all --silent
         stop all environments without confirmation
 
     Example output (IIS deployment):
@@ -101,7 +98,7 @@ CONFIRMATION PROMPT
 
     Continue? [y/N]: y
 
-    Use --quiet or -q flag to skip confirmation and proceed immediately.
+    Use --silent flag to skip confirmation and proceed immediately.
 
 ENVIRONMENT DETECTION
     An environment is considered active if any of the following are true:

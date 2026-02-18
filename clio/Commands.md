@@ -1239,14 +1239,14 @@ clio stop -e <ENV_NAME>
 clio stop --all
 
 # Stop without confirmation prompt
-clio stop -e <ENV_NAME> --quiet
-clio stop --all -q
+clio stop -e <ENV_NAME> --silent
+clio stop --all --silent
 ```
 
 ### Options
 - `-e, --environment <ENV_NAME>` - Stop specific environment
 - `--all` - Stop all registered Creatio environments
-- `-q, --quiet` - Skip confirmation prompt
+- `--silent` - Skip confirmation prompt
 
 ### Behavior
 
@@ -1305,13 +1305,12 @@ clio stop -e production
 
 Stop a specific environment without confirmation:
 ```bash
-clio stop -e production --quiet
-clio stop -e production -q
+clio stop -e production --silent
 ```
 
 Stop all registered environments:
 ```bash
-clio stop --all --quiet
+clio stop --all --silent
 ```
 
 Using alias:
@@ -1323,7 +1322,7 @@ clio stop-creatio -e dev
 
 **IIS Deployment (Windows)**:
 ```bash
-$ clio stop -e prod --quiet
+$ clio stop -e prod --silent
 
 Stopping environment: prod
 Stopping IIS application pool: prod
@@ -1335,7 +1334,7 @@ Stopped: 1
 
 **Background Process**:
 ```bash
-$ clio stop -e dev --quiet
+$ clio stop -e dev --silent
 
 Stopping environment: dev
 Killing process dotnet (PID: 12345)
@@ -1348,7 +1347,7 @@ Stopped: 1
 
 **Multiple Environments**:
 ```bash
-$ clio stop --all --quiet
+$ clio stop --all --silent
 
 Stopping environment: dev
 ✓ IIS application pool 'dev' stopped successfully
@@ -4559,7 +4558,7 @@ clio stop --all
 ### Options
 - `-e, --environment <ENV_NAME>` - Stop specific environment
 - `--all` - Stop all registered Creatio environments
-- `-q, --quiet` - Skip confirmation prompt
+- `--silent` - Skip confirmation prompt
 
 ### Behavior
 
@@ -4601,12 +4600,12 @@ clio stop -e dev1
 
 Stop a specific environment without confirmation:
 ```bash
-clio stop -e dev1 --quiet
+clio stop -e dev1 --silent
 ```
 
 Stop all registered environments:
 ```bash
-clio stop --all --quiet
+clio stop --all --silent
 ```
 
 ### Example Output

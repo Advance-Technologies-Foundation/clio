@@ -19,9 +19,6 @@ namespace Clio.Command
 	{
 		[Option("all", Required = false, HelpText = "Stop all Creatio services/processes")]
 		public bool All { get; set; }
-
-		[Option("quiet", Required = false, HelpText = "Stop without confirmation prompt")]
-		public bool Quiet { get; set; }
 	}
 
 	public class StopCommand : Command<StopOptions>
@@ -59,8 +56,8 @@ namespace Clio.Command
 					return 1;
 				}
 
-				// Show confirmation unless --quiet flag is set
-				if (!options.Quiet && !ConfirmStop(environmentsToStop))
+				// Show confirmation unless --silent flag is set
+				if (!options.IsSilent && !ConfirmStop(environmentsToStop))
 				{
 					_logger.WriteInfo("Operation cancelled by user.");
 					return 0;

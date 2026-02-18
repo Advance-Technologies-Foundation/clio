@@ -49,7 +49,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\inetpub\wwwroot\Creatio";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "production", Quiet = true };
+		StopOptions options = new() { Environment = "production", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("production").Returns(env);
 
@@ -85,7 +85,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\Creatio\Test";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "test", Quiet = true };
+		StopOptions options = new() { Environment = "test", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("test").Returns(env);
 		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
@@ -107,7 +107,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\Creatio\Test";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "test", Quiet = true };
+		StopOptions options = new() { Environment = "test", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("test").Returns(env);
 		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
@@ -127,7 +127,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\inetpub\wwwroot\Creatio";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "production", Quiet = true };
+		StopOptions options = new() { Environment = "production", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("production").Returns(env);
 
@@ -156,7 +156,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\inetpub\wwwroot\Creatio";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "production", Quiet = true };
+		StopOptions options = new() { Environment = "production", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("production").Returns(env);
 
@@ -183,7 +183,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\Creatio\Test";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "test", Quiet = true };
+		StopOptions options = new() { Environment = "test", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("test").Returns(env);
 		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
@@ -204,7 +204,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		// Arrange
 		string envPath = @"C:\inetpub\wwwroot\Creatio";
 		EnvironmentSettings env = new() { EnvironmentPath = envPath };
-		StopOptions options = new() { Environment = "production", Quiet = true };
+		StopOptions options = new() { Environment = "production", IsSilent = true };
 
 		_settingsRepository.GetEnvironment("production").Returns(env);
 
