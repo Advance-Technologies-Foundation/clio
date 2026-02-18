@@ -7,13 +7,13 @@ public interface IDbClientFactory
 
 	IMssql CreateMssql(int port, string username, string password);
 
-	Postgres CreatePostgres(string host, int port, string username, string password, bool isWindowsAuth = false);
+	Postgres CreatePostgres(string host, int port, string username, string password);
 
 	Postgres CreatePostgres(int port, string username, string password);
 
-	Postgres CreatePostgresSilent(string host, int port, string username, string password, bool isWindowsAuth = false);
+	Postgres CreatePostgresSilent(string host, int port, string username, string password);
 	
-	Postgres CreatePostgresSilent(int port, string username, string password, bool isWindowsAuth = false);
+	Postgres CreatePostgresSilent(int port, string username, string password);
 
 }
 
@@ -29,9 +29,9 @@ public class DbClientFactory : IDbClientFactory
 		return new Mssql(port, username, password);
 	}
 
-	public Postgres CreatePostgres(string host, int port, string username, string password, bool isWindowsAuth = false) {
+	public Postgres CreatePostgres(string host, int port, string username, string password) {
 		Postgres postgres = new Postgres();
-		postgres.Init(host, port, username, password, isWindowsAuth);
+		postgres.Init(host, port, username, password);
 		return postgres;
 	}
 	
@@ -39,16 +39,16 @@ public class DbClientFactory : IDbClientFactory
 		return new Postgres(port, username, password);
 	}
 
-	public Postgres CreatePostgresSilent(string host, int port, string username, string password, bool isWindowsAuth = false) {
+	public Postgres CreatePostgresSilent(string host, int port, string username, string password) {
 		Postgres postgres = new Postgres(NullLogger.Instance);
-		postgres.Init(host, port, username, password, isWindowsAuth);
+		postgres.Init(host, port, username, password);
 		return postgres;
 	}
 	
 	/// <summary>
 	/// Creates a Postgres instance with NullLogger for silent operations (connection testing)
 	/// </summary>
-	public Postgres CreatePostgresSilent(int port, string username, string password, bool isWindowsAuth = false) {
+	public Postgres CreatePostgresSilent(int port, string username, string password) {
 		return new Postgres(port, username, password, NullLogger.Instance);
 	}
 

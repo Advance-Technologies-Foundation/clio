@@ -762,9 +762,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		// Build connection string based on database type
 		dbConnectionString = dbConfig.DbType?.ToLowerInvariant() switch {
-			"postgres" or "postgresql" => dbConfig.UseWindowsAuth
-				? $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};Integrated Security=true;Timeout=500; CommandTimeout=400;MaxPoolSize=1024;"
-				: $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
+			"postgres" or "postgresql" => 
+				$"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
 			"mssql" => BuildMssqlConnectionString(dbConfig, options.SiteName),
 			var _ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
 		};

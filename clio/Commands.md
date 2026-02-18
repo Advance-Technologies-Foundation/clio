@@ -4304,13 +4304,14 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
 - `dbType` (required): Database type - `postgres` or `mssql`
 - `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
 - `port` (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
-- `username` (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication
-- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication
-- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`
+- `username` (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication for MSSQL
+- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication for MSSQL
+- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`. **Note:** Windows Authentication is not supported for PostgreSQL
 - `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
 - `description` (optional): Human-readable description
 
 **Note on Windows Authentication:**
+- Windows Authentication is only supported for MSSQL, not for PostgreSQL
 - When `useWindowsAuth` is `true`, clio will connect using the Windows identity of the current user
 - The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
 - For named instances with Windows Auth, set `port` to `0` and specify full instance name in `hostname` (e.g., `localhost\SQLEXPRESS`)
