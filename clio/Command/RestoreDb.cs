@@ -276,7 +276,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 	private int RestoreMssqlToLocalServer(LocalDbServerConfiguration config, string backupPath, string dbName, bool dropIfExists) {
 		try {
-			IMssql mssql = _dbClientFactory.CreateMssql(config.Hostname, config.Port, config.Username, config.Password);
+			IMssql mssql = _dbClientFactory.CreateMssql(config.Hostname, config.Port, config.Username, config.Password, config.UseWindowsAuth);
 			
 			if (mssql.CheckDbExists(dbName)) {
 				if (!dropIfExists) {

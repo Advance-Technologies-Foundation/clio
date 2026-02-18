@@ -3,7 +3,7 @@
 public interface IDbClientFactory
 {
 
-	IMssql CreateMssql(string host, int port, string username, string password);
+	IMssql CreateMssql(string host, int port, string username, string password, bool isWindowsAuth = false);
 
 	IMssql CreateMssql(int port, string username, string password);
 
@@ -20,8 +20,8 @@ public interface IDbClientFactory
 public class DbClientFactory : IDbClientFactory
 {
 
-	public IMssql CreateMssql(string host, int port, string username, string password) {
-		return new Mssql(host, port, username, password);
+	public IMssql CreateMssql(string host, int port, string username, string password, bool isWindowsAuth = false) {
+		return new Mssql(host, port, username, password, isWindowsAuth);
 	}
 	
 	public IMssql CreateMssql(int port, string username, string password) {
