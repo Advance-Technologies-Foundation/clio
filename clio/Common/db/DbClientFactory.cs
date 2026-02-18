@@ -21,7 +21,6 @@ public class DbClientFactory : IDbClientFactory
 {
 
 	public IMssql CreateMssql(string host, int port, string username, string password, bool isWindowsAuth = false) {
-		ConsoleLogger.Instance.WriteLine($"Connecting to MSSQL server {host}:{port} using {(isWindowsAuth ? "Windows Authentication" : $"SQL Authentication with user '{username}'")}");
 		return new Mssql(host, port, username, password, isWindowsAuth);
 	}
 	

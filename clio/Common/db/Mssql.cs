@@ -30,7 +30,6 @@ public class Mssql : IMssql
 
 	public Mssql(){}
 	public void Init(string host, int port, string username, string password, bool isWindowsAuth = false){
-		ConsoleLogger.Instance.Write("Auth type1: " + (isWindowsAuth ? "Windows Authentication" : "SQL Server Authentication"));
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = !isWindowsAuth ? $"{host},{port}" : host,
 			InitialCatalog = "master",
@@ -44,7 +43,6 @@ public class Mssql : IMssql
 	}
 	
 	public Mssql(string host, int port, string username, string password, bool isWindowsAuth = false) {
-		ConsoleLogger.Instance.Write("Auth type2: " + (isWindowsAuth ? "Windows Authentication" : "SQL Server Authentication"));
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = host.Contains("\\") || port == 0 ? host : $"{host},{port}",
 			InitialCatalog = "master",
@@ -193,7 +191,6 @@ public class Mssql : IMssql
 	public bool TestConnection() {
 		try {
 			using SqlConnection connection = new(_builder.ConnectionString);
-			ConsoleLogger.Instance.Write($"Testing connection to {_builder.ConnectionString}");
 			connection.Open();
 			connection.Close();
 			return true;
