@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -37,9 +36,9 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	}
 	
 	
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_applicationClientMock).As<IApplicationClient>();
+		containerBuilder.AddSingleton<IApplicationClient>(_applicationClientMock);
 	}
 
 	[OneTimeTearDown]
@@ -66,7 +65,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		const string expectedErrorMessage = "error";
 		_applicationClientMock.When(x => x.ExecuteGetRequest(Arg.Any<string>()))
 			.Do(x => throw new Exception(expectedErrorMessage));
-		LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 		
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions());
@@ -86,7 +85,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
 			.Returns(inputContent);
 		
-		LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions());
@@ -108,7 +107,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
 			.Returns(inputContent);
 		
-		LastCompilationLogCommand command = Container.Resolve<LastCompilationLogCommand>();
+		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions{IsRaw = true});

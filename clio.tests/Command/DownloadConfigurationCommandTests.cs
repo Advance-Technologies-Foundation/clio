@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Reflection;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -35,7 +34,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		_applicationDownloaderMock = Substitute.For<IApplicationDownloader>();
 		_zipBasedApplicationDownloaderMock = Substitute.For<IZipBasedApplicationDownloader>();
 		_workspaceMock = Substitute.For<IWorkspace>();
@@ -44,13 +43,12 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		_fileSystemMock = new FileSystem(_mockFileSystem);
 		_settingsRepositoryMock = Substitute.For<ISettingsRepository>();
 
-		containerBuilder.RegisterInstance(_applicationDownloaderMock).As<IApplicationDownloader>();
-		containerBuilder.RegisterInstance(_zipBasedApplicationDownloaderMock).As<IZipBasedApplicationDownloader>();
-		containerBuilder.RegisterInstance(_workspaceMock).As<IWorkspace>();
-		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
-		containerBuilder.RegisterInstance((SysIoAbstractions.IFileSystem)_mockFileSystem)
-						.As<SysIoAbstractions.IFileSystem>();
-		containerBuilder.RegisterInstance(_settingsRepositoryMock).As<ISettingsRepository>();
+		containerBuilder.AddSingleton<IApplicationDownloader>(_applicationDownloaderMock);
+		containerBuilder.AddSingleton<IZipBasedApplicationDownloader>(_zipBasedApplicationDownloaderMock);
+		containerBuilder.AddSingleton<IWorkspace>(_workspaceMock);
+		containerBuilder.AddSingleton<ILogger>(_loggerMock);
+		containerBuilder.AddSingleton<SysIoAbstractions.IFileSystem>((SysIoAbstractions.IFileSystem)_mockFileSystem);
+		containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
 
 	}
 
@@ -152,7 +150,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			BuildZipPath = directoryPath
 		};
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -173,7 +171,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			BuildZipPath = zipPath
 		};
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -193,7 +191,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			Environment = "demo"
 		};
 		_workspaceMock.WorkspaceSettings.Returns(new WorkspaceSettings { Packages = ["Package1"] });
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 		
 		EnvironmentSettings envSettings = new() { EnvironmentPath = "/path/to/env" };
 		_mockFileSystem.Directory.CreateDirectory(envSettings.EnvironmentPath);
@@ -217,7 +215,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		DownloadConfigurationCommandOptions options = new() {
 			BuildZipPath = zipPath
 		};
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -239,7 +237,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			BuildZipPath = zipPath
 		};
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -264,7 +262,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		};
 		_workspaceMock.WorkspaceSettings.Returns(new WorkspaceSettings { Packages = new string[] { } });
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -291,7 +289,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			.When(x => x.Download(Arg.Any<IEnumerable<string>>()))
 			.Do(_ => throw new InvalidOperationException("Debug test exception"));
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -318,7 +316,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 			.When(x => x.Download(Arg.Any<string[]>()))
 			.Do(_ => throw new Exception("Test exception"));
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);
@@ -337,7 +335,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 		};
 		_workspaceMock.WorkspaceSettings.Returns(new WorkspaceSettings { Packages = new string[] { } });
 
-		DownloadConfigurationCommand command = Container.Resolve<DownloadConfigurationCommand>();
+		DownloadConfigurationCommand command = Container.GetRequiredService<DownloadConfigurationCommand>();
 
 		// Act
 		int result = command.Execute(options);

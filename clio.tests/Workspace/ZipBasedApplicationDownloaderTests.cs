@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using Autofac;
 using Clio.Common;
 using Clio.Tests.Command;
 using Clio.Workspace;
@@ -32,19 +31,19 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		_compressionUtilitiesMock = Substitute.For<ICompressionUtilities>();
 		_workspacePathBuilderMock = Substitute.For<IWorkspacePathBuilder>();
 		_workingDirectoriesProviderMock = Substitute.For<IWorkingDirectoriesProvider>();
 		_loggerMock = Substitute.For<ILogger>();
 		_mockFileSystem = new MockFileSystem();
 
-		containerBuilder.RegisterInstance(_compressionUtilitiesMock).As<ICompressionUtilities>();
-		containerBuilder.RegisterInstance(_workspacePathBuilderMock).As<IWorkspacePathBuilder>();
-		containerBuilder.RegisterInstance(_workingDirectoriesProviderMock).As<IWorkingDirectoriesProvider>();
-		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
-		containerBuilder.RegisterInstance((SysIoAbstractions.IFileSystem)_mockFileSystem).As<SysIoAbstractions.IFileSystem>();
-		containerBuilder.RegisterInstance((IFileSystem)new FileSystem(_mockFileSystem)).As<IFileSystem>();
+		containerBuilder.AddSingleton<ICompressionUtilities>(_compressionUtilitiesMock);
+		containerBuilder.AddSingleton<IWorkspacePathBuilder>(_workspacePathBuilderMock);
+		containerBuilder.AddSingleton<IWorkingDirectoriesProvider>(_workingDirectoriesProviderMock);
+		containerBuilder.AddSingleton<ILogger>(_loggerMock);
+		containerBuilder.AddSingleton<SysIoAbstractions.IFileSystem>((SysIoAbstractions.IFileSystem)_mockFileSystem);
+		containerBuilder.AddSingleton<IFileSystem>(new FileSystem(_mockFileSystem));
 	}
 
 	#endregion
@@ -212,7 +211,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -231,7 +230,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -252,7 +251,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -271,7 +270,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -292,7 +291,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -318,7 +317,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		});
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -341,7 +340,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -359,7 +358,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -409,7 +408,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -429,7 +428,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetCoreStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -456,7 +455,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		_workspacePathBuilderMock.RootPath.Returns((string)null);
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act & Assert
 		Action act = () => downloader.DownloadFromZip(zipFilePath);
@@ -481,7 +480,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 			_mockFileSystem.AddDirectory(confBinPath);
 		});
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -514,7 +513,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 				cleanupCalled = true;
 			});
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromZip(zipFilePath);
@@ -565,7 +564,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		_mockFileSystem.AddDirectory(pkgDestPath);
 		_mockFileSystem.AddFile(Path.Combine(pkgDestPath, "CustomPackage1.dll"), new MockFileData("package1 dll content"));
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromDirectory(directoryPath);
@@ -608,7 +607,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		_mockFileSystem.AddDirectory(pkg1Path);
 		_mockFileSystem.AddFile(Path.Combine(pkg1Path, "NetCorePackage1.dll"), new MockFileData("package1 dll content"));
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromDirectory(directoryPath);
@@ -630,7 +629,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		string nonExistentPath = @"C:\does\not\exist";
 		SetupWorkspacePaths();
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act & Assert
 		Action act = () => downloader.DownloadFromDirectory(nonExistentPath);
@@ -653,7 +652,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		SetupTempDirectoryCallback(tempDir => CreateNetFrameworkStructure());
 		SetupZipFile(zipFilePath);
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromPath(zipFilePath);
@@ -678,7 +677,7 @@ public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 		_mockFileSystem.AddDirectory(binPath);
 		_mockFileSystem.AddFile(Path.Combine(binPath, "Terrasoft.Core.dll"), new MockFileData("core dll"));
 		
-		var downloader = Container.Resolve<IZipBasedApplicationDownloader>();
+		var downloader = Container.GetRequiredService<IZipBasedApplicationDownloader>();
 
 		// Act
 		downloader.DownloadFromPath(directoryPath);

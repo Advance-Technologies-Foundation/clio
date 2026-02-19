@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
-using Autofac;
 using Clio.Command;
 using Clio.Tests.Command;
 using Clio.Tests.Extensions;
@@ -34,7 +33,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("easy-creatio-config.yaml", 3)]
 	[TestCase("full-creatio-config.yaml", 2)]
 	public void GetApplicationsFrommanifest_if_applicationExists(string fileName, int appCount) {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, fileName);
 		var applications = environmentManager.GetApplicationsFromManifest(manifestFilePath);
 		appCount.Should().Be(applications.Count);
@@ -45,7 +44,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase(0, "CrtCustomer360", "1.5.2", "full-creatio-config.yaml")]
 	[TestCase(1, "CrtCaseManagment", "1.0.2", "full-creatio-config.yaml")]
 	public void GetApplicationsFrommanifest_if_applicationExists(int appIndex, string appName, string appVersion, string manifestFileName) {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		var applications = environmentManager.GetApplicationsFromManifest(manifestFilePath);
 		appName.Should().Be(applications[appIndex].Name);
@@ -54,7 +53,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 	[TestCase("easy-creatio-config.yaml")]
 	public void FindApplicationsFromManifest_In_AppHub(string manifestFileName) {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		var applicationsFromAppHub = environmentManager.FindApplicationsInAppHub(manifestFilePath);
 		applicationsFromAppHub.Should().HaveCount(2);
@@ -78,7 +77,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 	[TestCaseSource(nameof(FindApplicationsFromManifestTestCases))]
 	public void FindApplicationsFromManifest_InAppHub_WithCorrectBranch(string manifestFileName, string[] zipFilePathes) {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		var applicationsFromAppHub = environmentManager.FindApplicationsInAppHub(manifestFilePath);
 		applicationsFromAppHub.Should().HaveCount(3);
@@ -91,7 +90,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("easy-creatio-config.yaml", "CrtCaseManagment", "//tscrm.com/dfs-ts/MyAppHub/CrtCaseManagment/1.0.2/CrtCaseManagment_1.0.2.zip")]
 	public void FindAppHubPath_In_FromManifest(string manifestFileName, string appName, string path) {
 		string resultPath = path.Replace('/', Path.DirectorySeparatorChar);
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		var app = environmentManager.FindApplicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();
 		resultPath.Should().Be(app.ZipFileName);
@@ -101,7 +100,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	public void FindAppHubPath_In_FromManifest_ByAliases(string manifestFileName, string appName, string path) {
 		string resultPath = path.Replace('/', Path.DirectorySeparatorChar);
 		FileSystem.MockFile(resultPath);
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		var app = environmentManager.FindApplicationsInAppHub(manifestFilePath).Where(s => s.Name == appName).FirstOrDefault();
 		resultPath.Should().Be(app.ZipFileName);
@@ -110,7 +109,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("easy-creatio-config.yaml", "https://preprod.creatio.com", "https://preprod.creatio.com/0/ServiceModel/AuthService.svc/Login")]
 	[TestCase("full-creatio-config.yaml", "https://production.creatio.com", "https://production.creatio.com/0/ServiceModel/AuthService.svc/Login")]
 	public void GetEnvironmentUrl_FromManifest(string manifestFileName, string url, string authAppUrl) {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		EnvironmentSettings env = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 		url.Should().Be(env.Uri);
@@ -119,7 +118,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 		
 	[TestCase("feature-creatio-config.yaml", 3)]
 	public void ParsesYamlAndReturnsStructure(string manifestFileName, int count) {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 		IEnumerable<Feature> features = environmentManager.GetFeaturesFromManifest(manifestFilePath);
 		features.Count().Should().Be(count);
@@ -153,7 +152,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("setting-creatio-config.yaml", 7)]
 	public void GetSettingsFromManifest(string manifestFileName, int count) {
 		//Arrange
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 
 		//Act
@@ -209,7 +208,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("setting-creatio-config-broken.yaml", 7)]
 	public void GetSettingsFromManifest_Throws_When_YAML_ValueNull(string manifestFileName, int count) {
 		//Arrange
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 
 		//Act + Assert
@@ -221,7 +220,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("setting-creatio-config-broken.yaml", 7)]
 	public void GetSettingsFromManifest_Throws_When_YAML_CodeNull(string manifestFileName, int count) {
 		//Arrange
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 
 		//Act + Assert
@@ -233,7 +232,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("web-services-creatio.yaml", 2)]
 	public void GetWebServicesFromManifest(string manifestFileName, int count) {
 		//Arrange
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 
 		//Act
@@ -256,7 +255,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[TestCase("sections-without-items-creatio.yaml")]
 	public void GetWebServicesFromManifest_WhenExistsSectionButNotExistsItems(string manifestFileName) {
 		//Arrange
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFilePath = GetPlatformPath(TestDrive, manifestFileName);
 
 		//Act
@@ -271,7 +270,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 	[Test]
 	public void GetEnvironmentPackagesManifest() {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFileName = GetPlatformPath(TestDrive, "creatio-config-package.yaml");
 		var expectedPackagesCount = 2;
 		List<CreatioManifestPackage> packages = environmentManager.GetPackagesGromManifest(manifestFileName);
@@ -291,7 +290,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 	[Test]
 	public void GetEnvironmentEmptyPackagesManifest() {
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var manifestFileName = GetPlatformPath(TestDrive, "creatio-config-empty-package.yaml");
 		var expectedPackagesCount = 0;
 		List<CreatioManifestPackage> packages = environmentManager.GetPackagesGromManifest(manifestFileName);
@@ -301,7 +300,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[Test]
 	public void SaveEnvironmentPackagesManifest() {
 		string environmentUrl = "https://preprod.atf.com";
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var expectedManifestFileName = GetPlatformPath(TestDrive, "creatio-config-package.yaml");
 		var actualManifestFileName = GetPlatformPath(TestDrive, "actual-creatio-config-package.yaml");
 		List<CreatioManifestPackage> environmnetPackages = [
@@ -330,7 +329,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[Test]
 	public void SaveEnvironmentPackagesInReversOrderManifest() {
 		string environmentUrl = "https://preprod.atf.com";
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var expectedManifestFileName = GetPlatformPath(TestDrive, "creatio-config-package.yaml");
 		var actualManifestFileName = GetPlatformPath(TestDrive, "actual-creatio-config-package.yaml");
 		List<CreatioManifestPackage> environmnetPackages = [
@@ -359,7 +358,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[Test]
 	public void ThrowException_If_SaveEnvironmentManifest_in_ExistingFile() {
 		var existingManifestFilePath = GetPlatformPath(TestDrive, "creatio-config-package.yaml");
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var environmentManifest = new EnvironmentManifest();
 		Action act = () => environmentManager.SaveManifestToFile(existingManifestFilePath, environmentManifest);
 		act.Should().Throw<Exception>().WithMessage($"Manifest file already exists: {existingManifestFilePath}");	
@@ -368,7 +367,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 	[Test]
 	public void RewriteExistingManifest_If_SaveEnvironmentManifest_in_ExistingFile() {
 		var existingManifestFilePath = GetPlatformPath(TestDrive, "creatio-config-package.yaml");
-		var environmentManager = Container.Resolve<IEnvironmentManager>();
+		var environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		var environmentManifest = new EnvironmentManifest();
 		Action act = () => environmentManager.SaveManifestToFile(existingManifestFilePath, environmentManifest, true);
 		act.Should().NotThrow<Exception>();

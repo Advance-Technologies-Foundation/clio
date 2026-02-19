@@ -16,11 +16,8 @@ namespace Clio.Tests.Command.ProcessModel;
 [Category("ProcessSchemaParser")]
 
 public class SchemaTestFixture{
-	private Clio.Common.ILogger _logger = Substitute.For<ILogger>();
-
-
-	
-	private List<string> _warnings = new ();
+	private readonly ILogger _logger = Substitute.For<ILogger>();
+	private readonly List<string> _warnings = [];
 	
 	[SetUp]
 	public void Setup() {

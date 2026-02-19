@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using Autofac.Core;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -39,25 +38,25 @@ public class ExceptionReadableMessageExtensionTestCase
 	}
 
 	[Test]
-	public void GetReadableMessageException_PrintsCorrectMessage_WhenDependencyResolutionException() {
+	public void GetReadableMessageException_PrintsCorrectMessage_WhenInvalidOperationException() {
 		var innerException = new Exception("InnerMessage");
-		var exception = new DependencyResolutionException("Message", innerException);
+		var exception = new InvalidOperationException("Message", innerException);
 		var messageResult = exception.GetReadableMessageException();
 		messageResult.Should().Be($"{innerException.Message}");
 	}
 
 	[Test]
 	public void
-		GetReadableMessageException_PrintsCorrectMessage_WhenDependencyResolutionExceptionWithoutInnerException() {
-		var exception = new DependencyResolutionException("Message");
+		GetReadableMessageException_PrintsCorrectMessage_WhenInvalidOperationExceptionWithoutInnerException() {
+		var exception = new InvalidOperationException("Message");
 		var messageResult = exception.GetReadableMessageException();
 		messageResult.Should().Be($"{exception.Message}");
 	}
 
 	[Test]
-	public void GetReadableMessageException_PrintsCorrectMessage_WhenDependencyResolutionExceptionAndSetsDebug() {
+	public void GetReadableMessageException_PrintsCorrectMessage_WhenInvalidOperationExceptionAndSetsDebug() {
 		var innerException = new Exception("InnerMessage");
-		var exception = new DependencyResolutionException("Message", innerException);
+		var exception = new InvalidOperationException("Message", innerException);
 		var messageResult = exception.GetReadableMessageException(true);
 		messageResult.Should().Be(exception.ToString());
 	}

@@ -1,4 +1,3 @@
-﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using NSubstitute;
@@ -14,9 +13,9 @@ internal class PingAppCommandTests : BaseClioModuleTests
 
 	public override void Setup(){}
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_creatioClient).As<IApplicationClient>();
+		containerBuilder.AddSingleton<IApplicationClient>(_creatioClient);
 	}
 
 	[TestCase(true)]
@@ -28,7 +27,7 @@ internal class PingAppCommandTests : BaseClioModuleTests
 		BindingsModule bindingModule = new(FileSystem);
 		Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
 			
-		PingAppCommand command = Container.Resolve<PingAppCommand>();
+		PingAppCommand command = Container.GetRequiredService<PingAppCommand>();
 		PingAppOptions options = new PingAppOptions() { TimeOut = 1, RetryCount = 2, RetryDelay = 3 };
 			
 		// Act
@@ -52,7 +51,7 @@ internal class PingAppCommandTests : BaseClioModuleTests
 		FileSystem = CreateFs();
 		BindingsModule bindingModule = new(FileSystem);
 		Container = bindingModule.Register(EnvironmentSettings, AdditionalRegistrations);
-		PingAppCommand command = Container.Resolve<PingAppCommand>();
+		PingAppCommand command = Container.GetRequiredService<PingAppCommand>();
 		PingAppOptions options = new PingAppOptions() {
 			TimeOut = 1,
 			RetryCount = 2,

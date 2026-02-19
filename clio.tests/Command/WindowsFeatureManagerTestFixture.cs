@@ -1,4 +1,3 @@
-﻿using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -15,11 +14,11 @@ public class WindowsFeatureManagerTestFixture : BaseClioModuleTests
 	
 	public override void Setup(){
 		base.Setup();
-		_sut = Container.Resolve<IWindowsFeatureManager>();
+		_sut = Container.GetRequiredService<IWindowsFeatureManager>();
 	}
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_workingDirectoriesProvider).As<IWorkingDirectoriesProvider>();
+		containerBuilder.AddSingleton<IWorkingDirectoriesProvider>(_workingDirectoriesProvider);
 		//containerBuilder.RegisterInstance<ConsoleProgressbar>();
 	}
 

@@ -1,5 +1,4 @@
-﻿using System.Threading.Tasks;
-using Autofac;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -13,16 +12,16 @@ internal class UninstallCreatioCommandTests : BaseCommandTests<UninstallCreatioC
 {
 
 	ICreatioUninstaller _creatioUninstaller = Substitute.For<ICreatioUninstaller>();
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance<ICreatioUninstaller>(_creatioUninstaller);
+		containerBuilder.AddSingleton<ICreatioUninstaller>(_creatioUninstaller);
 	}
 	
 	private UninstallCreatioCommand _sut; 
 
 	public override void Setup(){
 		base.Setup();
-		_sut = Container.Resolve<UninstallCreatioCommand>();
+		_sut = Container.GetRequiredService<UninstallCreatioCommand>();
 	}
 
 	[Test]

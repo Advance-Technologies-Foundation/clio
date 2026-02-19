@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
-using Autofac;
 using Clio.Common;
 using Clio.Package;
 using Clio.Tests.Command;
@@ -34,18 +33,18 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 	private IWorkspaceSolutionCreator _solutionCreatorMock = Substitute.For<IWorkspaceSolutionCreator>();
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		_solutionCreatorMock.ClearReceivedCalls();
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_solutionCreatorMock);
+		containerBuilder.AddSingleton(_solutionCreatorMock);
 	}
 	
 	private PackageCreator InitCreator(){
-		return new PackageCreator(Container.Resolve<EnvironmentSettings>(), Container.Resolve<IWorkspace>(),
-			Container.Resolve<IWorkspaceSolutionCreator>(),
-			Container.Resolve<ITemplateProvider>(), Container.Resolve<IWorkspacePathBuilder>(),
-			Container.Resolve<IStandalonePackageFileManager>(), Container.Resolve<IJsonConverter>(),
-			Container.Resolve<IWorkingDirectoriesProvider>(), Container.Resolve<Clio.Common.IFileSystem>());
+		return new PackageCreator(Container.GetRequiredService<EnvironmentSettings>(), Container.GetRequiredService<IWorkspace>(),
+			Container.GetRequiredService<IWorkspaceSolutionCreator>(),
+			Container.GetRequiredService<ITemplateProvider>(), Container.GetRequiredService<IWorkspacePathBuilder>(),
+			Container.GetRequiredService<IStandalonePackageFileManager>(), Container.GetRequiredService<IJsonConverter>(),
+			Container.GetRequiredService<IWorkingDirectoriesProvider>(), Container.GetRequiredService<Clio.Common.IFileSystem>());
 	}
 
 	#endregion

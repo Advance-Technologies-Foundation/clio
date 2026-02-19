@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Autofac;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project.NuGet;
@@ -45,8 +44,8 @@ public class ClioGatewayTests : BaseClioModuleTests
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		containerBuilder.RegisterInstance(_applicationPackageListProviderMock).As<IApplicationPackageListProvider>();
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
+		containerBuilder.AddSingleton<IApplicationPackageListProvider>(_applicationPackageListProviderMock);
 		base.AdditionalRegistrations(containerBuilder);
 	}
 
@@ -60,7 +59,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(2, 0, 0), Net6ClioPkgName),
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate")
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		PackageVersion actualPackageInfo = clioGateway.GetInstalledVersion();
@@ -77,7 +76,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate"),
 			_createPackageInfo(new Version(1, 1, 1), Net6ClioPkgName)
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		PackageVersion actualPackageInfo = clioGateway.GetInstalledVersion();
@@ -94,7 +93,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate"),
 			_createPackageInfo(new Version(1, 1, 1), NetFrameworkClioPkgName)
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		PackageVersion actualPackageInfo = clioGateway.GetInstalledVersion();
@@ -111,7 +110,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate"),
 			_createPackageInfo(new Version(1, 1, 1), NetFrameworkClioPkgName)
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		bool actualPackageInfo = clioGateway.IsCompatibleWith("1.0.0");
@@ -126,7 +125,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 		_applicationPackageListProviderMock.GetPackages().Returns([
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate")
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		bool actualPackageInfo = clioGateway.IsCompatibleWith("1.0.0");
@@ -142,7 +141,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(2, 2, 2), NetFrameworkClioPkgName),
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate")
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		bool actualPackageInfo = clioGateway.IsCompatibleWith("3.0.0");
@@ -159,7 +158,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(2, 2, 2), Net6ClioPkgName),
 			_createPackageInfo(new Version(2, 2, 2), "not_cliogate")
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		bool actualPackageInfo = clioGateway.IsCompatibleWith("3.0.0");
@@ -186,7 +185,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 		_applicationPackageListProviderMock.GetPackages().Returns([
 			_createPackageInfo(new Version(installedVersion), Net6ClioPkgName),
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 
 		// Act
 		bool actualPackageInfo = clioGateway.IsCompatibleWith(requiredVersion);
@@ -203,7 +202,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 		_applicationPackageListProviderMock.GetPackages().Returns([
 			_createPackageInfo(new Version(installedVersion), NetFrameworkClioPkgName)
 		]);
-		IClioGateway clioGateway = Container.Resolve<IClioGateway>();
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
 	
 		// Act
 		Action act = () => clioGateway.CheckCompatibleVersion(requiredVersion);

@@ -1,5 +1,4 @@
-﻿using System;
-using Autofac;
+using System;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;

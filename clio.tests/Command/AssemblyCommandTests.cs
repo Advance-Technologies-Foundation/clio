@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Text.Json;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using NSubstitute;
@@ -34,9 +33,9 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		containerBuilder.RegisterInstance(_applicationClientMock).As<IApplicationClient>();
-		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
+		containerBuilder.AddSingleton<IApplicationClient>(_applicationClientMock);
+		containerBuilder.AddSingleton<ILogger>(_loggerMock);
 		base.AdditionalRegistrations(containerBuilder);
 	}
 
@@ -46,7 +45,7 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 	[Category("Unit")]
 	public void Execute_ShouldWriteResponse_WhenItIsSuccessful(){
 		// Arrange
-		AssemblyCommand command = Container.Resolve<AssemblyCommand>();
+		AssemblyCommand command = Container.GetRequiredService<AssemblyCommand>();
 		command.Logger = _loggerMock;
 
 		string executorType = typeof(AssemblyCommand).FullName;

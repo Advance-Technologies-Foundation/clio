@@ -1,5 +1,4 @@
 using System;
-using Autofac;
 using Clio.Command;
 using Clio.Package;
 using Clio.Project;
@@ -17,17 +16,17 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 	private readonly IPackageInstaller _packageInstaller = Substitute.For<IPackageInstaller>();
 	private readonly IMarketplace _marketplace = Substitute.For<IMarketplace>();
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_compileConfigurationCommand);
-		containerBuilder.RegisterInstance(_packageInstaller);
-		containerBuilder.RegisterInstance(_marketplace);
+		containerBuilder.AddSingleton(_compileConfigurationCommand);
+		containerBuilder.AddSingleton(_packageInstaller);
+		containerBuilder.AddSingleton(_marketplace);
 	}
 
 	[Test, Category("Unit")]
 	public void Execute_RunsForceCompilation() {
 		_compileConfigurationCommand.ClearReceivedCalls();
-		PushPackageCommand command = Container.Resolve<PushPackageCommand>();
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
 		PushPkgOptions options = new() {
 			ForceCompilation = true
 		};
@@ -43,7 +42,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 
 	[Test, Category("Unit")]
 	public void Execute_DoesNotRunningCompilation_WhenInstallFails() {
-		PushPackageCommand command = Container.Resolve<PushPackageCommand>();
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
 		PushPkgOptions options = new() {
 			ForceCompilation = true
 		};
@@ -57,7 +56,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 
 	[Test, Category("Unit")]
 	public void Execute_DoesNotRunningCompilation_WhenCompilationOptionsFalse() {
-		PushPackageCommand command = Container.Resolve<PushPackageCommand>();
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
 		PushPkgOptions options = new() {
 			ForceCompilation = false
 		};
@@ -72,7 +71,7 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 	[Test, Category("Unit")]
 	public void Execute_ReturnsFalse_WhenCompilationFails() {
 		_compileConfigurationCommand.ClearReceivedCalls();
-		PushPackageCommand command = Container.Resolve<PushPackageCommand>();
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
 		PushPkgOptions options = new() {
 			ForceCompilation = true
 		};

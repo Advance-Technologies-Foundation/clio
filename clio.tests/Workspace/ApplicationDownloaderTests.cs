@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Autofac;
 using Clio.Common;
 using Clio.Common.CsProjManager;
 using Clio.Tests.Command;
@@ -32,10 +31,10 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
-		containerBuilder.RegisterInstance(_csprojFileMock).As<ICsprojFile>();
-		containerBuilder.RegisterInstance(_downloaderMock).As<IDownloader>();
-		containerBuilder.RegisterInstance(_clioGatewayMock).As<IClioGateway>();
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
+		containerBuilder.AddSingleton<ICsprojFile>(_csprojFileMock);
+		containerBuilder.AddSingleton<IDownloader>(_downloaderMock);
+		containerBuilder.AddSingleton<IClioGateway>(_clioGatewayMock);
 	}
 
 	#endregion
@@ -44,13 +43,13 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 	public void Download_Should_DownloadFiles(){
 		// Arrange
 		_csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-		IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+		IApplicationDownloader downloader = Container.GetRequiredService<IApplicationDownloader>();
 		List<Reference> refs = [
 			new Reference("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
 		];
 		_initializedCsprojFile.GetPackageReferences()
 			.Returns(refs);
-		IServiceUrlBuilder serviceUrlBuilder = Container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder serviceUrlBuilder = Container.GetRequiredService<IServiceUrlBuilder>();
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
 		_clioGatewayMock.IsCompatibleWith("2.0.0.0").Returns(true);
 		
@@ -69,13 +68,13 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 	public void DownloadPackageDll_Skips_When_ClioGateIsOld(){
 		// Arrange
 		_csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-		IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+		IApplicationDownloader downloader = Container.GetRequiredService<IApplicationDownloader>();
 		List<Reference> refs = [
 			new Reference("CalendarBase", null, _mockHintPath("CalendarBase"), false, false)
 		];
 		_initializedCsprojFile.GetPackageReferences()
 			.Returns(refs);
-		IServiceUrlBuilder serviceUrlBuilder = Container.Resolve<IServiceUrlBuilder>();
+		IServiceUrlBuilder serviceUrlBuilder = Container.GetRequiredService<IServiceUrlBuilder>();
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(false);
 		
 		// Act
@@ -94,7 +93,7 @@ public class ApplicationDownloaderTests : BaseClioModuleTests
 	public void Download_Skips_WhenPackagesEmpty(){
 		// Arrange
 		_csprojFileMock.Initialize(Arg.Any<string>()).Returns(_initializedCsprojFile);
-		IApplicationDownloader downloader = Container.Resolve<IApplicationDownloader>();
+		IApplicationDownloader downloader = Container.GetRequiredService<IApplicationDownloader>();
 		_initializedCsprojFile.GetPackageReferences().Returns([]);
 		_clioGatewayMock.IsCompatibleWith("2.0.0.29").Returns(true);
 		

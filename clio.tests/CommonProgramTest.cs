@@ -176,7 +176,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	public void ReadEnvironmentOptionsFromManifestFile() {
 		FileSystem.MockExamplesFolder("deployments-manifest");
 		string manifestFileName = "full-creatio-config.yaml";
-		IEnvironmentManager environmentManager = Container.Resolve<IEnvironmentManager>();
+		IEnvironmentManager environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		string manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
 		EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 		FileSystem commonFileSystem = new(FileSystem);
@@ -191,7 +191,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	public void ReadEnvironmentOptionsFromOnlySettingsManifestFile() {
 		FileSystem.MockExamplesFolder("deployments-manifest");
 		string manifestFileName = "only-settings.yaml";
-		IEnvironmentManager environmentManager = Container.Resolve<IEnvironmentManager>();
+		IEnvironmentManager environmentManager = Container.GetRequiredService<IEnvironmentManager>();
 		string manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
 		EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 		FileSystem commonFileSystem = new(FileSystem);

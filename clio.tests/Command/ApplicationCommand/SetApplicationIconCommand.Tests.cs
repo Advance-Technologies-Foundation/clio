@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.IO;
-using Autofac;
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
 using NSubstitute;
@@ -24,9 +23,9 @@ internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicati
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		_composableApplicationManager = Substitute.For<IComposableApplicationManager>();
-		containerBuilder.RegisterInstance(_composableApplicationManager);
+		containerBuilder.AddSingleton(_composableApplicationManager);
 		base.AdditionalRegistrations(containerBuilder);
 	}
 
@@ -36,7 +35,7 @@ internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicati
 	public void SetApplicationIconCommand_CallsComposableAppmanager(){
 		string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Files", "icon.svg");
 		string appName = "ExampleAppName";
-		SetApplicationIconCommand command = Container.Resolve<SetApplicationIconCommand>();
+		SetApplicationIconCommand command = Container.GetRequiredService<SetApplicationIconCommand>();
 		command.Execute(new SetApplicationIconOption {
 			IconPath = iconPath,
 			AppPath = MockWorkspaceAppPackageFolderPath,

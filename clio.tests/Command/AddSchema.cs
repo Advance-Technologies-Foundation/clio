@@ -1,5 +1,4 @@
-﻿using System.Threading.Tasks;
-using Autofac;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -15,15 +14,15 @@ internal class AddSchemaCommandTests : BaseCommandTests<AddSchemaOptions>
 {
 
 	ISchemaBuilder _schemaBuilderMock = Substitute.For<ISchemaBuilder>();
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_schemaBuilderMock);
+		containerBuilder.AddSingleton(_schemaBuilderMock);
 	}
 
 	[Test(Description = "Describe your test, or ask copilot to describe it for you")]
 	public void Execute_ShouldReturn_WhenCalled(){
 		//Arrange
-		var command = Container.Resolve<AddSchemaCommand>();
+		var command = Container.GetRequiredService<AddSchemaCommand>();
 		var options = new AddSchemaOptions();
 
 		//Act
@@ -36,7 +35,7 @@ internal class AddSchemaCommandTests : BaseCommandTests<AddSchemaOptions>
 	[Test(Description = "Describe your test, or ask copilot to describe it for you")]
 	public void Execute_ShouldCall_SchemaBuilder(){
 		//Arrange
-		var command = Container.Resolve<AddSchemaCommand>();
+		var command = Container.GetRequiredService<AddSchemaCommand>();
 		var options = new AddSchemaOptions() {
 			Package = "Pkg1",
 			SchemaName = "MyService",

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -15,17 +14,17 @@ public class CheckWindowsFeaturesCommandTests : BaseCommandTests<CheckWindowsFea
 	private IWindowsFeatureManager _windowsFeatureManager;
 	private CheckWindowsFeaturesCommand _sut;
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder)
 	{
 		base.AdditionalRegistrations(containerBuilder);
 		_windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
-		containerBuilder.RegisterInstance(_windowsFeatureManager).As<IWindowsFeatureManager>();
+		containerBuilder.AddSingleton<IWindowsFeatureManager>(_windowsFeatureManager);
 	}
 
 	public override void Setup()
 	{
 		base.Setup();
-		_sut = Container.Resolve<CheckWindowsFeaturesCommand>();
+		_sut = Container.GetRequiredService<CheckWindowsFeaturesCommand>();
 	}
 
 #region Success Tests

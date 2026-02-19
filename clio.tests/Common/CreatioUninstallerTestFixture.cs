@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using Autofac;
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.K8;
@@ -81,14 +80,14 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private readonly k8Commands.ConnectionStringParams _cnpMs = new (0, 0, 0, 0, "", "");
 	private readonly k8Commands.ConnectionStringParams _cnpPg = new (0, 0, 0, 0, "", "");
 	
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_settingsRepositoryMock).As<ISettingsRepository>();
-		containerBuilder.RegisterInstance(_mediatorMock).As<IMediator>();
-		containerBuilder.RegisterInstance(_loggerMock).As<ILogger>();
-		containerBuilder.RegisterInstance(_k8CommandsMock).As<Ik8Commands>();
-		containerBuilder.RegisterInstance(_mssqlMock).As<IMssql>();
-		containerBuilder.RegisterInstance(_postgresMock).As<IPostgres>();
+		containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
+		containerBuilder.AddSingleton<IMediator>(_mediatorMock);
+		containerBuilder.AddSingleton<ILogger>(_loggerMock);
+		containerBuilder.AddSingleton<Ik8Commands>(_k8CommandsMock);
+		containerBuilder.AddSingleton<IMssql>(_mssqlMock);
+		containerBuilder.AddSingleton<IPostgres>(_postgresMock);
 	}
 
 	#endregion
@@ -107,7 +106,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_k8CommandsMock.GetMssqlConnectionString().Returns(_cnpMs);
 		_k8CommandsMock.GetPostgresConnectionString().Returns(_cnpPg);
 		
-		_sut = Container.Resolve<ICreatioUninstaller>();
+		_sut = Container.GetRequiredService<ICreatioUninstaller>();
 		FileSystem.AddDirectory(InstalledCreatioPath);
 		
 		// Clear all mock call history before each test to ensure test isolation

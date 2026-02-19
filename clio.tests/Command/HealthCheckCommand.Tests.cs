@@ -1,7 +1,6 @@
-﻿namespace Clio.Tests.Command;
+namespace Clio.Tests.Command;
 
 using System.Threading;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.Query;
@@ -57,7 +56,7 @@ public class HealthCheckCommandTestCase
 	{
 		BindingsModule bs = new BindingsModule();
 		var container = bs.Register(_environmentSettings);
-		var command = container.Resolve<HealthCheckCommand>();
+		var command = container.GetRequiredService<HealthCheckCommand>();
 		Assert.That(command, Is.Not.Null);
 	}
 }

@@ -183,8 +183,7 @@ namespace Clio
 
 
 	[Verb("convert", HelpText = "Convert package to project", Hidden = true)]
-	internal class ConvertOptions
-	{
+	internal class ConvertOptions{
 		[Option('p', "Path", Required = false,
 			HelpText = "Path to package directory", Default = null)]
 		public string Path { get; set; }

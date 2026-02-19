@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Autofac;
 using Clio.Command;
 using Clio.Tests.Command;
 using FluentAssertions;
@@ -19,7 +18,7 @@ public class UninstallCreatioCommandOptionsValidatorTestFixture : BaseClioModule
 
 	public override void Setup(){
 		base.Setup();
-		_sut = Container.Resolve<UninstallCreatioCommandOptionsValidator>();
+		_sut = Container.GetRequiredService<UninstallCreatioCommandOptionsValidator>();
 	}
 
 	public static IEnumerable<TestCaseData> EnvironmentNameIsEmptyTestCases {

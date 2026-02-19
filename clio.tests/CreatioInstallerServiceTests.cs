@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using Autofac;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common.K8;
 using Clio.Tests.Command;
@@ -365,20 +364,20 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests
 
     #region Methods: Public
 
-    protected override void AdditionalRegistrations(ContainerBuilder containerBuilder)
+    protected override void AdditionalRegistrations(IServiceCollection containerBuilder)
     {
         base.AdditionalRegistrations(containerBuilder);
         var kuber = Substitute.For<IKubernetes>();
-        containerBuilder.RegisterInstance(kuber);
+        containerBuilder.AddSingleton(kuber);
 
         var k8Commands = Substitute.For<Ik8Commands>();
-        containerBuilder.RegisterInstance(k8Commands);
+        containerBuilder.AddSingleton(k8Commands);
     }
 
     public override void Setup()
     {
         base.Setup();
-        _creatioInstallerService = Container.Resolve<CreatioInstallerService>();
+        _creatioInstallerService = Container.GetRequiredService<CreatioInstallerService>();
     }
 
     #endregion

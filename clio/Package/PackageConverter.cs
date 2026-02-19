@@ -2,9 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Json;
+using System.Text.Json;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json.Nodes;
 using Clio.Common;
 using Newtonsoft.Json;
 using File = System.IO.File;
@@ -126,16 +127,22 @@ namespace Clio
 		}
 
 		private void CreateProjectInfo(string path, string name, List<string> fileNames) {
-			var filePath = Path.Combine(path, name + "." + "csproj");
-			var csFilesPath = Path.Combine(path, "Files", "cs");
+			string filePath = Path.Combine(path, name + "." + "csproj");
+			string csFilesPath = Path.Combine(path, "Files", "cs");
 			List<string> refs = GetRefs(csFilesPath, fileNames);
-			var descriptorPath = Path.Combine(path, "descriptor.json");
+			string descriptorPath = Path.Combine(path, "descriptor.json");
 			string descriptorContent = File.ReadAllText(descriptorPath);
-			JsonObject jsonDoc = (JsonObject)JsonObject.Parse(descriptorContent);
-			string maintainer = jsonDoc["Descriptor"]["Maintainer"];
-			var depends = new List<string>();
-			foreach (var depend in jsonDoc["Descriptor"]["DependsOn"]) {
-				var curName = depend.ToString().Split("\": \"")[1].Split("\"")[0];
+			JsonDocument jsonDoc = JsonDocument.Parse(descriptorContent);
+			string maintainer = jsonDoc.RootElement.GetProperty("Descriptor").GetProperty("Maintainer").GetString();
+			List<string> depends = [];
+			int al = jsonDoc.RootElement.GetProperty("Descriptor").GetProperty("DependsOn").GetArrayLength();
+			for (int i = 0; i < al; i++) {
+				var depend = jsonDoc.RootElement.GetProperty("Descriptor").GetProperty("DependsOn").EnumerateArray().ElementAt(i);
+				string curName = depend.GetProperty("Name").GetString();
+				//var curName = depend.ToString().Split("\": \"")[1].Split("\"")[0];
+				if (string.IsNullOrWhiteSpace(curName)) {
+					continue;
+				}
 				depends.Add(curName);
 			}
 			CreateFromTpl(GetTplPath(CreatioPackage.EditProjTpl), filePath, name, fileNames, maintainer, refs, depends);

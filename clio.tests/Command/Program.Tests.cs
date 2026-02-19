@@ -4,7 +4,6 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Threading;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
-using Autofac;
 using Clio.Command;
 using FluentAssertions;
 using NSubstitute;
@@ -31,10 +30,10 @@ public class ProgramTestCase : BaseClioModuleTests
 		Program.AppUpdater = null;
 	}
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		var dataProviderMock = new DataProviderMock();
-		containerBuilder.RegisterInstance(dataProviderMock).As<IDataProvider>();
-		containerBuilder.RegisterInstance(appUpdaterMock).As<IAppUpdater>();
+		containerBuilder.AddSingleton<IDataProvider>(dataProviderMock);
+		containerBuilder.AddSingleton<IAppUpdater>(appUpdaterMock);
 	}
 
 	[Test, Category("Unit")]

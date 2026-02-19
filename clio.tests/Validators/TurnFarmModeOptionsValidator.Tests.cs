@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using Autofac;
 using Clio.Command;
 using Clio.Tests.Command;
 using FluentAssertions;
@@ -19,7 +18,7 @@ namespace Clio.Tests.Validators
         public override void Setup()
         {
             base.Setup();
-            _validator = Container.Resolve<TurnFarmModeOptionsValidator>();
+            _validator = Container.GetRequiredService<TurnFarmModeOptionsValidator>();
         }
 
         [Test]

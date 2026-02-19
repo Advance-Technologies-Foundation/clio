@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.Requests;
@@ -59,11 +58,11 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_logger);
-		containerBuilder.RegisterInstance(_mediator);
-		containerBuilder.RegisterInstance(_settingsRepository);
+		containerBuilder.AddSingleton(_logger);
+		containerBuilder.AddSingleton(_mediator);
+		containerBuilder.AddSingleton(_settingsRepository);
 	}
 
 	#endregion
@@ -73,7 +72,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_EnvNotFound_WhenEnvDoesNotExist(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName
@@ -95,7 +94,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_EnvNotFound_WhenEnvDoesNotHaveUri(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName
@@ -121,7 +120,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_EnvNotFound_WhenEnvUriNotValid(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName
@@ -148,7 +147,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_Error_DirectoryNotFound(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName
@@ -186,7 +185,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_Error_RegisteredSiteNotFound(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName
@@ -222,7 +221,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_Error_WhenAppSettingsNotFound(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName
@@ -260,7 +259,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	public void Execute_Returns_ReadsFile(){
 		//Arrange
 		const string envName = "test";
-		_sut = Container.Resolve<CustomizeDataProtectionCommand>();
+		_sut = Container.GetRequiredService<CustomizeDataProtectionCommand>();
 		CustomizeDataProtectionCommandOptions options = new() {
 			EnableDataProtection = true,
 			Environment = envName

@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 using ATF.Repository.Providers;
-using Autofac;
 using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
@@ -20,7 +19,7 @@ public class SysSettingsManagerTests
 
 	#region Fields: Private
 
-	private readonly IContainer _container;
+	private readonly IServiceProvider _container;
 	private readonly mockFs.IFileSystem _fileSystem = TestFileSystem.MockExamplesFolder("deployments-manifest");
 
 	#endregion
@@ -57,10 +56,10 @@ public class SysSettingsManagerTests
 		const string sysSettingCode = "nonExistingCode";
 		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -102,10 +101,10 @@ public class SysSettingsManagerTests
 		const string sysSettingCode = "nonExistingCode";
 		string sysSettingValue = stringDateTimeValue;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 		string segment = EnvironmentSettings.IsNetCore switch {
@@ -140,10 +139,10 @@ public class SysSettingsManagerTests
 		const string sysSettingCode = "nonExistingCode";
 		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 		string segment = EnvironmentSettings.IsNetCore switch {
@@ -185,10 +184,10 @@ public class SysSettingsManagerTests
 		const string sysSettingCode = "nonExistingCode";
 		decimal sysSettingValue = decimal.Parse(value, CultureInfo.InvariantCulture);
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -229,10 +228,10 @@ public class SysSettingsManagerTests
 		int sysSettingValue = (int)decimal.Parse(value, provider);
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -267,10 +266,10 @@ public class SysSettingsManagerTests
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -307,10 +306,10 @@ public class SysSettingsManagerTests
 		const string sysSettingValue = "123";
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -360,10 +359,10 @@ public class SysSettingsManagerTests
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -404,10 +403,10 @@ public class SysSettingsManagerTests
 		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
         		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
 
@@ -453,10 +452,10 @@ public class SysSettingsManagerTests
 	public void UpdateSysSetting_ReturnsTrue_WhenApiResponseSuccessIsTrue(){
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
 			workingDirectoriesProvider, filesystem, logger);
@@ -495,10 +494,10 @@ public class SysSettingsManagerTests
 	public void UpdateSysSetting_ReturnsFalse_WhenApiResponseSuccessIsFalse(){
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = _container.Resolve<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.Resolve<IDataProvider>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.Resolve<IWorkingDirectoriesProvider>();
-		IFileSystem filesystem = _container.Resolve<IFileSystem>();
+		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
+		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
+		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
 			workingDirectoriesProvider, filesystem, logger);

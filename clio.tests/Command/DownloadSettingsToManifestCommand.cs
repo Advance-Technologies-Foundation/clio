@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO.Abstractions.TestingHelpers;
@@ -9,7 +9,6 @@ using System.Text.Json.Serialization;
 using ATF.Repository.Attributes;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Extensions;
@@ -56,7 +55,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			Container.Resolve<Clio.Common.IFileSystem>(), Container.Resolve<ISerializer>(), webServiceManagerMock, Container.Resolve<IEnvironmentManager>());
+			Container.GetRequiredService<Clio.Common.IFileSystem>(), Container.GetRequiredService<ISerializer>(), webServiceManagerMock, Container.GetRequiredService<IEnvironmentManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
@@ -75,7 +74,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 	[Test]
 	public void SaveSysSettingsFromEnvironmentToFile() {
 		var container = GetContainer();
-		var sysSettingsManager = container.Resolve<ISysSettingsManager>();
+		var sysSettingsManager = container.GetRequiredService<ISysSettingsManager>();
 		var sysSettingsWithValues = sysSettingsManager.GetAllSysSettingsWithValues();
 		
 		sysSettingsWithValues.Should().NotBeNull();
@@ -92,7 +91,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 	[TestCase("PrimaryCurrency", "915e8a55-98d6-df11-9b2a-001d60e938c6")]
 	public void SaveSysSettingsToFile(string sysSettingsCode, string sysSettingsStringValue) {
 		var container = GetContainer();
-		var fileSystem = container.Resolve<Clio.Common.IFileSystem>();
+		var fileSystem = container.GetRequiredService<Clio.Common.IFileSystem>();
 		//Arrange
 		SaveSettingsToManifestOptions saveSettingsToManifestOptions = new() {
 			ManifestFileName = @"save-syssettings-manifest.yaml"
@@ -107,9 +106,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			fileSystem, container.Resolve<ISerializer>(), webServiceManagerMock,
-			container.Resolve<IEnvironmentManager>(), 
-			container.Resolve<ISysSettingsManager>());
+			fileSystem, container.GetRequiredService<ISerializer>(), webServiceManagerMock,
+			container.GetRequiredService<IEnvironmentManager>(), 
+			container.GetRequiredService<ISysSettingsManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
@@ -117,7 +116,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Assert
 		fileSystem.ExistsFile(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 
-		var envManager = container.Resolve<IEnvironmentManager>();
+		var envManager = container.GetRequiredService<IEnvironmentManager>();
 		var actualSettings = envManager.GetSettingsFromManifest(saveSettingsToManifestOptions.ManifestFileName);
 		var settings = actualSettings.FirstOrDefault(s => s.Code == sysSettingsCode);
 		sysSettingsStringValue.Should().Be(settings.Value);
@@ -127,7 +126,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 
 	public void SaveSysSettingsToFile() {
 		var container = GetContainer();
-		var fileSystem = container.Resolve<Clio.Common.IFileSystem>();
+		var fileSystem = container.GetRequiredService<Clio.Common.IFileSystem>();
 		//Arrange
 		SaveSettingsToManifestOptions saveSettingsToManifestOptions = new() {
 			ManifestFileName = @"save-syssettings-manifest.yaml"
@@ -143,9 +142,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			fileSystem, container.Resolve<ISerializer>(), webServiceManagerMock,
-			container.Resolve<IEnvironmentManager>(),
-			container.Resolve<ISysSettingsManager>());
+			fileSystem, container.GetRequiredService<ISerializer>(), webServiceManagerMock,
+			container.GetRequiredService<IEnvironmentManager>(),
+			container.GetRequiredService<ISysSettingsManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
@@ -155,14 +154,14 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
 
-		var envManager = container.Resolve<IEnvironmentManager>();
+		var envManager = container.GetRequiredService<IEnvironmentManager>();
 		var actualSettings = envManager.GetSettingsFromManifest(saveSettingsToManifestOptions.ManifestFileName);
 		actualSettings.Should().NotBeNull();
 		actualSettings.Count().Should().Be(434);
 		loggerMock.Received(1).WriteInfo("Done");
 	}
 
-	private IContainer GetContainer() {
+	private IServiceProvider GetContainer() {
 		return MockDataContainer.GetContainer(FileSystem);
 	}
 
@@ -195,7 +194,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			Container.Resolve<Clio.Common.IFileSystem>(), Container.Resolve<ISerializer>(), webServiceManagerMock, Container.Resolve<IEnvironmentManager>());
+			Container.GetRequiredService<Clio.Common.IFileSystem>(), Container.GetRequiredService<ISerializer>(), webServiceManagerMock, Container.GetRequiredService<IEnvironmentManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
@@ -242,7 +241,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		ILogger loggerMock = Substitute.For<ILogger>();
 
 		SaveSettingsToManifestCommand command = new(providerMock, loggerMock,
-			Container.Resolve<Clio.Common.IFileSystem>(), Container.Resolve<ISerializer>(), webServiceManagerMock, Container.Resolve<IEnvironmentManager>());
+			Container.GetRequiredService<Clio.Common.IFileSystem>(), Container.GetRequiredService<ISerializer>(), webServiceManagerMock, Container.GetRequiredService<IEnvironmentManager>());
 
 		//Act
 		command.Execute(saveSettingsToManifestOptions);
@@ -330,7 +329,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Arrange
 		var container = GetContainer();
 		// Getting SysSettingsManager from the container, we real deps but mock data provider
-		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
+		ISysSettingsManager sysSettingsManager = container.GetRequiredService<ISysSettingsManager>();
 		
 		//Act
 		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
@@ -352,7 +351,7 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		//Arrange
 		var container = GetContainer();
 		// Getting SysSettingsManager from the container, we real deps but mock data provider
-		ISysSettingsManager sysSettingsManager = container.Resolve<ISysSettingsManager>();
+		ISysSettingsManager sysSettingsManager = container.GetRequiredService<ISysSettingsManager>();
 
 		//Act
 		List<SysSettings> settings = sysSettingsManager.GetAllSysSettingsWithValues();
@@ -398,12 +397,12 @@ internal class MockDataContainer {
 		return Terrasoft.Common.Json.Json.Deserialize<ODataResponse>(content);
 	}
 
-	public static IContainer GetContainer(MockFileSystem fileSystem) {
+	public static IServiceProvider GetContainer(MockFileSystem fileSystem) {
 		var instance = new MockDataContainer(fileSystem);
 		return instance.InternalGetContainer();
 	}
 
-	private IContainer InternalGetContainer() {
+	private IServiceProvider InternalGetContainer() {
 		var dataProviderMock = GetMockSysSettingsData();
 		BindingsModule bm = new(_fileSystem);
 		EnvironmentSettings environmentSettings = new() {
@@ -412,10 +411,10 @@ internal class MockDataContainer {
 			Password = "Supervisor",
 			IsNetCore = false
 		};
-		IContainer container = bm.Register(
+		IServiceProvider container = bm.Register(
 		settings: environmentSettings,
 		additionalRegistrations: builder => {
-			builder.RegisterInstance(dataProviderMock).As<IDataProvider>();
+			builder.AddSingleton<IDataProvider>(dataProviderMock);
 		});
 		return container;
 	}
@@ -440,7 +439,7 @@ internal class MockDataContainer {
 
 		return dataProviderMock;
 		// Let's create a real container but with mock Items, see additionalRegistrations
-		// Autofac returns last registration, so we can override the real data provider with the mock one
+		// The additional registration overrides IDataProvider with the mock implementation
 
 	}
 

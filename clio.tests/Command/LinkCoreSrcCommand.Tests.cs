@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using Clio.Common.SystemServices;
@@ -32,20 +31,20 @@ namespace Clio.Tests.Command {
 
 		[SetUp]
 		public void SetUp() {
-			_fileSystemMock = Container.Resolve<IFileSystem>();
-			_settingsRepositoryMock = Container.Resolve<ISettingsRepository>();
-			_systemServiceManagerMock = Container.Resolve<ISystemServiceManager>();
-			_validator = Container.Resolve<IValidator<LinkCoreSrcOptions>>();
+			_fileSystemMock = Container.GetRequiredService<IFileSystem>();
+			_settingsRepositoryMock = Container.GetRequiredService<ISettingsRepository>();
+			_systemServiceManagerMock = Container.GetRequiredService<ISystemServiceManager>();
+			_validator = Container.GetRequiredService<IValidator<LinkCoreSrcOptions>>();
 		}
 
-		protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+		protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 			base.AdditionalRegistrations(containerBuilder);
 			_fileSystemMock ??= Substitute.For<IFileSystem>();
 			_settingsRepositoryMock ??= Substitute.For<ISettingsRepository>();
 			_systemServiceManagerMock ??= Substitute.For<ISystemServiceManager>();
-			containerBuilder.RegisterInstance(_fileSystemMock).As<IFileSystem>();
-			containerBuilder.RegisterInstance(_settingsRepositoryMock).As<ISettingsRepository>();
-			containerBuilder.RegisterInstance(_systemServiceManagerMock).As<ISystemServiceManager>();
+			containerBuilder.AddSingleton<IFileSystem>(_fileSystemMock);
+			containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
+			containerBuilder.AddSingleton<ISystemServiceManager>(_systemServiceManagerMock);
 		}
 
 		#endregion
@@ -362,7 +361,7 @@ namespace Clio.Tests.Command {
 			CorePath = ""
 		};
 
-		var command = Container.Resolve<LinkCoreSrcCommand>();
+		var command = Container.GetRequiredService<LinkCoreSrcCommand>();
 
 		// Act
 		int result = command.Execute(options);

@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using Autofac.Core;
 
 namespace Clio;
 
@@ -12,7 +11,6 @@ internal static class ExceptionReadableMessageExtension
 		return exception switch
 		{
 			FileNotFoundException ex => $"{ex.Message}{ex.FileName}",
-			DependencyResolutionException ex => ex.InnerException?.Message ?? ex.Message,
 			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
 			_ => exception.Message
 		};

@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using Autofac;
 using Clio.Common;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
@@ -46,7 +45,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 		string SCHEMA_NAME = (string)obj.SelectToken("$.MetaData.Schema.A2");
 		SCHEMA_NAME.Should().Be(SchemaName);
 
-		IPackageInfoProvider pif = Container.Resolve<IPackageInfoProvider>();
+		IPackageInfoProvider pif = Container.GetRequiredService<IPackageInfoProvider>();
 		PackageInfo packageInfo = pif.GetPackageInfo(PackagePath);
 		Guid PACKAGE_UID = (Guid)obj.SelectToken("$.MetaData.Schema.A5");
 		PACKAGE_UID.Should().Be(packageInfo.Descriptor.UId);
@@ -59,7 +58,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	}
 
 	private void AssertOnSchema(string schemaPath) {
-		IPackageInfoProvider pif = Container.Resolve<IPackageInfoProvider>();
+		IPackageInfoProvider pif = Container.GetRequiredService<IPackageInfoProvider>();
 		PackageInfo packageInfo = pif.GetPackageInfo(PackagePath);
 		string content = FileSystem.File.ReadAllText(schemaPath);
 		string expectedNameSpace = $"namespace {packageInfo.Descriptor.Maintainer}.{packageInfo.Descriptor.Name}";
@@ -142,7 +141,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	public void AddSchema_CopiesMetadataFiles_AndAdjustsContent(){
 		//Arrange
 		FileSystem.AddDirectory(PackagePath);
-		ISchemaBuilder sut = Container.Resolve<ISchemaBuilder>();
+		ISchemaBuilder sut = Container.GetRequiredService<ISchemaBuilder>();
 
 		//Act
 		sut.AddSchema(SchemaType, SchemaName, PackagePath);
@@ -178,7 +177,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	public void AddSchema_CopiesResourceFiles_AndAdjustsContent(){
 		//Arrange
 		FileSystem.AddDirectory(PackagePath);
-		ISchemaBuilder sut = Container.Resolve<ISchemaBuilder>();
+		ISchemaBuilder sut = Container.GetRequiredService<ISchemaBuilder>();
 
 		//Act
 		sut.AddSchema(SchemaType, SchemaName, PackagePath);
@@ -196,7 +195,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	public void AddSchema_Creates_FileContent(){
 		//Arrange
 		FileSystem.AddDirectory(PackagePath);
-		ISchemaBuilder sut = Container.Resolve<ISchemaBuilder>();
+		ISchemaBuilder sut = Container.GetRequiredService<ISchemaBuilder>();
 
 		//Act
 		sut.AddSchema(SchemaType, SchemaName, PackagePath);
@@ -222,7 +221,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 
 		string metadataSchemaFolderPath = Path.Combine(PackagePath, "Schemas", SchemaName);
 		FileSystem.AddDirectory(metadataSchemaFolderPath);
-		ISchemaBuilder sut = Container.Resolve<ISchemaBuilder>();
+		ISchemaBuilder sut = Container.GetRequiredService<ISchemaBuilder>();
 
 		//Act
 		Action act = () => sut.AddSchema(SchemaType, SchemaName, PackagePath);

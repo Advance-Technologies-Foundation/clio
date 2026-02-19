@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Linq;
-using Autofac;
 using Clio.Common;
 using Clio.ComposableApplication;
 using Clio.Package;
@@ -48,13 +47,11 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		ILogger logger = Substitute.For<ILogger>();
-		//containerBuilder.RegisterType<ZipFileMockWrapper>().As<IZipFile>();
-		containerBuilder
-			.RegisterInstance(new ZipFileMockWrapper(FileSystem, new WorkingDirectoriesProvider(logger, new FileSystem())))
-			.As<IZipFile>();
+		containerBuilder.AddSingleton<IZipFile>(
+			new ZipFileMockWrapper(FileSystem, new WorkingDirectoriesProvider(logger, new FileSystem())));
 	}
 
 	#endregion
@@ -66,7 +63,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		FileSystem.MockExamplesFolder("workspaces", WorkspacesFolderPath);
 		FileSystem.MockExamplesFolder("SVG_Icons", Path.Combine(_tempPath, "SVG_Icons"));
 		FileSystem.MockExamplesFolder("AppZips", Path.Combine(_tempPath, "AppZips"));
-		_sut = Container.Resolve<IComposableApplicationManager>();
+		_sut = Container.GetRequiredService<IComposableApplicationManager>();
 	}
 
 	#endregion
@@ -143,7 +140,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		// Assert
 		FileSystem.FileExists(zipAppPath).Should().BeTrue("because the zip file should exist after setting the icon");
 		Container
-			.Resolve<IPackageArchiver>()
+			.GetRequiredService<IPackageArchiver>()
 			.ExtractPackages(zipAppPath, true, true, true, false, unzipAppPath);
 		string appDescriptorContent
 			= FileSystem.File.ReadAllText(Path.Combine(unzipAppPath, "MrktApolloApp", "Files", "app-descriptor.json"));

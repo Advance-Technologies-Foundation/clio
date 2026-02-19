@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Json;
+using System.Text.Json;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Clio.Common;
 using Newtonsoft.Json.Linq;
@@ -75,7 +76,7 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 		return fileVersionInfo.FileVersion;
 	}
 
-	public string GetLatestVersionFromGitHub(){
+	private string GetLatestVersionFromGitHub(){
 		Task<byte[]> body;
 		using (HttpClient client = new()) {
 			client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -88,9 +89,9 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 		MemoryStream jsonStream = new(body.Result) {Position = 0};
 		using StreamReader reader = new(jsonStream, Encoding.UTF8);
 		string json = reader.ReadToEnd();
-		JsonObject jsonDoc = (JsonObject)JsonValue.Parse(json);
-		JsonValue version = jsonDoc["tag_name"];
-		return version;
+		JsonObject jsonDoc = (JsonObject)JsonNode.Parse(json);
+		JsonNode version = jsonDoc["tag_name"];
+		return version.ToString();
 	}
 
 	public string GetLatestVersionFromNuget(){
@@ -232,7 +233,7 @@ public interface IAppUpdater {
 
 	string GetCurrentVersion();
 
-	string GetLatestVersionFromGitHub();
+	//string GetLatestVersionFromGitHub();
 
 	string GetLatestVersionFromNuget();
 

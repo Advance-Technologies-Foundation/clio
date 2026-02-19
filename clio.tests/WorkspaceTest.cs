@@ -19,7 +19,7 @@ namespace Clio.Tests;
 internal class WorkspaceTest : BaseClioModuleTests
 {
 	// private BindingsModule _bindingModule;
-	// private IContainer _diContainer;
+	// private IServiceProvider _diContainer;
 	
 
 	private EnvironmentSettings GetTestEnvironmentSettings() {
@@ -40,7 +40,7 @@ internal class WorkspaceTest : BaseClioModuleTests
 		return JsonSerializer.Deserialize<EnvironmentSettings>(envSettingsJson);
 	}
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		
 		
@@ -51,8 +51,8 @@ internal class WorkspaceTest : BaseClioModuleTests
 			// Use System.IO.Compression to create a real zip file for testing
 			FileSystem.AddFile(destZip, new MockFileData(new byte[90000]));
 		});
-		containerBuilder.RegisterInstance(zip);
-		containerBuilder.RegisterInstance(GetTestEnvironmentSettings());
+		containerBuilder.AddSingleton(zip);
+		containerBuilder.AddSingleton(GetTestEnvironmentSettings());
 	}
 
 	private static string GetPlatformPath(string disk, string folder) {
@@ -64,7 +64,7 @@ internal class WorkspaceTest : BaseClioModuleTests
 		
 	}
 	private IWorkspace GetTestWorkspace(EnvironmentSettings envSettings) {
-		IWorkspace workspace = Container.Resolve<IWorkspace>();
+		IWorkspace workspace = Container.GetRequiredService<IWorkspace>();
 		return workspace;
 	}
 

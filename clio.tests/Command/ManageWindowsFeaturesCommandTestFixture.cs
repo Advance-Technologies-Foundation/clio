@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Management.Automation;
 using System.Runtime.InteropServices;
-using Autofac;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -22,9 +21,9 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests{
 
 	#region Methods: Protected
 
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_windowsFeatureManager).As<IWindowsFeatureManager>();
+		containerBuilder.AddSingleton<IWindowsFeatureManager>(_windowsFeatureManager);
 	}
 
 	#endregion
@@ -174,7 +173,7 @@ public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests{
 
 	public override void Setup() {
 		base.Setup();
-		_sut = Container.Resolve<ManageWindowsFeaturesCommand>();
+		_sut = Container.GetRequiredService<ManageWindowsFeaturesCommand>();
 	}
 
 	[OneTimeSetUp]

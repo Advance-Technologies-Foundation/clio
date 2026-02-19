@@ -2,9 +2,10 @@
 using System.Collections;
 using System.IO;
 using System.IO.Abstractions;
-using System.Json;
+using System.Text.Json;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using Clio.Common;
 using Clio.Package;
 using FluentValidation;
@@ -164,7 +165,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 		if (appDescriptorPaths.Length > 1) {
 			string code = string.Empty;
 			foreach (string descriptor in appDescriptorPaths) {
-				string actualCode = JsonValue.Parse(_fileSystem.File.ReadAllText(descriptor))["Code"].ToString();
+				string actualCode = JsonNode.Parse(_fileSystem.File.ReadAllText(descriptor))?["Code"]?.ToString();
 				if (code != actualCode && code != string.Empty) {
 					StringBuilder exceptionMessage = new();
 					exceptionMessage.AppendLine("Find more than one applications: ");
@@ -186,11 +187,22 @@ public class ComposableApplicationManager : IComposableApplicationManager
 			}
 		}
 		string appDescriptorPath = appDescriptorPaths[0];
-		JsonValue objectJson = JsonValue.Parse(_fileSystem.File.ReadAllText(appDescriptorPath));
-		objectJson["Version"] = version;
-		object jsonObject = JsonConvert.DeserializeObject(objectJson.ToString());
-		string formattedJsonString = JsonConvert.SerializeObject(jsonObject, Formatting.Indented);
-		_fileSystem.File.WriteAllText(appDescriptorPath, formattedJsonString);
+		string jsonContent = _fileSystem.File.ReadAllText(appDescriptorPath);
+    
+		// Remove duplicate Version keys using regex
+		jsonContent = System.Text.RegularExpressions.Regex.Replace(
+			jsonContent, 
+			@"""Version""\s*:\s*""[^""]*""\s*,\s*(?=""Version"")", 
+			string.Empty);
+    
+		JsonNode objectJson = JsonNode.Parse(jsonContent);
+		if (objectJson != null)
+		{
+			objectJson["Version"] = version;
+			object jsonObject = JsonConvert.DeserializeObject(objectJson.ToString());
+			string formattedJsonString = JsonConvert.SerializeObject(jsonObject, Formatting.Indented);
+			_fileSystem.File.WriteAllText(appDescriptorPath, formattedJsonString);
+		}
 	}
 
 	public bool TrySetVersion(string workspacePath, string appVersion){

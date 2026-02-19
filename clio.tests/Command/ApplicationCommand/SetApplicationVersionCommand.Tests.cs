@@ -2,7 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using System.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command.ApplicationCommand;
 using Clio.ComposableApplication;
 using FluentAssertions;
@@ -57,7 +58,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 			Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
 		});
 		var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(mockWorkspaceAppDescriptorPath));
-		string actualVersion = objectJson["Version"];
+		string actualVersion = objectJson["Version"].GetValue<string>();
 		_fileSystem.FileExists(mockWorkspaceAppDescriptorPath).Should().BeTrue();
 		expectedVersion.Should().Be(actualVersion);
 		_fileSystem.File.ReadAllLines(mockWorkspaceAppDescriptorPath).Length.Should().BeGreaterThan(20);
@@ -126,7 +127,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 			PackageFolderPath = mockPackageFolderPath
 		});
 		var objectJson = JsonObject.Parse(_fileSystem.File.ReadAllText(mockPackageAppDescriptorPath));
-		string actualVersion = objectJson["Version"];
+		string actualVersion = objectJson["Version"].GetValue<string>();
 		_fileSystem.FileExists(mockPackageAppDescriptorPath).Should().BeTrue();
 		expectedVersion.Should().Be(actualVersion);
 		_fileSystem.File.ReadAllLines(mockPackageAppDescriptorPath).Length.Should().BeGreaterThan(20);

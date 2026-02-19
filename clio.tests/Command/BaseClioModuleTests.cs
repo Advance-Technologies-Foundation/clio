@@ -1,6 +1,6 @@
-﻿using Autofac;
 using Clio.Tests.Infrastructure;
 using NUnit.Framework;
+using System;
 using System.IO.Abstractions.TestingHelpers;
 using Terrasoft.Core.Configuration;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -26,7 +26,7 @@ public abstract class BaseClioModuleTests
 	#region Fields: Protected
 
 	protected MockFileSystem FileSystem;
-	protected IContainer Container;
+	protected IServiceProvider Container;
 	protected EnvironmentSettings EnvironmentSettings = new() {
 		Uri = "http://localhost",
 		Login = "",
@@ -41,7 +41,7 @@ public abstract class BaseClioModuleTests
 		return TestFileSystem.MockFileSystem();
 	}
 
-	protected virtual void AdditionalRegistrations(ContainerBuilder containerBuilder) {
+	protected virtual void AdditionalRegistrations(IServiceCollection containerBuilder) {
 	}
 
 	#endregion

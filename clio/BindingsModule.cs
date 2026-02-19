@@ -64,14 +64,8 @@ public class BindingsModule {
 
 	#region Methods: Public
 
-	public Autofac.IContainer Register(EnvironmentSettings settings = null,
-		Action<Autofac.ContainerBuilder> additionalRegistrations = null){
-		return RegisterInternal(settings, additionalRegistrations is null
-			? null
-			: services => additionalRegistrations(new Autofac.ContainerBuilder(services)));
-	}
-
-	private Autofac.IContainer RegisterInternal(EnvironmentSettings settings, Action<IServiceCollection> additionalRegistrations){
+	public IServiceProvider Register(EnvironmentSettings settings = null,
+		Action<IServiceCollection> additionalRegistrations = null){
 		IServiceCollection services = new ServiceCollection();
 		RegisterAssemblyInterfaceTypes(services);
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
@@ -95,6 +89,8 @@ public class BindingsModule {
 					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore);
+			
+			services.AddSingleton(creatioClient);
 			services.AddSingleton<IApplicationClient>(new CreatioClientAdapter(creatioClient));
 			services.AddTransient<SysSettingsManager>();
 		}
@@ -114,7 +110,7 @@ public class BindingsModule {
 			}
 		});
 
-		services.AddTransient<IKubernetesClient, Common.Kubernetes.KubernetesClient>();
+		services.AddTransient<IKubernetesClient, KubernetesClient>();
 		services.AddTransient<K8ContextValidator>();
 		services.AddTransient<IK8ServiceResolver, K8ServiceResolver>();
 		services.AddTransient<IK8DatabaseDiscovery, K8DatabaseDiscovery>();
@@ -317,11 +313,10 @@ public class BindingsModule {
 		RegisterFluentValidators(services);
 
 		additionalRegistrations?.Invoke(services);
-		IServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
-			ValidateOnBuild = false,
+		return services.BuildServiceProvider(new ServiceProviderOptions {
+			ValidateOnBuild = true,
 			ValidateScopes = true
 		});
-		return new Autofac.Container(provider);
 	}
 
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){

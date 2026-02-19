@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.IO;
-using Autofac;
 using Clio.Command.CreatioInstallCommand;
 using FluentAssertions;
 using k8s;
@@ -17,10 +16,10 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 
 	IKubernetes _testKubernetesMock = Substitute.For<IKubernetes>();
 	ICreatioInstallerService _creatioInstallerServiceMock = Substitute.For<ICreatioInstallerService>();
-	protected override void AdditionalRegistrations(ContainerBuilder containerBuilder){
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
-		containerBuilder.RegisterInstance(_creatioInstallerServiceMock);
-		containerBuilder.RegisterInstance(_testKubernetesMock);
+		containerBuilder.AddSingleton(_creatioInstallerServiceMock);
+		containerBuilder.AddSingleton(_testKubernetesMock);
 		
 	}
 
@@ -31,7 +30,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 	[Test(Description = "Should return without waiting for user input")]
 	public void Execute_ReturnsWithoutWaitingForInput_WhenSilent(){
 		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
+		var command = Container.GetRequiredService<InstallerCommand>();
 		PfInstallerOptions options = new () {
 			IsSilent = true
 		};
@@ -48,7 +47,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 	[Test(Description = "Execute completes on Enter when not silent")]
 	public void Execute_ReturnsAfterConsoleInput_WhenNotSilent(){
 		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
+		var command = Container.GetRequiredService<InstallerCommand>();
 		PfInstallerOptions options = new () {
 			IsSilent = false
 		};
@@ -68,7 +67,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 	[Test(Description = "Should return 0 when OK")]
 	public void Execute_DoesNotOpenBrowser_WhenSilent(){
 		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
+		var command = Container.GetRequiredService<InstallerCommand>();
 		PfInstallerOptions options = new PfInstallerOptions() {
 			IsSilent = true
 		};
@@ -90,7 +89,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 	[Test(Description = "Should open browser")]
 	public void Execute_OpensBrowser_WhenNotSilent(){
 		//Arrange
-		var command = Container.Resolve<InstallerCommand>();
+		var command = Container.GetRequiredService<InstallerCommand>();
 		PfInstallerOptions options = new () {
 			IsSilent = false
 		};
