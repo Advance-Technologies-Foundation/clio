@@ -4705,6 +4705,11 @@ clio set-fsm-config [options]
 - `--environmentName` (optional): Specifies the environment name.
 - `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
 
+### Platform Notes
+- Windows: supported for both .NET Framework and .NET (Core/NET8) applications.
+- macOS: supported only for .NET (NET8) applications (`IsNetCore=true`).
+- macOS with `--environmentName`: the registered environment must have `EnvironmentPath` configured.
+
 ### Examples
 Enable file system mode for a specific environment:
 ```bash
@@ -4729,6 +4734,11 @@ clio turn-fsm [options]
 - `--physicalPath` (optional): Specifies the path to the application.
 - `--environmentName` (optional): Specifies the environment name.
 - `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Platform Notes
+- Windows: supported for both .NET Framework and .NET (Core/NET8) applications.
+- macOS: supported only for .NET (NET8) applications (`IsNetCore=true`).
+- macOS with `--environmentName`: the registered environment must have `EnvironmentPath` configured.
 
 ### Examples
 Turn on file system mode for a specific environment:

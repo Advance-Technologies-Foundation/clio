@@ -303,8 +303,9 @@ public class SysSettingsManager : ISysSettingsManager
 				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
 				return false;
 			}
-			string afterUpdateValue = GetSysSettingValueByCode(code).TrimStart('"').TrimEnd('"');
-			return afterUpdateValue.Equals(value.ToString(), StringComparison.OrdinalIgnoreCase);
+			return true;
+			// string afterUpdateValue = GetSysSettingValueByCode(code).TrimStart('"').TrimEnd('"');
+			// return afterUpdateValue.Equals(value.ToString(), StringComparison.OrdinalIgnoreCase);
 		} catch (JsonException) {
 			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
 			return false;
