@@ -174,6 +174,24 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	protected override void ProceedResponse(string response, CompileConfigurationOptions options) {
 		base.ProceedResponse(response, options);
 		try {
+			if (string.IsNullOrWhiteSpace(response)) {
+				CommandSuccess = _isSuccess = false;
+				Logger.WriteError("Empty response received from server during compilation.");
+				Logger.WriteError($"Endpoint: {ServiceUri}");
+				return;
+			}
+
+			string trimmed = response.TrimStart();
+			if (trimmed.StartsWith("<", StringComparison.Ordinal)) {
+				CommandSuccess = _isSuccess = false;
+				Logger.WriteError("Server returned non-JSON response during compilation (looks like HTML).");
+				Logger.WriteError($"Endpoint: {ServiceUri}");
+				Logger.WriteError("Full response:");
+				Logger.WriteLine(trimmed);
+				Logger.WriteError("Check environment URI, IsNetCore flag, and credentials (a login/404 page is often returned as HTML).");
+				return;
+			}
+
 			CreatioResponse model = JsonSerializer.Deserialize<CreatioResponse>(response);
 			CommandSuccess = _isSuccess = model.Success;
 			if (!model.Success) {
@@ -181,7 +199,13 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			}
 		}
 		catch (Exception e) {
+			CommandSuccess = _isSuccess = false;
 			Logger.WriteError(e.Message);
+			Logger.WriteError($"Endpoint: {ServiceUri}");
+			if (!string.IsNullOrWhiteSpace(response)) {
+				Logger.WriteError("Full response:");
+				Logger.WriteLine(response);
+			}
 		}
 	}
 }
