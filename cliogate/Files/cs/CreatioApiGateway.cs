@@ -174,19 +174,6 @@ namespace cliogate.Files.cs
 		#endregion
 
 		#region Methods: Public
-
-
-		[OperationContract]
-		[WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode",
-			BodyStyle = WebMessageBodyStyle.WrappedRequest,
-			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
-		public string CheckCompStatus() {
-			//_userConnection.Workspace.
-			return string.Empty;
-		}
-
-
-
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode", BodyStyle = WebMessageBodyStyle.WrappedRequest,
         			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
