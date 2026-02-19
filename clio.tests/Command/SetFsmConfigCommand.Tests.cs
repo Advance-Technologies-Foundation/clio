@@ -468,7 +468,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	
 	[Test]
 	[Category("Unit")]
-	[Description("Verifies that the command throws an exception on non-Windows OS.")]
+	[Description("Verifies OS-specific behavior for non-Windows platforms.")]
 	public void Execute_Should_Throw_OnNonWindows() {
 		if(OperatingSystem.IsWindows()) {
 			// This test is only relevant for Windows OS
@@ -478,11 +478,41 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		// Arrange
 		SetFsmConfigOptions options = new() { IsFsm = "on" };
 		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
 
 		// Act & Assert
 		Action act = () => _command.Execute(options);
+		if (OperatingSystem.IsMacOS()) {
+			act.Should().Throw<Exception>()
+				.WithMessage("On macOS this command is supported only for NET8 (IsNetCore=true) environments.");
+			return;
+		}
 		act.Should().Throw<Exception>()
-			.WithMessage("This command is only supported on Windows OS.");
+			.WithMessage("This command is only supported on Windows and macOS.");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that on macOS environment name is resolved via EnvironmentPath for NET8 environments.")]
+	public void Execute_UsesEnvironmentPath_OnMacOs_WhenNetCore() {
+		if(!OperatingSystem.IsMacOS()) {
+			return;
+		}
+
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Terrasoft.WebHost.dll.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "test-env" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost" });
+		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(new EnvironmentSettings { IsNetCore = true, EnvironmentPath = tempDir, Uri = "http://localhost" });
+
+		int result = _command.Execute(options);
+		result.Should().Be(0);
+
+		Directory.Delete(tempDir, true);
 	}
 
 }

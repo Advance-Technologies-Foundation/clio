@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 
 namespace Clio.Command;
 
@@ -12,7 +11,6 @@ using Clio.UserEnvironment;
 using FluentValidation;
 using FluentValidation.Results;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Xml;
 
 public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOptions>
@@ -21,20 +19,17 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
 	#region Constructors: Public
 
 	public SetFsmConfigOptionsValidator() {
+		RuleFor(o => o.IsFsm)
+			.Cascade(CascadeMode.Stop)
+			.NotEmpty()
+			.WithErrorCode("ArgumentParse.Error")
+			.WithMessage("IsFsm must be 'on' or 'off'.")
+			.Must(v => string.Equals(v?.Trim(), "on", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(v?.Trim(), "off", StringComparison.OrdinalIgnoreCase))
+			.WithErrorCode("ArgumentParse.Error")
+			.WithMessage("IsFsm must be 'on' or 'off'.");
+
 		RuleFor(o => o.EnvironmentName == o.PhysicalPath).Cascade(CascadeMode.Stop)
-			.Custom((value, context) =>
-			{
-				if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && string.IsNullOrWhiteSpace(context.InstanceToValidate.PhysicalPath))
-				{
-					context.AddFailure(new ValidationFailure
-					{
-						ErrorCode = "OS001",
-						ErrorMessage = $"Not supported OS Platform - When on {OSPlatform.Windows} user LoaderPath option instead of environment name",
-						Severity = Severity.Error,
-						AttemptedValue = value,
-					});
-				}
-			})
 			.Custom((value, context) => {
 				bool isLoaderPathEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.PhysicalPath);
 				bool isEnvEmpty = string.IsNullOrWhiteSpace(context.InstanceToValidate.Environment);
@@ -42,7 +37,7 @@ public class SetFsmConfigOptionsValidator : AbstractValidator<SetFsmConfigOption
 				if (isEnvEmpty && isLoaderPathEmpty) {
 					context.AddFailure(new ValidationFailure {
 						ErrorCode = "ArgumentParse.Error",
-						ErrorMessage = "Either loacalpath or environment name must be provided",
+						ErrorMessage = "Either physicalPath or environment name must be provided",
 						Severity = Severity.Error,
 						AttemptedValue = value
 					});
@@ -96,27 +91,35 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	
 	#region Methods: Public
 	public override int Execute(SetFsmConfigOptions options) {
-
-		if (Environment.OSVersion.Platform != PlatformID.Win32NT) {
-			throw new Exception("This command is only supported on Windows OS.");
+		bool isWindows = OperatingSystem.IsWindows();
+		bool isMacOs = OperatingSystem.IsMacOS();
+		if (!isWindows && !isMacOs) {
+			throw new Exception("This command is only supported on Windows and macOS.");
 		}
-		
-		
+
+		EnvironmentSettings environmentSettings = _settingsRepository.GetEnvironment(options);
+		if (environmentSettings == null) {
+			throw new Exception("Could not resolve environment settings.");
+		}
+		if (isMacOs && !environmentSettings.IsNetCore) {
+			throw new Exception("On macOS this command is supported only for NET8 (IsNetCore=true) environments.");
+		}
+
 		ValidationResult validationResult = _validator.Validate(options);
 		if (validationResult.Errors.Count != 0) {
 			PrintErrors(validationResult.Errors);
 			return 1;
 		}
 		
-		_ = _settingsRepository.GetEnvironment(options).IsNetCore switch {
+		_ = environmentSettings.IsNetCore switch {
 			true => _webConfigFileName = "Terrasoft.WebHost.dll.config",
 			var _ => _webConfigFileName = "Web.config"
  		};
 		
-		
-		string webConfigPath = string.IsNullOrWhiteSpace(options.PhysicalPath) ? 
-			Path.Join(GetWebConfigPathFromEnvName(options.Environment), _webConfigFileName) //Searches IIS registered sites
-			: Path.Join(options.PhysicalPath, _webConfigFileName);
+		string environmentPath = string.IsNullOrWhiteSpace(options.PhysicalPath)
+			? GetWebConfigPathFromEnvName(options.Environment)
+			: options.PhysicalPath;
+		string webConfigPath = Path.Join(environmentPath, _webConfigFileName);
 		if (File.Exists(webConfigPath)) {
 			ModifyWebConfigFile(webConfigPath, options.IsFsm.ToLower(CultureInfo.InvariantCulture) == "on"); //Happy path
 			return 0;
@@ -127,8 +130,20 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 
 	private string GetWebConfigPathFromEnvName(string envName) {
 		EnvironmentSettings env = _settingsRepository.GetEnvironment(envName);
-		if(string.IsNullOrWhiteSpace(env.Uri)) {
+		if (env == null) {
 			throw new Exception($"Could not find path to environment: '{envName}'");
+		}
+		if(string.IsNullOrWhiteSpace(env.Uri)) {
+			if (!OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(env.EnvironmentPath)) {
+				return env.EnvironmentPath;
+			}
+			throw new Exception($"Could not find path to environment: '{envName}'");
+		}
+		if (!OperatingSystem.IsWindows()) {
+			if (!string.IsNullOrWhiteSpace(env.EnvironmentPath)) {
+				return env.EnvironmentPath;
+			}
+			throw new Exception($"Could not find EnvironmentPath to environment: '{envName}'");
 		}
 		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites();
 		foreach (IISScannerHandler.UnregisteredSite site in sites) {

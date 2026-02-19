@@ -1,0 +1,28 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    turn-fsm - Turn file system mode on or off for an environment
+
+DESCRIPTION
+    Toggles Creatio file system mode (FSM).
+
+    When turning FSM on:
+    - Updates configuration to enable File Design Mode
+    - Loads packages to the file system
+
+    When turning FSM off:
+    - Loads packages to the database
+    - Updates configuration to disable File Design Mode
+
+    Note: On macOS this command is supported only for .NET (NET8) environments.
+
+EXAMPLE
+    clio turn-fsm --environmentName MyEnvironment on
+
+    clio turn-fsm --environmentName MyEnvironment off
+
+    clio turn-fsm --physicalPath "/path/to/creatio" on
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -1,0 +1,26 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    set-fsm-config - Set file system mode properties in config file
+
+DESCRIPTION
+    Updates the Creatio configuration file to enable or disable File Design Mode.
+
+    It changes:
+    - terrasoft/fileDesignMode enabled
+    - appSettings/UseStaticFileContent value (opposite of FSM)
+
+    You can provide either:
+    - --physicalPath (path to the environment folder)
+    - --environmentName (registered environment)
+
+    Note: On macOS this command is supported only for .NET (NET8) environments.
+
+EXAMPLE
+    clio set-fsm-config --environmentName MyEnvironment on
+
+    clio set-fsm-config --physicalPath "/path/to/creatio" off
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
