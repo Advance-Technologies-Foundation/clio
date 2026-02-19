@@ -97,6 +97,11 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 			throw new Exception("This command is only supported on Windows and macOS.");
 		}
 
+		ValidationResult validationResult = _validator.Validate(options);
+		if (validationResult.Errors.Count != 0) {
+			PrintErrors(validationResult.Errors);
+			return 1;
+		}
 		EnvironmentSettings environmentSettings = _settingsRepository.GetEnvironment(options);
 		if (environmentSettings == null) {
 			throw new Exception("Could not resolve environment settings.");
@@ -104,13 +109,6 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 		if (isMacOs && !environmentSettings.IsNetCore) {
 			throw new Exception("On macOS this command is supported only for NET8 (IsNetCore=true) environments.");
 		}
-
-		ValidationResult validationResult = _validator.Validate(options);
-		if (validationResult.Errors.Count != 0) {
-			PrintErrors(validationResult.Errors);
-			return 1;
-		}
-		
 		_ = environmentSettings.IsNetCore switch {
 			true => _webConfigFileName = "Terrasoft.WebHost.dll.config",
 			var _ => _webConfigFileName = "Web.config"

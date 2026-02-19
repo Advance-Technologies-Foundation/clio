@@ -67,8 +67,6 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	#endregion
 
 	
-
-	
 	/// <summary>
 	///  Verifies that the command works with environment name when physical path is not provided.
 	/// </summary>
