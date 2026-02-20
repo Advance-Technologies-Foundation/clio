@@ -1989,12 +1989,30 @@ Create workspace in local directory, execute create-workspace command
 clio create-workspace
 ```
 
+Create a new empty workspace in a subfolder without connecting to any Creatio environment (no credentials required):
+
+```bash
+clio create-workspace my-workspace --empty
+```
+
+If clio reports that you are inside an existing workspace (or the target folder is not empty), you can bypass checks with `--force`:
+
+```bash
+clio create-workspace my-workspace --empty --force
+```
+
 In directory **.clio** specify you packages
 
 Create workspace in local directory with all editable packages from environment, execute create-workspace command with argument -e <Environment name>
 
 ```bash
 clio create-workspace -e demo
+```
+
+If you want to create the workspace structure only (no downloads, no environment connection), use `--empty` with a target folder name:
+
+```bash
+clio create-workspace my-workspace --empty
 ```
 
 Create workspace in local directory with packages in app, execute create-workspace command

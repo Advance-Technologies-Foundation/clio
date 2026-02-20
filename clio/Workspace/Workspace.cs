@@ -148,8 +148,8 @@ public class Workspace : IWorkspace{
 		_workspaceSolutionCreator.Create();
 	}
 
-	public void Create(string environmentName, bool isAddingPackageNames = false) {
-		_workspaceCreator.Create(environmentName, isAddingPackageNames);
+	public void Create(string environmentName, bool isAddingPackageNames = false, bool force = false) {
+		_workspaceCreator.Create(environmentName, isAddingPackageNames, force);
 	}
 
 	public IEnumerable<string> GetFilteredPackages() {

@@ -53,7 +53,10 @@ namespace Clio.Common
 		}
 
 		private void ActualizePermissionsScriptFile(string scriptFile) {
-			_processExecutor.Execute("/bin/bash", $"-c \"sudo chmod +x {scriptFile}\"", false);
+			// Do not use sudo here: workspace files should be owned by the current user.
+			// Using sudo triggers an interactive password prompt and breaks non-interactive usage.
+			string escapedPath = scriptFile.Replace("\"", "\\\"");
+			_processExecutor.Execute("/bin/bash", $"-c \"chmod +x \"{escapedPath}\"\"", false);
 		}
 
 		#endregion
