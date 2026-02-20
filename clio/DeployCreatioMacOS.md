@@ -381,13 +381,13 @@ clio stop -e ENV_NAME
 clio stop -e dev1
 
 # Stop without confirmation
-clio stop -e dev1 --quiet
+clio stop -e dev1 --silent
 
 # Stop all environments
 clio stop --all
 
 # Stop all environments without confirmation
-clio stop --all --quiet
+clio stop --all --silent
 ```
 
 > **Important:** The `stop` command does NOT delete application files, database, or environment configuration. For complete removal, use `clio uninstall-creatio -e ENV_NAME`.

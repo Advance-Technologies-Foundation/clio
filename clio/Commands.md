@@ -365,6 +365,13 @@ To restore to a local database server, add a `db` section to your `appsettings.j
       "password": "YourPassword",
       "description": "Local MSSQL Server for development"
     },
+    "my-local-mssql-windows-auth": {
+      "dbType": "mssql",
+      "hostname": "localhos",
+      "port": 0,
+      "useWindowsAuth": true,
+      "description": "Local MSSQL Server with Windows Authentication"
+    },
     "my-local-postgres": {
       "dbType": "postgres",
       "hostname": "localhost",
@@ -380,12 +387,18 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 
 **Configuration Fields:**
 - `dbType` (required): Database type - `mssql` or `postgres`
-- `hostname` (required): Database server hostname or IP address
-- `port` (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL)
-- `username` (required): Database username
-- `password` (required): Database password
+- `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
+- `port` (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `username` (required for SQL Authentication): Database username. Not required when using Windows Authentication
+- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication
+- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication. Default is `false`
 - `description` (optional): Description for documentation
 - `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
+
+**Note on Windows Authentication:**
+- When `useWindowsAuth` is `true`, clio connects using the Windows identity of the current user
+- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
+- Username and password fields are ignored when Windows Authentication is enabled
 
 ### Usage
 
@@ -1226,14 +1239,14 @@ clio stop -e <ENV_NAME>
 clio stop --all
 
 # Stop without confirmation prompt
-clio stop -e <ENV_NAME> --quiet
-clio stop --all -q
+clio stop -e <ENV_NAME> --silent
+clio stop --all --silent
 ```
 
 ### Options
 - `-e, --environment <ENV_NAME>` - Stop specific environment
 - `--all` - Stop all registered Creatio environments
-- `-q, --quiet` - Skip confirmation prompt
+- `--silent` - Skip confirmation prompt
 
 ### Behavior
 
@@ -1292,13 +1305,12 @@ clio stop -e production
 
 Stop a specific environment without confirmation:
 ```bash
-clio stop -e production --quiet
-clio stop -e production -q
+clio stop -e production --silent
 ```
 
 Stop all registered environments:
 ```bash
-clio stop --all --quiet
+clio stop --all --silent
 ```
 
 Using alias:
@@ -1310,7 +1322,7 @@ clio stop-creatio -e dev
 
 **IIS Deployment (Windows)**:
 ```bash
-$ clio stop -e prod --quiet
+$ clio stop -e prod --silent
 
 Stopping environment: prod
 Stopping IIS application pool: prod
@@ -1322,7 +1334,7 @@ Stopped: 1
 
 **Background Process**:
 ```bash
-$ clio stop -e dev --quiet
+$ clio stop -e dev --silent
 
 Stopping environment: dev
 Killing process dotnet (PID: 12345)
@@ -1335,7 +1347,7 @@ Stopped: 1
 
 **Multiple Environments**:
 ```bash
-$ clio stop --all --quiet
+$ clio stop --all --silent
 
 Stopping environment: dev
 ✓ IIS application pool 'dev' stopped successfully
@@ -4294,10 +4306,34 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
       "username": "sa",
       "password": "your_password",
       "description": "Local MSSQL Server"
+    },
+    "my-local-mssql-windows-auth": {
+      "dbType": "mssql",
+      "hostname": "localhost",
+      "port": 0,
+      "useWindowsAuth": true,
+      "description": "Local MSSQL Server with Windows Authentication"
     }
   }
 }
 ```
+
+**Configuration Fields:**
+- `dbType` (required): Database type - `postgres` or `mssql`
+- `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
+- `port` (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `username` (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication for MSSQL
+- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication for MSSQL
+- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`. **Note:** Windows Authentication is not supported for PostgreSQL
+- `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
+- `description` (optional): Human-readable description
+
+**Note on Windows Authentication:**
+- Windows Authentication is only supported for MSSQL, not for PostgreSQL
+- When `useWindowsAuth` is `true`, clio will connect using the Windows identity of the current user
+- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
+- For named instances with Windows Auth, set `port` to `0` and specify full instance name in `hostname` (e.g., `localhost\SQLEXPRESS`)
+- Username and password fields are ignored when Windows Authentication is enabled
 
 ### Redis Database Configuration
 
@@ -4522,7 +4558,7 @@ clio stop --all
 ### Options
 - `-e, --environment <ENV_NAME>` - Stop specific environment
 - `--all` - Stop all registered Creatio environments
-- `-q, --quiet` - Skip confirmation prompt
+- `--silent` - Skip confirmation prompt
 
 ### Behavior
 
@@ -4564,12 +4600,12 @@ clio stop -e dev1
 
 Stop a specific environment without confirmation:
 ```bash
-clio stop -e dev1 --quiet
+clio stop -e dev1 --silent
 ```
 
 Stop all registered environments:
 ```bash
-clio stop --all --quiet
+clio stop --all --silent
 ```
 
 ### Example Output
@@ -4669,6 +4705,11 @@ clio set-fsm-config [options]
 - `--environmentName` (optional): Specifies the environment name.
 - `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
 
+### Platform Notes
+- Windows: supported for both .NET Framework and .NET (Core/NET8) applications.
+- macOS: supported only for .NET (NET8) applications (`IsNetCore=true`).
+- macOS with `--environmentName`: the registered environment must have `EnvironmentPath` configured.
+
 ### Examples
 Enable file system mode for a specific environment:
 ```bash
@@ -4693,6 +4734,11 @@ clio turn-fsm [options]
 - `--physicalPath` (optional): Specifies the path to the application.
 - `--environmentName` (optional): Specifies the environment name.
 - `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Platform Notes
+- Windows: supported for both .NET Framework and .NET (Core/NET8) applications.
+- macOS: supported only for .NET (NET8) applications (`IsNetCore=true`).
+- macOS with `--environmentName`: the registered environment must have `EnvironmentPath` configured.
 
 ### Examples
 Turn on file system mode for a specific environment:

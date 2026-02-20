@@ -493,7 +493,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private int RestoreMssqlToLocalServer(LocalDbServerConfiguration config, string backupPath, string dbName,
 		bool dropIfExists) {
 		try {
-			IMssql mssql = _dbClientFactory.CreateMssql(config.Hostname, config.Port, config.Username, config.Password);
+			IMssql mssql = _dbClientFactory.CreateMssql(config.Hostname, config.Port, config.Username, config.Password, config.UseWindowsAuth);
 
 			if (mssql.CheckDbExists(dbName)) {
 				if (!dropIfExists) {
@@ -731,6 +731,17 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return strategy;
 	}
 
+	private string BuildMssqlConnectionString(LocalDbServerConfiguration dbConfig, string databaseName) {
+		string dataSource = dbConfig.Hostname.Contains("\\") || dbConfig.Port == 0 
+			? dbConfig.Hostname 
+			: $"{dbConfig.Hostname},{dbConfig.Port}";
+
+		if (dbConfig.UseWindowsAuth) {
+			return $"Data Source={dataSource};Initial Catalog={databaseName};Integrated Security=true;MultipleActiveResultSets=true;Pooling=true;Max Pool Size=100";
+		}
+		return $"Data Source={dataSource};Initial Catalog={databaseName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=true;Pooling=true;Max Pool Size=100";
+	}
+
 	private async Task<int> UpdateConnectionString(DirectoryInfo unzippedDirectory, PfInstallerOptions options,
 		InstallerHelper.DatabaseType dbType) {
 		_logger.WriteInfo("[CheckUpdate connection string] - Started");
@@ -749,15 +760,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 					$"Database server configuration '{options.DbServerName}' not found in appsettings.json");
 			}
 
-			// Build connection string based on database type
-			dbConnectionString = dbConfig.DbType?.ToLowerInvariant() switch {
-									 "postgres" or "postgresql" =>
-										 $"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
-									 "mssql" =>
-										 $"Data Source={dbConfig.Hostname},{dbConfig.Port};Initial Catalog={options.SiteName};User Id={dbConfig.Username}; Password={dbConfig.Password};MultipleActiveResultSets=True;Pooling=true;Max Pool Size=100",
-									 var _ => throw new NotSupportedException(
-										 $"Database type '{dbConfig.DbType}' is not supported")
-								 };
+		// Build connection string based on database type
+		dbConnectionString = dbConfig.DbType?.ToLowerInvariant() switch {
+			"postgres" or "postgresql" => 
+				$"Server={dbConfig.Hostname};Port={dbConfig.Port};Database={options.SiteName};User ID={dbConfig.Username};password={dbConfig.Password};Timeout=500; CommandTimeout=400;MaxPoolSize=1024;",
+			"mssql" => BuildMssqlConnectionString(dbConfig, options.SiteName),
+			var _ => throw new NotSupportedException($"Database type '{dbConfig.DbType}' is not supported")
+		};
 
 			// For local deployment, use localhost Redis or skip if not available
 			(int dbNumber, string errorMessage) emptyDb = FindEmptyRedisDb();

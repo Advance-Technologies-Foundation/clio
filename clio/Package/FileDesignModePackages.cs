@@ -28,9 +28,11 @@ namespace Clio.Package
 	{
 		#region Consts: Private
 
-		private const int retryRequestCount = 3;
+		// After restart the application may accept HTTP requests with a delay.
+		// Keep retries relatively generous to avoid flaky behavior in local/dev environments.
+		private const int retryRequestCount = 30;
 
-		private const int delayBetweenRetryAttemptsSec = 1;
+		private const int delayBetweenRetryAttemptsSec = 3;
 
 		#endregion
 

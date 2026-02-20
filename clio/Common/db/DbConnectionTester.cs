@@ -6,7 +6,7 @@ namespace Clio.Common.db;
 public interface IDbConnectionTester
 {
 	ConnectionTestResult TestConnection(LocalDbServerConfiguration config);
-	ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password);
+	ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password, bool isWindowsAuth = false);
 	ConnectionTestResult TestPostgresConnection(string host, int port, string username, string password);
 }
 
@@ -30,7 +30,7 @@ public class DbConnectionTester : IDbConnectionTester
 		string dbType = config.DbType?.ToLowerInvariant();
 
 		return dbType switch {
-			"mssql" => TestMssqlConnection(config.Hostname, config.Port, config.Username, config.Password),
+			"mssql" => TestMssqlConnection(config.Hostname, config.Port, config.Username, config.Password, config.UseWindowsAuth),
 			"postgres" or "postgresql" => TestPostgresConnection(config.Hostname, config.Port, config.Username, config.Password),
 			_ => new ConnectionTestResult {
 				Success = false,
@@ -40,9 +40,10 @@ public class DbConnectionTester : IDbConnectionTester
 		};
 	}
 
-	public ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password) {
+	public ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password, 
+			bool isWindowsAuth = false) {
 		try {
-			IMssql mssql = _dbClientFactory.CreateMssql(host, port, username, password);
+			IMssql mssql = _dbClientFactory.CreateMssql(host, port, username, password, isWindowsAuth);
 			bool canConnect = mssql.TestConnection();
 
 			if (canConnect) {

@@ -37,7 +37,8 @@ public class Postgres : IPostgres
 		_logger = logger ?? ConsoleLogger.Instance;
 	}
 	
-	public void Init(string host, int port, string username, string password){
+	public void Init(string host, int port, string username, string password)
+	{
 		_connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres";
 	}
 	

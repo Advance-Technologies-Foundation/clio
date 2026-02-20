@@ -62,7 +62,15 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	/// <param name="options">Command options containing FSM configuration.</param>
 	/// <returns>0 if successful, 1 if failed.</returns>
 	public override int Execute(TurnFsmCommandOptions options) {
-		if (options.IsFsm == "on") {
+		string fsmValue = options.IsFsm?.Trim() ?? string.Empty;
+		bool isOn = string.Equals(fsmValue, "on", StringComparison.OrdinalIgnoreCase);
+		bool isOff = string.Equals(fsmValue, "off", StringComparison.OrdinalIgnoreCase);
+		if (!isOn && !isOff) {
+			Console.WriteLine("Invalid value for IsFsm. Expected: 'on' or 'off'.");
+			return 1;
+		}
+
+		if (isOn) {
 			if (_setFsmConfigCommand.Execute(options) == 0) {
 				options.IsNetCore = _environmentSettings.IsNetCore;
 				if (options.IsNetCore == true) {
@@ -75,17 +83,44 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 					};
 					//RestartCommand restartCommand = new (_applicationClient, _environmentSettings);
 					_restartCommand.Execute(opt);
-					Thread.Sleep(TimeSpan.FromSeconds(3));
-					_applicationClient.Login();
+					if (!TryLoginWithRetry(_applicationClient, timeout: TimeSpan.FromSeconds(90), delay: TimeSpan.FromSeconds(3))) {
+						Console.WriteLine("Application is not available after restart. Try again later or increase restart time.");
+						return 1;
+					}
 				}
 				return _loadPackagesToFileSystemCommand.Execute(options);
 			}
-		} else {
+		}
+		else {
 			if (_loadPackagesToDbCommand.Execute(options) == 0) {
 				return _setFsmConfigCommand.Execute(options);
 			}
 		}
 		return 1;
+	}
+
+	private static bool TryLoginWithRetry(IApplicationClient applicationClient, TimeSpan timeout, TimeSpan delay) {
+		DateTime start = DateTime.UtcNow;
+		Exception lastException = null;
+		bool printedWaitingMessage = false;
+		while (DateTime.UtcNow - start < timeout) {
+			try {
+				applicationClient.Login();
+				return true;
+			}
+			catch (Exception ex) {
+				lastException = ex;
+				if (!printedWaitingMessage) {
+					Console.WriteLine("Waiting for application to start after restart...");
+					printedWaitingMessage = true;
+				}
+				Thread.Sleep(delay);
+			}
+		}
+		if (lastException != null) {
+			Console.WriteLine(lastException.Message);
+		}
+		return false;
 	}
 
 	#endregion

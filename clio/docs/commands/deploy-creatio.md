@@ -399,6 +399,13 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
       "username": "sa",
       "password": "your_password",
       "description": "Local MSSQL Server"
+    },
+    "my-local-mssql-windows-auth": {
+      "dbType": "mssql",
+      "hostname": "localhost",
+      "port": 0,
+      "useWindowsAuth": true,
+      "description": "Local MSSQL Server with Windows Authentication"
     }
   }
 }
@@ -407,12 +414,18 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
 ### Configuration Fields
 
 - **dbType** (required): Database type - `postgres` or `mssql`
-- **hostname** (required): Database server hostname or IP address
-- **port** (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL)
-- **username** (required): Database username with create/drop database permissions
-- **password** (required): Database password
+- **hostname** (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
+- **port** (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
+- **username** (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication
+- **password** (required for SQL Authentication): Database password. Not required when using Windows Authentication
+- **useWindowsAuth** (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`
 - **pgToolsPath** (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
 - **description** (optional): Human-readable description
+
+**Note on Windows Authentication:**
+- When `useWindowsAuth` is `true`, clio will connect using the Windows identity of the current user
+- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
+- Username and password fields are ignored when Windows Authentication is enabled
 
 ## Deployment Behavior
 
