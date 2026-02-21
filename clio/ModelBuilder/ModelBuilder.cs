@@ -13,28 +13,33 @@ using Newtonsoft.Json.Linq;
 
 namespace Clio.ModelBuilder
 {
-	internal class ModelBuilder
+	internal interface IModelBuilder
+	{
+		void GetModels(AddItemOptions opts);
+	}
+
+	internal class ModelBuilder : IModelBuilder
 	{
 		private readonly IApplicationClient _applicationClient;
-		private readonly AddItemOptions _opts;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+		private AddItemOptions _opts;
 
 		private string EntitySchemaManagerRequestUrl => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.EntitySchemaManagerRequest);
 		private string RuntimeEntitySchemaRequestUrl => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
 		private readonly Dictionary<string, Schema> _schemas = new Dictionary<string, Schema>();
 
-		public ModelBuilder(IApplicationClient applicationClient, AddItemOptions opts,
+		public ModelBuilder(IApplicationClient applicationClient,
 			IWorkingDirectoriesProvider workingDirectoriesProvider, IServiceUrlBuilder serviceUrlBuilder)
 		{
 			_applicationClient = applicationClient;
-			_opts = opts;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
-		public void GetModels()
+		public void GetModels(AddItemOptions opts)
 		{
+			_opts = opts;
 			GetEntitySchemasAsync();
 
 			Parallel.ForEach(_schemas, new ParallelOptions(){ MaxDegreeOfParallelism = 4}, 

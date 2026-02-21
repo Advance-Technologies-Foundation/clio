@@ -66,34 +66,15 @@ internal class AddItemOptionsValidator : AbstractValidator<AddItemOptions>{
 	#endregion
 }
 
-internal class AddItemCommand : Command<AddItemOptions>{
-	#region Fields: Private
-
-	private readonly IApplicationClient _applicationClient;
-	private readonly ILogger _logger;
-	private readonly IValidator<AddItemOptions> _optionsValidator;
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
-	private readonly IVsProjectFactory _vsProjectFactory;
-	private readonly IFileSystem _fileSystem;
-	private readonly IModelBuilder _modelBuilder;
-
-	#endregion
-
-	#region Constructors: Public
-
-	public AddItemCommand(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder,
-		IValidator<AddItemOptions> optionsValidator, IVsProjectFactory vsProjectFactory, ILogger logger,
-		IFileSystem fileSystem, IModelBuilder modelBuilder) {
-		_applicationClient = applicationClient;
-		_serviceUrlBuilder = serviceUrlBuilder;
-		_optionsValidator = optionsValidator;
-		_vsProjectFactory = vsProjectFactory;
-		_logger = logger;
-		_fileSystem = fileSystem;
-		_modelBuilder = modelBuilder;
-	}
-
-	#endregion
+internal class AddItemCommand(
+	IApplicationClient applicationClient,
+	IServiceUrlBuilder serviceUrlBuilder,
+	IValidator<AddItemOptions> optionsValidator,
+	IVsProjectFactory vsProjectFactory,
+	ILogger logger,
+	IFileSystem fileSystem,
+	IModelBuilder modelBuilder)
+	: Command<AddItemOptions>{
 
 	#region Methods: Private
 
@@ -110,17 +91,17 @@ internal class AddItemCommand : Command<AddItemOptions>{
 	}
 
 	private int AddItemFromTemplate(AddItemOptions options) {
-		IVsProject project = _vsProjectFactory.Create(options.DestinationPath, options.Namespace);
+		IVsProject project = vsProjectFactory.Create(options.DestinationPath, options.Namespace);
 		CreatioEnvironment creatioEnv = new();
 		string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
-		if (!_fileSystem.File.Exists(tplPath)) {
+		if (!fileSystem.File.Exists(tplPath)) {
 			string envPath = creatioEnv.GetAssemblyFolderPath();
 			if (!string.IsNullOrEmpty(envPath)) {
 				tplPath = Path.Combine(envPath, tplPath);
 			}
 		}
 
-		string templateBody = _fileSystem.File.ReadAllText(tplPath);
+		string templateBody = fileSystem.File.ReadAllText(tplPath);
 		project.AddFile(options.ItemName, templateBody.Replace("<Name>", options.ItemName));
 		project.Reload();
 		return 0;
@@ -128,26 +109,26 @@ internal class AddItemCommand : Command<AddItemOptions>{
 
 	private int AddModels(AddItemOptions opts) {
 		if (opts.CreateAll) {
-			_logger.WriteInfo("Generating models...");
-			_modelBuilder.GetModels(opts);
+			logger.WriteInfo("Generating models...");
+			modelBuilder.GetModels(opts);
 			return 0;
 		}
 
 		Dictionary<string, string> models = GetClassModels(opts.ItemName, opts.Fields);
-		IVsProject project = _vsProjectFactory.Create(opts.DestinationPath, opts.Namespace);
+		IVsProject project = vsProjectFactory.Create(opts.DestinationPath, opts.Namespace);
 		foreach (KeyValuePair<string, string> model in models) {
 			project.AddFile(model.Key, model.Value);
 		}
 
 		project.Reload();
-		_logger.WriteInfo("Done");
+		logger.WriteInfo("Done");
 		return 0;
 	}
 
 	private Dictionary<string, string> GetClassModels(string entitySchemaName, string fields) {
-		string url = _serviceUrlBuilder.Build(
+		string url = serviceUrlBuilder.Build(
 			$"/rest/CreatioApiGateway/GetEntitySchemaModels/{entitySchemaName}/{fields}");
-		string responseFromServer = _applicationClient.ExecuteGetRequest(url);
+		string responseFromServer = applicationClient.ExecuteGetRequest(url);
 		string result = CorrectJson(responseFromServer);
 		return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 	}
@@ -157,10 +138,10 @@ internal class AddItemCommand : Command<AddItemOptions>{
 	#region Methods: Public
 
 	public override int Execute(AddItemOptions options) {
-		ValidationResult validationResult = _optionsValidator.Validate(options);
+		ValidationResult validationResult = optionsValidator.Validate(options);
 		if (!validationResult.IsValid) {
 			foreach (ValidationFailure error in validationResult.Errors) {
-				_logger.WriteError(error.ErrorMessage);
+				logger.WriteError(error.ErrorMessage);
 			}
 
 			return 1;
@@ -174,7 +155,7 @@ internal class AddItemCommand : Command<AddItemOptions>{
 			return AddItemFromTemplate(options);
 		}
 		catch (Exception e) {
-			_logger.WriteError(e.Message);
+			logger.WriteError(e.Message);
 			return 1;
 		}
 	}

@@ -41,12 +41,11 @@ internal class ModelBuilderTests
 
 			var modelBuilder = new Clio.ModelBuilder.ModelBuilder(
 				applicationClient,
-				options,
 				workingDirectoriesProvider,
 				serviceUrlBuilder);
 
 			// Act
-			modelBuilder.GetModels();
+			modelBuilder.GetModels(options);
 
 			// Assert
 			serviceUrlBuilder.Received(1).Build(ServiceUrlBuilder.KnownRoute.EntitySchemaManagerRequest);
