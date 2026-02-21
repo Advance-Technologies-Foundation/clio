@@ -24,6 +24,7 @@ internal class ModelBuilder : IModelBuilder{
 	#region Fields: Private
 
 	private readonly IApplicationClient _applicationClient;
+	private readonly Dictionary<string, List<DetailConnection>> _detailConnectionsByMasterSchema = new();
 	private readonly Dictionary<string, Schema> _schemas = new();
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -55,10 +56,12 @@ internal class ModelBuilder : IModelBuilder{
 	#region Methods: Private
 
 	private string CreateClassFileText(KeyValuePair<string, Schema> schema) {
+		List<DetailConnection> detailConnections = GetDetailConnections(schema.Key);
 		StringBuilder sb = new();
 		sb.AppendLine(@"#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
 		  .AppendLine()
 		  .AppendLine("using System;")
+		  .AppendLine("using System.Collections.Generic;")
 		  .AppendLine("using ATF.Repository;")
 		  .AppendLine("using ATF.Repository.Attributes;")
 		  .AppendLine("using System.Diagnostics.CodeAnalysis;")
@@ -112,6 +115,23 @@ internal class ModelBuilder : IModelBuilder{
 				  .Append(column.Value.Name).AppendLine(" { get; set; }");
 			}
 
+			sb.AppendLine();
+		}
+
+		if (detailConnections.Count > 0) {
+			sb.AppendLine("\t\t#region Details");
+			sb.AppendLine();
+
+			foreach (DetailConnection detailConnection in detailConnections) {
+				sb.Append("\t\t[DetailProperty(nameof(global::").Append(_opts.Namespace).Append('.')
+					.Append(detailConnection.DetailSchemaName).Append('.')
+					.Append(detailConnection.DetailSchemaPropertyName).AppendLine("))]");
+				sb.Append("\t\tpublic virtual List<").Append(detailConnection.DetailSchemaName).Append("> ")
+					.Append(detailConnection.DetailPropertyName).AppendLine(" { get; set; }");
+				sb.AppendLine();
+			}
+
+			sb.AppendLine("\t\t#endregion");
 			sb.AppendLine();
 		}
 
@@ -220,6 +240,53 @@ internal class ModelBuilder : IModelBuilder{
 			   };
 	}
 
+	private void BuildDetailConnections() {
+		_detailConnectionsByMasterSchema.Clear();
+
+		foreach (Schema detailSchema in _schemas.Values) {
+			foreach (Column lookupColumn in detailSchema.Columns.Values.Where(column =>
+				         !string.IsNullOrWhiteSpace(column.ReferenceSchemaName))) {
+				if (lookupColumn.Name == "Id") {
+					continue;
+				}
+
+				string masterSchemaName = lookupColumn.ReferenceSchemaName;
+				if (!_schemas.ContainsKey(masterSchemaName)) {
+					continue;
+				}
+
+				string detailSchemaPropertyName = lookupColumn.Name + "Id";
+				string detailPropertyName = $"CollectionOf{detailSchema.Name}By{lookupColumn.Name}";
+
+				if (_detailConnectionsByMasterSchema.TryGetValue(masterSchemaName, out List<DetailConnection> existingConnections)) {
+					if (existingConnections.Any(connection =>
+						    connection.DetailSchemaName == detailSchema.Name
+						    && connection.DetailSchemaPropertyName == detailSchemaPropertyName)) {
+						continue;
+					}
+				}
+
+				DetailConnection detailConnection = new() {
+					DetailSchemaName = detailSchema.Name,
+					DetailSchemaPropertyName = detailSchemaPropertyName,
+					DetailPropertyName = detailPropertyName
+				};
+
+				if (!_detailConnectionsByMasterSchema.ContainsKey(masterSchemaName)) {
+					_detailConnectionsByMasterSchema.Add(masterSchemaName, new List<DetailConnection>());
+				}
+
+				_detailConnectionsByMasterSchema[masterSchemaName].Add(detailConnection);
+			}
+		}
+	}
+
+	private List<DetailConnection> GetDetailConnections(string schemaName) {
+		return _detailConnectionsByMasterSchema.TryGetValue(schemaName, out List<DetailConnection> detailConnections)
+			? detailConnections.OrderBy(connection => connection.DetailPropertyName).ToList()
+			: new List<DetailConnection>();
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -229,7 +296,8 @@ internal class ModelBuilder : IModelBuilder{
 		GetEntitySchemasAsync();
 
 		Parallel.ForEach(_schemas, new ParallelOptions { MaxDegreeOfParallelism = 4 },
-			a => { GetRuntimeEntitySchema(a); });
+			GetRuntimeEntitySchema);
+		BuildDetailConnections();
 		if (string.IsNullOrWhiteSpace(_opts.DestinationPath)) {
 			_opts.DestinationPath = _workingDirectoriesProvider.CurrentDirectory;
 		}
@@ -249,6 +317,16 @@ internal class ModelBuilder : IModelBuilder{
 
 		Console.WriteLine();
 	}
+
+	#endregion
+}
+
+public class DetailConnection{
+	#region Properties: Public
+
+	public string DetailSchemaName { get; set; }
+	public string DetailSchemaPropertyName { get; set; }
+	public string DetailPropertyName { get; set; }
 
 	#endregion
 }
