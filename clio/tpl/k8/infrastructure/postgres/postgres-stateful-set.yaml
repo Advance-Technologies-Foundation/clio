@@ -55,7 +55,7 @@ spec:
               name: postgres-backup-images
       containers:
         - name: clio-postgres
-          image: postgres:16
+          image: postgres:16.12
           imagePullPolicy: "IfNotPresent"
           args: ["-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
           securityContext:

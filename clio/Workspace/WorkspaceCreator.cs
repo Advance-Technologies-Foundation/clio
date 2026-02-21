@@ -16,7 +16,7 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		void Create(string environmentName, bool isAddingPackageNames = false);
+		void Create(string environmentName, bool isAddingPackageNames = false, bool force = false);
 
 		void SaveWorkspaceEnvironmentSettings(string environmentName);
 
@@ -41,6 +41,7 @@ namespace Clio.Workspaces
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IExecutablePermissionsActualizer _executablePermissionsActualizer;
 		private readonly IOSPlatformChecker _osPlatformChecker;
+		private readonly ILogger _logger;
 
 		#endregion
 
@@ -50,7 +51,7 @@ namespace Clio.Workspaces
 				ITemplateProvider templateProvider, IJsonConverter jsonConverter, IFileSystem fileSystem,
 				IApplicationPackageListProvider applicationPackageListProvider, 
 				IExecutablePermissionsActualizer executablePermissionsActualizer,
-				IOSPlatformChecker osPlatformChecker) {
+				IOSPlatformChecker osPlatformChecker, ILogger logger) {
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			creatioSdk.CheckArgumentNull(nameof(creatioSdk));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
@@ -59,6 +60,7 @@ namespace Clio.Workspaces
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			executablePermissionsActualizer.CheckArgumentNull(nameof(executablePermissionsActualizer));
 			osPlatformChecker.CheckArgumentNull(nameof(osPlatformChecker));
+			logger.CheckArgumentNull(nameof(logger));
 			_workspacePathBuilder = workspacePathBuilder;
 			_creatioSdk = creatioSdk;
 			_templateProvider = templateProvider;
@@ -67,6 +69,7 @@ namespace Clio.Workspaces
 			_applicationPackageListProvider = applicationPackageListProvider;
 			_executablePermissionsActualizer = executablePermissionsActualizer;
 			_osPlatformChecker = osPlatformChecker;
+			_logger = logger;
 		}
 
 		#endregion
@@ -108,18 +111,35 @@ namespace Clio.Workspaces
 			_executablePermissionsActualizer.Actualize(_workspacePathBuilder.TasksFolderPath);
 		}
 
-		private void ValidateNotExistingWorkspace() {
+		private void ValidateNotExistingWorkspace(bool force) {
+			if (force) {
+				return;
+			}
 			if (IsWorkspace) {
-				throw new InvalidOperationException("This operation can not execute inside existing workspace!");
+				string message =
+					$"This operation can not execute inside existing workspace! " +
+					$"Workspace was detected because file exists: {WorkspaceSettingsPath}. " +
+					$"Resolved workspace root: {RootPath}. " +
+					$"Use --force to bypass this check.";
+				_logger.WriteWarning(message);
+				throw new InvalidOperationException(message);
 			}
 		}
 
-		private void ValidateDirectory() {
-			var existingDirectories = _fileSystem.GetDirectories();
+		private void ValidateDirectory(bool force) {
+			if (force) {
+				return;
+			}
+			var existingDirectories = _fileSystem.GetDirectories(RootPath);
 			string[] templateDirectories = _templateProvider.GetTemplateDirectories("workspace");
 			var commonDirectories = existingDirectories.Intersect(templateDirectories);
 			if (commonDirectories.Any()) {
-				throw new InvalidOperationException("This operation requires empty folder!");
+				string common = string.Join(", ", commonDirectories);
+				string message =
+					$"This operation requires empty folder. Conflicting directories in '{RootPath}': {common}. " +
+					$"Use --force to bypass this check.";
+				_logger.WriteWarning(message);
+				throw new InvalidOperationException(message);
 			}
 		}
 
@@ -134,9 +154,9 @@ namespace Clio.Workspaces
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceEnvironmentSettingsPath);
 		}
 
-		public void Create(string environmentName, bool isAddingPackageNames = false) {
-			ValidateNotExistingWorkspace();
-			ValidateDirectory();
+		public void Create(string environmentName, bool isAddingPackageNames = false, bool force = false) {
+			ValidateNotExistingWorkspace(force);
+			ValidateDirectory(force);
 			_templateProvider.CopyTemplateFolder("workspace", RootPath, "", "", false);
 			if (!ExistsWorkspaceSettingsFile) {
 				CreateWorkspaceSettingsFile(isAddingPackageNames);

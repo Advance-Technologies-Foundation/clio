@@ -73,6 +73,10 @@ public class BindingsModule {
 			.Where(t => t != typeof(ConsoleLogger))
 			.AsImplementedInterfaces();
 
+		// Workspace path builder holds mutable RootPath for the current command execution.
+		// It must be shared across services (command, workspace creator, etc.) to avoid using different root paths.
+		containerBuilder.RegisterType<WorkspacePathBuilder>().As<IWorkspacePathBuilder>().SingleInstance();
+
 		containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
 
 		if (settings != null) {
