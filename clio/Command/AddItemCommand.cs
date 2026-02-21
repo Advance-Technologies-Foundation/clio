@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Clio.Common;
+using Clio.ModelBuilder;
 using Clio.Project;
 using Clio.UserEnvironment;
 using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;
 using Newtonsoft.Json;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
@@ -72,21 +74,23 @@ internal class AddItemCommand : Command<AddItemOptions>{
 	private readonly IValidator<AddItemOptions> _optionsValidator;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IVsProjectFactory _vsProjectFactory;
-	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private readonly IFileSystem _fileSystem;
+	private readonly IModelBuilder _modelBuilder;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public AddItemCommand(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder,
-		IWorkingDirectoriesProvider workingDirectoriesProvider, IValidator<AddItemOptions> optionsValidator,
-		IVsProjectFactory vsProjectFactory, ILogger logger) {
+		IValidator<AddItemOptions> optionsValidator, IVsProjectFactory vsProjectFactory, ILogger logger,
+		IFileSystem fileSystem, IModelBuilder modelBuilder) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
-		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_optionsValidator = optionsValidator;
 		_vsProjectFactory = vsProjectFactory;
 		_logger = logger;
+		_fileSystem = fileSystem;
+		_modelBuilder = modelBuilder;
 	}
 
 	#endregion
@@ -109,14 +113,14 @@ internal class AddItemCommand : Command<AddItemOptions>{
 		IVsProject project = _vsProjectFactory.Create(options.DestinationPath, options.Namespace);
 		CreatioEnvironment creatioEnv = new();
 		string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
-		if (!File.Exists(tplPath)) {
+		if (!_fileSystem.File.Exists(tplPath)) {
 			string envPath = creatioEnv.GetAssemblyFolderPath();
 			if (!string.IsNullOrEmpty(envPath)) {
 				tplPath = Path.Combine(envPath, tplPath);
 			}
 		}
 
-		string templateBody = File.ReadAllText(tplPath);
+		string templateBody = _fileSystem.File.ReadAllText(tplPath);
 		project.AddFile(options.ItemName, templateBody.Replace("<Name>", options.ItemName));
 		project.Reload();
 		return 0;
@@ -125,9 +129,7 @@ internal class AddItemCommand : Command<AddItemOptions>{
 	private int AddModels(AddItemOptions opts) {
 		if (opts.CreateAll) {
 			_logger.WriteInfo("Generating models...");
-			ModelBuilder.ModelBuilder modelBuilder =
-				new(_applicationClient, opts, _workingDirectoriesProvider, _serviceUrlBuilder);
-			modelBuilder.GetModels();
+			_modelBuilder.GetModels(opts);
 			return 0;
 		}
 

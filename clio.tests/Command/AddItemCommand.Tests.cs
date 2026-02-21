@@ -1,11 +1,12 @@
 using System;
-using System.IO;
 using Clio.Command;
 using Clio.Common;
+using Clio.ModelBuilder;
 using Clio.Project;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using System.IO.Abstractions.TestingHelpers;
 
 namespace Clio.Tests.Command;
 
@@ -19,7 +20,8 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IVsProject _vsProject;
 	private IVsProjectFactory _vsProjectFactory;
-	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private MockFileSystem _fileSystem;
+	private IModelBuilder _modelBuilder;
 
 	#endregion
 
@@ -82,35 +84,46 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 	[Category("Unit")]
 	public void Execute_TemplateItem_CallsUnderlyingProjectWithTemplateBody() {
 		// Arrange
-		string originalCurrentDirectory = Environment.CurrentDirectory;
-		string tempDirectory = Path.Combine(Path.GetTempPath(), $"add-item-tests-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(Path.Combine(tempDirectory, "tpl"));
-		File.WriteAllText(Path.Combine(tempDirectory, "tpl", "service-template.tpl"), "public class <Name> {}");
+		_fileSystem.AddDirectory(@"C:\work\tpl");
+		_fileSystem.AddFile(@"C:\work\tpl\service-template.tpl", new MockFileData("public class <Name> {}"));
+		_fileSystem.Directory.SetCurrentDirectory(@"C:\work");
+		AddItemOptions options = new() {
+			ItemType = "service",
+			ItemName = "MyService",
+			Namespace = "Codex",
+			DestinationPath = @"C:\Models"
+		};
 
-		try {
-			Environment.CurrentDirectory = tempDirectory;
-			AddItemOptions options = new() {
-				ItemType = "service",
-				ItemName = "MyService",
-				Namespace = "Codex",
-				DestinationPath = @"C:\Models"
-			};
+		// Act
+		int result = _command.Execute(options);
 
-			// Act
-			int result = _command.Execute(options);
+		// Assert
+		result.Should().Be(0);
+		_vsProjectFactory.Received(1).Create(@"C:\Models", "Codex");
+		_vsProject.Received(1).AddFile("MyService", "public class MyService {}");
+		_vsProject.Received(1).Reload();
+	}
 
-			// Assert
-			result.Should().Be(0);
-			_vsProjectFactory.Received(1).Create(@"C:\Models", "Codex");
-			_vsProject.Received(1).AddFile("MyService", "public class MyService {}");
-			_vsProject.Received(1).Reload();
-		}
-		finally {
-			Environment.CurrentDirectory = originalCurrentDirectory;
-			if (Directory.Exists(tempDirectory)) {
-				Directory.Delete(tempDirectory, true);
-			}
-		}
+	[Test]
+	[Category("Unit")]
+	public void Execute_ModelCreateAll_UsesInjectedModelBuilder() {
+		// Arrange
+		AddItemOptions options = new() {
+			ItemType = "model",
+			CreateAll = true,
+			Namespace = "Codex",
+			Culture = "en-US"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		_modelBuilder.Received(1).GetModels(options);
+		_serviceUrlBuilder.Received(0).Build(Arg.Any<string>());
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+		_vsProjectFactory.DidNotReceiveWithAnyArgs().Create();
 	}
 
 	[SetUp]
@@ -118,18 +131,20 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 		base.Setup();
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		_vsProjectFactory = Substitute.For<IVsProjectFactory>();
 		_vsProject = Substitute.For<IVsProject>();
 		_logger = Substitute.For<ILogger>();
+		_fileSystem = new MockFileSystem();
+		_modelBuilder = Substitute.For<IModelBuilder>();
 		_vsProjectFactory.Create(Arg.Any<string>(), Arg.Any<string>()).Returns(_vsProject);
 		_command = new AddItemCommand(
 			_applicationClient,
 			_serviceUrlBuilder,
-			_workingDirectoriesProvider,
 			new AddItemOptionsValidator(),
 			_vsProjectFactory,
-			_logger);
+			_logger,
+			_fileSystem,
+			_modelBuilder);
 	}
 
 	#endregion
