@@ -147,6 +147,14 @@ internal class ServiceUrlBuilderCommandTests
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,
 				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
 				"http://localhost/0/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup");
+			yield return new TestCaseDataWithEnvSettingAndKnownRoutes(
+				ServiceUrlBuilder.KnownRoute.EntitySchemaManagerRequest,
+				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
+				"http://localhost/0/DataService/json/SyncReply/EntitySchemaManagerRequest");
+			yield return new TestCaseDataWithEnvSettingAndKnownRoutes(
+				ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest,
+				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
+				"http://localhost/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
 		}
 	}
 
@@ -165,6 +173,18 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost/",
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,
 				"http://localhost/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.EntitySchemaManagerRequest,
+				"http://localhost/0/DataService/json/SyncReply/EntitySchemaManagerRequest");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.EntitySchemaManagerRequest,
+				"http://localhost/DataService/json/SyncReply/EntitySchemaManagerRequest");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest,
+				"http://localhost/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest,
+				"http://localhost/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
 		}
 	}
 

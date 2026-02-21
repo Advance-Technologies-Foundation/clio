@@ -26,6 +26,7 @@ using Clio.Common.Database;
 using Clio.Common.ScenarioHandlers;
 using Clio.ComposableApplication;
 using Clio.Package;
+using Clio.Project;
 using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
@@ -76,6 +77,7 @@ public class BindingsModule {
 		// Workspace path builder holds mutable RootPath for the current command execution.
 		// It must be shared across services (command, workspace creator, etc.) to avoid using different root paths.
 		containerBuilder.RegisterType<WorkspacePathBuilder>().As<IWorkspacePathBuilder>().SingleInstance();
+		containerBuilder.RegisterType<VsProjectFactory>().As<IVsProjectFactory>();
 
 		containerBuilder.RegisterInstance(ConsoleLogger.Instance).As<ILogger>().SingleInstance();
 
@@ -315,6 +317,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<Link4RepoOptionsValidator>();
 		containerBuilder.RegisterType<LinkPackageStoreOptionsValidator>();
 		containerBuilder.RegisterType<DownloadConfigurationCommandOptionsValidator>();
+		containerBuilder.RegisterType<AddItemOptionsValidator>();
 
 		containerBuilder.RegisterType<CreatioUninstaller>().As<ICreatioUninstaller>();
 		containerBuilder.RegisterType<UnzipRequestValidator>();
@@ -336,6 +339,7 @@ public class BindingsModule {
 		containerBuilder.RegisterType<SetApplicationIconCommand>();
 		containerBuilder.RegisterType<CustomizeDataProtectionCommand>();
 		containerBuilder.RegisterType<GenerateProcessModelCommand>();
+		containerBuilder.RegisterType<AddItemCommand>();
 		containerBuilder.RegisterType<ZipFileWrapper>().As<IZipFile>();
 		containerBuilder.RegisterType<ProcessModelGenerator>().As<IProcessModelGenerator>();
 		containerBuilder.RegisterType<ProcessModelWriter>().As<IProcessModelWriter>();

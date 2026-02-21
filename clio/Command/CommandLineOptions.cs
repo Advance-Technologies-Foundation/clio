@@ -214,32 +214,6 @@ namespace Clio
 	{
 	}
 
-	[Verb("add-item", Aliases = ["create"], HelpText = "Create item in project")]
-	internal class ItemOptions : EnvironmentOptions
-	{
-		[Value(0, MetaName = "Item type", Required = true, HelpText = "Item type")]
-		public string ItemType { get; set; }
-
-		[Value(1, MetaName = "Item name", Required = false, HelpText = "Item name")]
-		public string ItemName { get; set; }
-
-
-		[Option('d', "DestinationPath", Required = false, HelpText = "Path to source directory.", Default = null)]
-		public string DestinationPath { get; set; }
-
-		[Option('n', "Namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
-		public string Namespace { get; set; }
-
-		[Option('f', "Fields", Required = false, HelpText = "Required fields for model class", Default = null)]
-		public string Fields { get; set; }
-
-		[Option('a', "All", Required = false, HelpText = "Create all models", Default = true)]
-		public bool CreateAll { get; set; }
-
-		[Option('x', "Culture", Required = false, HelpText = "Description culture", Default = "en-US")]
-		public string Culture { get; set; }
-	}
-
 	[Verb("set-dev-mode", Aliases = ["dev", "unlock"], HelpText = "Activate developer mode for selected environment")]
 	internal class DeveloperModeOptions : EnvironmentNameOptions
 	{

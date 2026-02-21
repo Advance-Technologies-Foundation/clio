@@ -18,7 +18,6 @@ using Clio.Query;
 using Clio.UserEnvironment;
 using CommandLine;
 using Creatio.Client;
-using Newtonsoft.Json;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -52,7 +51,7 @@ internal class Program {
 		typeof(ConvertOptions),
 		typeof(ExecuteSqlScriptOptions),
 		typeof(InstallGateOptions),
-		typeof(ItemOptions),
+		typeof(AddItemOptions),
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
 		typeof(FeatureOptions),
@@ -192,7 +191,7 @@ internal class Program {
 					ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
 					InstallGateOptions opts => Resolve<InstallGatePkgCommand>(CreateClioGatePkgOptions(opts))
 						.Execute(CreateClioGatePkgOptions(opts)),
-					ItemOptions opts => AddItem(opts),
+					AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
 					DeveloperModeOptions opts => SetDeveloperMode(opts),
 					SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
 					FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
@@ -201,8 +200,8 @@ internal class Program {
 					OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
 					PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
 					ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
-				EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
-				ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
+					EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
+					ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
 					CompileOptions opts => CreateRemoteCommand<CompileWorkspaceCommand>(opts).Execute(opts),
 					PushNuGetPkgsOptions opts => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
 					PackNuGetPkgOptions opts => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
@@ -340,8 +339,6 @@ internal class Program {
 
 	private static string ExistsPackageZipUrl => AppUrl + @"/rest/PackagesGateway/ExistsPackageZip";
 
-	private static string GetEntityModelsUrl => AppUrl + @"/rest/CreatioApiGateway/GetEntitySchemaModels/{0}/{1}";
-
 	private static string GetZipPackageUrl => AppUrl + @"/ServiceModel/PackageInstallerService.svc/GetZipPackages";
 
 	private static string Url => CreatioEnvironment.Settings.Uri; // Should be obtained from config
@@ -388,78 +385,6 @@ internal class Program {
 	#region Methods: Private
 
 	/// <summary>
-	/// Processes the given item options based on the item type.
-	/// </summary>
-	/// <param name="options">Options for creating the item</param>
-	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
-	private static int AddItem(ItemOptions options){
-		if (options.ItemType.ToLower() == "model") {
-			return AddModels(options);
-		}
-		return AddItemFromTemplate(options);
-	}
-
-	/// <summary>
-	/// Creates a file from a template for the specified item.
-	/// </summary>
-	/// <param name="options">Options containing the item name, type, and destination</param>
-	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
-	private static int AddItemFromTemplate(ItemOptions options){
-		try {
-			VSProject project = new(options.DestinationPath, options.Namespace);
-			CreatioEnvironment creatioEnv = new();
-			string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
-			if (!File.Exists(tplPath)) {
-				string envPath = creatioEnv.GetAssemblyFolderPath();
-				if (!string.IsNullOrEmpty(envPath)) {
-					tplPath = Path.Combine(envPath, tplPath);
-				}
-			}
-			string templateBody = File.ReadAllText(tplPath);
-			project.AddFile(options.ItemName, templateBody.Replace("<Name>", options.ItemName));
-			project.Reload();
-			return 0;
-		}
-		catch (Exception e) {
-			Console.WriteLine(e);
-			return 1;
-		}
-	}
-
-	/// <summary>
-	/// Generates model classes for the specified entity schema.
-	/// </summary>
-	/// <param name="opts">Options containing entity schema name and field information</param>
-	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
-	private static int AddModels(ItemOptions opts){
-		if (opts.CreateAll) {
-			Console.WriteLine("Generating models...");
-			SetupAppConnection(opts);
-
-			IWorkingDirectoriesProvider workingDirectoryProvider = Resolve<IWorkingDirectoriesProvider>();
-			ModelBuilder mb = new(_creatioClientInstance, AppUrl, opts, workingDirectoryProvider);
-			mb.GetModels();
-			return 0;
-		}
-
-		try {
-			SetupAppConnection(opts);
-			Dictionary<string, string> models = GetClassModels(opts.ItemName, opts.Fields);
-			VSProject project = new(opts.DestinationPath, opts.Namespace);
-			foreach (KeyValuePair<string, string> model in models) {
-				project.AddFile(model.Key, model.Value);
-			}
-			project.Reload();
-			Console.WriteLine("Done");
-			return 0;
-		}
-		catch (Exception e) {
-			Console.WriteLine(e);
-			return 1;
-		}
-	}
-
-	/// <summary>
 	/// Configures the environment with the specified options.
 	/// </summary>
 	/// <param name="options">Environment configuration options</param>
@@ -486,23 +411,6 @@ internal class Program {
 	/// <returns>Result code from the conversion operation</returns>
 	private static int ConvertPackage(ConvertOptions opts){
 		return Resolve<IPackageConverter>().Convert(opts);
-	}
-
-	/// <summary>
-	/// Corrects JSON formatting issues in the provided string, handling escape sequences and special characters.
-	/// </summary>
-	/// <param name="body">JSON string to correct</param>
-	/// <returns>Corrected JSON string</returns>
-	private static string CorrectJson(string body){
-		body = body.Replace("\\\\r\\\\n", Environment.NewLine);
-		body = body.Replace("\\r\\n", Environment.NewLine);
-		body = body.Replace("\\\\n", Environment.NewLine);
-		body = body.Replace("\\n", Environment.NewLine);
-		body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
-		body = body.Replace("\\\"", "\"");
-		body = body.Replace("\\\\", "\\");
-		body = body.Trim(new[] {'\"'});
-		return body;
 	}
 
 	/// <summary>
@@ -651,19 +559,6 @@ internal class Program {
 		}
 		catch (Exception) { }
 		return apiVersion;
-	}
-
-	/// <summary>
-	/// Retrieves class models for the specified entity schema.
-	/// </summary>
-	/// <param name="entitySchemaName">Name of the entity schema</param>
-	/// <param name="fields">Comma-separated list of fields to include</param>
-	/// <returns>Dictionary of model class names and their content</returns>
-	private static Dictionary<string, string> GetClassModels(string entitySchemaName, string fields){
-		string url = string.Format(GetEntityModelsUrl, entitySchemaName, fields);
-		string responseFormServer = _creatioClientInstance.ExecuteGetRequest(url);
-		string result = CorrectJson(responseFormServer);
-		return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
 	}
 
 	/// <summary>

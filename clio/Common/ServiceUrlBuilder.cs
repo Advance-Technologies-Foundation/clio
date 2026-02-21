@@ -66,7 +66,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		ProcessSchemaRequest = 18,
 		StartLogBroadcast = 19,
 		StopLogBroadcast = 20,
-		ClearRedisDb = 21
+		ClearRedisDb = 21,
+		EntitySchemaManagerRequest = 22,
+		RuntimeEntitySchemaRequest = 23
 
 	}
 
@@ -102,6 +104,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.StartLogBroadcast, "/rest/ATFLogService/StartLogBroadcast"},
 		{KnownRoute.StopLogBroadcast, "/rest/ATFLogService/ResetConfiguration"},
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
+		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
+		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

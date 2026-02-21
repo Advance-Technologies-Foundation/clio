@@ -1,34 +1,36 @@
-﻿using Clio.Dto;
-using Creatio.Client;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Clio;
+using Clio.Command;
 using Clio.Common;
+using Clio.Dto;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
-namespace Clio
+namespace Clio.ModelBuilder
 {
 	internal class ModelBuilder
 	{
-		private readonly CreatioClient _creatioClient;
-		private readonly string _appUrl;
-		private readonly ItemOptions _opts;
+		private readonly IApplicationClient _applicationClient;
+		private readonly AddItemOptions _opts;
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
-		private string EntitySchemaManagerRequestUrl => _appUrl + @"/DataService/json/SyncReply/EntitySchemaManagerRequest";
-		private string RuntimeEntitySchemaRequestUrl => _appUrl + @"/DataService/json/SyncReply/RuntimeEntitySchemaRequest";
+		private string EntitySchemaManagerRequestUrl => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.EntitySchemaManagerRequest);
+		private string RuntimeEntitySchemaRequestUrl => _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
 		private readonly Dictionary<string, Schema> _schemas = new Dictionary<string, Schema>();
 
-		public ModelBuilder(CreatioClient creatioClient, string appUrl, ItemOptions opts, IWorkingDirectoriesProvider workingDirectoriesProvider)
+		public ModelBuilder(IApplicationClient applicationClient, AddItemOptions opts,
+			IWorkingDirectoriesProvider workingDirectoriesProvider, IServiceUrlBuilder serviceUrlBuilder)
 		{
-			_creatioClient = creatioClient;
-			_appUrl = appUrl;
+			_applicationClient = applicationClient;
 			_opts = opts;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
 		public void GetModels()
@@ -61,7 +63,7 @@ namespace Clio
 
 		private void GetEntitySchemasAsync()
 		{
-			var responseJson = _creatioClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
+			var responseJson = _applicationClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
 			
 			JsonSerializerSettings settings = new () {
 				NullValueHandling = NullValueHandling.Ignore
@@ -78,7 +80,7 @@ namespace Clio
 
 		private void GetRuntimeEntitySchema(KeyValuePair<string, Schema> schema)
 		{
-			string definition = _creatioClient.ExecutePostRequest(RuntimeEntitySchemaRequestUrl, "{\"Name\" : \"" + schema.Key+ "\"}");
+			string definition = _applicationClient.ExecutePostRequest(RuntimeEntitySchemaRequestUrl, "{\"Name\" : \"" + schema.Key+ "\"}");
 
 			JToken jt = JToken.Parse(definition);
 			var items = jt.SelectToken("$.schema.columns.Items");
