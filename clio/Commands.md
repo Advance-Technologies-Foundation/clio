@@ -2867,45 +2867,63 @@ clio ds -t delete \
 ```
 
 ## add-item
-Create item in project
-```
-clio <ITEM-TYPE> <ITEM-NAME> <OPTIONS>
+
+> **Full Documentation**: See [`add-item`](./docs/commands/add-item.md) for comprehensive details
+
+Create item in project from templates or generate ATF.Repository models from Creatio entities.
+
+**Requires**: [cliogate](#install-gate) must be installed for model generation.
+
+```bash
+clio add-item <ITEM-TYPE> [ITEM-NAME] [OPTIONS]
 ```
 
-Add web service template to project
-```
-clio add-item service test
+### Quick Examples
+
+Add web service template to project:
+```bash
+clio add-item service test -n MyCompany.Services
 ``` 
 
-Add entity-listener template to project
+Add entity-listener template to project:
 ```bash
-clio add-item entity-listener test
+clio add-item entity-listener test -n MyCompany.Listeners
 ``` 
 
-Generate AFT model for `Contact` entity with `Name` and `Email` fields, set namespace to `MyNameSpace` and save to `current directory`
+Generate ATF model for `Contact` entity with `Name` and `Email` fields:
 ```bash
-clio add-item model Contact -f Name,Email -n MyNameSpace -d .
+clio add-item model Contact -f Name,Email -n MyNameSpace -d . -e production
 ```
 
-Generate ATF models for `All` entities, with comments pulled from description in en-US `Culture` and set `ATF.Repository.Models` namespace and save them to `C:\MyModels`
+Generate ATF models for **all** entities with detail relationships:
 ```bash
-clio add-item model -n "<YOUR_NAMESPACE>" -d <TARGET_PATH>
+clio add-item model -n MyCompany.Models -d C:\MyModels -e production
 ```
 
-To generate all models in current directory
+Generate all models in current directory:
 ```bash
-clio add-item model -n "<YOUR_NAMESPACE>" 
+clio add-item model -n MyCompany.Models -e production
 ```
 
-OPTIONS
+### New Feature: Detail Collections
 
-| Short name   | Long name       | Description                                    |
-|:-------------|:----------------|:-----------------------------------------------|
-| d            | DestinationPath | Path to source directory                       |
-| n            | Namespace       | Name space for service classes and ATF models  |
-| f            | Fields          | Required fields for ATF model class            |
-| a            | All             | Create ATF models for all Entities             |
-| x            | Culture         | Description culture                            |
+When generating models, the command now automatically creates collection properties for 1-to-many relationships. For example, if `Activity` has a lookup to `Contact`, the generated `Contact` model will include:
+
+```csharp
+[DetailProperty(nameof(global::MyCompany.Models.Activity.ContactId))]
+public virtual List<Activity> CollectionOfActivityByContact { get; set; }
+```
+
+### OPTIONS
+
+| Short name | Long name       | Description                                                    |
+|:-----------|:----------------|:---------------------------------------------------------------|
+| d          | DestinationPath | Path to destination directory (default: current directory)     |
+| n          | Namespace       | Namespace for service classes and ATF models (required for models) |
+| f          | Fields          | Comma-separated fields for single ATF model generation         |
+| a          | All             | Create ATF models for all entities (default: true)             |
+| x          | Culture         | Culture code for schema descriptions (default: en-US)          |
+| e          | Environment     | Environment name (required for model generation)               |
 
 ## add-schema
 Adds cs schema to a project

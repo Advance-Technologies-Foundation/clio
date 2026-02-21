@@ -1,35 +1,72 @@
-﻿COMMAND TYPE
+﻿﻿COMMAND TYPE
     Development commands
 
 NAME
-    add-item - Add new class to current project. Aviable 3 types of items:
-    model, service, entity listener
+    add-item (alias: create) - Add new class to current project. Available 3 
+    types of items: model, service, entity listener
 
 DESCRIPTION
     Add package item to project based on template. You can add data model for 
-    work with class oriented entity throuth repository (Detailed 
+    work with class-oriented entities through ATF.Repository package (Detailed 
     https://github.com/Advance-Technologies-Foundation/repository).
-    Supported by default web service and entity-listener template for creatio.
+    
+    Model generation includes support for:
+    - All entity columns with appropriate C# types
+    - Lookup properties (both ID and navigation properties)
+    - Detail collections (1-to-many relationships)
+    - XML documentation from Creatio schema descriptions
+    
+    Supported by default: web service and entity-listener templates for Creatio.
     You can add your own template in tpl folder in clio directory for 
-    frequently used code constructions. 
+    frequently used code constructions.
+    
+    REQUIRES: cliogate must be installed on Creatio environment for model 
+    generation.
 
 OPTIONS
-    Item type (pos. 0)   specify type of item
+    Item type (pos. 0)      Specify type of item: model, service, entity-listener
 
-    Item name (pos. 1)   specify class name
+    Item name (pos. 1)      Specify class name (optional for model when -a is true)
 
-    --Namespace         -n          Namespace for generated class
+    --DestinationPath   -d  Path to destination directory (default: current)
+    
+    --Namespace         -n  Namespace for generated class (required for models)
+    
+    --Fields            -f  Comma-separated list of fields for single model
+    
+    --All               -a  Generate all entity models (default: true for models)
+    
+    --Culture           -x  Culture code for schema descriptions (default: en-US)
+
+    --Environment       -e  Environment name (recommended for authentication)
 
 
-EXAMPLE
-    clio add-item model <ENTITY_NAME>            
-        add class model for <ENTITY_NAME> (ATF.Repository required)
+EXAMPLES
+    Generate single model with specific fields:
+        clio add-item model Contact -f Name,Email -n MyCompany.Models -e prod
 
-    clio add-item service <SERVICE_NAME>         
-        add new service in package based on template    
+    Generate all entity models:
+        clio add-item model -n MyCompany.Models -d C:\Models -e prod
+        
+    Generate models with detail relationships in current directory:
+        clio add-item model -n MyCompany.Models -e prod
+        
+    Generate models with Russian descriptions:
+        clio add-item model -n MyCompany.Models -e prod -x ru-RU
 
-    clio add-item entity-listener <ENTITY_NAME>  
-        add new entity-listener for <ENTITY_NAME> based on template 
+    Add web service template:
+        clio add-item service ContactService -n MyCompany.Services
+
+    Add entity-listener template:
+        clio add-item entity-listener Contact -n MyCompany.EventHandlers
+
+DETAIL COLLECTIONS
+    When generating models, the command automatically analyzes all entity 
+    relationships and creates collection properties for 1-to-many relationships.
+    
+    Example: If Activity has a lookup to Contact, the Contact model will include:
+        [DetailProperty(nameof(global::Models.Activity.ContactId))]
+        public virtual List<Activity> CollectionOfActivityByContact { get; set; }
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
