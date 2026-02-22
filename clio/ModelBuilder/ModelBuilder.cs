@@ -21,6 +21,12 @@ internal interface IModelBuilder{
 }
 
 internal class ModelBuilder : IModelBuilder{
+	#region Constants: Private
+
+	private const string DefaultNamespace = "Models";
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly IApplicationClient _applicationClient;
@@ -54,154 +60,6 @@ internal class ModelBuilder : IModelBuilder{
 	#endregion
 
 	#region Methods: Private
-
-	private string CreateClassFileText(KeyValuePair<string, Schema> schema) {
-		List<DetailConnection> detailConnections = GetDetailConnections(schema.Key);
-		StringBuilder sb = new();
-		sb.AppendLine("#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
-		  .AppendLine()
-		  .AppendLine("using ATF.Repository;")
-		  .AppendLine("using ATF.Repository.Attributes;")
-		  .AppendLine("using System.Diagnostics.CodeAnalysis;")
-		  .AppendLine()
-		  .Append("namespace ").Append(_opts.Namespace).Append(" {").AppendLine();
-
-		if (!string.IsNullOrEmpty(schema.Value.Description)) {
-			List<string> commentLines = schema.Value.Description.Split("\n").ToList();
-
-			sb.Append('\t').AppendLine("/// <summary>");
-			commentLines.ForEach(l => sb.Append('\t').Append("/// ").AppendLine(l));
-			sb.Append('\t').AppendLine("/// </summary>");
-		}
-
-		sb.Append('\t').AppendLine("[ExcludeFromCodeCoverage]");
-		sb.Append('\t').Append("[Schema(\"").Append(schema.Value.Name).AppendLine("\")]")
-		  .Append('\t').Append("public class ").Append(schema.Value.Name).AppendLine(": BaseModel {")
-		  .AppendLine();
-		
-		sb.AppendLine("\t\t#region Schema Columns").AppendLine();
-		
-		foreach (KeyValuePair<string, Column> column in schema.Value.Columns) {
-			if (column.Key == "Id") {
-				continue;
-			}
-
-			if (!string.IsNullOrEmpty(column.Value.Description)) {
-				sb
-					.Append("\t\t").AppendLine("/// <summary>")
-					.Append("\t\t").Append("/// ").AppendLine(column.Value.Description)
-					.Append("\t\t").AppendLine("/// </summary>");
-			}
-
-			if (column.Value.DataValueType == 13) {
-				continue; //byte[] properties are not supported in the current implementation of ATF Repository.
-			}
-			sb.Append("\t\t").Append("[SchemaProperty(\"").Append(column.Value.Name).AppendLine("\")]");
-			if (string.IsNullOrEmpty(column.Value.ReferenceSchemaName)) {
-
-				//Some models have ColumnName "IsNew" which is an already define property in the BaseModel.
-				if (string.Equals(column.Value.Name, "IsNew", StringComparison.Ordinal)) {
-					sb.Append("\t\t").Append("public new ").Append(GetTypeFromDataValueType(column.Value.DataValueType))
-					  .Append(' ').Append(column.Value.Name).AppendLine(" { get; set; }");
-				}
-				else {
-					sb.Append("\t\t").Append("public ").Append(GetTypeFromDataValueType(column.Value.DataValueType))
-					  .Append(' ').Append(column.Value.Name).AppendLine(" { get; set; }");
-				}
-				
-			}
-			else {
-				sb.Append("\t\t").Append("public ").Append(GetTypeFromDataValueType(column.Value.DataValueType))
-				  .Append(' ').Append(column.Value.Name).Append("Id").AppendLine(" { get; set; }");
-				sb.AppendLine();
-
-				if (!string.IsNullOrEmpty(column.Value.Description)) {
-					sb.Append("\t\t").Append("/// <inheritdoc cref=\"").Append(column.Value.Name).Append("Id")
-					  .AppendLine("\"/>");
-				}
-
-				sb.Append("\t\t").Append("[LookupProperty(\"").Append(column.Value.Name).AppendLine("\")]");
-				sb.Append("\t\t").Append("public virtual ").Append(column.Value.ReferenceSchemaName).Append(' ')
-				  .Append(column.Value.Name).AppendLine(" { get; set; }");
-			}
-
-			sb.AppendLine();
-		}
-
-		sb.AppendLine("\t\t#endregion").AppendLine();
-
-		if (detailConnections.Count > 0) {
-			sb.AppendLine("\t\t#region Details");
-			sb.AppendLine();
-
-			foreach (DetailConnection detailConnection in detailConnections) {
-				
-				sb.Append("\t\t").AppendLine("/// <summary>")
-							   .Append("\t\t").Append("/// ").AppendLine($"Collection of {detailConnection.DetailSchemaName} by column {detailConnection.DetailSchemaPropertyName}")
-							   .Append("\t\t").AppendLine("/// <remarks>")
-							   .Append("\t\t").AppendLine($"/// <see cref=\"global::{_opts.Namespace}.{detailConnection.DetailSchemaName}\">See more about the {detailConnection.DetailSchemaName} model</see>")
-							   .Append("\t\t").AppendLine("/// </remarks>")
-							   .Append("\t\t").AppendLine("/// </summary>");
-				sb.Append("\t\t[DetailProperty(nameof(global::").Append(_opts.Namespace).Append('.')
-					.Append(detailConnection.DetailSchemaName).Append('.')
-					.Append(detailConnection.DetailSchemaPropertyName).AppendLine("))]");
-				sb.Append("\t\tpublic virtual List<").Append(detailConnection.DetailSchemaName).Append("> ")
-					.Append(detailConnection.DetailPropertyName).AppendLine(" { get; set; }");
-				sb.AppendLine();
-			}
-			sb.AppendLine("\t\t#endregion");
-		}
-
-		sb.AppendLine("\t}");
-		sb.AppendLine("}");
-		sb.AppendLine("#pragma warning restore CS8618 // Non-nullable field is uninitialized.");
-		return sb.ToString();
-	}
-
-	private void GetEntitySchemasAsync() {
-		string responseJson = _applicationClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
-
-		JsonSerializerSettings settings = new() {
-			NullValueHandling = NullValueHandling.Ignore
-		};
-
-		EntitySchemaResponse col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson, settings);
-		foreach (EntitySchema item in col.Collection.Where(item => !_schemas.ContainsKey(item.Name))) {
-			_schemas.Add(item.Name, new Schema {
-				Name = item.Name
-			});
-		}
-	}
-
-	private void GetRuntimeEntitySchema(KeyValuePair<string, Schema> schema) {
-		string definition
-			= _applicationClient.ExecutePostRequest(RuntimeEntitySchemaRequestUrl,
-				$"{{\"Name\" : \"{schema.Key}\"}}");
-
-		JToken jt = JToken.Parse(definition);
-		JToken items = jt.SelectToken("$.schema.columns.Items");
-
-		if (items == null) {
-			Console.WriteLine($"Schema {schema.Key} not found");
-			return;
-		}
-
-		schema.Value.Description = jt.SelectToken($"$.schema.description.{_opts.Culture}")?.ToString();
-		Dictionary<Guid, JObject> columns = items.ToObject<Dictionary<Guid, JObject>>();
-
-		foreach (KeyValuePair<Guid, JObject> item in columns) {
-			Column col = new() {
-				Name = (string)item.Value.GetValue("name"),
-				DataValueType = (int)item.Value.GetValue("dataValueType")
-			};
-			if (item.Value.TryGetValue("referenceSchemaName", out JToken value)) {
-				col.ReferenceSchemaName = (string)value;
-			}
-
-			col.Description = item.Value.SelectToken($"$.description.{_opts.Culture}")?.ToString();
-			schema.Value.Columns.Add(col.Name, col);
-		}
-	}
 
 	private static string GetTypeFromDataValueType(int dataValueType) {
 		return dataValueType switch {
@@ -259,7 +117,7 @@ internal class ModelBuilder : IModelBuilder{
 
 		foreach (Schema detailSchema in _schemas.Values) {
 			foreach (Column lookupColumn in detailSchema.Columns.Values.Where(column =>
-				         !string.IsNullOrWhiteSpace(column.ReferenceSchemaName))) {
+						 !string.IsNullOrWhiteSpace(column.ReferenceSchemaName))) {
 				if (lookupColumn.Name == "Id") {
 					continue;
 				}
@@ -272,10 +130,11 @@ internal class ModelBuilder : IModelBuilder{
 				string detailSchemaPropertyName = $"{lookupColumn.Name}Id";
 				string detailPropertyName = $"CollectionOf{detailSchema.Name}By{lookupColumn.Name}";
 
-				if (_detailConnectionsByMasterSchema.TryGetValue(masterSchemaName, out List<DetailConnection> existingConnections)) {
+				if (_detailConnectionsByMasterSchema.TryGetValue(masterSchemaName,
+						out List<DetailConnection> existingConnections)) {
 					if (existingConnections.Any(connection =>
-						    connection.DetailSchemaName == detailSchema.Name
-						    && connection.DetailSchemaPropertyName == detailSchemaPropertyName)) {
+							connection.DetailSchemaName == detailSchema.Name
+							&& connection.DetailSchemaPropertyName == detailSchemaPropertyName)) {
 						continue;
 					}
 				}
@@ -287,19 +146,241 @@ internal class ModelBuilder : IModelBuilder{
 				};
 
 				if (!_detailConnectionsByMasterSchema.TryGetValue(masterSchemaName, out List<DetailConnection> value)) {
-                    value = [];
-                    _detailConnectionsByMasterSchema.Add(masterSchemaName, value);
+					value = [];
+					_detailConnectionsByMasterSchema.Add(masterSchemaName, value);
 				}
 
-                value.Add(detailConnection);
+				value.Add(detailConnection);
 			}
 		}
+	}
+
+	private string CreateClassFileText(KeyValuePair<string, Schema> schema) {
+		List<DetailConnection> detailConnections = GetDetailConnections(schema.Key);
+		StringBuilder sb = new();
+		sb.AppendLine("#pragma warning disable CS8618, // Non-nullable field is uninitialized.")
+		  .AppendLine()
+		  .AppendLine("using ATF.Repository;")
+		  .AppendLine("using ATF.Repository.Attributes;")
+		  .AppendLine("using System;")
+		  .AppendLine("using System.Collections.Generic;")
+		  .AppendLine("using System.Diagnostics.CodeAnalysis;")
+		  .AppendLine("using System.ComponentModel.DataAnnotations;")
+		  .AppendLine()
+		  .Append("namespace ").Append(string.IsNullOrWhiteSpace(_opts.Namespace) ? DefaultNamespace : _opts.Namespace).Append(" {").AppendLine();
+
+		if (!string.IsNullOrEmpty(schema.Value.Description)) {
+			List<string> commentLines = schema.Value.Description.Split("\n").ToList();
+
+			sb.Append('\t').AppendLine("/// <summary>");
+			commentLines.ForEach(l => sb.Append('\t').Append("/// ").AppendLine(l));
+			sb.Append('\t').AppendLine("/// </summary>");
+		}
+
+		sb.Append('\t').AppendLine("[ExcludeFromCodeCoverage]");
+		sb.Append('\t').Append("[Schema(\"").Append(schema.Value.Name).AppendLine("\")]")
+		  .Append('\t').Append("public class ").Append(schema.Value.Name).AppendLine(": BaseModel {")
+		  .AppendLine();
+
+		sb.AppendLine("\t\t#region Schema Columns").AppendLine();
+
+		foreach (KeyValuePair<string, Column> column in schema.Value.Columns) {
+			if (column.Key == "Id") {
+				continue;
+			}
+
+			if (!string.IsNullOrEmpty(column.Value.Description)) {
+				sb
+					.Append("\t\t").AppendLine("/// <summary>")
+					.Append("\t\t").Append("/// ").AppendLine(column.Value.Description)
+					.Append("\t\t").AppendLine("/// </summary>");
+			}
+
+			if (column.Value.DataValueType == 13) {
+				continue; //byte[] properties are not supported in the current implementation of ATF Repository.
+			}
+
+			const string requiredErrorMessage = "The {0} field is required.";
+			const string minLengthErrorMessage = "The {0} field must be a minimum of {1} character long.";
+			const string maxLengthErrorMessage = "The {0} field must be a maximum of {1} character long.";
+			if (column.Value.IsRequired) {
+				sb.Append("\t\t").AppendLine($"[Required(ErrorMessage = \"{requiredErrorMessage}\")]");
+				if (column.Value.DataValueType is 27 or 28 or 29) {
+					sb.Append("\t\t").AppendLine($"[MinLength(1, ErrorMessage = \"{minLengthErrorMessage}\")]");
+				}
+			}
+
+			if (column.Value.DataValueType == 27) {
+				sb.Append("\t\t").AppendLine($"[MaxLength(50, ErrorMessage = \"{maxLengthErrorMessage}\")]");
+			}
+
+			if (column.Value.DataValueType == 28) {
+				sb.Append("\t\t").AppendLine($"[MaxLength(250, ErrorMessage = \"{maxLengthErrorMessage}\")]");
+			}
+
+			if (column.Value.DataValueType == 29) {
+				sb.Append("\t\t").AppendLine($"[MaxLength(500, ErrorMessage = \"{maxLengthErrorMessage}\")]");
+			}
+
+			if (column.Value.DataValueType == 42) {
+				const string phoneErrorMessage = "The {0} field is not a valid e-mail address.";
+				sb.Append("\t\t").AppendLine($"[MaxLength(250, ErrorMessage = \"{maxLengthErrorMessage}\")]");
+				sb.Append("\t\t").AppendLine($"[Phone(ErrorMessage = \"{phoneErrorMessage}\")]");
+			}
+			
+			if (column.Value.DataValueType == 44) {
+				const string webUrlErrorMessage = "The {0} field is not a valid e-mail address.";
+				sb.Append("\t\t").AppendLine($"[MaxLength(250, ErrorMessage = \"{maxLengthErrorMessage}\")]");
+				sb.Append("\t\t").AppendLine($"[Url(ErrorMessage = \"{webUrlErrorMessage}\")]");
+			}
+			if (column.Value.DataValueType == 45) {
+				const string emailAddressErrorMessage = "The {0} field is not a valid e-mail address.";
+				sb.Append("\t\t").AppendLine($"[MaxLength(250, ErrorMessage = \"{maxLengthErrorMessage}\")]");
+				sb.Append("\t\t").AppendLine($"[EmailAddress(ErrorMessage = \"{emailAddressErrorMessage}\")]");
+			}
+
+			sb.Append("\t\t").Append("[SchemaProperty(\"").Append(column.Value.Name).AppendLine("\")]");
+			if (string.IsNullOrEmpty(column.Value.ReferenceSchemaName)) {
+				//Some models have ColumnName "IsNew" which is an already define property in the BaseModel.
+				if (string.Equals(column.Value.Name, "IsNew", StringComparison.Ordinal)) {
+					sb.Append("\t\t").Append("public new ").Append(GetTypeFromDataValueType(column.Value.DataValueType))
+					  .Append(' ').Append(column.Value.Name).AppendLine(" { get; set; }");
+				}
+				else {
+					sb.Append("\t\t").Append("public ").Append(GetTypeFromDataValueType(column.Value.DataValueType))
+					  .Append(' ').Append(column.Value.Name).AppendLine(" { get; set; }");
+				}
+			}
+			else {
+				sb.Append("\t\t").Append("public ").Append(GetTypeFromDataValueType(column.Value.DataValueType))
+				  .Append(' ').Append(column.Value.Name).Append("Id").AppendLine(" { get; set; }");
+				sb.AppendLine();
+
+				if (!string.IsNullOrEmpty(column.Value.Description)) {
+					sb.Append("\t\t").Append("/// <inheritdoc cref=\"").Append(column.Value.Name).Append("Id")
+					  .AppendLine("\"/>");
+				}
+
+				sb.Append("\t\t").Append("[LookupProperty(\"").Append(column.Value.Name).AppendLine("\")]");
+				sb.Append("\t\t").Append("public virtual ").Append(column.Value.ReferenceSchemaName).Append(' ')
+				  .Append(column.Value.Name).AppendLine(" { get; set; }");
+			}
+
+			sb.AppendLine();
+		}
+
+		sb.AppendLine("\t\t#endregion").AppendLine();
+
+		if (detailConnections.Count > 0) {
+			sb.AppendLine("\t\t#region Details");
+			sb.AppendLine();
+
+			foreach (DetailConnection detailConnection in detailConnections) {
+				sb.Append("\t\t").AppendLine("/// <summary>")
+				  .Append("\t\t").Append("/// ")
+				  .AppendLine(
+					  $"Collection of {detailConnection.DetailSchemaName} by column {detailConnection.DetailSchemaPropertyName}")
+				  .Append("\t\t").AppendLine("/// <remarks>")
+				  .Append("\t\t")
+				  .AppendLine(
+					  $"/// <see cref=\"global::{_opts.Namespace}.{detailConnection.DetailSchemaName}\">See more about the {detailConnection.DetailSchemaName} model</see>")
+				  .Append("\t\t").AppendLine("/// </remarks>")
+				  .Append("\t\t").AppendLine("/// </summary>");
+				sb.Append("\t\t[DetailProperty(nameof(global::").Append(_opts.Namespace).Append('.')
+				  .Append(detailConnection.DetailSchemaName).Append('.')
+				  .Append(detailConnection.DetailSchemaPropertyName).AppendLine("))]");
+				sb.Append("\t\tpublic virtual List<").Append(detailConnection.DetailSchemaName).Append("> ")
+				  .Append(detailConnection.DetailPropertyName).AppendLine(" { get; set; }");
+				sb.AppendLine();
+			}
+
+			sb.AppendLine("\t\t#endregion");
+		}
+
+		sb.AppendLine("\t}");
+		sb.AppendLine("}");
+		sb.AppendLine("#pragma warning restore CS8618 // Non-nullable field is uninitialized.");
+		return sb.ToString();
+	}
+
+	private void CreateExtensionClass(string namespaceName = DefaultNamespace) {
+		string classContent = $$"""
+								using System.Collections.Generic;
+								using System.ComponentModel.DataAnnotations;
+								using ATF.Repository;
+								
+								namespace {{namespaceName}} {
+								
+									public static class BaseModelExtensions{
+										#region Methods: Public
+										
+										public static List<ValidationResult> ValidateModel(this BaseModel model) {
+											List<ValidationResult> validationResult = new List<ValidationResult>();
+											bool isValid = Validator.TryValidateObject(model, new ValidationContext(model), validationResult, true);
+											return isValid ? new List<ValidationResult>() : validationResult;
+										}
+										
+										#endregion
+									}
+								
+								}
+								
+								""";
+		const string classFileName = "BaseModelExtensions.cs";
+		string destinationPath = Path.Combine(_opts.DestinationPath, classFileName);
+		File.WriteAllText(destinationPath, classContent);
 	}
 
 	private List<DetailConnection> GetDetailConnections(string schemaName) {
 		return _detailConnectionsByMasterSchema.TryGetValue(schemaName, out List<DetailConnection> detailConnections)
 			? detailConnections.OrderBy(connection => connection.DetailPropertyName).ToList()
 			: [];
+	}
+
+	private void GetEntitySchemasAsync() {
+		string responseJson = _applicationClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
+
+		JsonSerializerSettings settings = new() {
+			NullValueHandling = NullValueHandling.Ignore
+		};
+
+		EntitySchemaResponse col = JsonConvert.DeserializeObject<EntitySchemaResponse>(responseJson, settings);
+		foreach (EntitySchema item in col.Collection.Where(item => !_schemas.ContainsKey(item.Name))) {
+			_schemas.Add(item.Name, new Schema {
+				Name = item.Name
+			});
+		}
+	}
+
+	private void GetRuntimeEntitySchema(KeyValuePair<string, Schema> schema) {
+		string definition
+			= _applicationClient.ExecutePostRequest(RuntimeEntitySchemaRequestUrl,
+				$"{{\"Name\" : \"{schema.Key}\"}}");
+
+		JToken jt = JToken.Parse(definition);
+		JToken items = jt.SelectToken("$.schema.columns.Items");
+
+		if (items == null) {
+			Console.WriteLine($"Schema {schema.Key} not found");
+			return;
+		}
+
+		schema.Value.Description = jt.SelectToken($"$.schema.description.{_opts.Culture}")?.ToString();
+		Dictionary<Guid, JObject> columns = items.ToObject<Dictionary<Guid, JObject>>();
+
+		foreach (KeyValuePair<Guid, JObject> item in columns) {
+			Column col = new() {
+				Name = (string)item.Value.GetValue("name"),
+				DataValueType = (int)item.Value.GetValue("dataValueType"),
+				IsRequired = (bool)item.Value.GetValue("isRequired")
+			};
+			if (item.Value.TryGetValue("referenceSchemaName", out JToken value)) {
+				col.ReferenceSchemaName = (string)value;
+			}
+
+			col.Description = item.Value.SelectToken($"$.description.{_opts.Culture}")?.ToString();
+			schema.Value.Columns.Add(col.Name!, col);
+		}
 	}
 
 	#endregion
@@ -310,8 +391,7 @@ internal class ModelBuilder : IModelBuilder{
 		_opts = opts;
 		GetEntitySchemasAsync();
 
-		Parallel.ForEach(_schemas, new ParallelOptions { MaxDegreeOfParallelism = 4 },
-			GetRuntimeEntitySchema);
+		Parallel.ForEach(_schemas, new ParallelOptions { MaxDegreeOfParallelism = 4 }, GetRuntimeEntitySchema);
 		BuildDetailConnections();
 		if (string.IsNullOrWhiteSpace(_opts.DestinationPath)) {
 			_opts.DestinationPath = _workingDirectoriesProvider.CurrentDirectory;
@@ -330,6 +410,7 @@ internal class ModelBuilder : IModelBuilder{
 			Console.Write($"Generated: {++i} models from {_schemas.Count}\r");
 		}
 
+		CreateExtensionClass(_opts.Namespace ?? DefaultNamespace);
 		Console.WriteLine();
 	}
 
@@ -353,6 +434,7 @@ public class Column{
 	public int DataValueType { get; set; }
 	public string ReferenceSchemaName { get; set; }
 	public string Description { get; set; }
+	public bool IsRequired { get; set; }
 
 	#endregion
 }

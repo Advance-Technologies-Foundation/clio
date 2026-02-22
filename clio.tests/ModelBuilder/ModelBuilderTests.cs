@@ -83,7 +83,7 @@ internal class ModelBuilderTests
 			applicationClient.ExecutePostRequest("http://localhost/runtime-entity-schema",
 					"{\"Name\" : \"AccountFile\"}")
 				.Returns(
-					"{\"schema\":{\"columns\":{\"Items\":{\"a4a4a4a4-0000-0000-0000-000000000001\":{\"name\":\"Account\",\"dataValueType\":10,\"referenceSchemaName\":\"Account\"}}}}}");
+					"{\"schema\":{\"columns\":{\"Items\":{\"a4a4a4a4-0000-0000-0000-000000000001\":{\"name\":\"Account\",\"dataValueType\":10,\"referenceSchemaName\":\"Account\",\"isRequired\":false}}}}}");
 
 			AddItemOptions options = new() {
 				CreateAll = true,
@@ -141,7 +141,7 @@ internal class ModelBuilderTests
 			applicationClient.ExecutePostRequest("http://localhost/runtime-entity-schema",
 					"{\"Name\" : \"Detail\"}")
 				.Returns(
-					"{\"schema\":{\"columns\":{\"Items\":{\"a4a4a4a4-0000-0000-0000-000000000001\":{\"name\":\"Id\",\"dataValueType\":10,\"referenceSchemaName\":\"Master\"}}}}}");
+					"{\"schema\":{\"columns\":{\"Items\":{\"a4a4a4a4-0000-0000-0000-000000000001\":{\"name\":\"Id\",\"dataValueType\":10,\"referenceSchemaName\":\"Master\", \"isRequired\":true}}}}}");
 
 			AddItemOptions options = new() {
 				CreateAll = true,
