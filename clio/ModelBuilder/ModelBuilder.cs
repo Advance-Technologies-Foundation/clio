@@ -139,7 +139,7 @@ internal class ModelBuilder : IModelBuilder{
 				sb.Append("\t\t").AppendLine("/// <summary>")
 							   .Append("\t\t").Append("/// ").AppendLine($"Collection of {detailConnection.DetailSchemaName} by column {detailConnection.DetailSchemaPropertyName}")
 							   .Append("\t\t").AppendLine("/// <remarks>")
-							   .Append("\t\t").AppendLine($"/// <see cref=\"global::{_opts.Namespace}.{detailConnection.DetailSchemaName}\">See more about {detailConnection.DetailSchemaName} model</see>")
+							   .Append("\t\t").AppendLine($"/// <see cref=\"global::{_opts.Namespace}.{detailConnection.DetailSchemaName}\">See more about the {detailConnection.DetailSchemaName} model</see>")
 							   .Append("\t\t").AppendLine("/// </remarks>")
 							   .Append("\t\t").AppendLine("/// </summary>");
 				sb.Append("\t\t[DetailProperty(nameof(global::").Append(_opts.Namespace).Append('.')
