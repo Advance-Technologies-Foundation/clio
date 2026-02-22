@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Clio.Common;
+using Clio.Package;
 
 namespace Clio.Project.NuGet
 {

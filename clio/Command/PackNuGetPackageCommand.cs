@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Clio.Package;
 using Clio.Project.NuGet;
 
 namespace Clio.Command
@@ -60,8 +61,7 @@ namespace Clio.Command
 		#region Methods: Private
 
 		private PackageDependency ParseDependency(string dependencyDescription) {
-			string[] dependencyItems = dependencyDescription
-				.Split(new [] {':'}, StringSplitOptions.RemoveEmptyEntries);
+			string[] dependencyItems = dependencyDescription.Split([':'], StringSplitOptions.RemoveEmptyEntries);
 			if (dependencyItems.Length != 2) {
 				throw new ArgumentException($"Wrong format the dependency: '{dependencyDescription}'. " 
 				                            + "The format the dependency mast be: '<PackageName>:<PackageVersion>'");

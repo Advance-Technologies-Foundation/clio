@@ -158,10 +158,13 @@ public class PackageCreator : IPackageCreator{
 				Maintainer = Maintainer,
 				UId = Guid.NewGuid(),
 				PackageVersion = "0.1.0",
+				InstallBehavior = 1,
 				ProjectPath = isStandalonePackage ? $"Files/{packageName}.csproj" : string.Empty,
 				Type = isStandalonePackage ? PackageType.Assembly : PackageType.General,
 				ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now),
-				DependsOn = new List<PackageDependency>()
+				DependsOn = new List<PackageDependency>() {
+					new PackageDependency("CrtCoreBase", "7.8.0", 1, "3a71e376-9ac3-3049-c62b-9c43b9abe054")
+				}
 			}
 		};
 	}

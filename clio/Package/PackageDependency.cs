@@ -1,6 +1,6 @@
-﻿using Clio.Project.NuGet;
+﻿using Newtonsoft.Json;
 
-namespace Clio
+namespace Clio.Package
 {
 
 	#region Struct: NugetPackageFullName
@@ -15,6 +15,12 @@ namespace Clio
 			PackageVersion = packageVersion;
 			UId = uid ?? string.Empty;
 		}
+		public PackageDependency(string name, string packageVersion, int? type, string uid = null) {
+			Name = name;
+			PackageVersion = packageVersion;
+			UId = uid ?? string.Empty;
+			Type = type;
+		}
 
 		#endregion
 
@@ -23,6 +29,9 @@ namespace Clio
 		public string UId { get; set; }
 		public string PackageVersion { get; set; }
 		public string Name { get; set; }
+		
+		[JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+		public int? Type { get; set; }
 
 		#endregion
 
@@ -44,7 +53,7 @@ namespace Clio
 			if (obj == null || GetType() != obj.GetType()) {
 				return false;
 			}
-			var dependencyInfo = (PackageDependency) obj;
+			PackageDependency dependencyInfo = (PackageDependency) obj;
 			return dependencyInfo.Name == Name && 
 				dependencyInfo.PackageVersion == PackageVersion &&
 				dependencyInfo.UId == UId;

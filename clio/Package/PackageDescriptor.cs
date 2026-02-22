@@ -1,47 +1,45 @@
 ﻿using System;
 using System.Collections.Generic;
 using Clio.Common;
+using Newtonsoft.Json;
 
-namespace Clio.Package
-{
+namespace Clio.Package;
 
-	#region Class: PackageDescriptor
+#region Class: PackageDescriptor
 
-	public class PackageDescriptor
-	{
+public class PackageDescriptor{
+	#region Properties: Public
 
-		#region Properties: Public
+	public Guid UId { get; set; }
+	public string PackageVersion { get; set; }
+	public string Name { get; set; }
+	public PackageType Type { get; set; } = PackageType.General;
+	public string ProjectPath { get; set; } = string.Empty;
+	public string ModifiedOnUtc { get; set; }
+	public string Maintainer { get; set; }
+	
+	[JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+	public int? InstallBehavior { get; set; }
+	public IList<PackageDependency> DependsOn { get; set; }
 
-		public Guid UId { get; set; }
-		public string PackageVersion { get; set; }
-		public string Name { get; set; }
-		public PackageType Type { get; set; } = PackageType.General;
-		public string ProjectPath { get; set; } = string.Empty;
-		public string ModifiedOnUtc { get; set; }
-		public string Maintainer { get; set; }
-		public IList<PackageDependency> DependsOn { get; set; }
+	#endregion
 
-		#endregion
+	#region Methods: Private
 
-		#region Methods: Public
-
-		private static DateTime ClearMilliseconds(DateTime dt) {
-			return new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
-		}
-
-		#endregion
-
-		#region Methods: Public
-
-		public static string ConvertToModifiedOnUtc(DateTime dateTime) {
-			long unixDateTime = UnixTimeConverter.CovertToUnixDateTime(ClearMilliseconds(dateTime));
-			return $"/Date({unixDateTime})/";
-		}
-
-		#endregion
-
+	private static DateTime ClearMilliseconds(DateTime dt) {
+		return new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
 	}
 
 	#endregion
 
+	#region Methods: Public
+
+	public static string ConvertToModifiedOnUtc(DateTime dateTime) {
+		long unixDateTime = UnixTimeConverter.CovertToUnixDateTime(ClearMilliseconds(dateTime));
+		return $"/Date({unixDateTime})/";
+	}
+
+	#endregion
 }
+
+#endregion
