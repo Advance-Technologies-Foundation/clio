@@ -10,7 +10,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Default version for local development. Will be overridden during release from tag -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.3</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.4</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -117,6 +117,9 @@
 	</Choose>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
+		                  OutputItemType="Analyzer"
+		                  ReferenceOutputAssembly="false" />
 		<PackageReference Include="Autofac" Version="9.0.0"/>
 		<PackageReference Include="ConsoleTables" Version="2.7.0"/>
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>

@@ -14,6 +14,8 @@ DESCRIPTION
     - All entity columns with appropriate C# types
     - Lookup properties (both ID and navigation properties)
     - Detail collections (1-to-many relationships)
+    - Validation DataAnnotations based on schema metadata
+    - BaseModelExtensions with ValidateModel() helper method
     - XML documentation from Creatio schema descriptions
     
     Supported by default: web service and entity-listener templates for Creatio.
@@ -67,6 +69,17 @@ DETAIL COLLECTIONS
     Example: If Activity has a lookup to Contact, the Contact model will include:
         [DetailProperty(nameof(global::Models.Activity.ContactId))]
         public virtual List<Activity> CollectionOfActivityByContact { get; set; }
+
+MODEL VALIDATION
+    Generated models include DataAnnotations for common constraints:
+    - [Required] for required columns
+    - [MinLength]/[MaxLength] for text columns where applicable
+    - [Phone], [Url], [EmailAddress] for phone/url/email fields
+    
+    The command also creates BaseModelExtensions.cs with:
+        public static List<ValidationResult> ValidateModel(this BaseModel model)
+    
+    Use this extension to validate generated model instances before save/update.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

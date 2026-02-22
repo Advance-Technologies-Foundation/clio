@@ -2914,16 +2914,28 @@ When generating models, the command now automatically creates collection propert
 public virtual List<Activity> CollectionOfActivityByContact { get; set; }
 ```
 
+### New Feature: Model Validation Support
+
+Generated models now include DataAnnotations based on schema metadata (for example: `Required`, `MinLength`, `MaxLength`, `Phone`, `Url`, `EmailAddress`).
+
+The command also creates `BaseModelExtensions.cs` with:
+
+```csharp
+public static List<ValidationResult> ValidateModel(this BaseModel model)
+```
+
+Use this helper to validate generated model instances before create/update operations.
+
 ### OPTIONS
 
-| Short name | Long name       | Description                                                    |
-|:-----------|:----------------|:---------------------------------------------------------------|
-| d          | DestinationPath | Path to destination directory (default: current directory)     |
+| Short name | Long name       | Description                                                        |
+|:-----------|:----------------|:-------------------------------------------------------------------|
+| d          | DestinationPath | Path to destination directory (default: current directory)         |
 | n          | Namespace       | Namespace for service classes and ATF models (required for models) |
-| f          | Fields          | Comma-separated fields for single ATF model generation         |
-| a          | All             | Create ATF models for all entities (default: true)             |
-| x          | Culture         | Culture code for schema descriptions (default: en-US)          |
-| e          | Environment     | Environment name (required for model generation)               |
+| f          | Fields          | Comma-separated fields for single ATF model generation             |
+| a          | All             | Create ATF models for all entities (default: true)                 |
+| x          | Culture         | Culture code for schema descriptions (default: en-US)              |
+| e          | Environment     | Environment name (required for model generation)                   |
 
 ## add-schema
 Adds cs schema to a project

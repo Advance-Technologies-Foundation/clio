@@ -1,10 +1,13 @@
 ﻿using Clio.Common;
 using CommandLine;
 using System.Net.Security;
+using Clio.Common.K8;
+using Clio.Common.Kubernetes;
+using k8s;
 
 namespace Clio.Command;
 
-[Verb("add-schema", Aliases = new string[] { }, HelpText = "Add schema to package")]
+[Verb("add-schema", Aliases = [], HelpText = "Add schema to package")]
 public class AddSchemaOptions
 {
 
@@ -44,7 +47,7 @@ public class AddSchemaCommand : Command<AddSchemaOptions>
 
 	#region Methods: Public
 
-	public override int Execute(AddSchemaOptions options){
+	public override int Execute(AddSchemaOptions options) {
 		_schemaBuilder.AddSchema(options.SchemaType, options.SchemaName, options.Package);
 		_logger.WriteInfo("Done");
 		return 0;

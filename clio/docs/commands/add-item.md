@@ -13,32 +13,32 @@ clio add-item <ITEM_TYPE> [ITEM_NAME] [options]
 ## Arguments
 
 ### Required Arguments
-| Argument | Position | Description | Example |
-|----------|----------|-------------|---------|
-| ITEM_TYPE | 0 | Type of item to create: `model`, `service`, or `entity-listener` | `model` |
+| Argument  | Position | Description                                                      | Example |
+|-----------|----------|------------------------------------------------------------------|---------|
+| ITEM_TYPE | 0        | Type of item to create: `model`, `service`, or `entity-listener` | `model` |
 
 ### Optional Arguments
-| Argument | Short | Position | Default | Description | Example |
-|----------|-------|----------|---------|-------------|---------|
-| ITEM_NAME | | 1 | | Name of the item to create (required except when creating all models) | `Contact` |
-| --DestinationPath | -d | | Current directory | Path to destination directory for generated files | `-d C:\MyProject\Models` |
-| --Namespace | -n | | | Namespace for generated classes (required for models) | `-n MyCompany.Models` |
-| --Fields | -f | | | Comma-separated list of fields for single model generation | `-f Name,Email,Phone` |
-| --All | -a | | true | When true with `model` type, generates all entity models | `-a true` |
-| --Culture | -x | | en-US | Culture code for schema descriptions in generated models | `-x en-US` |
+| Argument          | Short | Position | Default           | Description                                                           | Example                  |
+|-------------------|-------|----------|-------------------|-----------------------------------------------------------------------|--------------------------|
+| ITEM_NAME         |       | 1        |                   | Name of the item to create (required except when creating all models) | `Contact`                |
+| --DestinationPath | -d    |          | Current directory | Path to destination directory for generated files                     | `-d C:\MyProject\Models` |
+| --Namespace       | -n    |          |                   | Namespace for generated classes (required for models)                 | `-n MyCompany.Models`    |
+| --Fields          | -f    |          |                   | Comma-separated list of fields for single model generation            | `-f Name,Email,Phone`    |
+| --All             | -a    |          | true              | When true with `model` type, generates all entity models              | `-a true`                |
+| --Culture         | -x    |          | en-US             | Culture code for schema descriptions in generated models              | `-x en-US`               |
 
 ### Inherited Environment Arguments
 When generating models, this command inherits authentication options from `EnvironmentOptions`:
 
-| Argument | Short | Description |
-|----------|-------|-------------|
-| --Environment | -e | Environment name (recommended) |
-| --uri | -u | Application URI |
-| --Login | -l | User login (for basic auth) |
-| --Password | -p | User password (for basic auth) |
-| --clientId | | OAuth client ID |
-| --clientSecret | | OAuth client secret |
-| --authAppUri | | OAuth authentication app URI |
+| Argument       | Short | Description                    |
+|----------------|-------|--------------------------------|
+| --Environment  | -e    | Environment name (recommended) |
+| --uri          | -u    | Application URI                |
+| --Login        | -l    | User login (for basic auth)    |
+| --Password     | -p    | User password (for basic auth) |
+| --clientId     |       | OAuth client ID                |
+| --clientSecret |       | OAuth client secret            |
+| --authAppUri   |       | OAuth authentication app URI   |
 
 ## Item Types
 
@@ -47,6 +47,8 @@ Generates C# model classes for Creatio entities compatible with ATF.Repository p
 - All entity columns with appropriate C# types
 - Lookup properties (both ID and navigation properties)
 - **Detail collections** - automatically generates collection properties for 1-to-many relationships
+- **Validation DataAnnotations** - automatically adds validation attributes based on column metadata
+- **Validation extension** - generates `BaseModelExtensions.ValidateModel()` helper for runtime model validation
 - XML documentation comments from Creatio schema descriptions
 - Proper attributes for ATF.Repository (`[Schema]`, `[SchemaProperty]`, `[LookupProperty]`, `[DetailProperty]`)
 
@@ -80,6 +82,30 @@ This creates a complete set of model classes for every entity in your Creatio en
 [DetailProperty(nameof(global::MyCompany.Models.Activity.ContactId))]
 public virtual List<Activity> CollectionOfActivityByContact { get; set; }
 ```
+
+#### Generated DataAnnotations
+For generated model properties, clio adds DataAnnotations based on schema data type and required flags:
+
+- `Required` for required columns
+- `MinLength(1)` for required text columns
+- `MaxLength(50)` for short text
+- `MaxLength(250)` for medium text, phone, URL, and email
+- `MaxLength(500)` for long text
+- `Phone` for phone fields
+- `Url` for URL fields
+- `EmailAddress` for email fields
+
+This allows immediate model validation compatibility with `System.ComponentModel.DataAnnotations`.
+
+#### Generated BaseModel Extension
+When generating models, clio also creates `BaseModelExtensions.cs` in the destination folder with:
+
+```csharp
+public static List<ValidationResult> ValidateModel(this BaseModel model)
+```
+
+The method runs DataAnnotations validation (`Validator.TryValidateObject`) and returns validation errors as a `List<ValidationResult>`.  
+Use it before create/update operations to catch invalid model values locally.
 
 ### 2. Service
 Adds a web service template to your project:
@@ -151,12 +177,13 @@ clio add-item model -n MyCompany.Models -d C:\Models --uri https://mysite.creati
 
 ### Model Generation
 - **Console**: Progress indicator showing `Generated: X models from Y` and final directory path
-- **Files**: Individual `.cs` files for each entity in the specified destination directory
+- **Files**: Individual `.cs` files for each entity in the specified destination directory plus `BaseModelExtensions.cs`
 - **Content**: 
   - Namespace declaration
   - Using statements for ATF.Repository
   - Class with `[Schema]` attribute
   - Properties with `[SchemaProperty]` attributes
+  - DataAnnotations (`[Required]`, `[MinLength]`, `[MaxLength]`, `[Phone]`, `[Url]`, `[EmailAddress]`) where applicable
   - Lookup properties with `[LookupProperty]` attributes
   - **Detail collections with `[DetailProperty]` attributes for 1-to-many relationships**
   - XML documentation comments from schema descriptions
@@ -191,13 +218,15 @@ You can add your own templates for frequently used code constructions:
 
 1. **Model Generation Performance**: The command uses parallel processing (up to 4 concurrent requests) to fetch schema information efficiently
 2. **Detail Collections**: New feature automatically identifies and generates collection properties for all 1-to-many relationships between entities
-3. **Overwriting**: Existing files are overwritten without warning - use version control
-4. **Namespace Validation**: For models, namespace is mandatory and must be a valid C# namespace
-5. **Authentication Priority**: Using `-e` (environment) is recommended over direct credentials
-6. **Culture Codes**: Use standard culture codes (en-US, ru-RU, de-DE, etc.) for schema descriptions
-7. **Default Behavior**: With `-a true` (default), all entities are generated; set `-a false` and provide `ITEM_NAME` for single entity
-8. **File Naming**: Generated files use the entity schema name (e.g., `Contact.cs`, `Account.cs`)
-9. **Detail Naming Convention**: Detail properties follow the pattern `CollectionOf{DetailSchema}By{LookupColumn}`
+3. **Validation Annotations**: Generated model properties include DataAnnotations inferred from Creatio schema metadata
+4. **BaseModel Extension**: `BaseModelExtensions.cs` is generated with `ValidateModel()` to validate models locally before persistence
+5. **Overwriting**: Existing files are overwritten without warning - use version control
+6. **Namespace Validation**: For models, namespace is mandatory and must be a valid C# namespace
+7. **Authentication Priority**: Using `-e` (environment) is recommended over direct credentials
+8. **Culture Codes**: Use standard culture codes (en-US, ru-RU, de-DE, etc.) for schema descriptions
+9. **Default Behavior**: With `-a true` (default), all entities are generated; set `-a false` and provide `ITEM_NAME` for single entity
+10. **File Naming**: Generated files use the entity schema name (e.g., `Contact.cs`, `Account.cs`)
+11. **Detail Naming Convention**: Detail properties follow the pattern `CollectionOf{DetailSchema}By{LookupColumn}`
 
 ## Troubleshooting
 

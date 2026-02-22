@@ -1,0 +1,4 @@
+interface:
+  display_name: "Document Command"
+  short_description: "Create or update docs for one clio command"
+  default_prompt: "Document the clio command command-name. Resolve aliases to canonical command name, then update clio/help/en/command-name.txt, clio/docs/commands/command-name.md, and clio/Commands.md consistently."
