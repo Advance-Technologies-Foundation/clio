@@ -29,9 +29,6 @@ public class LinkCoreSrcOptions : EnvironmentNameOptions
 
 	[Option("mode", Required = false, Default = CreatioMode.NetCore, HelpText = "Creatio mode: NetCore (Terrasoft.WebHost) or NetFramework (Terrasoft.WebApp.Loader)")]
 	public CreatioMode Mode { get; set; }
-
-	[Option("silent", Required = false, Default = false, HelpText = "Skip user confirmation prompt")]
-	public bool Silent { get; set; }
 }
 
 public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
@@ -346,7 +343,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			// Get environment settings
 			var env = _settingsRepository.GetEnvironment(options.Environment);
 
-			// Display summary and request confirmation (skips prompt if silent mode is enabled)
+			// Display summary and request confirmation
 			if (!RequestUserConfirmation(options, env))
 			{
 				_logger.WriteInfo("Operation cancelled by user");
@@ -420,7 +417,6 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 	private bool RequestUserConfirmation(LinkCoreSrcOptions options, EnvironmentSettings env)
 	{
-		// Always log the operation summary
 		_logger.WriteLine("\n═════════════════════════════════════════════════════════════════════════════════════");
 		_logger.WriteLine("Linking Creatio Core Source Code");
 		_logger.WriteLine("═════════════════════════════════════════════════════════════════════════════════════");
@@ -442,13 +438,6 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			_logger.WriteLine("  3. Update IIS site and web app's physical path to core directory and restart service");
 		}
 		_logger.WriteLine("═════════════════════════════════════════════════════════════════════════════════════\n");
-
-		// If silent mode is enabled, skip confirmation prompt and proceed
-		if (options.Silent)
-		{
-			_logger.WriteInfo("(Silent mode - proceeding without confirmation)");
-			return true;
-		}
 
 		_logger.Write("Continue? (Y/n): ");
 		string response = Console.ReadLine()?.ToLower() ?? "";
