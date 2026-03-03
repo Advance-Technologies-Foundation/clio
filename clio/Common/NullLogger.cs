@@ -16,6 +16,9 @@ public class NullLogger : ILogger
 
 	public List<LogMessage> LogMessages { get; } = [];
 	public bool PreserveMessages { get; set; }
+	public void ClearMessages() {
+		throw new NotImplementedException();
+	}
 	public void Start(string logFilePath = "") { }
 	public void StartWithStream() { }
 	public void Stop() { }

@@ -26,20 +26,23 @@ public class StopTool (StopCommand command, ILogger logger, ModelContextProtocol
 			Environment = environmentName,
 			IsSilent = true
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 	
 	[McpServerTool(Name = "StopAllCreatio"), Description("Stops all Creatio instances")]
 	public CommandExecutionResult StopAllCreatio(
-		RequestContext<CallToolRequestParams> requestContext,
-		[Description("Target Environment name")] [Required] string environmentName
+		RequestContext<CallToolRequestParams> requestContext
 	) {
 		_requestContext = requestContext;
 		StopOptions options = new() {
 			All = true,
 			IsSilent = true
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 	
 	private CommandExecutionResult InternalExecute(StopOptions options) {
@@ -47,6 +50,7 @@ public class StopTool (StopCommand command, ILogger logger, ModelContextProtocol
 		int result = -1;
 		try {
 			command.StatusChanged += OnStatusChanged;
+			
 			result = command.Execute(options);
 			Thread.Sleep(500);
 			return new CommandExecutionResult(result, logger.LogMessages.ToList());

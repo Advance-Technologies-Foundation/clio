@@ -27,7 +27,9 @@ public class StartTool (StartCommand command, ILogger logger, ModelContextProtoc
 			Environment = environmentName,
 			IsSilent = true
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 	private CommandExecutionResult InternalExecute(StartOptions options) {
 

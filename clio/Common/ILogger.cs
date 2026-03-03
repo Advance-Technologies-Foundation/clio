@@ -9,6 +9,11 @@ namespace Clio.Common
 
 		internal List<LogMessage> LogMessages { get; }
 		internal bool PreserveMessages { get; set; }
+
+		/// <summary>
+		/// Clears preserved log messages.
+		/// </summary>
+		public void ClearMessages();
 		
 		/// <summary>
 		/// Starts the logging process.

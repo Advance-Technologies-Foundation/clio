@@ -175,6 +175,10 @@ public class ConsoleLogger : ILogger, IDisposable{
 		_logQueue.Enqueue(new TableMessage(table));
 	}
 
+	public void ClearMessages() {
+		LogMessages.Clear();
+	}
+
 	/// <summary>
 	/// Starts the logging process runs.
 	/// This method initiates a new thread that continuously dequeues log messages from the queue

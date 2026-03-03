@@ -20,7 +20,9 @@ public class RestartTool(RestartCommand restartCommand, ILogger logger){
 			Environment = environmentName,
 			TimeOut = 30_000 //Timeout in millisecond
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 	
 	[McpServerTool(Name = "RestartByCredentials"), Description("Restarts Creatio instance by credentials")]
@@ -37,7 +39,9 @@ public class RestartTool(RestartCommand restartCommand, ILogger logger){
 			IsNetCore = isNetCore,
 			TimeOut = 30_000 //Timeout in millisecond
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 
 	private CommandExecutionResult InternalExecute(RestartOptions options) {

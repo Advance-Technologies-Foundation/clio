@@ -20,7 +20,9 @@ public class ClearRedisTool(RedisCommand command, ILogger logger){
 			Environment = environmentName,
 			TimeOut = 30_000 //Timeout in millisecond
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 	
 	[McpServerTool(Name = "ClearRedisByCredentials"), Description("Empties redis database used by creatio instance")]
@@ -37,7 +39,9 @@ public class ClearRedisTool(RedisCommand command, ILogger logger){
 			IsNetCore = isNetCore,
 			TimeOut = 30_000 //Timeout in millisecond
 		};
-		return InternalExecute(options);
+		CommandExecutionResult result = InternalExecute(options);
+		logger.ClearMessages();
+		return result;
 	}
 
 	private CommandExecutionResult InternalExecute(ClearRedisOptions options) {
