@@ -37,7 +37,6 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 			_settingsRepository,
 			_serviceManager,
 			_logger,
-			_fileSystem,
 			_iisAppPoolManager,
 			_iisSiteDetector);
 	}

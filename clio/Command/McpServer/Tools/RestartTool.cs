@@ -14,7 +14,7 @@ public class RestartTool(RestartCommand restartCommand, ILogger logger){
 
 	[McpServerTool(Name = "RestartByEnvironmentName"), Description("Restarts Creatio instance by environment name")]
 	public CommandExecutionResult RestartInstanceByName(
-		[Description("Environment name to restart")] [Required] string environmentName
+		[Description("Target Environment name to restart")] [Required] string environmentName
 	) {
 		RestartOptions options = new() {
 			Environment = environmentName,

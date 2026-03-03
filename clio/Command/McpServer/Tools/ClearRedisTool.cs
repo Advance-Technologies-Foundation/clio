@@ -14,7 +14,7 @@ public class ClearRedisTool(RedisCommand command, ILogger logger){
 
 	[McpServerTool(Name = "ClearRedisByEnvironmentName"), Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByName(
-		[Description("Environment name to restart")] [Required] string environmentName
+		[Description("Target Environment name")] [Required] string environmentName
 	) {
 		ClearRedisOptions options = new() {
 			Environment = environmentName,
