@@ -36,7 +36,7 @@
 				if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo)
 					&& errorInfo.ValueKind != JsonValueKind.Null
 					&& errorInfo.TryGetProperty("message", out var messageProperty)) {
-					errorMessage = messageProperty.GetString();
+					errorMessage = messageProperty.GetString() ?? "Unknown error";
 				}
 				Logger.WriteError($"Failed to delete package \"{options.Name}\": {errorMessage}");
 				CommandSuccess = false;
