@@ -400,3 +400,17 @@ Decision: Выполнен статический обзор по трем на�
 Discovery: Обнаружены 8 падающих тестов в `StartCommand`/`StopCommand`, риск утечки секрета в `NuGetManager.Push` (API key в аргументах процесса), а также системный техдолг по CLIO-анализаторам (952 warning при сборке).
 Files: clio/Command/StartCommand.cs, clio/Command/StopCommand.cs, clio/Common/ProcessExecutor.cs, clio/Command/RestoreDb.cs, clio/Package/NuGet/NuGetManager.cs, clio/Package/NuGet/NugetPackageRestorer.cs, clio/Common/FileSystem.cs, clio.tests/Command/StartCommand.Tests.cs, clio.tests/Command/StopCommand.Tests.cs, .codex/workspace-diary.md
 Impact: Зафиксирован приоритетный бэклог исправлений для надежности команд запуска/остановки, безопасности вызовов внешних утилит и снижения технического долга по архитектурным правилам.
+
+## 2026-02-28 01:28 – Review skill docs for .github/skills/clio
+Context: User requested a review of `.github/skills/clio` with focus on practical defects.
+Decision: Compared skill/reference markdown examples and aliases against actual command metadata in `[Verb(...)]` attributes and command option requirements.
+Discovery: Found concrete mismatches that can break usage (`env-ui` alias documented as `ui`, invalid minimal examples for `publish-app` and `new-ui-project`), plus a committed `.DS_Store` artifact and plaintext-secret examples without safety note.
+Files: .github/skills/clio/SKILL.md, .github/skills/clio/references/commands-reference.md, .github/skills/clio/.DS_Store, clio/Command/EnvManageUiCommand.cs, clio/Command/CreateUiProjectCommand.cs, clio/Command/PublishWorkspaceCommand.cs
+Impact: Future updates can prioritize correcting broken examples/aliases first to reduce failed command attempts and avoid accidental secret exposure in copied templates.
+
+## 2026-02-28 01:54 – Apply fixes for .github/skills/clio review findings
+Context: User asked to implement fixes after review of `.github/skills/clio`.
+Decision: Updated command reference examples/aliases to match current CLI metadata, replaced plaintext credential examples with placeholders plus explicit security note, and removed macOS `.DS_Store` artifact from the skill folder.
+Discovery: `publish-app` and `new-ui-project` examples were incomplete for required parameters; `env-ui` alias in reference diverged from actual verb aliases (`gui`, `far`).
+Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/.DS_Store, .codex/workspace-diary.md
+Impact: Skill docs now avoid known false examples, reduce credential leakage risk in copy-paste scenarios, and keep repository contents cleaner across platforms.
