@@ -28,6 +28,7 @@
 				bool isSuccess = json.RootElement.TryGetProperty("success", out var successProperty)
 					&& successProperty.GetBoolean();
 				if (isSuccess) {
+					CommandSuccess = true;
 					Logger.WriteInfo($"Package \"{options.Name}\" deleted successfully.");
 					return;
 				}
