@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading;
 using ConsoleTables;
 using FluentValidation.Results;
@@ -13,8 +15,7 @@ namespace Clio.Common;
 #region Class: ConsoleLogger
 
 /// <inheritdoc cref="ILogger"/>
-public class ConsoleLogger : ILogger, IDisposable
-{
+public class ConsoleLogger : ILogger, IDisposable{
 
 	#region Fields: Private
 	private TextWriter _logFileWriter;
@@ -22,7 +23,9 @@ public class ConsoleLogger : ILogger, IDisposable
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
-	
+	public List<LogMessage> LogMessages { get; private set; } = [];
+	public bool PreserveMessages { get; set; }
+
 	#endregion
 
 	#region Constructors: Private
@@ -59,6 +62,9 @@ public class ConsoleLogger : ILogger, IDisposable
 				continue;
 			}
 
+			if (PreserveMessages) {
+				LogMessages.Add(item);
+			}
 			Action action = item switch {
 								InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
 								ErrorMessage errorMessage => () => WriteErrorInternal(errorMessage.Value.ToString()),
@@ -401,11 +407,14 @@ internal class TableMessage(ConsoleTable value) : LogMessage(value){
 
 }
 
-internal abstract class LogMessage(object value){
+public abstract class LogMessage(object value){
 	#region Properties: Public
 
+	[JsonPropertyName("message-type")]
+	[Description("Type of log message")]
 	public abstract LogDecoratorType LogDecoratorType { get; }
 
+	[Description("Value of the log message" )]
 	public object Value { get; set; } = value;
 
 	#endregion

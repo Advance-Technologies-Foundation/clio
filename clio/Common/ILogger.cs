@@ -6,6 +6,9 @@ using FluentValidation.Results;
 namespace Clio.Common
 {
 	public interface ILogger{
+
+		internal List<LogMessage> LogMessages { get; }
+		internal bool PreserveMessages { get; set; }
 		
 		/// <summary>
 		/// Starts the logging process.

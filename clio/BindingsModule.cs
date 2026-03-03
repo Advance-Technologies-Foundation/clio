@@ -1,6 +1,8 @@
 #pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ATF.Repository.Providers;
@@ -8,6 +10,8 @@ using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.McpServer;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.SqlScriptCommand;
@@ -37,6 +41,7 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -322,15 +327,23 @@ public class BindingsModule {
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
+		
+		services.AddTransient<McpServerCommand>();
+		services.AddMcpServer()
+				.WithStdioServerTransport()
+				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
+				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
+				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
+		
 		RegisterFluentValidators(services);
-
 		additionalRegistrations?.Invoke(services);
 		return services.BuildServiceProvider(new ServiceProviderOptions {
 			ValidateOnBuild = true,
 			ValidateScopes = true
 		});
 	}
-
+	
+	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {

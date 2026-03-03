@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
@@ -156,7 +157,9 @@ internal class Program {
 		typeof(MergeWorkspacesCommandOptions),
 		typeof(GenerateProcessModelCommandOptions),
 		typeof(LinkCoreSrcOptions),
-		typeof(AssertOptions)
+		typeof(AssertOptions),
+		typeof(McpServerCommandOptions),
+		
 		
 	];
 
@@ -297,6 +300,7 @@ internal class Program {
 					LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
 					AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 					LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
+					McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
 					var _ => 1
 				};
 	};
@@ -612,6 +616,7 @@ internal class Program {
 				args = args.Where(x => x != "--log" && x != logTarget).ToArray();
 			}
 
+			bool isMcp = args.Contains("mcp-server");
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
@@ -620,10 +625,15 @@ internal class Program {
 			// Set IsCfgOpenCommand based on input arguments
 			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
 			
+			if (isMcp) {
+				ConsoleLogger.Instance.PreserveMessages = true;
+			}
+			
 			if (logTarget.ToLower() == "creatio") {
 				useCreatioLogStreamer = true;
 				ConsoleLogger.Instance.StartWithStream();
-			} else {
+			}  
+			else {
 				ConsoleLogger.Instance.Start(logTarget);
 			}
 			return ExecuteCommands(clearArgs);
