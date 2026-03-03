@@ -10,7 +10,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public class RestartTool(RestartCommand restartCommand, ILogger logger){
+public class RestartTool(RestartCommand command, ILogger logger){
 
 	[McpServerTool(Name = "RestartByEnvironmentName"), Description("Restarts Creatio instance by environment name")]
 	public CommandExecutionResult RestartInstanceByName(
@@ -45,17 +45,15 @@ public class RestartTool(RestartCommand restartCommand, ILogger logger){
 	}
 
 	private CommandExecutionResult InternalExecute(RestartOptions options) {
-
 		int result = -1;
 		try {
-			result = restartCommand.Execute(options);
+			result = command.Execute(options);
 			Thread.Sleep(500);
-			return new CommandExecutionResult(result, logger.LogMessages.ToList());
+			return new CommandExecutionResult(result, [..logger.LogMessages.ToList()]);
 		}
 		catch (Exception e) {
 			List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];
 			return new CommandExecutionResult(result, logMessages);
 		}
-		
 	}
 }

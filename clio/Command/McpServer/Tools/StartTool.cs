@@ -14,7 +14,6 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public class StartTool (StartCommand command, ILogger logger, ModelContextProtocol.Server.McpServer server){
 	
-	
 	private RequestContext<CallToolRequestParams> _requestContext;
 	
 	[McpServerTool(Name = "StartCreatio"), Description("Starts Creatio instance by environment name")]
@@ -38,7 +37,7 @@ public class StartTool (StartCommand command, ILogger logger, ModelContextProtoc
 			command.StatusChanged += OnStatusChanged;
 			result = command.Execute(options);
 			Thread.Sleep(500);
-			return new CommandExecutionResult(result, logger.LogMessages.ToList());
+			return new CommandExecutionResult(result, [..logger.LogMessages.ToList()]);
 		}
 		catch (Exception e) {
 			List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];

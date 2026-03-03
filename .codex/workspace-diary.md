@@ -414,3 +414,9 @@ Decision: Updated command reference examples/aliases to match current CLI metada
 Discovery: `publish-app` and `new-ui-project` examples were incomplete for required parameters; `env-ui` alias in reference diverged from actual verb aliases (`gui`, `far`).
 Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/.DS_Store, .codex/workspace-diary.md
 Impact: Skill docs now avoid known false examples, reduce credential leakage risk in copy-paste scenarios, and keep repository contents cleaner across platforms.
+## 2026-03-03 10:35 – Replace ShowAppListCommand Console.WriteLine usage
+Context: User requested fixing specific CLIO002 warnings in ShowAppListCommand.cs for direct Console.WriteLine calls.
+Decision: Replaced all Console.WriteLine calls in ShowAppListCommand with ILogger.WriteLine/WriteWarning while preserving message text and formatting behavior.
+Discovery: Targeted warnings were removed, but the file still has separate CLIO002 diagnostics for Console.Out and Console.OutputEncoding usages not requested in this task.
+Files: clio/Command/ShowAppListCommand.cs, .codex/workspace-diary.md
+Impact: ShowAppListCommand now follows logging abstraction for line output and no longer uses direct Console.WriteLine.

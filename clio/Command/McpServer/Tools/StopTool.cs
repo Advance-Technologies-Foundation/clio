@@ -53,7 +53,7 @@ public class StopTool (StopCommand command, ILogger logger, ModelContextProtocol
 			
 			result = command.Execute(options);
 			Thread.Sleep(500);
-			return new CommandExecutionResult(result, logger.LogMessages.ToList());
+			return new CommandExecutionResult(result, [..logger.LogMessages.ToList()]);
 		}
 		catch (Exception e) {
 			List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];

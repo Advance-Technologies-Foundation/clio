@@ -1,19 +1,19 @@
 [agents.reviewer]
 description = "Find security, correctness, and test risks in code."
-config_file = "./.codex/agents/reviewer.toml"
+config_file = "./agents/reviewer.toml"
 
 [agents.explorer]
 description = "Fast codebase explorer for read-heavy tasks."
-config_file = "./.codex/agents/custom-explorer.toml"
+config_file = "./agents/custom-explorer.toml"
 
 [agents.performance-review]
 description = "Find performance issues in the codebase."
-config_file = "./.codex/agents/performance-review.toml"
+config_file = "./agents/performance-review.toml"
 
 [agents.security-reviewer]
 description = "Find security issues in the codebase."
-config_file = "./.codex/agents/security-reviewer.toml"
+config_file = "./agents/security-reviewer.toml"
 
 [agents.code-quality-reviewer]
 description = "Find code quality issues in the codebase."
-config_file = "./.codex/agents/code-quality-reviewer.toml"
+config_file = "./agents/code-quality-reviewer.toml"

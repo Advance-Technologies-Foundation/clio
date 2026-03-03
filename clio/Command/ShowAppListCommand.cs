@@ -125,7 +125,7 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 		};
 
 		serializer.Serialize(Console.Out, sanitized);
-		Console.WriteLine(); // Add a newline after JSON
+		logger.WriteLine(); // Add a newline after JSON
 	}
 
 	/// <summary>
@@ -134,32 +134,32 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 	private void OutputAsRaw(EnvironmentSettings environment, string environmentName = null) {
 		// Simple text output without formatting, including all fields from EnvironmentSettings
 		if (!string.IsNullOrEmpty(environmentName)) {
-			Console.WriteLine($"Name: {environmentName}");
+			logger.WriteLine($"Name: {environmentName}");
 		}
 
-		Console.WriteLine($"Uri: {environment.Uri}");
-		Console.WriteLine($"DbName: {environment.DbName}");
-		Console.WriteLine($"BackupFilePath: {environment.BackupFilePath}");
-		Console.WriteLine($"Login: {environment.Login}");
-		Console.WriteLine($"Password: {MaskSensitiveData("Password", environment.Password)}");
-		Console.WriteLine($"Maintainer: {environment.Maintainer}");
-		Console.WriteLine($"IsNetCore: {environment.IsNetCore}");
-		Console.WriteLine($"ClientId: {environment.ClientId}");
-		Console.WriteLine($"ClientSecret: {MaskSensitiveData("ClientSecret", environment.ClientSecret)}");
-		Console.WriteLine($"AuthAppUri: {environment.AuthAppUri}");
-		Console.WriteLine($"SimpleLoginUri: {environment.SimpleloginUri}");
-		Console.WriteLine($"Safe: {environment.Safe}");
-		Console.WriteLine($"DeveloperModeEnabled: {environment.DeveloperModeEnabled}");
-		Console.WriteLine($"IsDevMode: {environment.IsDevMode}");
-		Console.WriteLine($"WorkspacePathes: {environment.WorkspacePathes}");
-		Console.WriteLine($"EnvironmentPath: {environment.EnvironmentPath}");
-		Console.WriteLine($"DbServerKey: {environment.DbServerKey}");
+		logger.WriteLine($"Uri: {environment.Uri}");
+		logger.WriteLine($"DbName: {environment.DbName}");
+		logger.WriteLine($"BackupFilePath: {environment.BackupFilePath}");
+		logger.WriteLine($"Login: {environment.Login}");
+		logger.WriteLine($"Password: {MaskSensitiveData("Password", environment.Password)}");
+		logger.WriteLine($"Maintainer: {environment.Maintainer}");
+		logger.WriteLine($"IsNetCore: {environment.IsNetCore}");
+		logger.WriteLine($"ClientId: {environment.ClientId}");
+		logger.WriteLine($"ClientSecret: {MaskSensitiveData("ClientSecret", environment.ClientSecret)}");
+		logger.WriteLine($"AuthAppUri: {environment.AuthAppUri}");
+		logger.WriteLine($"SimpleLoginUri: {environment.SimpleloginUri}");
+		logger.WriteLine($"Safe: {environment.Safe}");
+		logger.WriteLine($"DeveloperModeEnabled: {environment.DeveloperModeEnabled}");
+		logger.WriteLine($"IsDevMode: {environment.IsDevMode}");
+		logger.WriteLine($"WorkspacePathes: {environment.WorkspacePathes}");
+		logger.WriteLine($"EnvironmentPath: {environment.EnvironmentPath}");
+		logger.WriteLine($"DbServerKey: {environment.DbServerKey}");
 		if (environment.DbServer != null) {
-			Console.WriteLine("DbServer:");
-			Console.WriteLine($"  Uri: {environment.DbServer.Uri}");
-			Console.WriteLine($"  WorkingFolder: {environment.DbServer.WorkingFolder}");
-			Console.WriteLine($"  Login: {environment.DbServer.Login}");
-			Console.WriteLine($"  Password: {MaskSensitiveData("Password", environment.DbServer.Password)}");
+			logger.WriteLine("DbServer:");
+			logger.WriteLine($"  Uri: {environment.DbServer.Uri}");
+			logger.WriteLine($"  WorkingFolder: {environment.DbServer.WorkingFolder}");
+			logger.WriteLine($"  Login: {environment.DbServer.Login}");
+			logger.WriteLine($"  Password: {MaskSensitiveData("Password", environment.DbServer.Password)}");
 		}
 	}
 
@@ -167,8 +167,8 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 	///     Output all environments in table format
 	/// </summary>
 	private void OutputAsTable(Dictionary<string, EnvironmentSettings> environments) {
-		Console.WriteLine($"\"appsetting file path: {settingsRepository.AppSettingsFilePath}\"");
-		Console.WriteLine();
+		logger.WriteLine($"\"appsetting file path: {settingsRepository.AppSettingsFilePath}\"");
+		logger.WriteLine();
 
 		ConsoleTable table = new();
 		table.AddColumn(new[] { "Name", "Url", "Login", "IsNetCore" });
@@ -218,8 +218,8 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 						break;
 					case "table":
 						// For a single environment, output as raw in table-like format
-						Console.WriteLine($"Environment: {environmentName}");
-						Console.WriteLine(new string('-', 50));
+						logger.WriteLine($"Environment: {environmentName}");
+						logger.WriteLine(new string('-', 50));
 						OutputAsRaw(environment);
 						break;
 					case "raw":
@@ -251,13 +251,13 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 					case "raw":
 						// Output all environments in raw format
 						foreach (KeyValuePair<string, EnvironmentSettings> env in allEnvs) {
-							Console.WriteLine($"\n=== {env.Key} ===");
+							logger.WriteLine($"\n=== {env.Key} ===");
 							OutputAsRaw(env.Value);
 						}
 
 						break;
 					default:
-						Console.WriteLine($"Unknown format: {format}. Use: json, table, or raw");
+						logger.WriteWarning($"Unknown format: {format}. Use: json, table, or raw");
 						return 1;
 				}
 			}
