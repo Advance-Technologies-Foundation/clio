@@ -1,5 +1,4 @@
 using System;
-using System.Data;
 using System.Threading.Tasks;
 using Clio.Common.Kubernetes;
 using Npgsql;
@@ -10,25 +9,19 @@ namespace Clio.Common.Database
 	/// <summary>
 	/// Checks database capabilities like version.
 	/// </summary>
-	public class DatabaseCapabilityChecker : IDatabaseCapabilityChecker
-	{
-		public async Task<CapabilityCheckResult> CheckVersionAsync(DiscoveredDatabase database, string connectionString)
-		{
-			try
-			{
-				return database.Engine switch
-				{
+	public class DatabaseCapabilityChecker : IDatabaseCapabilityChecker{
+		public async Task<CapabilityCheckResult> CheckVersionAsync(DiscoveredDatabase database, string connectionString) {
+			try {
+				return database.Engine switch {
 					DatabaseEngine.Postgres => await CheckPostgresVersionAsync(connectionString),
 					DatabaseEngine.Mssql => await CheckMssqlVersionAsync(connectionString),
-					_ => new CapabilityCheckResult
-					{
+					var _ => new CapabilityCheckResult {
 						Success = false,
 						Error = $"Unknown database engine: {database.Engine}"
 					}
 				};
 			}
-			catch (Exception ex)
-			{
+			catch (Exception ex) {
 				return new CapabilityCheckResult
 				{
 					Success = false,
@@ -36,25 +29,20 @@ namespace Clio.Common.Database
 				};
 			}
 		}
-
-		private async Task<CapabilityCheckResult> CheckPostgresVersionAsync(string connectionString)
-		{
-			try
-			{
-				using var connection = new NpgsqlConnection(connectionString);
+		private async Task<CapabilityCheckResult> CheckPostgresVersionAsync(string connectionString) {
+			try {
+				await using NpgsqlConnection connection = new(connectionString);
 				await connection.OpenAsync();
 
-				using var command = new NpgsqlCommand("SELECT version()", connection);
-				var version = await command.ExecuteScalarAsync();
+				await using NpgsqlCommand command = new("SELECT version()", connection);
+				object version = await command.ExecuteScalarAsync();
 
-				return new CapabilityCheckResult
-				{
+				return new CapabilityCheckResult {
 					Success = true,
 					Version = version?.ToString()
 				};
 			}
-			catch (Exception ex)
-			{
+			catch (Exception ex) {
 				return new CapabilityCheckResult
 				{
 					Success = false,
@@ -63,11 +51,9 @@ namespace Clio.Common.Database
 			}
 		}
 
-		private async Task<CapabilityCheckResult> CheckMssqlVersionAsync(string connectionString)
-		{
-			try
-			{
-				await using SqlConnection connection = new SqlConnection(connectionString);
+		private async Task<CapabilityCheckResult> CheckMssqlVersionAsync(string connectionString) {
+			try {
+				await using SqlConnection connection = new(connectionString);
 				await connection.OpenAsync();
 				const string cmdText = """
 									   SELECT CONCAT(

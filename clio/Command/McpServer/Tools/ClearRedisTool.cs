@@ -27,7 +27,7 @@ public class ClearRedisTool(RedisCommand command, ILogger logger){
 	
 	[McpServerTool(Name = "ClearRedisByCredentials"), Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByCredentials(
-		[Description("Creatio instance url")] [Required] string url,
+		[Description("Creatio instance url")] [Required] string url,	
 		[Description("Creatio instance Username")] [Required] string userName,
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false

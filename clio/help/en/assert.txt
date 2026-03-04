@@ -6,11 +6,11 @@ NAME
 
 DESCRIPTION
     Provides deterministic assertion mechanism for validating Kubernetes 
-    and filesystem resources. Returns structured JSON output with precise 
+    local infrastructure and filesystem resources. Returns structured JSON output with precise 
     failure attribution and exit codes.
 
     The assert command ensures that clio can discover and connect to the 
-    required infrastructure components (databases, Redis, filesystem paths, 
+    required infrastructure components (Kubernetes resources, local databases, local Redis, filesystem paths, 
     and permissions) using the same discovery logic that clio uses during 
     normal operations. This validates that:
     
@@ -36,6 +36,7 @@ SYNOPSIS
 
 SCOPES
     k8          Kubernetes resource assertions
+    local       Local database and local Redis assertions
     fs          Filesystem path and permission assertions
 
 KUBERNETES OPTIONS
@@ -59,6 +60,28 @@ KUBERNETES OPTIONS
     --redis                         Assert Redis presence
     --redis-connect                 Validate Redis connectivity via TCP
     --redis-ping                    Execute Redis PING command
+
+LOCAL OPTIONS
+
+    Database Assertions:
+    --db                            Database engines to assert (comma-separated)
+                                    Supported: postgres, mssql
+                                    Required for local database assertions
+    --db-server-name                Local database server configuration key from appsettings.json
+                                    Required when local database assertions are requested
+    --db-min                        Minimum number of database engines required
+                                    Default: 1
+    --db-connect                    Validate database connectivity
+    --db-check                      Database capability check
+                                    Supported: version
+
+    Redis Assertions:
+    --redis                         Assert local Redis presence on localhost:6379
+    --redis-connect                 Validate Redis connectivity via TCP
+    --redis-ping                    Execute Redis PING command
+
+    Unsupported in local scope:
+    --context, --context-regex, --cluster, --namespace, --path, --user, --perm
 
 FILESYSTEM OPTIONS
     --path                          Filesystem path to validate (required)
@@ -135,6 +158,23 @@ FILESYSTEM EXAMPLES
 
     Path with read permissions:
         clio assert fs --path "C:\data" --user "BUILTIN\Users" --perm read
+
+LOCAL EXAMPLES
+
+    Local Redis presence:
+        clio assert local --redis
+
+    Local Redis with connectivity and ping:
+        clio assert local --redis --redis-connect --redis-ping
+
+    Local database presence:
+        clio assert local --db postgres --db-server-name my-local-postgres
+
+    Local database with connectivity and version:
+        clio assert local --db postgres --db-server-name my-local-postgres --db-connect --db-check version
+
+    Combined local checks:
+        clio assert local --db postgres --db-server-name my-local-postgres --db-connect --redis --redis-ping
 OUTPUT FORMAT
 
     Kubernetes success example:
@@ -205,6 +245,20 @@ OUTPUT FORMAT
       }
     }
 
+    Local Redis success example:
+    {
+      "status": "pass",
+      "scope": "Local",
+      "resolved": {
+        "redis": {
+          "name": "local-redis",
+          "host": "localhost",
+          "port": 6379,
+          "db": 3
+        }
+      }
+    }
+
 DESIGN PRINCIPLES
 
     - All checks are explicit via CLI flags (no hidden validation)
@@ -264,6 +318,8 @@ KUBERNETES DETECTION RULES
 NOTES
 
     - Kubernetes assertions require kubectl configured with access to target cluster
+    - Local scope Redis checks use localhost:6379 (same local Redis assumption as deploy-creatio)
+    - Local database checks require --db-server-name configuration in appsettings.json
     - Database version checks require valid credentials
     - Filesystem path validation works on all platforms
     - Filesystem permission checks are Windows-only (use ACLs)

@@ -713,10 +713,10 @@ internal class Program {
 	/// Unzips a package file to the default location.
 	/// </summary>
 	/// <param name="zipFilePath">Path to the zip file</param>
-	private static void UnZip(string zipFilePath){
-		IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
-		packageArchiver.UnZip(zipFilePath, true);
-	}
+	// private static void UnZip(string zipFilePath){
+	// 	IPackageArchiver packageArchiver = Resolve<IPackageArchiver>();
+	// 	packageArchiver.UnZip(zipFilePath, true);
+	// }
 
 	/// <summary>
 	/// Extracts packages from a zip file to the specified destination.

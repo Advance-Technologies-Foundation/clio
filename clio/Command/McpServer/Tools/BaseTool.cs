@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using Clio.Common;
@@ -8,18 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
-public class ShowWebAppListTool(ShowAppListCommand command, ILogger logger){
 
-	[McpServerTool(Name = "ShowWebAppList"), Description("Show the list of web applications (Creatrio environments) and their settings")]
-	public CommandExecutionResult ShowWebAppList() {
-		AppListOptions options = new() {
-			Format = "raw"
-		};
-		return InternalExecute(options);
-	}
+[McpServerToolType]
+public abstract class BaseTool<T>(Command<T> command, ILogger logger){
+
 	
-	private CommandExecutionResult InternalExecute(AppListOptions options) {
+	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		int result = -1;
 		try {
 			result = command.Execute(options);

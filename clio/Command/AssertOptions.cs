@@ -5,7 +5,7 @@ namespace Clio.Command
 	[Verb("assert", HelpText = "Validates infrastructure and filesystem resources")]
 	public class AssertOptions : BaseCommandOptions
 	{
-		[Value(0, MetaName = "scope", Required = true, HelpText = "Assertion scope: k8 (Kubernetes) or fs (Filesystem)")]
+		[Value(0, MetaName = "scope", Required = true, HelpText = "Assertion scope: k8 (Kubernetes), local (Local infrastructure), or fs (Filesystem)")]
 		public string Scope { get; set; }
 
 		// Kubernetes Database Options
@@ -20,6 +20,9 @@ namespace Clio.Command
 
 		[Option("db-check", Required = false, HelpText = "Database capability check (e.g., 'version')")]
 		public string DatabaseCheck { get; set; }
+
+		[Option("db-server-name", Required = false, HelpText = "Name of local database server configuration from appsettings.json")]
+		public string DbServerName { get; set; }
 
 		// Kubernetes Redis Options
 		[Option("redis", Required = false, HelpText = "Assert Redis presence")]

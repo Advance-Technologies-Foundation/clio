@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Common;
 using Clio.Common.Assertions;
 using Clio.Common.Kubernetes;
@@ -18,6 +19,8 @@ namespace Clio.Command
 		private readonly K8RedisAssertion _redisAssertion;
 		private readonly FsPathAssertion _fsPathAssertion;
 		private readonly FsPermissionAssertion _fsPermissionAssertion;
+		private readonly ILocalDatabaseAssertion _localDatabaseAssertion;
+		private readonly ILocalRedisAssertion _localRedisAssertion;
 
 		public AssertCommand(
 			ILogger logger, 
@@ -26,7 +29,9 @@ namespace Clio.Command
 			K8DatabaseAssertion databaseAssertion,
 			K8RedisAssertion redisAssertion,
 			FsPathAssertion fsPathAssertion,
-			FsPermissionAssertion fsPermissionAssertion)
+			FsPermissionAssertion fsPermissionAssertion,
+			ILocalDatabaseAssertion localDatabaseAssertion,
+			ILocalRedisAssertion localRedisAssertion)
 		{
 			_logger = logger;
 			_k8sClient = k8sClient;
@@ -35,6 +40,8 @@ namespace Clio.Command
 			_redisAssertion = redisAssertion;
 			_fsPathAssertion = fsPathAssertion;
 			_fsPermissionAssertion = fsPermissionAssertion;
+			_localDatabaseAssertion = localDatabaseAssertion;
+			_localRedisAssertion = localRedisAssertion;
 		}
 
 		public override int Execute(AssertOptions options)
@@ -46,6 +53,7 @@ namespace Clio.Command
 				AssertionResult result = scope switch
 				{
 					AssertionScope.K8 => ExecuteK8Assertions(options),
+					AssertionScope.Local => ExecuteLocalAssertions(options),
 					AssertionScope.Fs => ExecuteFsAssertions(options),
 					_ => throw new InvalidOperationException($"Unknown scope: {options.Scope}")
 				};
@@ -71,9 +79,113 @@ namespace Clio.Command
 			return scope?.ToLowerInvariant() switch
 			{
 				"k8" => AssertionScope.K8,
+				"local" => AssertionScope.Local,
 				"fs" => AssertionScope.Fs,
-				_ => throw new ArgumentException($"Invalid scope: {scope}. Must be 'k8' or 'fs'.")
+				_ => throw new ArgumentException($"Invalid scope: {scope}. Must be 'k8', 'local', or 'fs'.")
 			};
+		}
+
+		private AssertionResult ExecuteLocalAssertions(AssertOptions options)
+		{
+			ValidateLocalScopeOptions(options);
+
+			bool hasDbRequest = HasDatabaseRequest(options);
+			bool hasRedisRequest = options.Redis;
+
+			if (!hasDbRequest && !hasRedisRequest)
+			{
+				throw new ArgumentException("At least one local assertion must be requested: --db ... or --redis");
+			}
+
+			var successResult = AssertionResult.Success();
+			successResult.Scope = AssertionScope.Local;
+
+			if (hasDbRequest)
+			{
+				int databaseMinimum = options.DatabaseMinimum <= 0 ? 1 : options.DatabaseMinimum;
+				var dbResult = _localDatabaseAssertion.ExecuteAsync(
+					options.DatabaseEngines,
+					databaseMinimum,
+					options.DatabaseConnect,
+					options.DatabaseCheck,
+					options.DbServerName
+				).GetAwaiter().GetResult();
+
+				if (dbResult.Status == "fail")
+				{
+					return dbResult;
+				}
+
+				if (dbResult.Resolved.ContainsKey("databases"))
+				{
+					successResult.Resolved["databases"] = dbResult.Resolved["databases"];
+				}
+			}
+
+			if (hasRedisRequest)
+			{
+				var redisResult = _localRedisAssertion.ExecuteAsync(
+					options.RedisConnect,
+					options.RedisPing
+				).GetAwaiter().GetResult();
+
+				if (redisResult.Status == "fail")
+				{
+					return redisResult;
+				}
+
+				if (redisResult.Resolved.ContainsKey("redis"))
+				{
+					successResult.Resolved["redis"] = redisResult.Resolved["redis"];
+				}
+			}
+
+			return successResult;
+		}
+
+		private static bool HasDatabaseRequest(AssertOptions options)
+		{
+			return !string.IsNullOrWhiteSpace(options.DatabaseEngines) ||
+				   options.DatabaseConnect ||
+				   !string.IsNullOrWhiteSpace(options.DatabaseCheck) ||
+				   options.DatabaseMinimum > 1;
+		}
+
+		private static void ValidateLocalScopeOptions(AssertOptions options)
+		{
+			string[] unsupportedFlags = {
+				!string.IsNullOrWhiteSpace(options.Context) ? "--context" : null,
+				!string.IsNullOrWhiteSpace(options.ContextRegex) ? "--context-regex" : null,
+				!string.IsNullOrWhiteSpace(options.Cluster) ? "--cluster" : null,
+				!string.IsNullOrWhiteSpace(options.Namespace) ? "--namespace" : null,
+				!string.IsNullOrWhiteSpace(options.Path) ? "--path" : null,
+				!string.IsNullOrWhiteSpace(options.User) ? "--user" : null,
+				!string.IsNullOrWhiteSpace(options.Permission) ? "--perm" : null
+			};
+
+			string unsupported = string.Join(", ", unsupportedFlags.Where(f => !string.IsNullOrWhiteSpace(f)));
+			if (!string.IsNullOrWhiteSpace(unsupported))
+			{
+				throw new ArgumentException($"Unsupported option(s) for local scope: {unsupported}");
+			}
+
+			if ((options.RedisConnect || options.RedisPing) && !options.Redis)
+			{
+				throw new ArgumentException("--redis parameter is required when --redis-connect or --redis-ping is specified");
+			}
+
+			if (HasDatabaseRequest(options))
+			{
+				if (string.IsNullOrWhiteSpace(options.DatabaseEngines))
+				{
+					throw new ArgumentException("--db parameter is required when database checks are specified in local scope");
+				}
+
+				if (string.IsNullOrWhiteSpace(options.DbServerName))
+				{
+					throw new ArgumentException("--db-server-name parameter is required when local database assertions are specified");
+				}
+			}
 		}
 
 		private AssertionResult ExecuteK8Assertions(AssertOptions options)

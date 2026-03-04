@@ -11,6 +11,11 @@ namespace Clio.Common.Assertions
 		K8,
 
 		/// <summary>
+		/// Local infrastructure assertions.
+		/// </summary>
+		Local,
+
+		/// <summary>
 		/// Filesystem assertions.
 		/// </summary>
 		Fs

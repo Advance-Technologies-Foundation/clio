@@ -4121,11 +4121,11 @@ If deletion is not completing:
 
 ## assert
 
-Validates infrastructure and filesystem resources to ensure clio can discover and connect to required components. Returns structured JSON output with precise failure attribution and exit codes.
+Validates Kubernetes, local infrastructure, and filesystem resources to ensure clio can discover and connect to required components. Returns structured JSON output with precise failure attribution and exit codes.
 
 **Purpose:**
 
-The assert command ensures that clio can discover and connect to required infrastructure components (databases, Redis, filesystem paths and permissions) using the same discovery logic that clio uses during normal operations. This validates that if assert passes, clio operations will succeed.
+The assert command ensures that clio can discover and connect to required infrastructure components (Kubernetes databases/Redis, local databases/Redis, filesystem paths and permissions) using the same discovery logic that clio uses during normal operations. This validates that if assert passes, clio operations will succeed.
 
 **What it validates:**
 
@@ -4135,8 +4135,10 @@ The assert command ensures that clio can discover and connect to required infras
 4. **Pods** - Confirms pods are running and ready
 5. **Network Connectivity** - Tests TCP connections to services
 6. **Service Functionality** - Validates database version queries, Redis PING commands
-7. **Filesystem Paths** - Validates that directories exist and are accessible
-8. **Filesystem Permissions** - Validates user/group permissions on directories (Windows only)
+7. **Local DB Configuration** - Validates local DB server configuration and engine compatibility
+8. **Local Redis Availability** - Validates local Redis discovery/connectivity/ping on localhost:6379
+9. **Filesystem Paths** - Validates that directories exist and are accessible
+10. **Filesystem Permissions** - Validates user/group permissions on directories (Windows only)
 
 **Detection Method:**
 
@@ -4179,6 +4181,15 @@ clio assert k8 --redis --redis-connect --redis-ping
 clio assert k8 \
   --db postgres,mssql --db-connect --db-check version \
   --redis --redis-connect --redis-ping
+
+# Local Redis validation
+clio assert local --redis --redis-connect --redis-ping
+
+# Local database validation
+clio assert local --db postgres --db-server-name my-local-postgres --db-connect --db-check version
+
+# Combined local validation
+clio assert local --db postgres --db-server-name my-local-postgres --db-connect --redis --redis-ping
 
 # Filesystem path validation
 clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\"
@@ -4274,6 +4285,18 @@ Redis assertions:
 - `--redis` - Assert Redis presence
 - `--redis-connect` - Validate TCP connectivity to Redis
 - `--redis-ping` - Execute Redis PING command
+
+Local database assertions:
+- `--db` - Database engines to assert in local scope (comma-separated): postgres, mssql
+- `--db-server-name` - Local DB server configuration key from appsettings.json (required for local DB checks)
+- `--db-min` - Minimum number of database engines required (default: 1)
+- `--db-connect` - Validate connectivity to configured local DB
+- `--db-check` - Database capability check (currently supports: version)
+
+Local Redis assertions:
+- `--redis` - Assert local Redis presence on localhost:6379
+- `--redis-connect` - Validate TCP connectivity to local Redis
+- `--redis-ping` - Execute Redis PING command on local Redis
 
 Filesystem assertions:
 - `--path` - Filesystem path to validate (can be absolute path or setting key like "iis-clio-root-path")

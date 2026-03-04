@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Validates infrastructure and filesystem resources to ensure clio can discover and connect to required components. The assert command uses the same discovery logic that clio uses during normal operations, ensuring that if assert passes, clio operations will succeed.
+Validates infrastructure and filesystem resources to ensure clio can discover and connect to required components. The assert command supports Kubernetes, local infrastructure, and filesystem scopes, and uses the same discovery logic that clio uses during normal operations, ensuring that if assert passes, clio operations will succeed.
 
 ## Usage
 
@@ -16,7 +16,7 @@ clio assert <scope> [options]
 
 | Argument | Description                                    | Values  |
 |----------|------------------------------------------------|---------|
-| `scope`  | Type of resources to validate                  | k8, fs  |
+| `scope`  | Type of resources to validate                  | k8, local, fs  |
 
 ### Kubernetes Options
 
@@ -40,6 +40,24 @@ clio assert <scope> [options]
 | Argument          | Short | Default | Description                        | Example              |
 |-------------------|-------|---------|------------------------------------|----------------------|
 | `--redis`         | -     | false   | Assert Redis presence              | `--redis`            |
+| `--redis-connect` | -     | false   | Validate TCP connectivity          | `--redis-connect`    |
+| `--redis-ping`    | -     | false   | Execute Redis PING command         | `--redis-ping`       |
+
+### Local Infrastructure Options
+
+#### Database Assertions
+| Argument            | Short | Default | Description                                      | Example                               |
+|---------------------|-------|---------|--------------------------------------------------|---------------------------------------|
+| `--db`              | -     | -       | Database engines (comma-separated). Required for local DB checks | `--db postgres`           |
+| `--db-server-name`  | -     | -       | Local DB server configuration key from appsettings.json | `--db-server-name my-local-postgres` |
+| `--db-min`          | -     | 1       | Minimum number of engines required               | `--db-min 1`                          |
+| `--db-connect`      | -     | false   | Validate connectivity for configured local server | `--db-connect`                       |
+| `--db-check`        | -     | -       | Capability check (version)                       | `--db-check version`                 |
+
+#### Redis Assertions
+| Argument          | Short | Default | Description                        | Example              |
+|-------------------|-------|---------|------------------------------------|----------------------|
+| `--redis`         | -     | false   | Assert local Redis presence on localhost:6379 | `--redis` |
 | `--redis-connect` | -     | false   | Validate TCP connectivity          | `--redis-connect`    |
 | `--redis-ping`    | -     | false   | Execute Redis PING command         | `--redis-ping`       |
 
@@ -116,6 +134,33 @@ clio assert k8 \
   --context dev-cluster \
   --db postgres,mssql --db-connect --db-check version \
   --redis --redis-connect --redis-ping
+```
+
+### Local Infrastructure Validation
+
+Check local Redis:
+```bash
+clio assert local --redis
+```
+
+Check local Redis with connectivity and ping:
+```bash
+clio assert local --redis --redis-connect --redis-ping
+```
+
+Check local database:
+```bash
+clio assert local --db postgres --db-server-name my-local-postgres
+```
+
+Check local database connectivity and version:
+```bash
+clio assert local --db postgres --db-server-name my-local-postgres --db-connect --db-check version
+```
+
+Combined local checks:
+```bash
+clio assert local --db postgres --db-server-name my-local-postgres --db-connect --redis --redis-ping
 ```
 
 ### Filesystem Validation (Windows, Not Yet Implemented)
@@ -223,6 +268,14 @@ The assert command uses label-based discovery matching clio's k8Commands impleme
 
 #### Phase 4-6: Redis Assertions
 Similar phased approach for Redis validation
+
+#### Local Scope Phases
+- Local DB discovery from `--db-server-name` configuration and requested `--db` engines
+- Optional local DB connectivity check (`--db-connect`)
+- Optional local DB version check (`--db-check version`)
+- Local Redis discovery via empty-db selection on `localhost:6379`
+- Optional local Redis TCP check (`--redis-connect`)
+- Optional local Redis PING check (`--redis-ping`)
 
 ### Detection Rules
 
@@ -347,6 +400,24 @@ kubectl get secret clio-postgres-secret -n clio-infrastructure
 kubectl get secret clio-postgres-secret -n clio-infrastructure -o jsonpath='{.data.POSTGRES_USER}' | base64 -d
 ```
 
+### Local Scope Configuration Issues
+
+**Problem**: "Database server configuration 'X' not found in appsettings.json"
+
+**Solution**: Add or fix the `db` configuration key in appsettings and retry:
+```bash
+clio assert local --db postgres --db-server-name my-local-postgres
+```
+
+### Local Redis Unavailable
+
+**Problem**: Redis discovery or ping fails in local scope
+
+**Solution**: Ensure local Redis is running on localhost:6379:
+```bash
+redis-cli -h localhost -p 6379 ping
+```
+
 ## Notes
 
 ### Design Principles
@@ -366,6 +437,8 @@ kubectl get secret clio-postgres-secret -n clio-infrastructure -o jsonpath='{.da
 - No retry logic (fails fast)
 - Database version check requires valid credentials in secrets
 - Assumes standard Kubernetes configurations
+- Local Redis assertions use `localhost:6379` endpoint
+- Local DB assertions require explicit `--db-server-name`
 
 ### Security
 - Credentials never exposed in output

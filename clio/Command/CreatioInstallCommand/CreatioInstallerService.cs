@@ -10,13 +10,13 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.Database;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
 using MediatR;
-using StackExchange.Redis;
 using IFileSystem = Clio.Common.IFileSystem;
 using MsFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -95,6 +95,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly IPackageArchiver _packageArchiver;
 	private readonly IPostgresToolsPathDetector _postgresToolsPathDetector;
 	private readonly IProcessExecutor _processExecutor;
+	private readonly IRedisDatabaseSelector _redisDatabaseSelector;
 
 	private readonly string _productFolder;
 	private readonly RegAppCommand _registerCommand;
@@ -129,7 +130,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		DeploymentStrategyFactory deploymentStrategyFactory,
 		HealthCheckCommand healthCheckCommand, IDbClientFactory dbClientFactory,
 		IDbConnectionTester dbConnectionTester, IBackupFileDetector backupFileDetector,
-		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor) {
+		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor,
+		IRedisDatabaseSelector redisDatabaseSelector) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -148,6 +150,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_backupFileDetector = backupFileDetector;
 		_postgresToolsPathDetector = postgresToolsPathDetector;
 		_processExecutor = processExecutor;
+		_redisDatabaseSelector = redisDatabaseSelector;
 	}
 
 	/// <summary>
@@ -161,47 +164,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	#endregion
 
 	#region Methods: Private
-
-	private static (int dbNumber, string errorMessage)
-		FindEmptyRedisDb(string hostname = "localhost", int port = 6379) {
-		try {
-			ConfigurationOptions configurationOptions = new() {
-				SyncTimeout = 500000,
-				EndPoints = {
-					{ hostname, port }
-				},
-				AbortOnConnectFail
-					= false // Prevents exceptions when the initial connection to Redis fails, allowing the client to retry connecting.
-			};
-			ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-			IServer server = redis.GetServer($"{hostname}", port);
-			int count = server.DatabaseCount;
-			for (int i = 1; i < count; i++) {
-				long records = server.DatabaseSize(i);
-				if (records == 0) {
-					return (i, string.Empty);
-				}
-			}
-
-			// All databases are occupied
-			string errorMsg = $"[Redis Configuration Error] Could not find an empty Redis database. " +
-							  $"All {count - 1} available databases (1-{count - 1}) at {hostname}:{port} are in use. " +
-							  $"Please either: " +
-							  $"1) Clear some Redis databases, " +
-							  $"2) Increase the number of Redis databases, " +
-							  $"3) Manually specify a database number using the --redis-db option";
-
-			return (-1, errorMsg);
-		}
-		catch (Exception ex) {
-			string errorMsg = $"[Redis Connection Error] Could not connect to Redis at {hostname}:{port}. " +
-							  $"Error: {ex.Message}. " +
-							  $"Make sure Redis is running and accessible. " +
-							  $"You can also manually specify a database number using the --redis-db option";
-
-			return (-1, errorMsg);
-		}
-	}
 
 	private string BuildMssqlConnectionString(LocalDbServerConfiguration dbConfig, string databaseName) {
 		string dataSource = dbConfig.Hostname.Contains("\\") || dbConfig.Port == 0
@@ -840,13 +802,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 								 };
 
 			// For local deployment, use localhost Redis or skip if not available
-			(int dbNumber, string errorMessage) emptyDb = FindEmptyRedisDb();
+			RedisDatabaseSelectionResult emptyDb = _redisDatabaseSelector.FindEmptyLocalDatabase();
 
-			if (!string.IsNullOrEmpty(emptyDb.errorMessage)) {
-				_logger.WriteError(emptyDb.errorMessage);
+			if (!emptyDb.Success && !string.IsNullOrEmpty(emptyDb.ErrorMessage)) {
+				_logger.WriteError(emptyDb.ErrorMessage);
 			}
 
-			redisDb = options.RedisDb >= 0 ? options.RedisDb : emptyDb.dbNumber;
+			redisDb = options.RedisDb >= 0 ? options.RedisDb : emptyDb.DatabaseNumber;
 			redisConnectionString = $"host=localhost;db={redisDb};port=6379";
 			_logger.WriteInfo($"[Redis Configuration] - Using local Redis: database {redisDb}");
 		}
@@ -869,14 +831,15 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 			else {
 				// Auto-detect empty database
-				(int dbNumber, string errorMessage) = FindEmptyRedisDb(BindingsModule.k8sDns, csParam.RedisPort);
+				RedisDatabaseSelectionResult selection = _redisDatabaseSelector.FindEmptyDatabase(BindingsModule.k8sDns,
+					csParam.RedisPort);
 
-				if (dbNumber == -1) {
+				if (!selection.Success) {
 					// Error finding an empty database
-					return ExitWithErrorMessage(errorMessage);
+					return ExitWithErrorMessage(selection.ErrorMessage);
 				}
 
-				redisDb = dbNumber;
+				redisDb = selection.DatabaseNumber;
 				_logger.WriteInfo($"[Redis Configuration] - Auto-detected empty database: {redisDb}");
 			}
 
