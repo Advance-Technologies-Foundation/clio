@@ -963,5 +963,41 @@ public class FileSystemTests
 	}
 	
 	#endregion
+
+	#region NormalizeFilePathByPlatform
+
+	[Test]
+	[Description("Verifies absolute Unix-like paths keep the root separator after normalization.")]
+	public void NormalizeFilePathByPlatform_PreservesRoot_ForAbsolutePathWithRepeatedSeparators() {
+		// Arrange
+		const string input = "///usr//local///bin";
+		FileSystem sut = new(_mockFileSystem);
+		string expected = $"{Path.DirectorySeparatorChar}usr{Path.DirectorySeparatorChar}local{Path.DirectorySeparatorChar}bin";
+
+		// Act
+		string actual = sut.NormalizeFilePathByPlatform(input);
+
+		// Assert
+		Path.IsPathRooted(actual).Should().BeTrue("because absolute input paths must remain absolute after normalization");
+		actual.Should().Be(expected, "because repeated separators should be collapsed while preserving absolute root");
+	}
+
+	[Test]
+	[Description("Verifies relative mixed-separator paths are normalized without becoming rooted.")]
+	public void NormalizeFilePathByPlatform_NormalizesRelativePath_WithoutAddingRoot() {
+		// Arrange
+		const string input = "folder//sub\\inner///file.txt";
+		FileSystem sut = new(_mockFileSystem);
+		string expected = Path.Combine("folder", "sub", "inner", "file.txt");
+
+		// Act
+		string actual = sut.NormalizeFilePathByPlatform(input);
+
+		// Assert
+		Path.IsPathRooted(actual).Should().BeFalse("because relative input paths must stay relative");
+		actual.Should().Be(expected, "because all separator variants should be normalized to platform separators");
+	}
+
+	#endregion
 	
 }

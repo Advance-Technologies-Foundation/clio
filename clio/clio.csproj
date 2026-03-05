@@ -120,7 +120,6 @@
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"
 		                  ReferenceOutputAssembly="false" />
-		
 		<PackageReference Include="ConsoleTables" Version="2.7.0"/>
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
 		<PackageReference Include="ErrorOr" Version="2.1.0"/>

@@ -482,3 +482,10 @@ Decision: Added shared PostgresVersionPolicy helper usage in K8DatabaseAssertion
 Discovery: Existing local multi-server tests needed explicit capability checker setup because postgres floor checks now run on default local assertions; isolated test OutputPath/IntermediateOutputPath avoids active clio binary lock during test execution.
 Files: clio/Common/Database/PostgresVersionPolicy.cs, clio/Common/Kubernetes/K8DatabaseAssertion.cs, clio.tests/Common/Kubernetes/K8DatabaseAssertionTests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
 Impact: Assert now consistently blocks unsupported PostgreSQL versions (<16) across both local and k8 infrastructure checks, with synchronized CLI/docs behavior and targeted regression coverage.
+
+## 2026-03-05 22:32 – Add regression tests for Unix rooted path normalization
+Context: User asked whether commit 611529b4 (absolute Unix path root separator restore in FileSystem.NormalizeFilePathByPlatform) required tests.
+Decision: Added two focused unit tests to cover absolute repeated-separator path normalization and relative mixed-separator normalization behavior.
+Discovery: There was no existing direct test coverage for NormalizeFilePathByPlatform; running tests required isolated OutputPath/IntermediateOutputPath due a locked clio.exe in default bin folder.
+Files: clio.tests/Common/FileSystem.Tests.cs, .codex/workspace-diary.md
+Impact: Prevents regressions where rooted Unix-like paths lose leading separator after normalization and confirms relative paths stay relative.
