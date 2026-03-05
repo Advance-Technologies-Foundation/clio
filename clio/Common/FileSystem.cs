@@ -435,8 +435,15 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 			return filePath;
 		}
 
-		string[] filePathItem = filePath.Split(new[] { '\\', '/' }, StringSplitOptions.None);
-		return Path.Combine(filePathItem);
+		string[] filePathItem = filePath.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+		string result = Path.Combine(filePathItem);
+
+		// Path.Combine loses the root separator on Unix; restore it for absolute paths
+		if (Path.IsPathRooted(filePath) && !Path.IsPathRooted(result)) {
+			result = Path.DirectorySeparatorChar + result;
+		}
+
+		return result;
 	}
 
 	public void OverwriteExistsDirectory(string directoryPath) {
