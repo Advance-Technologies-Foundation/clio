@@ -15,16 +15,16 @@ namespace Clio.Utilities
 	public class PowerShellFactory : IPowerShellFactory
 	{
 
-		private bool _disposed = false;
+		private bool _disposed;
 		private string _userName;
 		private string _password;
 		private string _computerName;
 
 		public string ComputerName => _computerName;
 
-		private Runspace Runspace { get; set; }
+		private Runspace? Runspace { get; set; }
 
-		private SecureString SecureString { get; set; }
+		private SecureString? SecureString { get; set; }
 
 		private WSManConnectionInfo ConnectionInfo { get; set; }
 		
@@ -40,7 +40,7 @@ namespace Clio.Utilities
 
 		private void CreateConnectionInfo()
 		{
-			AuthenticationMechanism _authenticationMechanism = (_computerName == "localhost") ? AuthenticationMechanism.Default : AuthenticationMechanism.Kerberos;
+			AuthenticationMechanism authenticationMechanism = (_computerName == "localhost") ? AuthenticationMechanism.Default : AuthenticationMechanism.Kerberos;
 			if (string.IsNullOrEmpty(_userName) && string.IsNullOrEmpty(_password))
 			{
 				ConnectionInfo = new WSManConnectionInfo
@@ -61,7 +61,7 @@ namespace Clio.Utilities
 				{
 					Credential = creds,
 					ComputerName = _computerName,
-					AuthenticationMechanism = _authenticationMechanism
+					AuthenticationMechanism = authenticationMechanism
 				};
 			}
 		}
@@ -69,7 +69,7 @@ namespace Clio.Utilities
 		private void CreateRunspace()
 		{
 			Runspace = RunspaceFactory.CreateRunspace(ConnectionInfo);
-			Runspace.Open();
+			Runspace!.Open();
 			while (Runspace.RunspaceStateInfo.State != RunspaceState.Opened)
 			{
 			}
@@ -78,12 +78,12 @@ namespace Clio.Utilities
 		public PowerShell GetInstance()
 		{
 
-			if (Runspace.RunspaceStateInfo.State != RunspaceState.Opened)
+			if (Runspace is null || Runspace.RunspaceStateInfo.State != RunspaceState.Opened)
 			{
 				CreateRunspace();
 			}
 
-			var ps = PowerShell.Create();
+			PowerShell ps = PowerShell.Create();
 			ps.Runspace = Runspace;
 			return ps;
 		}
@@ -104,10 +104,10 @@ namespace Clio.Utilities
 
 			if (disposing)
 			{
-				SecureString.Dispose();
+				SecureString?.Dispose();
 				SecureString = null;
-				Runspace.Close();
-				Runspace.Dispose();
+				Runspace?.Close();
+				Runspace?.Dispose();
 				Runspace = null;
 			}
 			_disposed = true;

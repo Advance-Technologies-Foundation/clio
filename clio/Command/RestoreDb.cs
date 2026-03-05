@@ -167,7 +167,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 			string availableList = availableServers.Any() 
 				? string.Join(", ", availableServers) 
 				: "(none configured)";
-			_logger.WriteError($"Database server configuration '{options.DbServerName}' not found in appsettings.json. Available configurations: {availableList}");
+			_logger.WriteError($"Database server configuration '{options.DbServerName}' was not found or is disabled in appsettings.json. Available enabled configurations: {availableList}");
 			return 1;
 		}
 

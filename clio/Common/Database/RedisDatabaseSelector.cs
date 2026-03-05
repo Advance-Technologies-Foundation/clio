@@ -36,12 +36,30 @@ public interface IRedisDatabaseSelector
 	RedisDatabaseSelectionResult FindEmptyLocalDatabase();
 
 	/// <summary>
+	/// Finds an empty Redis database for local Redis instance using optional credentials.
+	/// </summary>
+	/// <param name="username">Redis ACL username.</param>
+	/// <param name="password">Redis password.</param>
+	/// <returns>Selection result with chosen db number or failure reason.</returns>
+	RedisDatabaseSelectionResult FindEmptyLocalDatabase(string username, string password);
+
+	/// <summary>
 	/// Finds an empty Redis database for specific host and port.
 	/// </summary>
 	/// <param name="hostname">Redis hostname.</param>
 	/// <param name="port">Redis port.</param>
 	/// <returns>Selection result with chosen db number or failure reason.</returns>
 	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port);
+
+	/// <summary>
+	/// Finds an empty Redis database for specific host and port using optional credentials.
+	/// </summary>
+	/// <param name="hostname">Redis hostname.</param>
+	/// <param name="port">Redis port.</param>
+	/// <param name="username">Redis ACL username.</param>
+	/// <param name="password">Redis password.</param>
+	/// <returns>Selection result with chosen db number or failure reason.</returns>
+	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password);
 }
 
 /// <summary>
@@ -52,11 +70,23 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 	/// <inheritdoc />
 	public RedisDatabaseSelectionResult FindEmptyLocalDatabase()
 	{
-		return FindEmptyDatabase("localhost", 6379);
+		return FindEmptyDatabase("localhost", 6379, null, null);
+	}
+
+	/// <inheritdoc />
+	public RedisDatabaseSelectionResult FindEmptyLocalDatabase(string username, string password)
+	{
+		return FindEmptyDatabase("localhost", 6379, username, password);
 	}
 
 	/// <inheritdoc />
 	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port)
+	{
+		return FindEmptyDatabase(hostname, port, null, null);
+	}
+
+	/// <inheritdoc />
+	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password)
 	{
 		try
 		{
@@ -66,6 +96,15 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 				AbortOnConnectFail = false
 			};
 			configurationOptions.EndPoints.Add(hostname, port);
+			if (!string.IsNullOrWhiteSpace(username))
+			{
+				configurationOptions.User = username;
+			}
+			if (!string.IsNullOrWhiteSpace(password))
+			{
+				configurationOptions.Password = password;
+			}
+			
 
 			ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
 			IServer server = redis.GetServer(hostname, port);

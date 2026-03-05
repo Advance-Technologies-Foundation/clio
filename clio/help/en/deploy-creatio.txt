@@ -86,6 +86,16 @@ OPTIONS
         - Use this when auto-detection fails or you need a specific database
         - Kubernetes mode: --redis-db 5
         - Local mode: --redis-db 2
+
+    --redis-server-name NAME
+        Name of Redis server configuration from appsettings.json for local deployment
+        Applicable only with --db-server-name local database mode
+        Optional. Resolution order for local deployment:
+        1) --redis-server-name (explicit)
+        2) defaultRedis from appsettings.json
+        3) single enabled redis server from appsettings.json
+        4) localhost:6379 fallback when redis section is absent
+        If multiple enabled redis servers are configured and no default is set, deployment fails
         
         Error Handling:
         - If all databases are occupied, provides detailed error with suggestions
@@ -106,6 +116,24 @@ OPTIONS
         Automatically drop existing database if present without prompting
         Only applicable when using --db-server-name for local database restore
         Default: false (will prompt user)
+
+    --disable-reset-password
+        Disable automatic password-reset script after installation
+        Hidden option, Default: true
+        
+        Corporate-gated behavior (script executes only when ALL conditions are met):
+        - Option value is true
+        - Package filename version is parsed and >= 8.3.3
+        - Corporate eligibility is detected:
+          - Windows user belongs to tscrm domain (whoami output starts with tscrm\)
+          - OR tscrm.com is reachable via ping
+        
+        Notes:
+        - If version cannot be parsed from filename, script is skipped silently
+        - If option is false, script is never executed
+        - If corporate eligibility is not detected, script is never executed
+        - Script targets both local and Kubernetes database deployments
+        - Script failures are logged as warnings and deployment continues
 
     --silent
         Run in silent mode without interactive prompts
@@ -137,7 +165,7 @@ EXAMPLES
            --app-path "/opt/creatio-prod" --ZipFile "/home/admin/creatio-app.zip"
 
     7. Deploy without auto-launching browser:
-       clio deploy-creatio -e "BackgroundApp" --auto-run=false \\
+       clio deploy-creatio -e "BackgroundApp" --auto-run false \\
            --ZipFile "C:\creatio-app.zip"
 
     8. Silent deployment with all parameters:
@@ -188,6 +216,15 @@ BEHAVIOR
     - WITH --db-server-name: Restores database to local server from appsettings.json
     - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
     - Connection strings are automatically updated to point to target database
+
+    Password Reset Script (Creatio >= 8.3.3):
+    - Applies SQL script that sets Supervisor ForceChangePassword to false
+    - Runs only when --disable-reset-password is true (default)
+    - Runs only for corporate-eligible machines:
+      - tscrm domain member (Windows)
+      - OR tscrm.com reachable via ping
+    - Works for both Kubernetes and local database modes
+    - Script errors do not block deployment (warning only)
 
     Windows (Default - IIS):
     - Creates IIS Application Pool
@@ -264,6 +301,7 @@ DATABASE RESTORATION
         "Port": 1433,
         "Username": "Supervisor",
         "Password": "Supervisor",
+        "Enabled": true,
         "Description": "Local MSSQL Server for development"
       },
       "my-local-postgres": {
@@ -272,8 +310,20 @@ DATABASE RESTORATION
         "Port": 5433,
         "Username": "postgres",
         "Password": "PASSWORD",
+        "Enabled": true,
         "Description": "Local PostgreSQL Server for development",
         "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin"
+      }
+    },
+    "defaultRedis": "local-redis",
+    "redis": {
+      "local-redis": {
+        "Hostname": "localhost",
+        "Port": 6379,
+        "Username": "default",
+        "Password": "PASSWORD",
+        "Enabled": true,
+        "Description": "Local Redis with ACL authentication"
       }
     }
     
@@ -281,6 +331,7 @@ DATABASE RESTORATION
     - dbType (required): Database type - 'mssql' or 'postgres'
     - hostname (required): Database server hostname or IP address
     - port (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL)
+    - enabled (optional): When false, this server is ignored by clio commands (default: true)
     - username (required): Database username
     - password (required): Database password
     - pgToolsPath (optional, PostgreSQL only): Path to PostgreSQL client tools 
@@ -303,7 +354,7 @@ DATABASE RESTORATION
 TROUBLESHOOTING
 
     Q: "Could not detect kubectl config, and db server name (db-server-name) is not specified"
-    A: This error occurs when Kubernetes is not available and no local database server is configured.
+    A: This error occurs when Kubernetes is not available and no enabled local database server is configured.
        Solutions:
        1. Install and configure kubectl for Kubernetes deployment
        2. Add --db-server-name parameter with a configured local database server

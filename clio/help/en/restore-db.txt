@@ -38,6 +38,7 @@ CONFIGURATION
           "port": 1433,
           "username": "sa",
           "password": "YourPassword",
+          "enabled": true,
           "description": "Local MSSQL Server for development"
         },
         "my-local-postgres": {
@@ -46,6 +47,7 @@ CONFIGURATION
           "port": 5432,
           "username": "postgres",
           "password": "postgres",
+          "enabled": true,
           "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
           "description": "Local PostgreSQL Server for development"
         }
@@ -56,6 +58,7 @@ CONFIGURATION
     - dbType (required): Database type - 'mssql' or 'postgres'
     - hostname (required): Database server hostname or IP address
     - port (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL)
+    - enabled (optional): When false, this server is ignored by clio commands (default: true)
     - username (required): Database username
     - password (required): Database password
     - description (optional): Description for documentation
@@ -75,7 +78,7 @@ OPTIONS
     
     --dbServerName        Name of database server configuration from appsettings.json
                           (optional)
-                          - If specified: restores to configured local server
+                          - If specified: restores to configured enabled local server
                           - If not specified: uses Kubernetes/environment behavior
 
 EXAMPLE
@@ -125,7 +128,7 @@ ERROR HANDLING
     The command provides detailed error messages for common issues:
     
     Configuration not found:
-        Lists available configurations in appsettings.json
+        Lists available enabled configurations in appsettings.json
     
     Connection failures:
         Suggests checking server status, credentials, and firewall settings

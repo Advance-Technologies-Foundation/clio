@@ -18,6 +18,11 @@ clio assert <scope> [options]
 |----------|------------------------------------------------|---------|
 | `scope`  | Type of resources to validate                  | k8, local, fs  |
 
+### Common Options
+| Argument | Short | Default | Description | Example |
+|----------|-------|---------|-------------|---------|
+| `--all`  | -     | false   | Run full validation checks applicable to selected scope. Cannot be combined with explicit scope assertion options. | `clio assert k8 --all` |
+
 ### Kubernetes Options
 
 #### Context Validation
@@ -34,7 +39,7 @@ clio assert <scope> [options]
 | `--db`         | -     | -       | Database engines (comma-separated)               | `--db postgres,mssql`      |
 | `--db-min`     | -     | 1       | Minimum number of engines required               | `--db-min 2`               |
 | `--db-connect` | -     | false   | Validate TCP connectivity                        | `--db-connect`             |
-| `--db-check`   | -     | -       | Capability check (version)                       | `--db-check version`       |
+| `--db-check`   | -     | -       | Capability check (version). PostgreSQL major version 16+ is always enforced in `k8`/`local`; `--db-check version` also returns version in output. | `--db-check version`       |
 
 #### Redis Assertions
 | Argument          | Short | Default | Description                        | Example              |
@@ -43,13 +48,17 @@ clio assert <scope> [options]
 | `--redis-connect` | -     | false   | Validate TCP connectivity          | `--redis-connect`    |
 | `--redis-ping`    | -     | false   | Execute Redis PING command         | `--redis-ping`       |
 
+Strict Redis auth policy:
+- When local Redis `Username` or `Password` is configured in appsettings, assertion also verifies that anonymous access is blocked.
+- If anonymous access still works, assertion fails with `RedisConnect`.
+
 ### Local Infrastructure Options
 
 #### Database Assertions
 | Argument            | Short | Default | Description                                      | Example                               |
 |---------------------|-------|---------|--------------------------------------------------|---------------------------------------|
 | `--db`              | -     | -       | Database engines (comma-separated). Required for local DB checks | `--db postgres`           |
-| `--db-server-name`  | -     | -       | Local DB server configuration key from appsettings.json | `--db-server-name my-local-postgres` |
+| `--db-server-name`  | -     | -       | Local DB server configuration key from appsettings.json. Optional; when omitted, all enabled local DB servers are considered. | `--db-server-name my-local-postgres` |
 | `--db-min`          | -     | 1       | Minimum number of engines required               | `--db-min 1`                          |
 | `--db-connect`      | -     | false   | Validate connectivity for configured local server | `--db-connect`                       |
 | `--db-check`        | -     | -       | Capability check (version)                       | `--db-check version`                 |
@@ -57,7 +66,8 @@ clio assert <scope> [options]
 #### Redis Assertions
 | Argument          | Short | Default | Description                        | Example              |
 |-------------------|-------|---------|------------------------------------|----------------------|
-| `--redis`         | -     | false   | Assert local Redis presence on localhost:6379 | `--redis` |
+| `--redis`         | -     | false   | Assert local Redis presence. Resolution order: `--redis-server-name` -> `defaultRedis` -> single enabled redis server -> `localhost:6379` fallback when `redis` section is absent | `--redis` |
+| `--redis-server-name` | - | - | Local Redis server configuration key from appsettings.json (requires `--redis`) | `--redis-server-name redis-dev` |
 | `--redis-connect` | -     | false   | Validate TCP connectivity          | `--redis-connect`    |
 | `--redis-ping`    | -     | false   | Execute Redis PING command         | `--redis-ping`       |
 
@@ -68,6 +78,8 @@ clio assert <scope> [options]
 | `--path`  | -     | -       | Filesystem path to validate              | `--path "C:\inetpub\wwwroot\app"`        |
 | `--user`  | -     | -       | Windows user identity                    | `--user "IIS APPPOOL\MyApp"`             |
 | `--perm`  | -     | -       | Permission level (read/write/modify/full)| `--perm full`                            |
+
+For `clio assert fs --all` on Windows, ACL validation uses `BUILTIN\IIS_IUSRS` identity (fallback: `IIS_IUSRS`) with `full-control` permission.
 
 ## Examples
 
@@ -143,6 +155,11 @@ Check local Redis:
 clio assert local --redis
 ```
 
+Check local Redis with explicit server:
+```bash
+clio assert local --redis --redis-server-name redis-dev
+```
+
 Check local Redis with connectivity and ping:
 ```bash
 clio assert local --redis --redis-connect --redis-ping
@@ -150,20 +167,27 @@ clio assert local --redis --redis-connect --redis-ping
 
 Check local database:
 ```bash
-clio assert local --db postgres --db-server-name my-local-postgres
+clio assert local --db postgres
 ```
 
 Check local database connectivity and version:
 ```bash
-clio assert local --db postgres --db-server-name my-local-postgres --db-connect --db-check version
+clio assert local --db postgres,mssql --db-min 2 --db-connect --db-check version
 ```
 
 Combined local checks:
 ```bash
-clio assert local --db postgres --db-server-name my-local-postgres --db-connect --redis --redis-ping
+clio assert local --db postgres --db-connect --redis --redis-ping
 ```
 
-### Filesystem Validation (Windows, Not Yet Implemented)
+Scope full validation:
+```bash
+clio assert local --all
+clio assert k8 --all
+clio assert fs --all
+```
+
+### Filesystem Validation
 
 ```bash
 clio assert fs --path "C:\inetpub\wwwroot\app\data"
@@ -204,7 +228,8 @@ clio assert fs --path "C:\data" --user "IIS APPPOOL\MyApp" --perm full
     "redis": {
       "name": "clio-redis",
       "host": "localhost",
-      "port": 6379
+      "port": 6379,
+      "firstAvailableDb": 3
     }
   }
 }
@@ -260,22 +285,27 @@ The assert command uses label-based discovery matching clio's k8Commands impleme
 - Tests TCP connection to database
 - Uses dynamically resolved host and port
 
-#### Phase 3: Database Capability (Optional)
+#### Phase 3: Database Capability and PostgreSQL Version Policy
 - Retrieves credentials from secrets
 - Executes version query:
   - Postgres: `SELECT version()`
   - MSSQL: `SERVERPROPERTY('ProductVersion')`
+- Enforces PostgreSQL major version 16+ for discovered postgres servers in both `k8` and `local` scopes (even when `--db-check version` is not specified)
 
 #### Phase 4-6: Redis Assertions
-Similar phased approach for Redis validation
+- Redis endpoint discovery (service/pod readiness)
+- First available Redis DB discovery (`firstAvailableDb`)
+- Optional connectivity and PING validation
 
 #### Local Scope Phases
-- Local DB discovery from `--db-server-name` configuration and requested `--db` engines
+- Local DB discovery from requested `--db` engines across enabled local DB servers (or a specific one via `--db-server-name`)
 - Optional local DB connectivity check (`--db-connect`)
-- Optional local DB version check (`--db-check version`)
-- Local Redis discovery via empty-db selection on `localhost:6379`
+- Automatic PostgreSQL version floor check (major version 16+) for discovered postgres servers
+- Optional local DB version output check (`--db-check version`)
+- Local Redis endpoint and empty-db discovery using appsettings config (`redis`/`defaultRedis`) or `localhost:6379` fallback when redis config is absent
 - Optional local Redis TCP check (`--redis-connect`)
 - Optional local Redis PING check (`--redis-ping`)
+- Strict auth enforcement validation when credentials are configured
 
 ### Detection Rules
 
@@ -402,9 +432,9 @@ kubectl get secret clio-postgres-secret -n clio-infrastructure -o jsonpath='{.da
 
 ### Local Scope Configuration Issues
 
-**Problem**: "Database server configuration 'X' not found in appsettings.json"
+**Problem**: "Database server configuration 'X' was not found or is disabled in appsettings.json"
 
-**Solution**: Add or fix the `db` configuration key in appsettings and retry:
+**Solution**: Add or fix the `db` configuration key in appsettings, and ensure `"enabled": true` for the selected server:
 ```bash
 clio assert local --db postgres --db-server-name my-local-postgres
 ```
@@ -413,7 +443,7 @@ clio assert local --db postgres --db-server-name my-local-postgres
 
 **Problem**: Redis discovery or ping fails in local scope
 
-**Solution**: Ensure local Redis is running on localhost:6379:
+**Solution**: Ensure configured local Redis server is reachable (or localhost:6379 when redis config is absent):
 ```bash
 redis-cli -h localhost -p 6379 ping
 ```
@@ -433,12 +463,13 @@ redis-cli -h localhost -p 6379 ping
 - Validates the same resources clio needs for database restore, connection strings, etc.
 
 ### Limitations
-- Filesystem assertions (Windows) not yet implemented
 - No retry logic (fails fast)
 - Database version check requires valid credentials in secrets
+- PostgreSQL major version 16+ is required for discovered postgres servers in both `k8` and `local` scopes
 - Assumes standard Kubernetes configurations
-- Local Redis assertions use `localhost:6379` endpoint
-- Local DB assertions require explicit `--db-server-name`
+- Local Redis assertions use appsettings `redis`/`defaultRedis` when configured, with `localhost:6379` fallback when redis section is absent
+- `--all` cannot be combined with explicit scope assertion options
+- Local DB assertions ignore servers with `"enabled": false`
 
 ### Security
 - Credentials never exposed in output

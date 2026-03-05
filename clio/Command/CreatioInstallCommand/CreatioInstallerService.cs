@@ -79,6 +79,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	#region Fields: Private
 
 	private readonly IBackupFileDetector _backupFileDetector;
+	private static readonly Version ResetPasswordChangeVersion = new(8, 3, 3);
+	private readonly ICorporateEnvironmentDetector _corporateEnvironmentDetector;
+	private readonly ICreatioPackageVersionParser _creatioPackageVersionParser;
 	private readonly IDbClientFactory _dbClientFactory;
 	private readonly IDbConnectionTester _dbConnectionTester;
 	private readonly DeploymentStrategyFactory _deploymentStrategyFactory;
@@ -92,9 +95,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly ILogger _logger;
 	private readonly IMediator _mediator;
 	private readonly MsFileSystem _msFileSystem;
+	private readonly ILocalRedisServerResolver _localRedisServerResolver;
 	private readonly IPackageArchiver _packageArchiver;
 	private readonly IPostgresToolsPathDetector _postgresToolsPathDetector;
 	private readonly IProcessExecutor _processExecutor;
+	private readonly IPasswordResetScriptExecutor _passwordResetScriptExecutor;
 	private readonly IRedisDatabaseSelector _redisDatabaseSelector;
 
 	private readonly string _productFolder;
@@ -124,6 +129,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="backupFileDetector">Service for detecting a backup file type.</param>
 	/// <param name="postgresToolsPathDetector">Detector for PostgreSQL tools installation paths.</param>
 	/// <param name="processExecutor">Process execution service used for external tool invocation.</param>
+	/// <param name="corporateEnvironmentDetector">Detector for corporate network/domain availability.</param>
+	/// <param name="creatioPackageVersionParser">Parser for version extraction from package filename.</param>
+	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, MsFileSystem msFileSystem, ILogger logger,
@@ -131,7 +139,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		HealthCheckCommand healthCheckCommand, IDbClientFactory dbClientFactory,
 		IDbConnectionTester dbConnectionTester, IBackupFileDetector backupFileDetector,
 		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor,
-		IRedisDatabaseSelector redisDatabaseSelector) {
+		IRedisDatabaseSelector redisDatabaseSelector,
+		ILocalRedisServerResolver localRedisServerResolver,
+		ICorporateEnvironmentDetector corporateEnvironmentDetector,
+		ICreatioPackageVersionParser creatioPackageVersionParser,
+		IPasswordResetScriptExecutor passwordResetScriptExecutor) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -151,6 +163,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_postgresToolsPathDetector = postgresToolsPathDetector;
 		_processExecutor = processExecutor;
 		_redisDatabaseSelector = redisDatabaseSelector;
+		_localRedisServerResolver = localRedisServerResolver;
+		_corporateEnvironmentDetector = corporateEnvironmentDetector;
+		_creatioPackageVersionParser = creatioPackageVersionParser;
+		_passwordResetScriptExecutor = passwordResetScriptExecutor;
 	}
 
 	/// <summary>
@@ -244,33 +260,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		CopyFileWithProgress(src, dest, progressReporter);
 		return dest;
 	}
-
-	// private async Task<int> CreateIISSite(string unzippedDirectoryPath, PfInstallerOptions options) {
-	// 	_logger.WriteInfo("[Create IIS Site] - Started");
-	// 	CreateIISSiteRequest request = new() {
-	// 		Arguments = new Dictionary<string, string> {
-	// 			{ "siteName", options.SiteName },
-	// 			{ "port", options.SitePort.ToString() },
-	// 			{ "sourceDirectory", unzippedDirectoryPath },
-	// 			{ "destinationDirectory", _iisRootFolder }, {
-	// 				"isNetFramework",
-	// 				(InstallerHelper.DetectFrameworkByPath(unzippedDirectoryPath) ==
-	// 				 InstallerHelper.FrameworkType.NetFramework)
-	// 				.ToString()
-	// 			}
-	// 		}
-	// 	};
-	// 	return (await _mediator.Send(request)).Value switch {
-	// 			   HandlerError error => ExitWithErrorMessage(error.ErrorDescription),
-	// 			   CreateIISSiteResponse {
-	// 				   Status: BaseHandlerResponse.CompletionStatus.Success
-	// 			   } result => ExitWithOkMessage(
-	// 				   result.Description),
-	// 			   CreateIISSiteResponse { Status: BaseHandlerResponse.CompletionStatus.Failure } result =>
-	// 				   ExitWithErrorMessage(result.Description),
-	// 			   var _ => ExitWithErrorMessage("Unknown error occured")
-	// 		   };
-	// }
 
 	private void CreatePgTemplate(string unzippedDirectoryPath, string tmpDbName, string sourceFileName) {
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
@@ -478,6 +467,25 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private int ExitWithOkMessage(string message) {
 		_logger.WriteInfo(message);
 		return 0;
+	}
+
+	private static string BuildRedisConnectionString(string host, int port, int databaseNumber, string username, string password)
+	{
+		List<string> parts = new()
+		{
+			$"host={host}",
+			$"db={databaseNumber}",
+			$"port={port}"
+		};
+		if (!string.IsNullOrWhiteSpace(username))
+		{
+			parts.Add($"user={username}");
+		}
+		if (!string.IsNullOrWhiteSpace(password))
+		{
+			parts.Add($"password={password}");
+		}
+		return string.Join(";", parts);
 	}
 
 	private Version GetLatestProductVersion(string latestBranchPath, Version latestVersion, string product,
@@ -699,7 +707,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				? string.Join(", ", availableServers)
 				: "(none configured)";
 			_logger.WriteError(
-				$"Database server configuration '{dbServerName}' not found in appsettings.json. Available configurations: {availableList}");
+				$"Database server configuration '{dbServerName}' was not found or is disabled in appsettings.json. Available enabled configurations: {availableList}");
 			return 1;
 		}
 
@@ -766,6 +774,84 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			   };
 	}
 
+	private void TryDisableForcedPasswordReset(PfInstallerOptions options, InstallerHelper.DatabaseType dbType) {
+		if (!options.DisableResetPassword) {
+			_logger.WriteInfo("Disable reset password - skipped because option value is false");
+			return;
+		}
+
+		if (!_creatioPackageVersionParser.TryParseVersion(options.ZipFile, out Version packageVersion)) {
+			return;
+		}
+
+		if (packageVersion < ResetPasswordChangeVersion) {
+			return;
+		}
+
+		if (!_corporateEnvironmentDetector.IsCorporateEnvironment()) {
+			_logger.WriteInfo(
+				"Disable reset password - skipped because current machine has no corporate network/domain access");
+			return;
+		}
+
+		if (!TryCreatePasswordResetRequest(options, dbType, out PasswordResetScriptExecutionRequest request)) {
+			return;
+		}
+
+		PasswordResetScriptExecutionResult result = _passwordResetScriptExecutor.TryExecute(request);
+		if (!result.Success) {
+			_logger.WriteWarning(
+				$"Disable reset password - script execution failed, continuing deployment. Details: {result.ErrorMessage}");
+			return;
+		}
+
+		_logger.WriteInfo("Disable reset password - script executed successfully");
+	}
+
+	private bool TryCreatePasswordResetRequest(PfInstallerOptions options, InstallerHelper.DatabaseType dbType,
+		out PasswordResetScriptExecutionRequest request) {
+		request = null;
+		if (!string.IsNullOrEmpty(options.DbServerName)) {
+			LocalDbServerConfiguration dbConfig = _settingsRepository.GetLocalDbServer(options.DbServerName);
+			if (dbConfig == null) {
+				_logger.WriteWarning(
+					$"Disable reset password - local database configuration '{options.DbServerName}' was not found or is disabled. Script execution skipped");
+				return false;
+			}
+
+			InstallerHelper.DatabaseType localDbType = dbConfig.DbType?.ToLowerInvariant() switch {
+				"mssql" => InstallerHelper.DatabaseType.MsSql,
+				"postgres" or "postgresql" => InstallerHelper.DatabaseType.Postgres,
+				var _ => dbType
+			};
+			request = new PasswordResetScriptExecutionRequest {
+				DatabaseType = localDbType,
+				Host = dbConfig.Hostname,
+				Port = dbConfig.Port,
+				DatabaseName = options.SiteName,
+				Username = dbConfig.Username,
+				Password = dbConfig.Password,
+				UseWindowsAuth = dbConfig.UseWindowsAuth
+			};
+			return true;
+		}
+
+		k8Commands.ConnectionStringParams csParam = dbType switch {
+			InstallerHelper.DatabaseType.Postgres => _k8.GetPostgresConnectionString(),
+			InstallerHelper.DatabaseType.MsSql => _k8.GetMssqlConnectionString(),
+			var _ => throw new NotSupportedException($"Database type '{dbType}' is not supported")
+		};
+		request = new PasswordResetScriptExecutionRequest {
+			DatabaseType = dbType,
+			Host = BindingsModule.k8sDns,
+			Port = csParam.DbPort,
+			DatabaseName = options.SiteName,
+			Username = csParam.DbUsername,
+			Password = csParam.DbPassword
+		};
+		return true;
+	}
+
 	private IDeploymentStrategy SelectDeploymentStrategy(PfInstallerOptions options) {
 		IDeploymentStrategy strategy = _deploymentStrategyFactory.SelectStrategy(
 			options.DeploymentMethod ?? "auto",
@@ -776,20 +862,20 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	private async Task<int> UpdateConnectionString(string unzippedDirectoryPath, PfInstallerOptions options,
 		InstallerHelper.DatabaseType dbType) {
-		_logger.WriteInfo("[CheckUpdate connection string] - Started");
+		_logger.WriteInfo("CheckUpdate connection string - Started");
 		string dbConnectionString;
 		string redisConnectionString;
 		int redisDb;
 
 		// Check if using local database server
 		if (!string.IsNullOrEmpty(options.DbServerName)) {
-			_logger.WriteInfo($"[Connection String Mode] - Local database server: {options.DbServerName}");
+			_logger.WriteInfo($"Connection String Mode - Local database server: {options.DbServerName}");
 
 			// Get local database configuration
 			LocalDbServerConfiguration dbConfig = _settingsRepository.GetLocalDbServer(options.DbServerName);
 			if (dbConfig == null) {
 				return ExitWithErrorMessage(
-					$"Database server configuration '{options.DbServerName}' not found in appsettings.json");
+					$"Database server configuration '{options.DbServerName}' was not found or is disabled in appsettings.json");
 			}
 
 			// Build connection string based on a database type
@@ -801,19 +887,43 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 										 $"Database type '{dbConfig.DbType}' is not supported")
 								 };
 
-			// For local deployment, use localhost Redis or skip if not available
-			RedisDatabaseSelectionResult emptyDb = _redisDatabaseSelector.FindEmptyLocalDatabase();
-
-			if (!emptyDb.Success && !string.IsNullOrEmpty(emptyDb.ErrorMessage)) {
-				_logger.WriteError(emptyDb.ErrorMessage);
+			if (!_localRedisServerResolver.TryResolve(options.RedisServerName, out ResolvedLocalRedisServer redisServer,
+					out string redisResolveError))
+			{
+				return ExitWithErrorMessage(redisResolveError);
 			}
 
-			redisDb = options.RedisDb >= 0 ? options.RedisDb : emptyDb.DatabaseNumber;
-			redisConnectionString = $"host=localhost;db={redisDb};port=6379";
-			_logger.WriteInfo($"[Redis Configuration] - Using local Redis: database {redisDb}");
+			if (options.RedisDb >= 0)
+			{
+				redisDb = options.RedisDb;
+				_logger.WriteInfo($"Redis Configuration - Using user-specified database: {redisDb}");
+			}
+			else
+			{
+				RedisDatabaseSelectionResult emptyDb = _redisDatabaseSelector.FindEmptyDatabase(
+					redisServer.Host,
+					redisServer.Port,
+					redisServer.Username,
+					redisServer.Password);
+				if (!emptyDb.Success)
+				{
+					return ExitWithErrorMessage(emptyDb.ErrorMessage);
+				}
+
+				redisDb = emptyDb.DatabaseNumber;
+				_logger.WriteInfo($"Redis Configuration - Auto-detected empty database: {redisDb}");
+			}
+
+			redisConnectionString = BuildRedisConnectionString(
+				redisServer.Host,
+				redisServer.Port,
+				redisDb,
+				redisServer.Username,
+				redisServer.Password);
+			_logger.WriteInfo($"Redis Configuration - Using local Redis server '{redisServer.Name}'");
 		}
 		else {
-			_logger.WriteInfo("[Connection String Mode] - Kubernetes cluster");
+			_logger.WriteInfo("Connection String Mode - Kubernetes cluster");
 			k8Commands.ConnectionStringParams csParam = dbType switch {
 															InstallerHelper.DatabaseType.Postgres => _k8
 																.GetPostgresConnectionString(),
@@ -827,7 +937,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			if (options.RedisDb >= 0) {
 				// User specified a Redis database
 				redisDb = options.RedisDb;
-				_logger.WriteInfo($"[Redis Configuration] - Using user-specified database: {redisDb}");
+				_logger.WriteInfo($"Redis Configuration - Using user-specified database: {redisDb}");
 			}
 			else {
 				// Auto-detect empty database
@@ -840,7 +950,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				}
 
 				redisDb = selection.DatabaseNumber;
-				_logger.WriteInfo($"[Redis Configuration] - Auto-detected empty database: {redisDb}");
+				_logger.WriteInfo($"Redis Configuration - Auto-detected empty database: {redisDb}");
 			}
 
 			// Build Kubernetes connection strings
@@ -852,12 +962,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 									 var _ => throw new NotSupportedException(
 										 $"Database type '{dbType}' is not supported")
 								 };
-			redisConnectionString = $"host={BindingsModule.k8sDns};db={redisDb};port={csParam.RedisPort}";
+			redisConnectionString = BuildRedisConnectionString(BindingsModule.k8sDns, csParam.RedisPort, redisDb, null, null);
 		}
 
 		// Determine the folder path based on deployment strategy
 		string folderPath = DetermineFolderPath(options);
-		_logger.WriteInfo($"[Connection string] - Target folder path: {folderPath}");
+		_logger.WriteInfo($"Connection string - Target folder path: {folderPath}");
 
 		ConfigureConnectionStringRequest request = new() {
 			Arguments = new Dictionary<string, string> {
@@ -1220,6 +1330,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 							  };
 		}
 
+		if (dbRestoreResult == 0) {
+			TryDisableForcedPasswordReset(options, dbType);
+		}
+
 		int deploySiteResult = dbRestoreResult switch {
 								   0 => DeployApplication(deploymentFolder, options),
 								   var _ => ExitWithErrorMessage("Database restore failed")
@@ -1255,7 +1369,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 		}
 
-		if (options.AutoRun) {
+		if ((bool)options.AutoRun) {
 			_logger.WriteInfo("[Auto-launching application]");
 			StartWebBrowser(options, isIisDeployment);
 		}

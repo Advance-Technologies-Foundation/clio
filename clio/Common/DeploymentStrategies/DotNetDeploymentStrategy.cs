@@ -96,7 +96,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			}
 
 			// Set up service management if on Linux or macOS
-			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && options.AutoRun)
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && (bool)options.AutoRun)
 			{
 				await SetupServiceManagement(appDirectoryPath, options);
 				_logger.WriteInfo("Service management configured");

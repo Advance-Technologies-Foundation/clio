@@ -107,6 +107,57 @@ public class K8DatabaseAssertion{
 		return engines;
 	}
 
+	private static AssertionResult BuildPostgresVersionValidationFailure(
+		DiscoveredDatabase discoveredDb,
+		CapabilityCheckResult capabilityResult) {
+		if (!capabilityResult.Success) {
+			AssertionResult failedCapability = AssertionResult.Failure(
+				AssertionScope.K8,
+				AssertionPhase.DbCheck,
+				$"PostgreSQL version check failed for {discoveredDb.Name}: {capabilityResult.Error}"
+			);
+			failedCapability.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+			failedCapability.Details["name"] = discoveredDb.Name;
+			failedCapability.Details["host"] = discoveredDb.Host;
+			failedCapability.Details["port"] = discoveredDb.Port;
+			failedCapability.Details["requiredMajorVersion"] = PostgresVersionPolicy.MinimumSupportedMajorVersion;
+			return failedCapability;
+		}
+
+		if (!PostgresVersionPolicy.TryParseMajorVersion(capabilityResult.Version, out int majorVersion)) {
+			AssertionResult parseFailure = AssertionResult.Failure(
+				AssertionScope.K8,
+				AssertionPhase.DbCheck,
+				$"Could not parse PostgreSQL major version from '{capabilityResult.Version}' for {discoveredDb.Name}"
+			);
+			parseFailure.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+			parseFailure.Details["name"] = discoveredDb.Name;
+			parseFailure.Details["host"] = discoveredDb.Host;
+			parseFailure.Details["port"] = discoveredDb.Port;
+			parseFailure.Details["actualVersion"] = capabilityResult.Version;
+			parseFailure.Details["requiredMajorVersion"] = PostgresVersionPolicy.MinimumSupportedMajorVersion;
+			return parseFailure;
+		}
+
+		if (PostgresVersionPolicy.IsSupportedMajorVersion(majorVersion)) {
+			return null;
+		}
+
+		AssertionResult floorFailure = AssertionResult.Failure(
+			AssertionScope.K8,
+			AssertionPhase.DbCheck,
+			PostgresVersionPolicy.BuildUnsupportedVersionError(capabilityResult.Version)
+		);
+		floorFailure.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+		floorFailure.Details["name"] = discoveredDb.Name;
+		floorFailure.Details["host"] = discoveredDb.Host;
+		floorFailure.Details["port"] = discoveredDb.Port;
+		floorFailure.Details["actualVersion"] = capabilityResult.Version;
+		floorFailure.Details["actualMajorVersion"] = majorVersion;
+		floorFailure.Details["requiredMajorVersion"] = PostgresVersionPolicy.MinimumSupportedMajorVersion;
+		return floorFailure;
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -169,27 +220,38 @@ public class K8DatabaseAssertion{
 			}
 		}
 
-		// Check capability if requested
-		if (!string.IsNullOrEmpty(checkCapability)) {
-			if (checkCapability.Equals("version", StringComparison.InvariantCultureIgnoreCase)) {
-				foreach (DiscoveredDatabase db in databases) {
-					// Get credentials from Kubernetes secrets
-					string connectionString = await BuildConnectionStringAsync(db, namespaceParam);
-					CapabilityCheckResult capabilityResult
-						= await _capabilityChecker.CheckVersionAsync(db, connectionString);
-					if (!capabilityResult.Success) {
-						AssertionResult result = AssertionResult.Failure(
-							AssertionScope.K8,
-							AssertionPhase.DbCheck,
-							$"Version check failed for {db.Engine}: {capabilityResult.Error}"
-						);
-						result.Details["engine"] = db.Engine.ToString().ToLower();
-						return result;
-					}
+		bool isVersionCheckRequested =
+			!string.IsNullOrWhiteSpace(checkCapability) &&
+			checkCapability.Equals("version", StringComparison.InvariantCultureIgnoreCase);
+		if (isVersionCheckRequested) {
+			foreach (DiscoveredDatabase db in databases) {
+				// Get credentials from Kubernetes secrets
+				string connectionString = await BuildConnectionStringAsync(db, namespaceParam);
+				CapabilityCheckResult capabilityResult
+					= await _capabilityChecker.CheckVersionAsync(db, connectionString);
+				if (!capabilityResult.Success) {
+					AssertionResult result = AssertionResult.Failure(
+						AssertionScope.K8,
+						AssertionPhase.DbCheck,
+						$"Version check failed for {db.Engine}: {capabilityResult.Error}"
+					);
+					result.Details["engine"] = db.Engine.ToString().ToLower();
+					return result;
+				}
 
-					// Add version to resolved data
-					Dictionary<string, object> dbInfo = resolvedDbs.First(d => d["name"].ToString() == db.Name);
-					dbInfo["version"] = capabilityResult.Version;
+				// Add version to resolved data
+				Dictionary<string, object> dbInfo = resolvedDbs.First(d => d["name"].ToString() == db.Name);
+				dbInfo["version"] = capabilityResult.Version;
+			}
+		} else {
+			// PostgreSQL version floor is always enforced for k8 scope assertions.
+			foreach (DiscoveredDatabase db in databases.Where(d => d.Engine == DatabaseEngine.Postgres)) {
+				string connectionString = await BuildConnectionStringAsync(db, namespaceParam);
+				CapabilityCheckResult capabilityResult
+					= await _capabilityChecker.CheckVersionAsync(db, connectionString);
+				AssertionResult postgresVersionFailure = BuildPostgresVersionValidationFailure(db, capabilityResult);
+				if (postgresVersionFailure != null) {
+					return postgresVersionFailure;
 				}
 			}
 		}

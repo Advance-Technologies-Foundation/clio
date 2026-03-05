@@ -21,7 +21,7 @@ public interface ILocalDatabaseAssertion
 	/// <param name="minDatabases">Minimum number of databases required.</param>
 	/// <param name="checkConnect">Whether connectivity check should be executed.</param>
 	/// <param name="checkCapability">Capability check name.</param>
-	/// <param name="dbServerName">Configured local database server name.</param>
+	/// <param name="dbServerName">Configured local database server name. When null or empty, all configured local DB servers are considered.</param>
 	/// <returns>Structured assertion result.</returns>
 	Task<AssertionResult> ExecuteAsync(
 		string databaseEnginesStr,
@@ -72,41 +72,72 @@ public class LocalDatabaseAssertion : ILocalDatabaseAssertion
 				AssertionPhase.DbDiscovery,
 				"No valid database engines specified");
 		}
+		
+		List<string> availableServers = _settingsRepository.GetLocalDbServerNames().ToList();
+		List<string> selectedServerNames = string.IsNullOrWhiteSpace(dbServerName)
+			? availableServers
+			: new List<string> { dbServerName };
 
-		LocalDbServerConfiguration config = _settingsRepository.GetLocalDbServer(dbServerName);
-		if (config == null)
+		if (selectedServerNames.Count == 0)
 		{
-			AssertionResult notFoundResult = AssertionResult.Failure(
+			AssertionResult noServersResult = AssertionResult.Failure(
 				AssertionScope.Local,
 				AssertionPhase.DbDiscovery,
-				$"Database server configuration '{dbServerName}' not found in appsettings.json");
-			notFoundResult.Details["dbServerName"] = dbServerName;
-			notFoundResult.Details["availableServers"] = _settingsRepository.GetLocalDbServerNames().ToList();
-			return notFoundResult;
-		}
-
-		if (!TryParseDatabaseEngine(config.DbType, out DatabaseEngine configuredEngine))
-		{
-			AssertionResult unsupportedResult = AssertionResult.Failure(
-				AssertionScope.Local,
-				AssertionPhase.DbDiscovery,
-				$"Unsupported database type '{config.DbType}' for local server '{dbServerName}'");
-			unsupportedResult.Details["dbServerName"] = dbServerName;
-			unsupportedResult.Details["dbType"] = config.DbType;
-			return unsupportedResult;
+				"No enabled local database server configurations found in appsettings.json");
+			noServersResult.Details["availableServers"] = availableServers;
+			return noServersResult;
 		}
 
 		List<DiscoveredDatabase> discovered = new();
-		if (requestedEngines.Contains(configuredEngine))
+		Dictionary<string, LocalDbServerConfiguration> configsByServerName = new(StringComparer.OrdinalIgnoreCase);
+
+		foreach (string serverName in selectedServerNames)
 		{
+			LocalDbServerConfiguration config = _settingsRepository.GetLocalDbServer(serverName);
+			if (config == null)
+			{
+				if (!string.IsNullOrWhiteSpace(dbServerName))
+				{
+					AssertionResult notFoundResult = AssertionResult.Failure(
+						AssertionScope.Local,
+						AssertionPhase.DbDiscovery,
+						$"Database server configuration '{dbServerName}' not found in appsettings.json");
+					notFoundResult.Details["dbServerName"] = dbServerName;
+					notFoundResult.Details["availableServers"] = availableServers;
+					return notFoundResult;
+				}
+				continue;
+			}
+
+			if (!TryParseDatabaseEngine(config.DbType, out DatabaseEngine configuredEngine))
+			{
+				if (!string.IsNullOrWhiteSpace(dbServerName))
+				{
+					AssertionResult unsupportedResult = AssertionResult.Failure(
+						AssertionScope.Local,
+						AssertionPhase.DbDiscovery,
+						$"Unsupported database type '{config.DbType}' for local server '{dbServerName}'");
+					unsupportedResult.Details["dbServerName"] = dbServerName;
+					unsupportedResult.Details["dbType"] = config.DbType;
+					return unsupportedResult;
+				}
+				continue;
+			}
+
+			if (!requestedEngines.Contains(configuredEngine))
+			{
+				continue;
+			}
+
 			discovered.Add(new DiscoveredDatabase
 			{
 				Engine = configuredEngine,
-				Name = dbServerName,
+				Name = serverName,
 				Host = config.Hostname,
 				Port = config.Port,
 				IsReady = true
 			});
+			configsByServerName[serverName] = config;
 		}
 
 		if (discovered.Count < minDatabases)
@@ -118,7 +149,11 @@ public class LocalDatabaseAssertion : ILocalDatabaseAssertion
 			result.Details["found"] = discovered.Count;
 			result.Details["expected"] = minDatabases;
 			result.Details["engines"] = requestedEngines.Select(e => e.ToString().ToLowerInvariant()).ToList();
-			result.Details["dbServerName"] = dbServerName;
+			if (!string.IsNullOrWhiteSpace(dbServerName))
+			{
+				result.Details["dbServerName"] = dbServerName;
+			}
+			result.Details["availableServers"] = availableServers;
 			return result;
 		}
 
@@ -132,43 +167,70 @@ public class LocalDatabaseAssertion : ILocalDatabaseAssertion
 
 		if (checkConnect)
 		{
-			ConnectionTestResult connectionResult = _connectionTester.TestConnection(config);
-			if (!connectionResult.Success)
+			foreach (DiscoveredDatabase discoveredDatabase in discovered)
 			{
-				AssertionResult failedConnection = AssertionResult.Failure(
-					AssertionScope.Local,
-					AssertionPhase.DbConnect,
-					$"Cannot connect to {configuredEngine.ToString().ToLowerInvariant()} database at {config.Hostname}:{config.Port}");
-				failedConnection.Details["engine"] = configuredEngine.ToString().ToLowerInvariant();
-				failedConnection.Details["host"] = config.Hostname;
-				failedConnection.Details["port"] = config.Port;
-				if (!string.IsNullOrWhiteSpace(connectionResult.DetailedError))
+				LocalDbServerConfiguration config = configsByServerName[discoveredDatabase.Name];
+				ConnectionTestResult connectionResult = _connectionTester.TestConnection(config);
+				if (!connectionResult.Success)
 				{
-					failedConnection.Details["error"] = connectionResult.DetailedError;
+					AssertionResult failedConnection = AssertionResult.Failure(
+						AssertionScope.Local,
+						AssertionPhase.DbConnect,
+						$"Cannot connect to {discoveredDatabase.Engine.ToString().ToLowerInvariant()} database at {config.Hostname}:{config.Port}");
+					failedConnection.Details["engine"] = discoveredDatabase.Engine.ToString().ToLowerInvariant();
+					failedConnection.Details["name"] = discoveredDatabase.Name;
+					failedConnection.Details["host"] = config.Hostname;
+					failedConnection.Details["port"] = config.Port;
+					if (!string.IsNullOrWhiteSpace(connectionResult.DetailedError))
+					{
+						failedConnection.Details["error"] = connectionResult.DetailedError;
+					}
+					return failedConnection;
 				}
-				return failedConnection;
 			}
 		}
 
 		if (!string.IsNullOrWhiteSpace(checkCapability) &&
 			checkCapability.Equals("version", StringComparison.InvariantCultureIgnoreCase))
 		{
-			DiscoveredDatabase discoveredDb = discovered[0];
-			string connectionString = BuildConnectionString(config, discoveredDb.Engine);
-			CapabilityCheckResult capabilityResult =
-				await _capabilityChecker.CheckVersionAsync(discoveredDb, connectionString);
-
-			if (!capabilityResult.Success)
+			foreach (DiscoveredDatabase discoveredDb in discovered)
 			{
-				AssertionResult failedCapability = AssertionResult.Failure(
-					AssertionScope.Local,
-					AssertionPhase.DbCheck,
-					$"Version check failed for {discoveredDb.Engine.ToString().ToLowerInvariant()}: {capabilityResult.Error}");
-				failedCapability.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
-				return failedCapability;
-			}
+				LocalDbServerConfiguration config = configsByServerName[discoveredDb.Name];
+				string connectionString = BuildConnectionString(config, discoveredDb.Engine);
+				CapabilityCheckResult capabilityResult =
+					await _capabilityChecker.CheckVersionAsync(discoveredDb, connectionString);
 
-			resolvedDbs[0]["version"] = capabilityResult.Version;
+				if (!capabilityResult.Success)
+				{
+					AssertionResult failedCapability = AssertionResult.Failure(
+						AssertionScope.Local,
+						AssertionPhase.DbCheck,
+						$"Version check failed for {discoveredDb.Engine.ToString().ToLowerInvariant()}: {capabilityResult.Error}");
+					failedCapability.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+					failedCapability.Details["name"] = discoveredDb.Name;
+					return failedCapability;
+				}
+
+				Dictionary<string, object> dbInfo = resolvedDbs.First(d => d["name"].ToString() == discoveredDb.Name);
+				dbInfo["version"] = capabilityResult.Version;
+			}
+		}
+		else
+		{
+			// PostgreSQL version floor is always enforced for local scope assertions.
+			foreach (DiscoveredDatabase discoveredDb in discovered.Where(d => d.Engine == DatabaseEngine.Postgres))
+			{
+				LocalDbServerConfiguration config = configsByServerName[discoveredDb.Name];
+				string connectionString = BuildConnectionString(config, discoveredDb.Engine);
+				CapabilityCheckResult capabilityResult =
+					await _capabilityChecker.CheckVersionAsync(discoveredDb, connectionString);
+
+				AssertionResult postgresVersionFailure = BuildPostgresVersionValidationFailure(discoveredDb, capabilityResult);
+				if (postgresVersionFailure != null)
+				{
+					return postgresVersionFailure;
+				}
+			}
 		}
 
 		AssertionResult successResult = AssertionResult.Success();
@@ -238,5 +300,57 @@ public class LocalDatabaseAssertion : ILocalDatabaseAssertion
 				engine = default;
 				return false;
 		}
+	}
+
+	private static AssertionResult BuildPostgresVersionValidationFailure(
+		DiscoveredDatabase discoveredDb,
+		CapabilityCheckResult capabilityResult)
+	{
+		if (!capabilityResult.Success)
+		{
+			AssertionResult failedCapability = AssertionResult.Failure(
+				AssertionScope.Local,
+				AssertionPhase.DbCheck,
+				$"PostgreSQL version check failed for {discoveredDb.Name}: {capabilityResult.Error}");
+			failedCapability.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+			failedCapability.Details["name"] = discoveredDb.Name;
+			failedCapability.Details["host"] = discoveredDb.Host;
+			failedCapability.Details["port"] = discoveredDb.Port;
+			failedCapability.Details["requiredMajorVersion"] = PostgresVersionPolicy.MinimumSupportedMajorVersion;
+			return failedCapability;
+		}
+
+		if (!PostgresVersionPolicy.TryParseMajorVersion(capabilityResult.Version, out int majorVersion))
+		{
+			AssertionResult parseFailure = AssertionResult.Failure(
+				AssertionScope.Local,
+				AssertionPhase.DbCheck,
+				$"Could not parse PostgreSQL major version from '{capabilityResult.Version}' for {discoveredDb.Name}");
+			parseFailure.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+			parseFailure.Details["name"] = discoveredDb.Name;
+			parseFailure.Details["host"] = discoveredDb.Host;
+			parseFailure.Details["port"] = discoveredDb.Port;
+			parseFailure.Details["actualVersion"] = capabilityResult.Version;
+			parseFailure.Details["requiredMajorVersion"] = PostgresVersionPolicy.MinimumSupportedMajorVersion;
+			return parseFailure;
+		}
+
+		if (PostgresVersionPolicy.IsSupportedMajorVersion(majorVersion))
+		{
+			return null;
+		}
+
+		AssertionResult floorFailure = AssertionResult.Failure(
+			AssertionScope.Local,
+			AssertionPhase.DbCheck,
+			PostgresVersionPolicy.BuildUnsupportedVersionError(capabilityResult.Version));
+		floorFailure.Details["engine"] = discoveredDb.Engine.ToString().ToLowerInvariant();
+		floorFailure.Details["name"] = discoveredDb.Name;
+		floorFailure.Details["host"] = discoveredDb.Host;
+		floorFailure.Details["port"] = discoveredDb.Port;
+		floorFailure.Details["actualVersion"] = capabilityResult.Version;
+		floorFailure.Details["actualMajorVersion"] = majorVersion;
+		floorFailure.Details["requiredMajorVersion"] = PostgresVersionPolicy.MinimumSupportedMajorVersion;
+		return floorFailure;
 	}
 }

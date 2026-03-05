@@ -363,6 +363,7 @@ To restore to a local database server, add a `db` section to your `appsettings.j
       "port": 1433,
       "username": "sa",
       "password": "YourPassword",
+      "enabled": true,
       "description": "Local MSSQL Server for development"
     },
     "my-local-mssql-windows-auth": {
@@ -378,6 +379,7 @@ To restore to a local database server, add a `db` section to your `appsettings.j
       "port": 5432,
       "username": "postgres",
       "password": "postgres",
+      "enabled": true,
       "pgToolsPath": "",
       "description": "Local PostgreSQL Server for development"
     }
@@ -389,6 +391,7 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 - `dbType` (required): Database type - `mssql` or `postgres`
 - `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
 - `port` (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `enabled` (optional): When `false`, this server is ignored by clio commands. Default is `true`
 - `username` (required for SQL Authentication): Database username. Not required when using Windows Authentication
 - `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication
 - `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication. Default is `false`
@@ -4136,7 +4139,7 @@ The assert command ensures that clio can discover and connect to required infras
 5. **Network Connectivity** - Tests TCP connections to services
 6. **Service Functionality** - Validates database version queries, Redis PING commands
 7. **Local DB Configuration** - Validates local DB server configuration and engine compatibility
-8. **Local Redis Availability** - Validates local Redis discovery/connectivity/ping on localhost:6379
+8. **Local Redis Availability** - Validates local Redis discovery/connectivity/ping from appsettings config or localhost fallback
 9. **Filesystem Paths** - Validates that directories exist and are accessible
 10. **Filesystem Permissions** - Validates user/group permissions on directories (Windows only)
 
@@ -4181,15 +4184,18 @@ clio assert k8 --redis --redis-connect --redis-ping
 clio assert k8 \
   --db postgres,mssql --db-connect --db-check version \
   --redis --redis-connect --redis-ping
+clio assert k8 --all
 
 # Local Redis validation
 clio assert local --redis --redis-connect --redis-ping
+clio assert local --redis --redis-server-name redis-dev
 
 # Local database validation
-clio assert local --db postgres --db-server-name my-local-postgres --db-connect --db-check version
+clio assert local --db postgres,mssql --db-min 2 --db-connect --db-check version
 
 # Combined local validation
-clio assert local --db postgres --db-server-name my-local-postgres --db-connect --redis --redis-ping
+clio assert local --db postgres --db-connect --redis --redis-ping
+clio assert local --all
 
 # Filesystem path validation
 clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\"
@@ -4199,6 +4205,7 @@ clio assert fs --path iis-clio-root-path
 clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm full-control
 clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\" --user "IIS APPPOOL\MyApp" --perm full-control
 clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm modify
+clio assert fs --all
 ```
 
 **Exit Codes:**
@@ -4230,7 +4237,8 @@ Success example (Kubernetes):
     "redis": {
       "name": "clio-redis",
       "host": "localhost",
-      "port": 6379
+      "port": 6379,
+      "firstAvailableDb": 3
     }
   }
 }
@@ -4269,6 +4277,9 @@ Failure example:
 
 **Options:**
 
+Common:
+- `--all` - Run full validation checks for selected scope. Cannot be combined with explicit scope assertion options
+
 Context validation:
 - `--context` - Expected Kubernetes context name (exact match)
 - `--context-regex` - Regex pattern for context name validation
@@ -4280,28 +4291,35 @@ Database assertions:
 - `--db-min` - Minimum number of database engines required (default: 1)
 - `--db-connect` - Validate TCP connectivity to databases
 - `--db-check` - Database capability check (currently supports: version)
+- PostgreSQL major version 16+ is always enforced for discovered postgres servers in `k8` and `local` scopes (`--db-check version` additionally returns version in output)
 
 Redis assertions:
 - `--redis` - Assert Redis presence
 - `--redis-connect` - Validate TCP connectivity to Redis
 - `--redis-ping` - Execute Redis PING command
+- Success payload includes `firstAvailableDb` (first discovered empty Redis DB index)
 
 Local database assertions:
 - `--db` - Database engines to assert in local scope (comma-separated): postgres, mssql
-- `--db-server-name` - Local DB server configuration key from appsettings.json (required for local DB checks)
+- `--db-server-name` - Local DB server configuration key from appsettings.json (optional; when omitted, all enabled local DB servers are considered)
 - `--db-min` - Minimum number of database engines required (default: 1)
 - `--db-connect` - Validate connectivity to configured local DB
 - `--db-check` - Database capability check (currently supports: version)
+- PostgreSQL major version 16+ is always enforced for discovered postgres servers
 
 Local Redis assertions:
-- `--redis` - Assert local Redis presence on localhost:6379
+- `--redis` - Assert local Redis presence
+- `--redis-server-name` - Local Redis server configuration key from appsettings.json (requires `--redis`)
 - `--redis-connect` - Validate TCP connectivity to local Redis
 - `--redis-ping` - Execute Redis PING command on local Redis
+- Success payload includes `firstAvailableDb` (same field as k8 scope)
+- Strict policy: when local Redis credentials are configured, assertion fails if anonymous Redis access is still allowed
 
 Filesystem assertions:
 - `--path` - Filesystem path to validate (can be absolute path or setting key like "iis-clio-root-path")
 - `--user` - Windows user/group identity to validate (e.g., "BUILTIN\IIS_IUSRS", "IIS APPPOOL\MyApp")
 - `--perm` - Required permission level: read, write, modify, full-control (requires --user)
+- `--all` on `fs` validates `iis-clio-root-path` and, on Windows, validates `BUILTIN\IIS_IUSRS` (`IIS_IUSRS` fallback) `full-control` ACL
 
 **Use Cases:**
 
@@ -4318,6 +4336,7 @@ Filesystem assertions:
 - Credentials are retrieved from Kubernetes secrets (not hardcoded)
 - Service names can be anything as long as labels are correct
 - Phase 0 context validation is mandatory for K8 scope and runs first
+- PostgreSQL major version 16+ is required in `k8` and `local` scopes for discovered postgres servers
 - Filesystem permission checks are Windows-only; other platforms will return a failure
 - Setting keys like "iis-clio-root-path" are resolved from appsettings.json
 
@@ -4384,6 +4403,13 @@ clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
 - `--db-server-name <Name>` - Name of database server configuration from appsettings.json for local database deployment
     - If not specified, uses Kubernetes cluster database (default behavior)
 - `--drop-if-exists` - Automatically drop existing database if present without prompting (works with local databases)
+- `--disable-reset-password` - Hidden option controlling post-restore password-reset script (default: `true`)
+    - Script is considered only for package filename versions `>= 8.3.3`
+    - Script runs only on corporate-eligible machines:
+      - Windows `whoami` output starts with `tscrm\`
+      - OR `ping tscrm.com` succeeds
+    - Script applies to both local and Kubernetes database modes
+    - Script failures produce warnings and do not block deployment
 
 **Redis Configuration:**
 - `--redis-db <Number>` - Specify Redis database number (optional)
@@ -4393,6 +4419,13 @@ clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
     - Works for both Kubernetes and local deployments
     - Manual override: Specify a number (0-15 or higher) to use a specific database
     - Error handling: Provides detailed messages if all databases are occupied or Redis is unreachable
+- `--redis-server-name <Name>` - Local Redis server configuration key from appsettings.json (local deployment mode)
+    - Resolution order for local deployment:
+      1) `--redis-server-name` (explicit)
+      2) `defaultRedis` from appsettings.json
+      3) single enabled server from `redis` section
+      4) `localhost:6379` fallback only when `redis` section is absent
+    - If multiple enabled servers are configured and no default is set, deployment fails
 
 **Deployment Options:**
 - `--SiteName <Name>` - Application site name
@@ -4439,6 +4472,7 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
       "port": 5432,
       "username": "postgres",
       "password": "your_password",
+      "enabled": true,
       "description": "Local PostgreSQL Server",
       "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin"
     },
@@ -4448,12 +4482,14 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
       "port": 1433,
       "username": "sa",
       "password": "your_password",
+      "enabled": true,
       "description": "Local MSSQL Server"
     },
     "my-local-mssql-windows-auth": {
       "dbType": "mssql",
       "hostname": "localhost",
       "port": 0,
+      "enabled": true,
       "useWindowsAuth": true,
       "description": "Local MSSQL Server with Windows Authentication"
     }
@@ -4465,6 +4501,7 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
 - `dbType` (required): Database type - `postgres` or `mssql`
 - `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
 - `port` (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `enabled` (optional): When `false`, this server is ignored by clio commands. Default: `true`
 - `username` (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication for MSSQL
 - `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication for MSSQL
 - `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`. **Note:** Windows Authentication is not supported for PostgreSQL
@@ -4489,12 +4526,29 @@ clio deploy-creatio --ZipFile ~/Downloads/creatio.zip --redis-db 5
 ```
 
 **Local Deployment:**
-Redis connection defaults to `localhost:6379` database 0. You can specify a different database:
+Redis connection is resolved from appsettings `redis` section (with `defaultRedis` support) and falls back to `localhost:6379` only when redis config is absent. You can specify a different database:
 
 ```bash
 clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
   --db-server-name my-local-postgres \
+  --redis-server-name redis-dev \
   --redis-db 2
+```
+
+Local Redis appsettings example:
+```json
+{
+  "defaultRedis": "redis-dev",
+  "redis": {
+    "redis-dev": {
+      "Hostname": "localhost",
+      "Port": 6379,
+      "Username": "default",
+      "Password": "your_password",
+      "Enabled": true
+    }
+  }
+}
 ```
 
 ### Error Handling
@@ -4521,6 +4575,11 @@ If you see `[Redis Connection Error] Could not connect to Redis`:
 If database already exists without `--drop-if-exists`:
 - The deployment will fail with an error message
 - Use `--drop-if-exists` flag to automatically drop and recreate the database
+
+**Password reset script behavior:**
+- If package version cannot be parsed from filename, script is skipped silently
+- If `--disable-reset-password false` is set, script is not executed
+- If corporate eligibility is not detected, script is not executed
 
 ### Examples
 

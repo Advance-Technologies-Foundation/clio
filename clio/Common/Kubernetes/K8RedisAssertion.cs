@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Clio.Common.Assertions;
+using Clio.Common.Database;
 
 namespace Clio.Common.Kubernetes
 {
@@ -26,14 +27,30 @@ namespace Clio.Common.Kubernetes
 	public class K8RedisAssertion
 	{
 		private readonly IKubernetesClient _k8sClient;
+		private readonly IRedisDatabaseSelector _redisDatabaseSelector;
 		private readonly IK8ServiceResolver _serviceResolver;
 
-		public K8RedisAssertion(IKubernetesClient k8sClient, IK8ServiceResolver serviceResolver)
+		/// <summary>
+		/// Initializes a new instance of the <see cref="K8RedisAssertion"/> class.
+		/// </summary>
+		/// <param name="k8sClient">Kubernetes API abstraction.</param>
+		/// <param name="serviceResolver">Resolver for Redis service endpoint and port.</param>
+		/// <param name="redisDatabaseSelector">Selector for first available Redis database.</param>
+		public K8RedisAssertion(IKubernetesClient k8sClient, IK8ServiceResolver serviceResolver,
+			IRedisDatabaseSelector redisDatabaseSelector)
 		{
 			_k8sClient = k8sClient ?? throw new ArgumentNullException(nameof(k8sClient));
 			_serviceResolver = serviceResolver ?? throw new ArgumentNullException(nameof(serviceResolver));
+			_redisDatabaseSelector = redisDatabaseSelector ?? throw new ArgumentNullException(nameof(redisDatabaseSelector));
 		}
 
+		/// <summary>
+		/// Executes Redis discovery and optional connectivity checks for Kubernetes scope.
+		/// </summary>
+		/// <param name="checkConnect">Whether TCP connectivity should be validated.</param>
+		/// <param name="checkPing">Whether Redis PING should be validated.</param>
+		/// <param name="namespaceParam">Kubernetes namespace to inspect.</param>
+		/// <returns>Structured assertion result.</returns>
 		public async Task<AssertionResult> ExecuteAsync(
 			bool checkConnect,
 			bool checkPing,
@@ -49,6 +66,19 @@ namespace Clio.Common.Kubernetes
 					AssertionPhase.RedisDiscovery,
 					"Redis not found in cluster"
 				);
+			}
+			
+			RedisDatabaseSelectionResult discovery = _redisDatabaseSelector.FindEmptyDatabase(redis.Host, redis.Port);
+			if (!discovery.Success)
+			{
+				var result = AssertionResult.Failure(
+					AssertionScope.K8,
+					AssertionPhase.RedisDiscovery,
+					discovery.ErrorMessage ?? $"Could not resolve first available Redis database at {redis.Host}:{redis.Port}"
+				);
+				result.Details["host"] = redis.Host;
+				result.Details["port"] = redis.Port;
+				return result;
 			}
 
 			// Check connectivity if requested
@@ -87,11 +117,12 @@ namespace Clio.Common.Kubernetes
 
 			// Success
 			var successResult = AssertionResult.Success();
-			successResult.Resolved["redis"] = new
+			successResult.Resolved["redis"] = new RedisAssertionResolvedDto
 			{
-				name = redis.Name,
-				host = redis.Host,
-				port = redis.Port
+				Name = redis.Name,
+				Host = redis.Host,
+				Port = redis.Port,
+				FirstAvailableDb = discovery.DatabaseNumber
 			};
 			return successResult;
 		}

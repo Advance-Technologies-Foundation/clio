@@ -59,7 +59,13 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	#endregion
 
 	#region Properties: Public
-
+	
+	/// <summary>
+	/// Gets or sets a value indicating whether force-password-reset disabling script may be executed.
+	/// </summary>
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = true, HelpText = "Disables reset password after installation")]
+	public bool DisableResetPassword { get; set; }
+	
 	/// <summary>
 	/// Gets or sets the database engine type: <c>pg</c> or <c>mssql</c>.
 	/// </summary>
@@ -151,7 +157,7 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// Gets or sets a value indicating whether the application should be started after deployment.
 	/// </summary>
 	[Option("auto-run", Required = false, Default = true, HelpText = "Automatically run application after deployment")]
-	public bool AutoRun { get; set; }
+	public bool? AutoRun { get; set; }
 
 	/// <summary>
 	/// Gets or sets the Redis database index. Use <c>-1</c> to auto-detect.
@@ -159,6 +165,13 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	[Option("redis-db", Required = false, Default = -1,
 		HelpText = "Redis database number (optional, auto-detect if not specified)")]
 	public int RedisDb { get; set; }
+
+	/// <summary>
+	/// Gets or sets the configured local Redis server name from application settings.
+	/// </summary>
+	[Option("redis-server-name", Required = false,
+		HelpText = "Name of Redis server configuration from appsettings.json for local deployment")]
+	public string RedisServerName { get; set; }
 
 	/// <summary>
 	/// Gets or sets the configured local database server name from application settings.

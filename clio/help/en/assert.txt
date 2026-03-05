@@ -39,6 +39,10 @@ SCOPES
     local       Local database and local Redis assertions
     fs          Filesystem path and permission assertions
 
+COMMON OPTIONS
+    --all                           Run full validation checks applicable to selected scope
+                                    Cannot be combined with explicit scope assertion options
+
 KUBERNETES OPTIONS
 
     Context Validation:
@@ -68,17 +72,29 @@ LOCAL OPTIONS
                                     Supported: postgres, mssql
                                     Required for local database assertions
     --db-server-name                Local database server configuration key from appsettings.json
-                                    Required when local database assertions are requested
+                                    Optional; when omitted, local DB servers are discovered from config
     --db-min                        Minimum number of database engines required
                                     Default: 1
     --db-connect                    Validate database connectivity
     --db-check                      Database capability check
                                     Supported: version
+                                    PostgreSQL major version 16+ is always enforced
+                                    for discovered postgres servers in k8/local scopes;
+                                    --db-check version additionally returns version in output
 
     Redis Assertions:
-    --redis                         Assert local Redis presence on localhost:6379
+    --redis                         Assert local Redis presence
+                                    Resolution order:
+                                    1) --redis-server-name (explicit)
+                                    2) defaultRedis from appsettings.json
+                                    3) single enabled redis server from appsettings.json
+                                    4) localhost:6379 fallback when redis section is absent
+    --redis-server-name             Local Redis server configuration key from appsettings.json
+                                    Optional; requires --redis
     --redis-connect                 Validate Redis connectivity via TCP
     --redis-ping                    Execute Redis PING command
+                                    Strict policy: when Redis credentials are configured in appsettings,
+                                    assert also verifies anonymous access is blocked
 
     Unsupported in local scope:
     --context, --context-regex, --cluster, --namespace, --path, --user, --perm
@@ -139,6 +155,9 @@ KUBERNETES EXAMPLES
             --db postgres,mssql --db-min 2 --db-connect --db-check version \
             --redis --redis-connect --redis-ping
 
+    Full scope validation preset:
+        clio assert k8 --all
+
 FILESYSTEM EXAMPLES
 
     Path validation (absolute path):
@@ -164,17 +183,26 @@ LOCAL EXAMPLES
     Local Redis presence:
         clio assert local --redis
 
+    Local Redis with explicit server:
+        clio assert local --redis --redis-server-name redis-dev
+
     Local Redis with connectivity and ping:
         clio assert local --redis --redis-connect --redis-ping
 
     Local database presence:
-        clio assert local --db postgres --db-server-name my-local-postgres
+        clio assert local --db postgres
 
     Local database with connectivity and version:
-        clio assert local --db postgres --db-server-name my-local-postgres --db-connect --db-check version
+        clio assert local --db postgres,mssql --db-min 2 --db-connect --db-check version
 
     Combined local checks:
-        clio assert local --db postgres --db-server-name my-local-postgres --db-connect --redis --redis-ping
+        clio assert local --db postgres --db-connect --redis --redis-ping
+
+    Full scope validation preset:
+        clio assert local --all
+
+    Full filesystem validation preset:
+        clio assert fs --all
 OUTPUT FORMAT
 
     Kubernetes success example:
@@ -193,13 +221,14 @@ OUTPUT FORMAT
             "name": "clio-postgres-0",
             "host": "clio-postgres-lb",
             "port": 5432,
-            "version": "PostgreSQL 14.5"
+            "version": "PostgreSQL 16.5"
           }
         ],
         "redis": {
           "name": "clio-redis",
           "host": "clio-redis-lb",
-          "port": 6379
+          "port": 6379,
+          "firstAvailableDb": 3
         }
       }
     }
@@ -254,7 +283,7 @@ OUTPUT FORMAT
           "name": "local-redis",
           "host": "localhost",
           "port": 6379,
-          "db": 3
+          "firstAvailableDb": 3
         }
       }
     }
@@ -318,9 +347,18 @@ KUBERNETES DETECTION RULES
 NOTES
 
     - Kubernetes assertions require kubectl configured with access to target cluster
-    - Local scope Redis checks use localhost:6379 (same local Redis assumption as deploy-creatio)
-    - Local database checks require --db-server-name configuration in appsettings.json
+    - Local scope Redis checks use appsettings redis configuration when present, with localhost:6379 fallback when redis section is absent
+    - When local Redis Username/Password are configured, assertion fails if Redis still allows anonymous access
+    - Redis success payload includes firstAvailableDb for both k8 and local scopes
+    - firstAvailableDb is discovered via empty-database selection logic (first empty DB index)
+    - Local database checks can target a specific config via --db-server-name, or all enabled local DB servers when omitted
+    - Local DB server configurations support 'enabled' flag in appsettings.json (default: true)
+    - assert local --all fails when no enabled local DB servers are configured
+    - --all cannot be combined with explicit scope assertion options
+    - fs --all validates iis-clio-root-path and, on Windows, checks IIS_IUSRS full-control ACL
+    - fs --all Windows identity resolution prefers BUILTIN\IIS_IUSRS and falls back to IIS_IUSRS
     - Database version checks require valid credentials
+    - PostgreSQL major version 16+ is required for discovered postgres servers in k8/local scopes (enforced even without --db-check version)
     - Filesystem path validation works on all platforms
     - Filesystem permission checks are Windows-only (use ACLs)
     - Setting key 'iis-clio-root-path' resolves from appsettings.json

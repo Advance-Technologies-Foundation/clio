@@ -14,7 +14,7 @@ clio deploy-creatio [options]
 
 - `dc`
 - `ic`
-- `install-creation`
+- `install-creatio`
 
 ## Arguments
 
@@ -43,8 +43,18 @@ clio deploy-creatio [options]
 | --db             |       | pg      | Database type: pg or mssql                   | `--db mssql`                   |
 | --db-server-name |       |         | Local DB server config from appsettings.json | `--db-server-name my-postgres` |
 | --drop-if-exists |       | false   | Auto-drop existing database without prompt   | `--drop-if-exists`             |
+| --disable-reset-password | | true | Hidden option. Disable post-restore password-reset script | `--disable-reset-password false` |
 
 **Important:** If kubectl is not detected (no Kubernetes cluster available), then `--db-server-name` is **REQUIRED**. The command will fail with an error if neither kubectl configuration nor `--db-server-name` is provided.
+
+**Password reset script behavior (Creatio >= 8.3.3):**
+- The script is eligible only when package filename version is parsed and is `>= 8.3.3`
+- The script runs only if `--disable-reset-password` is `true`
+- Corporate eligibility is required:
+  - Windows `whoami` must resolve to `tscrm\...`
+  - OR `ping tscrm.com` must succeed
+- The script applies to both Kubernetes and local database deployments
+- If script execution fails, deployment continues and a warning is logged
 
 ### Optional Arguments – Platform Configuration
 
@@ -66,6 +76,7 @@ clio deploy-creatio [options]
 | Argument   | Short | Default   | Description                                           | Example        |
 |------------|-------|-----------|-------------------------------------------------------|----------------|
 | --redis-db |       | -1 (auto) | Redis database number (auto-detects if not specified) | `--redis-db 5` |
+| --redis-server-name | | | Local Redis server config key from appsettings.json (local mode) | `--redis-server-name redis-dev` |
 
 **Redis Auto-Detection Behavior:**
 - **Default (-1)**: Automatically scans Redis for an empty database starting from database 1
@@ -73,6 +84,13 @@ clio deploy-creatio [options]
 - **Custom Configurations**: Supports Redis instances with more than 16 databases
 - **Both Modes**: Works for Kubernetes cluster and local deployments
 - **Error Handling**: Provides detailed error messages with recovery suggestions if all databases are occupied or Redis is unreachable
+
+**Local Redis Server Resolution (local database mode):**
+- `--redis-server-name` (explicit server key)
+- `defaultRedis` from appsettings.json
+- single enabled server from appsettings.json `redis` section
+- `localhost:6379` fallback only when `redis` section is absent
+- if multiple enabled servers exist and no default is configured, deployment fails with a clear message
 
 **Manual Override:**
 - Specify a specific database number (0-15 or higher depending on Redis configuration)
@@ -215,7 +233,7 @@ clio deploy-creatio -e "K8sApp" --ZipFile "C:\creatio-app.zip"
 
 When `--db-server-name` **IS** specified, the command deploys to a local database server configured in `appsettings.json`:
 
-- Reads database configuration from appsettings.json
+- Reads enabled database configuration from appsettings.json
 - Tests connection before proceeding
 - Restores database using local tools (pg_restore for PostgreSQL, SQL Server for MSSQL)
 - Uses template-based restoration for PostgreSQL (see below)
@@ -227,6 +245,24 @@ clio deploy-creatio -e "LocalApp" \
   --ZipFile "C:\creatio-app.zip" \
   --db-server-name my-local-postgres
 ```
+
+### 3. Corporate-Gated Password Reset Script
+
+For package versions `>= 8.3.3`, clio can automatically disable the immediate Supervisor password-change requirement in the restored database.
+
+- Default behavior: enabled (`--disable-reset-password true`)
+- Disable explicitly:
+
+```bash
+clio deploy-creatio -e "DevNoScript" \
+  --ZipFile "C:\Creatio\8.3.4.425_Studio_Softkey_PostgreSQL_ENU.zip" \
+  --disable-reset-password false
+```
+
+- Script is skipped when:
+  - package version cannot be parsed from filename
+  - machine is not corporate-eligible (`tscrm` domain OR `tscrm.com` ping)
+  - option is set to `false`
 
 ## PostgreSQL Template-Based Restoration
 
@@ -300,7 +336,7 @@ Clio automatically finds an empty Redis database for your deployment, eliminatin
 - Logs selected database number
 
 **Local Deployment:**
-- Connects to localhost Redis on port 6379
+- Connects to Redis from appsettings (`redis` section + `defaultRedis`) or falls back to localhost:6379 when redis config is absent
 - Scans all available databases for empty slot
 - Logs selected database number
 - Falls back to error if Redis unreachable
@@ -389,6 +425,7 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
       "port": 5432,
       "username": "postgres",
       "password": "your_password",
+      "enabled": true,
       "pgToolsPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
       "description": "Local PostgreSQL Server"
     },
@@ -398,12 +435,14 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
       "port": 1433,
       "username": "sa",
       "password": "your_password",
+      "enabled": true,
       "description": "Local MSSQL Server"
     },
     "my-local-mssql-windows-auth": {
       "dbType": "mssql",
       "hostname": "localhost",
       "port": 0,
+      "enabled": true,
       "useWindowsAuth": true,
       "description": "Local MSSQL Server with Windows Authentication"
     }
@@ -416,6 +455,7 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
 - **dbType** (required): Database type - `postgres` or `mssql`
 - **hostname** (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
 - **port** (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
+- **enabled** (optional): When `false`, this server is ignored by clio commands. Default is `true`
 - **username** (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication
 - **password** (required for SQL Authentication): Database password. Not required when using Windows Authentication
 - **useWindowsAuth** (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`
@@ -474,12 +514,33 @@ clio deploy-creatio --ZipFile "app.zip" --redis-db 5
 
 ### Local Deployment
 
-Redis connection defaults to `localhost:6379` database 0. Specify a different database if needed:
+Redis connection is resolved from appsettings when available (supports ACL username/password), then falls back to `localhost:6379` when `redis` section is absent.
+Specify a different database if needed:
 ```bash
 clio deploy-creatio --ZipFile "app.zip" \
   --db-server-name my-local-postgres \
+  --redis-server-name redis-dev \
   --redis-db 2
 ```
+
+Local Redis appsettings example:
+```json
+{
+  "defaultRedis": "redis-dev",
+  "redis": {
+    "redis-dev": {
+      "Hostname": "localhost",
+      "Port": 6379,
+      "Username": "default",
+      "Password": "your_password",
+      "Enabled": true
+    }
+  }
+}
+```
+
+When credentials are configured, redis connection string is generated as:
+`host={hostname};db={db_number};port={port_number};user={username};password={password}`
 
 ## Output
 
@@ -533,15 +594,16 @@ The command provides detailed progress information:
 ### Common Errors
 
 **"Could not detect kubectl config, and db server name (db-server-name) is not specified"**
-- **Cause**: Kubernetes cluster is not available and no local database server is configured
+- **Cause**: Kubernetes cluster is not available and no enabled local database server is configured
 - **Solutions**:
   1. Install and configure kubectl for Kubernetes deployment
   2. Add `--db-server-name` parameter with a configured local database server
   3. Configure database server in appsettings.json (see "Local Database Server Configuration" section)
 - **Example**: `clio deploy-creatio --ZipFile "app.zip" --db-server-name my-local-postgres`
 
-**"Database server configuration not found in appsettings.json"**
+**"Database server configuration was not found or is disabled in appsettings.json"**
 - Verify the database server name matches configuration in appsettings.json
+- Verify selected server has `"enabled": true`
 - Use `clio cfg open` to edit configuration
 
 **"Connection test failed"**

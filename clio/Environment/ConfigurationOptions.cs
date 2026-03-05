@@ -285,12 +285,17 @@ namespace Clio
 		[JsonProperty("dbConnectionStringKeys")]
 		public Dictionary<string, DbServer> DbServers { get; set; }
 
-	[JsonProperty("db")]
-	public Dictionary<string, LocalDbServerConfiguration> LocalDbServers { get; set; }
+		[JsonProperty("db")]
+		public Dictionary<string, LocalDbServerConfiguration> LocalDbServers { get; set; }
 
+		[JsonProperty("redis")]
+		public Dictionary<string, LocalRedisServerConfiguration> LocalRedisServers { get; set; }
 
+		[JsonProperty("defaultRedis")]
+		public string DefaultRedisServerName { get; set; }
+		
 		public EnvironmentSettings GetActiveEnvironment() {
-			if (String.IsNullOrEmpty(ActiveEnvironmentKey)
+			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
 				ActiveEnvironmentKey = Environments.First().Key;
 				return Environments.First().Value;
@@ -568,11 +573,41 @@ namespace Clio
 			if (_settings.LocalDbServers == null || !_settings.LocalDbServers.ContainsKey(name)) {
 				return null;
 			}
-			return _settings.LocalDbServers[name];
+			LocalDbServerConfiguration config = _settings.LocalDbServers[name];
+			return config.Enabled ? config : null;
 		}
 
 		public IEnumerable<string> GetLocalDbServerNames() {
-			return _settings.LocalDbServers?.Keys ?? Enumerable.Empty<string>();
+			return _settings.LocalDbServers?
+				.Where(kv => kv.Value != null && kv.Value.Enabled)
+				.Select(kv => kv.Key)
+				?? Enumerable.Empty<string>();
+		}
+
+		public LocalRedisServerConfiguration GetLocalRedisServer(string name) {
+			if (string.IsNullOrWhiteSpace(name)) {
+				return null;
+			}
+			if (_settings.LocalRedisServers == null || !_settings.LocalRedisServers.ContainsKey(name)) {
+				return null;
+			}
+			LocalRedisServerConfiguration config = _settings.LocalRedisServers[name];
+			return config is { Enabled: true } ? config : null;
+		}
+
+		public IEnumerable<string> GetLocalRedisServerNames() {
+			return _settings.LocalRedisServers?
+				.Where(kv => kv.Value != null && kv.Value.Enabled)
+				.Select(kv => kv.Key)
+				?? Enumerable.Empty<string>();
+		}
+
+		public string GetDefaultLocalRedisServerName() {
+			return _settings.DefaultRedisServerName;
+		}
+
+		public bool HasLocalRedisServersConfiguration() {
+			return _settings.LocalRedisServers is { Count: > 0 };
 		}
 
 	}

@@ -34,6 +34,10 @@ namespace Clio.UserEnvironment
 		string GetRemoteArtefactServerPath();
 		LocalDbServerConfiguration GetLocalDbServer(string name);
 		IEnumerable<string> GetLocalDbServerNames();
+		LocalRedisServerConfiguration GetLocalRedisServer(string name);
+		IEnumerable<string> GetLocalRedisServerNames();
+		string GetDefaultLocalRedisServerName();
+		bool HasLocalRedisServersConfiguration();
 		string GetDefaultEnvironmentName();
 	}
 }

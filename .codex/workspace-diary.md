@@ -426,3 +426,59 @@ Decision: Added `local` assert scope with dedicated `ILocalDatabaseAssertion` an
 Discovery: `AssertOptions.DatabaseMinimum` defaults to `0` when options are instantiated directly in tests, so local request detection must treat only values `>1` as explicit db-min override and normalize minimum to 1 before local DB assertions.
 Files: clio/Command/AssertCommand.cs, clio/Command/AssertOptions.cs, clio/Common/Assertions/AssertionScope.cs, clio/Common/Assertions/LocalDatabaseAssertion.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio/Common/Database/RedisDatabaseSelector.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/BindingsModule.cs, clio.tests/Command/AssertCommand.Tests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
 Impact: Assert now supports deterministic local DB and local Redis validation paths aligned with deployment assumptions, and command docs are synchronized across help/index/detail surfaces.
+
+## 2026-03-04 08:48 – deploy-creatio corporate-gated reset-password script
+Context: Needed deploy-creatio to auto-apply a DB script for Creatio packages >= 8.3.3 while enforcing corporate-network/domain constraints and honoring the hidden option toggle.
+Decision: Added three focused services (package version parser, corporate environment detector, password-reset SQL executor) and invoked them from CreatioInstallerService right after successful DB restore; failures are warning-only and deployment continues.
+Discovery: Corporate eligibility is implemented as OR logic (Windows tscrm domain via whoami OR successful ping to tscrm.com); version parsing must be based on package filename prefix and skip silently when unparsable.
+Files: clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/CreatioPackageVersionParser.cs, clio/Command/CreatioInstallCommand/CorporateEnvironmentDetector.cs, clio/Command/CreatioInstallCommand/PasswordResetScriptExecutor.cs, clio.tests/Command/CreatioInstallCommand/CreatioPackageVersionParserTests.cs, clio.tests/Command/CreatioInstallCommand/CorporateEnvironmentDetectorTests.cs, clio/help/en/deploy-creatio.txt, clio/docs/commands/deploy-creatio.md, clio/Commands.md
+Impact: deploy-creatio now handles Supervisor password-reset disabling safely for eligible environments across both local and Kubernetes DB targets, with synchronized command documentation and targeted test coverage.
+
+## 2026-03-04 09:12 – Unify Redis assertion DTO across local and k8 scopes
+Context: User requested LocalRedisAssertion and K8RedisAssertion to return the same payload and to replace ambiguous `db` with a clearer name.
+Decision: Introduced a shared `RedisAssertionResolvedDto` and made both assertions emit it; renamed output field to `firstAvailableDb` and aligned behavior by resolving empty DB in k8 via `IRedisDatabaseSelector`.
+Discovery: To guarantee same data contract across scopes, k8 redis assertion must fail discovery when first available DB cannot be resolved, rather than returning partial host/port data.
+Files: clio/Common/Assertions/RedisAssertionResolvedDto.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio/Common/Kubernetes/K8RedisAssertion.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio.tests/Common/Kubernetes/K8RedisAssertionTests.cs, clio.tests/Command/AssertCommand.Tests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Redis assertion output is now explicit and consistent between local and k8 scopes, simplifying downstream parsing and reducing ambiguity in assert results.
+
+## 2026-03-04 09:58 – Assert local multi-server discovery and scope-wide --all presets
+Context: User requested assert local to support k8-style db invocation without `--db-server-name`, and added scope-wide `--all` behavior for `local|k8|fs`.
+Decision: Added `--all` to assert options with explicit mixed-option rejection, implemented local DB discovery across all configured local db servers when `--db-server-name` is omitted, and added fs all-mode defaults (`iis-clio-root-path` + Windows current-user full-control ACL check).
+Discovery: In command tests, `AssertOptions` instantiated with `new` has `DatabaseMinimum=0` (attribute default not applied), so `--all` mixed-option detection must treat only values `>1` as explicit `--db-min` overrides.
+Files: clio/Command/AssertOptions.cs, clio/Command/AssertCommand.cs, clio/Common/Assertions/LocalDatabaseAssertion.cs, clio.tests/Command/AssertCommand.Tests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Assert command now supports local multi-db validation patterns from config, adds deterministic full-scope presets via `--all`, and keeps docs/help synchronized with runtime behavior.
+
+## 2026-03-04 10:26 – Switch fs --all ACL identity to IIS_IUSRS group
+Context: User requested `clio assert fs --all` to validate IIS worker-group permissions (`IIS_IUSRS`) instead of current-user identity.
+Decision: Updated fs all-mode to resolve Windows identity candidates in order (`BUILTIN\\IIS_IUSRS`, then `IIS_IUSRS`) and run full-control ACL assertion against the resolved group; added explicit FsUser failure when neither identity resolves.
+Discovery: Existing fs all-mode tests were missing; command tests can validate identity routing by asserting JSON output contains `IIS_IUSRS` on Windows and by verifying non-Windows path-only behavior for fs all-mode.
+Files: clio/Command/AssertCommand.cs, clio.tests/Command/AssertCommand.Tests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: fs full validation now matches IIS deployment expectations by checking ACLs for IIS_IUSRS group rather than the invoking user account.
+
+## 2026-03-04 11:20 – Add enabled local DB server filtering across local operations
+Context: Needed `db` configuration to support per-server enable/disable and ensure assert/deploy/restore ignore disabled servers.
+Decision: Added `Enabled` (default true) to `LocalDbServerConfiguration`, centralized filtering in `SettingsRepository.GetLocalDbServer*`, updated local assertion failure semantics for no enabled servers, and aligned local deploy/restore error handling to report disabled-or-missing server names.
+Discovery: Repository-level filtering automatically enforces the policy across AssertCommand local scope, CreatioInstallerService local flows, and RestoreDb without duplicating per-command checks.
+Files: clio/Common/db/LocalDbServerConfiguration.cs, clio/Environment/ConfigurationOptions.cs, clio/Common/Assertions/LocalDatabaseAssertion.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/RestoreDb.cs, clio/tpl/jsonschema/schema.json.tpl, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, clio/help/en/assert.txt, clio/help/en/deploy-creatio.txt, clio/help/en/restore-db.txt, clio/docs/commands/AssertCommand.md, clio/docs/commands/deploy-creatio.md, clio/Commands.md
+Impact: Local DB server enablement is now a single source of truth in config; commands and assertions consistently skip disabled servers and provide explicit diagnostics when no enabled servers are available.
+
+## 2026-03-04 12:01 – Add configurable local Redis servers for assert and deploy-creatio
+Context: User requested Redis configuration parity with local DB servers: multiple named servers, default selection, optional ACL credentials, and command-level server selection.
+Decision: Introduced `redis`/`defaultRedis` settings support with `Enabled` flag, added local Redis resolver service with explicit/default/single/fallback selection logic, extended Redis DB discovery to accept credentials, and wired `--redis-server-name` into `assert local` and `deploy-creatio`.
+Discovery: Backward compatibility is preserved by falling back to `localhost:6379` only when Redis configuration section is absent; if multiple enabled Redis servers exist without default, command fails with actionable diagnostics.
+Files: clio/Common/db/LocalRedisServerConfiguration.cs, clio/Common/db/LocalRedisServerResolver.cs, clio/Environment/ISettingsRepository.cs, clio/Environment/ConfigurationOptions.cs, clio/Common/Database/RedisDatabaseSelector.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio/Command/AssertOptions.cs, clio/Command/AssertCommand.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/tpl/jsonschema/schema.json.tpl, clio.tests/Common/db/LocalRedisServerResolverTests.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio.tests/Command/AssertCommand.Tests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/help/en/deploy-creatio.txt, clio/docs/commands/deploy-creatio.md, clio/Commands.md
+Impact: Local Redis is now configurable and selectable across commands, authenticated Redis deployments are supported for DB auto-selection and generated connection strings, and command docs/help remain synchronized.
+
+## 2026-03-04 12:31 – Enforce strict local Redis auth validation in assert
+Context: User reported `assert local --all` passing even when Redis credentials were configured but ACL auth was not enforced on Redis server.
+Decision: Added `IRedisAuthenticationValidator` and integrated it into local Redis assertion flow so that when Username/Password are configured, clio verifies anonymous access is blocked; otherwise assertion fails at `RedisConnect`.
+Discovery: Strict check is policy-based and independent from connectivity/ping success with configured credentials, preventing false-positive passes on non-authenticated Redis setups.
+Files: clio/Common/Assertions/RedisAuthenticationValidator.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md
+Impact: `assert local` now validates security posture for configured Redis credentials and surfaces misconfigured/non-enforced auth early in local infrastructure checks.
+
+## 2026-03-04 13:05 – Enforce PostgreSQL 16+ in assert for k8 and local
+Context: User requested AssertCommand to require PostgreSQL version 16 or higher for both Kubernetes and local scopes.
+Decision: Added shared PostgresVersionPolicy helper usage in K8DatabaseAssertion and retained LocalDatabaseAssertion floor enforcement, making version floor checks execute for discovered postgres servers even when --db-check version is not specified.
+Discovery: Existing local multi-server tests needed explicit capability checker setup because postgres floor checks now run on default local assertions; isolated test OutputPath/IntermediateOutputPath avoids active clio binary lock during test execution.
+Files: clio/Common/Database/PostgresVersionPolicy.cs, clio/Common/Kubernetes/K8DatabaseAssertion.cs, clio.tests/Common/Kubernetes/K8DatabaseAssertionTests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Assert now consistently blocks unsupported PostgreSQL versions (<16) across both local and k8 infrastructure checks, with synchronized CLI/docs behavior and targeted regression coverage.

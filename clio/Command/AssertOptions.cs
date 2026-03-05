@@ -8,6 +8,9 @@ namespace Clio.Command
 		[Value(0, MetaName = "scope", Required = true, HelpText = "Assertion scope: k8 (Kubernetes), local (Local infrastructure), or fs (Filesystem)")]
 		public string Scope { get; set; }
 
+		[Option("all", Required = false, HelpText = "Run full validation checks applicable to selected scope")]
+		public bool All { get; set; }
+
 		// Kubernetes Database Options
 		[Option("db", Required = false, HelpText = "Database engines to assert (comma-separated): postgres, mssql")]
 		public string DatabaseEngines { get; set; }
@@ -33,6 +36,10 @@ namespace Clio.Command
 
 		[Option("redis-ping", Required = false, HelpText = "Execute Redis PING command")]
 		public bool RedisPing { get; set; }
+
+		[Option("redis-server-name", Required = false,
+			HelpText = "Name of local Redis server configuration from appsettings.json")]
+		public string RedisServerName { get; set; }
 
 		// Kubernetes Context Options
 		[Option("context", Required = false, HelpText = "Expected Kubernetes context name")]

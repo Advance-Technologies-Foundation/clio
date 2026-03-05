@@ -60,7 +60,30 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 
 		// Assert
 		result.Should().Be(1, "because configuration does not exist");
-		_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("not found in appsettings.json")));
+		_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("not found or is disabled")));
+	}
+
+	[Test]
+	[Description("Should fail when requested local database server configuration is disabled")]
+	public void Execute_WhenConfigurationIsDisabled_ReturnsError() {
+		// Arrange
+		_settingsRepository.GetLocalDbServer("my-disabled-db").Returns((LocalDbServerConfiguration)null);
+		_settingsRepository.GetLocalDbServerNames().Returns(new[] { "my-enabled-db" });
+
+		var options = new RestoreDbCommandOptions {
+			DbServerName = "my-disabled-db",
+			BackupPath = "backup.bak",
+			DbName = "testdb"
+		};
+
+		var sut = CreateSut();
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "disabled local DB server configuration must not be used for restore");
+		_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("not found or is disabled")));
 	}
 
 	[Test]

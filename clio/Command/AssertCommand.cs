@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
 using Clio.Common;
 using Clio.Common.Assertions;
 using Clio.Common.Kubernetes;
@@ -49,6 +51,7 @@ namespace Clio.Command
 			try
 			{
 				var scope = ParseScope(options.Scope);
+				ValidateAllOptionUsage(scope, options);
 
 				AssertionResult result = scope switch
 				{
@@ -89,8 +92,16 @@ namespace Clio.Command
 		{
 			ValidateLocalScopeOptions(options);
 
-			bool hasDbRequest = HasDatabaseRequest(options);
-			bool hasRedisRequest = options.Redis;
+			bool hasDbRequest = options.All || HasDatabaseRequest(options);
+			bool hasRedisRequest = options.All || options.Redis || !string.IsNullOrWhiteSpace(options.RedisServerName);
+			string databaseEngines = options.All ? "postgres,mssql" : options.DatabaseEngines;
+			int databaseMinimum = options.All ? 1 : (options.DatabaseMinimum <= 0 ? 1 : options.DatabaseMinimum);
+			bool databaseConnect = options.All || options.DatabaseConnect;
+			string databaseCheck = options.All ? "version" : options.DatabaseCheck;
+			string dbServerName = options.All ? null : options.DbServerName;
+			bool redisConnect = options.All || options.RedisConnect;
+			bool redisPing = options.All || options.RedisPing;
+			string redisServerName = options.All ? null : options.RedisServerName;
 
 			if (!hasDbRequest && !hasRedisRequest)
 			{
@@ -102,13 +113,12 @@ namespace Clio.Command
 
 			if (hasDbRequest)
 			{
-				int databaseMinimum = options.DatabaseMinimum <= 0 ? 1 : options.DatabaseMinimum;
 				var dbResult = _localDatabaseAssertion.ExecuteAsync(
-					options.DatabaseEngines,
+					databaseEngines,
 					databaseMinimum,
-					options.DatabaseConnect,
-					options.DatabaseCheck,
-					options.DbServerName
+					databaseConnect,
+					databaseCheck,
+					dbServerName
 				).GetAwaiter().GetResult();
 
 				if (dbResult.Status == "fail")
@@ -125,8 +135,9 @@ namespace Clio.Command
 			if (hasRedisRequest)
 			{
 				var redisResult = _localRedisAssertion.ExecuteAsync(
-					options.RedisConnect,
-					options.RedisPing
+					redisConnect,
+					redisPing,
+					redisServerName
 				).GetAwaiter().GetResult();
 
 				if (redisResult.Status == "fail")
@@ -169,9 +180,9 @@ namespace Clio.Command
 				throw new ArgumentException($"Unsupported option(s) for local scope: {unsupported}");
 			}
 
-			if ((options.RedisConnect || options.RedisPing) && !options.Redis)
+			if ((options.RedisConnect || options.RedisPing || !string.IsNullOrWhiteSpace(options.RedisServerName)) && !options.Redis)
 			{
-				throw new ArgumentException("--redis parameter is required when --redis-connect or --redis-ping is specified");
+				throw new ArgumentException("--redis parameter is required when --redis-connect, --redis-ping or --redis-server-name is specified");
 			}
 
 			if (HasDatabaseRequest(options))
@@ -180,16 +191,19 @@ namespace Clio.Command
 				{
 					throw new ArgumentException("--db parameter is required when database checks are specified in local scope");
 				}
-
-				if (string.IsNullOrWhiteSpace(options.DbServerName))
-				{
-					throw new ArgumentException("--db-server-name parameter is required when local database assertions are specified");
-				}
 			}
 		}
 
 		private AssertionResult ExecuteK8Assertions(AssertOptions options)
 		{
+			string databaseEngines = options.All ? "postgres,mssql" : options.DatabaseEngines;
+			int databaseMinimum = options.All ? 2 : options.DatabaseMinimum;
+			bool databaseConnect = options.All || options.DatabaseConnect;
+			string databaseCheck = options.All ? "version" : options.DatabaseCheck;
+			bool redisRequested = options.All || options.Redis;
+			bool redisConnect = options.All || options.RedisConnect;
+			bool redisPing = options.All || options.RedisPing;
+
 			// Phase 0: Validate Kubernetes context (mandatory)
 			var contextResult = _contextValidator.ValidateContextAsync(
 				options.Context,
@@ -223,13 +237,13 @@ namespace Clio.Command
 			successResult.Context = contextResult.Context;
 
 			// Execute database assertions if requested
-			if (!string.IsNullOrEmpty(options.DatabaseEngines))
+			if (!string.IsNullOrEmpty(databaseEngines))
 			{
 				var dbResult = _databaseAssertion.ExecuteAsync(
-					options.DatabaseEngines,
-					options.DatabaseMinimum,
-					options.DatabaseConnect,
-					options.DatabaseCheck,
+					databaseEngines,
+					databaseMinimum,
+					databaseConnect,
+					databaseCheck,
 					requiredNamespace
 				).GetAwaiter().GetResult();
 
@@ -247,11 +261,11 @@ namespace Clio.Command
 			}
 
 			// Execute Redis assertions if requested
-			if (options.Redis)
+			if (redisRequested)
 			{
 				var redisResult = _redisAssertion.ExecuteAsync(
-					options.RedisConnect,
-					options.RedisPing,
+					redisConnect,
+					redisPing,
 					requiredNamespace
 				).GetAwaiter().GetResult();
 
@@ -273,6 +287,11 @@ namespace Clio.Command
 
 		private AssertionResult ExecuteFsAssertions(AssertOptions options)
 		{
+			if (options.All)
+			{
+				return ExecuteFsAllAssertions();
+			}
+
 			// Validate required path parameter
 			if (string.IsNullOrWhiteSpace(options.Path))
 			{
@@ -319,6 +338,114 @@ namespace Clio.Command
 
 			// Success: path exists and no permission check requested
 			return pathResult;
+		}
+
+		private AssertionResult ExecuteFsAllAssertions()
+		{
+			const string defaultPathKey = "iis-clio-root-path";
+			var pathResult = _fsPathAssertion.Execute(defaultPathKey);
+			if (pathResult.Status == "fail")
+			{
+				return pathResult;
+			}
+
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+			{
+				return pathResult;
+			}
+
+			if (!TryResolveIisIusrsIdentity(out string iisIdentity))
+			{
+				var failure = AssertionResult.Failure(
+					AssertionScope.Fs,
+					AssertionPhase.FsUser,
+					"Cannot resolve IIS_IUSRS Windows identity for --all filesystem assertions"
+				);
+				failure.Details["candidates"] = new[] { @"BUILTIN\IIS_IUSRS", "IIS_IUSRS" };
+				return failure;
+			}
+
+			return _fsPermissionAssertion.Execute(defaultPathKey, iisIdentity, "full-control");
+		}
+
+		private static bool TryResolveIisIusrsIdentity(out string identity)
+		{
+			string[] candidates = { @"BUILTIN\IIS_IUSRS", "IIS_IUSRS" };
+
+			foreach (string candidate in candidates)
+			{
+				try
+				{
+					IdentityReference account = new NTAccount(candidate);
+					account.Translate(typeof(SecurityIdentifier));
+					identity = candidate;
+					return true;
+				}
+				catch (IdentityNotMappedException)
+				{
+					// Try next candidate.
+				}
+				catch (SystemException)
+				{
+					// Try next candidate.
+				}
+			}
+
+			identity = null;
+			return false;
+		}
+
+		private static void ValidateAllOptionUsage(AssertionScope scope, AssertOptions options)
+		{
+			if (!options.All)
+			{
+				return;
+			}
+
+			string[] mixedOptions = scope switch
+			{
+				AssertionScope.K8 => new[]
+				{
+					!string.IsNullOrWhiteSpace(options.Context) ? "--context" : null,
+					!string.IsNullOrWhiteSpace(options.ContextRegex) ? "--context-regex" : null,
+					!string.IsNullOrWhiteSpace(options.Cluster) ? "--cluster" : null,
+					!string.IsNullOrWhiteSpace(options.Namespace) ? "--namespace" : null,
+					!string.IsNullOrWhiteSpace(options.DatabaseEngines) ? "--db" : null,
+					options.DatabaseMinimum > 1 ? "--db-min" : null,
+					options.DatabaseConnect ? "--db-connect" : null,
+					!string.IsNullOrWhiteSpace(options.DatabaseCheck) ? "--db-check" : null,
+					options.Redis ? "--redis" : null,
+					options.RedisConnect ? "--redis-connect" : null,
+					options.RedisPing ? "--redis-ping" : null,
+					!string.IsNullOrWhiteSpace(options.RedisServerName) ? "--redis-server-name" : null
+				},
+				AssertionScope.Local => new[]
+				{
+					!string.IsNullOrWhiteSpace(options.DatabaseEngines) ? "--db" : null,
+					options.DatabaseMinimum > 1 ? "--db-min" : null,
+					options.DatabaseConnect ? "--db-connect" : null,
+					!string.IsNullOrWhiteSpace(options.DatabaseCheck) ? "--db-check" : null,
+					!string.IsNullOrWhiteSpace(options.DbServerName) ? "--db-server-name" : null,
+					options.Redis ? "--redis" : null,
+					options.RedisConnect ? "--redis-connect" : null,
+					options.RedisPing ? "--redis-ping" : null,
+					!string.IsNullOrWhiteSpace(options.RedisServerName) ? "--redis-server-name" : null
+				},
+				AssertionScope.Fs => new[]
+				{
+					!string.IsNullOrWhiteSpace(options.Path) ? "--path" : null,
+					!string.IsNullOrWhiteSpace(options.User) ? "--user" : null,
+					!string.IsNullOrWhiteSpace(options.Permission) ? "--perm" : null,
+					!string.IsNullOrWhiteSpace(options.RedisServerName) ? "--redis-server-name" : null
+				},
+				_ => Array.Empty<string>()
+			};
+
+			string unsupported = string.Join(", ", mixedOptions.Where(f => !string.IsNullOrWhiteSpace(f)));
+			if (!string.IsNullOrWhiteSpace(unsupported))
+			{
+				throw new ArgumentException($"--all cannot be combined with explicit scope options: {unsupported}");
+			}
 		}
 
 		private void OutputResult(AssertionResult result) {
