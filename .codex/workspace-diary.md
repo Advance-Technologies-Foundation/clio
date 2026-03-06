@@ -496,17 +496,3 @@ Decision: Kept the local-server flow for `--dbServerName`/`--db-server-name`, fi
 Discovery: `pg_restore` rejected the old command line because `--no-owner` and `--no-privileges` were placed after the positional backup file; once reordered, the repo-built `clio.exe` restored successfully to `localhost:5432` using the host file directly.
 Files: clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, .codex/workspace-diary.md
 Impact: Local and Docker-hosted PostgreSQL restores now execute correctly through the host `pg_restore` binary without copying backup files into Kubernetes or containers.
-
-## 2026-03-06 13:39 – Validate deploy-creatio against local Docker-hosted PostgreSQL
-Context: User requested a final end-to-end deployment test using the repo-built `clio.exe`, an extracted Creatio folder, local PostgreSQL config `local-postgres`, IIS site name `clio_works`, and port `40003`.
-Decision: Ran `deploy-creatio` with `--db-server-name local-postgres --drop-if-exists --silent`, allowing the local PostgreSQL template-reuse flow to create a template DB from the host backup file and clone the target DB from that template.
-Discovery: Deployment succeeded end-to-end; IIS binding was created for `http/*:40003:o-davydko-nb.tscrm.com`, so `localhost:40003` returns `400` while the bound host URL returns `302`, confirming the site responds on the configured host header.
-Files: .codex/workspace-diary.md
-Impact: Confirms the Docker/local PostgreSQL deployment path works in practice for `deploy-creatio`, including template creation, DB provisioning, IIS deployment, and connection string generation.
-
-## 2026-03-06 14:02 – Restore detailed help text for deploy-creatio and restore-db
-Context: User reported that the recent Docker/local PostgreSQL doc update removed too much detail from the command help output.
-Decision: Restored the richer help structure for `deploy-creatio` and `restore-db` from the previous docs, then layered Docker-hosted PostgreSQL guidance into those fuller sections instead of replacing them with abbreviated content.
-Discovery: The built `clio.exe` was still serving older copied help files until a rebuild; after rebuilding, `deploy-creatio -H` and `restore-db -H` reflected the restored detailed help text with Docker notes.
-Files: clio/help/en/deploy-creatio.txt, clio/help/en/restore-db.txt, .codex/workspace-diary.md
-Impact: Users keep the original troubleshooting/examples/detail level in CLI help while still getting the new Docker/local PostgreSQL instructions.
