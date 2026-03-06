@@ -340,19 +340,19 @@ clio restore-configuration -f
 
 ## restore-db
 
-Restores a database from a backup file to either a Kubernetes cluster or a local database server.
+Restores a database from a backup file to either a Kubernetes cluster or a configured local/local-style database server.
 
 ### Prerequisites
 
-For PostgreSQL local restore:
-- PostgreSQL client tools (pg_restore) must be installed on the machine running clio
+For PostgreSQL local/local-style restore:
+- PostgreSQL client tools (`pg_restore`) must be installed on the machine running clio
 - **Windows**: Download from [https://www.postgresql.org/download/windows/](https://www.postgresql.org/download/windows/)
-- **Linux**: Install via package manager (e.g., `apt-get install postgresql-client`)
-- **macOS**: Install via Homebrew (`brew install postgresql`)
+- **Linux**: Install via package manager, for example `apt-get install postgresql-client`
+- **macOS**: Install via Homebrew, for example `brew install postgresql`
 
 ### Configuration
 
-To restore to a local database server, add a `db` section to your `appsettings.json` file:
+To restore to a local/local-style database server, add a `db` section to your `appsettings.json` file:
 
 ```json
 {
@@ -366,22 +366,15 @@ To restore to a local database server, add a `db` section to your `appsettings.j
       "enabled": true,
       "description": "Local MSSQL Server for development"
     },
-    "my-local-mssql-windows-auth": {
-      "dbType": "mssql",
-      "hostname": "localhos",
-      "port": 0,
-      "useWindowsAuth": true,
-      "description": "Local MSSQL Server with Windows Authentication"
-    },
-    "my-local-postgres": {
+    "docker-postgres": {
       "dbType": "postgres",
       "hostname": "localhost",
-      "port": 5432,
+      "port": 5433,
       "username": "postgres",
       "password": "postgres",
       "enabled": true,
-      "pgToolsPath": "",
-      "description": "Local PostgreSQL Server for development"
+      "pgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
+      "description": "PostgreSQL container published to localhost:5433"
     }
   }
 }
@@ -389,19 +382,14 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 
 **Configuration Fields:**
 - `dbType` (required): Database type - `mssql` or `postgres`
-- `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
-- `port` (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL). Use `0` for MSSQL named instances with Windows Authentication
+- `hostname` (required): Reachable database server host or IP. For Docker PostgreSQL, use the host-visible endpoint such as `localhost` or `host.docker.internal`
+- `port` (required): Database server port. For Docker PostgreSQL, use the published host port, for example `5433`
 - `enabled` (optional): When `false`, this server is ignored by clio commands. Default is `true`
 - `username` (required for SQL Authentication): Database username. Not required when using Windows Authentication
 - `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication
 - `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication. Default is `false`
 - `description` (optional): Description for documentation
-- `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
-
-**Note on Windows Authentication:**
-- When `useWindowsAuth` is `true`, clio connects using the Windows identity of the current user
-- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
-- Username and password fields are ignored when Windows Authentication is enabled
+- `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH. `pg_restore` must be installed on the machine running clio, even when PostgreSQL runs in Docker
 
 ### Usage
 
@@ -410,116 +398,75 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 clio restore-db --dbName mydb --backupPath /path/to/backup.backup
 ```
 
-#### Restore to local database server:
+#### Restore PostgreSQL to Docker-published host port:
 ```bash
-clio restore-db --dbServerName my-local-postgres --dbName mydb --backupPath /path/to/backup.backup
+clio restore-db --dbServerName docker-postgres --dbName mydb --backupPath /path/to/backup.backup
 ```
 
+#### Restore MSSQL to local server:
 ```bash
 clio restore-db --dbServerName my-local-mssql --dbName mydb --backupPath /path/to/backup.bak
 ```
 
 ### Options
 - `--dbName` (required): Name of the database to create/restore
-- `--backupPath` (required when using `--dbServerName`): Path to the backup file
-    - `.backup` extension for PostgreSQL backups
-    - `.bak` extension for MSSQL backups
+- `--backupPath` (required when using `--dbServerName`): Path to `.backup`, `.bak`, or a Creatio ZIP containing `db/*.backup` or `db/*.bak`
 - `--dbServerName` (optional): Name of the database server configuration from `appsettings.json`
-    - If specified, restores to the configured local server
-    - If not specified, uses existing Kubernetes/environment-based behavior
+  - If specified, restores to the configured local/local-style server
+  - If not specified, preserves the existing Kubernetes/environment-based behavior
 - `--drop-if-exists` (optional): Automatically drops existing database if present without prompting
-    - By default, if a database with the same name exists, the restore operation will fail
-    - Use this flag to automatically remove the existing database before restore
 
 ### Features
 - **Connection Testing**: Tests database connectivity before attempting restore
 - **Automatic Type Detection**: Determines backup type from file extension
-- **Type Validation**: Ensures backup file type matches database server type
-- **Real-time Progress Feedback**:
-    - PostgreSQL (Debug Mode): Shows verbose output with detailed progress information using `--debug` flag
-    - PostgreSQL (Normal Mode): Shows periodic "Restore in progress..." messages every 30 seconds
-    - MSSQL: Reports progress every 5% during restore operation
-- **Existing Database Handling**:
-    - By default, fails if database already exists
-    - With `--drop-if-exists` flag, automatically drops existing database before restore
-- **PostgreSQL Tools Detection**: Automatically finds `pg_restore` in PATH or common installation locations
-- **Comprehensive Error Messages**: Provides detailed error messages with actionable suggestions
-
-### Error Handling
-
-The command provides detailed error messages for common issues:
-- Configuration not found: Lists available configurations
-- Connection failures: Suggests checking server status and credentials
-- Missing pg_restore: Provides download link and installation instructions
-- Incompatible backup type: Explains the mismatch between backup and database types
+- **Type Validation**: Ensures backup file type matches database server type before any restore changes
+- **ZIP Support**: Extracts `db/*.backup` or `db/*.bak` from Creatio ZIP packages
+- **PostgreSQL Host Restore**: Uses local `pg_restore` against the configured host/port
+- **No Docker Exec**: For Docker PostgreSQL, clio does not `docker exec` and does not copy `.backup` into the container
 
 ### Examples
 
-**Restore from ZIP file (Creatio installation package):**
+**Restore from ZIP file (Creatio installation package) to Docker PostgreSQL:**
 ```bash
-clio restore-db --dbServerName my-local-mssql --dbName creatiodev --backupPath C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip
+clio restore-db --dbServerName docker-postgres --dbName creatiodev --backupPath C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip
 ```
 
-**Restore PostgreSQL backup with auto-detected tools:**
+**Restore PostgreSQL backup to Docker-published host port:**
 ```bash
-clio restore-db --dbServerName my-local-postgres --dbName creatiodev --backupPath database.backup
-```
-
-**Restore with detailed progress (debug mode):**
-```bash
-clio restore-db --dbServerName my-local-postgres --dbName creatiodev --backupPath database.backup --debug
+clio restore-db --dbServerName docker-postgres --dbName creatiodev --backupPath C:\Creatio\database.backup
 ```
 
 **Restore MSSQL backup:**
 ```bash
-clio restore-db --dbServerName my-local-mssql --dbName creatiodev --backupPath database.bak
+clio restore-db --dbServerName my-local-mssql --dbName creatiodev --backupPath C:\Creatio\database.bak
 ```
 
 **Restore with automatic database drop (if exists):**
 ```bash
-clio restore-db --dbServerName my-local-postgres --dbName creatiodev --backupPath database.backup --drop-if-exists
-```
-
-**Restore with explicit PostgreSQL tools path:**
-```json
-{
-  "db": {
-    "custom-postgres": {
-      "dbType": "postgres",
-      "hostname": "localhost",
-      "port": 5432,
-      "username": "postgres",
-      "password": "postgres",
-      "pgToolsPath": "C:\\Program Files\\PostgreSQL\\16\\bin"
-    }
-  }
-}
-```
-
-```bash
-clio restore-db --dbServerName custom-postgres --dbName creatiodev --backupPath database.backup
+clio restore-db --dbServerName docker-postgres --dbName creatiodev --backupPath C:\Creatio\database.backup --drop-if-exists
 ```
 
 ### Troubleshooting
 
-**PostgreSQL: "pg_restore not found"**
-- Install PostgreSQL client tools
-- Add PostgreSQL bin directory to PATH environment variable
+**PostgreSQL: `pg_restore not found`**
+- Install PostgreSQL client tools on the machine running clio
+- Add PostgreSQL `bin` directory to `PATH`
 - Or specify `pgToolsPath` in configuration
+- For Docker PostgreSQL, note that `pg_restore` still runs on the host
 
 **Connection test failed**
 - Verify database server is running
 - Check hostname and port are correct
 - Verify username and password
-- Check firewall settings
+- For Docker PostgreSQL:
+  - run `docker ps`
+  - verify the PostgreSQL container is running
+  - verify the PostgreSQL port is published to the host
+  - use the published host port in `appsettings.json`
 
 **Backup type mismatch**
 - Ensure `.backup` files are used with PostgreSQL servers
 - Ensure `.bak` files are used with MSSQL servers
-
-**Database already exists**
-- Use `--drop-if-exists` flag to automatically drop the existing database
-- Or manually drop the database before running the restore command
 
 ## get-pkg-list
 
@@ -4388,93 +4335,48 @@ You may need _**Administrator**_ privileges.
 
 ## deploy-creatio
 
-Deploy Creatio from a zip file to either a Kubernetes cluster or a local database server (PostgreSQL or MSSQL).
+Deploy Creatio from a zip file to either a Kubernetes cluster or a configured local/local-style database server.
 
 ```bash
-clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
+clio deploy-creatio [options]
 ```
 
-### Options
+**Aliases:** `dc`, `ic`, `install-creatio`
 
-**Required:**
-- `--ZipFile <Path>` - Path to Creatio zip file or directory (both accepted; directory skips extraction for better performance)
+### Key options
+- `--ZipFile` - Path to a Creatio zip file or extracted directory. If omitted, clio can resolve a build from `--product`
+- `--product` - Product key used to resolve a build when `--ZipFile` is omitted
+- `--db` - Database type for build selection: `pg` or `mssql`
+- `--platform` - Runtime platform for build selection: `net6` or `netframework`
+- `--db-server-name` - Local/local-style DB server key from `appsettings.json`. When omitted, clio uses the Kubernetes restore flow
+- `--drop-if-exists` - Automatically drops an existing target database in local/local-style mode
+- `--redis-db` - Redis database number. Default is `-1`, which means auto-detect an empty database
+- `--redis-server-name` - Local Redis server key from `appsettings.json` for local/local-style mode
+- `--SiteName`, `--SitePort`, `--deployment`, `--no-iis`, `--app-path`, `--auto-run` - Deployment options
 
-**Database Options:**
-- `--db-server-name <Name>` - Name of database server configuration from appsettings.json for local database deployment
-    - If not specified, uses Kubernetes cluster database (default behavior)
-- `--drop-if-exists` - Automatically drop existing database if present without prompting (works with local databases)
-- `--disable-reset-password` - Hidden option controlling post-restore password-reset script (default: `true`)
-    - Script is considered only for package filename versions `>= 8.3.3`
-    - Script runs only on corporate-eligible machines:
-      - Windows `whoami` output starts with `tscrm\`
-      - OR `ping tscrm.com` succeeds
-    - Script applies to both local and Kubernetes database modes
-    - Script failures produce warnings and do not block deployment
+### Docker PostgreSQL support
+When `--db-server-name` points to a PostgreSQL entry in `appsettings.json`, clio treats it as a normal host/port PostgreSQL server. This is the supported flow for PostgreSQL running in Docker with a published host port.
 
-**Redis Configuration:**
-- `--redis-db <Number>` - Specify Redis database number (optional)
-    - Default: -1 (auto-detect empty database)
-    - Auto-Detection: Scans Redis databases starting from 1 to find an empty database
-    - Supports custom Redis configurations with more than 16 databases
-    - Works for both Kubernetes and local deployments
-    - Manual override: Specify a number (0-15 or higher) to use a specific database
-    - Error handling: Provides detailed messages if all databases are occupied or Redis is unreachable
-- `--redis-server-name <Name>` - Local Redis server configuration key from appsettings.json (local deployment mode)
-    - Resolution order for local deployment:
-      1) `--redis-server-name` (explicit)
-      2) `defaultRedis` from appsettings.json
-      3) single enabled server from `redis` section
-      4) `localhost:6379` fallback only when `redis` section is absent
-    - If multiple enabled servers are configured and no default is set, deployment fails
+In that mode clio:
+- runs `pg_restore` on the machine running clio
+- connects through the configured host and port
+- keeps the `.backup` file on the local filesystem
+- does not `docker exec` into the container
+- keeps PostgreSQL template reuse enabled for repeated deployments from the same package
 
-**Deployment Options:**
-- `--SiteName <Name>` - Application site name
-- `--SitePort <Port>` - Site port number
-- `--deployment <Method>` - Deployment method: `auto|iis|dotnet` (default: auto)
-- `--no-iis` - Don't use IIS on Windows, use dotnet run instead
-- `--app-path <Path>` - Application installation path
-- `--auto-run` - Automatically run application after deployment (default: true)
-
-### Deployment Modes
-
-#### 1. **Kubernetes Cluster Database** (Default)
-Deploys to a PostgreSQL or MSSQL database running in Kubernetes:
-
-```bash
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip
-```
-
-#### 2. **Local Database Server**
-Deploys to a local PostgreSQL or MSSQL server configured in appsettings.json:
-
-```bash
-# Deploy to local PostgreSQL
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
-  --db-server-name my-local-postgres \
-  --drop-if-exists
-
-# Deploy to local MSSQL
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
-  --db-server-name my-local-mssql \
-  --drop-if-exists
-```
-
-### Local Database Configuration
-
-To use local database deployment, add a `db` section to your `$HOME/.clio/appsettings.json`:
-
+### Local DB configuration example
 ```json
 {
   "db": {
-    "my-local-postgres": {
+    "docker-postgres": {
       "dbType": "postgres",
       "hostname": "localhost",
-      "port": 5432,
+      "port": 5433,
       "username": "postgres",
-      "password": "your_password",
+      "password": "postgres",
       "enabled": true,
-      "description": "Local PostgreSQL Server",
-      "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin"
+      "pgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
+      "description": "PostgreSQL container published to localhost:5433"
     },
     "my-local-mssql": {
       "dbType": "mssql",
@@ -4484,218 +4386,38 @@ To use local database deployment, add a `db` section to your `$HOME/.clio/appset
       "password": "your_password",
       "enabled": true,
       "description": "Local MSSQL Server"
-    },
-    "my-local-mssql-windows-auth": {
-      "dbType": "mssql",
-      "hostname": "localhost",
-      "port": 0,
-      "enabled": true,
-      "useWindowsAuth": true,
-      "description": "Local MSSQL Server with Windows Authentication"
     }
   }
 }
 ```
 
-**Configuration Fields:**
-- `dbType` (required): Database type - `postgres` or `mssql`
-- `hostname` (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
-- `port` (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
-- `enabled` (optional): When `false`, this server is ignored by clio commands. Default: `true`
-- `username` (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication for MSSQL
-- `password` (required for SQL Authentication): Database password. Not required when using Windows Authentication for MSSQL
-- `useWindowsAuth` (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`. **Note:** Windows Authentication is not supported for PostgreSQL
-- `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
-- `description` (optional): Human-readable description
-
-**Note on Windows Authentication:**
-- Windows Authentication is only supported for MSSQL, not for PostgreSQL
-- When `useWindowsAuth` is `true`, clio will connect using the Windows identity of the current user
-- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
-- For named instances with Windows Auth, set `port` to `0` and specify full instance name in `hostname` (e.g., `localhost\SQLEXPRESS`)
-- Username and password fields are ignored when Windows Authentication is enabled
-
-### Redis Database Configuration
-
-**Kubernetes Deployment:**
-By default, Clio automatically finds an empty Redis database starting from index 1. If auto-detection fails:
-
-```bash
-# Manually specify Redis database
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip --redis-db 5
-```
-
-**Local Deployment:**
-Redis connection is resolved from appsettings `redis` section (with `defaultRedis` support) and falls back to `localhost:6379` only when redis config is absent. You can specify a different database:
-
-```bash
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
-  --db-server-name my-local-postgres \
-  --redis-server-name redis-dev \
-  --redis-db 2
-```
-
-Local Redis appsettings example:
-```json
-{
-  "defaultRedis": "redis-dev",
-  "redis": {
-    "redis-dev": {
-      "Hostname": "localhost",
-      "Port": 6379,
-      "Username": "default",
-      "Password": "your_password",
-      "Enabled": true
-    }
-  }
-}
-```
-
-### Error Handling
-
-**Redis Configuration Errors:**
-
-If you see `[Redis Configuration Error] Could not find an empty Redis database`:
-- **Cause**: All available Redis databases contain data (auto-detection scans from database 1 onwards)
-- **Solutions**:
-    1. Clear existing Redis databases: `clio clear-redis-db -e <environment>`
-    2. Increase available Redis databases in redis.conf `databases` setting
-    3. Use `--redis-db <number>` to manually specify an available database
-
-If you see `[Redis Connection Error] Could not connect to Redis`:
-- **Cause**: Redis server is not running or not accessible
-- **Solutions**:
-    1. Verify Redis is running: `redis-cli ping`
-    2. Check Redis configuration and network connectivity
-    3. For Kubernetes: Check Redis pod status (`kubectl get pods`)
-    4. Manually specify a database number as fallback: `--redis-db 0`
-
-**Database Errors:**
-
-If database already exists without `--drop-if-exists`:
-- The deployment will fail with an error message
-- Use `--drop-if-exists` flag to automatically drop and recreate the database
-
-**Password reset script behavior:**
-- If package version cannot be parsed from filename, script is skipped silently
-- If `--disable-reset-password false` is set, script is not executed
-- If corporate eligibility is not detected, script is not executed
+Notes:
+- `hostname` and `port` must be reachable from the machine running clio
+- for Docker PostgreSQL, use the published host endpoint such as `localhost:5433`
+- `pg_restore` must be installed on the machine running clio, even when PostgreSQL runs in Docker
+- when `enabled` is `false`, the DB server entry is ignored by clio commands
 
 ### Examples
-
-**Complete local deployment with database drop:**
 ```bash
-clio deploy-creatio \
-  --ZipFile ~/Downloads/8.3.3_StudioNet8_PostgreSQL.zip \
-  --db-server-name my-local-postgres \
-  --SiteName MyCreatioApp \
-  --SitePort 5000 \
-  --drop-if-exists \
-  --redis-db 0
+# Kubernetes restore flow
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip
+
+# PostgreSQL in Docker via published host port
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
+  --db-server-name docker-postgres --SiteName Dev --SitePort 8080
+
+# Local MSSQL with automatic drop
+clio deploy-creatio --ZipFile ~/Downloads/creatio.zip \
+  --db mssql --db-server-name my-local-mssql --drop-if-exists
 ```
 
-**Kubernetes deployment with custom Redis:**
-```bash
-clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio.zip \
-  --redis-db 3
-```
+### Troubleshooting
+- `pg_restore not found`: install PostgreSQL client tools on the machine running clio, add them to `PATH`, or set `pgToolsPath`
+- PostgreSQL connection failures in Docker mode: run `docker ps`, verify the container is running, and verify the PostgreSQL port is published to the host
+- Backup type mismatch: use PostgreSQL packages/backups with PostgreSQL servers and MSSQL packages/backups with MSSQL servers
+- Kubernetes unavailable: if kubectl is unavailable, `--db-server-name` is required
 
-### Technical Details
-
-- Automatically detects database type (PostgreSQL/MSSQL) from zip file
-- For local deployment, automatically configures connection strings for the specified database server
-- Extracts database backup from zip and restores it using the same logic as `restore-db` command
-- Deploys application files using IIS (Windows) or dotnet run (macOS/Linux)
-- Registers the environment in clio for easy management
-
-## Technical details
-
-Clio will automatically determine if the zip file is stored remotely.
-If the file isn't on your local machine, Clio will copy it to a predefined local working folder location,
-You can change the default location in `appsetting.json` file `creatio-products` property.
-To see your `appsetting.json` file execute
-```bash
-clio cfg open
-```
-If the zip file already exists in your working directory, Clio will skip this step.
-
-### For IIS deployment
-Make sure that iis working directory defined in `appsettings.json` file `iis-clio-root-path` has allow `Full Control` for IIS_IUSRS
-
-![](https://academy.creatio.com/sites/en/files/documentation/sdk/en/BPMonlineWebSDK/Screenshots/WorkingWithIDE/permissions.png)
-
-### Extracting the Zip File
-Clio will extract the zip file to the same directory where the original zip file is located.
-If the folder already exists, Clio will skip this step.
-
-
-### Constructing the Connection String
-The connection string will be generated based on your existing cluster configuration.
-
-
-### Database Restoration
-Initially, the backup file will be copied to a folder that is accessible to the database server.
-Scripts suitable for both Microsoft SQL and Postgres deployment within a Kubernetes cluster are provided.
-Clio will then search for a fitting server within the `clio-infrastructure` namespace in Kubernetes and
-copy files as needed.
-Once files are copied, Clio will proceed to restore the database.
-By default, database will be available on default port
-
-- Postgres: localhost:5432 (root/root)
-- PG Admin: localhost:1080 (root@creatio.com/root)
-- MSSQL: localhost:5432 (sa/$Zarelon01$Zarelon01)
-
-> Postgres - clio will create a template database, and then a real database from the template. If Database or template already exists, Clio will skip this step.
-
-> You can change port and secrets in configuration files `C:\Users\YOUR_USER\AppData\Local\creatio\clio\infrastructure`
-
-
-## Restore database for Creatio environments
-
-To restore database for Creatio environments, you can use the next command:
-
-```bash
-clio restore-db --db-name mydb10 --db-working-folder <DB_SERVER_FOLDER> --backup-file <BACKUP_FILE_PATH> --db-server-uri mssql://USERNAME:PASSWORD@127.0.0.1:1433
-#use --force to overwrite existing database without prompt
-```
-
-You can register db-servers in clio config file (`appsetting.json`) see example below
-
-```json
-{
-  "dbConnectionStringKeys": {
-    "k8-mssql": {
-      "uri": "mssql://username:password@127.0.0.1:1433",
-      "workingFolder": "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
-    }
-  }
-}
-```
-To link environment with a db server use `DbServerKey` property in environment settings.
-You can also specify `DbName` and `BackupFilePath` properties to simplify command.
-```json
-{
-  "Environments": {
-    "apollo-bundle-framework": {
-      "DbServerKey": "k8-mssql",
-      "DbName": "mydb10",
-      "BackupFilePath": "D:\\Projects\\CreatioProductBuild\\8.1.2.2482_Studio_Softkey_MSSQL_ENU\\db\\BPMonline812Studio.bak"
-    }
-  },
-  "dbConnectionStringKeys": {
-    "k8-mssql": {
-      "uri": "mssql://username:password@127.0.0.1:1433",
-      "workingFolder": "\\\\wsl.localhost\\rancher-desktop\\mnt\\clio-infrastructure\\mssql\\data"
-    }
-  }
-}
-```
-
-```bash
-clio restore-db -e <ENVIRONMENT_NAME>
-```
-
+For full details, see [`clio/docs/commands/deploy-creatio.md`](./docs/commands/deploy-creatio.md).
 ## hosts
 
 Lists all registered Creatio environments and their current runtime status.
@@ -5102,3 +4824,6 @@ Alias heading for call-Service command. Refer to call-Service for usage examples
 
 ## create-manifest
 Alias heading: creating a manifest is performed by save-state command; see save-state section.
+
+
+

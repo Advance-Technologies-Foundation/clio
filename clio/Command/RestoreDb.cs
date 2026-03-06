@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -212,6 +212,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 				if (!string.IsNullOrEmpty(testResult.Suggestion)) {
 					_logger.WriteWarning($"Suggestion: {testResult.Suggestion}");
 				}
+				WriteDockerPostgresConnectionHint(config);
 				return 1;
 			}
 
@@ -332,7 +333,8 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		string pgRestorePath = _postgresToolsPathDetector.GetPgRestorePath(config.PgToolsPath);
 		
 		if (string.IsNullOrEmpty(pgRestorePath)) {
-			_logger.WriteError("pg_restore not found. Please install PostgreSQL client tools and ensure they are in PATH, or specify pgToolsPath in configuration.");
+            _logger.WriteError("pg_restore not found. Install PostgreSQL client tools on the machine running clio, ensure pg_restore is in PATH, or specify pgToolsPath in configuration.");
+            _logger.WriteInfo("When using --dbServerName with PostgreSQL, clio runs pg_restore locally against the configured host and port; it does not copy the .backup file into Docker or Kubernetes.");
 			_logger.WriteInfo("Download PostgreSQL from: https://www.postgresql.org/download/");
 			if (!string.IsNullOrEmpty(config.PgToolsPath)) {
 				_logger.WriteError($"pg_restore not found at specified path: {config.PgToolsPath}");
@@ -366,6 +368,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 			_logger.WriteInfo($"Database {dbName} created successfully");
 			_logger.WriteInfo($"Starting restore from {backupPath}...");
+            _logger.WriteInfo($"Running local pg_restore against {config.Hostname}:{config.Port}. The backup file stays on the host filesystem and is not copied into Docker or Kubernetes.");
 			if (Program.IsDebugMode) {
 				_logger.WriteInfo("This may take several minutes depending on database size. Detailed progress will be shown below:");
 			} else {
@@ -388,7 +391,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	}
 
 	private int ExecutePgRestoreCommand(string pgRestorePath, LocalDbServerConfiguration config, string backupPath, string dbName) {
-		string arguments = $"-h {config.Hostname} -p {config.Port} -U {config.Username} -d {dbName} -v \"{backupPath}\" --no-owner --no-privileges";
+        string arguments = $"-h {config.Hostname} -p {config.Port} -U {config.Username} -d {dbName} -v --no-owner --no-privileges \"{backupPath}\"";
 		DateTime lastProgressMessage = DateTime.Now;
 		ProcessExecutionOptions executionOptions = new(pgRestorePath, arguments) {
 			EnvironmentVariables = new Dictionary<string, string> {
@@ -417,6 +420,13 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		return result.Started ? result.ExitCode ?? 1 : 1;
 	}
 
+	private void WriteDockerPostgresConnectionHint(LocalDbServerConfiguration config) {
+		if (!string.Equals(config.DbType, "postgres", StringComparison.OrdinalIgnoreCase) &&
+		    !string.Equals(config.DbType, "postgresql", StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		_logger.WriteWarning($"If PostgreSQL is running in Docker, verify docker ps shows the container, port {config.Port} is published to the host, and connect using the published host port in appsettings.json.");
+	}
 	private int HandleUnsupportedDbType(string dbType) {
 		_logger.WriteError($"Database type '{dbType}' is not supported. Supported types: mssql, postgres");
 		return 1;
@@ -428,4 +438,11 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 }
 
 #endregion
+
+
+
+
+
+
+
 
