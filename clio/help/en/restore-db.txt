@@ -2,34 +2,41 @@ COMMAND TYPE
     Database commands
 
 NAME
-    restore-db (rdb) - Restores database from backup file to either Kubernetes 
-                       cluster or local database server
+    restore-db (rdb) - Restores database from backup file to either Kubernetes
+                       cluster or a configured local database server
 
 DESCRIPTION
-    restore-db command restores a database from a backup file to a database 
+    restore-db command restores a database from a backup file to a database
     server. It supports both PostgreSQL and MSSQL databases.
-    
+
     The command can restore to:
     - Kubernetes cluster (default behavior)
     - Local database server (when --dbServerName is specified)
-    
+
     When restoring to a local server, the command:
     - Tests connection before restore (fail-fast)
     - Auto-detects backup file type (.backup for PostgreSQL, .bak for MSSQL)
     - Validates backup type matches database type
     - Automatically drops existing database if present
-    - For PostgreSQL: uses pg_restore tool (must be installed)
+    - For PostgreSQL: uses pg_restore tool (must be installed on the machine running clio)
+
+    PostgreSQL running in Docker is supported through the local server path.
+    Configure the published host/port in appsettings.json and clio will:
+    - connect to that host/port
+    - run pg_restore on the machine running clio
+    - use the backup file from the local filesystem
+    - NOT copy the .backup file into Docker or Kubernetes
 
 PREREQUISITES
     For PostgreSQL local restore, PostgreSQL client tools must be installed:
-    
+
     Windows: Download from https://www.postgresql.org/download/windows/
     Linux:   Install via package manager (e.g., apt-get install postgresql-client)
     macOS:   Install via Homebrew (brew install postgresql)
 
 CONFIGURATION
     To restore to a local database server, add a 'db' section to appsettings.json:
-    
+
     {
       "db": {
         "my-local-mssql": {
@@ -50,50 +57,80 @@ CONFIGURATION
           "enabled": true,
           "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
           "description": "Local PostgreSQL Server for development"
+        },
+        "docker-postgres": {
+          "dbType": "postgres",
+          "hostname": "localhost",
+          "port": 5433,
+          "username": "postgres",
+          "password": "postgres",
+          "enabled": true,
+          "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
+          "description": "PostgreSQL container published to localhost:5433"
         }
       }
     }
-    
+
     Configuration fields:
     - dbType (required): Database type - 'mssql' or 'postgres'
     - hostname (required): Database server hostname or IP address
+      For Docker PostgreSQL use the host-visible endpoint, such as localhost
+      or host.docker.internal
     - port (required): Database server port (1433 for MSSQL, 5432 for PostgreSQL)
+      For Docker PostgreSQL use the published host port, such as 5433
     - enabled (optional): When false, this server is ignored by clio commands (default: true)
     - username (required): Database username
     - password (required): Database password
+    - useWindowsAuth (optional, MSSQL only): Use Windows Authentication
     - description (optional): Description for documentation
-    - pgToolsPath (optional, PostgreSQL only): Path to PostgreSQL client tools 
+    - pgToolsPath (optional, PostgreSQL only): Path to PostgreSQL client tools
                                                 directory if not in PATH
 
 SYNOPSIS
     clio restore-db [OPTIONS]
 
 OPTIONS
-    --dbName               Database name to create/restore (required)
-    
-    --backupPath          Path to backup file or ZIP archive (required when using --dbServerName)
-                          - .zip file containing db/*.bak or db/*.backup
-                          - .backup extension for PostgreSQL backups
-                          - .bak extension for MSSQL backups
-    
-    --dbServerName        Name of database server configuration from appsettings.json
-                          (optional)
-                          - If specified: restores to configured enabled local server
-                          - If not specified: uses Kubernetes/environment behavior
+    --dbName
+        Database name to create/restore (required)
+
+    --backupPath
+        Path to backup file or ZIP archive (required when using --dbServerName)
+        - .zip file containing db/*.bak or db/*.backup
+        - .backup extension for PostgreSQL backups
+        - .bak extension for MSSQL backups
+
+    --dbServerName
+        Name of database server configuration from appsettings.json
+        (optional)
+        - If specified: restores to configured enabled local server
+        - If not specified: uses Kubernetes/environment behavior
+
+    --drop-if-exists
+        Automatically drop existing database if present without prompting
+        Local/local-style restore only
 
 EXAMPLE
     Restore from ZIP file (Creatio installation package):
-    clio restore-db --dbServerName my-local-mssql --dbName creatiodev 
+    clio restore-db --dbServerName my-local-mssql --dbName creatiodev
                     --backupPath C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip
+
     Restore to Kubernetes cluster (existing behavior):
     clio restore-db --dbName mydb --backupPath /path/to/backup.backup
 
     Restore to local PostgreSQL server:
-    clio restore-db --dbServerName my-local-postgres --dbName creatiodev 
+    clio restore-db --dbServerName my-local-postgres --dbName creatiodev
                     --backupPath database.backup
 
+    Restore PostgreSQL to Docker-published host port:
+    clio restore-db --dbServerName docker-postgres --dbName creatiodev
+                    --backupPath C:\Creatio\database.backup
+
+    Restore PostgreSQL from Creatio ZIP package to Docker-published host port:
+    clio restore-db --dbServerName docker-postgres --dbName creatiodev
+                    --backupPath C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip
+
     Restore to local MSSQL server:
-    clio restore-db --dbServerName my-local-mssql --dbName creatiodev 
+    clio restore-db --dbServerName my-local-mssql --dbName creatiodev
                     --backupPath database.bak
 
     Restore PostgreSQL with explicit tools path:
@@ -110,47 +147,62 @@ EXAMPLE
         }
       }
     }
-    
-    clio restore-db --dbServerName custom-postgres --dbName creatiodev 
+
+    clio restore-db --dbServerName custom-postgres --dbName creatiodev
                     --backupPath database.backup
+
+    Restore with automatic database drop:
+    clio restore-db --dbServerName docker-postgres --dbName creatiodev
+                    --backupPath C:\Creatio\database.backup --drop-if-exists
 
 FEATURES
     - Connection Testing: Tests database connectivity before attempting restore
     - Automatic Type Detection: Determines backup type from file extension
     - Type Validation: Ensures backup file type matches database server type
-    - Existing Database Handling: Automatically drops existing database before restore
-    - PostgreSQL Tools Detection: Automatically finds pg_restore in PATH or 
-                                  common installation locations
-    - Comprehensive Error Messages: Provides detailed error messages with 
+    - ZIP Support: Extracts db/*.bak or db/*.backup from Creatio ZIP packages
+    - Existing Database Handling: Supports automatic drop before restore
+    - PostgreSQL Tools Detection: Automatically finds pg_restore in PATH or
+                                  configured pgToolsPath
+    - Comprehensive Error Messages: Provides detailed error messages with
                                     actionable suggestions
 
 ERROR HANDLING
     The command provides detailed error messages for common issues:
-    
+
     Configuration not found:
         Lists available enabled configurations in appsettings.json
-    
+
     Connection failures:
-        Suggests checking server status, credentials, and firewall settings
-    
+        Suggests checking server status, credentials, firewall settings,
+        and for Docker PostgreSQL the published host port mapping
+
     Missing pg_restore:
         Provides download link and installation instructions
-    
+        Notes that pg_restore must exist on the machine running clio even when
+        PostgreSQL itself runs in Docker
+
     Incompatible backup type:
-        Explains the mismatch between backup and database types
+        Explains the mismatch between backup and database types and fails
+        before any database mutation
 
 TROUBLESHOOTING
     PostgreSQL: "pg_restore not found"
     - Install PostgreSQL client tools
     - Add PostgreSQL bin directory to PATH environment variable
     - Or specify pgToolsPath in configuration
-    
+    - For Docker PostgreSQL, note that pg_restore still runs on the host
+
     Connection test failed
     - Verify database server is running
     - Check hostname and port are correct
     - Verify username and password
     - Check firewall settings
-    
+    - For Docker PostgreSQL:
+      - run docker ps
+      - verify the PostgreSQL container is running
+      - verify the container port is published to the host
+      - use the published host port in appsettings.json
+
     Backup type mismatch
     - Ensure .backup files are used with PostgreSQL servers
     - Ensure .bak files are used with MSSQL servers

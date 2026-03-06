@@ -1,8 +1,10 @@
-﻿﻿# Deploy Creatio
+# Deploy Creatio
 
 ## Purpose
 
 Deploys Creatio application from a zip file to either a Kubernetes cluster or a local database server. This command handles the complete deployment process, including extracting files, restoring databases, configuring connection strings, and starting the application. Supports both Windows (IIS or dotnet) and macOS/Linux (dotnet) deployment strategies.
+
+For PostgreSQL running in Docker, use `--db-server-name` with a `db` entry that points to the published host/port. In that mode clio runs `pg_restore` on the machine running clio, connects through the configured host/port, and keeps the `.backup` file on the local filesystem. It does not `docker exec` into the container.
 
 ## Usage
 
@@ -20,32 +22,34 @@ clio deploy-creatio [options]
 
 ### Required Arguments
 
-| Argument  | Short | Description                                          | Example                          |
+| Argument | Short | Description | Example |
 |-----------|-------|------------------------------------------------------|----------------------------------|
-| --ZipFile |       | Path to Creatio zip file (must be zip, not directory) | `--ZipFile "C:\Creatio\app.zip"` |
+| --ZipFile |       | Path to Creatio zip file or already extracted directory | `--ZipFile "C:\Creatio\app.zip"` |
 
 ### Optional Arguments - Deployment Configuration
 
-| Argument          | Short | Default          | Description                                   | Example                     |
+| Argument | Short | Default | Description | Example |
 |-------------------|-------|------------------|-----------------------------------------------|-----------------------------|
-| -e, --Environment | -e    |                  | Environment name (positional argument 0)      | `-e MyCreatio`              |
-| --SiteName        |       |                  | Website/application name                      | `--SiteName MyApp`          |
-| --SitePort        |       | 80               | HTTP port for the application                 | `--SitePort 8080`           |
-| --deployment      |       | auto             | Deployment method: auto, iis, or dotnet       | `--deployment dotnet`       |
-| --no-iis          |       | false            | Don't use IIS on Windows (use dotnet)         | `--no-iis`                  |
-| --app-path        |       | Platform default | Custom application installation path          | `--app-path "/opt/creatio"` |
-| --auto-run        |       | true             | Automatically launch browser after deployment | `--auto-run false`          |
+| -e, --Environment | -e | | Environment name (positional argument 0) | `-e MyCreatio` |
+| --SiteName | | | Website/application name | `--SiteName MyApp` |
+| --SitePort | | 80 | HTTP port for the application | `--SitePort 8080` |
+| --deployment | | auto | Deployment method: auto, iis, or dotnet | `--deployment dotnet` |
+| --no-iis | | false | Don't use IIS on Windows (use dotnet) | `--no-iis` |
+| --app-path | | Platform default | Custom application installation path | `--app-path "/opt/creatio"` |
+| --auto-run | | true | Automatically launch browser after deployment | `--auto-run false` |
 
-### Optional Arguments – Database Configuration
+### Optional Arguments - Database Configuration
 
-| Argument         | Short | Default | Description                                  | Example                        |
+| Argument | Short | Default | Description | Example |
 |------------------|-------|---------|----------------------------------------------|--------------------------------|
-| --db             |       | pg      | Database type: pg or mssql                   | `--db mssql`                   |
-| --db-server-name |       |         | Local DB server config from appsettings.json | `--db-server-name my-postgres` |
-| --drop-if-exists |       | false   | Auto-drop existing database without prompt   | `--drop-if-exists`             |
+| --db | | pg | Database type: pg or mssql | `--db mssql` |
+| --db-server-name | | | Local DB server config from appsettings.json | `--db-server-name my-postgres` |
+| --drop-if-exists | | false | Auto-drop existing database without prompt | `--drop-if-exists` |
 | --disable-reset-password | | true | Hidden option. Disable post-restore password-reset script | `--disable-reset-password false` |
 
 **Important:** If kubectl is not detected (no Kubernetes cluster available), then `--db-server-name` is **REQUIRED**. The command will fail with an error if neither kubectl configuration nor `--db-server-name` is provided.
+
+**Docker PostgreSQL note:** When `--db-server-name` points to a PostgreSQL container exposed through a host port such as `localhost:5433`, clio uses the local restore flow. `pg_restore` still runs on the machine running clio, and the `.backup` file stays on the local filesystem.
 
 **Password reset script behavior (Creatio >= 8.3.3):**
 - The script is eligible only when package filename version is parsed and is `>= 8.3.3`
@@ -56,26 +60,26 @@ clio deploy-creatio [options]
 - The script applies to both Kubernetes and local database deployments
 - If script execution fails, deployment continues and a warning is logged
 
-### Optional Arguments – Platform Configuration
+### Optional Arguments - Platform Configuration
 
-| Argument   | Short | Default | Description                            | Example                   |
+| Argument | Short | Default | Description | Example |
 |------------|-------|---------|----------------------------------------|---------------------------|
-| --platform |       | net8    | Runtime platform: net8 or netframework | `--platform netframework` |
-| --product  |       |         | Product name (optional)                | `--product Studio`        |
+| --platform | | net8 | Runtime platform: net8 or netframework | `--platform netframework` |
+| --product | | | Product name (optional) | `--product Studio` |
 
-### Optional Arguments – HTTPS Configuration
+### Optional Arguments - HTTPS Configuration
 
-| Argument        | Short | Default | Description                            | Example                          |
+| Argument | Short | Default | Description | Example |
 |-----------------|-------|---------|----------------------------------------|----------------------------------|
-| --use-https     |       | false   | Enable HTTPS for the application       | `--use-https`                    |
-| --cert-path     |       |         | Path to SSL certificate (.pem or .pfx) | `--cert-path "C:\certs\app.pem"` |
-| --cert-password |       |         | Password for SSL certificate           | `--cert-password "secret"`       |
+| --use-https | | false | Enable HTTPS for the application | `--use-https` |
+| --cert-path | | | Path to SSL certificate (.pem or .pfx) | `--cert-path "C:\certs\app.pem"` |
+| --cert-password | | | Password for SSL certificate | `--cert-password "secret"` |
 
-### Optional Arguments – Redis Configuration
+### Optional Arguments - Redis Configuration
 
-| Argument   | Short | Default   | Description                                           | Example        |
+| Argument | Short | Default | Description | Example |
 |------------|-------|-----------|-------------------------------------------------------|----------------|
-| --redis-db |       | -1 (auto) | Redis database number (auto-detects if not specified) | `--redis-db 5` |
+| --redis-db | | -1 (auto) | Redis database number (auto-detects if not specified) | `--redis-db 5` |
 | --redis-server-name | | | Local Redis server config key from appsettings.json (local mode) | `--redis-server-name redis-dev` |
 
 **Redis Auto-Detection Behavior:**
@@ -97,17 +101,17 @@ clio deploy-creatio [options]
 - Use when auto-detection fails or when you need a deterministic database selection
 - Example: `--redis-db 5` uses database 5 explicitly
 
-### Optional Arguments – Authentication (inherited from EnvironmentOptions)
+### Optional Arguments - Authentication (inherited from EnvironmentOptions)
 
-| Argument       | Short | Default | Description                  | Example                             |
+| Argument | Short | Default | Description | Example |
 |----------------|-------|---------|------------------------------|-------------------------------------|
-| --uri          | -u    |         | Application URI              | `-u http://myapp.com`               |
-| --Login        | -l    |         | User login                   | `-l supervisor`                     |
-| --Password     | -p    |         | User password                | `-p password123`                    |
-| --clientId     |       |         | OAuth client ID              | `--clientId abc123`                 |
-| --clientSecret |       |         | OAuth client secret          | `--clientSecret xyz789`             |
-| --authAppUri   |       |         | OAuth authentication app URI | `--authAppUri https://auth.app.com` |
-| --silent       |       | false   | Run without user interaction | `--silent`                          |
+| --uri | -u | | Application URI | `-u http://myapp.com` |
+| --Login | -l | | User login | `-l supervisor` |
+| --Password | -p | | User password | `-p password123` |
+| --clientId | | | OAuth client ID | `--clientId abc123` |
+| --clientSecret | | | OAuth client secret | `--clientSecret xyz789` |
+| --authAppUri | | | OAuth authentication app URI | `--authAppUri https://auth.app.com` |
+| --silent | | false | Run without user interaction | `--silent` |
 
 ## Examples
 
@@ -125,7 +129,14 @@ clio deploy-creatio -e "dev" \
   --db-server-name my-local-postgres --SitePort 8080 --SiteName "MyApp" --silent
 ```
 
-#### 3. Deploy to local MSSQL server with database drop
+#### 3. Deploy to PostgreSQL running in Docker via published host port
+```bash
+clio deploy-creatio -e "docker-dev" \
+  --ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip" \
+  --db-server-name docker-postgres --SitePort 8080 --SiteName "MyApp" --silent
+```
+
+#### 4. Deploy to local MSSQL server with database drop
 ```bash
 clio deploy-creatio -e "QA" \
   --ZipFile "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip" \
@@ -137,7 +148,7 @@ clio deploy-creatio -e "QA" \
 
 ### Advanced Usage
 
-#### 4. Deploy with HTTPS on Windows using dotnet (no IIS)
+#### 5. Deploy with HTTPS on Windows using dotnet (no IIS)
 ```bash
 clio deploy-creatio -e "SecureApp" \
   --ZipFile "C:\creatio-app.zip" \
@@ -147,7 +158,7 @@ clio deploy-creatio -e "SecureApp" \
   --SitePort 443 --SiteName "MyApp"
 ```
 
-#### 5. Deploy to custom path on macOS
+#### 6. Deploy to custom path on macOS
 ```bash
 clio deploy-creatio -e "CreatioApp" \
   --ZipFile "/Users/downloads/creatio-app.zip" \
@@ -155,7 +166,7 @@ clio deploy-creatio -e "CreatioApp" \
   --SitePort 8080
 ```
 
-#### 6. Deploy on Linux with systemd service
+#### 7. Deploy on Linux with systemd service
 ```bash
 clio deploy-creatio -e "LinuxApp" \
   --ZipFile "/home/admin/creatio-app.zip" \
@@ -164,18 +175,18 @@ clio deploy-creatio -e "LinuxApp" \
   --SitePort 8080
 ```
 
-#### 7. Silent deployment without browser launch
+#### 8. Silent deployment without browser launch
 ```bash
 clio deploy-creatio -e "AutoDeploy" \
   --ZipFile "C:\creatio-app.zip" \
   --db mssql \
   --db-server-name my-local-mssql \
-  --SitePort 8080 --SiteName "MyApp"
+  --SitePort 8080 --SiteName "MyApp" \
   --auto-run false \
   --silent
 ```
 
-#### 8. Deploy with specific Redis database
+#### 9. Deploy with specific Redis database
 ```bash
 clio deploy-creatio -e "RedisApp" \
   --ZipFile "C:\creatio-app.zip" \
@@ -183,7 +194,7 @@ clio deploy-creatio -e "RedisApp" \
   --SitePort 8080
 ```
 
-#### 9. Deploy with long filename (PostgreSQL template reuse)
+#### 10. Deploy with long filename (PostgreSQL template reuse)
 ```bash
 # First deployment: Creates template from backup (slower)
 clio deploy-creatio -e "Dev" \
@@ -196,7 +207,7 @@ clio deploy-creatio -e "Dev2" \
   --db-server-name my-local-postgres --SitePort 8080 --SiteName "MyApp" --silent
 ```
 
-#### 10. Complete production deployment
+#### 11. Complete production deployment
 ```bash
 clio deploy-creatio -e "Production" \
   --ZipFile "/path/to/creatio-app.zip" \
@@ -204,7 +215,7 @@ clio deploy-creatio -e "Production" \
   --db-server-name prod-mssql \
   --platform net8 \
   --SitePort 8443 \
-  --SiteName "MyApp"
+  --SiteName "MyApp" \
   --use-https \
   --cert-path "/certs/server.pfx" \
   --cert-password "certpass" \
@@ -238,6 +249,8 @@ When `--db-server-name` **IS** specified, the command deploys to a local databas
 - Restores database using local tools (pg_restore for PostgreSQL, SQL Server for MSSQL)
 - Uses template-based restoration for PostgreSQL (see below)
 - Configures connection strings to point to the local server
+
+For PostgreSQL running in Docker, this same local mode is used. The configured database server entry must point to the published host endpoint, and clio keeps the backup file on the host while `pg_restore` connects over host/port.
 
 **Example:**
 ```bash
@@ -429,6 +442,16 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
       "pgToolsPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
       "description": "Local PostgreSQL Server"
     },
+    "docker-postgres": {
+      "dbType": "postgres",
+      "hostname": "localhost",
+      "port": 5433,
+      "username": "postgres",
+      "password": "your_password",
+      "enabled": true,
+      "pgToolsPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
+      "description": "PostgreSQL container published to localhost:5433"
+    },
     "my-local-mssql": {
       "dbType": "mssql",
       "hostname": "localhost",
@@ -453,8 +476,8 @@ To deploy to a local database server, add a `db` section to your `appsettings.js
 ### Configuration Fields
 
 - **dbType** (required): Database type - `postgres` or `mssql`
-- **hostname** (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`)
-- **port** (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication
+- **hostname** (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`). For Docker PostgreSQL, use the host-visible endpoint such as `localhost` or `host.docker.internal`
+- **port** (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication. For Docker PostgreSQL, use the published host port such as `5433`
 - **enabled** (optional): When `false`, this server is ignored by clio commands. Default is `true`
 - **username** (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication
 - **password** (required for SQL Authentication): Database password. Not required when using Windows Authentication
@@ -615,6 +638,7 @@ The command provides detailed progress information:
 - Install PostgreSQL client tools
 - Add PostgreSQL bin directory to PATH, or specify `pgToolsPath` in configuration
 - Download from: https://www.postgresql.org/download/
+- For Docker PostgreSQL, note that `pg_restore` must still exist on the machine running clio
 
 **"Database already exists"**
 - Use `--drop-if-exists` flag to automatically drop and recreate
@@ -684,7 +708,7 @@ Ensure the IIS working directory (defined in appsettings.json as `iis-clio-root-
 
 ### Database Restoration Workflow
 
-1. **Kubernetes Mode**: 
+1. **Kubernetes Mode**:
    - Backup file copied to database pod
    - Restored using pod-local tools
    - Scripts handle both MSSQL and PostgreSQL
@@ -694,6 +718,7 @@ Ensure the IIS working directory (defined in appsettings.json as `iis-clio-root-
    - Backup file used by local database tools
    - Template-based restoration for PostgreSQL
    - Direct restore for MSSQL
+   - For Docker-hosted PostgreSQL, the same host-based local restore path is used through the published host/port
 
 ### Connection String Construction
 
@@ -739,6 +764,20 @@ Generated based on target database configuration. For local deployment, uses hos
 - Check logs: `/var/log/system.log` (macOS) or `journalctl -u creatio-*` (Linux)
 - Verify file permissions on application directory
 - Ensure dotnet runtime is installed
+
+### Docker PostgreSQL Issues
+
+**"Connection test failed"**
+- Run `docker ps`
+- Verify the PostgreSQL container is running
+- Verify the PostgreSQL port is published to the host
+- Use the published host endpoint in `appsettings.json`
+
+**"pg_restore not found"**
+- Install PostgreSQL client tools on the machine running clio
+- Add the PostgreSQL `bin` directory to `PATH`
+- Or set `pgToolsPath` in configuration
+- Clio does not use `docker exec` for PostgreSQL restore
 
 ## See Also
 

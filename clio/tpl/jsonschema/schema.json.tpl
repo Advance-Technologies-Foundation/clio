@@ -1,4 +1,4 @@
-﻿{
+{
 	"$schema": "http://json-schema.org/schema",
 	"properties": {
 		"iis-clio-root-path": {
@@ -171,11 +171,11 @@
 				},
 				"Hostname": {
 					"type": "string",
-					"description": "Database server host name or IP. For MSSQL named instances use host\\\\instance"
+					"description": "Database server host name or IP. For PostgreSQL running in Docker, use the host-reachable name such as localhost or host.docker.internal with the published port. For MSSQL named instances use host\\\\instance"
 				},
 				"Port": {
 					"type": "integer",
-					"description": "Database server port. For MSSQL named instances use 0"
+					"description": "Database server port. For PostgreSQL running in Docker, use the published host port (for example 5433). For MSSQL named instances use 0"
 				},
 				"Username": {
 					"type": "string",
@@ -196,7 +196,7 @@
 				},
 				"PgToolsPath": {
 					"type": "string",
-					"description": "Optional path to PostgreSQL tools directory containing pg_restore"
+					"description": "Optional path to PostgreSQL tools directory containing pg_restore. pg_restore must be installed on the machine running clio, even when PostgreSQL runs in Docker"
 				},
 				"Enabled": {
 					"type": "boolean",
@@ -259,3 +259,4 @@
 		}
 	}
 }
+

@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
@@ -658,6 +661,143 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		result.Should().Be(0, "because backward compatibility should work");
 	}
 
+	[Test]
+	[Description("Should show Docker port mapping hint when PostgreSQL local connection test fails")]
+	public void Execute_WhenPostgresConnectionFails_ShowsDockerHint() {
+		// Arrange
+		var config = new LocalDbServerConfiguration {
+			DbType = "postgres",
+			Hostname = "localhost",
+			Port = 5433,
+			Username = "postgres",
+			Password = "postgres"
+		};
+
+		_settingsRepository.GetLocalDbServer("docker-postgres").Returns(config);
+		_fileSystem.ExistsFile("backup.backup").Returns(true);
+		_dbConnectionTester.TestConnection(config).Returns(new ConnectionTestResult {
+			Success = false,
+			ErrorMessage = "Connection refused",
+			Suggestion = "Check if PostgreSQL is reachable"
+		});
+
+		var options = new RestoreDbCommandOptions {
+			DbServerName = "docker-postgres",
+			BackupPath = "backup.backup",
+			DbName = "testdb"
+		};
+
+		var sut = CreateSut();
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "restore must stop when PostgreSQL connectivity validation fails");
+		_logger.Received().WriteWarning(Arg.Is<string>(s => s.Contains("docker ps") && s.Contains("published host port")));
+	}
+
+	[Test]
+	[Description("Should restore PostgreSQL to a configured local server by using local pg_restore and not the Kubernetes restore service")]
+	public void Execute_WhenPostgresLocalServerConfigured_UsesLocalPgRestoreInsteadOfKubernetesRestore() {
+		// Arrange
+		var config = new LocalDbServerConfiguration {
+			DbType = "postgres",
+			Hostname = "localhost",
+			Port = 5433,
+			Username = "postgres",
+			Password = "postgres"
+		};
+
+		_settingsRepository.GetLocalDbServer("docker-postgres").Returns(config);
+		_fileSystem.ExistsFile("backup.backup").Returns(true);
+		_dbConnectionTester.TestConnection(config).Returns(new ConnectionTestResult { Success = true });
+		_backupFileDetector.DetectBackupType("backup.backup").Returns(BackupFileType.PostgresBackup);
+		_postgresToolsPathDetector.GetPgRestorePath(null).Returns("/usr/bin/pg_restore");
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+
+		var postgres = Substitute.For<Postgres>();
+		postgres.CheckDbExists("testdb").Returns(false);
+		postgres.CreateDb("testdb").Returns(true);
+		_dbClientFactory.CreatePostgres("localhost", 5433, "postgres", "postgres").Returns(postgres);
+
+		var options = new RestoreDbCommandOptions {
+			DbServerName = "docker-postgres",
+			BackupPath = "backup.backup",
+			DbName = "testdb"
+		};
+
+		var sut = CreateSut();
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "configured local PostgreSQL restore should run through pg_restore successfully");
+		_processExecutor.Received(1).ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o => o.Arguments.Contains("-v --no-owner --no-privileges") && o.Arguments.Contains("\"backup.backup\"")));
+		_creatioInstallerService.DidNotReceive().DoPgWork(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("Running local pg_restore against localhost:5433")));
+	}
+
+	[Test]
+	[Description("Should extract PostgreSQL backup from zip and restore it locally without using Kubernetes restore service")]
+	public void Execute_WhenPostgresBackupIsInZip_ExtractsAndUsesLocalPgRestore() {
+		// Arrange
+		var config = new LocalDbServerConfiguration {
+			DbType = "postgres",
+			Hostname = "localhost",
+			Port = 5433,
+			Username = "postgres",
+			Password = "postgres"
+		};
+		string tempRoot = Path.Combine(Path.GetTempPath(), $"clio-restore-db-test-{Guid.NewGuid():N}");
+		string packageRoot = Path.Combine(tempRoot, "package");
+		string dbDirectory = Path.Combine(packageRoot, "db");
+		Directory.CreateDirectory(dbDirectory);
+		string backupFilePath = Path.Combine(dbDirectory, "sample.backup");
+		File.WriteAllText(backupFilePath, "backup");
+		string zipPath = Path.Combine(tempRoot, "sample.zip");
+		System.IO.Compression.ZipFile.CreateFromDirectory(packageRoot, zipPath);
+
+		try {
+			_settingsRepository.GetLocalDbServer("docker-postgres").Returns(config);
+			_fileSystem.ExistsFile(zipPath).Returns(true);
+			_fileSystem.When(x => x.CreateDirectory(Arg.Any<string>())).Do(callInfo => Directory.CreateDirectory(callInfo.Arg<string>()));
+			_dbConnectionTester.TestConnection(config).Returns(new ConnectionTestResult { Success = true });
+			_backupFileDetector.DetectBackupType(Arg.Any<string>()).Returns(BackupFileType.PostgresBackup);
+			_postgresToolsPathDetector.GetPgRestorePath(null).Returns("/usr/bin/pg_restore");
+			_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+				.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+
+			var postgres = Substitute.For<Postgres>();
+			postgres.CheckDbExists("testdb").Returns(false);
+			postgres.CreateDb("testdb").Returns(true);
+			_dbClientFactory.CreatePostgres("localhost", 5433, "postgres", "postgres").Returns(postgres);
+
+			var options = new RestoreDbCommandOptions {
+				DbServerName = "docker-postgres",
+				BackupPath = zipPath,
+				DbName = "testdb"
+			};
+
+			var sut = CreateSut();
+
+			// Act
+			int result = sut.Execute(options);
+
+			// Assert
+			result.Should().Be(0, because: "zip-based PostgreSQL backups should be extracted locally and restored via pg_restore");
+			_processExecutor.Received(1).ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+				o.Arguments.Contains("-v --no-owner --no-privileges") &&
+				o.Arguments.Contains(".backup\"")));
+			_creatioInstallerService.DidNotReceive().DoPgWork(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		} finally {
+			if (Directory.Exists(tempRoot)) {
+				Directory.Delete(tempRoot, true);
+			}
+		}
+	}
 	private RestoreDbCommand CreateSut() {
 		return new RestoreDbCommand(
 			_logger,
@@ -672,3 +812,9 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		);
 	}
 }
+
+
+
+
+
+

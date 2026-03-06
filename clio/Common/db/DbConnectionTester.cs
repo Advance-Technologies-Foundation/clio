@@ -40,7 +40,7 @@ public class DbConnectionTester : IDbConnectionTester
 		};
 	}
 
-	public ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password, 
+	public ConnectionTestResult TestMssqlConnection(string host, int port, string username, string password,
 			bool isWindowsAuth = false) {
 		try {
 			IMssql mssql = _dbClientFactory.CreateMssql(host, port, username, password, isWindowsAuth);
@@ -64,8 +64,6 @@ public class DbConnectionTester : IDbConnectionTester
 
 	public ConnectionTestResult TestPostgresConnection(string host, int port, string username, string password) {
 		try {
-			Postgres postgres = _dbClientFactory.CreatePostgresSilent(host, port, username, password);
-			
 			string connectionString = $"Host={host};Port={port};Username={username};Password={password};Database=postgres;Timeout=5";
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
 			using NpgsqlConnection connection = dataSource.OpenConnection();
@@ -75,7 +73,7 @@ public class DbConnectionTester : IDbConnectionTester
 				Success = true
 			};
 		} catch (Exception ex) {
-			return ParsePostgresException(ex);
+			return ParsePostgresException(ex, host, port);
 		}
 	}
 
@@ -100,9 +98,9 @@ public class DbConnectionTester : IDbConnectionTester
 		};
 	}
 
-	private ConnectionTestResult ParsePostgresException(Exception ex) {
+	private ConnectionTestResult ParsePostgresException(Exception ex, string host, int port) {
 		string errorMessage = ex.Message;
-		string suggestion = "Check PostgreSQL connection settings";
+		string suggestion = $"Check PostgreSQL connection settings for {host}:{port}.";
 
 		if (ex is PostgresException pgEx) {
 			if (pgEx.SqlState == "28P01") {
@@ -110,22 +108,21 @@ public class DbConnectionTester : IDbConnectionTester
 			} else if (pgEx.SqlState == "3D000") {
 				suggestion = "Database does not exist";
 			}
-		} else if (ex is NpgsqlException npgEx) {
+		} else if (ex is NpgsqlException) {
 			if (errorMessage.Contains("password authentication failed", StringComparison.OrdinalIgnoreCase)) {
 				suggestion = "Verify username and password are correct";
 			} else if (errorMessage.Contains("could not connect", StringComparison.OrdinalIgnoreCase) ||
 			           errorMessage.Contains("Connection refused", StringComparison.OrdinalIgnoreCase)) {
-				suggestion = "Check if PostgreSQL is running and network/firewall settings allow connection on port " + 
-				             (ex.Data.Contains("Port") ? ex.Data["Port"] : "5432");
+				suggestion = $"Check if PostgreSQL is running and accepting connections at {host}:{port}. " +
+				             "If PostgreSQL is running in Docker, verify `docker ps` shows the container and the port is published to the host " +
+				             "(for example `-p 5433:5432`).";
 			} else if (errorMessage.Contains("timeout", StringComparison.OrdinalIgnoreCase)) {
-				suggestion = "Connection timeout. Check network connectivity and PostgreSQL server status";
+				suggestion = $"Connection timeout when connecting to {host}:{port}. " +
+				             "If PostgreSQL is running in Docker, verify the published port mapping and host firewall settings.";
 			} else if (errorMessage.Contains("reading from stream", StringComparison.OrdinalIgnoreCase) ||
 			           errorMessage.Contains("Exception while reading", StringComparison.OrdinalIgnoreCase)) {
-				suggestion = "PostgreSQL server may not be running or is not accepting connections. Verify:\n" +
-				             "  1. PostgreSQL service is running\n" +
-				             "  2. Server is listening on the correct port\n" +
-				             "  3. pg_hba.conf allows connections from your host\n" +
-				             "  4. postgresql.conf has listen_addresses configured correctly";
+				suggestion = $"PostgreSQL at {host}:{port} may not be running or is not accepting connections. Verify service status, " +
+				             "listen_addresses/pg_hba.conf, and if Docker is used, confirm the container port is published to the host.";
 			}
 		}
 
