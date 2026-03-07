@@ -1,0 +1,64 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    modify-user-task-parameters - add or remove parameters on an existing workspace user task
+
+DESCRIPTION
+    modify-user-task-parameters updates parameters on an existing ProcessUserTask
+    schema that belongs to one of the packages in the current workspace.
+
+    The command first resolves the user task through Workspace Explorer,
+    then loads the schema through ProcessUserTaskSchemaDesignerService.svc/GetSchema,
+    applies requested parameter additions and removals, saves the schema,
+    and builds the owning package.
+
+    This command must be executed from a workspace directory.
+
+SYNOPSIS
+    clio modify-user-task-parameters <USER_TASK_NAME>
+        [--add-parameter <definition>[|<definition>...]]
+        [--remove-parameter <name>[|<name>...]]
+        [--culture <CULTURE>]
+        -e <ENVIRONMENT_NAME>
+
+OPTIONS
+    UserTaskName (pos. 0)      Existing user task schema name
+
+    --add-parameter            Parameter definition in
+                               code=<name>;title=<caption>;type=<type>
+                               format with optional boolean flags:
+                               required, resulting, serializable, copyValue,
+                               lazyLoad, containsPerformerId. Separate multiple
+                               parameter definitions with |
+
+    --remove-parameter         Existing parameter name to remove. Separate
+                               multiple names with |
+
+    --culture                  Culture for added parameter titles.
+                               Default: en-US
+
+    --Environment         -e   Environment name
+
+    --uri                 -u   Application uri
+
+    --Password            -p   User password
+
+    --Login               -l   User login
+
+    --timeout                  Request timeout in milliseconds
+
+EXAMPLE
+    clio modify-user-task-parameters UsrSendInvoice
+        --add-parameter "code=IsError;title=Is error;type=Boolean"
+        -e docker_fix2
+        add one parameter to an existing workspace user task
+
+    clio modify-user-task-parameters UsrSendInvoice
+        --add-parameter "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text"
+        --remove-parameter "ObsoleteFlag|LegacyResult"
+        -e docker_fix2
+        add two parameters, remove two parameters, and rebuild the owning package
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

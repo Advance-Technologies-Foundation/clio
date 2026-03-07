@@ -1,0 +1,74 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    add-user-task - create a process user task schema from the current workspace
+
+DESCRIPTION
+    add-user-task creates a new ProcessUserTask schema in a workspace package,
+    saves it through the User Task designer service, and then builds that
+    package in the target environment.
+
+    The command must be executed from a workspace directory and the package
+    passed in --package must exist in the current workspace.
+
+    Parameters can be added during schema creation with --parameter. Separate
+    multiple parameter definitions with |.
+    Supported parameter types are Boolean, Date, DateTime, Float, Guid,
+    Integer, Money, Text, and Time.
+
+SYNOPSIS
+    clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title <TITLE>
+        [--description <DESCRIPTION>] [--culture <CULTURE>]
+        [--title-localization <culture=value>[;<culture=value>...]]
+        [--description-localization <culture=value>[;<culture=value>...]]
+        [--parameter <definition>[|<definition>...]] -e <ENVIRONMENT_NAME>
+
+OPTIONS
+    Code (pos. 0)               User task code (schema/class name)
+
+    --package                   Workspace package name
+
+    --title                -t  Default localized title
+
+    --description          -d  Default localized description
+
+    --culture                  Culture for --title, --description, and parameter
+                               titles. Default: en-US
+
+    --title-localization       Additional title localization in
+                               <culture>=<value> format
+
+    --description-localization Additional description localization in
+                               <culture>=<value> format
+
+    --parameter                Parameter definition in
+                               code=<name>;title=<caption>;type=<type>
+                               format with optional boolean flags:
+                               required, resulting, serializable, copyValue,
+                               lazyLoad, containsPerformerId. Separate multiple
+                               parameter definitions with |
+
+    --Environment         -e   Environment name
+
+    --uri                 -u   Application uri
+
+    --Password            -p   User password
+
+    --Login               -l   User login
+
+    --timeout                  Request timeout in milliseconds
+
+EXAMPLE
+    clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+        --description "Creates and sends invoice" -e docker_fix2
+        create a user task without parameters in workspace package MyPackage
+
+    clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+        --parameter
+        "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
+        -e docker_fix2
+        create a user task with two parameters and build MyPackage
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

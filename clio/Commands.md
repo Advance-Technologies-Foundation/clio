@@ -2633,6 +2633,7 @@ Aliases: `dconf`
 - [Generate Process Model](#generate-process-model)
 - [Add schema](#add-schema)
 - [Add user task](#add-user-task)
+- [Modify user task parameters](#modify-user-task-parameters)
 - [Delete schema](#delete-schema)
 - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
 - [Link Workspace to File Design Mode](#link-from-repository)
@@ -2980,6 +2981,19 @@ Options:
 - `--culture` (optional): Culture for `--title` and `--description`. Default is `en-US`.
 - `--title-localization` (optional): Additional title localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
 - `--description-localization` (optional): Additional description localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
+- `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional boolean flags: `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
+
+Supported parameter types:
+
+- `Boolean`
+- `Date`
+- `DateTime`
+- `Float`
+- `Guid`
+- `Integer`
+- `Money`
+- `Text`
+- `Time`
 
 Examples:
 
@@ -2987,6 +3001,41 @@ Examples:
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --description "Creates and sends invoice" -e dev
 
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --title-localization "fr-FR=Envoyer facture" --description-localization "fr-FR=Crée et envoie la facture" -e dev
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
+```
+
+## modify-user-task-parameters
+Adds and/or removes parameters on an existing `ProcessUserTask` schema that belongs to one of the packages in the current workspace.
+
+```bash
+clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[|<definition>...]] [--remove-parameter <name>[|<name>...]] -e <ENVIRONMENT>
+```
+
+Options:
+
+- `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional boolean flags: `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
+- `--remove-parameter` (optional): Remove one or more existing parameter names. Separate multiple names with `|`.
+- `--culture` (optional): Culture for added parameter titles. Default is `en-US`.
+
+Supported parameter types:
+
+- `Boolean`
+- `Date`
+- `DateTime`
+- `Float`
+- `Guid`
+- `Integer`
+- `Money`
+- `Text`
+- `Time`
+
+Examples:
+
+```bash
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
 ```
 
 ## delete-schema

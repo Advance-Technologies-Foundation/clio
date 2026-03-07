@@ -300,6 +300,7 @@ public class BindingsModule {
 		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<CreatioInstallerService>();
 		services.AddTransient<SetApplicationIconCommand>();
