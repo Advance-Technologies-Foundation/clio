@@ -1,0 +1,40 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    delete-schema - delete a schema that belongs to the current workspace
+
+DESCRIPTION
+    delete-schema removes a schema from Creatio by using Workspace Explorer
+    service calls. The command first retrieves workspace items from the target
+    environment, then only allows deleting schemas whose package belongs to the
+    current local workspace.
+
+    This command must be executed from a workspace directory.
+
+SYNOPSIS
+    clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
+
+OPTIONS
+    Schema name (pos. 0)    Schema name to delete
+
+    --Environment       -e  Environment name
+
+    --uri               -u  Application uri
+
+    --Password          -p  User password
+
+    --Login             -l  User login
+
+    --timeout               Request timeout in milliseconds
+
+EXAMPLE
+    clio delete-schema UsrSendInvoice -e docker_fix2
+        delete schema UsrSendInvoice when it belongs to one of the current
+        workspace packages
+
+    clio delete-schema Activity -e docker_fix2
+        fail when Activity is not part of the current workspace
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

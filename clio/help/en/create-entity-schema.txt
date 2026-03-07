@@ -1,0 +1,68 @@
+COMMAND TYPE
+    Package Management commands
+
+NAME
+    create-entity-schema - Create an entity schema in a remote Creatio package
+
+SYNOPSIS
+    clio create-entity-schema [OPTIONS]
+
+DESCRIPTION
+    Creates an entity schema in an existing remote package using
+    EntitySchemaDesignerService.
+
+    The command creates a draft schema on the server, optionally assigns a
+    parent schema, applies the requested name, title, and initial columns, and
+    then saves the result.
+
+    Supported column types:
+    - Guid
+    - Text
+    - Integer
+    - Boolean
+    - DateTime
+    - Lookup (requires a reference schema name)
+
+OPTIONS
+    --package              Target package name
+    --name                 Entity schema name. Maximum length is 22 characters
+    --title                Entity schema title/caption
+    --parent               Parent schema name
+    --extend-parent        Create a replacement schema. Requires --parent
+    --column               Column definition in format
+                           <name>:<type>[:<title>[:<refSchema>]]
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Create a bare entity schema
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle"
+
+    # Create an entity schema with columns
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "Name:Text:Name"
+
+    # Create a lookup column
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "Owner:Lookup:Owner:Contact"
+
+    # Create a schema inheriting from a parent schema
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
+
+    # Create a replacement schema
+    clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Account" --parent Account --extend-parent
+
+NOTES
+    - The command works against a remote Creatio environment only
+    - Package resolution requires cliogate to be installed on the target environment
+    - If no Guid column is supplied for a root schema, Id:Guid is added automatically
+    - If no display column is set, the first Text column is used as primary display column
+    - Schema names longer than 22 characters are rejected before the server call
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    install-gate, get-pkg-list, add-schema

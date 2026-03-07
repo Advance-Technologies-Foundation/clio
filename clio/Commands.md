@@ -178,6 +178,7 @@ clio:   8.0.1.97
 - [Unlock package](#unlock-package)
 - [Activate package](#activate-pkg)
 - [Deactivate package](#deactivate-pkg)
+- [Create entity schema](#create-entity-schema)
 
 ## new-pkg
 
@@ -258,6 +259,46 @@ The `--check-configuration-errors` flag enables validation of compilation and co
 ## compile-package
 
 To compile package
+
+## create-entity-schema
+
+Create a remote entity schema in an existing Creatio package through `EntitySchemaDesignerService`.
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle"
+```
+
+Create an inheriting schema:
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" --parent BaseEntity
+```
+
+Create a replacement schema:
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrAccount --title "Account" --parent Account --extend-parent
+```
+
+Create a schema with initial columns:
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
+  --column "Id:Guid" \
+  --column "Name:Text:Vehicle name" \
+  --column "CreatedOn:DateTime:Created on" \
+  --column "IsActive:Boolean:Active" \
+  --column "Owner:Lookup:Owner:Contact"
+```
+
+Supported column types in v1:
+
+- `Guid`
+- `Text`
+- `Integer`
+- `Boolean`
+- `DateTime`
+- `Lookup` (requires reference schema name)
 
 ```
 clio compile-package <PACKAGE NAME>
@@ -2632,6 +2673,9 @@ Aliases: `dconf`
 - [Add item](#add-item)
 - [Generate Process Model](#generate-process-model)
 - [Add schema](#add-schema)
+- [Add user task](#add-user-task)
+- [Modify user task parameters](#modify-user-task-parameters)
+- [Delete schema](#delete-schema)
 - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
 - [Link Workspace to File Design Mode](#link-from-repository)
 - [Link PackageStore to Environment](#link-package-store)
@@ -2961,6 +3005,133 @@ Adds cs schema to a project
 
 ```bash
 clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
+```
+
+## add-user-task
+Creates a new `ProcessUserTask` schema in a package from the current workspace by calling the User Task designer services and then building the package. When parameter direction is specified, clio persists it by patching `Schemas/<SchemaName>/metadata.json`, loading workspace packages to the database, and rebuilding the package because the current Creatio `SaveSchema` route does not persist direction.
+
+```bash
+clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "My user task" -e <ENVIRONMENT>
+```
+
+Options:
+
+- `CODE` (required): User task code (schema/class name). Must start with `Usr`.
+- `--package` (required): Workspace package name where the schema will be created. The package must exist under `packages/<package>` in the current workspace.
+- `-t, --title` (required): Default localized title.
+- `-d, --description` (optional): Default localized description.
+- `--culture` (optional): Culture for `--title` and `--description`. Default is `en-US`.
+- `--title-localization` (optional): Additional title localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
+- `--description-localization` (optional): Additional description localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
+- `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional lookup, direction, and boolean flags: `lookup`, `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`. Use `lookup` only when `type=Lookup`.
+- `--parameter-item` (optional): Add child items to a `Serializable list of composite values` parameter in `parent=<listParameterName>;code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Use `Unique identifier` for the designer-aligned `Guid` label.
+
+Supported parameter types:
+
+- `Boolean`
+- `Date`
+- `DateTime`
+- `Float`
+- `Guid`
+- `Unique identifier`
+- `Integer`
+- `Lookup`
+- `Money`
+- `Serializable list of composite values`
+- `Text`
+- `Time`
+
+Supported direction values:
+
+- `In` or `0`
+- `Out` or `1`
+- `Variable` or `2`
+
+Examples:
+
+```bash
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --description "Creates and sends invoice" -e dev
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --title-localization "fr-FR=Envoyer facture" --description-localization "fr-FR=Crée et envoie la facture" -e dev
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=MyList;title=My list;type=Serializable list of composite values" --parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text" -e docker_fix2
+```
+
+## modify-user-task-parameters
+Adds and/or removes parameters on an existing `ProcessUserTask` schema that belongs to one of the packages in the current workspace. When parameter direction is added or changed, clio persists it by patching `Schemas/<SchemaName>/metadata.json`, loading workspace packages to the database, and rebuilding the package because the current Creatio `SaveSchema` route does not persist direction.
+
+```bash
+clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[|<definition>...]] [--add-parameter-item <definition>[|<definition>...]] [--remove-parameter <name>[|<name>...]] [--set-direction <name>=<direction>[|<name>=<direction>...]] -e <ENVIRONMENT>
+```
+
+Options:
+
+- `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional lookup, direction, and boolean flags: `lookup`, `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`. Use `lookup` only when `type=Lookup`.
+- `--add-parameter-item` (optional): Add child items to an existing or newly added `Serializable list of composite values` parameter in `parent=<listParameterName>;code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Use `Unique identifier` for the designer-aligned `Guid` label.
+- `--remove-parameter` (optional): Remove one or more existing parameter names. Separate multiple names with `|`.
+- `--set-direction` (optional): Update direction on one or more existing parameters using `<name>=<In|Out|Variable|0|1|2>`. Separate multiple values with `|`.
+- `--culture` (optional): Culture for added parameter titles. Default is `en-US`.
+
+Supported parameter types:
+
+- `Boolean`
+- `Date`
+- `DateTime`
+- `Float`
+- `Guid`
+- `Unique identifier`
+- `Integer`
+- `Lookup`
+- `Money`
+- `Serializable list of composite values`
+- `Text`
+- `Time`
+
+Supported direction values:
+
+- `In` or `0`
+- `Out` or `1`
+- `Variable` or `2`
+
+Examples:
+
+```bash
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --set-direction "IsError=Out|ResultMessage=Variable" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text" -e docker_fix2
+```
+
+## delete-schema
+Deletes a schema from the target environment, but only when that schema belongs to one of the packages in the current workspace.
+
+```bash
+clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT>
+```
+
+Behavior:
+
+- Must be executed from a workspace directory.
+- Calls `WorkspaceExplorerService.svc/GetWorkspaceItems` and filters the result to the current workspace package set.
+- Deletes the matching schema through `WorkspaceExplorerService.svc/Delete`.
+- Fails when the schema is not part of the current workspace.
+- Fails when the same schema name exists in multiple workspace packages.
+
+Examples:
+
+```bash
+clio delete-schema UsrSendInvoice -e docker_fix2
+
+clio delete-schema Activity -e docker_fix2
 ```
 
 ## Generate Process Model

@@ -68,7 +68,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		StopLogBroadcast = 20,
 		ClearRedisDb = 21,
 		EntitySchemaManagerRequest = 22,
-		RuntimeEntitySchemaRequest = 23
+		RuntimeEntitySchemaRequest = 23,
+		GetWorkspaceItems = 24,
+		DeleteWorkspaceItem = 25,
+		GetUserTaskSchema = 26,
+		CreateUserTaskSchema = 27,
+		SaveUserTaskSchema = 28,
+		GetAvailableEntitySchemas = 29
 
 	}
 
@@ -106,6 +112,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
 		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
+		{KnownRoute.GetWorkspaceItems, "ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems"},
+		{KnownRoute.DeleteWorkspaceItem, "ServiceModel/WorkspaceExplorerService.svc/Delete"},
+		{KnownRoute.GetUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/GetSchema"},
+		{KnownRoute.CreateUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/CreateNewSchema"},
+		{KnownRoute.SaveUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/SaveSchema"},
+		{KnownRoute.GetAvailableEntitySchemas, "ServiceModel/SchemaDataDesignerService.svc/GetAvailableEntitySchemas"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

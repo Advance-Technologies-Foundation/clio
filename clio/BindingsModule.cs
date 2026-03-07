@@ -10,6 +10,7 @@ using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
@@ -299,6 +300,10 @@ public class BindingsModule {
 		services.AddTransient<UninstallCreatioCommand>();
 		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
+		services.AddTransient<CreateEntitySchemaCommand>();
+		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<ModifyUserTaskParametersCommand>();
+		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<CreatioInstallerService>();
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
