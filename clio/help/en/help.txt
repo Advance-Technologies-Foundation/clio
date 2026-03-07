@@ -39,6 +39,9 @@ COMMANDS
     install-gate            gate        Install clio api gateway package on a
                                         web application(website)
 
+    create-entity-schema                Create an entity schema in a remote
+                                        package
+
     add-item                create      Create item in a project
 
     set-dev-mode            dev         Activate developer mode for selected
