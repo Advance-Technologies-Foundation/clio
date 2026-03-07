@@ -37,6 +37,7 @@ public class CreateUserTaskTool(
 			Description = args.Description,
 			Culture = string.IsNullOrWhiteSpace(args.Culture) ? "en-US" : args.Culture,
 			Parameters = UserTaskToolSupport.SerializeParameterDefinitions(args.Parameters),
+			ParameterItems = UserTaskToolSupport.SerializeNestedParameterItemDefinitions(args.Parameters),
 			Environment = args.EnvironmentName,
 			WorkspacePath = args.WorkspacePath
 		};
@@ -71,6 +72,7 @@ public class ModifyUserTaskParametersTool(
 			UserTaskName = args.UserTaskName,
 			Culture = string.IsNullOrWhiteSpace(args.Culture) ? "en-US" : args.Culture,
 			AddParameters = UserTaskToolSupport.SerializeParameterDefinitions(args.AddParameters),
+			AddParameterItems = UserTaskToolSupport.SerializeAllParameterItemDefinitions(args.AddParameters, args.AddParameterItems),
 			RemoveParameters = args.RemoveParameterNames,
 			SetDirections = UserTaskToolSupport.SerializeDirectionUpdates(args.SetParameterDirections),
 			Environment = args.EnvironmentName,
@@ -87,6 +89,25 @@ internal static class UserTaskToolSupport {
 			.ToList();
 	}
 
+	public static IEnumerable<string> SerializeNestedParameterItemDefinitions(IEnumerable<UserTaskParameterArgs> parameters) {
+		return parameters?
+			.SelectMany(SerializeNestedParameterItemDefinitions)
+			.ToList();
+	}
+
+	public static IEnumerable<string> SerializeParameterItemDefinitions(IEnumerable<UserTaskParameterItemArgs> parameterItems) {
+		return parameterItems?
+			.Select(SerializeParameterItemDefinition)
+			.ToList();
+	}
+
+	public static IEnumerable<string> SerializeAllParameterItemDefinitions(IEnumerable<UserTaskParameterArgs> parameters,
+		IEnumerable<UserTaskParameterItemArgs> parameterItems) {
+		return (SerializeNestedParameterItemDefinitions(parameters) ?? Enumerable.Empty<string>())
+			.Concat(SerializeParameterItemDefinitions(parameterItems) ?? Enumerable.Empty<string>())
+			.ToList();
+	}
+
 	public static IEnumerable<string> SerializeDirectionUpdates(IEnumerable<UserTaskParameterDirectionArgs> updates) {
 		return updates?
 			.Select(SerializeDirectionUpdate)
@@ -95,6 +116,52 @@ internal static class UserTaskToolSupport {
 
 	private static string SerializeParameterDefinition(UserTaskParameterArgs parameter) {
 		List<string> segments = [
+			$"code={parameter.Code}",
+			$"title={parameter.Title}",
+			$"type={parameter.Type}"
+		];
+		AddOptionalString(segments, "lookup", parameter.Lookup);
+		AddOptionalString(segments, "direction", parameter.Direction);
+		AddOptionalBoolean(segments, "required", parameter.Required);
+		AddOptionalBoolean(segments, "resulting", parameter.Resulting);
+		AddOptionalBoolean(segments, "serializable", parameter.Serializable);
+		AddOptionalBoolean(segments, "copyValue", parameter.CopyValue);
+		AddOptionalBoolean(segments, "lazyLoad", parameter.LazyLoad);
+		AddOptionalBoolean(segments, "containsPerformerId", parameter.ContainsPerformerId);
+		return string.Join(";", segments);
+	}
+
+	private static IEnumerable<string> SerializeNestedParameterItemDefinitions(UserTaskParameterArgs parameter) {
+		foreach (UserTaskParameterArgs item in parameter.Items ?? Enumerable.Empty<UserTaskParameterArgs>()) {
+			yield return SerializeParameterItemDefinition(parameter.Code, item);
+
+			foreach (string nestedItem in SerializeNestedParameterItemDefinitions(item)) {
+				yield return nestedItem;
+			}
+		}
+	}
+
+	private static string SerializeParameterItemDefinition(UserTaskParameterItemArgs parameterItem) {
+		return SerializeParameterItemDefinition(
+			parameterItem.ParentParameterName,
+			new UserTaskParameterArgs(
+				parameterItem.Code,
+				parameterItem.Title,
+				parameterItem.Type,
+				parameterItem.Lookup,
+				parameterItem.Required,
+				parameterItem.Direction,
+				parameterItem.Resulting,
+				parameterItem.Serializable,
+				parameterItem.CopyValue,
+				parameterItem.LazyLoad,
+				parameterItem.ContainsPerformerId,
+				parameterItem.Items));
+	}
+
+	private static string SerializeParameterItemDefinition(string parentParameterName, UserTaskParameterArgs parameter) {
+		List<string> segments = [
+			$"parent={parentParameterName}",
 			$"code={parameter.Code}",
 			$"title={parameter.Title}",
 			$"type={parameter.Type}"
@@ -142,7 +209,7 @@ public record UserTaskParameterArgs(
 	string Title,
 
 	[property:JsonPropertyName("type")]
-	[Description("Parameter type. Supported values: Boolean, Date, DateTime, Float, Guid, Integer, Lookup, Money, Text, Time.")]
+	[Description("Parameter type. Supported values: Boolean, Date, DateTime, Float, Guid, Unique identifier, Integer, Lookup, Money, Serializable list of composite values, Text, Time.")]
 	[Required]
 	string Type,
 
@@ -176,7 +243,72 @@ public record UserTaskParameterArgs(
 
 	[property:JsonPropertyName("contains-performer-id")]
 	[Description("Whether the parameter contains performer id.")]
-	bool? ContainsPerformerId = null
+	bool? ContainsPerformerId = null,
+
+	[property:JsonPropertyName("items")]
+	[Description("Child items for parameters of type Serializable list of composite values.")]
+	IEnumerable<UserTaskParameterArgs> Items = null
+);
+
+/// <summary>
+/// Structured child item input for composite list user task parameters.
+/// </summary>
+public record UserTaskParameterItemArgs(
+	[property:JsonPropertyName("parent-parameter-name")]
+	[Description("Existing or newly added composite list parameter name that will own this item")]
+	[Required]
+	string ParentParameterName,
+
+	[property:JsonPropertyName("code")]
+	[Description("Child item code")]
+	[Required]
+	string Code,
+
+	[property:JsonPropertyName("title")]
+	[Description("Child item title")]
+	[Required]
+	string Title,
+
+	[property:JsonPropertyName("type")]
+	[Description("Child item type. Supported values: Boolean, Date, DateTime, Float, Guid, Unique identifier, Integer, Lookup, Money, Serializable list of composite values, Text, Time.")]
+	[Required]
+	string Type,
+
+	[property:JsonPropertyName("lookup")]
+	[Description("Required when type is Lookup. Use an entity schema name like Account or a schema UId.")]
+	string Lookup = null,
+
+	[property:JsonPropertyName("required")]
+	[Description("Whether the child item is required.")]
+	bool? Required = null,
+
+	[property:JsonPropertyName("direction")]
+	[Description("Optional child item direction. Supported values: In, Out, Variable, 0, 1, 2.")]
+	string Direction = null,
+
+	[property:JsonPropertyName("resulting")]
+	[Description("Whether the child item is marked as resulting.")]
+	bool? Resulting = null,
+
+	[property:JsonPropertyName("serializable")]
+	[Description("Whether the child item is serializable.")]
+	bool? Serializable = null,
+
+	[property:JsonPropertyName("copy-value")]
+	[Description("Whether the child item copies its value.")]
+	bool? CopyValue = null,
+
+	[property:JsonPropertyName("lazy-load")]
+	[Description("Whether the child item is lazy-loaded.")]
+	bool? LazyLoad = null,
+
+	[property:JsonPropertyName("contains-performer-id")]
+	[Description("Whether the child item contains performer id.")]
+	bool? ContainsPerformerId = null,
+
+	[property:JsonPropertyName("items")]
+	[Description("Nested child items for composite list child items.")]
+	IEnumerable<UserTaskParameterArgs> Items = null
 );
 
 /// <summary>
@@ -262,6 +394,10 @@ public record ModifyUserTaskParametersArgs(
 	[property:JsonPropertyName("add-parameters")]
 	[Description("Parameters to add to the existing user task.")]
 	IEnumerable<UserTaskParameterArgs> AddParameters = null,
+
+	[property:JsonPropertyName("add-parameter-items")]
+	[Description("Child items to add to existing or newly added composite list parameters.")]
+	IEnumerable<UserTaskParameterItemArgs> AddParameterItems = null,
 
 	[property:JsonPropertyName("remove-parameter-names")]
 	[Description("Existing parameter names to remove from the user task.")]

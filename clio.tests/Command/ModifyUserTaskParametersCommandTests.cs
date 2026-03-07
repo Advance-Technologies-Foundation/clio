@@ -251,6 +251,71 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 	}
 
 	[Test]
+	[Description("Loads an existing workspace user task, adds an item to an existing composite list parameter, saves it, and builds the owning package.")]
+	[Category("Unit")]
+	public void Execute_Should_Add_Item_To_Existing_Composite_List_Parameter() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid itemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid schemaUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetUserTaskSchema).Returns(GetSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetWorkspaceItemsResponse(itemId, schemaUId, packageUId));
+		applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetSchemaResponseWithCompositeList(schemaUId, schemaId, packageUId));
+		applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{}");
+
+		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
+		ModifyUserTaskParametersOptions options = new() {
+			UserTaskName = "UsrSendInvoice",
+			AddParameterItems = ["parent=ExistingList;code=Bool1;title=Bool1;type=Boolean"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because child items can be added to an existing composite list parameter");
+		applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(body => MatchesCompositeListItemSaveRequest(body, schemaUId, packageUId)),
+			100000, 3, 1);
+		fileDesignModePackages.DidNotReceive().LoadPackagesToDb();
+	}
+
+	[Test]
 	[Description("Returns an error when a requested parameter removal does not exist on the current user task.")]
 	[Category("Unit")]
 	public void Execute_Should_Return_Error_When_Parameter_To_Remove_Does_Not_Exist() {
@@ -492,6 +557,61 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		return JsonSerializer.Serialize(response);
 	}
 
+	private static string GetSchemaResponseWithCompositeList(Guid schemaUId, Guid schemaId, Guid packageUId) {
+		var response = new {
+			success = true,
+			schema = new {
+				uId = schemaUId,
+				id = schemaId,
+				name = "UsrSendInvoice",
+				body = "",
+				metaData = "{}",
+				isReadOnly = false,
+				useFullHierarchy = false,
+				userLevelSchema = false,
+				addonTypes = Array.Empty<string>(),
+				caption = new[] {
+					new { cultureName = "en-US", value = "Send invoice" }
+				},
+				localizableStrings = Array.Empty<object>(),
+				description = new[] {
+					new { cultureName = "en-US", value = "Existing task" }
+				},
+				parameters = new object[] {
+					new {
+						uId = Guid.Parse("878f06a4-7c84-49e9-9af4-c0f3600ecc43"),
+						name = "ExistingList",
+						caption = new[] {
+							new { cultureName = "en-US", value = "Existing list" }
+						},
+						itemProperties = Array.Empty<object>(),
+						type = 39,
+						resulting = false,
+						serializable = false,
+						icon = "data-type-other-icon.svg"
+					}
+				},
+				partial = false,
+				userTask = true,
+				customEventHandler = false,
+				editPageSchemaUId = Guid.Empty,
+				dcmEditPageSchemaUId = Guid.Empty,
+				smallSvgImage = new { _isChanged = false },
+				largeSvgImage = new { _isChanged = false },
+				titleSvgImage = new { _isChanged = false },
+				dcmSmallSvgImage = new { _isChanged = false },
+				color = "#839DC3",
+				serializeToDB = true,
+				optionalProperties = Array.Empty<object>(),
+				package = new { name = "MyPackage", uId = packageUId, type = 1 },
+				dependencies = (object)null,
+				forceSave = false,
+				isFullHierarchyDesignSchema = false
+			}
+		};
+		return JsonSerializer.Serialize(response);
+	}
+
 	private static bool HasPropertyWithValue(string json, string propertyName, string expectedValue) {
 		using JsonDocument document = JsonDocument.Parse(json);
 		return document.RootElement.GetProperty(propertyName).GetString() == expectedValue;
@@ -543,6 +663,24 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			&& addedParameter.GetProperty("lookup").GetString() == accountSchemaUId.ToString()
 			&& addedParameter.GetProperty("icon").GetString() == "data-type-lookup-icon.svg"
 			&& !addedParameter.TryGetProperty("schema", out _);
+	}
+
+	private static bool MatchesCompositeListItemSaveRequest(string json, Guid schemaUId, Guid packageUId) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		JsonElement root = document.RootElement;
+		JsonElement compositeList = root.GetProperty("parameters").EnumerateArray()
+			.First(parameter => string.Equals(parameter.GetProperty("name").GetString(), "ExistingList",
+				StringComparison.OrdinalIgnoreCase));
+		JsonElement childItem = compositeList.GetProperty("itemProperties").EnumerateArray()
+			.First(parameter => string.Equals(parameter.GetProperty("name").GetString(), "Bool1",
+				StringComparison.OrdinalIgnoreCase));
+
+		return root.GetProperty("uId").GetString() == schemaUId.ToString()
+			&& root.GetProperty("package").GetProperty("uId").GetString() == packageUId.ToString()
+			&& compositeList.GetProperty("type").GetInt32() == 39
+			&& childItem.GetProperty("type").GetInt32() == 12
+			&& childItem.GetProperty("caption")[0].GetProperty("value").GetString() == "Bool1"
+			&& childItem.GetProperty("icon").GetString() == "data-type-boolean-icon.svg";
 	}
 
 	private static bool HasParameter(JsonElement parameters, string name) {

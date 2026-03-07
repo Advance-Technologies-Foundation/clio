@@ -2975,6 +2975,7 @@ clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "My user ta
 
 Options:
 
+- `CODE` (required): User task code (schema/class name). Must start with `Usr`.
 - `--package` (required): Workspace package name where the schema will be created. The package must exist under `packages/<package>` in the current workspace.
 - `-t, --title` (required): Default localized title.
 - `-d, --description` (optional): Default localized description.
@@ -2982,6 +2983,7 @@ Options:
 - `--title-localization` (optional): Additional title localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
 - `--description-localization` (optional): Additional description localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
 - `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional lookup, direction, and boolean flags: `lookup`, `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`. Use `lookup` only when `type=Lookup`.
+- `--parameter-item` (optional): Add child items to a `Serializable list of composite values` parameter in `parent=<listParameterName>;code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Use `Unique identifier` for the designer-aligned `Guid` label.
 
 Supported parameter types:
 
@@ -2990,9 +2992,11 @@ Supported parameter types:
 - `DateTime`
 - `Float`
 - `Guid`
+- `Unique identifier`
 - `Integer`
 - `Lookup`
 - `Money`
+- `Serializable list of composite values`
 - `Text`
 - `Time`
 
@@ -3012,18 +3016,21 @@ clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --t
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
 
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=MyList;title=My list;type=Serializable list of composite values" --parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text" -e docker_fix2
 ```
 
 ## modify-user-task-parameters
 Adds and/or removes parameters on an existing `ProcessUserTask` schema that belongs to one of the packages in the current workspace. When parameter direction is added or changed, clio persists it by patching `Schemas/<SchemaName>/metadata.json`, loading workspace packages to the database, and rebuilding the package because the current Creatio `SaveSchema` route does not persist direction.
 
 ```bash
-clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[|<definition>...]] [--remove-parameter <name>[|<name>...]] [--set-direction <name>=<direction>[|<name>=<direction>...]] -e <ENVIRONMENT>
+clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[|<definition>...]] [--add-parameter-item <definition>[|<definition>...]] [--remove-parameter <name>[|<name>...]] [--set-direction <name>=<direction>[|<name>=<direction>...]] -e <ENVIRONMENT>
 ```
 
 Options:
 
 - `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional lookup, direction, and boolean flags: `lookup`, `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`. Use `lookup` only when `type=Lookup`.
+- `--add-parameter-item` (optional): Add child items to an existing or newly added `Serializable list of composite values` parameter in `parent=<listParameterName>;code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Use `Unique identifier` for the designer-aligned `Guid` label.
 - `--remove-parameter` (optional): Remove one or more existing parameter names. Separate multiple names with `|`.
 - `--set-direction` (optional): Update direction on one or more existing parameters using `<name>=<In|Out|Variable|0|1|2>`. Separate multiple values with `|`.
 - `--culture` (optional): Culture for added parameter titles. Default is `en-US`.
@@ -3035,9 +3042,11 @@ Supported parameter types:
 - `DateTime`
 - `Float`
 - `Guid`
+- `Unique identifier`
 - `Integer`
 - `Lookup`
 - `Money`
+- `Serializable list of composite values`
 - `Text`
 - `Time`
 
@@ -3057,6 +3066,8 @@ clio modify-user-task-parameters UsrSendInvoice --set-direction "IsError=Out|Res
 clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
 
 clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text" -e docker_fix2
 ```
 
 ## delete-schema

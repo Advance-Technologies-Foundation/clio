@@ -36,7 +36,11 @@ public class UserTaskToolTests {
 			"en-US",
 			new List<UserTaskParameterArgs> {
 				new("IsError", "Is error", "Boolean", Direction: "Out", Resulting: true, Serializable: true),
-				new("AccountRef", "Account reference", "Lookup", Lookup: "Account")
+				new("AccountRef", "Account reference", "Lookup", Lookup: "Account"),
+				new("MyList", "My list", "Serializable list of composite values",
+					Items: new List<UserTaskParameterArgs> {
+						new("Bool1", "Bool1", "Boolean")
+					})
 			}));
 
 		// Assert
@@ -47,12 +51,17 @@ public class UserTaskToolTests {
 			&& options.Title == "Send invoice"
 			&& options.Environment == "docker_fix2"
 			&& options.WorkspacePath == @"C:\Projects\clio-with-core-and-ui\workspace"
-			&& options.Parameters != null));
+			&& options.Parameters != null
+			&& options.ParameterItems != null));
 		defaultCommand.CapturedOptions.Should().BeNull("because the environment-aware tool should use the resolved command");
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
 		resolvedCommand.CapturedOptions.Parameters.Should().BeEquivalentTo(new[] {
 			"code=IsError;title=Is error;type=Boolean;direction=Out;resulting=true;serializable=true",
-			"code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+			"code=AccountRef;title=Account reference;type=Lookup;lookup=Account",
+			"code=MyList;title=My list;type=Serializable list of composite values"
+		});
+		resolvedCommand.CapturedOptions.ParameterItems.Should().BeEquivalentTo(new[] {
+			"parent=MyList;code=Bool1;title=Bool1;type=Boolean"
 		});
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -78,8 +87,13 @@ public class UserTaskToolTests {
 			"en-US",
 			new List<UserTaskParameterArgs> {
 				new("IsError", "Is error", "Boolean", Direction: "1"),
-				new("AccountRef", "Account reference", "Lookup", Lookup: "Account")
+				new("AccountRef", "Account reference", "Lookup", Lookup: "Account"),
+				new("MyList", "My list", "Serializable list of composite values",
+					Items: new List<UserTaskParameterArgs> {
+						new("Bool1", "Bool1", "Boolean")
+					})
 			},
+			new[] { new UserTaskParameterItemArgs("ExistingList", "ChildText", "Child text", "Text") },
 			new[] { "ObsoleteFlag" },
 			new[] { new UserTaskParameterDirectionArgs("ExistingText", "Out") }));
 
@@ -95,7 +109,12 @@ public class UserTaskToolTests {
 		resolvedCommand.CapturedOptions.RemoveParameters.Should().BeEquivalentTo(new[] { "ObsoleteFlag" });
 		resolvedCommand.CapturedOptions.AddParameters.Should().BeEquivalentTo(new[] {
 			"code=IsError;title=Is error;type=Boolean;direction=1",
-			"code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+			"code=AccountRef;title=Account reference;type=Lookup;lookup=Account",
+			"code=MyList;title=My list;type=Serializable list of composite values"
+		});
+		resolvedCommand.CapturedOptions.AddParameterItems.Should().BeEquivalentTo(new[] {
+			"parent=MyList;code=Bool1;title=Bool1;type=Boolean",
+			"parent=ExistingList;code=ChildText;title=Child text;type=Text"
 		});
 		resolvedCommand.CapturedOptions.SetDirections.Should().ContainSingle()
 			.Which.Should().Be("ExistingText=Out");

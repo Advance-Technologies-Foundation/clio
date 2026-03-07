@@ -85,7 +85,11 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			DescriptionLocalizations = ["fr-FR=Description FR"],
 			Parameters = [
 				"code=IsError;title=Is error;type=Boolean;direction=Out",
-				"code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
+				"code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false",
+				"code=MyList;title=My list;type=Serializable list of composite values"
+			],
+			ParameterItems = [
+				"parent=MyList;code=Bool1;title=Bool1;type=Boolean"
 			]
 		};
 
@@ -204,6 +208,53 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 	}
 
 	[Test]
+	[Description("Returns an error when the user task code does not start with the required Usr prefix.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_When_Code_Does_Not_Start_With_Usr() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new();
+		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
+		string packagePath = @"C:\workspace\packages\MyPackage";
+		string descriptorPath = $"{packagePath}\\descriptor.json";
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
+		fileSystem.ExistsDirectory(packagePath).Returns(true);
+		fileSystem.ExistsFile(descriptorPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath).Returns(new PackageDescriptorDto {
+			Descriptor = new PackageDescriptor {
+				Name = "MyPackage",
+				UId = packageUId,
+				Type = PackageType.Assembly
+			}
+		});
+
+		CreateUserTaskCommand command =
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+		CreateUserTaskOptions options = new() {
+			Package = "MyPackage",
+			Code = "MyFinalTask",
+			Title = "My final task"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1);
+		applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
 	[Description("Builds a lookup parameter by resolving the requested entity schema and serializing the designer lookup payload shape.")]
 	[Category("Unit")]
 	public void BuildParameters_Should_Create_Lookup_Parameter_With_Resolved_Schema() {
@@ -235,6 +286,63 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		parameter.ReferenceSchemaName.Should().BeNull();
 		parameter.Icon.Should().Be("data-type-lookup-icon.svg");
 		parameter.Direction.Should().Be(2, "because new parameters default to Variable unless direction is specified");
+	}
+
+	[Test]
+	[Description("Accepts the designer label Unique identifier as an alias for Guid.")]
+	[Category("Unit")]
+	public void BuildParameters_Should_Accept_UniqueIdentifier_Alias() {
+		// Act
+		List<UserTaskParameterDto> parameters = UserTaskSchemaSupport.BuildParameters(
+			"en-US",
+			["code=ForeignId;title=Foreign ID;type=Unique identifier"]);
+
+		// Assert
+		parameters.Should().HaveCount(1);
+		parameters[0].Name.Should().Be("ForeignId");
+		parameters[0].Type.Should().Be(11);
+		parameters[0].Icon.Should().Be("data-type-guid-icon.svg");
+	}
+
+	[Test]
+	[Description("Attaches child item properties to a serializable composite list parameter.")]
+	[Category("Unit")]
+	public void AttachParameterItems_Should_Add_ItemProperties_To_Composite_List_Parameter() {
+		// Arrange
+		List<UserTaskParameterDto> parameters = UserTaskSchemaSupport.BuildParameters(
+			"en-US",
+			["code=MyList;title=My list;type=Serializable list of composite values"]);
+		List<UserTaskParameterItemDefinition> parameterItems = UserTaskSchemaSupport.BuildParameterItems(
+			"en-US",
+			["parent=MyList;code=Bool1;title=Bool1;type=Boolean"]);
+
+		// Act
+		UserTaskSchemaSupport.AttachParameterItems(parameters, parameterItems);
+
+		// Assert
+		parameters.Should().HaveCount(1);
+		parameters[0].Type.Should().Be(39, "because the parent parameter is a serializable composite list");
+		parameters[0].ItemProperties.Should().ContainSingle();
+		parameters[0].ItemProperties[0].Name.Should().Be("Bool1");
+		parameters[0].ItemProperties[0].Type.Should().Be(12);
+		parameters[0].ItemProperties[0].Icon.Should().Be("data-type-boolean-icon.svg");
+	}
+
+	[Test]
+	[Description("Serializes composite list Unique identifier items with the same type code used by the designer SaveSchema payload.")]
+	[Category("Unit")]
+	public void BuildParameterItems_Should_Create_UniqueIdentifier_Item_For_Composite_List() {
+		// Act
+		List<UserTaskParameterItemDefinition> parameterItems = UserTaskSchemaSupport.BuildParameterItems(
+			"en-US",
+			["parent=MyList;code=ForeignId;title=Foreign ID;type=Unique identifier"]);
+
+		// Assert
+		parameterItems.Should().HaveCount(1);
+		parameterItems[0].ParentParameterName.Should().Be("MyList");
+		parameterItems[0].Parameter.Name.Should().Be("ForeignId");
+		parameterItems[0].Parameter.Type.Should().Be(0, "because the live designer posts composite-list Unique identifier items with type=0");
+		parameterItems[0].Parameter.Icon.Should().Be("data-type-guid-icon.svg");
 	}
 
 	[Test]
@@ -423,6 +531,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		JsonElement parameters = root.GetProperty("parameters");
 		JsonElement isErrorParameter = parameters[0];
 		JsonElement resultMessageParameter = parameters[1];
+		JsonElement myListParameter = parameters[2];
+		JsonElement bool1Item = myListParameter.GetProperty("itemProperties")[0];
 
 		using JsonDocument metaData = JsonDocument.Parse(root.GetProperty("metaData").GetString());
 		JsonElement schema = metaData.RootElement.GetProperty("metaData").GetProperty("schema");
@@ -439,7 +549,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			&& packageType == 1
 			&& editPageValue == editPageSchemaUId.ToString()
 			&& dcmEditPageValue == dcmEditPageSchemaUId.ToString()
-			&& parameters.GetArrayLength() == 2
+			&& parameters.GetArrayLength() == 3
 			&& isErrorParameter.GetProperty("name").GetString() == "IsError"
 			&& isErrorParameter.GetProperty("caption")[0].GetProperty("value").GetString() == "Is error"
 			&& isErrorParameter.GetProperty("type").GetInt32() == 12
@@ -455,6 +565,15 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			&& !resultMessageParameter.GetProperty("resulting").GetBoolean()
 			&& !resultMessageParameter.GetProperty("serializable").GetBoolean()
 			&& resultMessageParameter.GetProperty("icon").GetString() == "data-type-text-icon.svg"
+			&& myListParameter.GetProperty("name").GetString() == "MyList"
+			&& myListParameter.GetProperty("caption")[0].GetProperty("value").GetString() == "My list"
+			&& myListParameter.GetProperty("type").GetInt32() == 39
+			&& myListParameter.GetProperty("icon").GetString() == "data-type-other-icon.svg"
+			&& myListParameter.GetProperty("itemProperties").GetArrayLength() == 1
+			&& bool1Item.GetProperty("name").GetString() == "Bool1"
+			&& bool1Item.GetProperty("caption")[0].GetProperty("value").GetString() == "Bool1"
+			&& bool1Item.GetProperty("type").GetInt32() == 12
+			&& bool1Item.GetProperty("icon").GetString() == "data-type-boolean-icon.svg"
 			&& schema.GetProperty("managerName").GetString() == "ProcessUserTaskSchemaManager"
 			&& schema.GetProperty("uId").GetString() == schemaUId.ToString()
 			&& schema.GetProperty("name").GetString() == "UsrMyUserTask"

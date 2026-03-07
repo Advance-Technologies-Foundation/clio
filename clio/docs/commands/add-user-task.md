@@ -15,7 +15,7 @@ clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "<TITLE>" [
 ### Required Arguments
 | Argument | Position | Description | Example |
 |----------|----------|-------------|---------|
-| `CODE` | 0 | User task schema code and generated class name | `UsrSendInvoice` |
+| `CODE` | 0 | User task schema code and generated class name. Must start with `Usr` | `UsrSendInvoice` |
 
 ### Required Options
 | Option | Short | Description | Example |
@@ -31,6 +31,7 @@ clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "<TITLE>" [
 | `--title-localization` |  |  | Additional title localization in `<culture>=<value>` format | `--title-localization "fr-FR=Envoyer facture"` |
 | `--description-localization` |  |  | Additional description localization in `<culture>=<value>` format | `--description-localization "fr-FR=Crée et envoie la facture"` |
 | `--parameter` |  |  | Parameter definition string. Separate multiple definitions with `|` | `--parameter "code=IsError;title=Is error;type=Boolean"` |
+| `--parameter-item` |  |  | Child item definition for a `Serializable list of composite values` parameter. Separate multiple definitions with `|` | `--parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean"` |
 
 ### Inherited Environment Arguments
 | Argument | Short | Description |
@@ -64,9 +65,11 @@ Supported parameter types:
 - `DateTime`
 - `Float`
 - `Guid`
+- `Unique identifier`
 - `Integer`
 - `Lookup`
 - `Money`
+- `Serializable list of composite values`
 - `Text`
 - `Time`
 
@@ -76,9 +79,27 @@ Parameter notes:
 - Separate multiple parameter definitions with `|` in the same `--parameter` value.
 - Parameter titles use the command culture from `--culture`.
 - When `type=Lookup`, add `lookup=<schemaNameOrSchemaUId>`. Clio resolves it through Creatio's `SchemaDataDesignerService.svc/GetAvailableEntitySchemas` route and saves the resolved schema UId in the parameter `lookup` field.
+- `Unique identifier` is accepted as a designer-friendly alias for `Guid`.
+- For child items inside `Serializable list of composite values`, clio serializes `Guid` and `Unique identifier`
+  using the same `SaveSchema` payload shape as the live designer.
+- User task schema codes must start with `Usr`.
+- When `type=Serializable list of composite values`, add child items with `--parameter-item`.
 - `direction` is optional. Supported values are `In`, `Out`, `Variable`, `0`, `1`, and `2`. When omitted, the command uses `Variable` (`2`).
 - `resulting` defaults to `true`, matching the designer default.
 - `serializable` defaults to `true`, matching the designer default.
+
+Use `--parameter-item` to add child items to a composite list parameter:
+
+```bash
+--parameter-item "parent=<listParameterName>;code=<name>;title=<caption>;type=<type>[;lookup=<schemaNameOrSchemaUId>][;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true][|parent=<listParameterName>;code=<name>;title=<caption>;type=<type>...]"
+```
+
+Composite list notes:
+
+- `parent` is required and must match a parameter added through `--parameter`.
+- The parent parameter must have `type=Serializable list of composite values`.
+- Child items use the same supported scalar types as regular parameters, including `Lookup`, `Guid`, and `Unique identifier`.
+- Child items are attached through the designer payload `itemProperties` collection.
 
 ## Examples
 
@@ -102,13 +123,18 @@ clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --p
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
 ```
 
+### Create a user task with a composite serializable list parameter
+```bash
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=MyList;title=My list;type=Serializable list of composite values" --parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text" -e docker_fix2
+```
+
 ## Behavior
 
 The command performs these steps:
 
 1. Resolves the target package from the current workspace descriptor.
 2. Calls `CreateNewSchema` for an empty process user task schema.
-3. Applies the requested title, description, and parameter definitions.
+3. Applies the requested title, description, parameter definitions, and composite list child items.
 4. Calls `SaveSchema`.
 5. Calls `BuildPackage` for the target package.
 6. If any parameter definition explicitly sets `direction`, patches `Schemas/<SchemaName>/metadata.json` to set `L12` for those parameters.
@@ -129,6 +155,9 @@ Run the command from the correct workspace directory and use a package that exis
 
 ### "Unsupported parameter type '<type>'."
 Use one of the supported parameter types listed above. The command rejects unverified parameter types instead of sending a partially guessed payload.
+
+### "Parameter '<name>' is not type=Serializable list of composite values."
+The `parent` passed to `--parameter-item` must refer to a parameter that was added through `--parameter` with `type=Serializable list of composite values`.
 
 ### "Parameter definition '<value>' must include ..."
 Check the `--parameter` value format. Each parameter must include `code`, `title`, and `type` as `<key>=<value>` pairs separated by `;`.

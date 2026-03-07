@@ -39,6 +39,8 @@ public class UserTaskPrompt {
 		 Include initial parameters only when they were explicitly requested, include parameter directions
 		 when the requested task contract depends on them, and when a parameter type is `Lookup`
 		 provide its `lookup` entity schema name or schema UId.
+		 When a parameter type is `Serializable list of composite values`, include its child items
+		 under `items`.
 		 """;
 
 	/// <summary>
@@ -64,6 +66,9 @@ public class UserTaskPrompt {
 		 direction updates for existing parameters when the request is to change input/output/variable
 		 behavior without recreating the parameter, and provide `lookup` entity schema names or schema
 		 UIds on added parameters whose type is `Lookup`.
+		 Use `add-parameters[].items` when creating a new `Serializable list of composite values`
+		 parameter with child items, and use `add-parameter-items` when adding child items to an
+		 existing composite list parameter.
 		 Because the tool can remove parameters from the schema, confirm the exact parameter changes
 		 before using it destructively.
 		 """;

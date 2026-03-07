@@ -30,6 +30,13 @@ public class ModifyUserTaskParametersOptions : RemoteCommandOptions {
 	public IEnumerable<string> AddParameters { get; set; }
 
 	/// <summary>
+	/// Gets or sets composite list item definitions to add to existing or newly added list parameters.
+	/// </summary>
+	[Option("add-parameter-item", Required = false, Separator = '|',
+		HelpText = "Composite list item definition in 'parent=<listParameterName>;code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. The parent parameter must be type=Serializable list of composite values. Separate multiple values with '|'")]
+	public IEnumerable<string> AddParameterItems { get; set; }
+
+	/// <summary>
 	/// Gets or sets parameter names to remove.
 	/// </summary>
 	[Option("remove-parameter", Required = false, Separator = '|',
@@ -103,9 +110,10 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		Dictionary<string, int> parameterDirectionsToUpdate = NormalizeDirectionUpdates(options.SetDirections);
 		if (parameterNamesToRemove.Count == 0
 			&& !(options.AddParameters?.Any() ?? false)
+			&& !(options.AddParameterItems?.Any() ?? false)
 			&& parameterDirectionsToUpdate.Count == 0) {
 			throw new InvalidOperationException(
-				"Specify at least one `--add-parameter`, `--remove-parameter`, or `--set-direction` operation.");
+				"Specify at least one `--add-parameter`, `--add-parameter-item`, `--remove-parameter`, or `--set-direction` operation.");
 		}
 
 		HashSet<string> workspacePackages = GetWorkspacePackages();
@@ -115,8 +123,13 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 			options.Culture,
 			options.AddParameters,
 			lookupValue => _userTaskLookupSchemaResolver.Resolve(schemaItem.PackageUId, lookupValue));
+		List<UserTaskParameterItemDefinition> parameterItemsToAdd = UserTaskSchemaSupport.BuildParameterItems(
+			options.Culture,
+			options.AddParameterItems,
+			lookupValue => _userTaskLookupSchemaResolver.Resolve(schemaItem.PackageUId, lookupValue));
 
 		ApplyParameterChanges(schema, parametersToAdd, parameterNamesToRemove, parameterDirectionsToUpdate);
+		UserTaskSchemaSupport.AttachParameterItems(schema.Parameters, parameterItemsToAdd);
 
 		string saveSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema);
 		string saveRequestBody = JsonSerializer.Serialize(schema);

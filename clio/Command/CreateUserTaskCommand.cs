@@ -20,7 +20,7 @@ public class CreateUserTaskOptions : RemoteCommandOptions {
 	/// <summary>
 	/// Gets or sets the user task schema code.
 	/// </summary>
-	[Value(0, MetaName = "Code", Required = true, HelpText = "User task code (schema/class name)")]
+	[Value(0, MetaName = "Code", Required = true, HelpText = "User task code (schema/class name). Must start with Usr")]
 	public string Code { get; set; }
 
 	/// <summary>
@@ -68,6 +68,13 @@ public class CreateUserTaskOptions : RemoteCommandOptions {
 	[Option("parameter", Required = false, Separator = '|',
 		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Use lookup only when type=Lookup. Separate multiple values with '|'")]
 	public IEnumerable<string> Parameters { get; set; }
+
+	/// <summary>
+	/// Gets or sets child item definitions for serializable composite list parameters.
+	/// </summary>
+	[Option("parameter-item", Required = false, Separator = '|',
+		HelpText = "Composite list item definition in 'parent=<listParameterName>;code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. The parent parameter must be type=Serializable list of composite values. Separate multiple values with '|'")]
+	public IEnumerable<string> ParameterItems { get; set; }
 
 	/// <summary>
 	/// Gets or sets the workspace root override used by MCP tools.
@@ -174,7 +181,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 
 	private static void ApplyRequestedValues(ProcessUserTaskDesignSchemaDto schema, CreateUserTaskOptions options,
 		PackageDescriptor package, IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver) {
-		schema.Name = options.Code.Trim();
+		schema.Name = ValidateUserTaskCode(options.Code);
 		schema.Caption = UserTaskSchemaSupport.BuildLocalizableValues(options.Culture, options.Title, options.TitleLocalizations,
 			allowEmptyPrimaryValue: false);
 		schema.Description = UserTaskSchemaSupport.BuildLocalizableValues(options.Culture, options.Description,
@@ -183,6 +190,12 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 			options.Culture,
 			options.Parameters,
 			lookupValue => userTaskLookupSchemaResolver.Resolve(package.UId, lookupValue));
+		UserTaskSchemaSupport.AttachParameterItems(
+			schema.Parameters,
+			UserTaskSchemaSupport.BuildParameterItems(
+				options.Culture,
+				options.ParameterItems,
+				lookupValue => userTaskLookupSchemaResolver.Resolve(package.UId, lookupValue)));
 		schema.LocalizableStrings ??= [];
 		schema.OptionalProperties ??= [];
 		schema.Body ??= string.Empty;
@@ -204,6 +217,20 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		schema.TitleSvgImage ??= new ProcessSchemaImageItemDto();
 		schema.DcmSmallSvgImage ??= new ProcessSchemaImageItemDto();
 		schema.MetaData = BuildMetaData(schema.UId, schema.Name, package.UId, schema.Color);
+	}
+
+	private static string ValidateUserTaskCode(string code) {
+		string normalizedCode = code?.Trim();
+		if (string.IsNullOrWhiteSpace(normalizedCode)) {
+			throw new InvalidOperationException("User task code cannot be empty.");
+		}
+
+		if (!normalizedCode.StartsWith("Usr", StringComparison.Ordinal)) {
+			throw new InvalidOperationException(
+				$"User task code '{normalizedCode}' must start with 'Usr'.");
+		}
+
+		return normalizedCode;
 	}
 
 	private PackageDescriptor ResolveWorkspacePackage(string packageName) {
@@ -519,7 +546,13 @@ internal sealed class MetaDataSchema {
 
 internal sealed record UserTaskParameterTypeDefinition(int TypeId, string Icon);
 
+internal sealed record UserTaskParameterItemDefinition(string ParentParameterName, UserTaskParameterDto Parameter);
+
 internal static class UserTaskSchemaSupport {
+	private const int CompositeSerializableListTypeId = 39;
+	private const int CompositeListUniqueIdentifierTypeId = 0;
+	private const int GuidTypeId = 11;
+
 	private static readonly string[] SupportedParameterTypeNames = [
 		"Boolean",
 		"Date",
@@ -529,6 +562,8 @@ internal static class UserTaskSchemaSupport {
 		"Integer",
 		"Lookup",
 		"Money",
+		"Unique identifier",
+		"Serializable list of composite values",
 		"Text",
 		"Time"
 	];
@@ -542,11 +577,17 @@ internal static class UserTaskSchemaSupport {
 			["Float"] = new(5, "data-type-float1-icon.svg"),
 			["Double"] = new(5, "data-type-float1-icon.svg"),
 			["Guid"] = new(11, "data-type-guid-icon.svg"),
+			["Unique identifier"] = new(11, "data-type-guid-icon.svg"),
+			["UniqueIdentifier"] = new(11, "data-type-guid-icon.svg"),
 			["Integer"] = new(4, "data-type-integer-icon.svg"),
 			["Int"] = new(4, "data-type-integer-icon.svg"),
 			["Lookup"] = new(10, "data-type-lookup-icon.svg"),
 			["Money"] = new(6, "data-type-currency-icon.svg"),
 			["Decimal"] = new(6, "data-type-currency-icon.svg"),
+			["Serializable list of composite values"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
+			["SerializableListOfCompositeValues"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
+			["SerializableCompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
+			["CompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
 			["Text"] = new(1, "data-type-text-icon.svg"),
 			["String"] = new(1, "data-type-text-icon.svg"),
 			["Time"] = new(9, "data-type-time-icon.svg")
@@ -606,6 +647,54 @@ internal static class UserTaskSchemaSupport {
 		}
 
 		return directions;
+	}
+
+	internal static List<UserTaskParameterItemDefinition> BuildParameterItems(string culture,
+		IEnumerable<string> parameterItemDefinitions, Func<string, UserTaskLookupSchema> lookupSchemaResolver = null) {
+		var parameterItems = new List<UserTaskParameterItemDefinition>();
+		foreach (string parameterItemDefinition in parameterItemDefinitions ?? []) {
+			Dictionary<string, string> values = ParseParameterDefinitionValues(parameterItemDefinition);
+			string parentParameterName = GetRequiredValue(values, "parent", parameterItemDefinition).Trim();
+			values.Remove("parent");
+			UserTaskParameterDto parameter = ParseParameter(culture, values, parameterItemDefinition, lookupSchemaResolver,
+				isCompositeListItem: true);
+			parameterItems.Add(new UserTaskParameterItemDefinition(parentParameterName, parameter));
+		}
+
+		return parameterItems;
+	}
+
+	internal static void AttachParameterItems(List<UserTaskParameterDto> parameters,
+		IEnumerable<UserTaskParameterItemDefinition> parameterItems) {
+		foreach (UserTaskParameterItemDefinition parameterItem in parameterItems ?? []) {
+			List<UserTaskParameterDto> matchingParents = FindParametersByName(parameters, parameterItem.ParentParameterName)
+				.ToList();
+			if (matchingParents.Count == 0) {
+				throw new InvalidOperationException(
+					$"Composite list parameter '{parameterItem.ParentParameterName}' was not found.");
+			}
+
+			if (matchingParents.Count > 1) {
+				throw new InvalidOperationException(
+					$"Composite list parameter '{parameterItem.ParentParameterName}' is ambiguous because it appears more than once.");
+			}
+
+			UserTaskParameterDto parentParameter = matchingParents[0];
+			if (parentParameter.Type != CompositeSerializableListTypeId) {
+				throw new InvalidOperationException(
+					$"Parameter '{parameterItem.ParentParameterName}' is not type=Serializable list of composite values.");
+			}
+
+			parentParameter.ItemProperties ??= [];
+			bool itemExists = parentParameter.ItemProperties.Any(item =>
+				string.Equals(item.Name, parameterItem.Parameter.Name, StringComparison.OrdinalIgnoreCase));
+			if (itemExists) {
+				throw new InvalidOperationException(
+					$"Composite list parameter '{parameterItem.ParentParameterName}' already contains item '{parameterItem.Parameter.Name}'.");
+			}
+
+			parentParameter.ItemProperties.Add(parameterItem.Parameter);
+		}
 	}
 
 	internal static List<LocalizableStringDto> BuildLocalizableValues(string culture, string primaryValue,
@@ -689,13 +778,21 @@ internal static class UserTaskSchemaSupport {
 	private static UserTaskParameterDto ParseParameter(string culture, string parameterDefinition,
 		Func<string, UserTaskLookupSchema> lookupSchemaResolver) {
 		Dictionary<string, string> values = ParseParameterDefinitionValues(parameterDefinition);
+		return ParseParameter(culture, values, parameterDefinition, lookupSchemaResolver, isCompositeListItem: false);
+	}
 
+	private static UserTaskParameterDto ParseParameter(string culture, Dictionary<string, string> values,
+		string parameterDefinition, Func<string, UserTaskLookupSchema> lookupSchemaResolver, bool isCompositeListItem) {
 		string name = GetRequiredValue(values, "code", parameterDefinition);
 		string title = GetRequiredValue(values, "title", parameterDefinition);
 		string typeName = GetRequiredValue(values, "type", parameterDefinition);
 		UserTaskParameterTypeDefinition parameterType = ResolveParameterType(typeName);
+		parameterType = NormalizeParameterType(parameterType, isCompositeListItem);
 		bool isLookup = string.Equals(typeName.Trim(), "Lookup", StringComparison.OrdinalIgnoreCase);
+		bool isCompositeSerializableList = parameterType.TypeId == CompositeSerializableListTypeId;
 		UserTaskLookupSchema lookupSchema = ResolveLookupSchema(values, parameterDefinition, isLookup, lookupSchemaResolver);
+		bool defaultResulting = !(isCompositeListItem || isCompositeSerializableList);
+		bool defaultSerializable = !(isCompositeListItem || isCompositeSerializableList);
 
 		return new UserTaskParameterDto {
 			UId = Guid.NewGuid(),
@@ -711,14 +808,37 @@ internal static class UserTaskSchemaSupport {
 			ReferenceSchemaUId = lookupSchema?.UId,
 			ReferenceSchemaName = null,
 			Required = ParseOptionalBoolean(values, "required", parameterDefinition),
-			Resulting = ParseOptionalBoolean(values, "resulting", parameterDefinition) ?? true,
+			Resulting = ParseOptionalBoolean(values, "resulting", parameterDefinition) ?? defaultResulting,
 			ContainsPerformerId = ParseOptionalBoolean(values, "containsPerformerId", parameterDefinition),
 			LazyLoad = ParseOptionalBoolean(values, "lazyLoad", parameterDefinition),
-			Serializable = ParseOptionalBoolean(values, "serializable", parameterDefinition) ?? true,
+			Serializable = ParseOptionalBoolean(values, "serializable", parameterDefinition) ?? defaultSerializable,
 			CopyValue = ParseOptionalBoolean(values, "copyValue", parameterDefinition),
 			Direction = ParseOptionalDirection(values, parameterDefinition) ?? 2,
 			Icon = parameterType.Icon
 		};
+	}
+
+	private static UserTaskParameterTypeDefinition NormalizeParameterType(UserTaskParameterTypeDefinition parameterType,
+		bool isCompositeListItem) {
+		if (isCompositeListItem && parameterType.TypeId == GuidTypeId) {
+			// The user task designer posts composite-list child "Unique identifier" items with type=0.
+			return new UserTaskParameterTypeDefinition(CompositeListUniqueIdentifierTypeId, parameterType.Icon);
+		}
+
+		return parameterType;
+	}
+
+	private static IEnumerable<UserTaskParameterDto> FindParametersByName(IEnumerable<UserTaskParameterDto> parameters,
+		string parameterName) {
+		foreach (UserTaskParameterDto parameter in parameters ?? []) {
+			if (string.Equals(parameter.Name, parameterName, StringComparison.OrdinalIgnoreCase)) {
+				yield return parameter;
+			}
+
+			foreach (UserTaskParameterDto nestedParameter in FindParametersByName(parameter.ItemProperties, parameterName)) {
+				yield return nestedParameter;
+			}
+		}
 	}
 
 	private static UserTaskLookupSchema ResolveLookupSchema(Dictionary<string, string> values, string parameterDefinition,
