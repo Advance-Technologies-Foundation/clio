@@ -299,6 +299,8 @@ public class BindingsModule {
 		services.AddTransient<UninstallCreatioCommand>();
 		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
+		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<CreatioInstallerService>();
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();

@@ -136,6 +136,8 @@ internal class Program {
 		typeof(MockDataCommandOptions),
 		typeof(UninstallCreatioCommandOptions),
 		typeof(AddSchemaOptions),
+		typeof(CreateUserTaskOptions),
+		typeof(DeleteSchemaOptions),
 		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
 		// Creatio instance management
@@ -281,6 +283,8 @@ internal class Program {
 					MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
 					UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 					AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
+					CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
+					DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
 					SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 					LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 					InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),

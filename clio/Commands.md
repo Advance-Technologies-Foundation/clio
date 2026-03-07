@@ -2632,6 +2632,8 @@ Aliases: `dconf`
 - [Add item](#add-item)
 - [Generate Process Model](#generate-process-model)
 - [Add schema](#add-schema)
+- [Add user task](#add-user-task)
+- [Delete schema](#delete-schema)
 - [Switch Nuget To Dll Reference](#switch-nuget-to-dll-reference)
 - [Link Workspace to File Design Mode](#link-from-repository)
 - [Link PackageStore to Environment](#link-package-store)
@@ -2961,6 +2963,53 @@ Adds cs schema to a project
 
 ```bash
 clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
+```
+
+## add-user-task
+Creates a new `ProcessUserTask` schema in a package from the current workspace by calling the User Task designer services and then building the package.
+
+```bash
+clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "My user task" -e <ENVIRONMENT>
+```
+
+Options:
+
+- `--package` (required): Workspace package name where the schema will be created. The package must exist under `packages/<package>` in the current workspace.
+- `-t, --title` (required): Default localized title.
+- `-d, --description` (optional): Default localized description.
+- `--culture` (optional): Culture for `--title` and `--description`. Default is `en-US`.
+- `--title-localization` (optional): Additional title localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
+- `--description-localization` (optional): Additional description localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
+
+Examples:
+
+```bash
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --description "Creates and sends invoice" -e dev
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --title-localization "fr-FR=Envoyer facture" --description-localization "fr-FR=Crée et envoie la facture" -e dev
+```
+
+## delete-schema
+Deletes a schema from the target environment, but only when that schema belongs to one of the packages in the current workspace.
+
+```bash
+clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT>
+```
+
+Behavior:
+
+- Must be executed from a workspace directory.
+- Calls `WorkspaceExplorerService.svc/GetWorkspaceItems` and filters the result to the current workspace package set.
+- Deletes the matching schema through `WorkspaceExplorerService.svc/Delete`.
+- Fails when the schema is not part of the current workspace.
+- Fails when the same schema name exists in multiple workspace packages.
+
+Examples:
+
+```bash
+clio delete-schema UsrSendInvoice -e docker_fix2
+
+clio delete-schema Activity -e docker_fix2
 ```
 
 ## Generate Process Model

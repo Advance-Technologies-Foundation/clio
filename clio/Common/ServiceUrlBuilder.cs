@@ -68,7 +68,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		StopLogBroadcast = 20,
 		ClearRedisDb = 21,
 		EntitySchemaManagerRequest = 22,
-		RuntimeEntitySchemaRequest = 23
+		RuntimeEntitySchemaRequest = 23,
+		GetWorkspaceItems = 24,
+		DeleteWorkspaceItem = 25
 
 	}
 
@@ -106,6 +108,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
 		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
+		{KnownRoute.GetWorkspaceItems, "ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems"},
+		{KnownRoute.DeleteWorkspaceItem, "ServiceModel/WorkspaceExplorerService.svc/Delete"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
