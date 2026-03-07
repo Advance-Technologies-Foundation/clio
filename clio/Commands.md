@@ -2981,7 +2981,7 @@ Options:
 - `--culture` (optional): Culture for `--title` and `--description`. Default is `en-US`.
 - `--title-localization` (optional): Additional title localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
 - `--description-localization` (optional): Additional description localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
-- `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional direction and boolean flags: `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
+- `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional lookup, direction, and boolean flags: `lookup`, `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`. Use `lookup` only when `type=Lookup`.
 
 Supported parameter types:
 
@@ -2991,6 +2991,7 @@ Supported parameter types:
 - `Float`
 - `Guid`
 - `Integer`
+- `Lookup`
 - `Money`
 - `Text`
 - `Time`
@@ -3009,6 +3010,8 @@ clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --d
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --title-localization "fr-FR=Envoyer facture" --description-localization "fr-FR=Crée et envoie la facture" -e dev
 
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
 ```
 
 ## modify-user-task-parameters
@@ -3020,7 +3023,7 @@ clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[
 
 Options:
 
-- `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional direction and boolean flags: `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
+- `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional lookup, direction, and boolean flags: `lookup`, `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`. Use `lookup` only when `type=Lookup`.
 - `--remove-parameter` (optional): Remove one or more existing parameter names. Separate multiple names with `|`.
 - `--set-direction` (optional): Update direction on one or more existing parameters using `<name>=<In|Out|Variable|0|1|2>`. Separate multiple values with `|`.
 - `--culture` (optional): Culture for added parameter titles. Default is `en-US`.
@@ -3033,6 +3036,7 @@ Supported parameter types:
 - `Float`
 - `Guid`
 - `Integer`
+- `Lookup`
 - `Money`
 - `Text`
 - `Time`
@@ -3051,6 +3055,8 @@ clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;ti
 clio modify-user-task-parameters UsrSendInvoice --set-direction "IsError=Out|ResultMessage=Variable" -e docker_fix2
 
 clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
 ```
 
 ## delete-schema

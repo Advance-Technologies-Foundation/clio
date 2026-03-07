@@ -99,6 +99,7 @@ internal static class UserTaskToolSupport {
 			$"title={parameter.Title}",
 			$"type={parameter.Type}"
 		];
+		AddOptionalString(segments, "lookup", parameter.Lookup);
 		AddOptionalString(segments, "direction", parameter.Direction);
 		AddOptionalBoolean(segments, "required", parameter.Required);
 		AddOptionalBoolean(segments, "resulting", parameter.Resulting);
@@ -141,9 +142,13 @@ public record UserTaskParameterArgs(
 	string Title,
 
 	[property:JsonPropertyName("type")]
-	[Description("Parameter type. Supported values: Boolean, Date, DateTime, Float, Guid, Integer, Money, Text, Time.")]
+	[Description("Parameter type. Supported values: Boolean, Date, DateTime, Float, Guid, Integer, Lookup, Money, Text, Time.")]
 	[Required]
 	string Type,
+
+	[property:JsonPropertyName("lookup")]
+	[Description("Required when type is Lookup. Use an entity schema name like Account or a schema UId.")]
+	string Lookup = null,
 
 	[property:JsonPropertyName("required")]
 	[Description("Whether the parameter is required.")]

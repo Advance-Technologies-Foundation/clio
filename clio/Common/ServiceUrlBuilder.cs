@@ -73,7 +73,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		DeleteWorkspaceItem = 25,
 		GetUserTaskSchema = 26,
 		CreateUserTaskSchema = 27,
-		SaveUserTaskSchema = 28
+		SaveUserTaskSchema = 28,
+		GetAvailableEntitySchemas = 29
 
 	}
 
@@ -116,6 +117,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.CreateUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/CreateNewSchema"},
 		{KnownRoute.SaveUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/SaveSchema"},
+		{KnownRoute.GetAvailableEntitySchemas, "ServiceModel/SchemaDataDesignerService.svc/GetAvailableEntitySchemas"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

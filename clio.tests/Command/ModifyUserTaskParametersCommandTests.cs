@@ -37,6 +37,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -71,7 +72,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns("{}");
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			Culture = "en-US",
@@ -119,6 +121,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -153,7 +156,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns("{}");
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			SetDirections = ["ExistingText=Out"]
@@ -176,6 +180,77 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 	}
 
 	[Test]
+	[Description("Loads an existing workspace user task, adds a lookup parameter, resolves the entity schema, saves it, and builds the owning package.")]
+	[Category("Unit")]
+	public void Execute_Should_Add_Lookup_Parameter_To_Existing_UserTask() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid itemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid schemaUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+		Guid accountSchemaUId = Guid.Parse("25d7c1ab-1de0-4501-b402-02e0e5a72d6e");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetUserTaskSchema).Returns(GetSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		lookupSchemaResolver.Resolve(Arg.Any<Guid>(), "Account").Returns(new UserTaskLookupSchema {
+			Name = "Account",
+			UId = accountSchemaUId,
+			Caption = "Account"
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetWorkspaceItemsResponse(itemId, schemaUId, packageUId));
+		applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
+		applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{}");
+
+		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
+		ModifyUserTaskParametersOptions options = new() {
+			UserTaskName = "UsrSendInvoice",
+			AddParameters = ["code=AccountRef;title=Account reference;type=Lookup;lookup=Account"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because lookup parameters should resolve to the same designer payload as Creatio");
+		lookupSchemaResolver.Received(1).Resolve(packageUId, "Account");
+		applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(body => MatchesLookupAddSaveRequest(body, schemaUId, packageUId, accountSchemaUId)),
+			100000, 3, 1);
+	}
+
+	[Test]
 	[Description("Returns an error when a requested parameter removal does not exist on the current user task.")]
 	[Category("Unit")]
 	public void Execute_Should_Return_Error_When_Parameter_To_Remove_Does_Not_Exist() {
@@ -187,6 +262,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -213,7 +289,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			RemoveParameters = ["MissingParameter"]
@@ -240,6 +317,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new();
 
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
@@ -255,7 +333,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns("""{"items":[{"id":"16cd93aa-c7ce-445c-9418-c46439708abe","uId":"2d3946f3-28d5-4560-bb34-f13d14572e96","name":"UsrSendInvoice","title":"Send invoice","packageUId":"1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f","packageName":"OtherPackage","type":8,"modifiedOn":"2026-03-07T05:50:52.434Z","isChanged":true,"isLocked":true,"isReadOnly":false}]}""");
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			AddParameters = ["code=IsError;title=Is error;type=Boolean"]
@@ -282,6 +361,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -308,7 +388,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			SetDirections = ["MissingParameter=Out"]
@@ -446,6 +527,22 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		return root.GetProperty("uId").GetString() == schemaUId.ToString()
 			&& root.GetProperty("package").GetProperty("uId").GetString() == packageUId.ToString()
 			&& updatedParameter.GetProperty("direction").GetInt32() == expectedDirection;
+	}
+
+	private static bool MatchesLookupAddSaveRequest(string json, Guid schemaUId, Guid packageUId,
+		Guid accountSchemaUId) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		JsonElement root = document.RootElement;
+		JsonElement addedParameter = root.GetProperty("parameters").EnumerateArray()
+			.First(parameter => string.Equals(parameter.GetProperty("name").GetString(), "AccountRef",
+				StringComparison.OrdinalIgnoreCase));
+
+		return root.GetProperty("uId").GetString() == schemaUId.ToString()
+			&& root.GetProperty("package").GetProperty("uId").GetString() == packageUId.ToString()
+			&& addedParameter.GetProperty("type").GetInt32() == 10
+			&& addedParameter.GetProperty("lookup").GetString() == accountSchemaUId.ToString()
+			&& addedParameter.GetProperty("icon").GetString() == "data-type-lookup-icon.svg"
+			&& !addedParameter.TryGetProperty("schema", out _);
 	}
 
 	private static bool HasParameter(JsonElement parameters, string name) {

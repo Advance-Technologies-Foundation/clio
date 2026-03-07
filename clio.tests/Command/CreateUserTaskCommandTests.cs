@@ -33,6 +33,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -73,7 +74,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -141,6 +142,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new();
 		string packagePath = @"C:\workspace\packages\Custom";
 		string descriptorPath = $"{packagePath}\\descriptor.json";
@@ -151,7 +153,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
 		CreateUserTaskOptions options = new() {
 			Package = "Custom",
 			Code = "UsrMyUserTask",
@@ -179,12 +181,13 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new();
 		workspacePathBuilder.IsWorkspace.Returns(false);
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -201,9 +204,43 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 	}
 
 	[Test]
-	[Description("Returns an error when a parameter definition uses an unsupported type name.")]
+	[Description("Builds a lookup parameter by resolving the requested entity schema and serializing the designer lookup payload shape.")]
 	[Category("Unit")]
-	public void Execute_Should_Return_Error_When_Parameter_Type_Is_Unsupported() {
+	public void BuildParameters_Should_Create_Lookup_Parameter_With_Resolved_Schema() {
+		// Arrange
+		Guid accountSchemaUId = Guid.Parse("25d7c1ab-1de0-4501-b402-02e0e5a72d6e");
+		UserTaskLookupSchema resolvedLookup = new() {
+			Name = "Account",
+			UId = accountSchemaUId,
+			Caption = "Account"
+		};
+
+		// Act
+		List<UserTaskParameterDto> parameters = UserTaskSchemaSupport.BuildParameters(
+			"en-US",
+			["code=AccountRef;title=Account reference;type=Lookup;lookup=Account"],
+			lookupValue => {
+				lookupValue.Should().Be("Account");
+				return resolvedLookup;
+			});
+
+		// Assert
+		parameters.Should().HaveCount(1);
+		UserTaskParameterDto parameter = parameters[0];
+		parameter.Name.Should().Be("AccountRef");
+		parameter.Caption.Should().ContainSingle();
+		parameter.Caption[0].Value.Should().Be("Account reference");
+		parameter.Type.Should().Be(10);
+		parameter.ReferenceSchemaUId.Should().Be(accountSchemaUId);
+		parameter.ReferenceSchemaName.Should().BeNull();
+		parameter.Icon.Should().Be("data-type-lookup-icon.svg");
+		parameter.Direction.Should().Be(2, "because new parameters default to Variable unless direction is specified");
+	}
+
+	[Test]
+	[Description("Returns an error when a lookup parameter definition does not include a lookup schema reference.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_When_Lookup_Parameter_Does_Not_Include_Lookup_Value() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -212,6 +249,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -242,7 +280,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -254,7 +292,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		int result = command.Execute(options);
 
 		// Assert
-		result.Should().Be(1, "because only parameter types with verified designer payload mappings are supported");
+		result.Should().Be(1, "because lookup parameters need an entity schema name or schema UId");
 		applicationClient.Received(1).ExecutePostRequest(
 			CreateNewSchemaUrl,
 			Arg.Any<string>(),
@@ -281,6 +319,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -301,7 +340,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		});
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -423,4 +462,5 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			&& schema.GetProperty("color").GetString() == "#839DC3"
 			&& schema.GetProperty("parameters").GetArrayLength() == 0;
 	}
+
 }

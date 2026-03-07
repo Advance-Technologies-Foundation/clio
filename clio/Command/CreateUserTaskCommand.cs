@@ -66,7 +66,7 @@ public class CreateUserTaskOptions : RemoteCommandOptions {
 	/// Gets or sets repeatable parameter definitions for the created user task.
 	/// </summary>
 	[Option("parameter", Required = false, Separator = '|',
-		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Separate multiple values with '|'")]
+		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Use lookup only when type=Lookup. Separate multiple values with '|'")]
 	public IEnumerable<string> Parameters { get; set; }
 
 	/// <summary>
@@ -91,11 +91,13 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	private readonly IFileSystem _fileSystem;
 	private readonly IFileDesignModePackages _fileDesignModePackages;
 	private readonly IUserTaskMetadataDirectionApplier _userTaskMetadataDirectionApplier;
+	private readonly IUserTaskLookupSchemaResolver _userTaskLookupSchemaResolver;
 
 	public CreateUserTaskCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, IWorkspacePathBuilder workspacePathBuilder,
 		IJsonConverter jsonConverter, IFileSystem fileSystem, IFileDesignModePackages fileDesignModePackages,
-		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier)
+		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier,
+		IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_workspacePathBuilder = workspacePathBuilder;
@@ -103,6 +105,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		_fileSystem = fileSystem;
 		_fileDesignModePackages = fileDesignModePackages;
 		_userTaskMetadataDirectionApplier = userTaskMetadataDirectionApplier;
+		_userTaskLookupSchemaResolver = userTaskLookupSchemaResolver;
 	}
 
 	protected override void ExecuteRemoteCommand(CreateUserTaskOptions options) {
@@ -126,7 +129,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		ProcessUserTaskDesignSchemaDto schema = createResponse.Schema
 			?? throw new InvalidOperationException("CreateNewSchema did not return a schema payload.");
 
-		ApplyRequestedValues(schema, options, package);
+		ApplyRequestedValues(schema, options, package, _userTaskLookupSchemaResolver);
 
 		string saveSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema);
 		string saveRequestBody = JsonSerializer.Serialize(schema);
@@ -170,13 +173,16 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	}
 
 	private static void ApplyRequestedValues(ProcessUserTaskDesignSchemaDto schema, CreateUserTaskOptions options,
-		PackageDescriptor package) {
+		PackageDescriptor package, IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver) {
 		schema.Name = options.Code.Trim();
 		schema.Caption = UserTaskSchemaSupport.BuildLocalizableValues(options.Culture, options.Title, options.TitleLocalizations,
 			allowEmptyPrimaryValue: false);
 		schema.Description = UserTaskSchemaSupport.BuildLocalizableValues(options.Culture, options.Description,
 			options.DescriptionLocalizations, allowEmptyPrimaryValue: true);
-		schema.Parameters = UserTaskSchemaSupport.BuildParameters(options.Culture, options.Parameters);
+		schema.Parameters = UserTaskSchemaSupport.BuildParameters(
+			options.Culture,
+			options.Parameters,
+			lookupValue => userTaskLookupSchemaResolver.Resolve(package.UId, lookupValue));
 		schema.LocalizableStrings ??= [];
 		schema.OptionalProperties ??= [];
 		schema.Body ??= string.Empty;
@@ -521,6 +527,7 @@ internal static class UserTaskSchemaSupport {
 		"Float",
 		"Guid",
 		"Integer",
+		"Lookup",
 		"Money",
 		"Text",
 		"Time"
@@ -534,9 +541,10 @@ internal static class UserTaskSchemaSupport {
 			["DateTime"] = new(7, "data-type-datetime-icon.svg"),
 			["Float"] = new(5, "data-type-float1-icon.svg"),
 			["Double"] = new(5, "data-type-float1-icon.svg"),
-			["Guid"] = new(10, "data-type-guid-icon.svg"),
+			["Guid"] = new(11, "data-type-guid-icon.svg"),
 			["Integer"] = new(4, "data-type-integer-icon.svg"),
 			["Int"] = new(4, "data-type-integer-icon.svg"),
+			["Lookup"] = new(10, "data-type-lookup-icon.svg"),
 			["Money"] = new(6, "data-type-currency-icon.svg"),
 			["Decimal"] = new(6, "data-type-currency-icon.svg"),
 			["Text"] = new(1, "data-type-text-icon.svg"),
@@ -564,11 +572,12 @@ internal static class UserTaskSchemaSupport {
 		PropertyNameCaseInsensitive = true
 	};
 
-	internal static List<UserTaskParameterDto> BuildParameters(string culture, IEnumerable<string> parameterDefinitions) {
+	internal static List<UserTaskParameterDto> BuildParameters(string culture, IEnumerable<string> parameterDefinitions,
+		Func<string, UserTaskLookupSchema> lookupSchemaResolver = null) {
 		var parameters = new List<UserTaskParameterDto>();
 		var parameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (string parameterDefinition in parameterDefinitions ?? []) {
-			UserTaskParameterDto parameter = ParseParameter(culture, parameterDefinition);
+			UserTaskParameterDto parameter = ParseParameter(culture, parameterDefinition, lookupSchemaResolver);
 			if (!parameterNames.Add(parameter.Name)) {
 				throw new InvalidOperationException(
 					$"Parameter '{parameter.Name}' is defined more than once. Parameter names must be unique.");
@@ -677,13 +686,16 @@ internal static class UserTaskSchemaSupport {
 		EnsureResponseSucceeded(response, "SaveSchema");
 	}
 
-	private static UserTaskParameterDto ParseParameter(string culture, string parameterDefinition) {
+	private static UserTaskParameterDto ParseParameter(string culture, string parameterDefinition,
+		Func<string, UserTaskLookupSchema> lookupSchemaResolver) {
 		Dictionary<string, string> values = ParseParameterDefinitionValues(parameterDefinition);
 
 		string name = GetRequiredValue(values, "code", parameterDefinition);
 		string title = GetRequiredValue(values, "title", parameterDefinition);
 		string typeName = GetRequiredValue(values, "type", parameterDefinition);
 		UserTaskParameterTypeDefinition parameterType = ResolveParameterType(typeName);
+		bool isLookup = string.Equals(typeName.Trim(), "Lookup", StringComparison.OrdinalIgnoreCase);
+		UserTaskLookupSchema lookupSchema = ResolveLookupSchema(values, parameterDefinition, isLookup, lookupSchemaResolver);
 
 		return new UserTaskParameterDto {
 			UId = Guid.NewGuid(),
@@ -696,6 +708,8 @@ internal static class UserTaskSchemaSupport {
 			],
 			ItemProperties = [],
 			Type = parameterType.TypeId,
+			ReferenceSchemaUId = lookupSchema?.UId,
+			ReferenceSchemaName = null,
 			Required = ParseOptionalBoolean(values, "required", parameterDefinition),
 			Resulting = ParseOptionalBoolean(values, "resulting", parameterDefinition) ?? true,
 			ContainsPerformerId = ParseOptionalBoolean(values, "containsPerformerId", parameterDefinition),
@@ -705,6 +719,31 @@ internal static class UserTaskSchemaSupport {
 			Direction = ParseOptionalDirection(values, parameterDefinition) ?? 2,
 			Icon = parameterType.Icon
 		};
+	}
+
+	private static UserTaskLookupSchema ResolveLookupSchema(Dictionary<string, string> values, string parameterDefinition,
+		bool isLookup, Func<string, UserTaskLookupSchema> lookupSchemaResolver) {
+		bool hasLookup = values.TryGetValue("lookup", out string lookupValue) && !string.IsNullOrWhiteSpace(lookupValue);
+		if (!isLookup) {
+			if (hasLookup) {
+				throw new InvalidOperationException(
+					$"Parameter definition '{parameterDefinition}' can only use 'lookup' when type=Lookup.");
+			}
+
+			return null;
+		}
+
+		if (!hasLookup) {
+			throw new InvalidOperationException(
+				$"Lookup parameter definition '{parameterDefinition}' must include a non-empty 'lookup' value.");
+		}
+
+		if (lookupSchemaResolver is null) {
+			throw new InvalidOperationException(
+				$"Lookup parameter definition '{parameterDefinition}' requires a lookup schema resolver.");
+		}
+
+		return lookupSchemaResolver(lookupValue.Trim());
 	}
 
 	private static Dictionary<string, string> ParseParameterDefinitionValues(string parameterDefinition) {

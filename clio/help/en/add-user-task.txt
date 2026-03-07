@@ -15,7 +15,7 @@ DESCRIPTION
     Parameters can be added during schema creation with --parameter. Separate
     multiple parameter definitions with |.
     Supported parameter types are Boolean, Date, DateTime, Float, Guid,
-    Integer, Money, Text, and Time.
+    Integer, Lookup, Money, Text, and Time.
 
     When a parameter definition includes direction, clio persists it through
     the workspace file design mode flow because the current Creatio SaveSchema
@@ -53,10 +53,12 @@ OPTIONS
 
     --parameter                Parameter definition in
                                code=<name>;title=<caption>;type=<type>
-                               format with optional direction and boolean flags:
-                               direction, required, resulting, serializable,
-                               copyValue, lazyLoad, containsPerformerId.
-                               Separate multiple parameter definitions with |
+                               format with optional lookup, direction, and
+                               boolean flags: lookup, direction, required,
+                               resulting, serializable, copyValue, lazyLoad,
+                               containsPerformerId. Use lookup only when
+                               type=Lookup. Separate multiple parameter
+                               definitions with |
 
     --Environment         -e   Environment name
 
@@ -78,6 +80,11 @@ EXAMPLE
         "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
         -e docker_fix2
         create a user task with two parameters and build MyPackage
+
+    clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+        --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+        -e docker_fix2
+        create a user task with a lookup parameter resolved through Creatio
 
     clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
         --parameter "code=IsError;title=Is error;type=Boolean;direction=Out"

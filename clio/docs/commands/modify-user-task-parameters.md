@@ -58,6 +58,7 @@ Supported parameter types:
 - `Float`
 - `Guid`
 - `Integer`
+- `Lookup`
 - `Money`
 - `Text`
 - `Time`
@@ -69,6 +70,8 @@ Direction values:
 - `Variable` or `2`
 
 Use `--remove-parameter` with one or more existing parameter names separated by `|`.
+
+When `type=Lookup`, add `lookup=<schemaNameOrSchemaUId>`. Clio resolves it through Creatio's `SchemaDataDesignerService.svc/GetAvailableEntitySchemas` route and saves the resolved schema UId in the parameter `lookup` field.
 
 Use `--set-direction` with one or more existing parameter direction updates separated by `|`:
 
@@ -103,6 +106,11 @@ clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;ti
 ### Add and remove parameters in one command
 ```bash
 clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
+```
+
+### Add a lookup parameter
+```bash
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
 ```
 
 ### Update direction on existing parameters

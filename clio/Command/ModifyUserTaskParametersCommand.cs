@@ -26,7 +26,7 @@ public class ModifyUserTaskParametersOptions : RemoteCommandOptions {
 	/// Gets or sets parameter definitions to add.
 	/// </summary>
 	[Option("add-parameter", Required = false, Separator = '|',
-		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Separate multiple values with '|'")]
+		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Use lookup only when type=Lookup. Separate multiple values with '|'")]
 	public IEnumerable<string> AddParameters { get; set; }
 
 	/// <summary>
@@ -68,6 +68,7 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 	private readonly IFileSystem _fileSystem;
 	private readonly IFileDesignModePackages _fileDesignModePackages;
 	private readonly IUserTaskMetadataDirectionApplier _userTaskMetadataDirectionApplier;
+	private readonly IUserTaskLookupSchemaResolver _userTaskLookupSchemaResolver;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="ModifyUserTaskParametersCommand"/> class.
@@ -75,7 +76,8 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 	public ModifyUserTaskParametersCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, IWorkspacePathBuilder workspacePathBuilder,
 		IJsonConverter jsonConverter, IFileSystem fileSystem, IFileDesignModePackages fileDesignModePackages,
-		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier)
+		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier,
+		IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_workspacePathBuilder = workspacePathBuilder;
@@ -83,6 +85,7 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		_fileSystem = fileSystem;
 		_fileDesignModePackages = fileDesignModePackages;
 		_userTaskMetadataDirectionApplier = userTaskMetadataDirectionApplier;
+		_userTaskLookupSchemaResolver = userTaskLookupSchemaResolver;
 	}
 
 	/// <inheritdoc />
@@ -95,11 +98,12 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		}
 
 		List<string> parameterNamesToRemove = NormalizeRemoveParameterNames(options.RemoveParameters);
-		List<UserTaskParameterDto> parametersToAdd = UserTaskSchemaSupport.BuildParameters(options.Culture, options.AddParameters);
 		Dictionary<string, int> explicitAddedParameterDirections = UserTaskSchemaSupport
 			.ExtractExplicitDirections(options.AddParameters);
 		Dictionary<string, int> parameterDirectionsToUpdate = NormalizeDirectionUpdates(options.SetDirections);
-		if (parameterNamesToRemove.Count == 0 && parametersToAdd.Count == 0 && parameterDirectionsToUpdate.Count == 0) {
+		if (parameterNamesToRemove.Count == 0
+			&& !(options.AddParameters?.Any() ?? false)
+			&& parameterDirectionsToUpdate.Count == 0) {
 			throw new InvalidOperationException(
 				"Specify at least one `--add-parameter`, `--remove-parameter`, or `--set-direction` operation.");
 		}
@@ -107,6 +111,10 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		HashSet<string> workspacePackages = GetWorkspacePackages();
 		WorkspaceExplorerItemDto schemaItem = FindWorkspaceUserTaskItem(userTaskName, workspacePackages);
 		ProcessUserTaskDesignSchemaDto schema = LoadSchema(schemaItem);
+		List<UserTaskParameterDto> parametersToAdd = UserTaskSchemaSupport.BuildParameters(
+			options.Culture,
+			options.AddParameters,
+			lookupValue => _userTaskLookupSchemaResolver.Resolve(schemaItem.PackageUId, lookupValue));
 
 		ApplyParameterChanges(schema, parametersToAdd, parameterNamesToRemove, parameterDirectionsToUpdate);
 

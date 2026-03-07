@@ -35,7 +35,8 @@ public class UserTaskToolTests {
 			"Creates and sends invoice",
 			"en-US",
 			new List<UserTaskParameterArgs> {
-				new("IsError", "Is error", "Boolean", Direction: "Out", Resulting: true, Serializable: true)
+				new("IsError", "Is error", "Boolean", Direction: "Out", Resulting: true, Serializable: true),
+				new("AccountRef", "Account reference", "Lookup", Lookup: "Account")
 			}));
 
 		// Assert
@@ -49,8 +50,10 @@ public class UserTaskToolTests {
 			&& options.Parameters != null));
 		defaultCommand.CapturedOptions.Should().BeNull("because the environment-aware tool should use the resolved command");
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
-		resolvedCommand.CapturedOptions.Parameters.Should().ContainSingle()
-			.Which.Should().Be("code=IsError;title=Is error;type=Boolean;direction=Out;resulting=true;serializable=true");
+		resolvedCommand.CapturedOptions.Parameters.Should().BeEquivalentTo(new[] {
+			"code=IsError;title=Is error;type=Boolean;direction=Out;resulting=true;serializable=true",
+			"code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+		});
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -74,7 +77,8 @@ public class UserTaskToolTests {
 			@"C:\Projects\clio-with-core-and-ui\workspace",
 			"en-US",
 			new List<UserTaskParameterArgs> {
-				new("IsError", "Is error", "Boolean", Direction: "1")
+				new("IsError", "Is error", "Boolean", Direction: "1"),
+				new("AccountRef", "Account reference", "Lookup", Lookup: "Account")
 			},
 			new[] { "ObsoleteFlag" },
 			new[] { new UserTaskParameterDirectionArgs("ExistingText", "Out") }));
@@ -89,8 +93,10 @@ public class UserTaskToolTests {
 		defaultCommand.CapturedOptions.Should().BeNull("because the environment-aware tool should use the resolved command");
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
 		resolvedCommand.CapturedOptions.RemoveParameters.Should().BeEquivalentTo(new[] { "ObsoleteFlag" });
-		resolvedCommand.CapturedOptions.AddParameters.Should().ContainSingle()
-			.Which.Should().Be("code=IsError;title=Is error;type=Boolean;direction=1");
+		resolvedCommand.CapturedOptions.AddParameters.Should().BeEquivalentTo(new[] {
+			"code=IsError;title=Is error;type=Boolean;direction=1",
+			"code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+		});
 		resolvedCommand.CapturedOptions.SetDirections.Should().ContainSingle()
 			.Which.Should().Be("ExistingText=Out");
 		ConsoleLogger.Instance.ClearMessages();
@@ -108,7 +114,8 @@ public class UserTaskToolTests {
 				Substitute.For<IJsonConverter>(),
 				Substitute.For<IFileSystem>(),
 				Substitute.For<IFileDesignModePackages>(),
-				Substitute.For<IUserTaskMetadataDirectionApplier>()) {
+				Substitute.For<IUserTaskMetadataDirectionApplier>(),
+				Substitute.For<IUserTaskLookupSchemaResolver>()) {
 		}
 
 		public override int Execute(CreateUserTaskOptions options) {
@@ -129,7 +136,8 @@ public class UserTaskToolTests {
 				Substitute.For<IJsonConverter>(),
 				Substitute.For<IFileSystem>(),
 				Substitute.For<IFileDesignModePackages>(),
-				Substitute.For<IUserTaskMetadataDirectionApplier>()) {
+				Substitute.For<IUserTaskMetadataDirectionApplier>(),
+				Substitute.For<IUserTaskLookupSchemaResolver>()) {
 		}
 
 		public override int Execute(ModifyUserTaskParametersOptions options) {

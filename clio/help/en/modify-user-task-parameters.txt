@@ -37,10 +37,12 @@ OPTIONS
 
     --add-parameter            Parameter definition in
                                code=<name>;title=<caption>;type=<type>
-                               format with optional direction and boolean flags:
-                               direction, required, resulting, serializable,
-                               copyValue, lazyLoad, containsPerformerId.
-                               Separate multiple parameter definitions with |
+                               format with optional lookup, direction, and
+                               boolean flags: lookup, direction, required,
+                               resulting, serializable, copyValue, lazyLoad,
+                               containsPerformerId. Use lookup only when
+                               type=Lookup. Separate multiple parameter
+                               definitions with |
 
     --remove-parameter         Existing parameter name to remove. Separate
                                multiple names with |
@@ -67,6 +69,11 @@ EXAMPLE
         --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In"
         -e docker_fix2
         add one parameter to an existing workspace user task
+
+    clio modify-user-task-parameters UsrSendInvoice
+        --add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+        -e docker_fix2
+        add a lookup parameter by resolving the Account entity schema in Creatio
 
     clio modify-user-task-parameters UsrSendInvoice
         --set-direction "IsError=Out|ResultMessage=Variable"

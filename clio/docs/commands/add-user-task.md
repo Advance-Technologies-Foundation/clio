@@ -65,6 +65,7 @@ Supported parameter types:
 - `Float`
 - `Guid`
 - `Integer`
+- `Lookup`
 - `Money`
 - `Text`
 - `Time`
@@ -74,10 +75,10 @@ Parameter notes:
 - `code`, `title`, and `type` are required in every parameter definition.
 - Separate multiple parameter definitions with `|` in the same `--parameter` value.
 - Parameter titles use the command culture from `--culture`.
+- When `type=Lookup`, add `lookup=<schemaNameOrSchemaUId>`. Clio resolves it through Creatio's `SchemaDataDesignerService.svc/GetAvailableEntitySchemas` route and saves the resolved schema UId in the parameter `lookup` field.
 - `direction` is optional. Supported values are `In`, `Out`, `Variable`, `0`, `1`, and `2`. When omitted, the command uses `Variable` (`2`).
 - `resulting` defaults to `true`, matching the designer default.
 - `serializable` defaults to `true`, matching the designer default.
-- The command currently supports scalar parameter types with verified save payload mappings. Lookup-style parameters are not included yet.
 
 ## Examples
 
@@ -94,6 +95,11 @@ clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --d
 ### Create a user task with parameters
 ```bash
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
+```
+
+### Create a user task with a lookup parameter
+```bash
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" -e docker_fix2
 ```
 
 ## Behavior
