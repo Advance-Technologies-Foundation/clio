@@ -178,6 +178,7 @@ clio:   8.0.1.97
 - [Unlock package](#unlock-package)
 - [Activate package](#activate-pkg)
 - [Deactivate package](#deactivate-pkg)
+- [Create entity schema](#create-entity-schema)
 
 ## new-pkg
 
@@ -258,6 +259,46 @@ The `--check-configuration-errors` flag enables validation of compilation and co
 ## compile-package
 
 To compile package
+
+## create-entity-schema
+
+Create a remote entity schema in an existing Creatio package through `EntitySchemaDesignerService`.
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle"
+```
+
+Create an inheriting schema:
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" --parent BaseEntity
+```
+
+Create a replacement schema:
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrAccount --title "Account" --parent Account --extend-parent
+```
+
+Create a schema with initial columns:
+
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
+  --column "Id:Guid" \
+  --column "Name:Text:Vehicle name" \
+  --column "CreatedOn:DateTime:Created on" \
+  --column "IsActive:Boolean:Active" \
+  --column "Owner:Lookup:Owner:Contact"
+```
+
+Supported column types in v1:
+
+- `Guid`
+- `Text`
+- `Integer`
+- `Boolean`
+- `DateTime`
+- `Lookup` (requires reference schema name)
 
 ```
 clio compile-package <PACKAGE NAME>
