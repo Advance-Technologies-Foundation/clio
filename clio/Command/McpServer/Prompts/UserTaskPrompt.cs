@@ -36,7 +36,8 @@ public class UserTaskPrompt {
 		 Use clio mcp server `create-user-task` tool to create user task `{code}` in workspace package
 		 `{packageName}` for environment `{environmentName}` using workspace path `{workspacePath}`.
 		 Set the title to `{title}` and description to `{description ?? "<not provided>"}`.
-		 Include initial parameters only when they were explicitly requested.
+		 Include initial parameters only when they were explicitly requested, and include parameter directions
+		 when the requested task contract depends on them.
 		 """;
 
 	/// <summary>
@@ -58,6 +59,9 @@ public class UserTaskPrompt {
 		 Use clio mcp server `modify-user-task-parameters` tool to add and/or remove parameters on
 		 existing user task `{userTaskName}` in environment `{environmentName}` using workspace path
 		 `{workspacePath}`.
+		 Include parameter directions on added parameters when they were explicitly requested, and use
+		 direction updates for existing parameters when the request is to change input/output/variable
+		 behavior without recreating the parameter.
 		 Because the tool can remove parameters from the schema, confirm the exact parameter changes
 		 before using it destructively.
 		 """;

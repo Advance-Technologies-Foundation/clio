@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
+using Clio.Package;
 using Clio.Workspaces;
 using CommandLine;
 
@@ -25,7 +26,7 @@ public class ModifyUserTaskParametersOptions : RemoteCommandOptions {
 	/// Gets or sets parameter definitions to add.
 	/// </summary>
 	[Option("add-parameter", Required = false, Separator = '|',
-		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Separate multiple values with '|'")]
+		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Separate multiple values with '|'")]
 	public IEnumerable<string> AddParameters { get; set; }
 
 	/// <summary>
@@ -34,6 +35,13 @@ public class ModifyUserTaskParametersOptions : RemoteCommandOptions {
 	[Option("remove-parameter", Required = false, Separator = '|',
 		HelpText = "Parameter name to remove. Separate multiple values with '|'")]
 	public IEnumerable<string> RemoveParameters { get; set; }
+
+	/// <summary>
+	/// Gets or sets direction updates for existing parameters.
+	/// </summary>
+	[Option("set-direction", Required = false, Separator = '|',
+		HelpText = "Set direction for an existing parameter in '<name>=<In|Out|Variable|0|1|2>' format. Separate multiple values with '|'")]
+	public IEnumerable<string> SetDirections { get; set; }
 
 	/// <summary>
 	/// Gets or sets the culture used for added parameter titles.
@@ -58,18 +66,23 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IJsonConverter _jsonConverter;
 	private readonly IFileSystem _fileSystem;
+	private readonly IFileDesignModePackages _fileDesignModePackages;
+	private readonly IUserTaskMetadataDirectionApplier _userTaskMetadataDirectionApplier;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="ModifyUserTaskParametersCommand"/> class.
 	/// </summary>
 	public ModifyUserTaskParametersCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, IWorkspacePathBuilder workspacePathBuilder,
-		IJsonConverter jsonConverter, IFileSystem fileSystem)
+		IJsonConverter jsonConverter, IFileSystem fileSystem, IFileDesignModePackages fileDesignModePackages,
+		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_workspacePathBuilder = workspacePathBuilder;
 		_jsonConverter = jsonConverter;
 		_fileSystem = fileSystem;
+		_fileDesignModePackages = fileDesignModePackages;
+		_userTaskMetadataDirectionApplier = userTaskMetadataDirectionApplier;
 	}
 
 	/// <inheritdoc />
@@ -83,16 +96,19 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 
 		List<string> parameterNamesToRemove = NormalizeRemoveParameterNames(options.RemoveParameters);
 		List<UserTaskParameterDto> parametersToAdd = UserTaskSchemaSupport.BuildParameters(options.Culture, options.AddParameters);
-		if (parameterNamesToRemove.Count == 0 && parametersToAdd.Count == 0) {
+		Dictionary<string, int> explicitAddedParameterDirections = UserTaskSchemaSupport
+			.ExtractExplicitDirections(options.AddParameters);
+		Dictionary<string, int> parameterDirectionsToUpdate = NormalizeDirectionUpdates(options.SetDirections);
+		if (parameterNamesToRemove.Count == 0 && parametersToAdd.Count == 0 && parameterDirectionsToUpdate.Count == 0) {
 			throw new InvalidOperationException(
-				"Specify at least one `--add-parameter` or `--remove-parameter` operation.");
+				"Specify at least one `--add-parameter`, `--remove-parameter`, or `--set-direction` operation.");
 		}
 
 		HashSet<string> workspacePackages = GetWorkspacePackages();
 		WorkspaceExplorerItemDto schemaItem = FindWorkspaceUserTaskItem(userTaskName, workspacePackages);
 		ProcessUserTaskDesignSchemaDto schema = LoadSchema(schemaItem);
 
-		ApplyParameterChanges(schema, parametersToAdd, parameterNamesToRemove);
+		ApplyParameterChanges(schema, parametersToAdd, parameterNamesToRemove, parameterDirectionsToUpdate);
 
 		string saveSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema);
 		string saveRequestBody = JsonSerializer.Serialize(schema);
@@ -103,6 +119,8 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		UserTaskSchemaSupport.EnsureSaveSucceeded(saveResponse);
 		Logger.WriteInfo($"Updated user task schema '{schema.Name}' ({saveResponse.SchemaUId}).");
 		BuildPackage(schemaItem.PackageName);
+		ApplyParameterDirectionMetadataIfNeeded(schemaItem.PackageName, schema.Name,
+			MergeDirectionUpdates(explicitAddedParameterDirections, parameterDirectionsToUpdate));
 	}
 
 	private void ConfigureWorkspace(ModifyUserTaskParametersOptions options) {
@@ -191,8 +209,42 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		return normalizedNames;
 	}
 
+	private static Dictionary<string, int> NormalizeDirectionUpdates(IEnumerable<string> setDirections) {
+		var directionUpdates = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		foreach (string directionUpdate in setDirections ?? []) {
+			if (string.IsNullOrWhiteSpace(directionUpdate)) {
+				throw new InvalidOperationException("Set direction value cannot be empty.");
+			}
+
+			int separatorIndex = directionUpdate.IndexOf('=');
+			if (separatorIndex <= 0) {
+				separatorIndex = directionUpdate.IndexOf(':');
+			}
+
+			if (separatorIndex <= 0) {
+				throw new InvalidOperationException(
+					$"Set direction value '{directionUpdate}' must be in '<name>=<direction>' format.");
+			}
+
+			string parameterName = directionUpdate[..separatorIndex].Trim();
+			string directionValue = directionUpdate[(separatorIndex + 1)..].Trim();
+			if (string.IsNullOrWhiteSpace(parameterName)) {
+				throw new InvalidOperationException(
+					$"Set direction value '{directionUpdate}' must include a parameter name.");
+			}
+
+			int direction = UserTaskSchemaSupport.ParseDirection(directionValue, directionUpdate);
+			if (!directionUpdates.TryAdd(parameterName, direction)) {
+				throw new InvalidOperationException(
+					$"Parameter '{parameterName}' is listed more than once for direction updates.");
+			}
+		}
+
+		return directionUpdates;
+	}
+
 	private static void ApplyParameterChanges(ProcessUserTaskDesignSchemaDto schema, List<UserTaskParameterDto> parametersToAdd,
-		List<string> parameterNamesToRemove) {
+		List<string> parameterNamesToRemove, Dictionary<string, int> parameterDirectionsToUpdate) {
 		schema.Parameters ??= [];
 
 		foreach (string parameterNameToRemove in parameterNamesToRemove) {
@@ -216,6 +268,45 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 
 			schema.Parameters.Add(parameterToAdd);
 		}
+
+		foreach ((string parameterName, int direction) in parameterDirectionsToUpdate) {
+			UserTaskParameterDto existingParameter = schema.Parameters.FirstOrDefault(parameter =>
+				string.Equals(parameter.Name, parameterName, StringComparison.OrdinalIgnoreCase));
+			if (existingParameter is null) {
+				throw new InvalidOperationException(
+					$"Parameter '{parameterName}' does not exist on user task '{schema.Name}'.");
+			}
+
+			existingParameter.Direction = direction;
+		}
+	}
+
+	private void ApplyParameterDirectionMetadataIfNeeded(string packageName, string schemaName,
+		IReadOnlyDictionary<string, int> directionsByParameterName) {
+		if (directionsByParameterName is null || directionsByParameterName.Count == 0) {
+			return;
+		}
+
+		Logger.WriteInfo($"Applying direction metadata for {directionsByParameterName.Count} parameter(s) on '{schemaName}'...");
+		_userTaskMetadataDirectionApplier.ApplyDirections(packageName, schemaName, directionsByParameterName);
+		Logger.WriteInfo("Loading workspace packages to database to apply direction metadata changes...");
+		_fileDesignModePackages.LoadPackagesToDb();
+		BuildPackage(packageName);
+	}
+
+	private static Dictionary<string, int> MergeDirectionUpdates(
+		IReadOnlyDictionary<string, int> explicitAddedParameterDirections,
+		IReadOnlyDictionary<string, int> parameterDirectionsToUpdate) {
+		var mergedDirections = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string parameterName, int direction) in explicitAddedParameterDirections ?? new Dictionary<string, int>()) {
+			mergedDirections[parameterName] = direction;
+		}
+
+		foreach ((string parameterName, int direction) in parameterDirectionsToUpdate ?? new Dictionary<string, int>()) {
+			mergedDirections[parameterName] = direction;
+		}
+
+		return mergedDirections;
 	}
 
 	private void BuildPackage(string packageName) {

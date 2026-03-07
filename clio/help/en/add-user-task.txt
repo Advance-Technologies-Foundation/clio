@@ -17,6 +17,15 @@ DESCRIPTION
     Supported parameter types are Boolean, Date, DateTime, Float, Guid,
     Integer, Money, Text, and Time.
 
+    When a parameter definition includes direction, clio persists it through
+    the workspace file design mode flow because the current Creatio SaveSchema
+    route does not persist parameter direction:
+    1. Save the schema through the designer service
+    2. Build the package so schema files appear in the workspace
+    3. Patch Schemas/<SchemaName>/metadata.json and set parameter L12
+    4. Load workspace packages to the database
+    5. Build the package again
+
 SYNOPSIS
     clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title <TITLE>
         [--description <DESCRIPTION>] [--culture <CULTURE>]
@@ -44,10 +53,10 @@ OPTIONS
 
     --parameter                Parameter definition in
                                code=<name>;title=<caption>;type=<type>
-                               format with optional boolean flags:
-                               required, resulting, serializable, copyValue,
-                               lazyLoad, containsPerformerId. Separate multiple
-                               parameter definitions with |
+                               format with optional direction and boolean flags:
+                               direction, required, resulting, serializable,
+                               copyValue, lazyLoad, containsPerformerId.
+                               Separate multiple parameter definitions with |
 
     --Environment         -e   Environment name
 
@@ -66,9 +75,15 @@ EXAMPLE
 
     clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
         --parameter
-        "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
+        "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
         -e docker_fix2
         create a user task with two parameters and build MyPackage
+
+    clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+        --parameter "code=IsError;title=Is error;type=Boolean;direction=Out"
+        -e docker_fix2
+        create a user task, patch parameter direction in metadata.json, load
+        the workspace package to the database, and rebuild MyPackage
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

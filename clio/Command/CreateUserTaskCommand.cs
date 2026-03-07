@@ -66,7 +66,7 @@ public class CreateUserTaskOptions : RemoteCommandOptions {
 	/// Gets or sets repeatable parameter definitions for the created user task.
 	/// </summary>
 	[Option("parameter", Required = false, Separator = '|',
-		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Separate multiple values with '|'")]
+		HelpText = "Parameter definition in 'code=<name>;title=<caption>;type=<type>[;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]' format. Separate multiple values with '|'")]
 	public IEnumerable<string> Parameters { get; set; }
 
 	/// <summary>
@@ -89,21 +89,28 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IJsonConverter _jsonConverter;
 	private readonly IFileSystem _fileSystem;
+	private readonly IFileDesignModePackages _fileDesignModePackages;
+	private readonly IUserTaskMetadataDirectionApplier _userTaskMetadataDirectionApplier;
 
 	public CreateUserTaskCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, IWorkspacePathBuilder workspacePathBuilder,
-		IJsonConverter jsonConverter, IFileSystem fileSystem)
+		IJsonConverter jsonConverter, IFileSystem fileSystem, IFileDesignModePackages fileDesignModePackages,
+		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_workspacePathBuilder = workspacePathBuilder;
 		_jsonConverter = jsonConverter;
 		_fileSystem = fileSystem;
+		_fileDesignModePackages = fileDesignModePackages;
+		_userTaskMetadataDirectionApplier = userTaskMetadataDirectionApplier;
 	}
 
 	protected override void ExecuteRemoteCommand(CreateUserTaskOptions options) {
 		ConfigureWorkspace(options);
 		PackageDescriptor package = ResolveWorkspacePackage(options.Package);
 		Guid packageUId = package.UId;
+		Dictionary<string, int> explicitParameterDirections = UserTaskSchemaSupport
+			.ExtractExplicitDirections(options.Parameters);
 
 		string createNewSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateUserTaskSchema);
 		string createRequestBody = JsonSerializer.Serialize(new CreateSchemaRequestDto {
@@ -131,6 +138,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		UserTaskSchemaSupport.EnsureSaveSucceeded(saveResponse);
 		Logger.WriteInfo($"Created user task schema '{schema.Name}' ({saveResponse.SchemaUId}).");
 		BuildPackage(package.Name);
+		ApplyParameterDirectionMetadataIfNeeded(package.Name, schema.Name, explicitParameterDirections);
 	}
 
 	private void ConfigureWorkspace(CreateUserTaskOptions options) {
@@ -146,6 +154,19 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		});
 		Logger.WriteInfo($"Building package '{packageName}'...");
 		ApplicationClient.ExecutePostRequest(buildPackageUrl, buildRequestBody, RequestTimeout, RetryCount, DelaySec);
+	}
+
+	private void ApplyParameterDirectionMetadataIfNeeded(string packageName, string schemaName,
+		IReadOnlyDictionary<string, int> directionsByParameterName) {
+		if (directionsByParameterName is null || directionsByParameterName.Count == 0) {
+			return;
+		}
+
+		Logger.WriteInfo($"Applying direction metadata for {directionsByParameterName.Count} parameter(s) on '{schemaName}'...");
+		_userTaskMetadataDirectionApplier.ApplyDirections(packageName, schemaName, directionsByParameterName);
+		Logger.WriteInfo("Loading workspace packages to database to apply direction metadata changes...");
+		_fileDesignModePackages.LoadPackagesToDb();
+		BuildPackage(packageName);
 	}
 
 	private static void ApplyRequestedValues(ProcessUserTaskDesignSchemaDto schema, CreateUserTaskOptions options,
@@ -416,6 +437,10 @@ internal sealed class UserTaskParameterDto {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? CopyValue { get; set; }
 
+	[JsonPropertyName("direction")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? Direction { get; set; }
+
 	[JsonPropertyName("icon")]
 	public string Icon { get; set; }
 }
@@ -519,6 +544,22 @@ internal static class UserTaskSchemaSupport {
 			["Time"] = new(9, "data-type-time-icon.svg")
 		};
 
+	private static readonly string[] SupportedDirectionNames = [
+		"In",
+		"Out",
+		"Variable"
+	];
+
+	private static readonly Dictionary<string, int> SupportedDirections =
+		new(StringComparer.OrdinalIgnoreCase) {
+			["0"] = 0,
+			["In"] = 0,
+			["1"] = 1,
+			["Out"] = 1,
+			["2"] = 2,
+			["Variable"] = 2
+		};
+
 	private static readonly JsonSerializerOptions SerializerOptions = new() {
 		PropertyNameCaseInsensitive = true
 	};
@@ -537,6 +578,25 @@ internal static class UserTaskSchemaSupport {
 		}
 
 		return parameters;
+	}
+
+	internal static Dictionary<string, int> ExtractExplicitDirections(IEnumerable<string> parameterDefinitions) {
+		var directions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		foreach (string parameterDefinition in parameterDefinitions ?? []) {
+			Dictionary<string, string> values = ParseParameterDefinitionValues(parameterDefinition);
+			if (!values.TryGetValue("direction", out string directionValue) || string.IsNullOrWhiteSpace(directionValue)) {
+				continue;
+			}
+
+			string parameterName = GetRequiredValue(values, "code", parameterDefinition).Trim();
+			int direction = ParseDirection(directionValue, parameterDefinition);
+			if (!directions.TryAdd(parameterName, direction)) {
+				throw new InvalidOperationException(
+					$"Parameter '{parameterName}' is defined more than once with an explicit direction.");
+			}
+		}
+
+		return directions;
 	}
 
 	internal static List<LocalizableStringDto> BuildLocalizableValues(string culture, string primaryValue,
@@ -618,6 +678,36 @@ internal static class UserTaskSchemaSupport {
 	}
 
 	private static UserTaskParameterDto ParseParameter(string culture, string parameterDefinition) {
+		Dictionary<string, string> values = ParseParameterDefinitionValues(parameterDefinition);
+
+		string name = GetRequiredValue(values, "code", parameterDefinition);
+		string title = GetRequiredValue(values, "title", parameterDefinition);
+		string typeName = GetRequiredValue(values, "type", parameterDefinition);
+		UserTaskParameterTypeDefinition parameterType = ResolveParameterType(typeName);
+
+		return new UserTaskParameterDto {
+			UId = Guid.NewGuid(),
+			Name = name.Trim(),
+			Caption = [
+				new LocalizableStringDto {
+					CultureName = culture,
+					Value = title
+				}
+			],
+			ItemProperties = [],
+			Type = parameterType.TypeId,
+			Required = ParseOptionalBoolean(values, "required", parameterDefinition),
+			Resulting = ParseOptionalBoolean(values, "resulting", parameterDefinition) ?? true,
+			ContainsPerformerId = ParseOptionalBoolean(values, "containsPerformerId", parameterDefinition),
+			LazyLoad = ParseOptionalBoolean(values, "lazyLoad", parameterDefinition),
+			Serializable = ParseOptionalBoolean(values, "serializable", parameterDefinition) ?? true,
+			CopyValue = ParseOptionalBoolean(values, "copyValue", parameterDefinition),
+			Direction = ParseOptionalDirection(values, parameterDefinition) ?? 2,
+			Icon = parameterType.Icon
+		};
+	}
+
+	private static Dictionary<string, string> ParseParameterDefinitionValues(string parameterDefinition) {
 		if (string.IsNullOrWhiteSpace(parameterDefinition)) {
 			throw new InvalidOperationException("Parameter definition cannot be empty.");
 		}
@@ -644,30 +734,7 @@ internal static class UserTaskSchemaSupport {
 			values[key] = value;
 		}
 
-		string name = GetRequiredValue(values, "code", parameterDefinition);
-		string title = GetRequiredValue(values, "title", parameterDefinition);
-		string typeName = GetRequiredValue(values, "type", parameterDefinition);
-		UserTaskParameterTypeDefinition parameterType = ResolveParameterType(typeName);
-
-		return new UserTaskParameterDto {
-			UId = Guid.NewGuid(),
-			Name = name.Trim(),
-			Caption = [
-				new LocalizableStringDto {
-					CultureName = culture,
-					Value = title
-				}
-			],
-			ItemProperties = [],
-			Type = parameterType.TypeId,
-			Required = ParseOptionalBoolean(values, "required", parameterDefinition),
-			Resulting = ParseOptionalBoolean(values, "resulting", parameterDefinition) ?? true,
-			ContainsPerformerId = ParseOptionalBoolean(values, "containsPerformerId", parameterDefinition),
-			LazyLoad = ParseOptionalBoolean(values, "lazyLoad", parameterDefinition),
-			Serializable = ParseOptionalBoolean(values, "serializable", parameterDefinition) ?? true,
-			CopyValue = ParseOptionalBoolean(values, "copyValue", parameterDefinition),
-			Icon = parameterType.Icon
-		};
+		return values;
 	}
 
 	private static string GetRequiredValue(Dictionary<string, string> values, string key, string parameterDefinition) {
@@ -690,6 +757,24 @@ internal static class UserTaskSchemaSupport {
 
 		throw new InvalidOperationException(
 			$"Parameter definition '{parameterDefinition}' has invalid boolean value '{value}' for '{key}'.");
+	}
+
+	private static int? ParseOptionalDirection(Dictionary<string, string> values, string parameterDefinition) {
+		if (!values.TryGetValue("direction", out string value) || string.IsNullOrWhiteSpace(value)) {
+			return null;
+		}
+
+		return ParseDirection(value, parameterDefinition);
+	}
+
+	internal static int ParseDirection(string value, string context) {
+		string normalizedValue = value?.Trim();
+		if (!string.IsNullOrWhiteSpace(normalizedValue) && SupportedDirections.TryGetValue(normalizedValue, out int direction)) {
+			return direction;
+		}
+
+		throw new InvalidOperationException(
+			$"Parameter definition '{context}' has invalid direction '{value}'. Supported values: {string.Join(", ", SupportedDirectionNames)} or 0, 1, 2.");
 	}
 
 	private static UserTaskParameterTypeDefinition ResolveParameterType(string typeName) {

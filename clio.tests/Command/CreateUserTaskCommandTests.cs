@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Common;
@@ -30,6 +31,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -69,7 +72,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			.Returns("{}");
 
 		CreateUserTaskCommand command =
-			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem);
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -79,7 +83,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			TitleLocalizations = ["fr-FR=Tache utilisateur"],
 			DescriptionLocalizations = ["fr-FR=Description FR"],
 			Parameters = [
-				"code=IsError;title=Is error;type=Boolean",
+				"code=IsError;title=Is error;type=Boolean;direction=Out",
 				"code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
 			]
 		};
@@ -110,7 +114,19 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 				100000,
 				3,
 				1);
+			applicationClient.ExecutePostRequest(
+				BuildPackageUrl,
+				Arg.Is<string>(body => HasPropertyWithValue(body, "packageName", "MyPackage")),
+				100000,
+				3,
+				1);
 		});
+		metadataDirectionApplier.Received(1).ApplyDirections(
+			"MyPackage",
+			"UsrMyUserTask",
+			Arg.Is<IReadOnlyDictionary<string, int>>(directions =>
+				directions.Count == 1 && directions["IsError"] == 1));
+		fileDesignModePackages.Received(1).LoadPackagesToDb();
 	}
 
 	[Test]
@@ -123,6 +139,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new();
 		string packagePath = @"C:\workspace\packages\Custom";
 		string descriptorPath = $"{packagePath}\\descriptor.json";
@@ -132,7 +150,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		fileSystem.ExistsFile(descriptorPath).Returns(false);
 
 		CreateUserTaskCommand command =
-			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem);
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier);
 		CreateUserTaskOptions options = new() {
 			Package = "Custom",
 			Code = "UsrMyUserTask",
@@ -158,11 +177,14 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new();
 		workspacePathBuilder.IsWorkspace.Returns(false);
 
 		CreateUserTaskCommand command =
-			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem);
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -188,6 +210,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -217,7 +241,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			.Returns(CreateNewSchemaResponse(schemaUId, schemaId, packageUId, editPageSchemaUId, dcmEditPageSchemaUId));
 
 		CreateUserTaskCommand command =
-			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem);
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier);
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -242,6 +267,55 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Returns an error when a parameter definition uses an unsupported direction value.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_When_Parameter_Direction_Is_Unsupported() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
+		string packagePath = @"C:\workspace\packages\MyPackage";
+		string descriptorPath = $"{packagePath}\\descriptor.json";
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
+		fileSystem.ExistsDirectory(packagePath).Returns(true);
+		fileSystem.ExistsFile(descriptorPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath).Returns(new PackageDescriptorDto {
+			Descriptor = new PackageDescriptor {
+				Name = "MyPackage",
+				UId = packageUId,
+				Type = PackageType.Assembly
+			}
+		});
+		CreateUserTaskCommand command =
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier);
+		CreateUserTaskOptions options = new() {
+			Package = "MyPackage",
+			Code = "UsrMyUserTask",
+			Title = "My user task",
+			Parameters = ["code=Broken;title=Broken parameter;type=Boolean;direction=Sideways"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because only verified direction values should be accepted");
+		applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest(default, default, default, default, default);
 	}
 
 	private static string CreateNewSchemaResponse(Guid schemaUId, Guid schemaId, Guid packageUId,
@@ -330,12 +404,14 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			&& isErrorParameter.GetProperty("name").GetString() == "IsError"
 			&& isErrorParameter.GetProperty("caption")[0].GetProperty("value").GetString() == "Is error"
 			&& isErrorParameter.GetProperty("type").GetInt32() == 12
+			&& isErrorParameter.GetProperty("direction").GetInt32() == 1
 			&& isErrorParameter.GetProperty("resulting").GetBoolean()
 			&& isErrorParameter.GetProperty("serializable").GetBoolean()
 			&& isErrorParameter.GetProperty("icon").GetString() == "data-type-boolean-icon.svg"
 			&& resultMessageParameter.GetProperty("name").GetString() == "ResultMessage"
 			&& resultMessageParameter.GetProperty("caption")[0].GetProperty("value").GetString() == "Result message"
 			&& resultMessageParameter.GetProperty("type").GetInt32() == 1
+			&& resultMessageParameter.GetProperty("direction").GetInt32() == 2
 			&& resultMessageParameter.GetProperty("required").GetBoolean()
 			&& !resultMessageParameter.GetProperty("resulting").GetBoolean()
 			&& !resultMessageParameter.GetProperty("serializable").GetBoolean()

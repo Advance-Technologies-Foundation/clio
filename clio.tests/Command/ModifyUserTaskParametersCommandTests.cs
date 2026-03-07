@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Common;
+using Clio.Package;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
@@ -32,6 +35,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -66,11 +71,11 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns("{}");
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			Culture = "en-US",
-			AddParameters = ["code=IsError;title=Is error;type=Boolean"],
+			AddParameters = ["code=IsError;title=Is error;type=Boolean;direction=In"],
 			RemoveParameters = ["ObsoleteFlag"]
 		};
 
@@ -90,7 +95,84 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			applicationClient.ExecutePostRequest(BuildPackageUrl,
 				Arg.Is<string>(body => HasPropertyWithValue(body, "packageName", "MyPackage")),
 				100000, 3, 1);
+			applicationClient.ExecutePostRequest(BuildPackageUrl,
+				Arg.Is<string>(body => HasPropertyWithValue(body, "packageName", "MyPackage")),
+				100000, 3, 1);
 		});
+		metadataDirectionApplier.Received(1).ApplyDirections(
+			"MyPackage",
+			"UsrSendInvoice",
+			Arg.Is<IReadOnlyDictionary<string, int>>(directions =>
+				directions.Count == 1 && directions["IsError"] == 0));
+		fileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Loads an existing workspace user task, updates parameter direction, saves it, and builds the owning package.")]
+	[Category("Unit")]
+	public void Execute_Should_Update_Direction_On_Existing_Parameter() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid itemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid schemaUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetUserTaskSchema).Returns(GetSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetWorkspaceItemsResponse(itemId, schemaUId, packageUId));
+		applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
+		applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{}");
+
+		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+		ModifyUserTaskParametersOptions options = new() {
+			UserTaskName = "UsrSendInvoice",
+			SetDirections = ["ExistingText=Out"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because direction changes on an existing parameter should be saved");
+		applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(body => MatchesDirectionUpdateSaveRequest(body, schemaUId, packageUId, "ExistingText", 1)),
+			100000, 3, 1);
+		metadataDirectionApplier.Received(1).ApplyDirections(
+			"MyPackage",
+			"UsrSendInvoice",
+			Arg.Is<IReadOnlyDictionary<string, int>>(directions =>
+				directions.Count == 1 && directions["ExistingText"] == 1));
+		fileDesignModePackages.Received(1).LoadPackagesToDb();
 	}
 
 	[Test]
@@ -103,6 +185,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new() {
 			Uri = "https://localhost",
 			IsNetCore = false
@@ -129,7 +213,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			RemoveParameters = ["MissingParameter"]
@@ -154,6 +238,8 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		EnvironmentSettings settings = new();
 
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
@@ -169,7 +255,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			.Returns("""{"items":[{"id":"16cd93aa-c7ce-445c-9418-c46439708abe","uId":"2d3946f3-28d5-4560-bb34-f13d14572e96","name":"UsrSendInvoice","title":"Send invoice","packageUId":"1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f","packageName":"OtherPackage","type":8,"modifiedOn":"2026-03-07T05:50:52.434Z","isChanged":true,"isLocked":true,"isReadOnly":false}]}""");
 
 		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
-			workspacePathBuilder, jsonConverter, fileSystem);
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrSendInvoice",
 			AddParameters = ["code=IsError;title=Is error;type=Boolean"]
@@ -181,6 +267,59 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		// Assert
 		result.Should().Be(1, "because only workspace-owned user tasks can be modified");
 		applicationClient.DidNotReceive().ExecutePostRequest(GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Returns an error when a direction update references a parameter that does not exist on the user task.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_When_Direction_Update_Target_Does_Not_Exist() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid itemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid schemaUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetUserTaskSchema).Returns(GetSchemaUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetWorkspaceItemsResponse(itemId, schemaUId, packageUId));
+		applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
+
+		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier);
+		ModifyUserTaskParametersOptions options = new() {
+			UserTaskName = "UsrSendInvoice",
+			SetDirections = ["MissingParameter=Out"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because direction cannot be changed on a missing parameter");
+		applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -291,7 +430,22 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			&& !HasParameter(parameters, "ObsoleteFlag")
 			&& parameters[1].GetProperty("caption")[0].GetProperty("value").GetString() == "Is error"
 			&& parameters[1].GetProperty("type").GetInt32() == 12
+			&& parameters[1].GetProperty("direction").GetInt32() == 0
 			&& parameters[1].GetProperty("icon").GetString() == "data-type-boolean-icon.svg";
+	}
+
+	private static bool MatchesDirectionUpdateSaveRequest(string json, Guid schemaUId, Guid packageUId,
+		string parameterName, int expectedDirection) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		JsonElement root = document.RootElement;
+		JsonElement parameters = root.GetProperty("parameters");
+		JsonElement updatedParameter = parameters.EnumerateArray()
+			.First(parameter => string.Equals(parameter.GetProperty("name").GetString(), parameterName,
+				StringComparison.OrdinalIgnoreCase));
+
+		return root.GetProperty("uId").GetString() == schemaUId.ToString()
+			&& root.GetProperty("package").GetProperty("uId").GetString() == packageUId.ToString()
+			&& updatedParameter.GetProperty("direction").GetInt32() == expectedDirection;
 	}
 
 	private static bool HasParameter(JsonElement parameters, string name) {

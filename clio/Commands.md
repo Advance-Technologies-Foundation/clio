@@ -2967,7 +2967,7 @@ clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
 ```
 
 ## add-user-task
-Creates a new `ProcessUserTask` schema in a package from the current workspace by calling the User Task designer services and then building the package.
+Creates a new `ProcessUserTask` schema in a package from the current workspace by calling the User Task designer services and then building the package. When parameter direction is specified, clio persists it by patching `Schemas/<SchemaName>/metadata.json`, loading workspace packages to the database, and rebuilding the package because the current Creatio `SaveSchema` route does not persist direction.
 
 ```bash
 clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "My user task" -e <ENVIRONMENT>
@@ -2981,7 +2981,7 @@ Options:
 - `--culture` (optional): Culture for `--title` and `--description`. Default is `en-US`.
 - `--title-localization` (optional): Additional title localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
 - `--description-localization` (optional): Additional description localization in `<culture>=<value>` format. Multiple values can be separated by `;`.
-- `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional boolean flags: `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
+- `--parameter` (optional): Add one or more user task parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional direction and boolean flags: `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
 
 Supported parameter types:
 
@@ -2995,6 +2995,12 @@ Supported parameter types:
 - `Text`
 - `Time`
 
+Supported direction values:
+
+- `In` or `0`
+- `Out` or `1`
+- `Variable` or `2`
+
 Examples:
 
 ```bash
@@ -3002,20 +3008,21 @@ clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --d
 
 clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --title-localization "fr-FR=Envoyer facture" --description-localization "fr-FR=Crée et envoie la facture" -e dev
 
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
 ```
 
 ## modify-user-task-parameters
-Adds and/or removes parameters on an existing `ProcessUserTask` schema that belongs to one of the packages in the current workspace.
+Adds and/or removes parameters on an existing `ProcessUserTask` schema that belongs to one of the packages in the current workspace. When parameter direction is added or changed, clio persists it by patching `Schemas/<SchemaName>/metadata.json`, loading workspace packages to the database, and rebuilding the package because the current Creatio `SaveSchema` route does not persist direction.
 
 ```bash
-clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[|<definition>...]] [--remove-parameter <name>[|<name>...]] -e <ENVIRONMENT>
+clio modify-user-task-parameters <USER_TASK_NAME> [--add-parameter <definition>[|<definition>...]] [--remove-parameter <name>[|<name>...]] [--set-direction <name>=<direction>[|<name>=<direction>...]] -e <ENVIRONMENT>
 ```
 
 Options:
 
-- `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional boolean flags: `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
+- `--add-parameter` (optional): Add one or more parameters in `code=<name>;title=<caption>;type=<type>` format. Separate multiple definitions with `|`. Optional direction and boolean flags: `direction`, `required`, `resulting`, `serializable`, `copyValue`, `lazyLoad`, `containsPerformerId`.
 - `--remove-parameter` (optional): Remove one or more existing parameter names. Separate multiple names with `|`.
+- `--set-direction` (optional): Update direction on one or more existing parameters using `<name>=<In|Out|Variable|0|1|2>`. Separate multiple values with `|`.
 - `--culture` (optional): Culture for added parameter titles. Default is `en-US`.
 
 Supported parameter types:
@@ -3030,12 +3037,20 @@ Supported parameter types:
 - `Text`
 - `Time`
 
+Supported direction values:
+
+- `In` or `0`
+- `Out` or `1`
+- `Variable` or `2`
+
 Examples:
 
 ```bash
-clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean" -e docker_fix2
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In" -e docker_fix2
 
-clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
+clio modify-user-task-parameters UsrSendInvoice --set-direction "IsError=Out|ResultMessage=Variable" -e docker_fix2
+
+clio modify-user-task-parameters UsrSendInvoice --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out" --remove-parameter "ObsoleteFlag|LegacyResult" -e docker_fix2
 ```
 
 ## delete-schema

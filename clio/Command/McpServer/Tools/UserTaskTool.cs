@@ -72,6 +72,7 @@ public class ModifyUserTaskParametersTool(
 			Culture = string.IsNullOrWhiteSpace(args.Culture) ? "en-US" : args.Culture,
 			AddParameters = UserTaskToolSupport.SerializeParameterDefinitions(args.AddParameters),
 			RemoveParameters = args.RemoveParameterNames,
+			SetDirections = UserTaskToolSupport.SerializeDirectionUpdates(args.SetParameterDirections),
 			Environment = args.EnvironmentName,
 			WorkspacePath = args.WorkspacePath
 		};
@@ -86,12 +87,19 @@ internal static class UserTaskToolSupport {
 			.ToList();
 	}
 
+	public static IEnumerable<string> SerializeDirectionUpdates(IEnumerable<UserTaskParameterDirectionArgs> updates) {
+		return updates?
+			.Select(SerializeDirectionUpdate)
+			.ToList();
+	}
+
 	private static string SerializeParameterDefinition(UserTaskParameterArgs parameter) {
 		List<string> segments = [
 			$"code={parameter.Code}",
 			$"title={parameter.Title}",
 			$"type={parameter.Type}"
 		];
+		AddOptionalString(segments, "direction", parameter.Direction);
 		AddOptionalBoolean(segments, "required", parameter.Required);
 		AddOptionalBoolean(segments, "resulting", parameter.Resulting);
 		AddOptionalBoolean(segments, "serializable", parameter.Serializable);
@@ -101,9 +109,19 @@ internal static class UserTaskToolSupport {
 		return string.Join(";", segments);
 	}
 
+	private static string SerializeDirectionUpdate(UserTaskParameterDirectionArgs update) {
+		return $"{update.ParameterName}={update.Direction}";
+	}
+
 	private static void AddOptionalBoolean(List<string> segments, string key, bool? value) {
 		if (value.HasValue) {
 			segments.Add($"{key}={value.Value.ToString().ToLowerInvariant()}");
+		}
+	}
+
+	private static void AddOptionalString(List<string> segments, string key, string value) {
+		if (!string.IsNullOrWhiteSpace(value)) {
+			segments.Add($"{key}={value.Trim()}");
 		}
 	}
 }
@@ -131,6 +149,10 @@ public record UserTaskParameterArgs(
 	[Description("Whether the parameter is required.")]
 	bool? Required = null,
 
+	[property:JsonPropertyName("direction")]
+	[Description("Parameter direction. Supported values: In, Out, Variable, 0, 1, 2. Defaults to Variable when omitted.")]
+	string Direction = null,
+
 	[property:JsonPropertyName("resulting")]
 	[Description("Whether the parameter is marked as resulting.")]
 	bool? Resulting = null,
@@ -150,6 +172,21 @@ public record UserTaskParameterArgs(
 	[property:JsonPropertyName("contains-performer-id")]
 	[Description("Whether the parameter contains performer id.")]
 	bool? ContainsPerformerId = null
+);
+
+/// <summary>
+/// Structured direction update input for existing user task parameters.
+/// </summary>
+public record UserTaskParameterDirectionArgs(
+	[property:JsonPropertyName("parameter-name")]
+	[Description("Existing parameter name")]
+	[Required]
+	string ParameterName,
+
+	[property:JsonPropertyName("direction")]
+	[Description("New parameter direction. Supported values: In, Out, Variable, 0, 1, 2.")]
+	[Required]
+	string Direction
 );
 
 /// <summary>
@@ -223,5 +260,9 @@ public record ModifyUserTaskParametersArgs(
 
 	[property:JsonPropertyName("remove-parameter-names")]
 	[Description("Existing parameter names to remove from the user task.")]
-	IEnumerable<string> RemoveParameterNames = null
+	IEnumerable<string> RemoveParameterNames = null,
+
+	[property:JsonPropertyName("set-parameter-directions")]
+	[Description("Direction updates for existing parameters on the user task.")]
+	IEnumerable<UserTaskParameterDirectionArgs> SetParameterDirections = null
 );

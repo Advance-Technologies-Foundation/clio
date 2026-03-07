@@ -3,6 +3,8 @@
 ## Purpose
 Creates a new `ProcessUserTask` schema in a package from the current workspace, saves it through Creatio's user task designer service, and builds the package in the target environment.
 
+When parameter direction is specified, clio persists it through workspace file design mode because the current Creatio `SaveSchema` route does not persist parameter direction on its own.
+
 ## Usage
 ```bash
 clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title "<TITLE>" [options]
@@ -52,7 +54,7 @@ If the package is not part of the current workspace, the command fails before sa
 Use `--parameter` with one or more parameter definitions separated by `|`:
 
 ```bash
---parameter "code=<name>;title=<caption>;type=<type>[;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true][|code=<name>;title=<caption>;type=<type>...]"
+--parameter "code=<name>;title=<caption>;type=<type>[;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true][|code=<name>;title=<caption>;type=<type>...]"
 ```
 
 Supported parameter types:
@@ -72,6 +74,7 @@ Parameter notes:
 - `code`, `title`, and `type` are required in every parameter definition.
 - Separate multiple parameter definitions with `|` in the same `--parameter` value.
 - Parameter titles use the command culture from `--culture`.
+- `direction` is optional. Supported values are `In`, `Out`, `Variable`, `0`, `1`, and `2`. When omitted, the command uses `Variable` (`2`).
 - `resulting` defaults to `true`, matching the designer default.
 - `serializable` defaults to `true`, matching the designer default.
 - The command currently supports scalar parameter types with verified save payload mappings. Lookup-style parameters are not included yet.
@@ -90,7 +93,7 @@ clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --d
 
 ### Create a user task with parameters
 ```bash
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false" -e docker_fix2
 ```
 
 ## Behavior
@@ -102,6 +105,9 @@ The command performs these steps:
 3. Applies the requested title, description, and parameter definitions.
 4. Calls `SaveSchema`.
 5. Calls `BuildPackage` for the target package.
+6. If any parameter definition explicitly sets `direction`, patches `Schemas/<SchemaName>/metadata.json` to set `L12` for those parameters.
+7. Loads workspace packages to the database.
+8. Builds the package again so the final workspace and database state stay aligned.
 
 ## Output
 
