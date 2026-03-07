@@ -27,7 +27,7 @@ public class UninstallCreatioTool(UninstallCreatioCommand command, ILogger logge
 		UninstallCreatioCommandOptions options = new() {
 			EnvironmentName = args.EnvironmentName
 		};
-		return InternalExecute(command, options);
+		return InternalExecute(options);
 	}
 }
 

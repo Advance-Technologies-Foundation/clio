@@ -489,3 +489,17 @@ Decision: Added two focused unit tests to cover absolute repeated-separator path
 Discovery: There was no existing direct test coverage for NormalizeFilePathByPlatform; running tests required isolated OutputPath/IntermediateOutputPath due a locked clio.exe in default bin folder.
 Files: clio.tests/Common/FileSystem.Tests.cs, .codex/workspace-diary.md
 Impact: Prevents regressions where rooted Unix-like paths lose leading separator after normalization and confirms relative paths stay relative.
+
+## 2026-03-07 11:55 – Merge entity schema and user task branches with create-entity-schema MCP tool
+Context: User requested merging `create-UserTask-Schema` and `entity-schema-create-command` into a shared branch, then adding MCP support for `create-entity-schema`.
+Decision: Created `codex/common`, resolved merge conflicts by keeping both feature sets registered, added `create-entity-schema` MCP tool/prompt support, and hardened `ToolCommandResolver` to reject unknown environments instead of falling back to default localhost credentials.
+Discovery: Lookup column serialization must preserve the empty title slot (`Name:Lookup::RefSchema`) when a reference schema is provided without an explicit title; otherwise the remote parser misreads the lookup reference.
+Files: clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/Command/McpServer/Tools/CreateEntitySchemaTool.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, .codex/workspace-diary.md
+Impact: The merged branch now exposes both schema features together and can safely create remote entity schemas through MCP without silently targeting an unintended environment.
+
+## 2026-03-06 13:26 – Fix local PostgreSQL pg_restore argument order for Docker-hosted restores
+Context: User needed `restore-db` and `deploy-creatio` to restore into PostgreSQL running in Docker via published host port, and the first runtime attempt failed after creating the database.
+Decision: Kept the local-server flow for `--dbServerName`/`--db-server-name`, fixed `pg_restore` argument ordering so flags precede the backup file path, and relaxed the zip-backup test to assert an extracted `.backup` path instead of a hard-coded filename.
+Discovery: `pg_restore` rejected the old command line because `--no-owner` and `--no-privileges` were placed after the positional backup file; once reordered, the repo-built `clio.exe` restored successfully to `localhost:5432` using the host file directly.
+Files: clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, .codex/workspace-diary.md
+Impact: Local and Docker-hosted PostgreSQL restores now execute correctly through the host `pg_restore` binary without copying backup files into Kubernetes or containers.

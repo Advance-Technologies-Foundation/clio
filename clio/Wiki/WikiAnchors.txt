@@ -24,6 +24,8 @@ set-app-icon:set-application-icon
 last-compilation-log:get-last-compilation-log
 add-schema:add-schema
 create-entity-schema:create-entity-schema
+add-user-task:add-user-task
+delete-schema:delete-schema
 set-fsm-config:Set File-System Mode configuration
 turn-fsm:Turn File-System Mode On/Off
 generate-process-model: Generate Process Model

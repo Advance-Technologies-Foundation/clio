@@ -18,6 +18,34 @@ If adding a new feature, create the folder and follow this naming format for all
 
 When changing any command behavior or command-related classes, always review command documentation and update it if needed.
 
+# MCP maintenance policy
+
+When changing any command behavior or command-related classes, always review the MCP surface for that command in the same way documentation is reviewed.
+
+## Trigger conditions for mandatory MCP review
+
+Review MCP artifacts whenever any of the following is changed:
+- Command options classes (for example classes with `[Verb]`, `[Option]`, `[Value]` attributes)
+- Command handlers/execution logic (for example `*Command`, validators, mapping in `Program.cs`)
+- Authentication/requirements/dependencies for command execution
+- Workspace ownership/validation behavior
+- Command output, progress reporting, or destructive behavior
+
+## Required MCP targets
+
+For every touched command, verify and update all relevant files:
+- `clio\clio\Command\McpServer\Tools\*.cs`
+- `clio\clio\Command\McpServer\Prompts\*.cs`
+- `clio\clio\Command\McpServer\Resources\*.cs`
+
+## Update rules
+
+- If the command already has an MCP tool, keep the tool arguments, descriptions, destructive flags, and execution path aligned with the current command behavior.
+- If the command is environment-sensitive, use the MCP `BaseTool` environment-aware execution pattern instead of executing the startup-time injected command directly.
+- If the command has an MCP prompt, keep the prompt guidance aligned with the current tool contract.
+- If no MCP artifact exists for a touched command, explicitly check whether one should be added and mention the result in the change summary.
+- If MCP artifacts are still accurate after review, explicitly state "MCP reviewed, no update required" in the change summary/PR description.
+
 ## Skill to use
 
 For command documentation tasks, explicitly use the `document-command` skill.
