@@ -524,3 +524,10 @@ Decision: Added an explicit workspace-item type allowlist in DeleteSchemaCommand
 Discovery: Existing delete-schema help and MCP prompt/tool already matched the intended behavior closely enough, so no doc or MCP text changes were required for this internal selection fix.
 Files: clio/Command/DeleteSchemaCommand.cs, clio.tests/Command/DeleteSchemaCommandTests.cs, .codex/workspace-diary.md
 Impact: delete-schema now ignores non-schema workspace items that share a name with the requested schema and only submits schema-type artifacts for deletion.
+
+## 2026-03-08 17:40 – Standardize MCP prompt containers as static utility classes
+Context: SonarQube flagged DeleteSchemaPrompt as a utility class that should not be instantiable, and the user asked for a local rule to keep future prompt files aligned.
+Decision: Added a prompt-folder `AGENTS.md` that requires `public static class` prompt containers, then updated all existing MCP prompt types in that directory to static utility form with XML documentation.
+Discovery: MCP prompt discovery still works with static classes because registration depends on type and method attributes, not on instance construction.
+Files: clio/Command/McpServer/Prompts/AGENTS.md, clio/Command/McpServer/Prompts/ClearRedisPrompt.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Prompts/DeleteSchemaPrompt.cs, clio/Command/McpServer/Prompts/LoadPackagesPrompt.cs, clio/Command/McpServer/Prompts/LookupHelpPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio/Command/McpServer/Prompts/RestartPrompt.cs, clio/Command/McpServer/Prompts/UserTaskPrompt.cs, .codex/workspace-diary.md
+Impact: Future MCP prompts in this folder now have a documented utility-class convention, and existing prompts no longer trigger the Sonar utility-class complaint.

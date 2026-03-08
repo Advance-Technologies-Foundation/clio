@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// Prompt helpers for the create entity schema MCP tool.
 /// </summary>
 [McpServerPromptType, Description("Prompts for creating remote entity schemas")]
-public class CreateEntitySchemaPrompt {
+public static class CreateEntitySchemaPrompt {
 
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a remote entity schema through MCP.

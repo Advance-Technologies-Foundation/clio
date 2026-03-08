@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// Prompt helpers for package storage synchronization commands.
 /// </summary>
 [McpServerPromptType, Description("Prompts to load packages between database and file system")]
-public class LoadPackagesPrompt {
+public static class LoadPackagesPrompt {
 
 	/// <summary>
 	/// Builds a prompt for loading packages from the database into the file system.

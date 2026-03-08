@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// Prompt helpers for the <c>reg-web-app</c> MCP tool.
 /// </summary>
 [McpServerPromptType, Description("Prompt to register or update a web application in local clio settings")]
-public class RegWebAppPrompt {
+public static class RegWebAppPrompt {
 
 	/// <summary>
 	/// Builds a prompt that directs the agent to use the <c>reg-web-app</c> tool.

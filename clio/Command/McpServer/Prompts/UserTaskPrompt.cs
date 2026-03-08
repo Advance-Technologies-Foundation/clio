@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// Prompt helpers for user task MCP tools.
 /// </summary>
 [McpServerPromptType, Description("Prompts for creating and modifying workspace user tasks")]
-public class UserTaskPrompt {
+public static class UserTaskPrompt {
 
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a user task through MCP.
