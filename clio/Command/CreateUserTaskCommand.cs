@@ -118,6 +118,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	protected override void ExecuteRemoteCommand(CreateUserTaskOptions options) {
 		ConfigureWorkspace(options);
 		PackageDescriptor package = ResolveWorkspacePackage(options.Package);
+		string validatedUserTaskCode = ValidateUserTaskCode(options.Code);
 		Guid packageUId = package.UId;
 		Dictionary<string, int> explicitParameterDirections = UserTaskSchemaSupport
 			.ExtractExplicitDirections(options.Parameters);
@@ -136,7 +137,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		ProcessUserTaskDesignSchemaDto schema = createResponse.Schema
 			?? throw new InvalidOperationException("CreateNewSchema did not return a schema payload.");
 
-		ApplyRequestedValues(schema, options, package, _userTaskLookupSchemaResolver);
+		ApplyRequestedValues(schema, options, package, _userTaskLookupSchemaResolver, validatedUserTaskCode);
 
 		string saveSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema);
 		string saveRequestBody = JsonSerializer.Serialize(schema);
@@ -180,8 +181,8 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	}
 
 	private static void ApplyRequestedValues(ProcessUserTaskDesignSchemaDto schema, CreateUserTaskOptions options,
-		PackageDescriptor package, IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver) {
-		schema.Name = ValidateUserTaskCode(options.Code);
+		PackageDescriptor package, IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver, string validatedUserTaskCode) {
+		schema.Name = validatedUserTaskCode;
 		schema.Caption = UserTaskSchemaSupport.BuildLocalizableValues(options.Culture, options.Title, options.TitleLocalizations,
 			allowEmptyPrimaryValue: false);
 		schema.Description = UserTaskSchemaSupport.BuildLocalizableValues(options.Culture, options.Description,

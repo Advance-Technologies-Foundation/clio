@@ -503,3 +503,10 @@ Decision: Kept the local-server flow for `--dbServerName`/`--db-server-name`, fi
 Discovery: `pg_restore` rejected the old command line because `--no-owner` and `--no-privileges` were placed after the positional backup file; once reordered, the repo-built `clio.exe` restored successfully to `localhost:5432` using the host file directly.
 Files: clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, .codex/workspace-diary.md
 Impact: Local and Docker-hosted PostgreSQL restores now execute correctly through the host `pg_restore` binary without copying backup files into Kubernetes or containers.
+
+## 2026-03-08 10:20 – Validate user task code before remote draft creation
+Context: The `CreateUserTaskCommandTests.Execute_Should_Return_Error_When_Code_Does_Not_Start_With_Usr` regression showed that invalid user task codes still triggered the remote `CreateNewSchema` call.
+Decision: Moved `ValidateUserTaskCode` execution to the start of `ExecuteRemoteCommand` and passed the validated value into the later schema-mapping step instead of re-validating after the remote draft was created.
+Discovery: The old flow validated inside `ApplyRequestedValues`, which happens only after `CreateNewSchema` returns, so an invalid `Code` could still create remote side effects before the command failed locally.
+Files: clio/Command/CreateUserTaskCommand.cs, .codex/workspace-diary.md
+Impact: Invalid user task codes now fail fast locally, matching test expectations and avoiding unnecessary remote schema draft creation.
