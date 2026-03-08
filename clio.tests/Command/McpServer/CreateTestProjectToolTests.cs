@@ -2,7 +2,6 @@ using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Workspace;
-using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -48,7 +47,7 @@ public class CreateTestProjectToolTests {
 	[Category("Unit")]
 	public void CreateTestProject_Should_Expose_Required_Environment_Argument() {
 		// Arrange
-		System.Reflection.PropertyInfo property = typeof(CreateTestProjectArgs).GetProperty(nameof(CreateTestProjectArgs.EnvironmentName));
+		System.Reflection.PropertyInfo property = typeof(CreateTestProjectArgs).GetProperty(nameof(CreateTestProjectArgs.EnvironmentName))!;
 
 		// Act
 		object[] requiredAttributes = property.GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), inherit: false);
@@ -63,11 +62,9 @@ public class CreateTestProjectToolTests {
 		public FakeCreateTestProjectCommand()
 			: base(
 				Substitute.For<FluentValidation.IValidator<CreateTestProjectOptions>>(),
-				Substitute.For<IWorkspace>(),
-				Substitute.For<IWorkspacePathBuilder>(),
-				Substitute.For<IWorkingDirectoriesProvider>(),
+				Substitute.For<ICreateTestProjectContext>(),
 				Substitute.For<ITemplateProvider>(),
-				Substitute.For<IFileSystem>(),
+				Substitute.For<ICreateTestProjectInfrastructure>(),
 				ConsoleLogger.Instance,
 				Substitute.For<ISolutionCreator>()) {
 		}

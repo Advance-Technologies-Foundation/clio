@@ -1,7 +1,6 @@
 using Clio.Command;
 using Clio.Common;
 using Clio.Workspace;
-using Clio.Workspaces;
 using FluentAssertions;
 using FluentValidation;
 using FluentValidation.Results;
@@ -18,20 +17,16 @@ public class CreateTestProjectCommandTests {
 	public void Execute_Should_Use_Explicit_Workspace_Path_When_Provided() {
 		// Arrange
 		IValidator<CreateTestProjectOptions> validator = Substitute.For<IValidator<CreateTestProjectOptions>>();
-		IWorkspace workspace = Substitute.For<IWorkspace>();
-		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		ICreateTestProjectContext context = Substitute.For<ICreateTestProjectContext>();
 		ITemplateProvider templateProvider = Substitute.For<ITemplateProvider>();
-		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ICreateTestProjectInfrastructure infrastructure = Substitute.For<ICreateTestProjectInfrastructure>();
 		ILogger logger = Substitute.For<ILogger>();
-		ISolutionCreator solutionCreator = Substitute.For<ISolutionCreator>();
+		Clio.Workspace.ISolutionCreator solutionCreator = Substitute.For<Clio.Workspace.ISolutionCreator>();
 		CreateTestProjectCommand command = new(
 			validator,
-			workspace,
-			workspacePathBuilder,
-			workingDirectoriesProvider,
+			context,
 			templateProvider,
-			fileSystem,
+			infrastructure,
 			logger,
 			solutionCreator);
 		CreateTestProjectOptions options = new() {
@@ -46,6 +41,6 @@ public class CreateTestProjectCommandTests {
 
 		// Assert
 		result.Should().Be(1, "because validation failure should stop execution after the explicit workspace path is applied");
-		workspacePathBuilder.Received().RootPath = @"C:\Projects\clio";
+		context.Received().RootPath = @"C:\Projects\clio";
 	}
 }

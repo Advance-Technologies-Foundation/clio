@@ -21,7 +21,7 @@ public class ClearRedisTool(
 		return InternalExecute<RedisCommand>(options);
 	}
 
-	[McpServerTool(Name = "ClearRedisByCredentials"), Description("Empties redis database used by creatio instance")]
+	[McpServerTool(Name = "clear-redis"), Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,

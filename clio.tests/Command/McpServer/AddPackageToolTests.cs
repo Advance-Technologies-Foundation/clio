@@ -51,20 +51,20 @@ public class AddPackageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeAddPackageCommand defaultCommand = new();
-		FakeAddPackageCommand resolvedCommand = new();
+		FakeAddPackageCommand resolvedCommand = new(){};
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<AddPackageCommand>(Arg.Any<AddPackageOptions>()).Returns(resolvedCommand);
+		commandResolver.ResolveWithoutEnvironment<AddPackageCommand>(Arg.Any<AddPackageOptions>()).Returns(resolvedCommand);
 		WorkspacePackageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
 		CommandExecutionResult result = tool.AddPackage(new AddPackageArgs(
-			"MyPackage",
-			@"C:\Projects\clio-with-core-and-ui\workspace"));
+			"MyPackage", @"C:\Projects\clio-with-core-and-ui\workspace")
+		);
 
 		// Assert
 		result.ExitCode.Should().Be(0, "because omitted optional arguments should still produce a valid command request");
 		resolvedCommand.CapturedOptions.Should().NotBeNull("because the resolved command should still execute");
-		resolvedCommand.CapturedOptions.Environment.Should().BeNull("because environment-name is optional for the MCP tool");
+		resolvedCommand.CapturedOptions.Environment.Should().BeNull("because environment-name is not optional for the MCP tool");
 		resolvedCommand.CapturedOptions.AsApp.Should().BeFalse("because as-app should default to false when omitted");
 		resolvedCommand.CapturedOptions.BuildZipPath.Should().BeNull("because build-zip-path is optional");
 		ConsoleLogger.Instance.ClearMessages();

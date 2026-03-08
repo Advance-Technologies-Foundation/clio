@@ -15,7 +15,7 @@ public class StopTool(
 
 	private RequestContext<CallToolRequestParams> _requestContext;
 
-	[McpServerTool(Name = "StopCreatio"), Description("Stops Creatio instance by environment name")]
+	[McpServerTool(Name = "stop-creatio"), Description("Stops Creatio instance by environment name")]
 	public CommandExecutionResult StopCreatioByName(
 		RequestContext<CallToolRequestParams> requestContext,
 		[Description("Target Environment name")] [Required] string environmentName

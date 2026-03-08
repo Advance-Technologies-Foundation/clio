@@ -44,7 +44,8 @@ public class AddPackageOptions : EnvironmentOptions{
 
 #region Class: AddPackageCommand
 
-public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, IFollowUpChain chain, [FromKeyedServices(nameof(DconfChainItem))] IFollowupUpChainItem dconfChainItem) : Command<AddPackageOptions>{
+public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, IFollowUpChain chain, 
+	[FromKeyedServices(nameof(DconfChainItem))] IFollowupUpChainItem dconfChainItem) : Command<AddPackageOptions>{
 
 	#region Methods: Public
 
