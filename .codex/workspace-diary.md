@@ -517,3 +517,10 @@ Decision: Made `UserTaskToolSupport.SerializeParameterItemDefinitions` recurse t
 Discovery: The tool already handled recursion for `add-parameters[].items`; only the `add-parameter-items` path lacked the same traversal.
 Files: clio/Command/McpServer/Tools/UserTaskTool.cs, clio.tests/Command/McpServer/UserTaskToolTests.cs, .codex/workspace-diary.md
 Impact: Nested composite-list child items provided through MCP are now preserved instead of being silently lost.
+
+## 2026-03-08 15:02 – Restrict delete-schema to schema workspace item types
+Context: Code review flagged that delete-schema matched workspace items only by package/name, which could target a same-named non-schema artifact.
+Decision: Added an explicit workspace-item type allowlist in DeleteSchemaCommand and covered mixed-type same-name selection with a regression test.
+Discovery: Existing delete-schema help and MCP prompt/tool already matched the intended behavior closely enough, so no doc or MCP text changes were required for this internal selection fix.
+Files: clio/Command/DeleteSchemaCommand.cs, clio.tests/Command/DeleteSchemaCommandTests.cs, .codex/workspace-diary.md
+Impact: delete-schema now ignores non-schema workspace items that share a name with the requested schema and only submits schema-type artifacts for deletion.

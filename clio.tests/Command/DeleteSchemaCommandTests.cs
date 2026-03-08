@@ -178,6 +178,60 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.ExecutePostRequest(default, default, default, default, default);
 	}
 
+	[Test]
+	[Description("Deletes only schema workspace item types when non-schema items share the same name.")]
+	[Category("Unit")]
+	public void Execute_Should_Ignore_NonSchema_Items_With_Same_Name() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid schemaItemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid schemaItemUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems)
+			.Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem)
+			.Returns(DeleteUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetWorkspaceItemsResponseWithSameNameDifferentTypes(schemaItemId, schemaItemUId, packageUId));
+		applicationClient.ExecutePostRequest(DeleteUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
+
+		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
+			jsonConverter, fileSystem);
+		DeleteSchemaOptions options = new() {
+			SchemaName = "UsrSendInvoice"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because a same-named non-schema item should be ignored during delete resolution");
+		applicationClient.Received(1).ExecutePostRequest(DeleteUrl,
+			Arg.Is<string>(body => MatchesDeleteRequest(body, schemaItemId, schemaItemUId, packageUId)),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
 	private static string GetWorkspaceItemsResponse(Guid itemId, Guid itemUId, Guid packageUId) {
 		var response = new {
 			items = new[] {
@@ -227,5 +281,40 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			&& item.GetProperty("isChanged").GetBoolean()
 			&& item.GetProperty("isLocked").GetBoolean()
 			&& !item.GetProperty("isReadOnly").GetBoolean();
+	}
+
+	private static string GetWorkspaceItemsResponseWithSameNameDifferentTypes(Guid schemaItemId, Guid schemaItemUId,
+		Guid packageUId) {
+		var response = new {
+			items = new object[] {
+				new {
+					id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+					uId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+					name = "UsrSendInvoice",
+					title = "UsrSendInvoice process parameter",
+					packageUId,
+					packageName = "MyPackage",
+					type = 99,
+					modifiedOn = "2026-03-07T05:50:52.434Z",
+					isChanged = true,
+					isLocked = false,
+					isReadOnly = false
+				},
+				new {
+					id = schemaItemId,
+					uId = schemaItemUId,
+					name = "UsrSendInvoice",
+					title = "Send invoice",
+					packageUId,
+					packageName = "MyPackage",
+					type = 8,
+					modifiedOn = "2026-03-07T05:50:52.434Z",
+					isChanged = true,
+					isLocked = true,
+					isReadOnly = false
+				}
+			}
+		};
+		return JsonSerializer.Serialize(response);
 	}
 }
