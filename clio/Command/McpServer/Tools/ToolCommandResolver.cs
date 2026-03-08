@@ -16,6 +16,7 @@ public interface IToolCommandResolver {
 	/// <param name="options">Environment options that identify the execution target.</param>
 	/// <returns>A command instance configured for the requested target.</returns>
 	TCommand Resolve<TCommand>(EnvironmentOptions options);
+	TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options);
 }
 
 /// <summary>
@@ -40,13 +41,20 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 				?? throw new InvalidOperationException(
 					$"Environment with key '{options.Environment}' not found. Check your clio configuration.");
 			settings = settings.Fill(options);
-		} else {
+		} 
+		else {
 			settings = new EnvironmentSettings().Fill(options);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				throw new InvalidOperationException(
 					"Either a configured environment name or an explicit URI is required for MCP command execution.");
 			}
 		}
+		IServiceProvider container = new BindingsModule().Register(settings);
+		return container.GetRequiredService<TCommand>();
+	}
+	public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		EnvironmentSettings settings = new EnvironmentSettings().Fill(options);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
 	}

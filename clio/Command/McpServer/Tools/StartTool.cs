@@ -15,7 +15,7 @@ public class StartTool(
 
 	private RequestContext<CallToolRequestParams> _requestContext;
 
-	[McpServerTool(Name = "StartCreatio"), Description("Starts Creatio instance by environment name")]
+	[McpServerTool(Name = "start-creatio"), Description("Starts Creatio instance by environment name")]
 	public CommandExecutionResult StartCreatioByName(
 		RequestContext<CallToolRequestParams> requestContext,
 		[Description("Target Environment name")] [Required] string environmentName
