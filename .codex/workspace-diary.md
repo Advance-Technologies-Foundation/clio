@@ -510,3 +510,10 @@ Decision: Moved `ValidateUserTaskCode` execution to the start of `ExecuteRemoteC
 Discovery: The old flow validated inside `ApplyRequestedValues`, which happens only after `CreateNewSchema` returns, so an invalid `Code` could still create remote side effects before the command failed locally.
 Files: clio/Command/CreateUserTaskCommand.cs, .codex/workspace-diary.md
 Impact: Invalid user task codes now fail fast locally, matching test expectations and avoiding unnecessary remote schema draft creation.
+
+## 2026-03-08 10:42 – Preserve nested add-parameter-items in MCP user task tools
+Context: Code review flagged that nested `add-parameter-items[].items` were accepted by the MCP contract but silently dropped during serialization.
+Decision: Made `UserTaskToolSupport.SerializeParameterItemDefinitions` recurse through nested `UserTaskParameterItemArgs.Items` and extended the MCP tool test to assert a grandchild item is serialized.
+Discovery: The tool already handled recursion for `add-parameters[].items`; only the `add-parameter-items` path lacked the same traversal.
+Files: clio/Command/McpServer/Tools/UserTaskTool.cs, clio.tests/Command/McpServer/UserTaskToolTests.cs, .codex/workspace-diary.md
+Impact: Nested composite-list child items provided through MCP are now preserved instead of being silently lost.

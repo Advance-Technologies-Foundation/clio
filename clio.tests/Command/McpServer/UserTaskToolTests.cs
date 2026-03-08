@@ -93,7 +93,16 @@ public class UserTaskToolTests {
 						new("Bool1", "Bool1", "Boolean")
 					})
 			},
-			new[] { new UserTaskParameterItemArgs("ExistingList", "ChildText", "Child text", "Text") },
+			new[] {
+				new UserTaskParameterItemArgs(
+					"ExistingList",
+					"ChildText",
+					"Child text",
+					"Text",
+					Items: new List<UserTaskParameterArgs> {
+						new("GrandchildFlag", "Grandchild flag", "Boolean")
+					})
+			},
 			new[] { "ObsoleteFlag" },
 			new[] { new UserTaskParameterDirectionArgs("ExistingText", "Out") }));
 
@@ -114,7 +123,8 @@ public class UserTaskToolTests {
 		});
 		resolvedCommand.CapturedOptions.AddParameterItems.Should().BeEquivalentTo(new[] {
 			"parent=MyList;code=Bool1;title=Bool1;type=Boolean",
-			"parent=ExistingList;code=ChildText;title=Child text;type=Text"
+			"parent=ExistingList;code=ChildText;title=Child text;type=Text",
+			"parent=ChildText;code=GrandchildFlag;title=Grandchild flag;type=Boolean"
 		});
 		resolvedCommand.CapturedOptions.SetDirections.Should().ContainSingle()
 			.Which.Should().Be("ExistingText=Out");

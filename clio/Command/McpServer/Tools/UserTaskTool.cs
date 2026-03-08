@@ -97,7 +97,7 @@ internal static class UserTaskToolSupport {
 
 	public static IEnumerable<string> SerializeParameterItemDefinitions(IEnumerable<UserTaskParameterItemArgs> parameterItems) {
 		return parameterItems?
-			.Select(SerializeParameterItemDefinition)
+			.SelectMany(SerializeParameterItemDefinitions)
 			.ToList();
 	}
 
@@ -157,6 +157,18 @@ internal static class UserTaskToolSupport {
 				parameterItem.LazyLoad,
 				parameterItem.ContainsPerformerId,
 				parameterItem.Items));
+	}
+
+	private static IEnumerable<string> SerializeParameterItemDefinitions(UserTaskParameterItemArgs parameterItem) {
+		yield return SerializeParameterItemDefinition(parameterItem);
+
+		foreach (UserTaskParameterArgs item in parameterItem.Items ?? Enumerable.Empty<UserTaskParameterArgs>()) {
+			yield return SerializeParameterItemDefinition(parameterItem.Code, item);
+
+			foreach (string nestedItem in SerializeNestedParameterItemDefinitions(item)) {
+				yield return nestedItem;
+			}
+		}
 	}
 
 	private static string SerializeParameterItemDefinition(string parentParameterName, UserTaskParameterArgs parameter) {
