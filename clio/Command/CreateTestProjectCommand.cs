@@ -18,10 +18,16 @@ namespace Clio.Command;
 
 #region Class: CreateTestProjectOptions
 
+/// <summary>
+/// Options for generating backend unit test project scaffolding.
+/// </summary>
 [Verb("new-test-project", Aliases = ["unit-test","create-test-project"], HelpText = "Add new test project")]
 public class CreateTestProjectOptions : EnvironmentOptions{
 	#region Properties: Public
 
+	/// <summary>
+	/// Gets or sets the package name, or a comma-separated list of package names, to scaffold.
+	/// </summary>
 	[Option("package", Required = false, HelpText = "Package name")]
 	public string PackageName { get; set; }
 
@@ -33,7 +39,10 @@ public class CreateTestProjectOptions : EnvironmentOptions{
 
 #region Class: CreateTestProjectCommand
 
-internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
+/// <summary>
+/// Creates backend unit test projects for workspace packages.
+/// </summary>
+public class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 	#region Constants: Private
 
 	private const string TestsDirectoryName = "tests";
@@ -191,6 +200,9 @@ internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 
 #region Class: CreateTestProjectOptionsValidator
 
+/// <summary>
+/// Validates options for the <c>new-test-project</c> command.
+/// </summary>
 public class CreateTestProjectOptionsValidator : AbstractValidator<CreateTestProjectOptions>{
 	#region Constructors: Public
 

@@ -545,3 +545,10 @@ Decision: Reviewed implementation, command options/docs, and existing RemoteEnti
 Discovery: Existing tests cover happy-path and missing lookup reference schema but do not cover duplicate columns, non-lookup extra segment handling, or colon-containing column tokens.
 Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/CreateEntitySchemaCommand.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio/docs/commands/create-entity-schema.md, .codex/workspace-diary.md
 Impact: Future fixes can prioritize parser strictness and duplicate-name validation with focused regression tests.
+
+## 2026-03-08 19:35 – Add MCP tools for add-package and new-test-project
+Context: Needed MCP exposure for local workspace package creation (`add-package`/`ap`) and backend unit test scaffolding (`new-test-project`/`unit-test`), plus a clio version bump.
+Decision: Added dedicated MCP tools and prompts for both commands, bumped clio version to 8.0.2.15, and handled explicit workspace-path execution by spawning a child `clio` process with `WorkingDirectory` set instead of mutating process current directory inside the MCP server.
+Discovery: Using `Directory.SetCurrentDirectory` in-process for MCP path support is unsafe under concurrent requests because current directory is process-global; validating `workspace-path` via `.clio/workspaceSettings.json` keeps the explicit path contract aligned with the target workspace use case.
+Files: clio/Command/McpServer/Tools/AddPackageTool.cs, clio/Command/McpServer/Tools/CreateTestProjectTool.cs, clio/Command/McpServer/Prompts/AddPackagePrompt.cs, clio/Command/McpServer/Prompts/CreateTestProjectPrompt.cs, clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/CreateTestProjectCommand.cs, clio.tests/Command/McpServer/AddPackageToolTests.cs, clio.tests/Command/McpServer/CreateTestProjectToolTests.cs, clio/clio.csproj, .codex/workspace-diary.md
+Impact: MCP clients can now create workspace packages and related unit test projects with explicit workspace targeting, without introducing cwd races inside the MCP host.
