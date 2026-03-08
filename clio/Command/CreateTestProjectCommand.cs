@@ -22,8 +22,16 @@ namespace Clio.Command;
 public class CreateTestProjectOptions : EnvironmentOptions{
 	#region Properties: Public
 
+	/// <summary>
+	/// Workspace package name to scaffold tests for.
+	/// </summary>
 	[Option("package", Required = false, HelpText = "Package name")]
 	public string PackageName { get; set; }
+
+	/// <summary>
+	/// Explicit workspace root path supplied by MCP callers.
+	/// </summary>
+	internal string WorkspacePath { get; set; }
 
 	#endregion
 }
@@ -33,7 +41,10 @@ public class CreateTestProjectOptions : EnvironmentOptions{
 
 #region Class: CreateTestProjectCommand
 
-internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
+/// <summary>
+/// Creates test project scaffolding for workspace packages.
+/// </summary>
+public class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 	#region Constants: Private
 
 	private const string TestsDirectoryName = "tests";
@@ -123,6 +134,7 @@ internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 	#region Methods: Public
 
 	public override int Execute(CreateTestProjectOptions options) {
+		ApplyWorkspacePath(options);
 		
 		ValidationResult validationResult = _optionsValidator.Validate(options);
 		if (validationResult.Errors.Count != 0) {
@@ -184,6 +196,13 @@ internal class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 	}
 
 	#endregion
+
+	private void ApplyWorkspacePath(CreateTestProjectOptions options) {
+		if (string.IsNullOrWhiteSpace(options.WorkspacePath)) {
+			return;
+		}
+		_workspacePathBuilder.RootPath = options.WorkspacePath;
+	}
 }
 
 #endregion
