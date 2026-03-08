@@ -1,16 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Threading;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
-public class RestartTool(RestartCommand command, ILogger logger){
+public class RestartTool(
+	RestartCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver) : BaseTool<RestartOptions>(command, logger, commandResolver) {
 
 	[McpServerTool(Name = "RestartByEnvironmentName"), Description("Restarts Creatio instance by environment name")]
 	public CommandExecutionResult RestartInstanceByName(
@@ -18,13 +16,11 @@ public class RestartTool(RestartCommand command, ILogger logger){
 	) {
 		RestartOptions options = new() {
 			Environment = environmentName,
-			TimeOut = 30_000 //Timeout in millisecond
+			TimeOut = 30_000
 		};
-		CommandExecutionResult result = InternalExecute(options);
-		logger.ClearMessages();
-		return result;
+		return InternalExecute<RestartCommand>(options);
 	}
-	
+
 	[McpServerTool(Name = "RestartByCredentials"), Description("Restarts Creatio instance by credentials")]
 	public CommandExecutionResult RestartInstanceByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
@@ -37,23 +33,8 @@ public class RestartTool(RestartCommand command, ILogger logger){
 			Password = password,
 			Uri = url,
 			IsNetCore = isNetCore,
-			TimeOut = 30_000 //Timeout in millisecond
+			TimeOut = 30_000
 		};
-		CommandExecutionResult result = InternalExecute(options);
-		logger.ClearMessages();
-		return result;
-	}
-
-	private CommandExecutionResult InternalExecute(RestartOptions options) {
-		int result = -1;
-		try {
-			result = command.Execute(options);
-			Thread.Sleep(500);
-			return new CommandExecutionResult(result, [..logger.LogMessages.ToList()]);
-		}
-		catch (Exception e) {
-			List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];
-			return new CommandExecutionResult(result, logMessages);
-		}
+		return InternalExecute<RestartCommand>(options);
 	}
 }

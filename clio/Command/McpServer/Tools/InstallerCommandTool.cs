@@ -45,7 +45,7 @@ public class InstallerCommandTool(InstallerCommand command, ILogger logger) : Ba
 		return new CommandExecutionResult(1, [
 			new ErrorMessage("Infrastructure temporarily unavailable due to scheduled maintenance. Please try again later.")
 		]);
-		return InternalExecute(command, options);
+		return InternalExecute(options);
 	}
 
 }

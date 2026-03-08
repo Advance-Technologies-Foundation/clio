@@ -490,9 +490,58 @@ Discovery: There was no existing direct test coverage for NormalizeFilePathByPla
 Files: clio.tests/Common/FileSystem.Tests.cs, .codex/workspace-diary.md
 Impact: Prevents regressions where rooted Unix-like paths lose leading separator after normalization and confirms relative paths stay relative.
 
+## 2026-03-07 11:55 – Merge entity schema and user task branches with create-entity-schema MCP tool
+Context: User requested merging `create-UserTask-Schema` and `entity-schema-create-command` into a shared branch, then adding MCP support for `create-entity-schema`.
+Decision: Created `codex/common`, resolved merge conflicts by keeping both feature sets registered, added `create-entity-schema` MCP tool/prompt support, and hardened `ToolCommandResolver` to reject unknown environments instead of falling back to default localhost credentials.
+Discovery: Lookup column serialization must preserve the empty title slot (`Name:Lookup::RefSchema`) when a reference schema is provided without an explicit title; otherwise the remote parser misreads the lookup reference.
+Files: clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/Command/McpServer/Tools/CreateEntitySchemaTool.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, .codex/workspace-diary.md
+Impact: The merged branch now exposes both schema features together and can safely create remote entity schemas through MCP without silently targeting an unintended environment.
+
 ## 2026-03-06 13:26 – Fix local PostgreSQL pg_restore argument order for Docker-hosted restores
 Context: User needed `restore-db` and `deploy-creatio` to restore into PostgreSQL running in Docker via published host port, and the first runtime attempt failed after creating the database.
 Decision: Kept the local-server flow for `--dbServerName`/`--db-server-name`, fixed `pg_restore` argument ordering so flags precede the backup file path, and relaxed the zip-backup test to assert an extracted `.backup` path instead of a hard-coded filename.
 Discovery: `pg_restore` rejected the old command line because `--no-owner` and `--no-privileges` were placed after the positional backup file; once reordered, the repo-built `clio.exe` restored successfully to `localhost:5432` using the host file directly.
 Files: clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, .codex/workspace-diary.md
 Impact: Local and Docker-hosted PostgreSQL restores now execute correctly through the host `pg_restore` binary without copying backup files into Kubernetes or containers.
+
+## 2026-03-08 10:20 – Validate user task code before remote draft creation
+Context: The `CreateUserTaskCommandTests.Execute_Should_Return_Error_When_Code_Does_Not_Start_With_Usr` regression showed that invalid user task codes still triggered the remote `CreateNewSchema` call.
+Decision: Moved `ValidateUserTaskCode` execution to the start of `ExecuteRemoteCommand` and passed the validated value into the later schema-mapping step instead of re-validating after the remote draft was created.
+Discovery: The old flow validated inside `ApplyRequestedValues`, which happens only after `CreateNewSchema` returns, so an invalid `Code` could still create remote side effects before the command failed locally.
+Files: clio/Command/CreateUserTaskCommand.cs, .codex/workspace-diary.md
+Impact: Invalid user task codes now fail fast locally, matching test expectations and avoiding unnecessary remote schema draft creation.
+
+## 2026-03-08 10:42 – Preserve nested add-parameter-items in MCP user task tools
+Context: Code review flagged that nested `add-parameter-items[].items` were accepted by the MCP contract but silently dropped during serialization.
+Decision: Made `UserTaskToolSupport.SerializeParameterItemDefinitions` recurse through nested `UserTaskParameterItemArgs.Items` and extended the MCP tool test to assert a grandchild item is serialized.
+Discovery: The tool already handled recursion for `add-parameters[].items`; only the `add-parameter-items` path lacked the same traversal.
+Files: clio/Command/McpServer/Tools/UserTaskTool.cs, clio.tests/Command/McpServer/UserTaskToolTests.cs, .codex/workspace-diary.md
+Impact: Nested composite-list child items provided through MCP are now preserved instead of being silently lost.
+
+## 2026-03-08 15:02 – Restrict delete-schema to schema workspace item types
+Context: Code review flagged that delete-schema matched workspace items only by package/name, which could target a same-named non-schema artifact.
+Decision: Added an explicit workspace-item type allowlist in DeleteSchemaCommand and covered mixed-type same-name selection with a regression test.
+Discovery: Existing delete-schema help and MCP prompt/tool already matched the intended behavior closely enough, so no doc or MCP text changes were required for this internal selection fix.
+Files: clio/Command/DeleteSchemaCommand.cs, clio.tests/Command/DeleteSchemaCommandTests.cs, .codex/workspace-diary.md
+Impact: delete-schema now ignores non-schema workspace items that share a name with the requested schema and only submits schema-type artifacts for deletion.
+
+## 2026-03-08 17:40 – Standardize MCP prompt containers as static utility classes
+Context: SonarQube flagged DeleteSchemaPrompt as a utility class that should not be instantiable, and the user asked for a local rule to keep future prompt files aligned.
+Decision: Added a prompt-folder `AGENTS.md` that requires `public static class` prompt containers, then updated all existing MCP prompt types in that directory to static utility form with XML documentation.
+Discovery: MCP prompt discovery still works with static classes because registration depends on type and method attributes, not on instance construction.
+Files: clio/Command/McpServer/Prompts/AGENTS.md, clio/Command/McpServer/Prompts/ClearRedisPrompt.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Prompts/DeleteSchemaPrompt.cs, clio/Command/McpServer/Prompts/LoadPackagesPrompt.cs, clio/Command/McpServer/Prompts/LookupHelpPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio/Command/McpServer/Prompts/RestartPrompt.cs, clio/Command/McpServer/Prompts/UserTaskPrompt.cs, .codex/workspace-diary.md
+Impact: Future MCP prompts in this folder now have a documented utility-class convention, and existing prompts no longer trigger the Sonar utility-class complaint.
+
+## 2026-03-08 18:26 – Reduce ParseColumns complexity and tighten entity column validation
+Context: User asked for a review of RemoteEntitySchemaCreator changes and specifically to address SonarQube's cognitive-complexity complaint on ParseColumns.
+Decision: Split ParseColumns into focused helper methods for format, type, title, and lookup validation, and added a regression that rejects four-part non-lookup column specs instead of silently discarding the final segment.
+Discovery: The existing create-entity-schema help already described the fourth segment as a lookup-only reference schema, so the stricter validation aligned with current docs and MCP behavior without further contract updates.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, .codex/workspace-diary.md
+Impact: ParseColumns is easier to reason about, Sonar should stop flagging its cognitive complexity, and invalid non-lookup column definitions now fail fast before save.
+
+## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
+Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
+Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.
+Discovery: Existing tests cover happy-path and missing lookup reference schema but do not cover duplicate columns, non-lookup extra segment handling, or colon-containing column tokens.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/CreateEntitySchemaCommand.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio/docs/commands/create-entity-schema.md, .codex/workspace-diary.md
+Impact: Future fixes can prioritize parser strictness and duplicate-name validation with focused regression tests.
