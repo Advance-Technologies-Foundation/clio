@@ -20,9 +20,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Constants: Private
 
 	private const string DefaultCultureName = "en-US";
-
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
-	private const string ServiceBasePath = "/ServiceModel/EntitySchemaDesignerService.svc/";
 
 	#endregion
 
@@ -129,9 +127,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		schema.Columns = columns;
 		schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
-		if (schema.PrimaryDisplayColumn == null) {
-			schema.PrimaryDisplayColumn = columns.FirstOrDefault(column => column.IsTextType());
-		}
+		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
 	}
 
 	private EntityDesignSchemaDto AssignParentSchema(
@@ -167,12 +163,14 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private bool CheckUniqueSchemaName(string schemaName, Guid excludeUId, CreateEntitySchemaOptions options) {
-		BoolResponse response = Post<object, BoolResponse>("CheckUniqueSchemaName", new {
+		
+		const string methodName = "CheckUniqueSchemaName";
+		BoolResponse response = Post<object, BoolResponse>(methodName, new {
 			managerName = EntitySchemaManagerName,
 			schemaName,
 			excludeUId
 		}, options);
-		EnsureSuccess(response, "CheckUniqueSchemaName");
+		EnsureSuccess(response, methodName);
 		return response.Value;
 	}
 
@@ -233,36 +231,72 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		foreach (string columnSpec in columnSpecs.Where(spec => !string.IsNullOrWhiteSpace(spec))) {
-			string[] parts = columnSpec.Split(':');
-			if (parts.Length < 2 || parts.Length > 4) {
-				throw new InvalidOperationException(
-					$"Column '{columnSpec}' has invalid format. Expected <name>:<type>[:<title>[:<refSchema>]].");
-			}
-
-			string name = parts[0].Trim();
-			string type = parts[1].Trim();
-			if (string.IsNullOrWhiteSpace(name) || !SupportedDataValueTypes.ContainsKey(type)) {
-				throw new InvalidOperationException(
-					$"Column '{columnSpec}' has unsupported values. Supported types: {string.Join(", ", SupportedDataValueTypes.Keys.OrderBy(k => k))}.");
-			}
-
-			string title = parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]) ? parts[2].Trim() : name;
-			string referenceSchemaName
-				= parts.Length == 4 && !string.IsNullOrWhiteSpace(parts[3]) ? parts[3].Trim() : null;
-			if (string.Equals(type, "lookup", StringComparison.OrdinalIgnoreCase) &&
-				string.IsNullOrWhiteSpace(referenceSchemaName)) {
-				throw new InvalidOperationException(
-					$"Lookup column '{columnSpec}' must specify a reference schema name.");
-			}
-
-			yield return new ParsedColumn(name, type, title, referenceSchemaName);
+			yield return ParseColumn(columnSpec);
 		}
+	}
+
+	private static string GetLookupReferenceSchemaName(string[] parts) {
+		return parts.Length == 4 && !string.IsNullOrWhiteSpace(parts[3])
+			? parts[3].Trim()
+			: null;
+	}
+
+	private static string GetSupportedTypesList() {
+		return string.Join(", ", SupportedDataValueTypes.Keys.OrderBy(key => key));
+	}
+
+	private static string GetTitle(string[] parts, string name) {
+		return parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2])
+			? parts[2].Trim()
+			: name;
+	}
+
+	private static void ValidateColumnFormat(string columnSpec, string[] parts) {
+		if (parts.Length is < 2 or > 4) {
+			throw new InvalidOperationException(
+				$"Column '{columnSpec}' has invalid format. Expected <name>:<type>[:<title>[:<refSchema>]].");
+		}
+	}
+
+	private static void ValidateLookupReferenceSchema(string columnSpec, string type, string referenceSchemaName) {
+		bool isLookup = string.Equals(type, "lookup", StringComparison.OrdinalIgnoreCase);
+		if (isLookup && string.IsNullOrWhiteSpace(referenceSchemaName)) {
+			throw new InvalidOperationException(
+				$"Lookup column '{columnSpec}' must specify a reference schema name.");
+		}
+
+		if (!isLookup && !string.IsNullOrWhiteSpace(referenceSchemaName)) {
+			throw new InvalidOperationException(
+				$"Column '{columnSpec}' can specify a reference schema name only for lookup columns.");
+		}
+	}
+
+	private static void ValidateSupportedColumnValues(string columnSpec, string name, string type) {
+		if (string.IsNullOrWhiteSpace(name) || !SupportedDataValueTypes.ContainsKey(type)) {
+			throw new InvalidOperationException(
+				$"Column '{columnSpec}' has unsupported values. Supported types: {GetSupportedTypesList()}.");
+		}
+	}
+
+	private ParsedColumn ParseColumn(string columnSpec) {
+		string[] parts = columnSpec.Split(':');
+		ValidateColumnFormat(columnSpec, parts);
+
+		string name = parts[0].Trim();
+		string type = parts[1].Trim();
+		ValidateSupportedColumnValues(columnSpec, name, type);
+
+		string title = GetTitle(parts, name);
+		string referenceSchemaName = GetLookupReferenceSchemaName(parts);
+		ValidateLookupReferenceSchema(columnSpec, type, referenceSchemaName);
+
+		return new ParsedColumn(name, type, title, referenceSchemaName);
 	}
 
 	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, CreateEntitySchemaOptions options)
 		where TRequest : class
 		where TResponse : BaseResponse {
-		string url = _serviceUrlBuilder.Build(ServiceBasePath + methodName);
+		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ServiceBasePath + $"/{methodName}");
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
 		string rawResponse = _applicationClient.ExecutePostRequest(
 			url,
@@ -322,9 +356,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		ApplySchemaMetadata(schema, options, parsedColumns, package);
+		const string methodName = "SaveSchema";
 		SaveDesignItemDesignerResponse saveResponse
-			= Post<EntityDesignSchemaDto, SaveDesignItemDesignerResponse>("SaveSchema", schema, options);
-		EnsureSuccess(saveResponse, "SaveSchema");
+			= Post<EntityDesignSchemaDto, SaveDesignItemDesignerResponse>(methodName, schema, options);
+		EnsureSuccess(saveResponse, methodName);
 		_logger.WriteInfo($"Entity schema '{options.SchemaName}' created in package '{options.Package}'.");
 	}
 

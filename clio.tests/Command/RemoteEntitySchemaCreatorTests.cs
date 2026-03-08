@@ -1,12 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
@@ -72,19 +70,19 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		});
 
 		_applicationClient.Received().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/CreateNewSchema")),
+			Arg.Is<string>(url => url.Contains("CreateNewSchema", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
 		_applicationClient.Received().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName")),
+			Arg.Is<string>(url => url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
 		_applicationClient.Received().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/SaveSchema")),
+			Arg.Is<string>(url => url.Contains("SaveSchema", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
@@ -130,13 +128,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		});
 
 		_applicationClient.Received().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/GetAvailableParentSchemas")),
+			Arg.Is<string>(url => url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
 		_applicationClient.Received().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/AssignParentSchema")),
+			Arg.Is<string>(url => url.Contains("AssignParentSchema", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
@@ -164,7 +162,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 
 		action.Should().Throw<InvalidOperationException>().WithMessage("*already exists*");
 		_applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/SaveSchema")),
+			Arg.Is<string>(url => url.Contains("SaveSchema", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
@@ -196,7 +194,44 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 
 		action.Should().Throw<InvalidOperationException>().WithMessage("*Reference schema 'Contact'*");
 		_applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("/ServiceModel/EntitySchemaDesignerService.svc/SaveSchema")),
+			Arg.Is<string>(url => url.Contains("SaveSchema", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Rejects non-lookup column definitions that include a reference schema segment.")]
+	public void Create_StopsBeforeSave_WhenNonLookupColumnIncludesReferenceSchema()
+	{
+		// Arrange
+		SetupApplicationClient((url, _) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		Action action = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name:Contact"]
+		});
+
+		// Act
+		Action act = action;
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*only for lookup columns*",
+				because: "a fourth column segment must not be accepted for non-lookup types");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema", StringComparison.Ordinal)),
 			Arg.Any<string>(),
 			Arg.Any<int>(),
 			Arg.Any<int>(),

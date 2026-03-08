@@ -531,3 +531,17 @@ Decision: Added a prompt-folder `AGENTS.md` that requires `public static class` 
 Discovery: MCP prompt discovery still works with static classes because registration depends on type and method attributes, not on instance construction.
 Files: clio/Command/McpServer/Prompts/AGENTS.md, clio/Command/McpServer/Prompts/ClearRedisPrompt.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Prompts/DeleteSchemaPrompt.cs, clio/Command/McpServer/Prompts/LoadPackagesPrompt.cs, clio/Command/McpServer/Prompts/LookupHelpPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio/Command/McpServer/Prompts/RestartPrompt.cs, clio/Command/McpServer/Prompts/UserTaskPrompt.cs, .codex/workspace-diary.md
 Impact: Future MCP prompts in this folder now have a documented utility-class convention, and existing prompts no longer trigger the Sonar utility-class complaint.
+
+## 2026-03-08 18:26 – Reduce ParseColumns complexity and tighten entity column validation
+Context: User asked for a review of RemoteEntitySchemaCreator changes and specifically to address SonarQube's cognitive-complexity complaint on ParseColumns.
+Decision: Split ParseColumns into focused helper methods for format, type, title, and lookup validation, and added a regression that rejects four-part non-lookup column specs instead of silently discarding the final segment.
+Discovery: The existing create-entity-schema help already described the fourth segment as a lookup-only reference schema, so the stricter validation aligned with current docs and MCP behavior without further contract updates.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, .codex/workspace-diary.md
+Impact: ParseColumns is easier to reason about, Sonar should stop flagging its cognitive complexity, and invalid non-lookup column definitions now fail fast before save.
+
+## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
+Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
+Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.
+Discovery: Existing tests cover happy-path and missing lookup reference schema but do not cover duplicate columns, non-lookup extra segment handling, or colon-containing column tokens.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/CreateEntitySchemaCommand.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio/docs/commands/create-entity-schema.md, .codex/workspace-diary.md
+Impact: Future fixes can prioritize parser strictness and duplicate-name validation with focused regression tests.
