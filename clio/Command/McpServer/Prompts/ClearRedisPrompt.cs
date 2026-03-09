@@ -35,8 +35,8 @@ public static class ClearRedisPrompt {
 		string userName,
 		[Description("Creatio user password")] [Required]
 		string password,
-		[Description("Whether the target environment runs on .NET Core")] [Required]
-		bool isNetCore) =>
+		[Description("Whether the target environment runs on .NET Core. Optional, defaults to false.")]
+		bool isNetCore = false) =>
 		$"""
 		 Use clio mcp server `clear-redis-db` command to empty the Redis database used by
 		 the Creatio instance at `{url}` with user `{userName}`, password

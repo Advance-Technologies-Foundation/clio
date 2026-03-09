@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test MCP Tool"
+  short_description: "Add or update unit and end-to-end coverage for a clio MCP tool."
+  default_prompt: "Add or update MCP unit and end-to-end tests for a clio MCP tool."

@@ -539,9 +539,72 @@ Discovery: The existing create-entity-schema help already described the fourth s
 Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, .codex/workspace-diary.md
 Impact: ParseColumns is easier to reason about, Sonar should stop flagging its cognitive complexity, and invalid non-lookup column definitions now fail fast before save.
 
+## 2026-03-09 15:34 – Add first clear-redis MCP E2E harness
+Context: User requested the first real `clio.mcp.e2e` test to exercise MCP end-to-end behavior for the destructive `clear-redis` tool.
+Decision: Implemented a sandbox-only E2E harness that starts the external `clio mcp-server` over stdio, drives it through the official `ModelContextProtocol` client, loads settings from `appsettings.json` plus environment variables, and verifies Redis side effects instead of only MCP response shape.
+Discovery: In the current `ModelContextProtocol` 1.0.0 client surface, `McpClient.ListToolsAsync` returns `IList<McpClientTool>`, `StructuredContent` is easiest to deserialize via `JsonSerializer.Serialize(...)`, and disposing `McpClient` is sufficient for the stdio test session in this harness.
+Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/clio.mcp.e2e.csproj, clio.mcp.e2e/appsettings.json, clio.mcp.e2e/appsettings.example.json, clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/McpE2ESettings.cs, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, clio.mcp.e2e/Support/Mcp/ClioProcessDescriptor.cs, clio.mcp.e2e/Support/Mcp/ClioExecutableResolver.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/Support/Redis/RedisSandboxClient.cs, clio.mcp.e2e/Support/Results/CommandExecutionEnvelope.cs, .codex/workspace-diary.md
+Impact: `clio.mcp.e2e` now has a reusable foundation for destructive MCP integration tests, and the initial `clear-redis` path is ready to run once sandbox settings and explicit opt-in are provided.
+
+## 2026-03-09 16:02 – Resolve sandbox connection strings from clio environment path
+Context: User clarified that the E2E suite should accept only a registered `clio` environment key and derive infrastructure details from that environment's `EnvironmentPath`.
+Decision: Replaced direct Redis connection string config with runtime resolution through `SettingsRepository.FindEnvironment`, recursive `ConnectionStrings.config` discovery, and XML extraction of both `redis` and `db` connection strings; refactored the clear-redis test into explicit `[AllureStep]` methods for Arrange, Act, and Assert and marked the fixture with `[AllureFeature("Essential features")]`.
+Discovery: The `clio envs` source of truth is the registered environment entry itself, so using `SettingsRepository` gives the same `EnvironmentPath` data without shelling out, and the current Creatio `ConnectionStrings.config` convention exposes the relevant entries under `add name="redis"` and `add name="db"`.
+Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/appsettings.json, clio.mcp.e2e/appsettings.example.json, clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/McpE2ESettings.cs, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentContext.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentResolver.cs, .codex/workspace-diary.md
+Impact: Future destructive MCP tests can target any registered sandbox by name and reuse the same resolved Redis/DB context, while Allure reports now show the test as explicit AAA steps.
+
+## 2026-03-09 16:18 – Align clear-redis E2E with real clio env and Redis formats
+Context: Running the new clear-redis E2E test showed two runtime mismatches: the test-host `SettingsRepository` did not surface the same `EnvironmentPath` as `clio envs`, and Creatio Redis connection strings were not directly usable by `StackExchange.Redis`.
+Decision: Switched environment-path lookup to invoke the real `clio envs <name> --format raw` command via the same executable resolver used for the MCP server, added Creatio-to-StackExchange Redis connection string translation at the test client boundary, and made MCP result parsing accept either structured payloads or content-based fallbacks before inferring exit code 0 from a non-error result.
+Discovery: On this machine `clio envs docker_fix2 --format raw` returns the needed `EnvironmentPath` even when the in-process test host does not, and the current clear-redis MCP tool returns a successful result without guaranteed `StructuredContent`, so end-to-end assertions must tolerate the actual wire shape.
+Files: clio.mcp.e2e/Support/Mcp/ClioExecutableResolver.cs, clio.mcp.e2e/Support/Configuration/ClioEnvironmentCommandResolver.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentResolver.cs, clio.mcp.e2e/Support/Redis/RedisSandboxClient.cs, clio.mcp.e2e/ClearRedisToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The first destructive MCP E2E test now passes against a real registered sandbox environment instead of relying on assumptions about config storage or result serialization.
+
+## 2026-03-09 16:27 – Standardize MCP E2E Allure metadata and assertion steps
+Context: User requested richer Allure metadata for MCP tests and finer-grained assertion visibility in the report.
+Decision: Standardized the clear-redis E2E test to use `AllureTag` for the tool under test together with human-readable `AllureName` and `AllureDescription`, removed the placeholder story attribute, and split the assert phase into separate `[AllureStep]` methods with their own `AllureDescription` entries.
+Discovery: Keeping the test body as a thin AAA coordinator while moving each assertion into its own named step produces a much clearer Allure report without changing the runtime behavior of the end-to-end flow.
+Files: clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/AGENTS.md, .codex/workspace-diary.md
+Impact: Future MCP E2E fixtures now have a concrete reporting convention that makes failures easier to interpret directly from Allure.
+
+## 2026-03-09 16:58 – Add clear-redis success log assertion and invalid-environment E2E coverage
+Context: User asked to align the clear-redis MCP E2E tests with the new tool-name constants, assert that successful output contains an `Info` message type, and add a negative case for an invalid environment name.
+Decision: Updated the clear-redis E2E fixture to use `ClearRedisTool.ClearRedisByEnvironmentName` as the tool tag/name, added a success-path assertion for `LogDecoratorType.Info`, added an invalid-environment test that asserts failure plus no Redis mutation, and replaced brittle direct JSON deserialization with a tolerant execution parser that can read structured payloads, content blocks, and top-level MCP error responses.
+Discovery: On this MCP surface, successful tool calls may expose execution details via text content rather than directly deserializable structured content, and invalid environment lookups can surface as a generic MCP invocation error (`An error occurred invoking 'clear-redis-by-environment'.`) instead of the raw command diagnostic.
+Files: clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/AGENTS.md, .codex/workspace-diary.md
+Impact: The clear-redis E2E suite now covers both the happy path and a core failure mode while matching the real MCP wire contract closely enough to keep the Allure report stable and useful.
+
+## 2026-03-09 17:08 – Add repository skills for creating and testing MCP tools
+Context: User requested two local Codex skills that explain how to create MCP tools and how to test them in this repository.
+Decision: Added `create-mcp-tool` and `test-mcp-tool` under `.codex/skills`, using the skill scaffolding workflow and concise repo-specific instructions that require production tool-name constants, full optional-argument coverage, and `Info`/`Error` message-type assertions in tests.
+Discovery: The repo-local skill set was small enough that self-contained `SKILL.md` guidance was sufficient; no extra references or scripts were needed beyond the standard generated `agents/openai.yaml`.
+Files: .codex/skills/create-mcp-tool/SKILL.md, .codex/skills/create-mcp-tool/agents/openai.yaml, .codex/skills/test-mcp-tool/SKILL.md, .codex/skills/test-mcp-tool/agents/openai.yaml, .codex/workspace-diary.md
+Impact: Future MCP work can now be guided by explicit reusable instructions for both tool implementation and test coverage standards.
+
+## 2026-03-09 17:12 – Wire MCP skills into repository AGENTS guidance
+Context: User asked whether AGENTS guidance needed to be updated so the new MCP skills would be invoked consistently.
+Decision: Updated the root `AGENTS.md` to explicitly require `create-mcp-tool` for MCP implementation work and `test-mcp-tool` for MCP testing work, and added local reminders in the MCP source and E2E test folders.
+Discovery: The repo already had an explicit skill-trigger section for command documentation, so extending that same pattern was the lowest-friction way to make MCP skill usage deterministic for future agents.
+Files: AGENTS.md, clio/Command/McpServer/AGENTS.md, clio.mcp.e2e/AGENTS.md, .codex/workspace-diary.md
+Impact: Future Codex runs no longer need to rely on implicit skill-description matching for MCP work; the repository instructions now call out the MCP skills directly.
+
 ## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
 Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
 Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.
 Discovery: Existing tests cover happy-path and missing lookup reference schema but do not cover duplicate columns, non-lookup extra segment handling, or colon-containing column tokens.
 Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/CreateEntitySchemaCommand.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio/docs/commands/create-entity-schema.md, .codex/workspace-diary.md
 Impact: Future fixes can prioritize parser strictness and duplicate-name validation with focused regression tests.
+
+## 2026-03-09 10:45 – Add clear-redis-by-credentials MCP coverage
+Context: User requested MCP test coverage for the `clear-redis-by-credentials` tool using the new repository MCP skills.
+Decision: Added unit coverage for credentials argument mapping including the optional `isNetCore` combinations, extended the E2E sandbox resolver to read URL/login/password/IsNetCore from the real registered `clio` settings plus `ConnectionStrings.config`, and added successful and negative credentials-path E2E scenarios.
+Discovery: On this machine the registered `clio` settings file contains the credentials needed for sandbox MCP tests, while the most reliable negative runtime path for `clear-redis-by-credentials` is an invalid URL rather than invalid credentials; successful runs emit `Info` messages and failed runs emit `Error` messages that should be asserted explicitly.
+Files: clio.tests/Command/McpServer/ClearRedisToolTests.cs, clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/RegisteredClioEnvironmentSettingsResolver.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentContext.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentResolver.cs, clio/Command/McpServer/Prompts/ClearRedisPrompt.cs, clio.mcp.e2e/AGENTS.md, .codex/workspace-diary.md
+Impact: MCP work on `clear-redis` now has both mapping-level and end-to-end credentials coverage, plus explicit guidance for future tools around optional-argument combinations and success/error message assertions.
+
+## 2026-03-09 10:55 – Standardize command-based Allure features and manual E2E flow
+Context: User requested that MCP E2E fixtures use the underlying `clio` command name as the Allure feature when possible and that the project guidance document the manual test execution flow.
+Decision: Kept the clear-redis fixture on `[AllureFeature("clear-redis-db")]` and updated the E2E AGENTS guidance to prefer command-based feature names, require Allure Report 3, and describe the repository `run-e2e-tests.ps1` workflow.
+Discovery: The local PowerShell runner assumes Allure CLI is already installed and available on `PATH`, using `allure generate` and `allure serve` directly after `dotnet test`.
+Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/ClearRedisToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future MCP E2E tests should produce more consistent Allure reporting and clearer local execution guidance.

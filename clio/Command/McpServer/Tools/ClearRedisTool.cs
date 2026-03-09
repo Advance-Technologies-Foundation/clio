@@ -10,7 +10,10 @@ public class ClearRedisTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<ClearRedisOptions>(command, logger, commandResolver) {
 
-	[McpServerTool(Name = "ClearRedisByEnvironmentName"), Description("Empties redis database used by creatio instance")]
+	internal const string ClearRedisByCredentialsToolName = "clear-redis-db-by-credentials";
+	internal const string ClearRedisByEnvironmentName = "clear-redis-db-by-environment";
+	
+	[McpServerTool(Name = ClearRedisByEnvironmentName), Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByName(
 		[Description("Target Environment name")] [Required] string environmentName
 	) {
@@ -21,7 +24,7 @@ public class ClearRedisTool(
 		return InternalExecute<RedisCommand>(options);
 	}
 
-	[McpServerTool(Name = "clear-redis"), Description("Empties redis database used by creatio instance")]
+	[McpServerTool(Name = ClearRedisByCredentialsToolName), Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,

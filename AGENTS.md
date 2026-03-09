@@ -52,6 +52,14 @@ For command documentation tasks, explicitly use the `document-command` skill.
 - Trigger this skill when documenting a command, updating command help/docs, or when command-related source changes may affect docs.
 - Preferred invocation pattern: `$document-command <request>`.
 
+For MCP tool implementation tasks, explicitly use the `create-mcp-tool` skill.
+- Trigger this skill when adding or updating files under `clio\clio\Command\McpServer\Tools`, `Prompts`, or `Resources`, or when command changes require MCP contract alignment.
+- Preferred invocation pattern: `$create-mcp-tool <request>`.
+
+For MCP tool testing tasks, explicitly use the `test-mcp-tool` skill.
+- Trigger this skill when adding or updating MCP unit tests in `clio.tests` or MCP end-to-end tests in `clio.mcp.e2e`.
+- Preferred invocation pattern: `$test-mcp-tool <request>`.
+
 ## Trigger conditions for mandatory doc review
 
 Review docs whenever any of the following is changed:
