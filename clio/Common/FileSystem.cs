@@ -26,6 +26,8 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 
 	internal static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
+	public char DirectorySeparatorChar => Path.DirectorySeparatorChar;
+
 	#region Methods: Public
 
 	public void CreateLink(string link, string target) {
@@ -83,11 +85,19 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		return GetFileHash(algorithm, first) == GetFileHash(algorithm, second);
 	}
 
+	public string CombinePaths(params string[] paths) {
+		return Path.Combine(paths);
+	}
+
 	public string ConvertToRelativePath(string path, string rootDirectoryPath) {
 		rootDirectoryPath = rootDirectoryPath.TrimEnd(Path.DirectorySeparatorChar);
 		int rootDirectoryPathLength = rootDirectoryPath.Length;
 		string relativePath = path.Substring(rootDirectoryPathLength);
 		return relativePath.TrimStart(Path.DirectorySeparatorChar);
+	}
+
+	public string GetFullPath(string path) {
+		return Path.GetFullPath(path);
 	}
 
 	public void CopyDirectory(string source, string destination, bool overwrite) {
@@ -278,6 +288,10 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
 		string fileName = ExtractFileNameFromPath(filePath);
 		return Path.Combine(destinationPath, fileName);
+	}
+
+	public bool IsPathRooted(string path) {
+		return Path.IsPathRooted(path);
 	}
 
 	public string[] GetDirectories(string directoryPath) {

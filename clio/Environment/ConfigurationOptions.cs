@@ -274,6 +274,12 @@ namespace Clio
 			set => _iISClioRootPath = value;
 		}
 
+		[JsonProperty("workspaces-root")]
+		public string WorkspacesRoot {
+			get;
+			set;
+		}
+
 		[JsonProperty("$schema")]
 		public string Schema => "./schema.json";
 
@@ -567,6 +573,10 @@ namespace Clio
 
 		public string GetRemoteArtefactServerPath() {
 			return _settings.RemoteArtefactServerPath;
+		}
+
+		public string GetWorkspacesRoot() {
+			return _settings.WorkspacesRoot;
 		}
 
 		public LocalDbServerConfiguration GetLocalDbServer(string name) {

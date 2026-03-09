@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create MCP Tool"
+  short_description: "Build or update a clio MCP tool."
+  default_prompt: "Create or update a clio MCP tool and align the command, MCP surface, and tests."

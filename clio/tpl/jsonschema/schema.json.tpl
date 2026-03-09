@@ -5,6 +5,10 @@
 			"type": "string",
 			"description": "Default IIS folder where Creatio instances will run from"
 		},
+		"workspaces-root": {
+			"type": "string",
+			"description": "Default absolute base directory for create-workspace --empty when --directory is omitted"
+		},
 		"RemoteArtefactServerPath": {
 			"type": "string",
 			"description": "Path to remote artefact server"

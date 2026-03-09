@@ -1986,10 +1986,20 @@ Create a new empty workspace in a subfolder without connecting to any Creatio en
 clio create-workspace my-workspace --empty
 ```
 
+When `--empty` is used, clio resolves the base directory from `--directory` first and then from appsettings.json property `workspaces-root`. The command fails if neither source is configured or the resolved directory does not exist.
+
+On success, clio reports the final workspace directory as `Workspace created at: <full-path>`.
+
+Create a new empty workspace under an explicit absolute directory:
+
+```bash
+clio create-workspace my-workspace --empty --directory C:\Workspaces
+```
+
 If clio reports that you are inside an existing workspace (or the target folder is not empty), you can bypass checks with `--force`:
 
 ```bash
-clio create-workspace my-workspace --empty --force
+clio create-workspace my-workspace --empty --directory C:\Workspaces --force
 ```
 
 In directory **.clio** specify you packages

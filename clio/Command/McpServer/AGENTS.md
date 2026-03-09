@@ -2,6 +2,10 @@
 
 This directory contains the MCP surface for `clio`: tools, prompts, and related resources.
 
+## Skill to use
+
+For MCP implementation work in this directory, explicitly use the `create-mcp-tool` skill.
+
 ## Base rule
 
 Prefer deriving MCP tools from `clio\Command\McpServer\Tools\BaseTool.cs`.

@@ -13,6 +13,12 @@ DESCRIPTION
     Use --empty to create a new workspace in a subfolder without connecting to
     any environment (no credentials required).
 
+    For --empty mode, clio now resolves the base directory from --directory
+    first, then from appsettings.json property workspaces-root.
+
+    On success, the command reports the full directory where the workspace was
+    created.
+
 SYNOPSIS
     clio create-workspace [options]
     clio createw [options]
@@ -21,6 +27,9 @@ OPTIONS
     --empty                             Create a new workspace in a subfolder without connecting to any environment.
                                         Usage: clio createw <workspace-name> --empty
                                         Default: false
+
+    --directory                         Absolute base directory for --empty workspace creation.
+                                        When omitted, clio falls back to appsettings.json property workspaces-root.
 
     --force                             Bypass safety checks (existing workspace detection and non-empty folder checks).
                                         Useful when clio incorrectly detects a parent workspace or when the destination folder is not empty.
@@ -52,11 +61,15 @@ OPTIONS
     --AppCode               -a          Application code
 
 EXAMPLES
-    Create a new empty workspace in a subfolder without connecting to any environment:
+    Create a new empty workspace in a subfolder under the configured global workspaces root:
         clio create-workspace my-workspace --empty
+        Output: Workspace created at: C:\Workspaces\my-workspace
+
+    Create a new empty workspace in a subfolder under an explicit directory:
+        clio create-workspace my-workspace --empty --directory C:\Workspaces
 
     Create in a subfolder even if the destination folder is not empty:
-        clio create-workspace my-workspace --empty --force
+        clio create-workspace my-workspace --empty --directory C:\Workspaces --force
 
     Create workspace and download editable packages from a configured environment:
         clio create-workspace -e dev
