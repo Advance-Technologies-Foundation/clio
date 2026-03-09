@@ -97,6 +97,27 @@ public class LinkFromRepositoryToolTests {
 			because: "the MCP contract should declare mandatory arguments explicitly");
 	}
 
+	[Test]
+	[Description("Marks both link-from-repository MCP methods as destructive so MCP clients can apply confirmation and safety policies before the command deletes package folders.")]
+	[Category("Unit")]
+	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvironment))]
+	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath))]
+	public void LinkFromRepository_Methods_Should_Be_Marked_As_Destructive(string methodName) {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(LinkFromRepositoryTool).GetMethod(methodName)!;
+		ModelContextProtocol.Server.McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(ModelContextProtocol.Server.McpServerToolAttribute), inherit: false)
+			.Cast<ModelContextProtocol.Server.McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(
+			because: "link-from-repository deletes existing package directories before replacing them with symbolic links");
+	}
+
 	private sealed class FakeLink4RepoCommand : Link4RepoCommand {
 		public Link4RepoOptions? CapturedOptions { get; private set; }
 

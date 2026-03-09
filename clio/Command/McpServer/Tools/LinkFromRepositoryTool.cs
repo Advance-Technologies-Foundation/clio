@@ -19,7 +19,7 @@ public class LinkFromRepositoryTool(
 	/// <summary>
 	/// Links repository packages into a Creatio environment resolved by registered environment name.
 	/// </summary>
-	[McpServerTool(Name = LinkFromRepositoryByEnvironmentToolName, ReadOnly = false, Destructive = false,
+	[McpServerTool(Name = LinkFromRepositoryByEnvironmentToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("Links repository package content into a Creatio environment package directory resolved by registered environment name")]
 	public CommandExecutionResult LinkFromRepositoryByEnvironment(
@@ -38,7 +38,7 @@ public class LinkFromRepositoryTool(
 	/// <summary>
 	/// Links repository packages into a Creatio environment package directory resolved by explicit package path.
 	/// </summary>
-	[McpServerTool(Name = LinkFromRepositoryByEnvPackagePathToolName, ReadOnly = false, Destructive = false,
+	[McpServerTool(Name = LinkFromRepositoryByEnvPackagePathToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("Links repository package content into a Creatio environment package directory resolved by explicit environment package path")]
 	public CommandExecutionResult LinkFromRepositoryByEnvPackagePath(

@@ -16,22 +16,22 @@ namespace Clio.Command
 	{
 		private readonly ILogger _logger;
 		private readonly IKubernetesClient _k8sClient;
-		private readonly K8ContextValidator _contextValidator;
-		private readonly K8DatabaseAssertion _databaseAssertion;
-		private readonly K8RedisAssertion _redisAssertion;
-		private readonly FsPathAssertion _fsPathAssertion;
-		private readonly FsPermissionAssertion _fsPermissionAssertion;
+		private readonly IK8ContextValidator _contextValidator;
+		private readonly IK8DatabaseAssertion _databaseAssertion;
+		private readonly IK8RedisAssertion _redisAssertion;
+		private readonly IFsPathAssertion _fsPathAssertion;
+		private readonly IFsPermissionAssertion _fsPermissionAssertion;
 		private readonly ILocalDatabaseAssertion _localDatabaseAssertion;
 		private readonly ILocalRedisAssertion _localRedisAssertion;
 
 		public AssertCommand(
 			ILogger logger, 
 			IKubernetesClient k8sClient, 
-			K8ContextValidator contextValidator,
-			K8DatabaseAssertion databaseAssertion,
-			K8RedisAssertion redisAssertion,
-			FsPathAssertion fsPathAssertion,
-			FsPermissionAssertion fsPermissionAssertion,
+			IK8ContextValidator contextValidator,
+			IK8DatabaseAssertion databaseAssertion,
+			IK8RedisAssertion redisAssertion,
+			IFsPathAssertion fsPathAssertion,
+			IFsPermissionAssertion fsPermissionAssertion,
 			ILocalDatabaseAssertion localDatabaseAssertion,
 			ILocalRedisAssertion localRedisAssertion)
 		{

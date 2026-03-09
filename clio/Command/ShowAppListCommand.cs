@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using Clio.Common;
@@ -9,6 +10,39 @@ using ConsoleTables;
 using Newtonsoft.Json;
 
 namespace Clio.Command;
+
+/// <summary>
+/// Structured environment payload used by show-web-app-list JSON projections.
+/// </summary>
+public sealed record ShowWebAppSettingsResult(
+	[property: JsonProperty("name")] string Name,
+	[property: JsonProperty("uri")] string Uri,
+	[property: JsonProperty("dbName")] string DbName,
+	[property: JsonProperty("backupFilePath")] string BackupFilePath,
+	[property: JsonProperty("login")] string Login,
+	[property: JsonProperty("password")] string Password,
+	[property: JsonProperty("maintainer")] string Maintainer,
+	[property: JsonProperty("isNetCore")] bool IsNetCore,
+	[property: JsonProperty("clientId")] string ClientId,
+	[property: JsonProperty("clientSecret")] string ClientSecret,
+	[property: JsonProperty("authAppUri")] string AuthAppUri,
+	[property: JsonProperty("simpleLoginUri")] string SimpleLoginUri,
+	[property: JsonProperty("safe")] bool? Safe,
+	[property: JsonProperty("developerModeEnabled")] bool? DeveloperModeEnabled,
+	[property: JsonProperty("isDevMode")] bool IsDevMode,
+	[property: JsonProperty("workspacePathes")] string WorkspacePathes,
+	[property: JsonProperty("environmentPath")] string EnvironmentPath,
+	[property: JsonProperty("dbServerKey")] string DbServerKey,
+	[property: JsonProperty("dbServer")] ShowWebAppDbServerResult DbServer);
+
+/// <summary>
+/// Structured database server payload used by show-web-app-list JSON projections.
+/// </summary>
+public sealed record ShowWebAppDbServerResult(
+	[property: JsonProperty("uri")] string Uri,
+	[property: JsonProperty("workingFolder")] string WorkingFolder,
+	[property: JsonProperty("login")] string Login,
+	[property: JsonProperty("password")] string Password);
 
 [Verb("show-web-app-list", Aliases = ["env", "envs", "show-web-app"],
 	HelpText = "Show the list of web applications and their settings")]
@@ -85,46 +119,54 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 		return value;
 	}
 
+	private string MaybeMaskSensitiveData(string fieldName, string value, bool maskSensitiveData) {
+		return maskSensitiveData ? MaskSensitiveData(fieldName, value) : value;
+	}
+
+	private ShowWebAppSettingsResult BuildEnvironmentResult(
+		EnvironmentSettings environment,
+		string environmentName,
+		bool maskSensitiveData) {
+		ShowWebAppDbServerResult dbServer = environment.DbServer == null
+			? null
+			: new ShowWebAppDbServerResult(
+				environment.DbServer.Uri?.ToString(),
+				environment.DbServer.WorkingFolder,
+				environment.DbServer.Login,
+				MaybeMaskSensitiveData("Password", environment.DbServer.Password, maskSensitiveData));
+
+		return new ShowWebAppSettingsResult(
+			environmentName,
+			environment.Uri,
+			environment.DbName,
+			environment.BackupFilePath,
+			environment.Login,
+			MaybeMaskSensitiveData("Password", environment.Password, maskSensitiveData),
+			environment.Maintainer,
+			environment.IsNetCore,
+			environment.ClientId,
+			MaybeMaskSensitiveData("ClientSecret", environment.ClientSecret, maskSensitiveData),
+			environment.AuthAppUri,
+			environment.SimpleloginUri,
+			environment.Safe,
+			environment.DeveloperModeEnabled,
+			environment.IsDevMode,
+			environment.WorkspacePathes,
+			environment.EnvironmentPath,
+			environment.DbServerKey,
+			dbServer);
+	}
+
 	/// <summary>
 	///     Output environment settings in JSON format with masked sensitive data and all known fields
 	/// </summary>
 	private void OutputAsJson(EnvironmentSettings environment, string environmentName = null) {
-		// Create a copy with masked sensitive data and include all settings fields
-		var sanitized = new {
-			name = environmentName,
-			uri = environment.Uri,
-			dbName = environment.DbName,
-			backupFilePath = environment.BackupFilePath,
-			login = environment.Login,
-			password = MaskSensitiveData("Password", environment.Password),
-			maintainer = environment.Maintainer,
-			isNetCore = environment.IsNetCore,
-			clientId = environment.ClientId,
-			clientSecret = MaskSensitiveData("ClientSecret", environment.ClientSecret),
-			authAppUri = environment.AuthAppUri,
-			simpleLoginUri = environment.SimpleloginUri,
-			safe = environment.Safe,
-			developerModeEnabled = environment.DeveloperModeEnabled,
-			isDevMode = environment.IsDevMode,
-			workspacePathes = environment.WorkspacePathes,
-			environmentPath = environment.EnvironmentPath,
-			dbServerKey = environment.DbServerKey,
-			dbServer = environment.DbServer == null
-				? null
-				: new {
-					uri = environment.DbServer.Uri,
-					workingFolder = environment.DbServer.WorkingFolder,
-					login = environment.DbServer.Login,
-					password = MaskSensitiveData("Password", environment.DbServer.Password)
-				}
-		};
-
 		JsonSerializer serializer = new() {
 			Formatting = Formatting.Indented,
 			NullValueHandling = NullValueHandling.Ignore
 		};
 
-		serializer.Serialize(Console.Out, sanitized);
+		serializer.Serialize(Console.Out, BuildEnvironmentResult(environment, environmentName, maskSensitiveData: true));
 		logger.WriteLine(); // Add a newline after JSON
 	}
 
@@ -188,6 +230,18 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 	#endregion
 
 	#region Methods: Public
+
+	/// <summary>
+	/// Returns all registered web application settings using the structured JSON projection shape.
+	/// </summary>
+	/// <param name="maskSensitiveData">Whether password and client secret fields should be masked.</param>
+	/// <returns>The registered environments ordered by name.</returns>
+	public IReadOnlyList<ShowWebAppSettingsResult> GetAllWebAppSettings(bool maskSensitiveData) {
+		return settingsRepository.GetAllEnvironments()
+			.OrderBy(environment => environment.Key, StringComparer.OrdinalIgnoreCase)
+			.Select(environment => BuildEnvironmentResult(environment.Value, environment.Key, maskSensitiveData))
+			.ToList();
+	}
 
 	public override int Execute(AppListOptions options) {
 		try {

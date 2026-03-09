@@ -14,9 +14,25 @@ using k8s.Models;
 namespace Clio.Common.Kubernetes;
 
 /// <summary>
+/// Executes Kubernetes database assertions.
+/// </summary>
+public interface IK8DatabaseAssertion
+{
+	/// <summary>
+	/// Executes database assertions for Kubernetes scope.
+	/// </summary>
+	Task<AssertionResult> ExecuteAsync(
+		string databaseEnginesStr,
+		int minDatabases,
+		bool checkConnect,
+		string checkCapability,
+		string namespaceParam);
+}
+
+/// <summary>
 ///     Executes database assertions for Kubernetes.
 /// </summary>
-public class K8DatabaseAssertion{
+public class K8DatabaseAssertion : IK8DatabaseAssertion{
 	#region Fields: Private
 
 	private readonly IDatabaseCapabilityChecker _capabilityChecker;

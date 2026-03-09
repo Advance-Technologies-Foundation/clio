@@ -75,13 +75,14 @@ Environment variables should use the standard double-underscore form, for exampl
   - clears `bin\Debug\net10.0`
   - runs `dotnet test .\clio.mcp.e2e.csproj`
   - runs all tests when no filter argument is provided
-  - accepts a shorthand filter such as `ClearRedis` and forwards it as a `FullyQualifiedName` filter
+  - accepts a shorthand fixture name such as `ClearRedis` and resolves it to the matching `Clio.Mcp.E2E.*ToolE2ETests` `FullyQualifiedName` filter
   - still accepts an explicit `dotnet test --filter` expression when needed
   - runs `allure generate`
   - runs `allure serve`
 - Examples:
   - `./run-e2e-tests.ps1`
   - `./run-e2e-tests.ps1 ClearRedis`
+  - `./run-e2e-tests.ps1 AssertInfrastructureToolE2ETests`
   - `./run-e2e-tests.ps1 "FullyQualifiedName~ClearRedis"`
 - If `allure` is not on `PATH` after global installation, the Allure docs note that the npm global install directory must be added to `PATH`.
 

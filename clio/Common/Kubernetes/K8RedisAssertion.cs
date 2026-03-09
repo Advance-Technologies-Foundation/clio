@@ -9,6 +9,20 @@ using Clio.Common.Database;
 namespace Clio.Common.Kubernetes
 {
 	/// <summary>
+	/// Executes Kubernetes Redis assertions.
+	/// </summary>
+	public interface IK8RedisAssertion
+	{
+		/// <summary>
+		/// Executes Redis assertions for Kubernetes scope.
+		/// </summary>
+		Task<AssertionResult> ExecuteAsync(
+			bool checkConnect,
+			bool checkPing,
+			string namespaceParam);
+	}
+
+	/// <summary>
 	/// Represents a discovered Redis instance.
 	/// </summary>
 	public class DiscoveredRedis
@@ -24,7 +38,7 @@ namespace Clio.Common.Kubernetes
 	/// <summary>
 	/// Executes Redis assertions for Kubernetes.
 	/// </summary>
-	public class K8RedisAssertion
+	public class K8RedisAssertion : IK8RedisAssertion
 	{
 		private readonly IKubernetesClient _k8sClient;
 		private readonly IRedisDatabaseSelector _redisDatabaseSelector;

@@ -6,9 +6,24 @@ using Clio.Common.Assertions;
 namespace Clio.Common.Kubernetes
 {
 	/// <summary>
+	/// Validates Kubernetes context information for assertion workflows.
+	/// </summary>
+	public interface IK8ContextValidator
+	{
+		/// <summary>
+		/// Validates the current Kubernetes context against the requested expectations.
+		/// </summary>
+		Task<AssertionResult> ValidateContextAsync(
+			string expectedContext = null,
+			string contextRegex = null,
+			string expectedCluster = null,
+			string expectedNamespace = null);
+	}
+
+	/// <summary>
 	/// Validates Kubernetes context before running assertions.
 	/// </summary>
-	public class K8ContextValidator
+	public class K8ContextValidator : IK8ContextValidator
 	{
 		private readonly IKubernetesClient _k8sClient;
 

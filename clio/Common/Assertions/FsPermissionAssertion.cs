@@ -8,9 +8,20 @@ using Clio.UserEnvironment;
 namespace Clio.Common.Assertions
 {
 	/// <summary>
+	/// Validates filesystem permissions for assertion workflows.
+	/// </summary>
+	public interface IFsPermissionAssertion
+	{
+		/// <summary>
+		/// Validates that the requested identity has the required permission on the path.
+		/// </summary>
+		AssertionResult Execute(string pathOrSettingKey, string userIdentity, string requiredPermission);
+	}
+
+	/// <summary>
 	/// Handles filesystem permission validation assertions.
 	/// </summary>
-	public class FsPermissionAssertion
+	public class FsPermissionAssertion : IFsPermissionAssertion
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly ILogger _logger;
