@@ -43,7 +43,7 @@ public sealed class PassingInfrastructureServiceTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Prefers a fully passing Kubernetes deployment target and propagates the discovered Redis database index into the recommended deploy-creatio arguments.")]
+	[Description("Prefers a fully passing Kubernetes deployment target and returns a deploy-creatio recommendation that no longer includes disabled MCP-only arguments.")]
 	public async Task ExecuteAsync_Should_Recommend_Kubernetes_When_K8_Database_And_Redis_Pass()
 	{
 		// Arrange
@@ -63,10 +63,10 @@ public sealed class PassingInfrastructureServiceTests
 			because: "a passing Kubernetes target should produce a deployment recommendation");
 		result.RecommendedDeployment!.DeploymentMode.Should().Be("kubernetes",
 			because: "Kubernetes should be preferred when both Kubernetes database and Redis are passing");
-		result.RecommendedDeployment.RedisDb.Should().Be(2,
-			because: "the discovered first available Redis database index should flow into the recommendation");
-		result.RecommendedDeployment.DeployCreatioArguments.Db.Should().Be("pg",
-			because: "PostgreSQL recommendations should be normalized to the deploy-creatio pg argument");
+		result.RecommendedDeployment.DeployCreatioArguments.DbServerName.Should().BeNull(
+			because: "Kubernetes recommendations should not inject a local db-server-name into deploy-creatio");
+		result.RecommendedDeployment.DeployCreatioArguments.RedisServerName.Should().BeNull(
+			because: "Kubernetes recommendations should not inject a local redis-server-name into deploy-creatio");
 		result.RecommendedByEngine.Postgres.Should().NotBeNull(
 			because: "the service should provide a per-engine recommendation for PostgreSQL when Kubernetes PostgreSQL is passing");
 	}
@@ -123,8 +123,10 @@ public sealed class PassingInfrastructureServiceTests
 			because: "the recommended local deployment should preserve the selected local DB server name");
 		result.RecommendedDeployment.RedisServerName.Should().Be("cache-b",
 			because: "the configured default local Redis server should be preferred");
-		result.RecommendedDeployment.RedisDb.Should().Be(7,
-			because: "the recommended local Redis database should come from the discovered first available DB on the selected Redis server");
+		result.RecommendedDeployment.DeployCreatioArguments.DbServerName.Should().Be("pg-main",
+			because: "the deploy-creatio argument bundle should contain the selected local DB server name");
+		result.RecommendedDeployment.DeployCreatioArguments.RedisServerName.Should().Be("cache-b",
+			because: "the deploy-creatio argument bundle should contain the selected local Redis server name");
 		result.RecommendedByEngine.Postgres!.DbServerName.Should().Be("pg-main",
 			because: "per-engine PostgreSQL recommendations should use the matching passing local database");
 		result.RecommendedByEngine.Mssql!.DbServerName.Should().Be("sql-main",

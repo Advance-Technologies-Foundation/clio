@@ -26,4 +26,10 @@ public class StubIISSiteDetector : IIISSiteDetector
 		await Task.CompletedTask;
 		return null;
 	}
+
+	public async Task<IReadOnlyCollection<int>> GetBoundPorts(int rangeStart, int rangeEnd)
+	{
+		await Task.CompletedTask;
+		return [];
+	}
 }

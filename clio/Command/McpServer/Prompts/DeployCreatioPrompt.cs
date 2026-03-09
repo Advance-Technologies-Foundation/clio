@@ -29,8 +29,10 @@ public static class DeployCreatioPrompt
 		$"""
 		 Before calling `{InstallerCommandTool.DeployCreatioToolName}`, first run `assert-infrastructure`
 		 to review all passing and failing infrastructure, then run `show-passing-infrastructure` to get
-		 deployable choices and the recommended deployment bundle.
+		 deployable choices and the recommended `dbServerName` and `redisServerName` values.
+		 If you are deploying locally to IIS, run `{FindEmptyIisPortTool.FindEmptyIisPortToolName}` to pick
+		 a safe `sitePort` between {FindEmptyIisPortTool.RangeStart} and {FindEmptyIisPortTool.RangeEnd}.
 		 After that preflight, call `{InstallerCommandTool.DeployCreatioToolName}` with site name `{siteName}`,
-		 zip file `{zipFile}`, site port `{sitePort}`, and the selected or recommended infrastructure arguments.
+		 zip file `{zipFile}`, site port `{sitePort}`, and the selected or recommended server-name arguments.
 		 """;
 }

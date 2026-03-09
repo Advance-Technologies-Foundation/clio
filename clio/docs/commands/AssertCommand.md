@@ -14,9 +14,9 @@ clio assert <scope> [options]
 
 ### Required Arguments
 
-| Argument | Description                                    | Values  |
-|----------|------------------------------------------------|---------|
-| `scope`  | Type of resources to validate                  | k8, local, fs  |
+| Argument | Description                   | Values        |
+|----------|-------------------------------|---------------|
+| `scope`  | Type of resources to validate | k8, local, fs |
 
 ### Common Options
 | Argument | Short | Default | Description | Example |
@@ -34,12 +34,12 @@ clio assert <scope> [options]
 | `--namespace`     | -     | -       | Expected Kubernetes namespace            | `--namespace default`           |
 
 #### Database Assertions
-| Argument       | Short | Default | Description                                      | Example                    |
-|----------------|-------|---------|--------------------------------------------------|----------------------------|
-| `--db`         | -     | -       | Database engines (comma-separated)               | `--db postgres,mssql`      |
-| `--db-min`     | -     | 1       | Minimum number of engines required               | `--db-min 2`               |
-| `--db-connect` | -     | false   | Validate TCP connectivity                        | `--db-connect`             |
-| `--db-check`   | -     | -       | Capability check (version). PostgreSQL major version 16+ is always enforced in `k8`/`local`; `--db-check version` also returns version in output. | `--db-check version`       |
+| Argument       | Short | Default | Description                                                                                                                                       | Example               |
+|----------------|-------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------|
+| `--db`         | -     | -       | Database engines (comma-separated)                                                                                                                | `--db postgres,mssql` |
+| `--db-min`     | -     | 1       | Minimum number of engines required                                                                                                                | `--db-min 2`          |
+| `--db-connect` | -     | false   | Validate TCP connectivity                                                                                                                         | `--db-connect`        |
+| `--db-check`   | -     | -       | Capability check (version). PostgreSQL major version 16+ is always enforced in `k8`/`local`; `--db-check version` also returns version in output. | `--db-check version`  |
 
 #### Redis Assertions
 | Argument          | Short | Default | Description                        | Example              |
@@ -55,21 +55,21 @@ Strict Redis auth policy:
 ### Local Infrastructure Options
 
 #### Database Assertions
-| Argument            | Short | Default | Description                                      | Example                               |
-|---------------------|-------|---------|--------------------------------------------------|---------------------------------------|
-| `--db`              | -     | -       | Database engines (comma-separated). Required for local DB checks | `--db postgres`           |
-| `--db-server-name`  | -     | -       | Local DB server configuration key from appsettings.json. Optional; when omitted, all enabled local DB servers are considered. | `--db-server-name my-local-postgres` |
-| `--db-min`          | -     | 1       | Minimum number of engines required               | `--db-min 1`                          |
-| `--db-connect`      | -     | false   | Validate connectivity for configured local server | `--db-connect`                       |
-| `--db-check`        | -     | -       | Capability check (version)                       | `--db-check version`                 |
+| Argument           | Short | Default | Description                                                                                                                   | Example                              |
+|--------------------|-------|---------|-------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| `--db`             | -     | -       | Database engines (comma-separated). Required for local DB checks                                                              | `--db postgres`                      |
+| `--db-server-name` | -     | -       | Local DB server configuration key from appsettings.json. Optional; when omitted, all enabled local DB servers are considered. | `--db-server-name my-local-postgres` |
+| `--db-min`         | -     | 1       | Minimum number of engines required                                                                                            | `--db-min 1`                         |
+| `--db-connect`     | -     | false   | Validate connectivity for configured local server                                                                             | `--db-connect`                       |
+| `--db-check`       | -     | -       | Capability check (version)                                                                                                    | `--db-check version`                 |
 
 #### Redis Assertions
-| Argument          | Short | Default | Description                        | Example              |
-|-------------------|-------|---------|------------------------------------|----------------------|
-| `--redis`         | -     | false   | Assert local Redis presence. Resolution order: `--redis-server-name` -> `defaultRedis` -> single enabled redis server -> `localhost:6379` fallback when `redis` section is absent | `--redis` |
-| `--redis-server-name` | - | - | Local Redis server configuration key from appsettings.json (requires `--redis`) | `--redis-server-name redis-dev` |
-| `--redis-connect` | -     | false   | Validate TCP connectivity          | `--redis-connect`    |
-| `--redis-ping`    | -     | false   | Execute Redis PING command         | `--redis-ping`       |
+| Argument              | Short | Default | Description                                                                                                                                                                       | Example                         |
+|-----------------------|-------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `--redis`             | -     | false   | Assert local Redis presence. Resolution order: `--redis-server-name` -> `defaultRedis` -> single enabled redis server -> `localhost:6379` fallback when `redis` section is absent | `--redis`                       |
+| `--redis-server-name` | -     | -       | Local Redis server configuration key from appsettings.json (requires `--redis`)                                                                                                   | `--redis-server-name redis-dev` |
+| `--redis-connect`     | -     | false   | Validate TCP connectivity                                                                                                                                                         | `--redis-connect`               |
+| `--redis-ping`        | -     | false   | Execute Redis PING command                                                                                                                                                        | `--redis-ping`                  |
 
 ### Filesystem Options (Windows Only)
 

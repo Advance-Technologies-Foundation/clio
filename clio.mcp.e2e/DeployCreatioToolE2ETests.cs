@@ -6,6 +6,7 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
+using System.Text.Json;
 
 namespace Clio.Mcp.E2E;
 
@@ -43,6 +44,11 @@ public sealed class DeployCreatioToolE2ETests
 			because: "the deploy-creatio description should tell the agent to review full infrastructure first");
 		tool.Description.Should().Contain("show-passing-infrastructure",
 			because: "the deploy-creatio description should tell the agent to fetch deployable recommendations second");
+		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
+		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
+		argsSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName"],
+			because: "the real MCP server should only advertise the five approved deploy-creatio arguments inside the args wrapper");
 	}
 
 	[Test]

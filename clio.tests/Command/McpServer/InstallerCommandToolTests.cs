@@ -55,44 +55,25 @@ public sealed class InstallerCommandToolTests
 			because: "the tool description should direct agents to run the full infrastructure assertion first");
 		text.Should().Contain("show-passing-infrastructure",
 			because: "the tool description should direct agents to run passing-infrastructure discovery before deployment");
+		text.Should().Contain("find-empty-iis-port",
+			because: "the tool description should tell agents how to choose a safe local IIS sitePort");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps the full deploy-creatio MCP argument contract into PfInstallerOptions and forces silent mode for non-interactive MCP execution.")]
-	public void DeployCreatio_Should_Map_All_Arguments_And_Force_Silent_Mode()
+	[Description("Maps the reduced deploy-creatio MCP argument contract into PfInstallerOptions and forces silent mode for non-interactive MCP execution.")]
+	public void DeployCreatio_Should_Map_Allowed_Arguments_And_Force_Silent_Mode()
 	{
 		// Arrange
 		TestLogger logger = new();
 		FakeInstallerCommand command = new(logger, exitCode: 7);
 		InstallerCommandTool tool = new(command, logger);
 		DeployCreatioArgs args = new(
-			Environment: "sandbox",
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
 			SitePort: 8080,
-			Db: "mssql",
 			DbServerName: "sql-main",
-			RedisServerName: "redis-main",
-			RedisDb: 5,
-			DropIfExists: true,
-			DisableResetPassword: false,
-			Platform: "net6",
-			Product: "Studio",
-			DeploymentMethod: "dotnet",
-			NoIis: true,
-			AppPath: @"C:\inetpub\creatio-app",
-			UseHttps: true,
-			CertificatePath: @"C:\certs\site.pfx",
-			CertificatePassword: "pfx-secret",
-			AutoRun: false,
-			Uri: "https://sandbox.example",
-			Login: "Supervisor",
-			Password: "Password1!",
-			ClientId: "client-id",
-			ClientSecret: "client-secret",
-			AuthAppUri: "https://auth.example",
-			IsNetCore: true);
+			RedisServerName: "redis-main");
 
 		// Act
 		CommandExecutionResult result = tool.DeployCreatio(args);
@@ -102,58 +83,32 @@ public sealed class InstallerCommandToolTests
 			because: "the MCP tool should return the real command execution result instead of a stubbed maintenance response");
 		command.ReceivedOptions.Should().NotBeNull(
 			because: "the deploy-creatio MCP tool should execute the installer command with mapped options");
-		command.ReceivedOptions!.Environment.Should().Be("sandbox",
-			because: "registered environment selection should flow through to the underlying command");
+		command.ReceivedOptions!.Environment.Should().BeNull(
+			because: "the reduced MCP tool contract should no longer accept an environment argument");
 		command.ReceivedOptions.SiteName.Should().Be("creatio-app",
 			because: "site-name should map directly into PfInstallerOptions");
 		command.ReceivedOptions.ZipFile.Should().Be(@"C:\temp\creatio.zip",
 			because: "zip-file should map directly into PfInstallerOptions");
 		command.ReceivedOptions.SitePort.Should().Be(8080,
 			because: "site-port should map directly into PfInstallerOptions");
-		command.ReceivedOptions.DB.Should().Be("mssql",
-			because: "db should preserve the caller-selected database engine");
 		command.ReceivedOptions.DbServerName.Should().Be("sql-main",
 			because: "local DB server selection should be forwarded when provided");
 		command.ReceivedOptions.RedisServerName.Should().Be("redis-main",
 			because: "local Redis server selection should be forwarded when provided");
-		command.ReceivedOptions.RedisDb.Should().Be(5,
-			because: "the selected Redis database index should be forwarded when provided");
+		command.ReceivedOptions.RedisDb.Should().Be(-1,
+			because: "the reduced MCP contract should keep automatic Redis DB detection");
+		command.ReceivedOptions.DisableResetPassword.Should().BeTrue(
+			because: "the MCP wrapper should preserve the CLI default and disable forced password reset unless explicitly changed in code");
+		command.ReceivedOptions.DB.Should().BeNull(
+			because: "the reduced MCP contract should let the installer detect the database type from the build");
 		command.ReceivedOptions.DropIfExists.Should().BeTrue(
-			because: "drop-if-exists should preserve explicit destructive intent from the caller");
-		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
-			because: "disable-reset-password should preserve explicit overrides");
-		command.ReceivedOptions.Platform.Should().Be("net6",
-			because: "platform should map directly into PfInstallerOptions");
-		command.ReceivedOptions.Product.Should().Be("Studio",
-			because: "product should map directly into PfInstallerOptions");
-		command.ReceivedOptions.DeploymentMethod.Should().Be("dotnet",
-			because: "deployment method should map directly into PfInstallerOptions");
-		command.ReceivedOptions.NoIIS.Should().BeTrue(
-			because: "no-iis should map directly into PfInstallerOptions");
-		command.ReceivedOptions.AppPath.Should().Be(@"C:\inetpub\creatio-app",
-			because: "app-path should map directly into PfInstallerOptions");
-		command.ReceivedOptions.UseHttps.Should().BeTrue(
-			because: "use-https should map directly into PfInstallerOptions");
-		command.ReceivedOptions.CertificatePath.Should().Be(@"C:\certs\site.pfx",
-			because: "certificate-path should map directly into PfInstallerOptions");
-		command.ReceivedOptions.CertificatePassword.Should().Be("pfx-secret",
-			because: "certificate-password should map directly into PfInstallerOptions");
-		command.ReceivedOptions.AutoRun.Should().BeFalse(
-			because: "auto-run should preserve explicit overrides");
-		command.ReceivedOptions.Uri.Should().Be("https://sandbox.example",
-			because: "inherited URI auth settings should remain available through MCP");
-		command.ReceivedOptions.Login.Should().Be("Supervisor",
-			because: "inherited login settings should remain available through MCP");
-		command.ReceivedOptions.Password.Should().Be("Password1!",
-			because: "inherited password settings should remain available through MCP");
-		command.ReceivedOptions.ClientId.Should().Be("client-id",
-			because: "inherited OAuth client ID should remain available through MCP");
-		command.ReceivedOptions.ClientSecret.Should().Be("client-secret",
-			because: "inherited OAuth client secret should remain available through MCP");
-		command.ReceivedOptions.AuthAppUri.Should().Be("https://auth.example",
-			because: "inherited OAuth app URI should remain available through MCP");
-		command.ReceivedOptions.IsNetCore.Should().BeTrue(
-			because: "inherited runtime selection should remain available through MCP");
+			because: "the reduced MCP contract should use drop-if-exists overrides");
+		command.ReceivedOptions.DeploymentMethod.Should().BeNull(
+			because: "the reduced MCP contract should no longer expose deployment-method overrides");
+		command.ReceivedOptions.AutoRun.Should().BeTrue(
+			because: "the MCP wrapper should still apply the CLI auto-run default even though the argument is no longer caller-configurable");
+		command.ReceivedOptions.Uri.Should().BeNull(
+			because: "the reduced MCP contract should no longer expose inherited auth arguments");
 		command.ReceivedOptions.IsSilent.Should().BeTrue(
 			because: "MCP execution must never block on interactive console input");
 		result.Output.Should().ContainSingle(
@@ -166,40 +121,19 @@ public sealed class InstallerCommandToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps db-server-name optional and applies CLI defaults that preserve the Kubernetes-first deployment path when local selections are omitted.")]
-	public void DeployCreatio_Should_Keep_DbServerName_Optional_And_Apply_Cli_Defaults()
+	[Description("Keeps db-server-name optional and limits the deploy-creatio MCP argument type to the five approved fields.")]
+	public void DeployCreatio_Should_Keep_DbServerName_Optional_And_Expose_Only_Approved_Fields()
 	{
 		// Arrange
 		TestLogger logger = new();
 		FakeInstallerCommand command = new(logger, exitCode: 0);
 		InstallerCommandTool tool = new(command, logger);
 		DeployCreatioArgs args = new(
-			Environment: null,
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
 			SitePort: 5000,
-			Db: null,
 			DbServerName: null,
-			RedisServerName: null,
-			RedisDb: null,
-			DropIfExists: null,
-			DisableResetPassword: null,
-			Platform: null,
-			Product: null,
-			DeploymentMethod: null,
-			NoIis: null,
-			AppPath: null,
-			UseHttps: null,
-			CertificatePath: null,
-			CertificatePassword: null,
-			AutoRun: null,
-			Uri: null,
-			Login: null,
-			Password: null,
-			ClientId: null,
-			ClientSecret: null,
-			AuthAppUri: null,
-			IsNetCore: null);
+			RedisServerName: null);
 
 		// Act
 		tool.DeployCreatio(args);
@@ -211,16 +145,9 @@ public sealed class InstallerCommandToolTests
 			because: "db-server-name must remain optional so Kubernetes can stay the default deployment path");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
-		command.ReceivedOptions.DisableResetPassword.Should().BeTrue(
-			because: "disable-reset-password should keep the CLI default when omitted");
-		command.ReceivedOptions.DeploymentMethod.Should().Be("auto",
-			because: "deployment method should keep the CLI default when omitted");
-		command.ReceivedOptions.NoIIS.Should().BeFalse(
-			because: "no-iis should default to false when omitted");
-		command.ReceivedOptions.UseHttps.Should().BeFalse(
-			because: "use-https should default to false when omitted");
-		command.ReceivedOptions.AutoRun.Should().BeTrue(
-			because: "auto-run should keep the CLI default when omitted");
+		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
+			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName"],
+			because: "the MCP deploy-creatio argument type should expose only the five approved arguments");
 	}
 
 	[Test]
@@ -238,6 +165,8 @@ public sealed class InstallerCommandToolTests
 			because: "the prompt should direct the agent to inspect full infrastructure before deployment");
 		prompt.Should().Contain("show-passing-infrastructure",
 			because: "the prompt should direct the agent to retrieve deployable recommendations before deployment");
+		prompt.Should().Contain("find-empty-iis-port",
+			because: "the prompt should direct the agent to discover a safe local IIS port when sitePort selection matters");
 		prompt.Should().Contain("deploy-creatio",
 			because: "the prompt should conclude with the actual deployment call");
 	}

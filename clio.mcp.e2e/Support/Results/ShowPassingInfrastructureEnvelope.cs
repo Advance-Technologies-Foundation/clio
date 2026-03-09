@@ -54,14 +54,11 @@ internal sealed record ShowPassingInfrastructureRecommendationEnvelope(
 	[property: JsonPropertyName("dbEngine")] string DbEngine,
 	[property: JsonPropertyName("dbServerName")] string? DbServerName,
 	[property: JsonPropertyName("redisServerName")] string? RedisServerName,
-	[property: JsonPropertyName("redisDb")] int RedisDb,
 	[property: JsonPropertyName("deployCreatioArguments")] ShowPassingInfrastructureDeployCreatioArgumentsEnvelope DeployCreatioArguments);
 
 internal sealed record ShowPassingInfrastructureDeployCreatioArgumentsEnvelope(
-	[property: JsonPropertyName("db")] string Db,
 	[property: JsonPropertyName("dbServerName")] string? DbServerName,
-	[property: JsonPropertyName("redisServerName")] string? RedisServerName,
-	[property: JsonPropertyName("redisDb")] int RedisDb);
+	[property: JsonPropertyName("redisServerName")] string? RedisServerName);
 
 internal static class ShowPassingInfrastructureResultParser
 {

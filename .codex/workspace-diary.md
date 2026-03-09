@@ -729,3 +729,31 @@ Decision: Replaced the `deploy-creatio` maintenance stub with real `InstallerCom
 Discovery: The deployment selection flow needed a purpose-built passing-only contract instead of reusing the diagnostic assert payload, and the real MCP server returns these structured tool results through text content wrappers that the E2E parser must validate before deserializing.
 Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Tools/ShowPassingInfrastructureTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Command/McpServer/Prompts/ShowPassingInfrastructurePrompt.cs, clio/Common/Assertions/PassingInfrastructureService.cs, clio/Common/Assertions/ShowPassingInfrastructureResult.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.tests/Command/McpServer/ShowPassingInfrastructureToolTests.cs, clio.tests/Common/Assertions/PassingInfrastructureServiceTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio.mcp.e2e/ShowPassingInfrastructureToolE2ETests.cs, clio.mcp.e2e/Support/Results/ShowPassingInfrastructureEnvelope.cs, .codex/workspace-diary.md
 Impact: MCP callers can now inspect failing infrastructure, inspect passing deployable infrastructure, and then call `deploy-creatio` with a concrete recommended bundle instead of guessing `dbServerName` and `redisDb`.
+
+## 2026-03-09 23:07 – Reduce deploy-creatio MCP inputs to five fields
+Context: User wanted the MCP-facing `deploy-creatio` tool to accept only `db-server-name`, `redis-server-name`, `ZipFile`, `SiteName`, and `SitePort`, with all other MCP arguments disabled.
+Decision: Reduced `DeployCreatioArgs` to the five approved fields, kept `IsSilent = true` plus `RedisDb = -1` internally, and trimmed `show-passing-infrastructure` recommendation bundles so they only advertise MCP arguments that `deploy-creatio` still accepts.
+Discovery: The underlying installer does not need an MCP `db` argument when `ZipFile` is supplied because it detects the database type from the unpacked build; the real MCP server advertises the deploy input schema under an `args` wrapper, so E2E validation must inspect nested properties rather than expecting flattened tool parameters.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Common/Assertions/ShowPassingInfrastructureResult.cs, clio/Common/Assertions/PassingInfrastructureService.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.tests/Command/McpServer/ShowPassingInfrastructureToolTests.cs, clio.tests/Common/Assertions/PassingInfrastructureServiceTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio.mcp.e2e/ShowPassingInfrastructureToolE2ETests.cs, clio.mcp.e2e/Support/Results/ShowPassingInfrastructureEnvelope.cs, .codex/workspace-diary.md
+Impact: MCP callers now see a much narrower deploy contract, while the passing-infrastructure discovery payload remains aligned with the reduced tool input surface.
+
+## 2026-03-09 23:20 – Fix deploy-creatio MCP AutoRun null regression
+Context: A real deploy-creatio MCP request failed after successful unzip and PostgreSQL restore with `Nullable object must have a value.`
+Decision: Set `AutoRun = true` in the deploy-creatio MCP wrapper and changed the installer service to use a null-safe `options.AutoRun == true` check.
+Discovery: The reduced five-argument MCP wrapper manually constructs `PfInstallerOptions`, so CLI parser defaults are bypassed and nullable options must be assigned explicitly.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, .codex/workspace-diary.md
+Impact: deploy-creatio MCP calls no longer crash at the auto-launch step when using the reduced contract.
+
+## 2026-03-09 23:55 – Add hardened find-empty-iis-port MCP tool
+Context: User needed an MCP tool that helps agents choose a safe local IIS `sitePort` in the fixed `40000-42000` range before `deploy-creatio`.
+Decision: Added a read-only MCP tool plus IIS port discovery services, then hardened the result contract to expose only the recommended port and occupancy counts while failing closed on scan errors.
+Discovery: Returning full bound-port lists and raw exception text leaked unnecessary host topology, and cross-platform unit tests required injected platform detection because IIS discovery is Windows-only.
+Files: clio/Common/IIS/FindAvailableIisPortResult.cs, clio/Common/IIS/AvailableIisPortService.cs, clio/Common/IIS/IPlatformDetector.cs, clio/Common/IIS/TcpPortReservationReader.cs, clio/Common/IIS/IIISSiteDetector.cs, clio/Common/IIS/WindowsIISSiteDetector.cs, clio/Command/McpServer/Tools/FindEmptyIisPortTool.cs, clio/Command/McpServer/Prompts/FindEmptyIisPortPrompt.cs, clio.tests/Common/IIS/AvailableIisPortServiceTests.cs, clio.tests/Command/McpServer/FindEmptyIisPortToolTests.cs, clio.mcp.e2e/FindEmptyIisPortToolE2ETests.cs, clio.mcp.e2e/Support/Results/FindAvailableIisPortEnvelope.cs, .codex/workspace-diary.md
+Impact: Agents can now discover a safe local IIS deployment port through MCP without guessing, while the tool avoids leaking host network details and has both unit and real server E2E coverage.
+
+## 2026-03-10 00:04 – Restore disable-reset-password default in deploy-creatio MCP
+Context: User reported that password-reset disabling no longer worked through the reduced five-argument `deploy-creatio` MCP tool.
+Decision: Set `DisableResetPassword = true` explicitly in the MCP wrapper so it matches the CLI parser default that is bypassed by manual `PfInstallerOptions` construction, and locked that behavior with a unit test.
+Discovery: The CLI option default lives on `PfInstallerOptions`, but the MCP wrapper builds the options object directly, so any omitted boolean defaults silently fall back to `false` unless they are assigned in code.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, .codex/workspace-diary.md
+Impact: `deploy-creatio` MCP now preserves the existing CLI behavior for forced-password-reset disabling instead of silently skipping it.

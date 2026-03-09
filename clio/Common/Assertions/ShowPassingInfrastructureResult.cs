@@ -183,10 +183,6 @@ public sealed record ShowPassingInfrastructureRecommendation(
 	[property: Description("redis-server-name argument to pass to deploy-creatio when local mode is recommended")]
 	string? RedisServerName,
 
-	[property: JsonPropertyName("redisDb")]
-	[property: Description("redis-db argument to pass to deploy-creatio")]
-	int RedisDb,
-
 	[property: JsonPropertyName("deployCreatioArguments")]
 	[property: Description("Infrastructure-selection arguments that should be merged into the final deploy-creatio MCP call")]
 	ShowPassingInfrastructureDeployCreatioArguments DeployCreatioArguments
@@ -196,19 +192,11 @@ public sealed record ShowPassingInfrastructureRecommendation(
 /// Partial deploy-creatio MCP arguments derived from passing infrastructure selection.
 /// </summary>
 public sealed record ShowPassingInfrastructureDeployCreatioArguments(
-	[property: JsonPropertyName("db")]
-	[property: Description("Database engine argument for deploy-creatio")]
-	string Db,
-
 	[property: JsonPropertyName("dbServerName")]
 	[property: Description("Optional local db-server-name argument for deploy-creatio")]
 	string? DbServerName,
 
 	[property: JsonPropertyName("redisServerName")]
 	[property: Description("Optional local redis-server-name argument for deploy-creatio")]
-	string? RedisServerName,
-
-	[property: JsonPropertyName("redisDb")]
-	[property: Description("Suggested redis-db argument for deploy-creatio")]
-	int RedisDb
+	string? RedisServerName
 );

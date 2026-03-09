@@ -404,17 +404,14 @@ public sealed class PassingInfrastructureService : IPassingInfrastructureService
 	{
 		bool isLocal = string.Equals(deploymentMode, LocalDeploymentMode, StringComparison.OrdinalIgnoreCase);
 		ShowPassingInfrastructureDeployCreatioArguments arguments = new(
-			NormalizeDeployCreatioEngine(database.Engine),
 			isLocal ? database.DbServerName : null,
-			isLocal ? redis.RedisServerName : null,
-			redis.FirstAvailableDb);
+			isLocal ? redis.RedisServerName : null);
 
 		return new ShowPassingInfrastructureRecommendation(
 			deploymentMode,
 			database.Engine,
 			arguments.DbServerName,
 			arguments.RedisServerName,
-			arguments.RedisDb,
 			arguments);
 	}
 
@@ -465,11 +462,6 @@ public sealed class PassingInfrastructureService : IPassingInfrastructureService
 			$"localRedisServers={local.RedisServers.Count}, " +
 			$"filesystemAvailable={filesystem.IsAvailable}, " +
 			$"recommendedMode={(recommendedDeployment?.DeploymentMode ?? "none")}.";
-	}
-
-	private static string NormalizeDeployCreatioEngine(string engine)
-	{
-		return string.Equals(engine, "postgres", StringComparison.OrdinalIgnoreCase) ? "pg" : "mssql";
 	}
 
 	private static string? TryReadString(IDictionary<string, object> values, string key)

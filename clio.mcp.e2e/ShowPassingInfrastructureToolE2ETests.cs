@@ -130,10 +130,12 @@ public sealed class ShowPassingInfrastructureToolE2ETests
 			because: "recommendations should state the database engine they target");
 		recommendation.DeployCreatioArguments.Should().NotBeNull(
 			because: "recommendations should include the deploy-creatio argument bundle");
-		recommendation.DeployCreatioArguments.Db.Should().NotBeNullOrWhiteSpace(
-			because: "deploy-creatio recommendations should include the normalized db argument");
-		recommendation.DeployCreatioArguments.RedisDb.Should().BeGreaterThanOrEqualTo(0,
-			because: "deploy-creatio recommendations should include the discovered Redis DB index");
+		(recommendation.DeployCreatioArguments.DbServerName is null ||
+		 !string.IsNullOrWhiteSpace(recommendation.DeployCreatioArguments.DbServerName)).Should().BeTrue(
+			because: "deploy-creatio recommendations should only expose an optional local db-server-name argument");
+		(recommendation.DeployCreatioArguments.RedisServerName is null ||
+		 !string.IsNullOrWhiteSpace(recommendation.DeployCreatioArguments.RedisServerName)).Should().BeTrue(
+			because: "deploy-creatio recommendations should only expose an optional local redis-server-name argument");
 	}
 
 	private sealed record ArrangeContext(

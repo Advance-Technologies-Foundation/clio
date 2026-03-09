@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Microsoft.Web.Administration;
 
 namespace Clio.Common.IIS;
 
@@ -500,5 +501,39 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 		});
 	}
 
+	/// <inheritdoc />
+	public async Task<IReadOnlyCollection<int>> GetBoundPorts(int rangeStart, int rangeEnd)
+	{
+		return await Task.Run<IReadOnlyCollection<int>>(() =>
+		{
+			using ServerManager serverManager = new();
+			return serverManager.Sites
+				.SelectMany(site => site.Bindings)
+				.Select(TryGetBindingPort)
+				.Where(port => port.HasValue)
+				.Select(port => port!.Value)
+				.Where(port => port >= rangeStart && port <= rangeEnd)
+				.Distinct()
+				.OrderBy(port => port)
+				.ToArray();
+		});
+	}
+
 	#endregion
+
+	private static int? TryGetBindingPort(Binding binding)
+	{
+		if (binding.EndPoint is not null)
+		{
+			return binding.EndPoint.Port;
+		}
+
+		string[] parts = (binding.BindingInformation ?? string.Empty).Split(':');
+		if (parts.Length >= 2 && int.TryParse(parts[1], out int port))
+		{
+			return port;
+		}
+
+		return null;
+	}
 }

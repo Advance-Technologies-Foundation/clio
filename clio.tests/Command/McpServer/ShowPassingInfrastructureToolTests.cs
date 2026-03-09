@@ -50,16 +50,14 @@ public sealed class ShowPassingInfrastructureToolTests
 				"postgres",
 				null,
 				null,
-				3,
-				new ShowPassingInfrastructureDeployCreatioArguments("pg", null, null, 3)),
+				new ShowPassingInfrastructureDeployCreatioArguments(null, null)),
 			new ShowPassingInfrastructureRecommendationsByEngine(
 				new ShowPassingInfrastructureRecommendation(
 					"kubernetes",
 					"postgres",
 					null,
 					null,
-					3,
-					new ShowPassingInfrastructureDeployCreatioArguments("pg", null, null, 3)),
+					new ShowPassingInfrastructureDeployCreatioArguments(null, null)),
 				null));
 		service.ExecuteAsync().Returns(expectedResult);
 		ShowPassingInfrastructureTool tool = new(service);
