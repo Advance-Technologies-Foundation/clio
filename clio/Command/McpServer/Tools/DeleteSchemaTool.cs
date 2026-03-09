@@ -11,7 +11,8 @@ public class DeleteSchemaTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<DeleteSchemaOptions>(command, logger, commandResolver) {
 
-	[McpServerTool(Name = "delete-schema", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	internal const string DeleteSchemaToolName = "delete-schema";
+	[McpServerTool(Name = DeleteSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("""
 				 Deletes a schema from a Creatio environment, but only when the schema belongs to
 				 one of the packages in the specified local workspace.

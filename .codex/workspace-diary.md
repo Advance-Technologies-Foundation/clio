@@ -588,6 +588,41 @@ Discovery: The repo already had an explicit skill-trigger section for command do
 Files: AGENTS.md, clio/Command/McpServer/AGENTS.md, clio.mcp.e2e/AGENTS.md, .codex/workspace-diary.md
 Impact: Future Codex runs no longer need to rely on implicit skill-description matching for MCP work; the repository instructions now call out the MCP skills directly.
 
+## 2026-03-09 19:02 – Add create-workspace MCP tool and workspaces-root fallback
+Context: User requested an MCP surface for `clio create-workspace` that creates empty local workspaces, plus command support for an explicit base directory or a global configured workspaces root.
+Decision: Added `Settings.workspaces-root`, extended `create-workspace --empty` with `--directory`, kept the MCP tool thin by mapping directly to command options, and covered the feature with command unit tests, MCP mapping tests, and MCP E2E tests. The MCP prompt was given a distinct name and the E2E client was aligned to the scalar MCP argument name `workspaceName`.
+Discovery: `WorkspacePathes` belongs to environment settings and is not the right source for global empty-workspace creation; the real CLI path works with `--directory`, while the MCP client binds scalar tool arguments by C# parameter name rather than kebab-case.
+Files: clio/Environment/ConfigurationOptions.cs, clio/Environment/ISettingsRepository.cs, clio/Command/CreateWorkspaceCommand.cs, clio/Command/McpServer/Tools/CreateWorkspaceTool.cs, clio/Command/McpServer/Prompts/CreateWorkspacePrompt.cs, clio/help/en/create-workspace.txt, clio/docs/commands/create-workspace.md, clio/Commands.md, clio.tests/Command/CreateWorkspaceCommand.Tests.cs, clio.tests/Command/McpServer/CreateWorkspaceToolTests.cs, clio.mcp.e2e/CreateWorkspaceToolE2ETests.cs, clio.mcp.e2e/Support/Results/McpCommandExecutionParser.cs, spec/create-workspace-mcp/plan.md, .codex/workspace-diary.md
+Impact: Future MCP work for local filesystem commands can follow a proven pattern: keep command path resolution in the command layer, use explicit tool-name constants, and validate E2E argument names against the real MCP binding behavior.
+
+## 2026-03-09 19:18 – Replace create-workspace path calls with filesystem abstraction
+Context: User asked to address CLIO003 warnings in `CreateWorkspaceCommand` and add XML documentation for `ISettingsRepository`.
+Decision: Extended `IFileSystem` with the minimal path operations needed by `CreateWorkspaceCommand` (`CombinePaths`, `GetFullPath`, `IsPathRooted`, `DirectorySeparatorChar`), switched the command to use those members instead of `System.IO.Path`, and documented the full `ISettingsRepository` interface with XML comments.
+Discovery: The command tests needed explicit substitute behavior for the new path members because the workspace command now relies on the filesystem abstraction for rooted-path validation and normalization.
+Files: clio/Common/IFileSystem.cs, clio/Common/FileSystem.cs, clio/Command/CreateWorkspaceCommand.cs, clio/Environment/ISettingsRepository.cs, clio.tests/Command/CreateWorkspaceCommand.Tests.cs, .codex/workspace-diary.md
+Impact: `CreateWorkspaceCommand` now follows the repository’s filesystem-abstraction rule more closely, and the settings repository contract is clearer for future command and MCP work.
+
+## 2026-03-09 12:21 – Fix create-workspace omitted-directory E2E settings override
+Context: User noticed the `create-workspace` MCP E2E fixture covered the explicit `directory` path but the omitted-directory fallback path was failing after a new test was added.
+Decision: Kept the omitted-directory E2E scenario and fixed the temporary settings override helper to edit clio's real `creatio\\clio\\appsettings.json` location based on the clio assembly metadata instead of deriving the path from the test host process.
+Discovery: `SettingsRepository.AppSettingsFolderPath` depends on `Assembly.GetEntryAssembly()`, so using `new SettingsRepository()` inside the E2E test process pointed at the test host's settings location rather than the `clio mcp-server` child process location.
+Files: clio.mcp.e2e/CreateWorkspaceToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/TemporaryClioSettingsOverride.cs, .codex/workspace-diary.md
+Impact: Future E2E tests that temporarily override clio global settings can target the same settings file the spawned `clio` process actually reads, which makes fallback-configuration scenarios reliable.
+
+## 2026-03-09 12:30 – Report create-workspace destination path
+Context: User requested `create-workspace` to report the directory where the workspace was created and asked for related unit and E2E coverage.
+Decision: Updated `CreateWorkspaceCommand` to emit an explicit `Workspace created at: <full-path>` info message for both empty-workspace and environment-backed flows, extended command unit tests to assert the new message, and extended MCP E2E assertions to verify the path is surfaced through tool output.
+Discovery: The `create-workspace` MCP tool contract did not need to change because the new behavior is purely command output; MCP reviewed, no update required beyond tests.
+Files: clio/Command/CreateWorkspaceCommand.cs, clio.tests/Command/CreateWorkspaceCommand.Tests.cs, clio.mcp.e2e/CreateWorkspaceToolE2ETests.cs, clio/help/en/create-workspace.txt, clio/docs/commands/create-workspace.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Users and MCP consumers now get the created workspace path directly in command output, which improves usability and gives tests a stable user-facing success signal to assert.
+
+## 2026-03-09 12:47 – Add workspaces-root to generated settings schema
+Context: User noticed the generated `appsettings.json` schema template still did not expose the new global `workspaces-root` setting.
+Decision: Added `workspaces-root` to the JSON schema template with a description aligned to `create-workspace --empty` fallback behavior.
+Discovery: The runtime `Settings` model and docs had already been updated, but `clio/tpl/jsonschema/schema.json.tpl` was still missing the corresponding property, so schema-driven editors would not suggest it.
+Files: clio/tpl/jsonschema/schema.json.tpl, .codex/workspace-diary.md
+Impact: Generated schema consumers now see `workspaces-root` as a first-class supported setting in `appsettings.json`.
+
 ## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
 Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
 Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.

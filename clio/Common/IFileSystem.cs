@@ -204,6 +204,32 @@ namespace Clio.Common
 
 		string GetDestinationFileDirectory(string filePath, string destinationPath);
 
+		/// <summary>
+		/// Combines path fragments using the current platform separator.
+		/// </summary>
+		/// <param name="paths">Path fragments to combine.</param>
+		/// <returns>The combined path.</returns>
+		string CombinePaths(params string[] paths);
+
+		/// <summary>
+		/// Resolves the absolute path for a path fragment.
+		/// </summary>
+		/// <param name="path">The path to normalize.</param>
+		/// <returns>The absolute normalized path.</returns>
+		string GetFullPath(string path);
+
+		/// <summary>
+		/// Determines whether the supplied path is rooted.
+		/// </summary>
+		/// <param name="path">The path to inspect.</param>
+		/// <returns><c>true</c> when the path is rooted; otherwise <c>false</c>.</returns>
+		bool IsPathRooted(string path);
+
+		/// <summary>
+		/// Gets the platform-specific directory separator character.
+		/// </summary>
+		char DirectorySeparatorChar { get; }
+
 		string[] GetDirectories(string directoryPath);
 
 		string[] GetDirectories(string directoryPath, string patternt, SearchOption searchOption);
