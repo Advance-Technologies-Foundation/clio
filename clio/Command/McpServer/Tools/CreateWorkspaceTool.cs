@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using Clio.Command;
 using Clio.Common;
 using ModelContextProtocol.Server;
 

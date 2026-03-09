@@ -9,11 +9,10 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Default version for local development. Will be overridden during release from tag -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.15</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.16</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
-		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageLicense>MIT</PackageLicense>
 		<RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
@@ -32,9 +31,11 @@
 		<ErrorReport>prompt</ErrorReport>
 		<DebugType>none</DebugType>
 		<DebugSymbols>false</DebugSymbols>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
 		<PlatformTarget>AnyCPU</PlatformTarget>
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	</PropertyGroup>
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
