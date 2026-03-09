@@ -150,11 +150,14 @@ Files: <path1>, <path2>
 Impact: <how this helps future tasks>
 ```
 
-
-
 # Code review
 
 Use multiple agents in parallel to review code for
 - code quality and maintainability
 - performance and correctness
 - security and best practices
+
+
+## Nuget Management
+This projects uses Centrally managed nuget packages versions, see
+[Directory.Packages.props](./Directory.Packages.props) for details.

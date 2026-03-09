@@ -50,12 +50,12 @@
   <Choose>
     <When Condition="'$(TargetFramework)' == 'net472'">
       <ItemGroup>
-          <PackageReference Include="CreatioSDK" Version="8.1.4.2938"></PackageReference>    
+          <PackageReference Include="CreatioSDK" VersionOverride="8.1.4.2938"></PackageReference>    
       </ItemGroup>
     </When>
     <When Condition="'$(TargetFramework)' == 'netstandard2.0'" >
       <ItemGroup>
-          <PackageReference Include="CreatioSDK" Version="8.1.4.2938"></PackageReference>
+          <PackageReference Include="CreatioSDK" VersionOverride="8.1.4.2938"></PackageReference>
       </ItemGroup>
     </When>
   </Choose>
@@ -64,20 +64,20 @@
     <ProjectReference Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
-    <PackageReference Include="ATF.Repository" Version="2.0.3.3" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="ATF.Repository" />
+    <PackageReference Include="Newtonsoft.Json" />
     
     <!-- 5.2.1 Is the version in the Core -->
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" VersionOverride="5.2.1" />
     
     <!-- 8.0.3 Is the version in the Core -->
-    <PackageReference Include="Npgsql" Version="8.0.3" />
+    <PackageReference Include="Npgsql" VersionOverride="8.0.3" />
 
     <!-- 8.0.0 Is the version in the Core -->
-    <PackageReference Include="System.CodeDom" Version="8.0.0" />
+    <PackageReference Include="System.CodeDom" VersionOverride="8.0.0" />
 
     <!-- 4.3.0 Is the version in the Core -->
-    <PackageReference Include="System.IO.Compression" Version="4.3.0" />
+    <PackageReference Include="System.IO.Compression" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="NLogExt">
@@ -87,8 +87,8 @@
   <Choose>
     <When Condition="'$(TargetFramework)'=='netstandard2.0'">
       <ItemGroup>
-        <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0" />
-        <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
+        <PackageReference Include="Terrasoft.ServiceModel" VersionOverride="1.0.0" />
+        <PackageReference Include="Terrasoft.ServiceModel.Primitives" VersionOverride="1.0.0">
           <Private>False</Private>
         </PackageReference>
       </ItemGroup>
