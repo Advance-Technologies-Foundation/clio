@@ -55,5 +55,6 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
 		<PackageVersion Include="coverlet.collector" Version="6.0.4" />
 		<PackageVersion Include="NSubstitute" Version="5.3.0" />
 		<PackageVersion Include="NUnit.Analyzers" Version="4.7.0"/>
+		<PackageVersion Include="Allure.NUnit" Version="2.14.1" />
 	</ItemGroup>
 </Project>
