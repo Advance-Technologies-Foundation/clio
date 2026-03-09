@@ -7,21 +7,21 @@
 
     <ItemGroup>
         
-        <PackageReference Include="coverlet.msbuild" Version="3.2.0">
+        <PackageReference Include="coverlet.msbuild" VersionOverride="3.2.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="CreatioMock" Version="8.0.1.1996"/>
-        <PackageReference Include="CreatioTestFramework" Version="8.0.3.1759"/>
-        <PackageReference Include="FluentAssertions" Version="6.12.0" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2"/>
-        <PackageReference Include="NUnit" Version="3.14.0"/>
-        <PackageReference Include="NUnit3TestAdapter" Version="4.5.0"/>
-        <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
-        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
-        <PackageReference Include="System.Collections.Immutable" Version="8.0.0" />
-        <PackageReference Include="Terrasoft.ServiceModel" Version="1.0.0" />
-        <PackageReference Include="Terrasoft.ServiceModel.Primitives" Version="1.0.0">
+        <PackageReference Include="CreatioMock" VersionOverride="8.0.1.1996"/>
+        <PackageReference Include="CreatioTestFramework" VersionOverride="8.0.3.1759"/>
+        <PackageReference Include="FluentAssertions"  />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" VersionOverride="17.7.2"/>
+        <PackageReference Include="NUnit" VersionOverride="3.14.0"/>
+        <PackageReference Include="NUnit3TestAdapter" VersionOverride="4.5.0"/>
+        <PackageReference Include="System.Configuration.ConfigurationManager" VersionOverride="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" VersionOverride="8.0.0" />
+        <PackageReference Include="System.Collections.Immutable" VersionOverride="8.0.0" />
+        <PackageReference Include="Terrasoft.ServiceModel" VersionOverride="1.0.0" />
+        <PackageReference Include="Terrasoft.ServiceModel.Primitives" VersionOverride="1.0.0">
             <Private>False</Private>
         </PackageReference>
     </ItemGroup>

@@ -84,7 +84,7 @@
 		</When>
 		<Otherwise>
 			<ItemGroup>
-				<PackageReference Include="creatio.client" Version="1.0.33"/>
+				<PackageReference Include="creatio.client" />
 			</ItemGroup>
 		</Otherwise>
 	</Choose>
@@ -97,7 +97,7 @@
 		</When>
 		<Otherwise>
 			<ItemGroup>
-				<PackageReference Include="CommandLineSDK" Version="1.0.11"/>
+				<PackageReference Include="CommandLineSDK" />
 			</ItemGroup>
 		</Otherwise>
 	</Choose>
@@ -110,7 +110,7 @@
 		</When>
 		<Otherwise>
 			<ItemGroup>
-				<PackageReference Include="ATF.Repository" Version="2.0.3.4"/>
+				<PackageReference Include="ATF.Repository" />
 			</ItemGroup>
 		</Otherwise>
 	</Choose>
@@ -120,34 +120,37 @@
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"
 		                  ReferenceOutputAssembly="false" />
-		<PackageReference Include="ConsoleTables" Version="2.7.0"/>
-		<PackageReference Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
-		<PackageReference Include="ErrorOr" Version="2.1.0"/>
-		<PackageReference Include="FluentValidation" Version="12.1.1"/>
-		<PackageReference Include="KubernetesClient" Version="19.0.2" />
-		<PackageReference Include="MediatR" Version="[12.5.0]"/>
-		<PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4"/>
-		<PackageReference Include="Microsoft.Dism" Version="4.0.7"/>
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
-		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
-		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.3" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.3" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.3" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.3" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.3" />
-		<PackageReference Include="Microsoft.PowerShell.SDK" Version="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
-		<PackageReference Include="Microsoft.Web.Administration" Version="11.1.0"/>
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.4"/>
-		<PackageReference Include="Npgsql" Version="10.0.1"/>
-		<PackageReference Include="NRedisStack" Version="1.3.0" />
-		<PackageReference Include="OneOf" Version="3.0.271"/>
-		<PackageReference Include="Spectre.Console" Version="0.54.0"/>
-		<PackageReference Include="System.IO.Abstractions" Version="22.1.0"/>
-		<PackageReference Include="Ignore" Version="0.2.1"/>
-		<PackageReference Include="YamlDotNet" Version="16.3.0"/>
-		<PackageReference Include="SharpZipLib" Version="1.4.2"/>
-		<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.16.0" />
-		<PackageReference Include="ModelContextProtocol" Version="1.0.0"/>
 		
+		<PackageReference Include="DocumentFormat.OpenXmlSDK" VersionOverride="2.0.0"/>
+		<PackageReference Include="MediatR" VersionOverride="[12.5.0]"/>
+		<PackageReference Include="Microsoft.Dism" VersionOverride="4.0.7"/>
+		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
+		<PackageReference Include="Microsoft.Web.Administration" VersionOverride="11.1.0"/>
+	</ItemGroup>
+	
+	<ItemGroup Label="Centrally Managed Package Versions">
+		<PackageReference Include="KubernetesClient" />
+		<PackageReference Include="OneOf" />
+		<PackageReference Include="Ignore" />
+		<PackageReference Include="YamlDotNet" />
+		<PackageReference Include="SharpZipLib" />
+		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
+		<PackageReference Include="Newtonsoft.Json" />
+		<PackageReference Include="FluentValidation" />
+		<PackageReference Include="ConsoleTables" />
+		<PackageReference Include="Spectre.Console" />
+		<PackageReference Include="Npgsql" />
+		<PackageReference Include="NRedisStack" />
+		<PackageReference Include="ErrorOr" />
+		<PackageReference Include="System.IO.Abstractions" />
+		<PackageReference Include="ModelContextProtocol" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+		<PackageReference Include="Microsoft.Extensions.Http" />
+		<PackageReference Include="Microsoft.Extensions.Configuration" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+		<PackageReference Include="Microsoft.Data.SqlClient" />
 	</ItemGroup>
 </Project>
