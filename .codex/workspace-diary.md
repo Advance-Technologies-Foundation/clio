@@ -623,6 +623,13 @@ Discovery: The runtime `Settings` model and docs had already been updated, but `
 Files: clio/tpl/jsonschema/schema.json.tpl, .codex/workspace-diary.md
 Impact: Generated schema consumers now see `workspaces-root` as a first-class supported setting in `appsettings.json`.
 
+## 2026-03-09 20:05 – Identify Windows register tool packaging mismatch
+Context: User reported `clio register` failing on Windows with `DirectoryNotFoundException` for `.dotnet\tools\.store\...\tools\net8.0\any\img`.
+Decision: Traced the failure to `RegisterCommand` assuming an `img` folder exists under `AppContext.BaseDirectory`, then verified the built `clio.8.0.2.16.nupkg` packs `reg` assets but not `img`.
+Discovery: `clio/Command/RegisterCommand.cs` unconditionally calls `imgFolder.GetFiles()` on `<base>/img`, while `clio/clio.csproj` includes `reg`, `tpl`, `cliogate`, `Wiki`, and `help` as content but omits `img`; existing register tests manually add `img` to the mock filesystem, so they miss the packaged-tool layout.
+Files: clio/Command/RegisterCommand.cs, clio/clio.csproj, clio.tests/Command/RegisterCommand.Tests.cs, .codex/workspace-diary.md
+Impact: Future fixes should either pack `img` with the tool or make `register` tolerate a missing icon directory, and add a regression test that reflects the real .NET tool installation structure.
+
 ## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
 Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
 Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.
