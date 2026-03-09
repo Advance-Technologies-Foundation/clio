@@ -7,6 +7,12 @@ This suite is intentionally different from `clio.tests` MCP unit tests:
 - unit tests validate MCP argument mapping and command-resolution behavior in-process
 - `clio.mcp.e2e` validates the real server process, stdio transport, MCP discovery, and tool execution end to end
 
+## Default rule
+
+- Every new or updated MCP tool must add or update coverage in this project.
+- Do not treat E2E coverage as optional or wait for the user to request it explicitly.
+- If the current harness cannot execute the tool safely, extend the harness or add the missing sandbox support in the same change.
+
 ## Skill to use
 
 For MCP test work in this project, explicitly use the `test-mcp-tool` skill.

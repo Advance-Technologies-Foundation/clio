@@ -37,12 +37,16 @@ For every touched command, verify and update all relevant files:
 - `clio\clio\Command\McpServer\Tools\*.cs`
 - `clio\clio\Command\McpServer\Prompts\*.cs`
 - `clio\clio\Command\McpServer\Resources\*.cs`
+- `clio.tests\Command\McpServer\*.cs`
+- `clio.mcp.e2e\*.cs`
 
 ## Update rules
 
 - If the command already has an MCP tool, keep the tool arguments, descriptions, destructive flags, and execution path aligned with the current command behavior.
 - If the command is environment-sensitive, use the MCP `BaseTool` environment-aware execution pattern instead of executing the startup-time injected command directly.
 - If the command has an MCP prompt, keep the prompt guidance aligned with the current tool contract.
+- Always add or update MCP end-to-end coverage in `clio.mcp.e2e` for every new or changed MCP tool. This is mandatory even when the user does not mention E2E coverage explicitly.
+- Treat unit tests in `clio.tests` as necessary but insufficient for MCP tool changes; mapping-only coverage does not complete the task.
 - If no MCP artifact exists for a touched command, explicitly check whether one should be added and mention the result in the change summary.
 - If MCP artifacts are still accurate after review, explicitly state "MCP reviewed, no update required" in the change summary/PR description.
 

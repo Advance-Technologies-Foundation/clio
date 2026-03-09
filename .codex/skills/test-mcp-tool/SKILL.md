@@ -33,12 +33,13 @@ At minimum, assert that each MCP method:
 
 ## End-to-End Tests
 
-Use `clio.mcp.e2e` when the tool’s runtime behavior matters.
+Use `clio.mcp.e2e` for every new or updated MCP tool.
 
 - Start the real `clio mcp-server` process over stdio.
 - Discover the tool by the production constant, not a duplicated string literal.
 - Verify side effects in the target system, not only MCP success shape.
 - For destructive tests, require explicit opt-in and a sandbox target.
+- If the current harness cannot cover the tool yet, extend the harness in the same task instead of omitting E2E coverage.
 
 ## Assertion Rules
 
@@ -69,7 +70,7 @@ Do not hardcode MCP tool names in test files.
 ## Finish Checklist
 
 - Unit coverage updated in `clio.tests`
-- E2E coverage updated in `clio.mcp.e2e` when runtime behavior matters
+- E2E coverage updated in `clio.mcp.e2e`
 - Optional-argument combinations reviewed explicitly
 - `Info` and `Error` message-type assertions added where relevant
 - Allure metadata added for MCP E2E tests

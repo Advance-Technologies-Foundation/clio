@@ -630,6 +630,27 @@ Discovery: `clio/Command/RegisterCommand.cs` unconditionally calls `imgFolder.Ge
 Files: clio/Command/RegisterCommand.cs, clio/clio.csproj, clio.tests/Command/RegisterCommand.Tests.cs, .codex/workspace-diary.md
 Impact: Future fixes should either pack `img` with the tool or make `register` tolerate a missing icon directory, and add a regression test that reflects the real .NET tool installation structure.
 
+## 2026-03-09 21:02 – Expose link-from-repository as MCP tool
+Context: User requested MCP coverage for the `link-from-repository` command alias `l4r`, mirroring both CLI target modes.
+Decision: Added a thin MCP tool with separate methods for registered-environment and direct-environment-package-path modes, paired prompt helpers, and mapping-focused unit coverage without E2E because the command creates filesystem symlinks.
+Discovery: `Link4RepoCommand` already owns both target-resolution paths, so the MCP adapter does not need `IToolCommandResolver`; isolated test output paths remain necessary in this repo because the default `clio.exe` debug output can be locked by a running process.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, .codex/workspace-diary.md
+Impact: MCP consumers can now invoke `l4r` safely through explicit mode-specific tools while future maintainers have a tested pattern for local filesystem-linking MCP adapters that should stay unit-tested only unless a symlink-safe sandbox is introduced.
+
+## 2026-03-09 21:15 – Make MCP E2E coverage mandatory in repo guidance
+Context: User requested that new or updated MCP tools always require end-to-end coverage by default, even when not explicitly mentioned in the task.
+Decision: Tightened root AGENTS guidance, MCP-local AGENTS guidance, the E2E project guidance, and both MCP skills so MCP work now requires `clio.mcp.e2e` coverage as a standard deliverable rather than an optional follow-up.
+Discovery: The prior guidance strongly encouraged E2E for MCP work but still left room to stop at unit mapping tests; making the requirement explicit in both repo policy and skills is the lowest-friction way to change future agent behavior.
+Files: AGENTS.md, clio/Command/McpServer/AGENTS.md, clio.mcp.e2e/AGENTS.md, .codex/skills/create-mcp-tool/SKILL.md, .codex/skills/test-mcp-tool/SKILL.md, .codex/workspace-diary.md
+Impact: Future MCP tool tasks should now include real `clio mcp-server` end-to-end coverage automatically, and agents should extend the harness instead of treating E2E as optional.
+
+## 2026-03-09 21:29 – Add link-from-repository MCP E2E coverage
+Context: After exposing `link-from-repository` as an MCP tool, the user required real end-to-end coverage instead of unit mapping tests only.
+Decision: Added a dedicated `clio.mcp.e2e` fixture covering direct-path success plus failure paths for both MCP methods, and ran it against the isolated `clio.dll` build via `McpE2E__ClioProcessPath` to avoid the locked default debug executable.
+Discovery: A stable direct-path success case only needs a temporary repository with `packages/<PackageName>` and a temporary Creatio `Pkg` folder; on machines without directory-symlink capability, the success scenario should be skipped explicitly before invoking MCP.
+Files: clio.mcp.e2e/LinkFromRepositoryToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The `l4r` MCP surface now has real stdio/server coverage, including symbolic-link side effects and failure diagnostics, and future local-filesystem MCP tests can reuse the same isolated-process-path approach.
+
 ## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
 Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
 Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.
@@ -650,3 +671,33 @@ Decision: Kept the clear-redis fixture on `[AllureFeature("clear-redis-db")]` an
 Discovery: The local PowerShell runner assumes Allure CLI is already installed and available on `PATH`, using `allure generate` and `allure serve` directly after `dotnet test`.
 Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/ClearRedisToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future MCP E2E tests should produce more consistent Allure reporting and clearer local execution guidance.
+
+## 2026-03-09 20:13 – Security/correctness review for LinkFromRepository MCP tool
+Context: User requested a focused review of the newly added link-from-repository / l4r MCP tool, prompt, and unit tests.
+Decision: Reviewed added MCP files against command execution flow (Link4RepoCommand and RfsEnvironment) to confirm security and behavioral alignment.
+Discovery: The link-from-repository-by-environment tool currently allows absolute file-path input through environmentName, which reaches destructive filesystem operations; tool metadata also marks both methods as non-destructive despite delete-and-symlink behavior.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio/Command/Link4RepoCommand.cs, clio/Command/RfsEnvironment.cs, .codex/workspace-diary.md
+Impact: Future MCP hardening work should enforce strict environment-key validation on the environment-mode tool path and correct MCP destructive metadata so clients can apply appropriate safety gating.
+
+
+## 2026-03-09 20:15 – Review LinkFromRepository MCP tool correctness/performance
+Context: User requested a targeted review of the new LinkFromRepository MCP tool, prompt, and unit tests for correctness/performance concerns.
+Decision: Reviewed the new MCP files against Link4RepoCommand behavior and executed targeted Release tests for LinkFromRepositoryToolTests to validate baseline mapping behavior.
+Discovery: The tool currently executes a startup-resolved Link4RepoCommand instance directly, while that command contains mutable execution state; the prompt and tests also do not cover platform restrictions in environment-name flow.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio/Command/Link4RepoCommand.cs, .codex/workspace-diary.md
+Impact: Future MCP updates for link-from-repository should enforce mode/platform constraints and prefer isolated command execution to avoid cross-request correctness risks.
+
+
+## 2026-03-09 20:17 – Review LinkFromRepository MCP additions
+Context: User requested a focused code-quality/correctness review of the new `link-from-repository` MCP tool, prompt, and unit tests.
+Decision: Validated added tests in `Release` mode (`dotnet test ... --filter FullyQualifiedName~LinkFromRepositoryToolTests`) and reproduced command behavior for relative `envPkgPath` with `dotnet run -c Release --no-build -- link-from-repository --envPkgPath RelativePkgPath --repoPath C:\Repo --packages PkgA`.
+Discovery: The new MCP by-path contract and prompt describe `envPkgPath` as a path but do not constrain it to an absolute path, while command execution falls back to environment-name resolution for non-file values; current unit tests use a fake command that always returns success, so this mismatch is not detected.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio/Command/Link4RepoCommand.cs, .codex/workspace-diary.md
+Impact: Future MCP/tool tests should include at least one real-failure path assertion for `link-from-repository` (or a high-fidelity fake) so parameter-contract regressions are caught before release.
+
+## 2026-03-09 21:43 – Expand l4r MCP E2E package selection coverage
+Context: User requested additional `link-from-repository` MCP E2E tests for comma-separated package lists and `*` wildcard package selection.
+Decision: Extended the existing direct-path E2E fixture with one test covering `PkgA,PkgB` and another covering `*`, and generalized the symlink assertion helpers to validate per-package results.
+Discovery: Verifying these flows reliably required seeding two repository packages and two target package folders in the temporary Creatio package path before invoking the real `clio mcp-server` process.
+Files: clio.mcp.e2e/LinkFromRepositoryToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The `l4r` MCP tool now has process-level coverage for the main package-selection modes users are expected to invoke through MCP.
