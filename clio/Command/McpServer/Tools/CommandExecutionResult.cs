@@ -11,6 +11,9 @@ public record CommandExecutionResult(
 	int ExitCode,
 	
 	[property:JsonPropertyName("execution-log-messages"), Description("Command execution output")]
-	IEnumerable<LogMessage> Output
+	IEnumerable<LogMessage> Output,
+
+	[property: JsonPropertyName("log-file-path"), Description("Optional path to the generated database operation log file")]
+	string LogFilePath = null
 	
 );

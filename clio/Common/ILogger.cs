@@ -14,6 +14,13 @@ namespace Clio.Common
 		/// Clears preserved log messages.
 		/// </summary>
 		public void ClearMessages();
+
+		/// <summary>
+		/// Adds a scoped secondary file sink for log output.
+		/// </summary>
+		/// <param name="logFilePath">Absolute or relative path to the additional log file.</param>
+		/// <returns>A scope that removes the secondary sink when disposed.</returns>
+		public IDisposable BeginScopedFileSink(string logFilePath);
 		
 		/// <summary>
 		/// Starts the logging process.

@@ -336,6 +336,8 @@ clio restore-configuration -f
 
 Restores a database from a backup file to either a Kubernetes cluster or a local database server.
 
+Every `restore-db` invocation creates a temp database-operation log file. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tools return the same path in `log-file-path`.
+
 ### Prerequisites
 
 For PostgreSQL local restore:
@@ -380,6 +382,12 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 - `password` (required): Database password
 - `description` (optional): Description for documentation
 - `pgToolsPath` (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
+
+### Database operation log
+
+- Includes normal clio output plus native PostgreSQL/MSSQL restore messages when available
+- Written to a temp file for every `restore-db` invocation
+- Returned in MCP responses as `log-file-path`
 
 ### Usage
 
@@ -3594,6 +3602,8 @@ You may need _**Administrator**_ privileges.
 
 Deploy Creatio from a zip file to either a Kubernetes cluster or a local database server (PostgreSQL or MSSQL).
 
+Every `deploy-creatio` invocation creates a temp database-operation log file for the database restore stage. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tool returns the same path in `log-file-path`.
+
 ```bash
 clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
 ```
@@ -3607,6 +3617,12 @@ clio deploy-creatio --ZipFile <Path_To_ZipFile> [options]
 - `--db-server-name <Name>` - Name of database server configuration from appsettings.json for local database deployment
   - If not specified, uses Kubernetes cluster database (default behavior)
 - `--drop-if-exists` - Automatically drop existing database if present without prompting (works with local databases)
+
+### Database operation log
+
+- Includes normal clio output plus native PostgreSQL/MSSQL restore messages when available
+- Written to a temp file for every `deploy-creatio` invocation
+- Covers the database restore stage of deployment
 
 **Redis Configuration:**
 - `--redis-db <Number>` - Specify Redis database number (optional, 0-15)

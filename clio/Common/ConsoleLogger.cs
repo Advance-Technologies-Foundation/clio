@@ -22,7 +22,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private ILogStreamer _creatioLogStreamer;
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
+	private readonly object _scopedSinksLock = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
+	private readonly Dictionary<Guid, SharedAppendFileSinkLease> _scopedFileSinks = new();
 	public List<LogMessage> LogMessages { get; private set; } = [];
 	public bool PreserveMessages { get; set; }
 
@@ -93,6 +95,14 @@ public class ConsoleLogger : ILogger, IDisposable{
 		WriteLineInternal(table.ToString());
 	}
 
+	private void WriteToAdditionalSinks(string value) {
+		lock (_scopedSinksLock) {
+			foreach (SharedAppendFileSinkLease sink in _scopedFileSinks.Values) {
+				sink.WriteLine(value);
+			}
+		}
+	}
+
 	private void WriteErrorInternal(string value){
 		Console.ForegroundColor = ConsoleColor.Red;
 		string linePrefix = GetLinePrefix("[ERR]");
@@ -101,6 +111,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		Console.Error.WriteLine(value);
 		//Console.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		WriteToAdditionalSinks($"{linePrefix}{value}");
 	}
 
 	private string GetTimeStamp() {
@@ -114,6 +125,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.Out.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 	
@@ -124,6 +136,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.Out.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 
@@ -131,6 +144,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		Console.Out.WriteLine(value);
 		string linePrefix = GetLinePrefix();
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 
@@ -141,6 +155,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		Console.ForegroundColor = _defaultConsoleColor;
 		Console.Out.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
+		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 	
@@ -180,6 +195,27 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	/// <summary>
+	/// Adds a scoped additional log file sink.
+	/// </summary>
+	/// <param name="logFilePath">The file path that should receive a copy of all logger output.</param>
+	/// <returns>A scope that unregisters the additional sink on disposal.</returns>
+	public IDisposable BeginScopedFileSink(string logFilePath) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(logFilePath);
+		string? directory = Path.GetDirectoryName(logFilePath);
+		if (!string.IsNullOrWhiteSpace(directory)) {
+			Directory.CreateDirectory(directory);
+		}
+
+		SharedAppendFileSinkLease sink = SharedAppendFileSinkRegistry.Acquire(logFilePath);
+		Guid sinkId = Guid.NewGuid();
+		lock (_scopedSinksLock) {
+			_scopedFileSinks[sinkId] = sink;
+		}
+
+		return new ScopedFileSink(this, sinkId, sink);
+	}
+
+	/// <summary>
 	/// Starts the logging process runs.
 	/// This method initiates a new thread that continuously dequeues log messages from the queue
 	/// and writes them to the console.
@@ -189,9 +225,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 			return;
 		}
 		if (!string.IsNullOrEmpty(logFileName)) {
-			_logFileWriter = new StreamWriter(logFileName, append: true) {
-				AutoFlush = true
-			};
+			_logFileWriter = CreateSharedAppendWriter(logFileName);
 		}
 		_printThread = new(PrintInternal);
 		_printThread.Start();
@@ -313,6 +347,12 @@ public class ConsoleLogger : ILogger, IDisposable{
 		_logFileWriter = null;
 	}
 
+	private void RemoveScopedFileSink(Guid sinkId) {
+		lock (_scopedSinksLock) {
+			_scopedFileSinks.Remove(sinkId);
+		}
+	}
+
 	#endregion
 
 	public static readonly Func<object, string> WrapRed = s => $"\e[31m{s}\e[0m";
@@ -334,6 +374,31 @@ public class ConsoleLogger : ILogger, IDisposable{
 		!Console.IsOutputRedirected &&
 		Environment.GetEnvironmentVariable("NO_COLOR") == null &&
 		Environment.GetEnvironmentVariable("TERM") != null;
+
+	private static StreamWriter CreateSharedAppendWriter(string logFilePath) {
+		FileStream stream = new(
+			logFilePath,
+			FileMode.Append,
+			FileAccess.Write,
+			FileShare.ReadWrite | FileShare.Delete);
+		return new StreamWriter(stream) {
+			AutoFlush = true
+		};
+	}
+
+	private sealed class ScopedFileSink(ConsoleLogger owner, Guid sinkId, SharedAppendFileSinkLease sink) : IDisposable {
+		private bool _disposed;
+
+		public void Dispose() {
+			if (_disposed) {
+				return;
+			}
+
+			owner.RemoveScopedFileSink(sinkId);
+			sink.Dispose();
+			_disposed = true;
+		}
+	}
 }
 
 #endregion

@@ -9,6 +9,11 @@ DESCRIPTION
     restore-db command restores a database from a backup file to a database
     server. It supports both PostgreSQL and MSSQL databases.
 
+    Every restore-db run creates a temp database-operation log file. The final
+    CLI output includes the absolute path in a "Database operation log:" line.
+    For MCP tool execution, the same path is returned in the structured
+    response as log-file-path.
+
     The command can restore to:
     - Kubernetes cluster (default behavior)
     - Local database server (when --dbServerName is specified)
@@ -160,6 +165,8 @@ FEATURES
     - Automatic Type Detection: Determines backup type from file extension
     - Type Validation: Ensures backup file type matches database server type
     - ZIP Support: Extracts db/*.bak or db/*.backup from Creatio ZIP packages
+    - Temp Log Artifact: Always writes command output plus PostgreSQL/MSSQL
+                         native restore output into a temp log file
     - Existing Database Handling: Supports automatic drop before restore
     - PostgreSQL Tools Detection: Automatically finds pg_restore in PATH or
                                   configured pgToolsPath

@@ -69,9 +69,11 @@ public sealed class DeployCreatioToolE2ETests
 			ToolName,
 			new Dictionary<string, object?>
 			{
-				["siteName"] = $"e2e-{Guid.NewGuid():N}",
-				["zipFile"] = missingZipFile,
-				["sitePort"] = 5001
+				["args"] = new Dictionary<string, object?> {
+					["siteName"] = $"e2e-{Guid.NewGuid():N}",
+					["zipFile"] = missingZipFile,
+					["sitePort"] = 5001
+				}
 			},
 			cancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -86,5 +88,9 @@ public sealed class DeployCreatioToolE2ETests
 			because: "the scheduled-maintenance stub has been removed and the MCP tool should now reach the real command path");
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "the real command path should produce human-readable diagnostics for an invalid archive path");
+		execution.LogFilePath.Should().NotBeNullOrWhiteSpace(
+			because: "deploy-creatio should return the temp database-operation log artifact path even when deployment fails early");
+		File.Exists(execution.LogFilePath!).Should().BeTrue(
+			because: "the returned deploy-creatio log-file-path should reference a created temp artifact");
 	}
 }

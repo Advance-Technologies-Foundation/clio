@@ -101,6 +101,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly IProcessExecutor _processExecutor;
 	private readonly IPasswordResetScriptExecutor _passwordResetScriptExecutor;
 	private readonly IRedisDatabaseSelector _redisDatabaseSelector;
+	private readonly IDbOperationLogContextAccessor _dbOperationLogContextAccessor;
 
 	private readonly string _productFolder;
 	private readonly RegAppCommand _registerCommand;
@@ -132,6 +133,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="corporateEnvironmentDetector">Detector for corporate network/domain availability.</param>
 	/// <param name="creatioPackageVersionParser">Parser for version extraction from package filename.</param>
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
+	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, MsFileSystem msFileSystem, ILogger logger,
@@ -143,7 +145,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ILocalRedisServerResolver localRedisServerResolver,
 		ICorporateEnvironmentDetector corporateEnvironmentDetector,
 		ICreatioPackageVersionParser creatioPackageVersionParser,
-		IPasswordResetScriptExecutor passwordResetScriptExecutor) {
+		IPasswordResetScriptExecutor passwordResetScriptExecutor,
+		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_mediator = mediator;
@@ -167,6 +170,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_corporateEnvironmentDetector = corporateEnvironmentDetector;
 		_creatioPackageVersionParser = creatioPackageVersionParser;
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
+		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
 
 	/// <summary>
@@ -307,7 +311,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_k8.CopyBackupFileToPod(k8Commands.PodType.Postgres, src, srcFileName);
 
 		postgres.CreateDb(tmpDbName);
-		_k8.RestorePgDatabase(srcFileName, tmpDbName);
+		WriteNativeLogMultiline(_k8.RestorePgDatabase(srcFileName, tmpDbName));
 		postgres.SetDatabaseAsTemplate(tmpDbName);
 
 		// Set metadata comment
@@ -400,7 +404,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		bool exists = mssql.CheckDbExists(siteName);
 		if (!exists) {
-			mssql.CreateDb(siteName, $"{siteName}.bak");
+			DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
+				siteName,
+				$"{siteName}.bak",
+				WriteNativeLogLine);
+			if (!restoreResult.Success) {
+				return 1;
+			}
 		}
 
 		if (useFs) {
@@ -421,9 +431,16 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			EnvironmentVariables = new Dictionary<string, string> {
 				["PGPASSWORD"] = config.Password
 			},
-			OnOutput = Program.IsDebugMode
-				? (line, _) => _logger.WriteDebug(line)
-				: null
+			OnOutput = (line, stream) => {
+				if (string.IsNullOrWhiteSpace(line)) {
+					return;
+				}
+
+				WriteNativeLogLine(FormatProcessOutputLine(line, stream));
+				if (Program.IsDebugMode) {
+					_logger.WriteDebug(line);
+				}
+			}
 		};
 
 		CancellationTokenSource progressCancellationTokenSource = new();
@@ -515,6 +532,25 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		return 1;
 	}
 
+	private void WriteNativeLogLine(string line) {
+		_dbOperationLogContextAccessor.CurrentSession?.WriteNativeLine(line);
+	}
+
+	private void WriteNativeLogMultiline(string output) {
+		if (string.IsNullOrWhiteSpace(output)) {
+			return;
+		}
+
+		using StringReader reader = new(output);
+		while (reader.ReadLine() is { } line) {
+			WriteNativeLogLine(line);
+		}
+	}
+
+	private static string FormatProcessOutputLine(string line, ProcessOutputStream stream) {
+		return stream == ProcessOutputStream.StdErr ? $"[STDERR] {line}" : line;
+	}
+
 	private bool IsPortAvailable(int port) {
 		try {
 			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
@@ -576,9 +612,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			_logger.WriteInfo("Starting database restore...");
 			_logger.WriteInfo(
 				"This may take several minutes depending on database size. SQL Server will report progress every 5%.");
-			bool success = mssql.CreateDb(dbName, backupFileName);
+			DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
+				dbName,
+				backupFileName,
+				WriteNativeLogLine);
 
-			if (success) {
+			if (restoreResult.Success) {
 				_logger.WriteInfo($"Successfully restored database {dbName} from {backupPath}");
 				return 0;
 			}

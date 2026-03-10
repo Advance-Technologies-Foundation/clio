@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.CreatioInstallCommand;
@@ -66,8 +67,11 @@ public sealed class InstallerCommandToolTests
 	{
 		// Arrange
 		TestLogger logger = new();
-		FakeInstallerCommand command = new(logger, exitCode: 7);
-		InstallerCommandTool tool = new(command, logger);
+		DbOperationLogContextAccessor dbOperationLogContextAccessor = new();
+		IDbOperationLogSessionFactory dbOperationLogSessionFactory =
+			new DbOperationLogSessionFactory(logger, dbOperationLogContextAccessor);
+		FakeInstallerCommand command = new(logger, exitCode: 7, dbOperationLogSessionFactory);
+		InstallerCommandTool tool = new(command, logger, dbOperationLogContextAccessor);
 		DeployCreatioArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
@@ -111,6 +115,8 @@ public sealed class InstallerCommandToolTests
 			because: "the reduced MCP contract should no longer expose inherited auth arguments");
 		command.ReceivedOptions.IsSilent.Should().BeTrue(
 			because: "MCP execution must never block on interactive console input");
+		result.LogFilePath.Should().NotBeNullOrWhiteSpace(
+			because: "the deploy-creatio MCP result should surface the generated database-operation log path");
 		result.Output.Should().ContainSingle(
 			message => (string?)message.Value == "real installer command path",
 			because: "the command-backed MCP result should preserve actual execution logs");
@@ -191,21 +197,40 @@ public sealed class InstallerCommandToolTests
 	{
 		private readonly TestLogger _logger;
 		private readonly int _exitCode;
+		private readonly IDbOperationLogSessionFactory _dbOperationLogSessionFactory;
 
-		public FakeInstallerCommand(TestLogger logger, int exitCode)
+		public FakeInstallerCommand(
+			TestLogger logger,
+			int exitCode,
+			IDbOperationLogSessionFactory dbOperationLogSessionFactory = null)
 			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>())
 		{
 			_logger = logger;
 			_exitCode = exitCode;
+			_dbOperationLogSessionFactory = dbOperationLogSessionFactory ?? new NoopDbOperationLogSessionFactory();
 		}
 
 		public PfInstallerOptions? ReceivedOptions { get; private set; }
 
 		public override int Execute(PfInstallerOptions options)
 		{
+			using IDbOperationLogSession session = _dbOperationLogSessionFactory.BeginSession("deploy-creatio-test");
 			ReceivedOptions = options;
 			_logger.WriteInfo("real installer command path");
+			_logger.WriteInfo($"Database operation log: {session.LogFilePath}");
 			return _exitCode;
+		}
+
+		private sealed class NoopDbOperationLogSessionFactory : IDbOperationLogSessionFactory {
+			public IDbOperationLogSession BeginSession(string operationName) => new NoopDbOperationLogSession();
+		}
+
+		private sealed class NoopDbOperationLogSession : IDbOperationLogSession {
+			public string LogFilePath => string.Empty;
+
+			public void Dispose() { }
+
+			public void WriteNativeLine(string? line) { }
 		}
 	}
 
@@ -216,6 +241,7 @@ public sealed class InstallerCommandToolTests
 		internal List<LogMessage> LogMessages { get; } = [];
 
 		public void ClearMessages() => LogMessages.Clear();
+		public IDisposable BeginScopedFileSink(string logFilePath) => new NoopDisposable();
 		public void Start(string logFilePath = "") { }
 		public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer) { }
 		public void StartWithStream() { }
@@ -229,5 +255,9 @@ public sealed class InstallerCommandToolTests
 		public void WriteDebug(string value) => LogMessages.Add(new DebugMessage(value));
 		public void PrintTable(ConsoleTable table) { }
 		public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) { }
+
+		private sealed class NoopDisposable : IDisposable {
+			public void Dispose() { }
+		}
 	}
 }

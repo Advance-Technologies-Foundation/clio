@@ -198,7 +198,8 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 
 		var mssql = Substitute.For<IMssql>();
 		mssql.CheckDbExists("testdb").Returns(false);
-		mssql.CreateDb("testdb", "backup.bak").Returns(true);
+		mssql.RestoreDatabase("testdb", "backup.bak", Arg.Any<Action<string>>())
+			.Returns(new DatabaseRestoreResult(true, Array.Empty<string>()));
 		_dbClientFactory.CreateMssql("localhost", 1433, "sa", "password").Returns(mssql);
 
 		var options = new RestoreDbCommandOptions {
@@ -376,7 +377,8 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 
 		var mssql = Substitute.For<IMssql>();
 		mssql.CheckDbExists("testdb").Returns(false);
-		mssql.CreateDb("testdb", "backup.bak").Returns(true);
+		mssql.RestoreDatabase("testdb", "backup.bak", Arg.Any<Action<string>>())
+			.Returns(new DatabaseRestoreResult(true, Array.Empty<string>()));
 		_dbClientFactory.CreateMssql("localhost", 1433, "sa", "password").Returns(mssql);
 
 		var options = new RestoreDbCommandOptions {
@@ -392,7 +394,7 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 
 		// Assert
 		result.Should().Be(0, "because restore should succeed");
-		mssql.Received(1).CreateDb("testdb", "backup.bak");
+		mssql.Received(1).RestoreDatabase("testdb", "backup.bak", Arg.Any<Action<string>>());
 		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("Successfully restored")));
 	}
 
@@ -415,7 +417,8 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 
 		var mssql = Substitute.For<IMssql>();
 		mssql.CheckDbExists("testdb").Returns(true);
-		mssql.CreateDb("testdb", "backup.bak").Returns(true);
+		mssql.RestoreDatabase("testdb", "backup.bak", Arg.Any<Action<string>>())
+			.Returns(new DatabaseRestoreResult(true, Array.Empty<string>()));
 		_dbClientFactory.CreateMssql("localhost", 1433, "sa", "password").Returns(mssql);
 
 		var options = new RestoreDbCommandOptions {
@@ -634,7 +637,8 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 	public void Execute_BackwardCompatibility_WorksWithoutDbServerName() {
 		// Arrange
 		var mssql = Substitute.For<IMssql>();
-		mssql.CreateDb("testdb", "backup.bak").Returns(true);
+		mssql.RestoreDatabase("testdb", "backup.bak", Arg.Any<Action<string>>())
+			.Returns(new DatabaseRestoreResult(true, Array.Empty<string>()));
 		mssql.CheckDbExists("testdb").Returns(false);
 
 		_dbClientFactory.CreateMssql("localhost", 1433, "sa", "password").Returns(mssql);

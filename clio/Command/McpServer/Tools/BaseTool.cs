@@ -8,7 +8,11 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public abstract class BaseTool<T>(Command<T> command, ILogger logger, IToolCommandResolver commandResolver = null){
+public abstract class BaseTool<T>(
+	Command<T> command,
+	ILogger logger,
+	IToolCommandResolver commandResolver = null,
+	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 	private static readonly object CommandExecutionLock = new();
 
 	private protected CommandExecutionResult InternalExecute(T options) {
@@ -47,18 +51,30 @@ public abstract class BaseTool<T>(Command<T> command, ILogger logger, IToolComma
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		int result = -1;
 		lock (CommandExecutionLock) {
+			dbOperationLogContextAccessor?.ClearLastCompletedPath();
+			bool previousPreserveMessages = logger.PreserveMessages;
+			logger.PreserveMessages = true;
 			try {
 				result = command.Execute(options);
 				Thread.Sleep(500);
-				CommandExecutionResult returnResult = new(result, [.. logger.LogMessages.ToList()]);
+				CommandExecutionResult returnResult = new(
+					result,
+					[.. logger.LogMessages.ToList()],
+					dbOperationLogContextAccessor?.LastCompletedPath);
 				logger.ClearMessages();
 				return returnResult;
 			}
 			catch (Exception e) {
 				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];
-				CommandExecutionResult returnResult = new(result, logMessages);
+				CommandExecutionResult returnResult = new(
+					result,
+					logMessages,
+					dbOperationLogContextAccessor?.LastCompletedPath);
 				logger.ClearMessages();
 				return returnResult;
+			}
+			finally {
+				logger.PreserveMessages = previousPreserveMessages;
 			}
 		}
 	}

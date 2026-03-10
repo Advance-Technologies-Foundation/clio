@@ -50,6 +50,8 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	private readonly IBackupFileDetector _backupFileDetector;
 	private readonly IPostgresToolsPathDetector _postgresToolsPathDetector;
 	private readonly IProcessExecutor _processExecutor;
+	private readonly IDbOperationLogSessionFactory _dbOperationLogSessionFactory;
+	private readonly IDbOperationLogContextAccessor _dbOperationLogContextAccessor;
 
 	#endregion
 
@@ -67,10 +69,14 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	/// <param name="backupFileDetector">Service that detects backup file type.</param>
 	/// <param name="postgresToolsPathDetector">Service that resolves <c>pg_restore</c> path.</param>
 	/// <param name="processExecutor">Process execution abstraction used to run <c>pg_restore</c>.</param>
+	/// <param name="dbOperationLogSessionFactory">Factory that creates per-invocation database operation log artifacts.</param>
+	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	public RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory, 
 		ISettingsRepository settingsRepository, ICreatioInstallerService creatioInstallerService,
 		IDbConnectionTester dbConnectionTester, IBackupFileDetector backupFileDetector,
-		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor) {
+		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor,
+		IDbOperationLogSessionFactory dbOperationLogSessionFactory = null,
+		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 		_logger = logger;
 		_fileSystem = fileSystem;
 		_dbClientFactory = dbClientFactory;
@@ -80,6 +86,8 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		_backupFileDetector = backupFileDetector;
 		_postgresToolsPathDetector = postgresToolsPathDetector;
 		_processExecutor = processExecutor;
+		_dbOperationLogSessionFactory = dbOperationLogSessionFactory ?? NullDbOperationLogSessionFactory.Instance;
+		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
 
 	#endregion
@@ -87,42 +95,50 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	#region Methods: Public
 
 	public override int Execute(RestoreDbCommandOptions options) {
+		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("restore-db");
+		try {
 
-		if (!string.IsNullOrEmpty(options.DbServerName)) {
-			return RestoreToLocalServer(options);
-		}
+			if (!string.IsNullOrEmpty(options.DbServerName)) {
+				return RestoreToLocalServer(options);
+			}
 
-		if (!string.IsNullOrEmpty(options.BackupPath)) {
+			if (!string.IsNullOrEmpty(options.BackupPath)) {
 			
-			if (Path.GetExtension(options.BackupPath) == ".backup") {
+				if (Path.GetExtension(options.BackupPath) == ".backup") {
 				
-				_logger.WriteInfo($"Restoring database from backup file: {options.BackupPath}");
-				return RestorePg(options.DbName, options.BackupPath);
-			}
-			
-			if (_fileSystem.ExistsDirectory(options.BackupPath)) {
-				string[] backupFiles = _fileSystem.GetFiles(
-					options.BackupPath, "*.backup", SearchOption.AllDirectories);
-				if (backupFiles.Length == 0) {
-					_logger.WriteError($"No .backup files found in directory: {options.BackupPath}");
-					return 1;
+					_logger.WriteInfo($"Restoring database from backup file: {options.BackupPath}");
+					return RestorePg(options.DbName, options.BackupPath);
 				}
-				_logger.WriteInfo($"Restoring database from backup file: {backupFiles[0]}");
-				return RestorePg(options.DbName, backupFiles[0]);
+			
+				if (_fileSystem.ExistsDirectory(options.BackupPath)) {
+					string[] backupFiles = _fileSystem.GetFiles(
+						options.BackupPath, "*.backup", SearchOption.AllDirectories);
+					if (backupFiles.Length == 0) {
+						_logger.WriteError($"No .backup files found in directory: {options.BackupPath}");
+						return 1;
+					}
+					_logger.WriteInfo($"Restoring database from backup file: {backupFiles[0]}");
+					return RestorePg(options.DbName, backupFiles[0]);
+				}
 			}
-		}
 		
-		EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
-		var result =  env.DbServer.Uri.Scheme switch {
-			 "mssql" => RestoreMs(env.DbServer, env.DbName, options.Force, env.BackupFilePath),
-			  var _ => HandleIncorrectUri(options.Uri)
-		};
-		_logger.WriteLine("Done");
-		return result;
+			EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
+			int result = env.DbServer.Uri.Scheme switch {
+				"mssql" => RestoreMs(env.DbServer, env.DbName, options.Force, env.BackupFilePath),
+				var _ => HandleIncorrectUri(options.Uri)
+			};
+			_logger.WriteLine("Done");
+			return result;
+		}
+		finally {
+			string? logFilePath = dbOperationLogSession.LogFilePath;
+			_logger.WriteInfo($"Database operation log: {logFilePath}");
+		}
 	}
 
 	private int HandleIncorrectUri(string uri){
-		_logger.WriteError($"Scheme {uri} is not supported.\r\n\tExample: mssql://user:pass@127.0.01:1433 or\r\n\tpgsql://user:pass@127.0.01:5432");
+		string safeUri = SanitizeUriForLogging(uri);
+		_logger.WriteError($"Scheme {safeUri} is not supported.\r\n\tExample: mssql://127.0.0.1:1433 or\r\n\tpgsql://127.0.0.1:5432");
 		return 1;
 	}
 	private int RestoreMs(DbServer dbServer, string dbName, bool force, string backUpFilePath){
@@ -148,7 +164,11 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		_logger.WriteInfo($"Copied backup file to server \r\n\tfrom: {backUpFilePath} \r\n\tto  : {dbServer.WorkingFolder}");
 		
 		_logger.WriteInfo("Started db restore...");
-		int result =  mssql.CreateDb(dbName, Path.GetFileName(backUpFilePath)) ? 0 : 1;
+		DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
+			dbName,
+			Path.GetFileName(backUpFilePath),
+			WriteNativeLogLine);
+		int result = restoreResult.Success ? 0 : 1;
 		_logger.WriteInfo($"Created database {dbName} from file {backUpFilePath}");
 		return result;
 	}
@@ -314,9 +334,12 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 			_logger.WriteInfo("Starting database restore...");
 			_logger.WriteInfo("This may take several minutes depending on database size. SQL Server will report progress every 5%.");
-			bool success = mssql.CreateDb(dbName, backupFileName);
+			DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
+				dbName,
+				backupFileName,
+				WriteNativeLogLine);
 			
-			if (success) {
+			if (restoreResult.Success) {
 				_logger.WriteInfo($"Successfully restored database {dbName} from {backupPath}");
 				return 0;
 			} else {
@@ -402,6 +425,8 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 					return;
 				}
 
+				WriteNativeLogLine(FormatProcessOutputLine(line, stream));
+
 				if (Program.IsDebugMode) {
 					_logger.WriteDebug(line);
 					return;
@@ -430,6 +455,22 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	private int HandleUnsupportedDbType(string dbType) {
 		_logger.WriteError($"Database type '{dbType}' is not supported. Supported types: mssql, postgres");
 		return 1;
+	}
+
+	private void WriteNativeLogLine(string line) {
+		_dbOperationLogContextAccessor.CurrentSession?.WriteNativeLine(line);
+	}
+
+	private static string SanitizeUriForLogging(string uri) {
+		if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri? parsedUri)) {
+			return "(invalid-uri)";
+		}
+
+		return parsedUri.GetComponents(UriComponents.SchemeAndServer, UriFormat.Unescaped);
+	}
+
+	private static string FormatProcessOutputLine(string line, ProcessOutputStream stream) {
+		return stream == ProcessOutputStream.StdErr ? $"[STDERR] {line}" : line;
 	}
 	
 	

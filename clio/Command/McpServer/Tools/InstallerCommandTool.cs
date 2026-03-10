@@ -10,8 +10,11 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// MCP tool surface for the <c>deploy-creatio</c> command.
 /// </summary>
-public class InstallerCommandTool(InstallerCommand command, ILogger logger)
-	: BaseTool<PfInstallerOptions>(command, logger)
+public class InstallerCommandTool(
+	InstallerCommand command,
+	ILogger logger,
+	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null)
+	: BaseTool<PfInstallerOptions>(command, logger, dbOperationLogContextAccessor: dbOperationLogContextAccessor)
 {
 	/// <summary>
 	/// Stable MCP tool name for Creatio deployment.

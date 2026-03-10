@@ -6,6 +6,8 @@ Restores a database from a backup file either to the default Kubernetes database
 
 For PostgreSQL running in Docker, use `--dbServerName` with a `db` entry that points to the published host/port. In that mode clio runs `pg_restore` on the machine running clio and keeps the backup file on the local filesystem. It does not copy the `.backup` file into Docker or Kubernetes.
 
+Every `restore-db` invocation also creates a temp database-operation log file. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tools return the same path in `log-file-path`.
+
 ## Usage
 
 ```bash
@@ -72,6 +74,7 @@ When `--dbServerName` is specified, clio:
 - rejects PostgreSQL-to-MSSQL and MSSQL-to-PostgreSQL mismatches before restore
 - restores PostgreSQL with local `pg_restore`
 - restores MSSQL with the existing local SQL Server flow
+- writes both normal clio output and native PostgreSQL/MSSQL restore output into the temp database-operation log artifact
 
 When `--dbServerName` is omitted, clio preserves the existing Kubernetes/environment-based behavior.
 
@@ -124,6 +127,11 @@ Backup type mismatch
 
 - Use `.backup` with PostgreSQL.
 - Use `.bak` with MSSQL.
+
+Database operation log
+
+- Check the final `Database operation log:` line for the temp artifact path.
+- The artifact includes normal clio output and native restore-engine messages from `pg_restore` or SQL Server restore progress when available.
 
 ## Related Commands
 

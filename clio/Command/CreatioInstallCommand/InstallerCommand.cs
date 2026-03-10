@@ -197,6 +197,7 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
+	private readonly IDbOperationLogSessionFactory _dbOperationLogSessionFactory;
 	private readonly IKubernetes _kubernetes;
 	private readonly ILogger _logger;
 
@@ -210,10 +211,16 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	/// <param name="creatioInstallerService">Service that performs deployment steps.</param>
 	/// <param name="logger">Logger used for user-facing output.</param>
 	/// <param name="kubernetes">Kubernetes client used to validate cluster availability.</param>
-	public InstallerCommand(ICreatioInstallerService creatioInstallerService, ILogger logger, IKubernetes kubernetes) {
+	/// <param name="dbOperationLogSessionFactory">Factory that creates per-invocation database operation log artifacts.</param>
+	public InstallerCommand(
+		ICreatioInstallerService creatioInstallerService,
+		ILogger logger,
+		IKubernetes kubernetes,
+		IDbOperationLogSessionFactory dbOperationLogSessionFactory = null) {
 		_creatioInstallerService = creatioInstallerService;
 		_logger = logger;
 		_kubernetes = kubernetes;
+		_dbOperationLogSessionFactory = dbOperationLogSessionFactory ?? NullDbOperationLogSessionFactory.Instance;
 	}
 
 	#endregion
@@ -228,19 +235,25 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	/// <c>0</c> on success; non-zero value when execution cannot continue or deployment fails.
 	/// </returns>
 	public override int Execute(PfInstallerOptions options) {
-		if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
-			_logger.WriteError(
-				"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
-			return 1;
-		}
+		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+		try {
+			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
+				_logger.WriteError(
+					"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
+				return 1;
+			}
 
-		int result = _creatioInstallerService.Execute(options);
-		if (!options.IsSilent) {
-			_logger.WriteLine("Press enter to exit...");
-			Console.ReadLine();
-		}
+			int result = _creatioInstallerService.Execute(options);
+			if (!options.IsSilent) {
+				_logger.WriteLine("Press enter to exit...");
+				Console.ReadLine();
+			}
 
-		return result;
+			return result;
+		}
+		finally {
+			_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
+		}
 	}
 
 	#endregion

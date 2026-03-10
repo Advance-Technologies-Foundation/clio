@@ -13,6 +13,11 @@ DESCRIPTION
     Services (IIS) by default. On macOS and Linux, uses dotnet runtime. Supports cross-platform
     deployment with optional HTTPS configuration and automatic service management.
 
+    Every deploy-creatio run creates a temp database-operation log file for the
+    database restore portion of deployment. The final CLI output includes the
+    absolute path in a "Database operation log:" line. For MCP tool execution,
+    the same path is returned in the structured response as log-file-path.
+
     Database restore mode:
     - Without --db-server-name: existing Kubernetes restore flow
     - With --db-server-name: configured local/local-style DB server from appsettings.json
@@ -246,6 +251,8 @@ BEHAVIOR
     - WITH --db-server-name: Restores database to local server from appsettings.json
     - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
     - Connection strings are automatically updated to point to target database
+    - PostgreSQL/MSSQL native restore output is written into the temp database
+      operation log artifact
 
     Password Reset Script (Creatio >= 8.3.3):
     - Applies SQL script that sets Supervisor ForceChangePassword to false

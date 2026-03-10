@@ -77,6 +77,8 @@ public class BindingsModule {
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
+		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
+		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
 
 		EnvironmentSettings activeSettings = settings;
 		if (activeSettings is null) {
@@ -366,7 +368,8 @@ public class BindingsModule {
 			foreach (Type implementedInterface in type.GetInterfaces()) {
 				if (implementedInterface.Namespace is null
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
-					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)) {
+					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)
+					|| implementedInterface == typeof(IDbOperationLogSession)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

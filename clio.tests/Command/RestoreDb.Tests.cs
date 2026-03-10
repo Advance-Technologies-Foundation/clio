@@ -32,7 +32,8 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 			: @"~/creatio/8.1.2.2482_Studio_Softkey_MSSQL_ENU/db/BPMonline812Studio.bak";
 		const string existingDbName = "db-that-exists";
 		const string newDbName = "new-db-name";
-		mssql.CreateDb(newDbName, "BPMonline812Studio.bak").Returns(true);
+		mssql.RestoreDatabase(newDbName, "BPMonline812Studio.bak", Arg.Any<Action<string>>())
+			.Returns(new DatabaseRestoreResult(true, Array.Empty<string>()));
 		mssql.CheckDbExists(existingDbName).Returns(true);
 		mssql.CheckDbExists(Arg.Is<string>(s=> s!= existingDbName)).Returns(false);
 		

@@ -51,11 +51,13 @@ internal static class McpCommandExecutionParser {
 		if (element.ValueKind == JsonValueKind.Array) {
 			List<CommandLogMessageEnvelope> messages = [];
 			int? exitCode = null;
+			string? logFilePath = null;
 
 			foreach (JsonElement item in element.EnumerateArray()) {
 				if (TryParseExecutionEnvelope(item, out CommandExecutionEnvelope? nestedExecution)) {
 					CommandExecutionEnvelope parsedNestedExecution = nestedExecution!;
 					exitCode ??= parsedNestedExecution.ExitCode;
+					logFilePath ??= parsedNestedExecution.LogFilePath;
 					if (parsedNestedExecution.Output is not null) {
 						messages.AddRange(parsedNestedExecution.Output);
 					}
@@ -70,6 +72,7 @@ internal static class McpCommandExecutionParser {
 					TryParseExecutionEnvelope(textPayloadElement, out CommandExecutionEnvelope? textExecution)) {
 					CommandExecutionEnvelope parsedTextExecution = textExecution!;
 					exitCode ??= parsedTextExecution.ExitCode;
+					logFilePath ??= parsedTextExecution.LogFilePath;
 					if (parsedTextExecution.Output is not null) {
 						messages.AddRange(parsedTextExecution.Output);
 					}
@@ -86,9 +89,11 @@ internal static class McpCommandExecutionParser {
 			}
 
 			if (exitCode.HasValue || messages.Count > 0) {
+				logFilePath ??= TryExtractLogFilePath(messages);
 				execution = new CommandExecutionEnvelope(
 					exitCode ?? (isErrorResult ? 1 : 0),
-					messages.Count > 0 ? messages : null);
+					messages.Count > 0 ? messages : null,
+					logFilePath);
 				return true;
 			}
 		}
@@ -138,6 +143,7 @@ internal static class McpCommandExecutionParser {
 		}
 
 		IReadOnlyList<CommandLogMessageEnvelope>? output = null;
+		string? logFilePath = null;
 		if (TryGetProperty(
 			element,
 			"execution-log-messages",
@@ -148,7 +154,18 @@ internal static class McpCommandExecutionParser {
 			output = ParseLogMessages(outputElement);
 		}
 
-		execution = new CommandExecutionEnvelope(exitCode, output);
+		if (TryGetProperty(
+			element,
+			"log-file-path",
+			"logFilePath",
+			"LogFilePath",
+			out JsonElement logFilePathElement) &&
+			logFilePathElement.ValueKind == JsonValueKind.String) {
+			logFilePath = logFilePathElement.GetString();
+		}
+
+		logFilePath ??= TryExtractLogFilePath(output);
+		execution = new CommandExecutionEnvelope(exitCode, output, logFilePath);
 		return true;
 	}
 
@@ -190,6 +207,19 @@ internal static class McpCommandExecutionParser {
 		}
 
 		return LogDecoratorType.None;
+	}
+
+	private static string? TryExtractLogFilePath(IReadOnlyList<CommandLogMessageEnvelope>? output) {
+		if (output is null) {
+			return null;
+		}
+
+		const string prefix = "Database operation log: ";
+		return output
+			.Select(message => message.Value)
+			.LastOrDefault(value => !string.IsNullOrWhiteSpace(value) && value.StartsWith(prefix, StringComparison.Ordinal))
+			?.Substring(prefix.Length)
+			.Trim();
 	}
 
 	private static bool TryGetTextPayload(JsonElement element, out string? textPayload) {

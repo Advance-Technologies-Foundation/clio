@@ -6,6 +6,8 @@ Deploys Creatio application from a zip file to either a Kubernetes cluster or a 
 
 For PostgreSQL running in Docker, use `--db-server-name` with a `db` entry that points to the published host/port. In that mode clio runs `pg_restore` on the machine running clio, connects through the configured host/port, and keeps the `.backup` file on the local filesystem. It does not `docker exec` into the container.
 
+Every `deploy-creatio` invocation also creates a temp database-operation log file for the database restore stage. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tool returns the same path in `log-file-path`.
+
 ## Usage
 
 ```bash
@@ -249,6 +251,7 @@ When `--db-server-name` **IS** specified, the command deploys to a local databas
 - Restores database using local tools (pg_restore for PostgreSQL, SQL Server for MSSQL)
 - Uses template-based restoration for PostgreSQL (see below)
 - Configures connection strings to point to the local server
+- Writes both normal clio output and native PostgreSQL/MSSQL restore output into the temp database-operation log artifact
 
 For PostgreSQL running in Docker, this same local mode is used. The configured database server entry must point to the published host endpoint, and clio keeps the backup file on the host while `pg_restore` connects over host/port.
 
@@ -258,6 +261,12 @@ clio deploy-creatio -e "LocalApp" \
   --ZipFile "C:\creatio-app.zip" \
   --db-server-name my-local-postgres
 ```
+
+## Database Operation Log
+
+- Check the final `Database operation log:` line for the temp artifact path.
+- The artifact includes normal clio output and native restore-engine messages from `pg_restore` or SQL Server restore progress when available.
+- When `deploy-creatio` is invoked through MCP, the same path is returned as `log-file-path`.
 
 ### 3. Corporate-Gated Password Reset Script
 
