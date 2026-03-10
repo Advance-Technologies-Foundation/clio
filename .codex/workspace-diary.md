@@ -757,3 +757,10 @@ Decision: Set `DisableResetPassword = true` explicitly in the MCP wrapper so it 
 Discovery: The CLI option default lives on `PfInstallerOptions`, but the MCP wrapper builds the options object directly, so any omitted boolean defaults silently fall back to `false` unless they are assigned in code.
 Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, .codex/workspace-diary.md
 Impact: `deploy-creatio` MCP now preserves the existing CLI behavior for forced-password-reset disabling instead of silently skipping it.
+
+## 2026-03-10 01:22 – Add dconf MCP tools for environment and build flows
+Context: User needed MCP support for `dconf -e` and `dconf --build` so agents can download configuration into a chosen workspace.
+Decision: Added separate `download-configuration-by-environment` and `download-configuration-by-build` MCP tools plus aligned prompt guidance, required absolute `workspace-path` for both modes, enforced absolute `build-path` for build mode, and serialized MCP command execution in `BaseTool` to avoid concurrent working-directory leakage.
+Discovery: `DownloadConfigurationCommand` depends on the current working directory to target the workspace, Windows drive-relative paths can bypass a simple rooted-path check, and the extracted-build flow works in E2E when the workspace includes `.clio/workspaceSettings.json`.
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/DownloadConfigurationTool.cs, clio/Command/McpServer/Prompts/DownloadConfigurationPrompt.cs, clio.tests/Command/McpServer/DownloadConfigurationToolTests.cs, clio.mcp.e2e/DownloadConfigurationToolE2ETests.cs, .codex/workspace-diary.md
+Impact: MCP clients can now invoke both supported `dconf` flows with a clear contract and passing unit/E2E coverage, while malformed paths and concurrent tool execution are handled more safely.

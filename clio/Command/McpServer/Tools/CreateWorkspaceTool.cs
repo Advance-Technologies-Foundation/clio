@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -23,19 +24,32 @@ public class CreateWorkspaceTool(
 	[Description("""
 				 Creates a new empty clio workspace in a local directory.
 				 
-				 The tool maps directly to `clio create-workspace <workspace-name> --empty`.
-				 When `directory` is provided, the workspace is created under that absolute path.
-				 When `directory` is omitted, clio uses the global `workspaces-root` setting from appsettings.json.
+				 To create a workspace in C:\Projects\Workspaces\son directory, use:
+				 workspaceName: son, directory: C:\Projects\Workspaces
 				 """)]
 	public CommandExecutionResult CreateWorkspace(
-		[Description("Relative workspace folder name to create")] [Required] string workspaceName,
-		[Description("Optional absolute directory where the new workspace folder should be created")] string directory = null
+		[Description("Workspace creation parameters")] [Required] CreateWorkspaceArgs args
 	) {
 		CreateWorkspaceCommandOptions options = new() {
-			WorkspaceName = workspaceName,
-			Directory = directory,
+			WorkspaceName = args.WorkspaceName,
+			Directory = args.Directory,
 			Empty = true
 		};
 		return InternalExecute(options);
 	}
 }
+
+/// <summary>
+/// MCP arguments for the <c>create-workspace</c> tool.
+/// </summary>
+public sealed record CreateWorkspaceArgs(
+	[property: JsonPropertyName("workspaceName")]
+	[property: Description("Relative workspace folder name to create")]
+	[property: Required]
+	string WorkspaceName,
+
+	[property: JsonPropertyName("directory")]
+	[property: Description("Optional absolute directory where the new workspace folder should be created")]
+	[property: Required]
+	string Directory = null
+);

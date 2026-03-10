@@ -21,12 +21,11 @@ public class CreateWorkspaceToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateWorkspaceCommand command = new();
 		CreateWorkspaceTool tool = new(command, ConsoleLogger.Instance);
-
+	
 		// Act
 		CommandExecutionResult result = tool.CreateWorkspace(
-			"my-workspace",
-			@"C:\Workspaces");
-
+			new CreateWorkspaceArgs("my-workspace", @"C:\Workspaces"));
+	
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should forward a valid create-workspace payload");
 		command.CapturedOptions.Should().NotBeNull(because: "the command should receive the mapped options");
@@ -49,7 +48,8 @@ public class CreateWorkspaceToolTests {
 		CreateWorkspaceTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.CreateWorkspace("my-workspace");
+		CommandExecutionResult result = tool.CreateWorkspace(
+			new CreateWorkspaceArgs("my-workspace"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should support the global workspaces-root fallback path");
@@ -66,17 +66,20 @@ public class CreateWorkspaceToolTests {
 	[Category("Unit")]
 	public void CreateWorkspace_Should_Expose_Required_Workspace_Name_Argument() {
 		// Arrange
-		System.Reflection.ParameterInfo workspaceNameParameter = typeof(CreateWorkspaceTool)
+		System.Reflection.ParameterInfo argsParameter = typeof(CreateWorkspaceTool)
 			.GetMethod(nameof(CreateWorkspaceTool.CreateWorkspace))!
 			.GetParameters()
-			.Single(parameter => parameter.Name == "workspaceName");
+			.Single(parameter => parameter.Name == "args");
 
 		// Act
-		object[] requiredAttributes = workspaceNameParameter.GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), inherit: false);
+		object[] requiredAttributes = argsParameter.GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), inherit: false);
 
 		// Assert
 		requiredAttributes.Should().ContainSingle(
-			because: "workspace-name is required for the create-workspace MCP tool");
+			because: "the create-workspace MCP tool should require its structured args payload");
+		typeof(CreateWorkspaceArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
+			["WorkspaceName", "Directory"],
+			because: "the create-workspace MCP payload should only expose the supported workspace arguments");
 	}
 
 	private sealed class FakeCreateWorkspaceCommand : CreateWorkspaceCommand {
