@@ -220,3 +220,7 @@ PUBLISH_NEXUS_README.md
 
 
 **/allure-report
+
+
+These files are used on local dev environment only
+**/HAR Files/

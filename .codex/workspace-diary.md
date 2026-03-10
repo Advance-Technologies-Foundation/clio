@@ -764,3 +764,17 @@ Decision: Added separate `download-configuration-by-environment` and `download-c
 Discovery: `DownloadConfigurationCommand` depends on the current working directory to target the workspace, Windows drive-relative paths can bypass a simple rooted-path check, and the extracted-build flow works in E2E when the workspace includes `.clio/workspaceSettings.json`.
 Files: clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/DownloadConfigurationTool.cs, clio/Command/McpServer/Prompts/DownloadConfigurationPrompt.cs, clio.tests/Command/McpServer/DownloadConfigurationToolTests.cs, clio.mcp.e2e/DownloadConfigurationToolE2ETests.cs, .codex/workspace-diary.md
 Impact: MCP clients can now invoke both supported `dconf` flows with a clear contract and passing unit/E2E coverage, while malformed paths and concurrent tool execution are handled more safely.
+
+## 2026-03-10 15:17 – Review FSM/compile MCP correctness and coverage
+Context: User requested a focused review of the new FSM status/toggle and compile MCP implementation and tests.
+Decision: Re-ran targeted unit and E2E suites for FSM/compile tools and validated the FSM mode inference edge case with a throwaway runtime probe against `FsmModeStatusService`.
+Discovery: `DetectMode` currently classifies `useStaticFileContent=true` with `staticFileContent={}` as `off`, which violates the intended fail-closed behavior for non-populated static content; existing unit/E2E tests do not cover this shape.
+Files: clio/Common/FsmModeStatusService.cs, clio.tests/Command/McpServer/FsmModeToolTests.cs, clio.tests/Command/McpServer/CompileCreatioToolTests.cs, clio.mcp.e2e/FsmModeToolE2ETests.cs, clio.mcp.e2e/CompileCreatioToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future fixes should tighten `staticFileContent` population validation and add explicit regression tests so ambiguous payloads fail closed as designed.
+
+## 2026-03-10 15:09 – Add FSM mode and compile MCP tools
+Context: User needed MCP support to detect FSM mode from `GetApplicationInfo`, toggle FSM mode by environment name, and compile Creatio fully or by a single package.
+Decision: Added a new `IFsmModeStatusService` that derives FSM mode from a single unambiguous `GetApplicationInfo` payload, exposed `get-fsm-mode`, `set-fsm-mode`, and `compile-creatio` MCP tools with aligned prompts, and blocked comma-separated package lists at the MCP boundary so `compile-creatio` stays single-package only.
+Discovery: The real MCP E2E runner was using a Debug `clio.exe` from `clio.mcp.e2e/appsettings.json`, so verifying new tool discovery required overriding `McpE2E__ClioProcessPath` to the fresh Release binary; the current stable E2E coverage for these tools is discovery plus invalid-environment failure paths.
+Files: clio/Common/FsmModeStatusService.cs, clio/Command/McpServer/Tools/FsmModeTool.cs, clio/Command/McpServer/Tools/CompileCreatioTool.cs, clio/Command/McpServer/Prompts/FsmAndCompilePrompt.cs, clio.tests/Command/McpServer/FsmModeToolTests.cs, clio.tests/Command/McpServer/CompileCreatioToolTests.cs, clio.mcp.e2e/FsmModeToolE2ETests.cs, clio.mcp.e2e/CompileCreatioToolE2ETests.cs, clio.mcp.e2e/Support/Results/FsmModeStatusEnvelope.cs, clio/BindingsModule.cs, .codex/workspace-diary.md
+Impact: Agents can now query FSM state, toggle FSM mode, and request full or single-package compilation through MCP with passing targeted unit and E2E coverage; docs were reviewed and remain accurate because CLI behavior did not change.
