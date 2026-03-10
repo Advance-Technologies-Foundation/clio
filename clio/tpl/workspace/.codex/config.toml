@@ -1,0 +1,3 @@
+﻿[mcp_servers.clio]
+command = "clio"
+args = ["mcp-server"]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creatio Config Web Service"
+  short_description: "Build and test custom Creatio configuration web services."
+  default_prompt: "Create or update a Creatio configuration web service and include test steps."
