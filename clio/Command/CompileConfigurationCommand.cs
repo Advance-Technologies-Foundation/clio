@@ -98,6 +98,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		int execResult = base.Execute(options);
 		sw.Stop();
 		cts.Cancel();
+		thread.Join(); // Wait for background thread to complete before disposing CancellationTokenSource
 		if (CommandSuccess) {
 			_logger.WriteLine();
 			_logger.WriteInfo($"Compilation finished in {TimeOnly.FromTimeSpan(sw.Elapsed):HH:mm:ss}");
