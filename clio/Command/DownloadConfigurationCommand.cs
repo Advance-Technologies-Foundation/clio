@@ -146,15 +146,34 @@ public class DownloadConfigurationCommand : Command<DownloadConfigurationCommand
 	}
 
 	private int DownloadFromNamedEnv(DownloadConfigurationCommandOptions options) {
-		if (Program.IsDebugMode) {
-			_logger.WriteDebug($"DownloadConfigurationCommand: Using {ConsoleLogger.WrapRed("named env mode")} with path={options.Environment}");
-		}
-		EnvironmentSettings env = _settingsRepository.FindEnvironment(options.Environment);
-		if (!string.IsNullOrWhiteSpace(env?.EnvironmentPath) && _fileSystem.ExistsDirectory(env.EnvironmentPath)) {
-			_zipBasedApplicationDownloader.DownloadFromPath(env.EnvironmentPath);
-		}
 
-		return 0;
+		try {
+			if (Program.IsDebugMode) {
+				_logger.WriteDebug(
+					$"DownloadConfigurationCommand: Using {ConsoleLogger.WrapRed("named env mode")} with path={options.Environment}");
+			}
+
+			EnvironmentSettings env = _settingsRepository.FindEnvironment(options.Environment);
+			if (!string.IsNullOrWhiteSpace(env?.EnvironmentPath) && _fileSystem.ExistsDirectory(env.EnvironmentPath)) {
+				_zipBasedApplicationDownloader.DownloadFromPath(env.EnvironmentPath);
+				_logger.WriteLine($"Download from {env.EnvironmentPath} path completed successfully");
+				return 0;
+			}
+			_applicationDownloader.Download(_workspace.WorkspaceSettings.Packages);
+			_logger.WriteLine($"Download from {options.Environment} environment completed successfully");
+			return 0;
+
+		}
+		catch (Exception ex) {
+			_logger.WriteError($"Error: {ex.Message}");
+			_logger.WriteError(ex.Message);
+
+			if (Program.IsDebugMode) {
+				_logger.WriteError($"[DEBUG] Stack trace: {ex.StackTrace}");
+				_logger.WriteError($"Stack trace: {ex.StackTrace}");
+			}
+			return 1;
+		}
 	}
 
 	private int DownloadFromPath(DownloadConfigurationCommandOptions options) {
