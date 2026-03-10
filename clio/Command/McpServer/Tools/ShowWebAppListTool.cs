@@ -1,16 +1,28 @@
+using System.Collections.Generic;
 using System.ComponentModel;
-using Clio.Common;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-public class ShowWebAppListTool(ShowAppListCommand command, ILogger logger) : BaseTool<AppListOptions>(command, logger) {
+/// <summary>
+/// MCP tool surface for listing registered web applications with their configured settings.
+/// </summary>
+[McpServerToolType]
+public sealed class ShowWebAppListTool(ShowAppListCommand command)
+{
+	/// <summary>
+	/// Stable MCP tool name for listing registered web applications.
+	/// </summary>
+	internal const string ShowWebAppListToolName = "show-webApp-list";
 
-	[McpServerTool(Name = "show-webApp-list"), Description("Show the list of web applications (Creatrio environments) and their settings")]
-	public CommandExecutionResult ShowWebAppList() {
-		AppListOptions options = new() {
-			Format = "raw"
-		};
-		return InternalExecute(options);
+	/// <summary>
+	/// Returns all registered web application settings as structured MCP JSON without masking sensitive fields.
+	/// </summary>
+	[McpServerTool(Name = ShowWebAppListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description("Shows the list of registered web applications and their settings as structured JSON without masking sensitive values.")]
+	public IReadOnlyList<ShowWebAppSettingsResult> ShowWebAppList()
+	{
+		return command.GetAllWebAppSettings(maskSensitiveData: false);
 	}
 }

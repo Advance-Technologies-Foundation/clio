@@ -326,6 +326,9 @@ public class BindingsModule {
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? new Common.IIS.WindowsIISSiteDetector()
 				: new Common.IIS.StubIISSiteDetector());
+		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
+		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
+		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
 		services.AddSingleton<Common.IIS.IIISAppPoolManager>(_ =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? new Common.IIS.WindowsIISAppPoolManager()

@@ -7,6 +7,12 @@ This suite is intentionally different from `clio.tests` MCP unit tests:
 - unit tests validate MCP argument mapping and command-resolution behavior in-process
 - `clio.mcp.e2e` validates the real server process, stdio transport, MCP discovery, and tool execution end to end
 
+## Default rule
+
+- Every new or updated MCP tool must add or update coverage in this project.
+- Do not treat E2E coverage as optional or wait for the user to request it explicitly.
+- If the current harness cannot execute the tool safely, extend the harness or add the missing sandbox support in the same change.
+
 ## Skill to use
 
 For MCP test work in this project, explicitly use the `test-mcp-tool` skill.
@@ -69,13 +75,14 @@ Environment variables should use the standard double-underscore form, for exampl
   - clears `bin\Debug\net10.0`
   - runs `dotnet test .\clio.mcp.e2e.csproj`
   - runs all tests when no filter argument is provided
-  - accepts a shorthand filter such as `ClearRedis` and forwards it as a `FullyQualifiedName` filter
+  - accepts a shorthand fixture name such as `ClearRedis` and resolves it to the matching `Clio.Mcp.E2E.*ToolE2ETests` `FullyQualifiedName` filter
   - still accepts an explicit `dotnet test --filter` expression when needed
   - runs `allure generate`
   - runs `allure serve`
 - Examples:
   - `./run-e2e-tests.ps1`
   - `./run-e2e-tests.ps1 ClearRedis`
+  - `./run-e2e-tests.ps1 AssertInfrastructureToolE2ETests`
   - `./run-e2e-tests.ps1 "FullyQualifiedName~ClearRedis"`
 - If `allure` is not on `PATH` after global installation, the Allure docs note that the npm global install directory must be added to `PATH`.
 

@@ -9,6 +9,8 @@ namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
 public abstract class BaseTool<T>(Command<T> command, ILogger logger, IToolCommandResolver commandResolver = null){
+	private static readonly object CommandExecutionLock = new();
+
 	private protected CommandExecutionResult InternalExecute(T options) {
 		return InternalExecute(command, options);
 	}
@@ -44,18 +46,20 @@ public abstract class BaseTool<T>(Command<T> command, ILogger logger, IToolComma
 
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		int result = -1;
-		try {
-			result = command.Execute(options);
-			Thread.Sleep(500);
-			CommandExecutionResult returnResult = new(result, [.. logger.LogMessages.ToList()]);
-			logger.ClearMessages();
-			return returnResult;
-		}
-		catch (Exception e) {
-			List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];
-			CommandExecutionResult returnResult = new(result, logMessages);
-			logger.ClearMessages();
-			return returnResult;
+		lock (CommandExecutionLock) {
+			try {
+				result = command.Execute(options);
+				Thread.Sleep(500);
+				CommandExecutionResult returnResult = new(result, [.. logger.LogMessages.ToList()]);
+				logger.ClearMessages();
+				return returnResult;
+			}
+			catch (Exception e) {
+				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];
+				CommandExecutionResult returnResult = new(result, logMessages);
+				logger.ClearMessages();
+				return returnResult;
+			}
 		}
 	}
 }

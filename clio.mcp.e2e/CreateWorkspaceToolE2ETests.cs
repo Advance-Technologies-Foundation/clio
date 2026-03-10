@@ -144,7 +144,7 @@ public sealed class CreateWorkspaceToolE2ETests {
 	[AllureDescription("Assert that the create-workspace MCP tool completed without an MCP error result")]
 	private static void AssertToolCallSucceeded(CreateWorkspaceActResult actResult) {
 		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: "a successful create-workspace invocation should return a normal MCP tool result");
+			because: $"a successful create-workspace invocation should return a normal MCP tool result. Actual MCP content: {DescribeCallResult(actResult.CallResult)}");
 	}
 
 	[AllureStep("Assert create-workspace command exit code")]
@@ -250,4 +250,14 @@ public sealed class CreateWorkspaceToolE2ETests {
 	private sealed record CreateWorkspaceActResult(
 		CallToolResult CallResult,
 		CommandExecutionEnvelope Execution);
+
+	private static string DescribeCallResult(CallToolResult callResult) {
+		if (callResult.Content is null || callResult.Content.Count == 0) {
+			return "<no content>";
+		}
+
+		return string.Join(
+			" | ",
+			callResult.Content.Select(content => content?.ToString() ?? "<null>"));
+	}
 }

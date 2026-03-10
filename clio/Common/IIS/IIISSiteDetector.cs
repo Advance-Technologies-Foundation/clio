@@ -28,6 +28,14 @@ public interface IIISSiteDetector
 	/// <param name="siteName">Name of the IIS site</param>
 	/// <returns>Process ID if found; null otherwise</returns>
 	Task<int?> GetSiteProcessId(string siteName);
+
+	/// <summary>
+	/// Gets IIS site binding ports inside the requested inclusive range.
+	/// </summary>
+	/// <param name="rangeStart">Inclusive start of the port range.</param>
+	/// <param name="rangeEnd">Inclusive end of the port range.</param>
+	/// <returns>Distinct IIS-bound ports inside the requested range.</returns>
+	Task<IReadOnlyCollection<int>> GetBoundPorts(int rangeStart, int rangeEnd);
 }
 
 /// <summary>

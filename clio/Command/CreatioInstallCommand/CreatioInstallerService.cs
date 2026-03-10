@@ -1384,7 +1384,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 		}
 
-		if ((bool)options.AutoRun) {
+		if (options.AutoRun == true) {
 			_logger.WriteInfo("[Auto-launching application]");
 			StartWebBrowser(options, isIisDeployment);
 		}

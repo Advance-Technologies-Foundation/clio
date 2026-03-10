@@ -40,6 +40,9 @@ Use `[McpServerTool(Name = ...)]` with concise descriptions and argument descrip
 6. Review prompt and resource updates.
 If the command already has an MCP prompt or resource, keep them aligned with the tool contract. If there is no prompt/resource, explicitly decide whether one is needed.
 
+7. Plan the test work immediately.
+Every new or updated MCP tool must also get end-to-end coverage in `clio.mcp.e2e`, not only unit mapping tests in `clio.tests`.
+
 ## Required Checks
 
 - Keep the MCP tool aligned with current command behavior.
@@ -47,6 +50,7 @@ If the command already has an MCP prompt or resource, keep them aligned with the
 - Prefer one MCP method per invocation mode when the command supports distinct modes such as environment-name and credentials.
 - Preserve destructive semantics clearly in names and descriptions.
 - Add or update XML docs on public C# API where required by repo policy.
+- Treat E2E coverage as mandatory for every MCP tool change; extend the harness if needed instead of deferring that work.
 
 ## Change Summary Requirement
 

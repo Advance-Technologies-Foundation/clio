@@ -61,7 +61,15 @@ When adding or updating an MCP tool, also review:
 
 - prompts in `clio\Command\McpServer\Prompts`
 - any related MCP resources in `clio\Command\McpServer\Resources`
+- unit tests in `clio.tests\Command\McpServer`
+- end-to-end tests in `clio.mcp.e2e`
 - tool descriptions and safety flags (`ReadOnly`, `Destructive`, `Idempotent`, `OpenWorld`)
+
+## Test requirement
+
+- Every new or changed MCP tool must ship with updated `clio.mcp.e2e` coverage.
+- Do not stop at unit mapping tests; MCP implementation work is incomplete until the real `clio mcp-server` path is exercised end to end.
+- If an existing E2E harness cannot support the tool yet, extend the harness as part of the same task instead of deferring E2E coverage.
 
 ## Workspace-scoped tools
 

@@ -3,6 +3,28 @@
     [string]$Filter
 )
 
+function Get-TestFixtureName {
+    param(
+        [string]$Value
+    )
+
+    $normalizedValue = $Value.Trim()
+
+    if ($normalizedValue -match '\.') {
+        return $normalizedValue
+    }
+
+    if ($normalizedValue.EndsWith('ToolE2ETests', [System.StringComparison]::Ordinal)) {
+        return "Clio.Mcp.E2E.$normalizedValue"
+    }
+
+    if ($normalizedValue.EndsWith('E2ETests', [System.StringComparison]::Ordinal)) {
+        return "Clio.Mcp.E2E.$normalizedValue"
+    }
+
+    return "Clio.Mcp.E2E.$($normalizedValue)ToolE2ETests"
+}
+
 function Get-TestFilterExpression {
     param(
         [string]$Value
@@ -21,7 +43,8 @@ function Get-TestFilterExpression {
         return $normalizedValue
     }
 
-    return "FullyQualifiedName~$normalizedValue"
+    $fixtureName = Get-TestFixtureName -Value $normalizedValue
+    return "FullyQualifiedName~$fixtureName"
 }
 
 $testArguments = @('.\\clio.mcp.e2e.csproj')

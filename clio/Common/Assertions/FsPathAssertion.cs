@@ -5,9 +5,20 @@ using Clio.UserEnvironment;
 namespace Clio.Common.Assertions
 {
 	/// <summary>
+	/// Validates filesystem path existence for assertion workflows.
+	/// </summary>
+	public interface IFsPathAssertion
+	{
+		/// <summary>
+		/// Validates that the requested path exists.
+		/// </summary>
+		AssertionResult Execute(string pathOrSettingKey);
+	}
+
+	/// <summary>
 	/// Handles filesystem path validation assertions.
 	/// </summary>
-	public class FsPathAssertion
+	public class FsPathAssertion : IFsPathAssertion
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly ILogger _logger;

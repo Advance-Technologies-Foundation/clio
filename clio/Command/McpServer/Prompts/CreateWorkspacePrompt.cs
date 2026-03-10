@@ -24,8 +24,8 @@ public static class CreateWorkspacePrompt {
 		 Use clio mcp server `create-workspace` to create an empty local workspace named
 		 `{workspaceName}`.
 		 {(string.IsNullOrWhiteSpace(directory)
-			 ? "Do not pass `directory`; clio should fall back to the configured `workspaces-root` setting."
-			 : $"Pass `directory` as `{directory}` and create the workspace under that absolute path.")}
+			 ? "Pass only `workspaceName`; do not pass `directory` so clio falls back to the configured `workspaces-root` setting."
+			 : $"Pass `workspaceName` and `directory` as `{directory}` so clio creates the workspace under that absolute path.")}
 		 Do not use environment-backed restore/download modes for this tool.
 		 """;
 }

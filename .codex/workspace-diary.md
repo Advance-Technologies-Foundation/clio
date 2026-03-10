@@ -623,6 +623,34 @@ Discovery: The runtime `Settings` model and docs had already been updated, but `
 Files: clio/tpl/jsonschema/schema.json.tpl, .codex/workspace-diary.md
 Impact: Generated schema consumers now see `workspaces-root` as a first-class supported setting in `appsettings.json`.
 
+## 2026-03-09 20:05 – Identify Windows register tool packaging mismatch
+Context: User reported `clio register` failing on Windows with `DirectoryNotFoundException` for `.dotnet\tools\.store\...\tools\net8.0\any\img`.
+Decision: Traced the failure to `RegisterCommand` assuming an `img` folder exists under `AppContext.BaseDirectory`, then verified the built `clio.8.0.2.16.nupkg` packs `reg` assets but not `img`.
+Discovery: `clio/Command/RegisterCommand.cs` unconditionally calls `imgFolder.GetFiles()` on `<base>/img`, while `clio/clio.csproj` includes `reg`, `tpl`, `cliogate`, `Wiki`, and `help` as content but omits `img`; existing register tests manually add `img` to the mock filesystem, so they miss the packaged-tool layout.
+Files: clio/Command/RegisterCommand.cs, clio/clio.csproj, clio.tests/Command/RegisterCommand.Tests.cs, .codex/workspace-diary.md
+Impact: Future fixes should either pack `img` with the tool or make `register` tolerate a missing icon directory, and add a regression test that reflects the real .NET tool installation structure.
+
+## 2026-03-09 21:02 – Expose link-from-repository as MCP tool
+Context: User requested MCP coverage for the `link-from-repository` command alias `l4r`, mirroring both CLI target modes.
+Decision: Added a thin MCP tool with separate methods for registered-environment and direct-environment-package-path modes, paired prompt helpers, and mapping-focused unit coverage without E2E because the command creates filesystem symlinks.
+Discovery: `Link4RepoCommand` already owns both target-resolution paths, so the MCP adapter does not need `IToolCommandResolver`; isolated test output paths remain necessary in this repo because the default `clio.exe` debug output can be locked by a running process.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, .codex/workspace-diary.md
+Impact: MCP consumers can now invoke `l4r` safely through explicit mode-specific tools while future maintainers have a tested pattern for local filesystem-linking MCP adapters that should stay unit-tested only unless a symlink-safe sandbox is introduced.
+
+## 2026-03-09 21:15 – Make MCP E2E coverage mandatory in repo guidance
+Context: User requested that new or updated MCP tools always require end-to-end coverage by default, even when not explicitly mentioned in the task.
+Decision: Tightened root AGENTS guidance, MCP-local AGENTS guidance, the E2E project guidance, and both MCP skills so MCP work now requires `clio.mcp.e2e` coverage as a standard deliverable rather than an optional follow-up.
+Discovery: The prior guidance strongly encouraged E2E for MCP work but still left room to stop at unit mapping tests; making the requirement explicit in both repo policy and skills is the lowest-friction way to change future agent behavior.
+Files: AGENTS.md, clio/Command/McpServer/AGENTS.md, clio.mcp.e2e/AGENTS.md, .codex/skills/create-mcp-tool/SKILL.md, .codex/skills/test-mcp-tool/SKILL.md, .codex/workspace-diary.md
+Impact: Future MCP tool tasks should now include real `clio mcp-server` end-to-end coverage automatically, and agents should extend the harness instead of treating E2E as optional.
+
+## 2026-03-09 21:29 – Add link-from-repository MCP E2E coverage
+Context: After exposing `link-from-repository` as an MCP tool, the user required real end-to-end coverage instead of unit mapping tests only.
+Decision: Added a dedicated `clio.mcp.e2e` fixture covering direct-path success plus failure paths for both MCP methods, and ran it against the isolated `clio.dll` build via `McpE2E__ClioProcessPath` to avoid the locked default debug executable.
+Discovery: A stable direct-path success case only needs a temporary repository with `packages/<PackageName>` and a temporary Creatio `Pkg` folder; on machines without directory-symlink capability, the success scenario should be skipped explicitly before invoking MCP.
+Files: clio.mcp.e2e/LinkFromRepositoryToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The `l4r` MCP surface now has real stdio/server coverage, including symbolic-link side effects and failure diagnostics, and future local-filesystem MCP tests can reuse the same isolated-process-path approach.
+
 ## 2026-03-08 14:55 – RemoteEntitySchemaCreator parsing review
 Context: User requested a correctness/regression review of RemoteEntitySchemaCreator with focus on ParseColumns and column parsing.
 Decision: Reviewed implementation, command options/docs, and existing RemoteEntitySchemaCreator tests; validated baseline by running targeted tests.
@@ -643,3 +671,96 @@ Decision: Kept the clear-redis fixture on `[AllureFeature("clear-redis-db")]` an
 Discovery: The local PowerShell runner assumes Allure CLI is already installed and available on `PATH`, using `allure generate` and `allure serve` directly after `dotnet test`.
 Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/ClearRedisToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future MCP E2E tests should produce more consistent Allure reporting and clearer local execution guidance.
+
+## 2026-03-09 20:13 – Security/correctness review for LinkFromRepository MCP tool
+Context: User requested a focused review of the newly added link-from-repository / l4r MCP tool, prompt, and unit tests.
+Decision: Reviewed added MCP files against command execution flow (Link4RepoCommand and RfsEnvironment) to confirm security and behavioral alignment.
+Discovery: The link-from-repository-by-environment tool currently allows absolute file-path input through environmentName, which reaches destructive filesystem operations; tool metadata also marks both methods as non-destructive despite delete-and-symlink behavior.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio/Command/Link4RepoCommand.cs, clio/Command/RfsEnvironment.cs, .codex/workspace-diary.md
+Impact: Future MCP hardening work should enforce strict environment-key validation on the environment-mode tool path and correct MCP destructive metadata so clients can apply appropriate safety gating.
+
+
+## 2026-03-09 20:15 – Review LinkFromRepository MCP tool correctness/performance
+Context: User requested a targeted review of the new LinkFromRepository MCP tool, prompt, and unit tests for correctness/performance concerns.
+Decision: Reviewed the new MCP files against Link4RepoCommand behavior and executed targeted Release tests for LinkFromRepositoryToolTests to validate baseline mapping behavior.
+Discovery: The tool currently executes a startup-resolved Link4RepoCommand instance directly, while that command contains mutable execution state; the prompt and tests also do not cover platform restrictions in environment-name flow.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio/Command/Link4RepoCommand.cs, .codex/workspace-diary.md
+Impact: Future MCP updates for link-from-repository should enforce mode/platform constraints and prefer isolated command execution to avoid cross-request correctness risks.
+
+
+## 2026-03-09 20:17 – Review LinkFromRepository MCP additions
+Context: User requested a focused code-quality/correctness review of the new `link-from-repository` MCP tool, prompt, and unit tests.
+Decision: Validated added tests in `Release` mode (`dotnet test ... --filter FullyQualifiedName~LinkFromRepositoryToolTests`) and reproduced command behavior for relative `envPkgPath` with `dotnet run -c Release --no-build -- link-from-repository --envPkgPath RelativePkgPath --repoPath C:\Repo --packages PkgA`.
+Discovery: The new MCP by-path contract and prompt describe `envPkgPath` as a path but do not constrain it to an absolute path, while command execution falls back to environment-name resolution for non-file values; current unit tests use a fake command that always returns success, so this mismatch is not detected.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio/Command/Link4RepoCommand.cs, .codex/workspace-diary.md
+Impact: Future MCP/tool tests should include at least one real-failure path assertion for `link-from-repository` (or a high-fidelity fake) so parameter-contract regressions are caught before release.
+
+## 2026-03-09 21:43 – Expand l4r MCP E2E package selection coverage
+Context: User requested additional `link-from-repository` MCP E2E tests for comma-separated package lists and `*` wildcard package selection.
+Decision: Extended the existing direct-path E2E fixture with one test covering `PkgA,PkgB` and another covering `*`, and generalized the symlink assertion helpers to validate per-package results.
+Discovery: Verifying these flows reliably required seeding two repository packages and two target package folders in the temporary Creatio package path before invoking the real `clio mcp-server` process.
+Files: clio.mcp.e2e/LinkFromRepositoryToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The `l4r` MCP tool now has process-level coverage for the main package-selection modes users are expected to invoke through MCP.
+
+## 2026-03-09 21:58 – Mark link-from-repository MCP tools as destructive
+Context: User reported that the new link-from-repository MCP endpoints were annotated as non-destructive even though the command deletes existing package directories before replacing them with symbolic links.
+Decision: Set both LinkFromRepository MCP methods to `Destructive = true`, added a unit test that reflects the attribute contract, and added an MCP E2E discovery assertion that checks the destructive hint from the real server.
+Discovery: The E2E project default `appsettings.json` points at a Debug `clio.exe`, so validating newly changed MCP metadata locally required the existing `McpE2E__ClioProcessPath` override to target the freshly built Release binary.
+Files: clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs, clio.tests/Command/McpServer/LinkFromRepositoryToolTests.cs, clio.mcp.e2e/LinkFromRepositoryToolE2ETests.cs, .codex/workspace-diary.md
+Impact: MCP clients can now apply destructive-operation guardrails consistently for both link-from-repository invocation modes, and future regressions in discovery metadata are covered at both unit and server levels.
+
+## 2026-03-09 21:25 – Add aggregate assert-infrastructure MCP tool
+Context: User requested one MCP call that runs the full infrastructure assert sweep and returns complete machine-readable results for Kubernetes, local infrastructure, filesystem, and deployment database candidates.
+Decision: Added an MCP-only aggregation service and structured result contract, exposed it through a dedicated `assert-infrastructure` tool and prompt, introduced focused assertion interfaces for testable orchestration, and added both unit coverage and real `clio mcp-server` E2E coverage.
+Discovery: The ModelContextProtocol server advertises non-`BaseTool` classes only when they carry `[McpServerToolType]`, and this tool’s structured payload is returned through a text content block rather than `StructuredContent`, so the E2E parser must validate wrappers before deserializing the actual JSON.
+Files: clio/Common/Assertions/AssertInfrastructureAggregator.cs, clio/Common/Assertions/AssertInfrastructureResult.cs, clio/Command/McpServer/Tools/AssertInfrastructureTool.cs, clio/Command/McpServer/Prompts/AssertInfrastructurePrompt.cs, clio.tests/Common/Assertions/AssertInfrastructureAggregatorTests.cs, clio.tests/Command/McpServer/AssertInfrastructureToolTests.cs, clio.mcp.e2e/AssertInfrastructureToolE2ETests.cs, clio.mcp.e2e/Support/Results/AssertInfrastructureEnvelope.cs, clio/Command/AssertCommand.cs, clio/Common/Kubernetes/K8ContextValidator.cs, clio/Common/Kubernetes/K8DatabaseAssertion.cs, clio/Common/Kubernetes/K8RedisAssertion.cs, clio/Common/Assertions/FsPathAssertion.cs, clio/Common/Assertions/FsPermissionAssertion.cs, .codex/workspace-diary.md
+Impact: Agents can now inspect one authoritative infrastructure snapshot before deployment decisions, while future MCP work has a tested pattern for aggregate read-only tools that continue across partial failures and still verify against the real stdio server.
+
+## 2026-03-09 21:40 – Return structured unmasked show-webApp-list MCP payload
+Context: User wanted the `show-webApp-list` MCP tool to stop returning raw logger output and instead expose the same structured shape as the command JSON output, but without masking sensitive values.
+Decision: Kept the CLI command projection reusable by adding a structured environment DTO path on `ShowAppListCommand`, updated the MCP tool to return that structured result directly with `maskSensitiveData: false`, and tightened the E2E parser so it only accepts meaningful environment payloads instead of MCP wrapper objects.
+Discovery: The real MCP server returned the tool payload inside wrapper content that could deserialize into an array of null-valued envelopes unless the parser validated at least one meaningful `name` or `uri`.
+Files: clio/Command/ShowAppListCommand.cs, clio/Command/McpServer/Tools/ShowWebAppListTool.cs, clio.tests/Command/McpServer/ShowWebAppListToolTests.cs, clio.mcp.e2e/ShowWebAppListToolE2ETests.cs, clio.mcp.e2e/Support/Results/ShowWebAppListEnvelope.cs, .codex/workspace-diary.md
+Impact: Agents now receive structured, unmasked web application settings from MCP without depending on raw log parsing, and the E2E harness is stricter about identifying actual JSON result payloads.
+
+## 2026-03-09 22:18 – Finish deploy-creatio MCP flow and add passing infrastructure discovery
+Context: User needed `deploy-creatio` to become a real MCP deployment entrypoint and needed a separate MCP tool that exposes only passing infrastructure choices and explicit deployment recommendations.
+Decision: Replaced the `deploy-creatio` maintenance stub with real `InstallerCommand` execution, added preflight guidance that points agents to `assert-infrastructure` and `show-passing-infrastructure`, introduced `IPassingInfrastructureService` plus a structured `show-passing-infrastructure` MCP tool, and covered both tools with unit and real stdio E2E tests.
+Discovery: The deployment selection flow needed a purpose-built passing-only contract instead of reusing the diagnostic assert payload, and the real MCP server returns these structured tool results through text content wrappers that the E2E parser must validate before deserializing.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Tools/ShowPassingInfrastructureTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Command/McpServer/Prompts/ShowPassingInfrastructurePrompt.cs, clio/Common/Assertions/PassingInfrastructureService.cs, clio/Common/Assertions/ShowPassingInfrastructureResult.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.tests/Command/McpServer/ShowPassingInfrastructureToolTests.cs, clio.tests/Common/Assertions/PassingInfrastructureServiceTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio.mcp.e2e/ShowPassingInfrastructureToolE2ETests.cs, clio.mcp.e2e/Support/Results/ShowPassingInfrastructureEnvelope.cs, .codex/workspace-diary.md
+Impact: MCP callers can now inspect failing infrastructure, inspect passing deployable infrastructure, and then call `deploy-creatio` with a concrete recommended bundle instead of guessing `dbServerName` and `redisDb`.
+
+## 2026-03-09 23:07 – Reduce deploy-creatio MCP inputs to five fields
+Context: User wanted the MCP-facing `deploy-creatio` tool to accept only `db-server-name`, `redis-server-name`, `ZipFile`, `SiteName`, and `SitePort`, with all other MCP arguments disabled.
+Decision: Reduced `DeployCreatioArgs` to the five approved fields, kept `IsSilent = true` plus `RedisDb = -1` internally, and trimmed `show-passing-infrastructure` recommendation bundles so they only advertise MCP arguments that `deploy-creatio` still accepts.
+Discovery: The underlying installer does not need an MCP `db` argument when `ZipFile` is supplied because it detects the database type from the unpacked build; the real MCP server advertises the deploy input schema under an `args` wrapper, so E2E validation must inspect nested properties rather than expecting flattened tool parameters.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Common/Assertions/ShowPassingInfrastructureResult.cs, clio/Common/Assertions/PassingInfrastructureService.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.tests/Command/McpServer/ShowPassingInfrastructureToolTests.cs, clio.tests/Common/Assertions/PassingInfrastructureServiceTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio.mcp.e2e/ShowPassingInfrastructureToolE2ETests.cs, clio.mcp.e2e/Support/Results/ShowPassingInfrastructureEnvelope.cs, .codex/workspace-diary.md
+Impact: MCP callers now see a much narrower deploy contract, while the passing-infrastructure discovery payload remains aligned with the reduced tool input surface.
+
+## 2026-03-09 23:20 – Fix deploy-creatio MCP AutoRun null regression
+Context: A real deploy-creatio MCP request failed after successful unzip and PostgreSQL restore with `Nullable object must have a value.`
+Decision: Set `AutoRun = true` in the deploy-creatio MCP wrapper and changed the installer service to use a null-safe `options.AutoRun == true` check.
+Discovery: The reduced five-argument MCP wrapper manually constructs `PfInstallerOptions`, so CLI parser defaults are bypassed and nullable options must be assigned explicitly.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, .codex/workspace-diary.md
+Impact: deploy-creatio MCP calls no longer crash at the auto-launch step when using the reduced contract.
+
+## 2026-03-09 23:55 – Add hardened find-empty-iis-port MCP tool
+Context: User needed an MCP tool that helps agents choose a safe local IIS `sitePort` in the fixed `40000-42000` range before `deploy-creatio`.
+Decision: Added a read-only MCP tool plus IIS port discovery services, then hardened the result contract to expose only the recommended port and occupancy counts while failing closed on scan errors.
+Discovery: Returning full bound-port lists and raw exception text leaked unnecessary host topology, and cross-platform unit tests required injected platform detection because IIS discovery is Windows-only.
+Files: clio/Common/IIS/FindAvailableIisPortResult.cs, clio/Common/IIS/AvailableIisPortService.cs, clio/Common/IIS/IPlatformDetector.cs, clio/Common/IIS/TcpPortReservationReader.cs, clio/Common/IIS/IIISSiteDetector.cs, clio/Common/IIS/WindowsIISSiteDetector.cs, clio/Command/McpServer/Tools/FindEmptyIisPortTool.cs, clio/Command/McpServer/Prompts/FindEmptyIisPortPrompt.cs, clio.tests/Common/IIS/AvailableIisPortServiceTests.cs, clio.tests/Command/McpServer/FindEmptyIisPortToolTests.cs, clio.mcp.e2e/FindEmptyIisPortToolE2ETests.cs, clio.mcp.e2e/Support/Results/FindAvailableIisPortEnvelope.cs, .codex/workspace-diary.md
+Impact: Agents can now discover a safe local IIS deployment port through MCP without guessing, while the tool avoids leaking host network details and has both unit and real server E2E coverage.
+
+## 2026-03-10 00:04 – Restore disable-reset-password default in deploy-creatio MCP
+Context: User reported that password-reset disabling no longer worked through the reduced five-argument `deploy-creatio` MCP tool.
+Decision: Set `DisableResetPassword = true` explicitly in the MCP wrapper so it matches the CLI parser default that is bypassed by manual `PfInstallerOptions` construction, and locked that behavior with a unit test.
+Discovery: The CLI option default lives on `PfInstallerOptions`, but the MCP wrapper builds the options object directly, so any omitted boolean defaults silently fall back to `false` unless they are assigned in code.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, .codex/workspace-diary.md
+Impact: `deploy-creatio` MCP now preserves the existing CLI behavior for forced-password-reset disabling instead of silently skipping it.
+
+## 2026-03-10 01:22 – Add dconf MCP tools for environment and build flows
+Context: User needed MCP support for `dconf -e` and `dconf --build` so agents can download configuration into a chosen workspace.
+Decision: Added separate `download-configuration-by-environment` and `download-configuration-by-build` MCP tools plus aligned prompt guidance, required absolute `workspace-path` for both modes, enforced absolute `build-path` for build mode, and serialized MCP command execution in `BaseTool` to avoid concurrent working-directory leakage.
+Discovery: `DownloadConfigurationCommand` depends on the current working directory to target the workspace, Windows drive-relative paths can bypass a simple rooted-path check, and the extracted-build flow works in E2E when the workspace includes `.clio/workspaceSettings.json`.
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/DownloadConfigurationTool.cs, clio/Command/McpServer/Prompts/DownloadConfigurationPrompt.cs, clio.tests/Command/McpServer/DownloadConfigurationToolTests.cs, clio.mcp.e2e/DownloadConfigurationToolE2ETests.cs, .codex/workspace-diary.md
+Impact: MCP clients can now invoke both supported `dconf` flows with a clear contract and passing unit/E2E coverage, while malformed paths and concurrent tool execution are handled more safely.
