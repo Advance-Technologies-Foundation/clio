@@ -37,7 +37,7 @@ public class OpenAppCommand(
 			}
 
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
-				ProcessExecutionOptions po = new("open", env.SimpleloginUri);
+				ProcessExecutionOptions po = new("open", env.Uri);
 				ProcessLaunchResult result = processExecutor.FireAndForgetAsync(po).ConfigureAwait(false).GetAwaiter()
 															.GetResult();
 				if (result.Started) {
@@ -49,7 +49,7 @@ public class OpenAppCommand(
 				return 1;
 			}
 			else {
-				webBrowser.OpenUrl(env.SimpleloginUri);
+				webBrowser.OpenUrl(env.Uri);
 			}
 
 			return 0;

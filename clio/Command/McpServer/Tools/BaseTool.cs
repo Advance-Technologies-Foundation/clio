@@ -15,12 +15,20 @@ public abstract class BaseTool<T>(
 	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 	private static readonly object CommandExecutionLock = new();
 
+	private protected static object CommandExecutionSyncRoot => CommandExecutionLock;
+
 	private protected CommandExecutionResult InternalExecute(T options) {
 		return InternalExecute(command, options);
 	}
 
 	private protected CommandExecutionResult InternalExecute<TCommand>(T options,
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveCommand<TCommand>(options);
+		configureCommand?.Invoke(resolvedCommand);
+		return InternalExecute(resolvedCommand, options);
+	}
+
+	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
 		if (options is not EnvironmentOptions environmentOptions) {
 			throw new InvalidOperationException(
 				$"{GetType().Name} can only resolve commands for options derived from EnvironmentOptions.");
@@ -31,7 +39,7 @@ public abstract class BaseTool<T>(
 				$"{GetType().Name} does not support environment-based command resolution.");
 		}
 
-		TCommand resolvedCommand = options switch {
+		return options switch {
 									   //Optional environment properties are not used in command resolution for these options, so null is passed explicitly to avoid confusion about which properties are used.
 									   CreateTestProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
@@ -42,9 +50,6 @@ public abstract class BaseTool<T>(
 									   var _ => throw new InvalidOperationException(
 										   $"Unsupported options type: {options.GetType().Name}")
 								   };
-
-		configureCommand?.Invoke(resolvedCommand);
-		return InternalExecute(resolvedCommand, options);
 	}
 
 

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using Clio.Command.McpServer.Tools;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Prompts;
@@ -58,4 +59,26 @@ public static class WorkspacePackagePrompt {
 		 Pass `workspace-path` exactly as provided and use `environment-name` `{environmentName}`.
 		 Operate on the specified workspace package only.
 		 """;
+
+	/// <summary>
+	/// Builds a prompt that directs the agent to inspect packages installed in an environment.
+	/// </summary>
+	[McpServerPrompt(Name = GetPkgListTool.GetPkgListToolName), Description("Prompt to list environment packages")]
+	public static string GetPkgList(
+		[Required]
+		[Description("Creatio environment name")]
+		string environmentName,
+		[Description("Optional package-name filter")]
+		string? filter = null) =>
+		string.IsNullOrWhiteSpace(filter)
+			? $"""
+			   Use clio mcp server `{GetPkgListTool.GetPkgListToolName}` tool to list packages installed in
+			   Creatio environment `{environmentName}`.
+			   Pass `environment-name` exactly as provided and omit `filter` when you need the full package list.
+			   """
+			: $"""
+			   Use clio mcp server `{GetPkgListTool.GetPkgListToolName}` tool to list packages installed in
+			   Creatio environment `{environmentName}`.
+			   Pass `environment-name` exactly as provided and use `filter` `{filter}` to narrow the result.
+			   """;
 }

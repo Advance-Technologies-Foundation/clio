@@ -22,4 +22,18 @@ internal static class TestConfiguration {
 		settings.Sandbox.SeedKeyPrefix.Should().NotBeNullOrWhiteSpace(
 			because: "seeded Redis keys must use a predictable prefix for cleanup and diagnostics");
 	}
+
+	public static string ResolveFreshClioProcessPath() {
+		return Path.GetFullPath(Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"..",
+			"..",
+			"..",
+			"..",
+			"clio",
+			"bin",
+			"Debug",
+			"net8.0",
+			"clio.dll"));
+	}
 }

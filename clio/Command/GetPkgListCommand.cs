@@ -34,6 +34,7 @@ namespace Clio.Command
 
 	public class GetPkgListCommand : Command<PkgListOptions>
 	{
+		private const string MinClioGateVersion = "2.0.0.0";
 
 		#region Fields: Private
 
@@ -88,7 +89,7 @@ namespace Clio.Command
 		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages, 
 				string searchPattern) {
 			return packages
-				.Where(p => p.Descriptor.Name.ToLower().Contains(searchPattern.ToLower()))
+				.Where(p => p.Descriptor.Name.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
 				.OrderBy(p => p.Descriptor.Name);
 		}
 
@@ -112,27 +113,37 @@ namespace Clio.Command
 			}
 		}
 
+		internal bool TryGetFilteredPackages(PkgListOptions options, out IReadOnlyList<PackageInfo> packages,
+			out string errorMessage, out string remediationMessage) {
+			if (!_clioGateway.IsCompatibleWith(MinClioGateVersion)) {
+				packages = Array.Empty<PackageInfo>();
+				errorMessage =
+					$"To view packages feature requires cliogate package version {MinClioGateVersion} or higher installed in Creatio.";
+				remediationMessage = string.IsNullOrWhiteSpace(options.Environment)
+					? "To install cliogate use the following command: clio install-gate"
+					: $"To install cliogate use the following command: clio install-gate -e {options.Environment}";
+				return false;
+			}
+
+			packages = FilterPackages(_applicationPackageListProvider.GetPackages(), options.SearchPattern).ToList();
+			errorMessage = string.Empty;
+			remediationMessage = string.Empty;
+			return true;
+		}
+
 		#endregion
 
 		#region Methods: Public
 
 		public override int Execute(PkgListOptions options) {
-			
-			const string minClioGateVersion = "2.0.0.0";
-			if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
-				_logger.WriteError($"To view packages feature requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
-
-				_logger.WriteInfo(string.IsNullOrWhiteSpace(options.Environment)
-					?  "To install cliogate use the following command: clio install-gate"
-					: $"To install cliogate use the following command: clio install-gate -e {options.Environment}");
-				return 0;
-			}
-			
-			
-			
 			try {
-				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
-				var filteredPackages = FilterPackages(packages, options.SearchPattern);
+				if (!TryGetFilteredPackages(options, out IReadOnlyList<PackageInfo> filteredPackages,
+						out string errorMessage, out string remediationMessage)) {
+					_logger.WriteError(errorMessage);
+					_logger.WriteInfo(remediationMessage);
+					return 0;
+				}
+
 				PrintPackageList(options, filteredPackages);
 				return 0;
 			} catch (Exception e) {

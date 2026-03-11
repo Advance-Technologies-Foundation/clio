@@ -785,3 +785,31 @@ Decision: Added per-invocation DB log sessions, surfaced `log-file-path` in MCP 
 Discovery: MCP tool invocation for command-style tools requires the `args` wrapper in E2E calls; reopening the artifact file per line caused both corruption and a measurable performance regression, so a shared append writer registry was needed.
 Files: clio/Common/DbOperationLogging.cs, clio/Common/SharedAppendFileSink.cs, clio/Common/ConsoleLogger.cs, clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/McpServer/Tools/CommandExecutionResult.cs, clio/Command/McpServer/Tools/RestoreDbTool.cs, clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Prompts/RestoreDbPrompt.cs, clio.tests/Command/RestoreDb.LogArtifact.Tests.cs, clio.tests/Command/McpServer/RestoreDbToolTests.cs, clio.mcp.e2e/RestoreDbToolE2ETests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, .codex/workspace-diary.md
 Impact: CLI users and MCP callers now consistently receive a persistent DB-operation log artifact path for troubleshooting, with restore/deploy DB-native output preserved and covered by unit and E2E tests.
+
+## 2026-03-11 11:35 – Add push-workspace and restore-workspace MCP tools
+Context: User requested new MCP tools for `pushw` and `restorew` with only environment name and workspace path inputs.
+Decision: Added dedicated workspace-sync MCP tools plus prompt helpers, reused the download-configuration-style absolute workspace-path validation and current-directory switching pattern, and limited the MCP contract to `environment-name` and `workspace-path`.
+Discovery: Because `BaseTool<T>` requires one concrete options type, exposing both commands cleanly required separate MCP tool classes sharing a common workspace execution base rather than one combined generic adapter.
+Files: clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: MCP clients can now invoke workspace push and restore flows with a narrow, explicit contract and regression coverage for path validation, command mapping, and invalid-environment failures.
+
+## 2026-03-11 16:02 – Security review of workspace-sync MCP additions
+Context: User requested a focused security/unsafe-behavior review for new workspace sync MCP files only.
+Decision: Reviewed tool metadata, path-validation logic, prompt wording, and unit/E2E coverage for exploitable behaviors and safety-contract mismatches.
+Discovery: Workspace path validation currently accepts UNC absolute paths and switches process working directory to them, and both mutating tools are marked Destructive=false, weakening client safety guardrails.
+Files: clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future MCP workspace sync hardening should explicitly block network/UNC workspace paths and align destructive metadata with real side effects.
+
+## 2026-03-11 16:02 – Workspace sync MCP performance review
+Context: User requested a focused performance/overhead review for new workspace MCP tool, prompt, unit tests, and E2E tests.
+Decision: Performed static review of the four target files and validated runtime behavior by executing the `WorkspaceSyncToolE2ETests` suite.
+Discovery: No concrete performance bottlenecks or unnecessary overhead were found in the reviewed additions; the E2E class completed quickly in the current environment.
+Files: clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future reviewers can treat this workspace-sync MCP slice as performance-clean unless command-level behavior outside these files changes.
+
+## 2026-03-11 17:02 – Add get-pkg-list MCP tool and workspace happy-path coverage
+Context: User asked to expose `get-pkg-list` through MCP and to add real happy-path push/restore coverage using arranged workspaces and packages.
+Decision: Added a structured `get-pkg-list` MCP tool plus prompt and unit/E2E coverage, changed workspace E2E to arrange real packages with `create-workspace` and `add-package`, asserted push success through MCP `get-pkg-list`, and verified restore by deleting the local package directory then restoring into the same workspace so existing workspace settings drive the package download.
+Discovery: `CallToolResult.Content` for structured non-command MCP tools arrives as text-content wrappers containing JSON strings, so E2E parsers must reject wrapper objects before deserializing payload rows; `install-gate` can fail even when cliogate is already present, so the harness now falls back to verifying `get-pkg-list --Json true` success instead of assuming install must always be the successful path.
+Files: clio/Command/GetPkgListCommand.cs, clio/Command/McpServer/Tools/GetPkgListTool.cs, clio/Command/McpServer/Prompts/WorkspacePackagePrompt.cs, clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio.tests/Command/McpServer/GetPkgListToolTests.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/GetPkgListToolE2ETests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, clio.mcp.e2e/Support/Results/GetPkgListEnvelope.cs, .codex/workspace-diary.md
+Impact: MCP callers can now list environment packages with structured package metadata, and the workspace-sync MCP slice now has real end-to-end proof for push publication and restore reconstruction instead of only negative-path validation.
