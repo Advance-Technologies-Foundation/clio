@@ -290,7 +290,7 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 
 		// Assert
 		result.Should().Be(0, "command should succeed");
-		_webBrowser.Received(1).OpenUrl(environment.SimpleloginUri);
+		_webBrowser.Received(1).OpenUrl(environment.Uri);
 	}
 
 	[SetUp]
