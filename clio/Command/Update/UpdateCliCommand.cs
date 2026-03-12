@@ -20,11 +20,11 @@ public class UpdateCliOptions : EnvironmentOptions {
 	public bool Global { get; set; }
 
 	/// <summary>
-	/// Skip the interactive confirmation prompt and proceed with update (default: false).
+	/// Skip the interactive confirmation prompt and proceed with update (default: true).
 	/// </summary>
-	[Option('y', "no-prompt", Required = false, Default = false,
-		HelpText = "Skip confirmation prompt and proceed with update automatically")]
-	public bool NoPrompt { get; set; }
+	[Option('y', "no-prompt", Required = false, Default = true,
+		HelpText = "Proceed with update automatically without confirmation (default behavior)")]
+	public bool NoPrompt { get; set; } = true;
 
 }
 
@@ -32,7 +32,7 @@ public class UpdateCliOptions : EnvironmentOptions {
 
 
 /// <summary>
-/// Command to update clio to the latest version with interactive confirmation.
+/// Command to update clio to the latest version automatically without confirmation by default.
 /// </summary>
 public class UpdateCliCommand : Command<UpdateCliOptions> {
 
@@ -75,7 +75,7 @@ public class UpdateCliCommand : Command<UpdateCliOptions> {
 			await _promptService.DisplayVersionInfoAsync(currentVersion, latestVersion);
 			_logger.WriteInfo("An update is available!");
 
-			// Step 4: Prompt user (unless --no-prompt is set)
+			// Step 4: Proceed automatically (default) or prompt user if needed
 			bool proceed = options.NoPrompt || await _promptService.PromptForConfirmationAsync(currentVersion, latestVersion);
 
 			if (!proceed) {

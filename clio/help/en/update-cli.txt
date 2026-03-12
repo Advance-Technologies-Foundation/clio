@@ -10,33 +10,31 @@ SYNOPSIS
 
 DESCRIPTION
     Checks for a newer version of clio on NuGet.org and updates the installation
-    if an update is available. By default, the command operates in interactive mode,
-    showing the current and latest versions and prompting the user for confirmation
-    before updating.
+    if an update is available. By default, the command proceeds with the update
+    automatically without prompting for confirmation.
+    
+    Use the --prompt option if you want to review the changes before updating.
     
     Recommended to use the latest version of clio for bug fixes and new features.
 
 OPTIONS
     -g, --global            Install clio globally (default: true)
 
-    -y, --no-prompt         Skip confirmation prompt and proceed with update
-                            automatically. Useful for automated scripts.
+    -y, --no-prompt         Proceed with update automatically without confirmation
+                            (default behavior)
 
 EXAMPLES
-    # Interactive update (prompts user)
+    # Automatic update (default behavior)
     update-cli
 
-    # Automatic update without confirmation
-    update-cli --no-prompt
-
-    # Using short alias
-    update -y
+    # Same as above using alias
+    update
 
 BEHAVIOR
     - Checks current installed version and latest version on NuGet.org
     - If already on latest version, displays confirmation message and exits
-    - If update available and not --no-prompt, displays versions and prompts for confirmation
-    - On user confirmation or with --no-prompt, runs: dotnet tool update clio -g
+    - If update available, automatically proceeds with update (unless overridden)
+    - Runs: dotnet tool update clio -g
     - Verifies the new version is installed correctly
     - Reports success or failure with appropriate exit codes
 

@@ -99,6 +99,25 @@ namespace Clio.Tests.Command {
 		}
 
 		[Test]
+		[Description("Should skip prompt by default when no options are explicitly set")]
+		public void Execute_DefaultOptions_SkipsPromptAndUpdates() {
+			// Arrange
+			var options = new UpdateCliOptions(); // No explicit NoPrompt setting - using default
+			_mockAppUpdater.GetCurrentVersion().Returns("8.0.1.80");
+			_mockAppUpdater.GetLatestVersionFromNuget().Returns("8.0.1.85");
+			_mockAppUpdater.IsUpdateAvailableAsync().Returns(Task.FromResult(true));
+			_mockAppUpdater.ExecuteUpdateAsync(true).Returns(Task.FromResult(0));
+			_mockAppUpdater.VerifyInstallationAsync("8.0.1.85").Returns(Task.FromResult(true));
+
+			// Act
+			int result = _command.Execute(options);
+
+			// Assert
+			result.Should().Be(0, "because update succeeds with default auto-confirm behavior");
+			_mockPromptService.DidNotReceive().PromptForConfirmationAsync(Arg.Any<string>(), Arg.Any<string>());
+		}
+
+		[Test]
 		[Description("Should return 1 when update execution fails")]
 		public void Execute_UpdateFails_ReturnsOne() {
 			// Arrange
@@ -165,6 +184,16 @@ namespace Clio.Tests.Command {
 			// Assert
 			result.Should().Be(0, "because update succeeds");
 			_mockAppUpdater.Received(1).ExecuteUpdateAsync(false);
+		}
+
+		[Test]
+		[Description("NoPrompt option should default to true")]
+		public void UpdateCliOptions_NoPrompt_DefaultsToTrue() {
+			// Arrange & Act
+			var options = new UpdateCliOptions();
+
+			// Assert
+			options.NoPrompt.Should().BeTrue("because NoPrompt should be true by default to skip confirmation");
 		}
 
 	}
