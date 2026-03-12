@@ -30,6 +30,17 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 	#region Methods: Public
 
 	[Test]
+	[Description("EnvironmentName positional value should set Environment property so 'clio open myEnv' works")]
+	public void EnvironmentName_ShouldSetEnvironmentProperty() {
+		// Arrange
+		OpenAppOptions options = new() { EnvironmentName = "my-dev-env" };
+
+		// Act & Assert
+		options.Environment.Should().Be("my-dev-env",
+			"because positional EnvironmentName should map to Environment property");
+	}
+
+	[Test]
 	[Description("Execute should handle environment with trailing slash in URI")]
 	public void Execute_ShouldHandleTrailingSlashInUri() {
 		// Arrange
