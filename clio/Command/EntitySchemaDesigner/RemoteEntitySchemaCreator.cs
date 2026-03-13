@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using Clio.Common;
 using Clio.Common.Responses;
@@ -17,20 +16,11 @@ public interface IRemoteEntitySchemaCreator{
 }
 
 internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
-	#region Constants: Private
-
-	private const string DefaultCultureName = "en-US";
-	private const string EntitySchemaManagerName = "EntitySchemaManager";
-
-	#endregion
-
 	#region Fields: Private
 
-	private readonly IApplicationClient _applicationClient;
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
-	private readonly IJsonConverter _jsonConverter;
+	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
 	#endregion
 
@@ -42,28 +32,14 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	#endregion
 
-	private static readonly Dictionary<string, int> SupportedDataValueTypes =
-		new(StringComparer.OrdinalIgnoreCase) {
-			["guid"] = 0,
-			["text"] = 1,
-			["integer"] = 4,
-			["datetime"] = 7,
-			["lookup"] = 10,
-			["boolean"] = 12
-		};
-
 	#region Constructors: Public
 
 	public RemoteEntitySchemaCreator(
-		IApplicationClient applicationClient,
 		IApplicationPackageListProvider applicationPackageListProvider,
-		IJsonConverter jsonConverter,
-		IServiceUrlBuilder serviceUrlBuilder,
+		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		ILogger logger) {
-		_applicationClient = applicationClient;
 		_applicationPackageListProvider = applicationPackageListProvider;
-		_jsonConverter = jsonConverter;
-		_serviceUrlBuilder = serviceUrlBuilder;
+		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 	}
 
@@ -71,44 +47,20 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	#region Methods: Private
 
-	private static TResponse EnsureSuccess<TResponse>(TResponse response, string methodName)
-		where TResponse : BaseResponse {
-		if (response == null) {
-			throw new InvalidOperationException($"{methodName} returned an empty response.");
-		}
-
-		if (!response.Success) {
-			throw new InvalidOperationException(
-				string.IsNullOrWhiteSpace(response.ErrorInfo?.Message)
-					? $"{methodName} failed."
-					: response.ErrorInfo.Message);
-		}
-
-		return response;
-	}
-
-	private static string Truncate(string value, int maxLength) {
-		return string.IsNullOrEmpty(value) || value.Length <= maxLength
-			? value
-			: value[..maxLength];
-	}
-
 	private void ApplySchemaMetadata(
 		EntityDesignSchemaDto schema,
 		CreateEntitySchemaOptions options,
 		IReadOnlyCollection<ParsedColumn> parsedColumns,
 		PackageInfo package) {
-		string cultureName = CultureInfo.CurrentCulture.Name;
+		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		schema.Name = options.SchemaName;
 		schema.Caption = [
 			new LocalizableStringDto {
-				CultureName = string.IsNullOrWhiteSpace(cultureName) ? DefaultCultureName : cultureName,
+				CultureName = cultureName,
 				Value = options.Title
 			}
 		];
-		schema.Package ??= new WorkspacePackageDto();
-		schema.Package.UId = package.Descriptor.UId;
-		schema.Package.Name = package.Descriptor.Name;
+		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
 		schema.InheritedColumns ??= [];
@@ -135,14 +87,12 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string parentSchemaName,
 		Guid packageUId,
 		CreateEntitySchemaOptions options) {
-		AvailableEntitySchemasResponse parentResponse
-			= Post<GetAvailableSchemasRequestDto, AvailableEntitySchemasResponse>(
-				"GetAvailableParentSchemas",
-				new GetAvailableSchemasRequestDto {
-					PackageUId = packageUId,
-					UseFullHierarchy = false
-				},
-				options);
+		AvailableEntitySchemasResponse parentResponse = _entitySchemaDesignerClient.GetAvailableParentSchemas(
+			new GetAvailableSchemasRequestDto {
+				PackageUId = packageUId,
+				UseFullHierarchy = false
+			},
+			options);
 		ManagerItemDto parent = parentResponse.Items?.FirstOrDefault(item =>
 			string.Equals(item.Name, parentSchemaName, StringComparison.OrdinalIgnoreCase));
 		if (parent == null) {
@@ -150,27 +100,22 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				$"Parent schema '{parentSchemaName}' is not available for package '{schema.Package?.Name ?? packageUId.ToString()}'.");
 		}
 
-		DesignerResponse<EntityDesignSchemaDto> response
-			= Post<AssignParentSchemaRequestDto<EntityDesignSchemaDto>, DesignerResponse<EntityDesignSchemaDto>>(
-				"AssignParentSchema",
-				new AssignParentSchemaRequestDto<EntityDesignSchemaDto> {
-					DesignSchema = schema,
-					ParentSchemaUId = parent.UId,
-					UseFullHierarchy = false
-				},
-				options);
+		DesignerResponse<EntityDesignSchemaDto> response = _entitySchemaDesignerClient.AssignParentSchema(
+			new AssignParentSchemaRequestDto<EntityDesignSchemaDto> {
+				DesignSchema = schema,
+				ParentSchemaUId = parent.UId,
+				UseFullHierarchy = false
+			},
+			options);
 		return response.Schema ?? throw new InvalidOperationException("AssignParentSchema returned no schema.");
 	}
 
 	private bool CheckUniqueSchemaName(string schemaName, Guid excludeUId, CreateEntitySchemaOptions options) {
-		
-		const string methodName = "CheckUniqueSchemaName";
-		BoolResponse response = Post<object, BoolResponse>(methodName, new {
-			managerName = EntitySchemaManagerName,
+		BoolResponse response = _entitySchemaDesignerClient.CheckUniqueSchemaName(
+			EntitySchemaDesignerSupport.EntitySchemaManagerName,
 			schemaName,
-			excludeUId
-		}, options);
-		EnsureSuccess(response, methodName);
+			excludeUId,
+			options);
 		return response.Value;
 	}
 
@@ -181,10 +126,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = parsedColumn.Name,
-			DataValueType = SupportedDataValueTypes[parsedColumn.Type],
+			DataValueType = EntitySchemaDesignerSupport.SupportedDataValueTypes[parsedColumn.Type],
 			Caption = [
 				new LocalizableStringDto {
-					CultureName = string.IsNullOrWhiteSpace(cultureName) ? DefaultCultureName : cultureName,
+					CultureName = cultureName,
 					Value = parsedColumn.Title
 				}
 			]
@@ -200,7 +145,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				Name = referenceSchema.Name,
 				Caption = [
 					new LocalizableStringDto {
-						CultureName = string.IsNullOrWhiteSpace(cultureName) ? DefaultCultureName : cultureName,
+						CultureName = cultureName,
 						Value = referenceSchema.Caption
 					}
 				]
@@ -211,8 +156,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private Dictionary<string, ManagerItemDto> GetReferenceSchemas(Guid packageUId, CreateEntitySchemaOptions options) {
-		AvailableEntitySchemasResponse response = Post<GetAvailableSchemasRequestDto, AvailableEntitySchemasResponse>(
-			"GetAvailableReferenceSchemas",
+		AvailableEntitySchemasResponse response = _entitySchemaDesignerClient.GetAvailableReferenceSchemas(
 			new GetAvailableSchemasRequestDto {
 				PackageUId = packageUId,
 				UseFullHierarchy = false,
@@ -242,7 +186,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static string GetSupportedTypesList() {
-		return string.Join(", ", SupportedDataValueTypes.Keys.OrderBy(key => key));
+		return EntitySchemaDesignerSupport.GetSupportedTypesList();
 	}
 
 	private static string GetTitle(string[] parts, string name) {
@@ -272,7 +216,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static void ValidateSupportedColumnValues(string columnSpec, string name, string type) {
-		if (string.IsNullOrWhiteSpace(name) || !SupportedDataValueTypes.ContainsKey(type)) {
+		if (string.IsNullOrWhiteSpace(name)
+			|| !EntitySchemaDesignerSupport.SupportedDataValueTypes.ContainsKey(type)) {
 			throw new InvalidOperationException(
 				$"Column '{columnSpec}' has unsupported values. Supported types: {GetSupportedTypesList()}.");
 		}
@@ -293,31 +238,6 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return new ParsedColumn(name, type, title, referenceSchemaName);
 	}
 
-	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, CreateEntitySchemaOptions options)
-		where TRequest : class
-		where TResponse : BaseResponse {
-		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ServiceBasePath + $"/{methodName}");
-		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(
-			url,
-			requestBody,
-			options.TimeOut,
-			options.RetryCount,
-			options.RetryDelay);
-		string correctedJson = _jsonConverter.CorrectJson(rawResponse);
-		TResponse response;
-		try {
-			response = _jsonConverter.DeserializeObject<TResponse>(correctedJson);
-		}
-		catch (Exception exception) {
-			throw new InvalidOperationException(
-				$"{methodName} returned invalid JSON: {Truncate(rawResponse, 1000)}",
-				exception);
-		}
-
-		return EnsureSuccess(response, methodName);
-	}
-
 	private PackageInfo ResolvePackage(string packageName) {
 		PackageInfo package = _applicationPackageListProvider
 							  .GetPackages()
@@ -334,19 +254,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		ArgumentNullException.ThrowIfNull(options);
 		PackageInfo package = ResolvePackage(options.Package);
 		List<ParsedColumn> parsedColumns = ParseColumns(options.Columns).ToList();
-		DesignerResponse<EntityDesignSchemaDto> createResponse
-			= Post<CreateEntitySchemaRequestDto, DesignerResponse<EntityDesignSchemaDto>>(
-				"CreateNewSchema",
-				new CreateEntitySchemaRequestDto {
-					PackageUId = package.Descriptor.UId,
-					ExtendParent = options.ExtendParent
-				},
-				options);
+		DesignerResponse<EntityDesignSchemaDto> createResponse = _entitySchemaDesignerClient.CreateNewSchema(
+			new CreateEntitySchemaRequestDto {
+				PackageUId = package.Descriptor.UId,
+				ExtendParent = options.ExtendParent
+			},
+			options);
 		EntityDesignSchemaDto schema = createResponse.Schema ??
 									   throw new InvalidOperationException("CreateNewSchema returned no schema.");
-		schema.Package ??= new WorkspacePackageDto();
-		schema.Package.UId = package.Descriptor.UId;
-		schema.Package.Name = package.Descriptor.Name;
+		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		if (!CheckUniqueSchemaName(options.SchemaName, schema.UId, options)) {
 			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
 		}
@@ -356,29 +272,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		ApplySchemaMetadata(schema, options, parsedColumns, package);
-		const string methodName = "SaveSchema";
-		SaveDesignItemDesignerResponse saveResponse
-			= Post<EntityDesignSchemaDto, SaveDesignItemDesignerResponse>(methodName, schema, options);
-		EnsureSuccess(saveResponse, methodName);
+		_entitySchemaDesignerClient.SaveSchema(schema, options);
 		_logger.WriteInfo($"Entity schema '{options.SchemaName}' created in package '{options.Package}'.");
-	}
-
-	#endregion
-}
-
-internal static class EntitySchemaDesignerExtensions{
-	#region Methods: Public
-
-	public static bool HasValue(this EntityDesignSchemaDto? schema) {
-		return schema != null && schema.UId != Guid.Empty;
-	}
-
-	public static bool IsGuidType(this EntitySchemaColumnDto column) {
-		return column.DataValueType == 0;
-	}
-
-	public static bool IsTextType(this EntitySchemaColumnDto column) {
-		return column.DataValueType == 1;
 	}
 
 	#endregion
