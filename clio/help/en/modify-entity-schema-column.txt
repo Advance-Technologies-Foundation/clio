@@ -1,0 +1,81 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    modify-entity-schema-column - Add, modify, or remove a column in a remote Creatio entity schema
+
+SYNOPSIS
+    clio modify-entity-schema-column [OPTIONS]
+
+DESCRIPTION
+    Loads the full entity schema design item from the remote Creatio environment,
+    mutates one own column locally, and saves the schema back through
+    EntitySchemaDesignerService.
+
+    Supported actions:
+    - add
+    - modify
+    - remove
+
+    Supported types for add and modify:
+    - Guid
+    - Text
+    - Integer
+    - Boolean
+    - DateTime
+    - Lookup (requires --reference-schema)
+
+OPTIONS
+    --package                      Target package name
+    --schema-name                  Entity schema name
+    --action                       Column action: add, modify, or remove
+    --column-name                  Target column name
+    --new-name                     New column name for rename operations
+    --type                         Column type for add/modify
+    --title                        Column title/caption
+    --description                  Column description
+    --reference-schema             Lookup reference schema name
+    --required                     Set required flag
+    --indexed                      Set indexed flag
+    --cloneable                    Set make-copy flag
+    --track-changes                Set update-change-log flag
+    --default-value                Set a constant default value
+    --multiline-text               Set multi-line text flag (Text only)
+    --localizable-text             Set localizable text flag (Text only)
+    --accent-insensitive           Set accent-insensitive flag (Text only)
+    --masked                       Set masked flag (Text only)
+    --format-validated             Set format-validated flag (Text only)
+    --use-seconds                  Set use-seconds flag (DateTime only)
+    --simple-lookup                Set simple-lookup flag (Lookup only)
+    --cascade                      Set cascade-connection flag (Lookup only)
+    --do-not-control-integrity     Set do-not-control-integrity flag (Lookup only)
+
+    Environment options are also available:
+    -e, --Environment              Environment name from the registered configuration
+    -u, --uri                      Application URI
+    -l, --Login                    User login
+    -p, --Password                 User password
+
+EXAMPLES
+    # Add a text column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Name --type Text --title "Vehicle name"
+
+    # Add a lookup column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Owner --type Lookup --reference-schema Contact --title "Owner"
+
+    # Rename and update a column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --title "Primary owner"
+
+    # Remove an own column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
+
+NOTES
+    - v1 allows mutations for own columns only; inherited columns are read-only
+    - remove clears schema-level references to the deleted column and validates required fallbacks locally
+    - unspecified modify options are preserved as-is in the saved payload
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-entity-schema-column-properties, get-entity-schema-properties, create-entity-schema

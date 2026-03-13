@@ -1618,6 +1618,101 @@ clio create-entity-schema MyEntity -e dev
 clio create-entity-schema MyEntity -p MyPackage -e dev
 ```
 
+## modify-entity-schema-column
+
+Add, modify, or remove one own column in a remote entity schema.
+
+```bash
+clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_NAME> --action <add|modify|remove> --column-name <COLUMN_NAME> -e <ENVIRONMENT_NAME> [OPTIONS]
+```
+
+**Options:**
+- `--package <PACKAGE_NAME>` (required): Target package name
+- `--schema-name <SCHEMA_NAME>` (required): Entity schema name
+- `--action <add|modify|remove>` (required): Column mutation type
+- `--column-name <COLUMN_NAME>` (required): Target column name
+- `--new-name <COLUMN_NAME>` (optional): Rename the column
+- `--type <Guid|Text|Integer|Boolean|DateTime|Lookup>` (optional for modify, required for add): Column type
+- `--title <CAPTION>` (optional): Column caption
+- `--description <TEXT>` (optional): Column description
+- `--reference-schema <SCHEMA_NAME>` (optional): Reference schema for lookup columns
+- `--required <true|false>` (optional): Required flag
+- `--indexed <true|false>` (optional): Indexed flag
+- `--cloneable <true|false>` (optional): Cloneable flag
+- `--track-changes <true|false>` (optional): Track changes flag
+- `--default-value <VALUE>` (optional): Constant default value
+- `--multiline-text <true|false>` (optional): Text-only flag
+- `--localizable-text <true|false>` (optional): Text-only flag
+- `--accent-insensitive <true|false>` (optional): Text-only flag
+- `--masked <true|false>` (optional): Text-only flag
+- `--format-validated <true|false>` (optional): Text-only flag
+- `--use-seconds <true|false>` (optional): DateTime-only flag
+- `--simple-lookup <true|false>` (optional): Lookup-only flag
+- `--cascade <true|false>` (optional): Lookup-only flag
+- `--do-not-control-integrity <true|false>` (optional): Lookup-only flag
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
+
+**Examples:**
+
+```bash
+# Add a text column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --action add --column-name Name --type Text --title "Vehicle name" -e dev
+
+# Modify a lookup column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --reference-schema Contact -e dev
+
+# Remove an own column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --action remove --column-name LegacyCode -e dev
+```
+
+**Notes:**
+- v1 mutates own columns only; inherited columns are read-only
+- remove clears direct schema-level references to the removed column and validates required fallbacks locally
+
+## get-entity-schema-column-properties
+
+Print a human-readable summary of a remote entity schema column.
+
+```bash
+clio get-entity-schema-column-properties --package <PACKAGE_NAME> --schema-name <SCHEMA_NAME> --column-name <COLUMN_NAME> -e <ENVIRONMENT_NAME>
+```
+
+**Options:**
+- `--package <PACKAGE_NAME>` (required): Target package name
+- `--schema-name <SCHEMA_NAME>` (required): Entity schema name
+- `--column-name <COLUMN_NAME>` (required): Column name
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
+
+**Examples:**
+
+```bash
+# Read an own column
+clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVehicle --column-name Name -e dev
+
+# Read an inherited column
+clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVehicle --column-name Owner -e dev
+```
+
+## get-entity-schema-properties
+
+Print a human-readable summary of a remote entity schema.
+
+```bash
+clio get-entity-schema-properties --package <PACKAGE_NAME> --schema-name <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
+```
+
+**Options:**
+- `--package <PACKAGE_NAME>` (required): Target package name
+- `--schema-name <SCHEMA_NAME>` (required): Entity schema name
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
+
+**Examples:**
+
+```bash
+# Read entity schema properties
+clio get-entity-schema-properties --package MyPackage --schema-name UsrVehicle -e dev
+```
+
 ## add-user-task
 
 Create a new ProcessUserTask schema in a package.
