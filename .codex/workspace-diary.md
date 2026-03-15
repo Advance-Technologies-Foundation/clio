@@ -869,3 +869,17 @@ Decision: Extended the same GUID primary-key generation behavior to add-row, and
 Discovery: The right fix was to treat primary-key presence as "present with a non-empty value" rather than just `ContainsKey`; targeted unit tests, MCP E2E tests, and a direct CLI smoke against `d2` confirmed that add-row now appends a new row with a generated GUID `Id`.
 Files: clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataBindingTool.cs, clio/Command/McpServer/Prompts/DataBindingPrompt.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.mcp.e2e/DataBindingToolE2ETests.cs, clio/help/en/add-data-binding-row.txt, clio/docs/commands/add-data-binding-row.md, clio/help/en/create-data-binding.txt, clio/docs/commands/create-data-binding.md, clio/Commands.md, .codex/workspace-diary.md
 Impact: Both create and add-row now accept business-column payloads without explicit `Id`, and null GUID keys no longer create malformed rows that are hard to remove later.
+
+## 2026-03-15 12:15 – Add offline data-binding template catalog
+Context: User wanted `create-data-binding` to work in isolated environments for stable schemas such as `SysSettings`, with MCP and docs aligned to the same offline behavior.
+Decision: Added a built-in template catalog plus schema resolver so templated schemas bypass Creatio entirely, made MCP `create-data-binding` conditionally environment-free for templated schemas, and kept add/remove row strictly local-file operations.
+Discovery: The safest public DI surface was a small public `IDataBindingTemplateCatalog` contract exposing only `HasTemplate`; the schema-returning part stayed internal to avoid leaking internal model types through the public MCP tool constructor path.
+Files: clio/Command/DataBindingCommand.cs, clio/BindingsModule.cs, clio/Command/McpServer/Tools/DataBindingTool.cs, clio/Command/McpServer/Prompts/DataBindingPrompt.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.mcp.e2e/DataBindingToolE2ETests.cs, clio/help/en/create-data-binding.txt, clio/help/en/add-data-binding-row.txt, clio/help/en/remove-data-binding-row.txt, clio/docs/commands/create-data-binding.md, clio/docs/commands/add-data-binding-row.md, clio/docs/commands/remove-data-binding-row.md, clio/Commands.md, spec/data-binding/data-binding-template-catalog.md, .codex/workspace-diary.md
+Impact: `SysSettings` bindings can now be created offline through both CLI and MCP, while future stable schemas can be added to the built-in catalog without changing command semantics.
+
+## 2026-03-15 12:35 – Collapse data-binding type maps into DataValueTypeMap
+Context: User called out that `DataBindingDataValueTypeMap.FromRuntimeValueType` duplicated GUID knowledge already present in `DataValueTypeMap`.
+Decision: Added `DataValueTypeMap.FromRuntimeValueType(int)` to the existing shared map in `clio/Command/ProcessModel/Schema.cs` and removed the data-binding-specific switch table.
+Discovery: `DataValueTypeMap` already had the needed GUID constants but only exposed GUID-to-CLR-type resolution; adding the reverse runtime-int-to-GUID method removed the duplication cleanly without changing data-binding behavior.
+Files: clio/Command/ProcessModel/Schema.cs, clio/Command/DataBindingCommand.cs, .codex/workspace-diary.md
+Impact: Data-binding and process-model code now share a single authoritative data-value-type GUID table, so future GUID changes only need to be made in one place.

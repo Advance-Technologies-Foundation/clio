@@ -14,13 +14,14 @@ namespace Clio.Command.McpServer.Tools;
 public class CreateDataBindingTool(
 	CreateDataBindingCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver)
+	IToolCommandResolver commandResolver,
+	IDataBindingTemplateCatalog templateCatalog)
 	: BaseTool<CreateDataBindingOptions>(command, logger, commandResolver) {
 	internal const string CreateDataBindingToolName = "create-data-binding";
 
 	[McpServerTool(Name = CreateDataBindingToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates or regenerates a package data binding from a runtime entity schema.")]
+	[Description("Creates or regenerates a package data binding from a built-in template or a runtime entity schema.")]
 	public CommandExecutionResult CreateDataBinding(
 		[Description("create-data-binding parameters")]
 		[Required]
@@ -35,7 +36,9 @@ public class CreateDataBindingTool(
 			LocalizationsJson = args.LocalizationsJson,
 			WorkspacePath = DataBindingToolPathValidator.ValidateWorkspacePath(args.WorkspacePath)
 		};
-		return InternalExecute<CreateDataBindingCommand>(options);
+		return templateCatalog.HasTemplate(args.SchemaName)
+			? InternalExecute(options)
+			: InternalExecute<CreateDataBindingCommand>(options);
 	}
 }
 
@@ -116,9 +119,8 @@ internal static class DataBindingToolPathValidator {
 /// </summary>
 public sealed record CreateDataBindingArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name used to fetch the runtime entity schema")]
-	[property: Required]
-	string EnvironmentName,
+	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
+	string? EnvironmentName,
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Target package name inside the workspace")]
@@ -126,7 +128,7 @@ public sealed record CreateDataBindingArgs(
 	string PackageName,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name used to build the binding descriptor")]
+	[property: Description("Entity schema name used to build the binding descriptor. Built-in offline templates currently include SysSettings.")]
 	[property: Required]
 	string SchemaName,
 

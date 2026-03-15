@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Removes a row from an existing package data binding by primary-key value.
+Removes a row from an existing package data binding by primary-key value. Once the binding exists locally, the command works entirely from the binding files and does not require Creatio access, including bindings created from built-in offline templates such as `SysSettings`.
 
 ## Usage
 
@@ -17,7 +17,7 @@ clio remove-data-binding-row [options]
 | Argument | Description | Example |
 |----------|-------------|---------|
 | `--package` | Target package name | `--package Custom` |
-| `--binding-name` | Binding folder name under package `Data` | `--binding-name SysSettings_1` |
+| `--binding-name` | Binding folder name under package `Data` | `--binding-name SysSettings` |
 | `--key-value` | Primary-key value of the row to remove | `--key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15` |
 
 ### Optional Arguments
@@ -39,14 +39,14 @@ clio remove-data-binding-row [options]
 ### Remove a Row from the Current Workspace
 
 ```bash
-clio remove-data-binding-row --package Custom --binding-name SysSettings_1 \
+clio remove-data-binding-row --package Custom --binding-name SysSettings \
   --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
 ```
 
 ### Remove a Row from an Explicit Workspace
 
 ```bash
-clio remove-data-binding-row --package Custom --binding-name SysSettings_1 \
+clio remove-data-binding-row --package Custom --binding-name SysSettings \
   --workspace-path C:\Work\MyWorkspace \
   --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
 ```

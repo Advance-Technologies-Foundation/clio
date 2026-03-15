@@ -86,7 +86,7 @@ public class RemoveDataBindingRowOptions {
 }
 
 /// <summary>
-/// Creates or regenerates package data-binding files from a runtime schema.
+/// Creates or regenerates package data-binding files from a resolved schema.
 /// </summary>
 public class CreateDataBindingCommand(IDataBindingService dataBindingService, ILogger logger)
 	: Command<CreateDataBindingOptions> {
@@ -144,7 +144,7 @@ public class RemoveDataBindingRowCommand(IDataBindingService dataBindingService,
 /// </summary>
 public interface IDataBindingService {
 	/// <summary>
-	/// Creates or regenerates a binding folder from the requested runtime schema.
+	/// Creates or regenerates a binding folder from the requested schema.
 	/// </summary>
 	void CreateBinding(CreateDataBindingOptions options);
 
@@ -163,6 +163,26 @@ internal interface IDataBindingSchemaClient {
 	DataBindingSchema Fetch(string schemaName);
 }
 
+internal interface IDataBindingSchemaResolver {
+	DataBindingSchema Resolve(string schemaName);
+}
+
+/// <summary>
+/// Provides built-in offline data-binding schema templates for stable Creatio entities.
+/// </summary>
+public interface IDataBindingTemplateCatalog {
+	/// <summary>
+	/// Determines whether a built-in template exists for the requested schema.
+	/// </summary>
+	/// <param name="schemaName">The entity schema name.</param>
+	/// <returns><c>true</c> when a built-in template exists; otherwise, <c>false</c>.</returns>
+	bool HasTemplate(string schemaName);
+}
+
+internal interface IDataBindingTemplateSchemaCatalog : IDataBindingTemplateCatalog {
+	bool TryGetTemplate(string schemaName, out DataBindingSchema schema);
+}
+
 internal interface IDataBindingSerializer {
 	string SerializeDescriptor(DataBindingDescriptorFile descriptor);
 
@@ -178,7 +198,8 @@ internal interface IDataBindingValueConverter {
 }
 
 internal sealed class DataBindingService(
-	IDataBindingSchemaClient schemaClient,
+	IDataBindingSchemaResolver schemaResolver,
+	IDataBindingTemplateCatalog templateCatalog,
 	IDataBindingSerializer serializer,
 	IDataBindingValueConverter valueConverter,
 	IWorkspacePathBuilder workspacePathBuilder,
@@ -195,7 +216,7 @@ internal sealed class DataBindingService(
 
 		string workspaceRoot = ResolveWorkspaceRoot(options.WorkspacePath);
 		string packagePath = ResolvePackagePath(workspaceRoot, options.PackageName);
-		DataBindingSchema schema = schemaClient.Fetch(options.SchemaName);
+		DataBindingSchema schema = schemaResolver.Resolve(options.SchemaName);
 
 		string bindingName = string.IsNullOrWhiteSpace(options.BindingName)
 			? options.SchemaName
@@ -304,8 +325,11 @@ internal sealed class DataBindingService(
 		RemoveLocalizationRows(bindingDirectoryPath, runtimeDescriptor, normalizedKeyValue);
 	}
 
-	private static void ValidateCreateOptions(CreateDataBindingOptions options) {
-		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrWhiteSpace(options.Uri)) {
+	private void ValidateCreateOptions(CreateDataBindingOptions options) {
+		bool requiresEnvironment = !templateCatalog.HasTemplate(options.SchemaName);
+		if (requiresEnvironment &&
+			string.IsNullOrWhiteSpace(options.Environment) &&
+			string.IsNullOrWhiteSpace(options.Uri)) {
 			throw new InvalidOperationException("create-data-binding requires --environment or --uri.");
 		}
 		if (string.IsNullOrWhiteSpace(options.PackageName)) {
@@ -481,7 +505,7 @@ internal sealed class DataBindingService(
 				IsForceUpdate = false,
 				IsKey = column.UId == schema.PrimaryColumnUId,
 				ColumnName = column.Name,
-				DataTypeValueUId = DataBindingDataValueTypeMap.FromRuntimeValueType(column.DataValueType)
+				DataTypeValueUId = DataValueTypeMap.FromRuntimeValueType(column.DataValueType)
 			})
 			.OrderBy(column => column.ColumnName, StringComparer.Ordinal)
 			.ToList();
@@ -835,6 +859,88 @@ internal sealed class DataBindingSchemaClient(IApplicationClient applicationClie
 	}
 }
 
+internal sealed class DataBindingSchemaResolver(
+	IDataBindingTemplateSchemaCatalog templateCatalog,
+	IDataBindingSchemaClient schemaClient) : IDataBindingSchemaResolver {
+	public DataBindingSchema Resolve(string schemaName) {
+		if (templateCatalog.TryGetTemplate(schemaName, out DataBindingSchema schema)) {
+			return schema;
+		}
+
+		return schemaClient.Fetch(schemaName);
+	}
+}
+
+internal sealed class DataBindingTemplateCatalog : IDataBindingTemplateSchemaCatalog {
+	private static readonly IReadOnlyDictionary<string, DataBindingSchema> Templates =
+		new Dictionary<string, DataBindingSchema>(StringComparer.OrdinalIgnoreCase) {
+			["SysSettings"] = new(
+				new Guid("27aeadd6-d508-4572-8061-5b55b667c902"),
+				"SysSettings",
+				new Guid("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"),
+				[
+					new DataBindingSchemaColumn(
+						new Guid("13aad544-ec30-4e76-a373-f0cff3202e24"),
+						"Code",
+						27,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("64fadca1-ab7c-4471-9d25-68599acc729b"),
+						"IsSSPAvailable",
+						12,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("736c30a7-c0ec-4fa9-b034-2552b319b633"),
+						"Name",
+						28,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("764cd95a-59b3-4060-b17f-2797d5c76aaa"),
+						"IsPersonal",
+						12,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("9e53fd7c-dde4-4502-a64c-b9e34148108b"),
+						"Description",
+						29,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"),
+						"Id",
+						0,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("b2280617-35f9-4006-8634-c557a2e121c2"),
+						"ReferenceSchemaUId",
+						0,
+						"SysSchema"),
+					new DataBindingSchemaColumn(
+						new Guid("eb971f1a-dd41-4668-99aa-1f2a6b61a1b9"),
+						"IsCacheable",
+						12,
+						null),
+					new DataBindingSchemaColumn(
+						new Guid("f7960a8a-1fd4-41d2-997a-fd78ea60075f"),
+						"ValueTypeName",
+						28,
+						null)
+				])
+		};
+
+	public bool HasTemplate(string schemaName) {
+		return !string.IsNullOrWhiteSpace(schemaName) && Templates.ContainsKey(schemaName);
+	}
+
+	public bool TryGetTemplate(string schemaName, out DataBindingSchema schema) {
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			schema = default!;
+			return false;
+		}
+
+		return Templates.TryGetValue(schemaName, out schema!);
+	}
+}
+
 internal sealed class DataBindingSerializer : IDataBindingSerializer {
 	public string SerializeDescriptor(DataBindingDescriptorFile descriptor) {
 		return JsonSerializer.Serialize(descriptor, DataBindingJson.Options);
@@ -962,31 +1068,6 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 
 	public bool IsStringLike(Guid dataTypeUId) {
 		return DataValueTypeMap.Resolve(dataTypeUId) == typeof(string);
-	}
-}
-
-internal static class DataBindingDataValueTypeMap {
-	public static Guid FromRuntimeValueType(int runtimeDataValueType) {
-		return runtimeDataValueType switch {
-			0 => new Guid("{23018567-A13C-4320-8687-FD6F9E3699BD}"),
-			1 => new Guid("{8B3F29BB-EA14-4CE5-A5C5-293A929B6BA2}"),
-			4 => new Guid("{6B6B74E2-820D-490E-A017-2B73D4CCF2B0}"),
-			5 => new Guid("{57EE4C31-5EC4-45FA-B95D-3A2868AA89A8}"),
-			6 => new Guid("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"),
-			7 => new Guid("{D21E9EF4-C064-4012-B286-FA1A8171DA44}"),
-			8 => new Guid("{603D4960-A1A2-45E9-B232-206A54421B01}"),
-			9 => new Guid("{04CC757B-8F06-482C-8A1A-0C0E171D2410}"),
-			10 => new Guid("{B295071F-7EA9-4E62-8D1A-919BF3732FF2}"),
-			12 => new Guid("{90B65BF8-0FFC-4141-8779-2420877AF907}"),
-			27 => new Guid("{325A73B8-0F47-44A0-8412-7606F78003AC}"),
-			28 => new Guid("{DDB3A1EE-07E8-4D62-B7A9-D0E618B00FBD}"),
-			29 => new Guid("{C0F04627-4620-4BC0-84E5-9419DC8516B1}"),
-			42 => new Guid("{26CBA63C-DAF1-4F36-B2EA-73C0D675D90C}"),
-			44 => new Guid("{26CBA64C-DAF1-4F36-B2EA-73C0D695D90C}"),
-			45 => new Guid("{66CBA64C-DAF1-4F36-B8EA-73C0D695D90C}"),
-			var _ => throw new InvalidOperationException(
-				$"Runtime dataValueType '{runtimeDataValueType}' is not supported for data-binding generation.")
-		};
 	}
 }
 

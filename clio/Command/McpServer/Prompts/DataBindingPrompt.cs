@@ -15,18 +15,20 @@ public static class DataBindingPrompt {
 	/// </summary>
 	[McpServerPrompt(Name = CreateDataBindingTool.CreateDataBindingToolName), Description("Prompt to create a package data binding")]
 	public static string CreateDataBinding(
-		[Required] [Description("Creatio environment name")] string environmentName,
 		[Required] [Description("Target package name")] string packageName,
 		[Required] [Description("Entity schema name")] string schemaName,
 		[Required] [Description("Absolute workspace path")] string workspacePath,
 		[Description("Optional binding folder name")] string? bindingName = null,
 		[Description("Optional descriptor install type")] int installType = 0,
 		[Description("Optional values JSON")] string? values = null,
-		[Description("Optional localizations JSON")] string? localizations = null) =>
+		[Description("Optional localizations JSON")] string? localizations = null,
+		[Description("Optional Creatio environment name for non-templated schemas")] string? environmentName = null) =>
 		$"""
 		 Use clio mcp server `{CreateDataBindingTool.CreateDataBindingToolName}` to create or regenerate a data binding
 		 for schema `{schemaName}` in package `{packageName}`.
-		 Pass `environment-name` `{environmentName}` and `workspace-path` `{workspacePath}` exactly as provided.
+		 Pass `workspace-path` `{workspacePath}` exactly as provided.
+		 If `{schemaName}` is covered by a built-in offline template such as `SysSettings`, omit `environment-name`.
+		 Otherwise pass `environment-name` `{environmentName ?? "<required for non-templated schema>"}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default>"}` and `install-type` `{installType}`.
 		 Use `values` `{values ?? "<not provided>"}` when an initial row should be created. If that payload omits the
 		 GUID primary key column or sets it to null, the tool generates it automatically. Use

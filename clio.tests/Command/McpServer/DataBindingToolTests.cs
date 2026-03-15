@@ -179,20 +179,19 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Creates a binding through the MCP wrapper by resolving the environment-aware command and auto-generating the GUID primary key when the initial values omit it.")]
-	public void CreateDataBinding_Should_Create_Files_Through_Resolved_Command() {
+	[Description("Creates a templated binding through the MCP wrapper without requiring environment-based command resolution and auto-generates the GUID primary key when the initial values omit it.")]
+	public void CreateDataBinding_Should_Create_Files_Offline_For_Templated_Schema() {
 		// Arrange
-		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<CreateDataBindingCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		CreateDataBindingTool tool = new(
 			Container.GetRequiredService<CreateDataBindingCommand>(),
 			Container.GetRequiredService<ILogger>(),
-			commandResolver);
+			commandResolver,
+			Container.GetRequiredService<IDataBindingTemplateCatalog>());
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			"dev",
+			null,
 			_packageName,
 			"SysSettings",
 			_workspaceRoot,
@@ -200,9 +199,8 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Assert
 		result.ExitCode.Should().Be(0,
-			because: "the MCP wrapper should pass valid arguments through to the create-data-binding command");
-		commandResolver.Received(1).Resolve<CreateDataBindingCommand>(Arg.Is<EnvironmentOptions>(options =>
-			options.Environment == "dev"));
+			because: "templated schemas should be creatable offline through the MCP wrapper");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateDataBindingCommand>(default!);
 		_mockFileSystem.File.Exists(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings", "data.json")).Should().BeTrue(
 			because: "the resolved create-data-binding command should create binding files in the requested workspace");
 		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings", "data.json"));
@@ -215,6 +213,36 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		}
 		Guid.TryParse(generatedId, out _).Should().BeTrue(
 			because: "create-data-binding should auto-generate the missing GUID primary key before writing data.json");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Description("Resolves the environment-aware create-data-binding command for schemas that are not covered by the built-in offline template catalog.")]
+	public void CreateDataBinding_Should_Resolve_Command_For_NonTemplated_Schema() {
+		// Arrange
+		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		CreateDataBindingTool tool = new(
+			Container.GetRequiredService<CreateDataBindingCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver,
+			Container.GetRequiredService<IDataBindingTemplateCatalog>());
+
+		// Act
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+			"dev",
+			_packageName,
+			"UsrOfflineOnly",
+			_workspaceRoot,
+			ValuesJson: """{"Id":"4f41bcc2-7ed0-45e8-a1fd-474918966d15","Name":"Tool row"}"""));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "non-templated schemas should still execute through the environment-aware command resolution path");
+		commandResolver.Received(1).Resolve<CreateDataBindingCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"));
+		_applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -241,12 +269,12 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Prompt guidance for data-binding tools mentions workspace-path and the exact production tool names so agents use the right MCP endpoints.")]
+	[Description("Prompt guidance for data-binding tools mentions workspace-path, the exact production tool names, and the conditional offline-template behavior for create-data-binding.")]
 	public void DataBindingPrompt_Should_Mention_Workspace_Path_And_Tool_Names() {
 		// Arrange
 
 		// Act
-		string createPrompt = DataBindingPrompt.CreateDataBinding("dev", _packageName, "SysSettings", _workspaceRoot);
+		string createPrompt = DataBindingPrompt.CreateDataBinding(_packageName, "SysSettings", _workspaceRoot, environmentName: null);
 		string addPrompt = DataBindingPrompt.AddDataBindingRow(_packageName, "SysSettings", _workspaceRoot, """{"Id":"1"}""");
 		string removePrompt = DataBindingPrompt.RemoveDataBindingRow(_packageName, "SysSettings", _workspaceRoot, "1");
 
@@ -255,6 +283,8 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			because: "the create prompt should reference the exact production MCP tool name");
 		createPrompt.Should().Contain("workspace-path",
 			because: "the create prompt should keep the local workspace requirement visible");
+		createPrompt.Should().Contain("built-in offline template",
+			because: "the create prompt should explain when environment-name can be omitted");
 		addPrompt.Should().Contain(AddDataBindingRowTool.AddDataBindingRowToolName,
 			because: "the add-row prompt should reference the exact production MCP tool name");
 		removePrompt.Should().Contain(RemoveDataBindingRowTool.RemoveDataBindingRowToolName,

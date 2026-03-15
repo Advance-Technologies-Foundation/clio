@@ -482,6 +482,33 @@ public static class DataValueTypeMap{
 		var _ => typeof(object)
 	};
 
+	/// <summary>
+	/// Resolves a Creatio runtime <c>dataValueType</c> integer to the corresponding data-value-type identifier.
+	/// </summary>
+	/// <param name="runtimeDataValueType">The Creatio runtime data-value-type integer.</param>
+	/// <returns>The corresponding data-value-type unique identifier.</returns>
+	/// <exception cref="InvalidOperationException">Thrown when the runtime data-value type is not supported.</exception>
+	public static Guid FromRuntimeValueType(int runtimeDataValueType) => runtimeDataValueType switch {
+		0 => GuidDataValueTypeUId,
+		1 => TextDataValueTypeUId,
+		4 => IntegerDataValueTypeUId,
+		5 => FloatDataValueTypeUId,
+		6 => MoneyDataValueTypeUId,
+		7 => DateTimeDataValueTypeUId,
+		8 => DateDataValueTypeUId,
+		9 => TimeDataValueTypeUId,
+		10 => LookupDataValueTypeUId,
+		12 => BooleanDataValueTypeUId,
+		27 => ShortTextDataValueTypeUId,
+		28 => MediumTextDataValueTypeUId,
+		29 => MaxSizeTextDataValueTypeUId,
+		42 => PhoneTextDataValueTypeUId,
+		44 => WebTextDataValueTypeUId,
+		45 => EmailTextDataValueTypeUId,
+		var _ => throw new InvalidOperationException(
+			$"Runtime dataValueType '{runtimeDataValueType}' is not supported for data-binding generation.")
+	};
+
 
 	/// <summary>
 	/// Boolean data value type Id.

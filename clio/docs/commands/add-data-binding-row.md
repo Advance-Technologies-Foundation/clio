@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Adds a new row to an existing package data binding or replaces the existing row that has the same primary-key value.
+Adds a new row to an existing package data binding or replaces the existing row that has the same primary-key value. Once the binding exists locally, the command works entirely from the binding files and does not require Creatio access, including bindings created from built-in offline templates such as `SysSettings`.
 
 ## Usage
 

@@ -25,20 +25,19 @@ public sealed class DataBindingToolE2ETests {
 	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
 
 	[Test]
-	[Description("Creates a workspace and package with the real clio CLI, invokes create-data-binding through MCP against the sandbox environment without an explicit Id, and verifies the descriptor and data files are generated with an auto-created GUID primary key.")]
+	[Description("Creates a workspace and package with the real clio CLI, invokes create-data-binding through MCP for the built-in SysSettings template without a Creatio environment, and verifies the descriptor and data files are generated with an auto-created GUID primary key.")]
 	[AllureTag(CreateToolName)]
-	[AllureName("Create data binding auto-generates missing GUID primary key")]
-	[AllureDescription("Uses the real clio MCP server to create a data binding from the runtime SysSettings schema with values that omit Id and verifies that the package Data folder contains the expected generated files plus an auto-generated GUID primary key.")]
+	[AllureName("Create templated data binding offline auto-generates missing GUID primary key")]
+	[AllureDescription("Uses the real clio MCP server to create a data binding from the built-in SysSettings template with values that omit Id and verifies that the package Data folder contains the expected generated files plus an auto-generated GUID primary key without requiring Creatio access.")]
 	public async Task CreateDataBinding_Should_Create_Files() {
 		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync();
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
 
 		// Act
 		CommandExecutionActResult createResult = await ActCommandAsync(
 			arrangeContext,
 			CreateToolName,
 			new Dictionary<string, object?> {
-				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = "SysSettings",
 				["workspace-path"] = arrangeContext.WorkspacePath,
@@ -60,8 +59,10 @@ public sealed class DataBindingToolE2ETests {
 		string dataJson = await File.ReadAllTextAsync(Path.Combine(bindingDirectoryPath, "data.json"));
 		descriptorJson.Should().Contain("\"Name\": \"SysSettings\"",
 			because: "the generated descriptor should use the default binding folder name");
-		descriptorJson.Should().Contain("\"Schema\"",
-			because: "the generated descriptor should include the fetched runtime schema reference");
+		descriptorJson.Should().Contain("\"UId\": \"27aeadd6-d508-4572-8061-5b55b667c902\"",
+			because: "the generated descriptor should use the built-in template schema identity");
+		descriptorJson.Should().Contain("\"ColumnName\": \"Code\"",
+			because: "explicit-value mode should retain the requested business columns from the template");
 		dataJson.Should().Contain("UsrMcpSetting",
 			because: "the created row should preserve the user-provided payload columns");
 		string? keyColumnUId = null;
@@ -83,21 +84,20 @@ public sealed class DataBindingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Creates a binding through MCP, then adds and removes a row through MCP, and verifies the resulting file mutations on disk.")]
+	[Description("Creates a templated binding through MCP without Creatio, then adds and removes a row through MCP, and verifies the resulting file mutations on disk.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(AddRowToolName)]
 	[AllureTag(RemoveRowToolName)]
 	[AllureName("Add and remove data-binding row updates local binding files")]
-	[AllureDescription("Uses the real clio MCP server to create a binding from the SysSettings schema, add a row, remove the same row, and verify the expected data.json mutations plus user-visible command diagnostics.")]
+	[AllureDescription("Uses the real clio MCP server to create a binding from the built-in SysSettings template, add a row, remove the same row, and verify the expected data.json mutations plus user-visible command diagnostics.")]
 	public async Task AddAndRemoveDataBindingRow_Should_Mutate_Files() {
 		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync();
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
 		string bindingDirectoryPath = Path.Combine(arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", "SysSettings");
 		await ActCommandAsync(
 			arrangeContext,
 			CreateToolName,
 			new Dictionary<string, object?> {
-				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = "SysSettings",
 				["workspace-path"] = arrangeContext.WorkspacePath,
@@ -173,10 +173,40 @@ public sealed class DataBindingToolE2ETests {
 			because: "the removed row should no longer be present in the main data file after remove-data-binding-row");
 	}
 
-	private static async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync() {
+	[Test]
+	[Description("Fails clearly through MCP when create-data-binding targets a schema without a built-in template and no environment-name or uri is provided.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("Create non-templated data binding without environment fails clearly")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for a non-templated schema without environment-name and verifies that MCP returns a clear resolution error instead of silently attempting offline generation.")]
+	public async Task CreateDataBinding_Should_Fail_Without_Environment_For_NonTemplated_Schema() {
+		// Arrange
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["package-name"] = arrangeContext.PackageName,
+					["schema-name"] = "UsrOfflineOnly",
+					["workspace-path"] = arrangeContext.WorkspacePath
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: "non-templated schemas still require environment-based resolution in the MCP create tool");
+		DescribeCallResult(callResult).Should().Contain("An error occurred invoking 'create-data-binding'.",
+			because: "the MCP server currently wraps non-templated resolution failures as a top-level invocation error");
+	}
+
+	private static async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string? environmentName = requireEnvironment
+			? await ResolveReachableEnvironmentAsync(settings)
+			: null;
 
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-data-binding-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
@@ -267,7 +297,7 @@ public sealed class DataBindingToolE2ETests {
 		string RootDirectory,
 		string WorkspacePath,
 		string PackageName,
-		string EnvironmentName,
+		string? EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {

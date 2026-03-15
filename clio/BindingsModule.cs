@@ -188,7 +188,11 @@ public class BindingsModule {
 		services.AddTransient<RestoreWorkspaceCommand>();
 		services.AddTransient<CreateWorkspaceCommand>();
 		services.AddTransient<PushWorkspaceCommand>();
+		services.AddSingleton<IDataBindingTemplateSchemaCatalog, DataBindingTemplateCatalog>();
+		services.AddSingleton<IDataBindingTemplateCatalog>(provider =>
+			provider.GetRequiredService<IDataBindingTemplateSchemaCatalog>());
 		services.AddTransient<IDataBindingSchemaClient, DataBindingSchemaClient>();
+		services.AddTransient<IDataBindingSchemaResolver, DataBindingSchemaResolver>();
 		services.AddTransient<IDataBindingSerializer, DataBindingSerializer>();
 		services.AddTransient<IDataBindingValueConverter, DataBindingValueConverter>();
 		services.AddTransient<IDataBindingService, DataBindingService>();

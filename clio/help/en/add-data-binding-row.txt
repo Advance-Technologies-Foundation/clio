@@ -14,7 +14,9 @@ DESCRIPTION
     The command reads descriptor.json to resolve column names to schema column
     identifiers and writes the updated row to data.json. If --localizations is
     provided, matching localization files are created or updated under the
-    binding Localization folder.
+    binding Localization folder. Once a binding exists locally, this command
+    does not require Creatio access, including bindings that were created from
+    built-in offline templates.
 
 OPTIONS
     --package              Target package name

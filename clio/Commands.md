@@ -2588,13 +2588,15 @@ clio mock-data -m .\Models -d .\Tests\Data -e prod --exclude-models VwSys
 
 ## create-data-binding
 
-Create or regenerate a package data binding from a runtime schema fetched from a Creatio environment.
+Create or regenerate a package data binding from a built-in offline template or a runtime schema fetched from a Creatio environment.
 
 ```bash
-clio create-data-binding -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --schema <SCHEMA_NAME> [--workspace-path <WORKSPACE_PATH>] [--binding-name <BINDING_NAME>] [--install-type <0-3>] [--values <JSON>] [--localizations <JSON>]
+clio create-data-binding [ -e <ENVIRONMENT_NAME> | --uri <APPLICATION_URI> ] --package <PACKAGE_NAME> --schema <SCHEMA_NAME> [--workspace-path <WORKSPACE_PATH>] [--binding-name <BINDING_NAME>] [--install-type <0-3>] [--values <JSON>] [--localizations <JSON>]
 ```
 
 Behavior:
+- Uses built-in offline template metadata when the requested schema is covered by the template catalog
+- In v1, `SysSettings` is available offline and template metadata always takes precedence over runtime schema fetches
 - Creates or updates `<workspace>/packages/<package>/Data/<binding-name>`
 - Writes `descriptor.json`, `data.json`, and `filter.json`
 - Creates template `Localization/data.en-US.json` when `--values` is omitted
@@ -2605,9 +2607,11 @@ Behavior:
 Examples:
 
 ```bash
-clio create-data-binding -e dev --package Custom --schema SysSettings
+clio create-data-binding --package Custom --schema SysSettings
 
 clio create-data-binding -e dev --package Custom --schema SysSettings --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrSetting\",\"Name\":\"Setting name\"}"
+
+clio create-data-binding -e dev --package Custom --schema UsrCustomEntity --workspace-path C:\Work\MyWorkspace --values "{\"Name\":\"Runtime schema row\"}"
 ```
 
 ## add-data-binding-row
@@ -2623,6 +2627,7 @@ Behavior:
 - Upserts rows by primary-key value
 - Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
 - Updates `Localization/data.<culture>.json` files when `--localizations` is supplied
+- Works entirely from the local binding files once the binding exists, including offline-template bindings
 
 Example:
 
@@ -2642,6 +2647,7 @@ Behavior:
 - Removes the matching row from `data.json`
 - Removes matching localized rows from every localization file
 - Fails when the requested row key is not present
+- Works entirely from the local binding files once the binding exists, including offline-template bindings
 
 Example:
 

@@ -8,8 +8,15 @@ SYNOPSIS
     clio create-data-binding [OPTIONS]
 
 DESCRIPTION
-    Fetches a runtime entity schema from a Creatio environment and creates or
-    updates a data-binding folder under the target package.
+    Creates or updates a data-binding folder under the target package.
+
+    When the requested schema has a built-in offline template, clio uses that
+    template and does not require Creatio access. In v1, SysSettings is the
+    first supported offline template and template metadata always takes
+    precedence over runtime schema fetches.
+
+    For schemas that are not covered by the built-in template catalog, clio
+    fetches the runtime entity schema from a Creatio environment.
 
     The generated binding lives under:
     <workspace>/packages/<package>/Data/<binding-name>
@@ -26,7 +33,7 @@ DESCRIPTION
 
 OPTIONS
     --package              Target package name
-    --schema               Entity schema name used to fetch runtime metadata
+    --schema               Entity schema name used to fetch template or runtime metadata
     --workspace-path       Workspace root path. Defaults to the current workspace
     --binding-name         Binding folder name. Defaults to <schema>
     --install-type         Descriptor install type. Allowed values: 0, 1, 2, 3.
@@ -43,17 +50,18 @@ OPTIONS
     -p, --Password         User password
 
 EXAMPLES
-    # Create a template binding from the current workspace
-    clio create-data-binding -e dev --package Custom --schema SysSettings
+    # Create a SysSettings binding offline from the current workspace
+    clio create-data-binding --package Custom --schema SysSettings
 
-    # Create a binding in an explicit workspace with initial values
-    clio create-data-binding -e dev --package Custom --schema SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Code\":\"UsrSetting\",\"Name\":\"Setting name\"}'
+    # Create a non-templated binding in an explicit workspace with initial values
+    clio create-data-binding -e dev --package Custom --schema UsrCustomEntity --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"Setting name\"}'
 
     # Create a binding with explicit localizations
     clio create-data-binding -e dev --package Custom --schema SysSettings --values "{\"Name\":\"Setting name\"}" --localizations '{\"ru-RU\":{\"Name\":\"Настройка\"}}'
 
 NOTES
-    - The command requires either --environment or --uri
+    - For templated schemas such as SysSettings, --environment and --uri are optional
+    - For non-templated schemas, the command requires either --environment or --uri
     - Unknown columns in --values or --localizations are rejected
     - If the primary key column is a Guid and is omitted or null in --values, create-data-binding generates it automatically
     - If the target binding folder already exists for another schema, the

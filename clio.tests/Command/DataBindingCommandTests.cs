@@ -63,11 +63,10 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	}
 
 	[Test]
-	[Description("Creates descriptor, data, filter, and default localization files when template mode is requested without explicit row values.")]
-	public void Execute_Should_Create_Template_Files_When_Values_Are_Not_Provided() {
+	[Description("Creates descriptor, data, filter, and default localization files for a built-in templated schema without requiring Creatio access.")]
+	public void Execute_Should_Create_Template_Files_From_Offline_Template_When_Values_Are_Not_Provided() {
 		// Arrange
 		CreateDataBindingOptions options = new() {
-			Environment = "dev",
 			PackageName = PackageName,
 			SchemaName = "SysSettings"
 		};
@@ -90,22 +89,28 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
 		descriptorJson.Should().Contain("\"Name\": \"SysSettings\"",
 			because: "the generated descriptor should use the default binding folder name");
-		descriptorJson.Should().Contain("\"ColumnName\": \"CreatedOn\"",
-			because: "template mode should include all runtime schema columns in the descriptor");
+		descriptorJson.Should().Contain("\"ColumnName\": \"ReferenceSchemaUId\"",
+			because: "template mode should include all columns defined by the built-in template metadata");
+		descriptorJson.Should().Contain("\"ColumnName\": \"IsSSPAvailable\"",
+			because: "template mode should include all columns defined by the built-in template metadata");
+		descriptorJson.Should().Contain("\"UId\": \"27aeadd6-d508-4572-8061-5b55b667c902\"",
+			because: "the generated descriptor should use the built-in template schema identity");
+		descriptorJson.Should().NotContain("\"ColumnName\": \"CreatedOn\"",
+			because: "offline template mode should not depend on runtime-only mock columns");
 		dataJson.Should().Contain("\"SchemaColumnUId\": \"ae0e45ca-c495-4fe7-a39d-3ab7278e1617\"",
 			because: "template mode should include the primary key column row entry");
 		dataJson.Should().Contain("\"Value\": \"\"",
 			because: "template mode should create empty placeholder values");
 		FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\filter.json").Should().BeEmpty(
 			because: "filter.json should be created as an empty file");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 	}
 
 	[Test]
-	[Description("Creates a binding from explicit values and localizations, auto-generating a GUID primary key when the payload omits it while keeping only the requested columns plus the primary key in the descriptor and data files.")]
+	[Description("Creates a binding from explicit values and localizations using the built-in template metadata, auto-generating a GUID primary key when the payload omits it while keeping only the requested columns plus the primary key in the descriptor and data files.")]
 	public void Execute_Should_Create_Binding_From_Explicit_Values() {
 		// Arrange
 		CreateDataBindingOptions options = new() {
-			Environment = "dev",
 			PackageName = PackageName,
 			SchemaName = "SysSettings",
 			ValuesJson = """{"Code":"UsrTestSetting","Name":"Test setting"}""",
@@ -147,14 +152,14 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 			because: "the row payload should preserve provided values");
 		localizedName.Should().Be("Тестовая настройка",
 			because: "provided localized values should be written to the culture-specific file");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 	}
 
 	[Test]
-	[Description("Rejects runtime payload columns that are not present in the fetched schema instead of writing a partially invalid binding.")]
+	[Description("Rejects payload columns that are not present in the built-in template instead of writing a partially invalid binding.")]
 	public void Execute_Should_Fail_When_Values_Contain_Unknown_Column() {
 		// Arrange
 		CreateDataBindingOptions options = new() {
-			Environment = "dev",
 			PackageName = PackageName,
 			SchemaName = "SysSettings",
 			ValuesJson = """{"Id":"4f41bcc2-7ed0-45e8-a1fd-474918966d15","Missing":"x"}"""
@@ -166,6 +171,25 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		// Assert
 		result.Should().Be(1, because: "unknown runtime schema columns should be rejected before files are written");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Column 'Missing'")));
+	}
+
+	[Test]
+	[Description("Requires --environment or --uri for schemas that are not covered by the built-in offline template catalog.")]
+	public void Execute_Should_Fail_Without_Environment_For_NonTemplated_Schema() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "UsrOfflineOnly"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "non-templated schemas still need a runtime schema source from Creatio");
+		_logger.Received(1).WriteError("create-data-binding requires --environment or --uri.");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 	}
 
 	[Test]
