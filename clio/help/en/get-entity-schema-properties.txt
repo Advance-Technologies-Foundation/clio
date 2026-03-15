@@ -1,0 +1,37 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-entity-schema-properties - Get properties from a remote Creatio entity schema
+
+SYNOPSIS
+    clio get-entity-schema-properties [OPTIONS]
+
+DESCRIPTION
+    Loads the full entity schema design item from the remote Creatio environment
+    and prints a human-readable schema summary with package, parent schema,
+    primary columns, column counts, indexes, and major schema flags.
+
+OPTIONS
+    --package              Target package name
+    --schema-name          Entity schema name
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Read entity schema properties
+    clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle
+
+NOTES
+    - output is human-readable text, not JSON
+    - the report includes own and inherited column counts
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-entity-schema-column-properties, modify-entity-schema-column
