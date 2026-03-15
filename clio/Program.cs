@@ -81,6 +81,9 @@ internal class Program {
 		typeof(LoadPackagesToDbOptions),
 		typeof(HealthCheckOptions),
 		typeof(AddPackageOptions),
+		typeof(CreateDataBindingOptions),
+		typeof(AddDataBindingRowOptions),
+		typeof(RemoveDataBindingRowOptions),
 		typeof(UnlockPackageOptions),
 		typeof(LockPackageOptions),
 		typeof(DeactivatePkgOptions),
@@ -170,6 +173,22 @@ internal class Program {
 	internal static bool IsCfgOpenCommand;
 	public static IAppUpdater _appUpdater;
 
+	private static string[] NormalizeCommandLineArgs(string[] args) {
+		if (args.Length >= 3 &&
+			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
+			string[] normalizedArgs = (string[])args.Clone();
+			for (int index = 1; index < normalizedArgs.Length; index++) {
+				if (string.Equals(normalizedArgs[index], "--environment", StringComparison.OrdinalIgnoreCase)) {
+					normalizedArgs[index] = "-e";
+				}
+			}
+
+			return normalizedArgs;
+		}
+
+		return args;
+	}
+
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
 		return instance switch {
 					ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
@@ -227,6 +246,9 @@ internal class Program {
 					UploadLicensesOptions opts => Resolve<UploadLicensesCommand>(opts).Execute(opts),
 					HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
 					AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
+					CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
+					AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
+					RemoveDataBindingRowOptions opts => Resolve<RemoveDataBindingRowCommand>().Execute(opts),
 					UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 					LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
 					DataServiceQueryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),
@@ -796,7 +818,8 @@ internal class Program {
 			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<WikiHelpViewer>();
 		}
 		
-		ParserResult<object> parserResult = Parser.Default.ParseArguments(args, CommandOption);
+		string[] normalizedArgs = NormalizeCommandLineArgs(args);
+		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, CommandOption);
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}

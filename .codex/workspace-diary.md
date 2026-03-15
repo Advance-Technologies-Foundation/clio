@@ -820,3 +820,52 @@ Decision: Reviewed the local runner and test attributes, then checked official `
 Discovery: In the current VSTest-based `dotnet test` flow, NUnit filtering is limited to `FullyQualifiedName`, `Name`, `Category`, and `Priority`; `AllureFeature` is reporting metadata and is not a native test-selection property. More precise selection would need either standardized NUnit categories or NUnit's `NUnit.Where` filtering against custom NUnit properties.
 Files: clio.mcp.e2e/run-e2e-tests.ps1, clio.mcp.e2e/clio.mcp.e2e.csproj, Directory.Packages.props, .codex/workspace-diary.md
 Impact: Future cleanup of the E2E runner should standardize on explicit NUnit metadata for test selection instead of overloading free-form filter input and class-name conventions.
+
+## 2026-03-12 10:45 – Install gh-address-comments skill
+Context: User requested installation of the `gh-address-comments` Codex skill.
+Decision: Used the `skill-installer` helper script to install the curated skill from `openai/skills` into the local Codex skills directory.
+Discovery: The curated installer script successfully placed the skill under `C:\Users\k.krylov\.codex\skills\gh-address-comments` without requiring fallback to git checkout.
+Files: C:/Users/k.krylov/.codex/skills/.system/skill-installer/SKILL.md, .codex/workspace-diary.md
+Impact: The `gh-address-comments` skill is now available in this Codex environment after restart.
+
+## 2026-03-12 11:05 – Research product skill repository model
+Context: User asked how to create a product-specific skills repository with an experience similar to the OpenAI `skill-installer` flow.
+Decision: Ground the recommendation in the Codex skills documentation plus the installed `skill-installer` behavior instead of proposing a custom format.
+Discovery: The cleanest path is to mirror the `openai/skills` repository conventions (`skills/.curated`, optional `skills/.experimental`, one folder per skill with `SKILL.md`) so an installer can list and install skills by repo path while Codex still discovers installed skills normally.
+Files: C:/Users/k.krylov/.codex/skills/.system/skill-installer/SKILL.md, C:/Projects/clio/.codex/workspace-diary.md
+Impact: Future guidance for internal skill catalogs can reuse the same repository shape and user flow without inventing a separate distribution model.
+
+## 2026-03-13 12:55 – Add data-binding CLI and MCP flows
+Context: User requested implementation of the planned data-binding command family with matching MCP tools, tests, and docs.
+Decision: Added three flat verbs (`create-data-binding`, `add-data-binding-row`, `remove-data-binding-row`) over a shared DI-backed service layer, aligned MCP tools/prompts/tests to the same contract, and normalized `create-data-binding --environment` to the legacy `-e/--Environment` parser option in `Program.cs` so the CLI matches the documented plan without changing global environment handling.
+Discovery: Real MCP E2E failures came from two separate issues: command-style MCP calls in this harness need the `args` wrapper, and `create-data-binding` can surface a top-level MCP invocation error when the configured sandbox environment is unresolved because environment-aware command resolution happens before `BaseTool` enters its exception-to-result path.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataBindingTool.cs, clio/Command/McpServer/Prompts/DataBindingPrompt.cs, clio/BindingsModule.cs, clio/Program.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.mcp.e2e/DataBindingToolE2ETests.cs, clio/help/en/create-data-binding.txt, clio/help/en/add-data-binding-row.txt, clio/help/en/remove-data-binding-row.txt, clio/docs/commands/create-data-binding.md, clio/docs/commands/add-data-binding-row.md, clio/docs/commands/remove-data-binding-row.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future command/MCP work can reuse the data-binding service and E2E patterns, while the CLI now accepts the planned lowercase environment flag and the E2E suite automatically falls back to a reachable real environment (`d2`) when the configured sandbox alias is stale.
+
+## 2026-03-15 10:20 – Change default data-binding folder name
+Context: User wanted `create-data-binding` to default to `SysSettings` instead of `SysSettings_1` when no explicit binding name is provided.
+Decision: Changed the default binding-name derivation from `<schema>_1` to `<schema>` and updated the matching MCP description text, docs, unit tests, and E2E expectations to keep the contract aligned.
+Discovery: The code path that needed the behavior change was a single default-name branch in `DataBindingService.CreateBinding`; the rest of the work was contract maintenance across docs/tests, and parallel `dotnet test` runs against the same Debug output can produce transient `clio.dll` file-lock failures, so rerunning the targeted unit slices with `--no-build` was the stable verification path.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataBindingTool.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.mcp.e2e/DataBindingToolE2ETests.cs, clio/help/en/create-data-binding.txt, clio/docs/commands/create-data-binding.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: `clio-dev create-data-binding -e d2 --package <pkg> --schema <schema>` now creates the binding under `<schema>` by default, and future changes to this command have an updated doc/test baseline that matches the new folder naming rule.
+
+## 2026-03-15 10:40 – Make data-binding filter.json empty
+Context: User wanted newly created data bindings to generate an empty `filter.json` file instead of `{}`.
+Decision: Changed the filter writer in `DataBindingService.CreateBinding` to write an empty string and updated the command help plus detailed command docs and unit coverage to match.
+Discovery: Direct CLI verification is stable when the workspace is arranged minimally on disk (`.clio/workspaceSettings.json` plus the target package folder) and the command is run sequentially; the resulting `filter.json` length is `0` against real environment `d2`.
+Files: clio/Command/DataBindingCommand.cs, clio.tests/Command/DataBindingCommandTests.cs, clio/help/en/create-data-binding.txt, clio/docs/commands/create-data-binding.md, .codex/workspace-diary.md
+Impact: Newly created bindings now match the expected empty-filter file layout and avoid spurious `{}` content diffs.
+
+## 2026-03-15 11:05 – Auto-generate missing data-binding Id on create
+Context: User wanted `create-data-binding` to accept row payloads without `Id` and generate the primary key automatically for schemas such as `SysSettings`.
+Decision: Changed only the create flow to synthesize a GUID value when the binding primary column is GUID-based and omitted from `--values`; `add-data-binding-row` still requires an explicit primary key so upserts remain deterministic.
+Discovery: The narrowest safe implementation point was `BuildRow`, with a create-only `autoGeneratePrimaryKey` switch; targeted unit tests, MCP E2E tests, and a direct CLI smoke against `d2` all confirmed that `--values "{\"Code\":\"UsrSetting\",\"Name\":\"Setting name\"}"` now writes a generated GUID `Id` into `data.json`.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataBindingTool.cs, clio/Command/McpServer/Prompts/DataBindingPrompt.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.mcp.e2e/DataBindingToolE2ETests.cs, clio/help/en/create-data-binding.txt, clio/docs/commands/create-data-binding.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Users and MCP callers can create data bindings from business-column payloads without manually supplying `Id`, while row-level update/remove operations keep explicit key semantics.
+
+## 2026-03-15 11:25 – Auto-generate missing data-binding Id on add-row
+Context: User wanted `add-data-binding-row` to mirror `create-data-binding` and generate `Id` automatically when the row payload omits it.
+Decision: Extended the same GUID primary-key generation behavior to add-row, and tightened the helper so `Id: null` is treated as missing instead of producing an empty normalized key.
+Discovery: The right fix was to treat primary-key presence as "present with a non-empty value" rather than just `ContainsKey`; targeted unit tests, MCP E2E tests, and a direct CLI smoke against `d2` confirmed that add-row now appends a new row with a generated GUID `Id`.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataBindingTool.cs, clio/Command/McpServer/Prompts/DataBindingPrompt.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.mcp.e2e/DataBindingToolE2ETests.cs, clio/help/en/add-data-binding-row.txt, clio/docs/commands/add-data-binding-row.md, clio/help/en/create-data-binding.txt, clio/docs/commands/create-data-binding.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Both create and add-row now accept business-column payloads without explicit `Id`, and null GUID keys no longer create malformed rows that are hard to remove later.

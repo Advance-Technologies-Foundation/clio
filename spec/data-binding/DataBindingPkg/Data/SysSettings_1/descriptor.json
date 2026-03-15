@@ -1,0 +1,77 @@
+﻿{
+  "Descriptor": {
+    "UId": "c653d44c-9c7c-125d-e269-b9257b353ff9",
+    "Name": "SysSettings_1",
+    "ModifiedOnUtc": "\/Date(1773420316000)\/",
+    "InstallType": 0,
+    "Schema": {
+      "UId": "27aeadd6-d508-4572-8061-5b55b667c902",
+      "Name": "SysSettings"
+    },
+    "Columns": [
+      {
+        "ColumnUId": "13aad544-ec30-4e76-a373-f0cff3202e24",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "Code",
+        "DataTypeValueUId": "325a73b8-0f47-44a0-8412-7606f78003ac"
+      },
+      {
+        "ColumnUId": "64fadca1-ab7c-4471-9d25-68599acc729b",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "IsSSPAvailable",
+        "DataTypeValueUId": "90b65bf8-0ffc-4141-8779-2420877af907"
+      },
+      {
+        "ColumnUId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "Name",
+        "DataTypeValueUId": "ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd"
+      },
+      {
+        "ColumnUId": "764cd95a-59b3-4060-b17f-2797d5c76aaa",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "IsPersonal",
+        "DataTypeValueUId": "90b65bf8-0ffc-4141-8779-2420877af907"
+      },
+      {
+        "ColumnUId": "9e53fd7c-dde4-4502-a64c-b9e34148108b",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "Description",
+        "DataTypeValueUId": "c0f04627-4620-4bc0-84e5-9419dc8516b1"
+      },
+      {
+        "ColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+        "IsForceUpdate": false,
+        "IsKey": true,
+        "ColumnName": "Id",
+        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
+      },
+      {
+        "ColumnUId": "b2280617-35f9-4006-8634-c557a2e121c2",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "ReferenceSchemaUId",
+        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
+      },
+      {
+        "ColumnUId": "eb971f1a-dd41-4668-99aa-1f2a6b61a1b9",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "IsCacheable",
+        "DataTypeValueUId": "90b65bf8-0ffc-4141-8779-2420877af907"
+      },
+      {
+        "ColumnUId": "f7960a8a-1fd4-41d2-997a-fd78ea60075f",
+        "IsForceUpdate": false,
+        "IsKey": false,
+        "ColumnName": "ValueTypeName",
+        "DataTypeValueUId": "ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd"
+      }
+    ]
+  }
+}

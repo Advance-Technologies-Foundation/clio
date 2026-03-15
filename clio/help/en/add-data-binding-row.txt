@@ -1,0 +1,46 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    add-data-binding-row - Add or replace a row in an existing package data binding
+
+SYNOPSIS
+    clio add-data-binding-row [OPTIONS]
+
+DESCRIPTION
+    Updates an existing local package data binding by adding a new row or
+    replacing the row that has the same primary-key value.
+
+    The command reads descriptor.json to resolve column names to schema column
+    identifiers and writes the updated row to data.json. If --localizations is
+    provided, matching localization files are created or updated under the
+    binding Localization folder.
+
+OPTIONS
+    --package              Target package name
+    --binding-name         Binding folder name under package Data
+    --workspace-path       Workspace root path. Defaults to the current workspace
+    --values               JSON object keyed by column name for the row payload.
+                           If the GUID primary key column is omitted or null,
+                           it is generated automatically
+    --localizations        Optional JSON object keyed by culture and column name
+
+EXAMPLES
+    # Add a new row from the current workspace
+    clio add-data-binding-row --package Custom --binding-name SysSettings --values '{\"Name\":\"Setting name\"}'
+
+    # Replace an existing row and update localization data
+    clio add-data-binding-row --package Custom --binding-name SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"New name\"}" --localizations "{\"en-US\":{\"Name\":\"Localized name\"}}'
+
+NOTES
+    - The binding must already exist locally
+    - The row key is the primary column marked in descriptor.json
+    - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically
+    - Unknown columns in --values or --localizations are rejected
+    - Existing rows with the same primary key are replaced instead of duplicated
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    create-data-binding, remove-data-binding-row

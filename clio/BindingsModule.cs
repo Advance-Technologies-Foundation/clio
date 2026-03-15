@@ -188,6 +188,13 @@ public class BindingsModule {
 		services.AddTransient<RestoreWorkspaceCommand>();
 		services.AddTransient<CreateWorkspaceCommand>();
 		services.AddTransient<PushWorkspaceCommand>();
+		services.AddTransient<IDataBindingSchemaClient, DataBindingSchemaClient>();
+		services.AddTransient<IDataBindingSerializer, DataBindingSerializer>();
+		services.AddTransient<IDataBindingValueConverter, DataBindingValueConverter>();
+		services.AddTransient<IDataBindingService, DataBindingService>();
+		services.AddTransient<CreateDataBindingCommand>();
+		services.AddTransient<AddDataBindingRowCommand>();
+		services.AddTransient<RemoveDataBindingRowCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();

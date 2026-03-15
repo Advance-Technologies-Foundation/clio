@@ -1,0 +1,20 @@
+﻿{
+  "Descriptor": {
+    "UId": "1d242b68-01ed-46d2-9db5-b5135a511873",
+    "PackageVersion": "0.1.0",
+    "Name": "DataBindingPkg",
+    "Type": 1,
+    "InstallBehavior": 1,
+    "ModifiedOnUtc": "\/Date(1773403033000)\/",
+    "Maintainer": "Customer",
+    "ProjectPath": "Files/DataBindingPkg.csproj",
+    "DependsOn": [
+      {
+        "UId": "3a71e376-9ac3-3049-c62b-9c43b9abe054",
+        "PackageVersion": "7.8.0",
+        "Name": "CrtCoreBase",
+        "Type": 1
+      }
+    ]
+  }
+}

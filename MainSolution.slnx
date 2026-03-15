@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <BuildType Name="dev-n8" />
+    <BuildType Name="dev-nf" />
+  </Configurations>
+  <Project Path="packages\ManualPkg\Files\ManualPkg.csproj" />
+  <Project Path="packages\Pkg1426397c7ffe44b\Files\Pkg1426397c7ffe44b.csproj" />
+</Solution>

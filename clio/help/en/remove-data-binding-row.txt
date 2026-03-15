@@ -1,0 +1,37 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    remove-data-binding-row - Remove a row from an existing package data binding
+
+SYNOPSIS
+    clio remove-data-binding-row [OPTIONS]
+
+DESCRIPTION
+    Removes a row from an existing local package data binding by matching the
+    supplied primary-key value. The matching row is deleted from data.json and
+    from every localization file under the binding Localization folder.
+
+OPTIONS
+    --package              Target package name
+    --binding-name         Binding folder name under package Data
+    --workspace-path       Workspace root path. Defaults to the current workspace
+    --key-value            Primary-key value of the row to remove
+
+EXAMPLES
+    # Remove a row from the current workspace
+    clio remove-data-binding-row --package Custom --binding-name SysSettings_1 --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+
+    # Remove a row from an explicit workspace
+    clio remove-data-binding-row --package Custom --binding-name SysSettings_1 --workspace-path C:\Work\MyWorkspace --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+
+NOTES
+    - The binding must already exist locally
+    - The command fails if the supplied key does not exist
+    - Localization rows that share the same primary key are removed together
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    create-data-binding, add-data-binding-row

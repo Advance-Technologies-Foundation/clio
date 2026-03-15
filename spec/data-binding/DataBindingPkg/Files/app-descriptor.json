@@ -1,0 +1,20 @@
+{
+  "Name": "DataBindingPkg",
+  "Description": "",
+  "Maintainer": "Customer",
+  "Icon": "",
+  "IconName": "",
+  "Color": "#FFAC07",
+  "Version": "0.1.0",
+  "MarketplaceLink": "",
+  "HelpLink": "",
+  "OrderLink": "",
+  "SupportEmail": "",
+  "Code": "DataBindingPkg",
+  "Packages": [
+    {
+      "UId": "1d242b68-01ed-46d2-9db5-b5135a511873",
+      "Name": "DataBindingPkg"
+    }
+  ]
+}

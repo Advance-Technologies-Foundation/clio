@@ -1,0 +1,67 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    create-data-binding - Create or regenerate a package data binding from a runtime schema
+
+SYNOPSIS
+    clio create-data-binding [OPTIONS]
+
+DESCRIPTION
+    Fetches a runtime entity schema from a Creatio environment and creates or
+    updates a data-binding folder under the target package.
+
+    The generated binding lives under:
+    <workspace>/packages/<package>/Data/<binding-name>
+
+    Files created or updated:
+    - descriptor.json
+    - data.json
+    - filter.json
+    - Localization/data.en-US.json in template mode
+    - Localization/data.<culture>.json for cultures supplied in --localizations
+
+    If --values is omitted, the command creates a single template row with all
+    schema columns and empty placeholder values.
+
+OPTIONS
+    --package              Target package name
+    --schema               Entity schema name used to fetch runtime metadata
+    --workspace-path       Workspace root path. Defaults to the current workspace
+    --binding-name         Binding folder name. Defaults to <schema>
+    --install-type         Descriptor install type. Allowed values: 0, 1, 2, 3.
+                           Default: 0
+    --values               Optional JSON object keyed by column name for the
+                           initial row. If the GUID primary key column is
+                           omitted or null, it is generated automatically
+    --localizations        Optional JSON object keyed by culture and column name
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Create a template binding from the current workspace
+    clio create-data-binding -e dev --package Custom --schema SysSettings
+
+    # Create a binding in an explicit workspace with initial values
+    clio create-data-binding -e dev --package Custom --schema SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Code\":\"UsrSetting\",\"Name\":\"Setting name\"}'
+
+    # Create a binding with explicit localizations
+    clio create-data-binding -e dev --package Custom --schema SysSettings --values "{\"Name\":\"Setting name\"}" --localizations '{\"ru-RU\":{\"Name\":\"Настройка\"}}'
+
+NOTES
+    - The command requires either --environment or --uri
+    - Unknown columns in --values or --localizations are rejected
+    - If the primary key column is a Guid and is omitted or null in --values, create-data-binding generates it automatically
+    - If the target binding folder already exists for another schema, the
+      command fails instead of overwriting it
+    - filter.json is always created as an empty file
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    add-data-binding-row, remove-data-binding-row, call-service

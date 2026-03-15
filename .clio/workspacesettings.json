@@ -1,6 +1,11 @@
 {
-  "ignorePackages": [
+  "Packages": [
+    "ManualPkg"
+  ],
+  "ApplicationVersion": null,
+  "IgnorePackages": [
     "TestPackage",
     "Demo*"
-  ]
+  ],
+  "ExternalPackages": []
 }

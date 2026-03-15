@@ -13,6 +13,7 @@ Clio Command Reference
   - [Package Filtering](#package-filtering-in-workspace)
 - [Download Configuration](#download-configuration)
 - [Development](#development)
+- [Data Binding](#data-binding)
 - [Using for CI/CD systems](#using-for-cicd-systems)
 - [Web farm deployments](#web-farm-deployments)
 - [GitOps](#gitops)
@@ -2579,6 +2580,74 @@ clio mock-data -m .\Models -d .\Tests\Data -e prod --exclude-models VwSys
 **Related commands:**
 - `execute-assembly-code` - Execute code against Creatio
 - `assert` - Run unit tests
+
+# Data Binding
+- [Create data binding](#create-data-binding)
+- [Add data binding row](#add-data-binding-row)
+- [Remove data binding row](#remove-data-binding-row)
+
+## create-data-binding
+
+Create or regenerate a package data binding from a runtime schema fetched from a Creatio environment.
+
+```bash
+clio create-data-binding -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --schema <SCHEMA_NAME> [--workspace-path <WORKSPACE_PATH>] [--binding-name <BINDING_NAME>] [--install-type <0-3>] [--values <JSON>] [--localizations <JSON>]
+```
+
+Behavior:
+- Creates or updates `<workspace>/packages/<package>/Data/<binding-name>`
+- Writes `descriptor.json`, `data.json`, and `filter.json`
+- Creates template `Localization/data.en-US.json` when `--values` is omitted
+- Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
+- Writes additional localization files from `--localizations`
+- Rejects unknown columns and bindings that already target another schema
+
+Examples:
+
+```bash
+clio create-data-binding -e dev --package Custom --schema SysSettings
+
+clio create-data-binding -e dev --package Custom --schema SysSettings --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrSetting\",\"Name\":\"Setting name\"}"
+```
+
+## add-data-binding-row
+
+Add a row to an existing binding or replace the row that already has the same primary-key value.
+
+```bash
+clio add-data-binding-row --package <PACKAGE_NAME> --binding-name <BINDING_NAME> [--workspace-path <WORKSPACE_PATH>] --values <JSON> [--localizations <JSON>]
+```
+
+Behavior:
+- Resolves column names from the existing binding descriptor
+- Upserts rows by primary-key value
+- Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
+- Updates `Localization/data.<culture>.json` files when `--localizations` is supplied
+
+Example:
+
+```bash
+clio add-data-binding-row --package Custom --binding-name SysSettings --values "{\"Name\":\"New name\"}"
+```
+
+## remove-data-binding-row
+
+Remove a row from an existing binding by primary-key value.
+
+```bash
+clio remove-data-binding-row --package <PACKAGE_NAME> --binding-name <BINDING_NAME> [--workspace-path <WORKSPACE_PATH>] --key-value <PRIMARY_KEY_VALUE>
+```
+
+Behavior:
+- Removes the matching row from `data.json`
+- Removes matching localized rows from every localization file
+- Fails when the requested row key is not present
+
+Example:
+
+```bash
+clio remove-data-binding-row --package Custom --binding-name SysSettings --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+```
 
 ## get-app-hash
 

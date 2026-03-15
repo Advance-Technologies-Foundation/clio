@@ -489,22 +489,22 @@ public static class DataValueTypeMap{
 	private static readonly Guid BooleanDataValueTypeUId  = new ("{90B65BF8-0FFC-4141-8779-2420877AF907}");
 
 	/// <summary>
-	/// ShortText data value type Id.
+	/// ShortText data value type Id. (length 50)
 	/// </summary>
 	private static readonly Guid ShortTextDataValueTypeUId  = new ("{325A73B8-0F47-44A0-8412-7606F78003AC}");
 
 	/// <summary>
-	/// MediumText data value type Id.
+	/// MediumText data value type Id. (length 250)
 	/// </summary>
 	private static readonly Guid MediumTextDataValueTypeUId  = new ("{DDB3A1EE-07E8-4D62-B7A9-D0E618B00FBD}");
 
 	/// <summary>
-	/// LongText data value type Id.
+	/// LongText data value type Id. (length 500)
 	/// </summary>
 	private static readonly Guid LongTextDataValueTypeUId  = new ("{5CA35F10-A101-4C67-A96A-383DA6AFACFC}");
 
 	/// <summary>
-	/// MaxSizeText data value type Id.
+	/// MaxSizeText data value type Id. (length unlimited)
 	/// </summary>
 	private static readonly Guid MaxSizeTextDataValueTypeUId  = new ("{C0F04627-4620-4bc0-84E5-9419DC8516B1}");
 
