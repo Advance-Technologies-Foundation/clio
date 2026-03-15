@@ -883,3 +883,10 @@ Decision: Added `DataValueTypeMap.FromRuntimeValueType(int)` to the existing sha
 Discovery: `DataValueTypeMap` already had the needed GUID constants but only exposed GUID-to-CLR-type resolution; adding the reverse runtime-int-to-GUID method removed the duplication cleanly without changing data-binding behavior.
 Files: clio/Command/ProcessModel/Schema.cs, clio/Command/DataBindingCommand.cs, .codex/workspace-diary.md
 Impact: Data-binding and process-model code now share a single authoritative data-value-type GUID table, so future GUID changes only need to be made in one place.
+
+## 2026-03-15 14:05 – Preserve workspace gitignore through dotnet-tool packaging
+Context: User reported that `create-workspace` lost `.gitignore` after clio was packed and installed as a NuGet tool because dotfiles under `tpl/workspace` were not surviving packaging.
+Decision: Kept the real template source `.gitignore`, added a surrogate `clio/tpl/workspace/gitignore.txt` that NuGet will carry, and normalized it back to `.gitignore` in `WorkspaceCreator.Create` immediately after copying the workspace template.
+Discovery: Even when the generated `.nuspec` explicitly listed `tpl/workspace/.gitignore` in `tools/net8.0/any`, the final `.nupkg` still dropped that entry; a non-dot surrogate filename packs correctly and can be renamed safely during workspace creation.
+Files: clio/clio.csproj, clio/tpl/workspace/gitignore.txt, clio/Workspace/WorkspaceCreator.cs, .codex/workspace-diary.md
+Impact: Installed `clio` tool packages now preserve the workspace gitignore content via a packaged surrogate, and `create-workspace` produces `.gitignore` correctly in both local-dev and packaged-tool flows.

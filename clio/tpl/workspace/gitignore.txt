@@ -1,0 +1,21 @@
+**/.vscode
+**/.vs
+**/.idea
+
+**/.application
+**/.solution
+**/.nuget
+**/*.user
+
+**/[O-o]bj
+**/[B-b]in
+
+**\workspaceEnvironmentSettings.json
+
+# We only keep en-US resources
+**/resource.??-??.xml
+!**/resource.en-US.xml
+
+# We only keep en-US data
+**/data.??-??.json
+!**/data.en-US.json

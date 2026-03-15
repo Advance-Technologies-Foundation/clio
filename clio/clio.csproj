@@ -68,7 +68,6 @@
 		<Content Include="tpl\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-
 		<None Include="cliogate\**"/>
 		<Content Include="cliogate\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>

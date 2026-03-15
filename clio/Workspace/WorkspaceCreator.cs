@@ -111,6 +111,19 @@ namespace Clio.Workspaces
 			_executablePermissionsActualizer.Actualize(_workspacePathBuilder.TasksFolderPath);
 		}
 
+		private void NormalizeWorkspaceGitIgnore() {
+			string gitIgnorePath = _fileSystem.CombinePaths(RootPath, ".gitignore");
+			string fallbackGitIgnorePath = _fileSystem.CombinePaths(RootPath, "gitignore.txt");
+			if (_fileSystem.ExistsFile(gitIgnorePath)) {
+				_fileSystem.DeleteFileIfExists(fallbackGitIgnorePath);
+				return;
+			}
+
+			if (_fileSystem.ExistsFile(fallbackGitIgnorePath)) {
+				_fileSystem.MoveFile(fallbackGitIgnorePath, gitIgnorePath);
+			}
+		}
+
 		private void ValidateNotExistingWorkspace(bool force) {
 			if (force) {
 				return;
@@ -158,6 +171,7 @@ namespace Clio.Workspaces
 			ValidateNotExistingWorkspace(force);
 			ValidateDirectory(force);
 			_templateProvider.CopyTemplateFolder("workspace", RootPath, "", "", false);
+			NormalizeWorkspaceGitIgnore();
 			if (!ExistsWorkspaceSettingsFile) {
 				CreateWorkspaceSettingsFile(isAddingPackageNames);
 				SaveWorkspaceEnvironmentSettings(environmentName);
