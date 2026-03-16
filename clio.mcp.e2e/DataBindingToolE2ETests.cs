@@ -224,6 +224,39 @@ public sealed class DataBindingToolE2ETests {
 	}
 
 	[Test]
+	[Description("Creates an offline SysModule binding through MCP with explicit displayValue objects for lookup and image-reference columns and verifies that both display texts are written to data.json.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("Create SysModule binding preserves explicit lookup and image-reference display values")]
+	[AllureDescription("Uses the real clio MCP server to create an offline SysModule binding with structured FolderMode and Logo values and verifies that data.json contains both identifier values and their DisplayValue fields.")]
+	public async Task CreateDataBinding_Should_Write_DisplayValue_For_Lookup_And_ImageReference_Columns() {
+		// Arrange
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
+
+		// Act
+		CommandExecutionActResult createResult = await ActCommandAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "SysModule",
+				["workspace-path"] = arrangeContext.WorkspacePath,
+				["values"] =
+					"""{"Code":"UsrDisplayModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Folder mode display"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Logo display"}}"""
+			});
+
+		// Assert
+		AssertToolCallSucceeded(createResult);
+		AssertCommandExitCode(createResult, 0,
+			"create-data-binding should accept structured display-value payloads for offline lookup and image-reference columns");
+		string bindingDirectoryPath = Path.Combine(arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", "SysModule");
+		string dataJson = await File.ReadAllTextAsync(Path.Combine(bindingDirectoryPath, "data.json"));
+		dataJson.Should().Contain("\"DisplayValue\": \"Folder mode display\"",
+			because: "lookup columns should preserve caller-supplied display text in the generated binding");
+		dataJson.Should().Contain("\"DisplayValue\": \"Logo display\"",
+			because: "image-reference columns should preserve caller-supplied display text in the generated binding");
+	}
+
+	[Test]
 	[Description("Fails clearly through MCP when create-data-binding targets a schema without a built-in template and no environment-name or uri is provided.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("Create non-templated data binding without environment fails clearly")]
@@ -280,6 +313,35 @@ public sealed class DataBindingToolE2ETests {
 			because: "validation failures should emit an error message in the execution log");
 		DescribeExecution(result.Execution).Should().Contain("predefined colors",
 			because: "the failure should explain why the requested SysModule color was rejected");
+	}
+
+	[Test]
+	[Description("Fails clearly through MCP when an offline lookup payload omits DisplayValue for a non-null SysModule FolderMode value.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("Create SysModule binding without lookup display value fails clearly")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for the offline SysModule template with a scalar FolderMode lookup value and verifies that command execution fails with a human-readable displayValue validation error.")]
+	public async Task CreateDataBinding_Should_Fail_When_Lookup_DisplayValue_Is_Missing_Offline() {
+		// Arrange
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "SysModule",
+				["workspace-path"] = arrangeContext.WorkspacePath,
+				["values"] = """{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""
+			});
+
+		// Assert
+		result.CallResult.IsError.Should().NotBeTrue(
+			because: "command validation failures should still be returned as normal MCP command envelopes");
+		AssertCommandExitCode(result, 1,
+			"offline create-data-binding should reject non-null lookup values that do not include display text");
+		DescribeExecution(result.Execution).Should().Contain("requires displayValue",
+			because: "the error should explain how the lookup value must be shaped");
 	}
 
 	private static async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {

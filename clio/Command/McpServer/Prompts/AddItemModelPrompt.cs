@@ -29,6 +29,6 @@ public static class AddItemModelPrompt {
 		 Use clio mcp server `{AddItemModelTool.AddItemModelToolName}` to generate all C# models from
 		 Creatio environment `{environmentName}` into folder `{folder}` with namespace `{@namespace}`.
 		 Pass `namespace`, `folder`, and `environment-name` exactly as provided.
-		 The `folder` value must be an existing local absolute directory.
+		 The `folder` value must be a local absolute directory path and will be created if it does not exist.
 		 """;
 }

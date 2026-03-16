@@ -146,7 +146,7 @@ public sealed record CreateDataBindingArgs(
 	int? InstallType = null,
 
 	[property: JsonPropertyName("values")]
-	[property: Description("Optional JSON object keyed by column name for the initial row. If the GUID primary key is omitted or null, create-data-binding generates it automatically. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file. For SysModule.IconBackground, only the predefined 16-color palette is allowed.")]
+	[property: Description("Optional JSON object keyed by column name for the initial row. If the GUID primary key is omitted or null, create-data-binding generates it automatically. For lookup and image-reference columns, pass either a scalar value or an object like {\"value\":\"...\",\"displayValue\":\"...\"}; if displayValue is omitted, create-data-binding resolves it from Creatio when runtime lookup data is available. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file. For SysModule.IconBackground, only the predefined 16-color palette is allowed.")]
 	string? ValuesJson = null,
 
 	[property: JsonPropertyName("localizations")]
@@ -174,7 +174,7 @@ public sealed record AddDataBindingRowArgs(
 	string WorkspacePath,
 
 	[property: JsonPropertyName("values")]
-	[property: Description("JSON object keyed by column name for the row to add or replace. If the GUID primary key is omitted or null, add-data-binding-row generates it automatically. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file. For SysModule.IconBackground, only the predefined 16-color palette is allowed.")]
+	[property: Description("JSON object keyed by column name for the row to add or replace. If the GUID primary key is omitted or null, add-data-binding-row generates it automatically. For non-null lookup and image-reference columns, pass an object like {\"value\":\"...\",\"displayValue\":\"...\"}. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file. For SysModule.IconBackground, only the predefined 16-color palette is allowed.")]
 	[property: Required]
 	string ValuesJson,
 

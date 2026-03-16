@@ -13,7 +13,7 @@ using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Query;
 
-[Verb("call-service", Aliases = new[] {"cs"}, HelpText = "Call Service Request")]
+[Verb("call-service", Aliases = ["cs"], HelpText = "Call Service Request")]
 public class CallServiceCommandOptions : RemoteCommandOptions {
 
 	#region Properties: Public
@@ -40,7 +40,7 @@ public class CallServiceCommandOptions : RemoteCommandOptions {
 
 }
 
-[Verb("dataservice", Aliases = new[] {"ds"}, HelpText = "DataService Request")]
+[Verb("dataservice", Aliases = ["ds"], HelpText = "DataService Request")]
 public class DataServiceQueryOptions : CallServiceCommandOptions {
 
 	#region Properties: Public

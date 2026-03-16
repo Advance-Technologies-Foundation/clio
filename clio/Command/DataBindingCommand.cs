@@ -36,7 +36,7 @@ public class CreateDataBindingOptions : EnvironmentOptions {
 	[Option("install-type", Required = false, Default = 0, HelpText = "Descriptor install type")]
 	public int InstallType { get; set; }
 
-	[Option("values", Required = false, HelpText = "Row values as JSON object keyed by column name. Image content columns accept either a base64 string or a local file path to encode")]
+	[Option("values", Required = false, HelpText = "Row values as JSON object keyed by column name. Lookup and image-reference columns may use {\"value\":\"...\",\"displayValue\":\"...\"}; if displayValue is omitted, create-data-binding resolves it from Creatio when runtime lookup data is available. Image content columns accept either a base64 string or a local file path to encode")]
 	public string? ValuesJson { get; set; }
 
 	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
@@ -57,7 +57,7 @@ public class AddDataBindingRowOptions {
 	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
 	public string BindingName { get; set; } = string.Empty;
 
-	[Option("values", Required = true, HelpText = "Row values as JSON object keyed by column name. Image content columns accept either a base64 string or a local file path to encode")]
+	[Option("values", Required = true, HelpText = "Row values as JSON object keyed by column name. Non-null lookup and image-reference columns should use {\"value\":\"...\",\"displayValue\":\"...\"}. Image content columns accept either a base64 string or a local file path to encode")]
 	public string ValuesJson { get; set; } = string.Empty;
 
 	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
@@ -202,11 +202,16 @@ internal interface IDataBindingValueConverter {
 	bool IsStringLike(Guid dataTypeUId);
 }
 
+internal interface IDataBindingDisplayValueResolver {
+	bool TryResolveDisplayValue(DataBindingColumnDefinition column, object? value, out string? displayValue);
+}
+
 internal sealed class DataBindingService(
 	IDataBindingSchemaResolver schemaResolver,
 	IDataBindingTemplateCatalog templateCatalog,
 	IDataBindingSerializer serializer,
 	IDataBindingValueConverter valueConverter,
+	IDataBindingDisplayValueResolver displayValueResolver,
 	IWorkspacePathBuilder workspacePathBuilder,
 	IFileSystem fileSystem) : IDataBindingService {
 	private const string DataFolderName = "Data";
@@ -262,6 +267,8 @@ internal sealed class DataBindingService(
 				values!,
 				allowEmptyPrimaryKey: false,
 				autoGeneratePrimaryKey: true,
+				allowRemoteDisplayValueResolution:
+				!string.IsNullOrWhiteSpace(options.Environment) || !string.IsNullOrWhiteSpace(options.Uri),
 				valueFileBasePath: workspaceRoot);
 
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DescriptorFileName),
@@ -302,6 +309,7 @@ internal sealed class DataBindingService(
 			values,
 			allowEmptyPrimaryKey: false,
 			autoGeneratePrimaryKey: true,
+			allowRemoteDisplayValueResolution: false,
 			valueFileBasePath: workspaceRoot);
 		string key = GetPrimaryKey(newRow, runtimeDescriptor);
 		int existingIndex = FindRowIndex(dataFile.PackageData, runtimeDescriptor, key);
@@ -523,7 +531,8 @@ internal sealed class DataBindingService(
 				IsKey = column.UId == schema.PrimaryColumnUId,
 				ColumnName = column.Name,
 				DataTypeValueUId = column.TemplateDataTypeValueUId
-					?? DataValueTypeMap.FromRuntimeValueType(column.DataValueType)
+					?? DataValueTypeMap.FromRuntimeValueType(column.DataValueType),
+				ReferenceSchemaName = column.ReferenceSchemaName
 			})
 			.OrderBy(column => column.ColumnName, StringComparer.Ordinal)
 			.ToList();
@@ -558,13 +567,22 @@ internal sealed class DataBindingService(
 
 	private static DataBindingPackageDataFile BuildTemplateData(
 		IReadOnlyCollection<DataBindingColumnDefinition> descriptorColumns) {
-		List<DataBindingRowValue> row = descriptorColumns.Select(column => new DataBindingRowValue {
-			SchemaColumnUId = column.ColumnUId,
-			Value = string.Empty
-		}).ToList();
+		List<DataBindingRowValue> row = descriptorColumns.Select(CreateTemplateRowValue).ToList();
 		return new DataBindingPackageDataFile {
 			PackageData = [new DataBindingRow { Row = row }]
 		};
+	}
+
+	private static DataBindingRowValue CreateTemplateRowValue(DataBindingColumnDefinition column) {
+		DataBindingRowValue rowValue = new() {
+			SchemaColumnUId = column.ColumnUId,
+			Value = string.Empty
+		};
+		if (RequiresDisplayValue(column)) {
+			rowValue.DisplayValue = string.Empty;
+		}
+
+		return rowValue;
 	}
 
 	private DataBindingPackageDataFile BuildDataFile(
@@ -573,11 +591,20 @@ internal sealed class DataBindingService(
 		Dictionary<string, JsonNode?> values,
 		bool allowEmptyPrimaryKey,
 		bool autoGeneratePrimaryKey,
+		bool allowRemoteDisplayValueResolution,
 		string? valueFileBasePath = null) {
 		DataBindingRuntimeDescriptor descriptor =
 			DataBindingRuntimeDescriptor.FromSchema(schema, descriptorColumns, valueConverter);
 		return new DataBindingPackageDataFile {
-			PackageData = [BuildRow(descriptor, values, allowEmptyPrimaryKey, autoGeneratePrimaryKey, valueFileBasePath)]
+			PackageData = [
+				BuildRow(
+					descriptor,
+					values,
+					allowEmptyPrimaryKey,
+					autoGeneratePrimaryKey,
+					allowRemoteDisplayValueResolution,
+					valueFileBasePath)
+			]
 		};
 	}
 
@@ -586,6 +613,7 @@ internal sealed class DataBindingService(
 		Dictionary<string, JsonNode?> values,
 		bool allowEmptyPrimaryKey,
 		bool autoGeneratePrimaryKey = false,
+		bool allowRemoteDisplayValueResolution = false,
 		string? valueFileBasePath = null) {
 		Dictionary<string, JsonNode?> resolvedValues = EnsurePrimaryKeyValue(descriptor, values, autoGeneratePrimaryKey);
 		List<DataBindingRowValue> row = [];
@@ -594,17 +622,13 @@ internal sealed class DataBindingService(
 				throw new InvalidOperationException($"Column '{columnName}' is not part of binding '{descriptor.Name}'.");
 			}
 
-			object? converted = valueConverter.ConvertValue(
+			row.Add(BuildMainRowValue(
+				descriptor.Name,
+				column,
 				node,
-				column.DataTypeValueUId,
-				column.ColumnName,
-				allowEmptyString: allowEmptyPrimaryKey || !column.IsKey,
-				fileBasePath: valueFileBasePath);
-			converted = DataBindingDomainRules.NormalizeValue(descriptor.Name, column.ColumnName, converted);
-			row.Add(new DataBindingRowValue {
-				SchemaColumnUId = column.ColumnUId,
-				Value = converted
-			});
+				allowEmptyPrimaryKey || !column.IsKey,
+				allowRemoteDisplayValueResolution,
+				valueFileBasePath));
 		}
 
 		DataBindingColumnDefinition primaryColumn = descriptor.PrimaryColumn;
@@ -687,6 +711,113 @@ internal sealed class DataBindingService(
 		}
 
 		return -1;
+	}
+
+	private DataBindingRowValue BuildMainRowValue(
+		string bindingName,
+		DataBindingColumnDefinition column,
+		JsonNode? node,
+		bool allowEmptyString,
+		bool allowRemoteDisplayValueResolution,
+		string? valueFileBasePath) {
+		DataBindingParsedInputValue parsedValue = ParseInputValue(column, node);
+		object? converted = valueConverter.ConvertValue(
+			parsedValue.ValueNode,
+			column.DataTypeValueUId,
+			column.ColumnName,
+			allowEmptyString,
+			fileBasePath: valueFileBasePath);
+		converted = DataBindingDomainRules.NormalizeValue(bindingName, column.ColumnName, converted);
+		object? normalizedValue = NormalizeBindingRowValue(column, converted);
+		DataBindingRowValue rowValue = new() {
+			SchemaColumnUId = column.ColumnUId,
+			Value = normalizedValue
+		};
+		if (RequiresDisplayValue(column)) {
+			rowValue.DisplayValue = ResolveDisplayValue(
+				column,
+				normalizedValue,
+				parsedValue,
+				allowRemoteDisplayValueResolution);
+		}
+
+		return rowValue;
+	}
+
+	private string ResolveDisplayValue(
+		DataBindingColumnDefinition column,
+		object? normalizedValue,
+		DataBindingParsedInputValue parsedValue,
+		bool allowRemoteDisplayValueResolution) {
+		if (parsedValue.HasDisplayValue) {
+			return parsedValue.DisplayValue ?? string.Empty;
+		}
+
+		if (IsNullLikeValue(normalizedValue)) {
+			return DataValueTypeMap.IsLookup(column.DataTypeValueUId) ? "null" : string.Empty;
+		}
+
+		if (allowRemoteDisplayValueResolution &&
+			displayValueResolver.TryResolveDisplayValue(column, normalizedValue, out string? displayValue) &&
+			displayValue is not null) {
+			return displayValue;
+		}
+
+		throw new InvalidOperationException(
+			$"Column '{column.ColumnName}' requires displayValue. Pass the value as an object like " +
+			$"{{\"value\":\"{normalizedValue}\",\"displayValue\":\"...\"}}.");
+	}
+
+	private static DataBindingParsedInputValue ParseInputValue(DataBindingColumnDefinition column, JsonNode? node) {
+		if (node is not JsonObject objectNode) {
+			return new DataBindingParsedInputValue(node, HasDisplayValue: false, DisplayValue: null);
+		}
+
+		if (!RequiresDisplayValue(column)) {
+			throw new InvalidOperationException(
+				$"Column '{column.ColumnName}' expects a scalar JSON value and does not support an object payload.");
+		}
+
+		if (!objectNode.TryGetPropertyValue("value", out JsonNode? valueNode)) {
+			throw new InvalidOperationException(
+				$"Column '{column.ColumnName}' object payload must contain a 'value' property.");
+		}
+
+		bool hasDisplayValue = objectNode.TryGetPropertyValue("displayValue", out JsonNode? displayValueNode);
+		string? displayValue = ReadDisplayValue(column.ColumnName, displayValueNode);
+		return new DataBindingParsedInputValue(valueNode, hasDisplayValue, displayValue);
+	}
+
+	private static string? ReadDisplayValue(string columnName, JsonNode? displayValueNode) {
+		if (displayValueNode is null) {
+			return null;
+		}
+
+		if (displayValueNode is JsonValue displayValueJson &&
+			displayValueJson.TryGetValue<string>(out string? displayValue)) {
+			return displayValue;
+		}
+
+		throw new InvalidOperationException(
+			$"Column '{columnName}' displayValue must be a JSON string.");
+	}
+
+	private static bool RequiresDisplayValue(DataBindingColumnDefinition column) {
+		return DataValueTypeMap.IsLookup(column.DataTypeValueUId) ||
+			DataValueTypeMap.IsImageReference(column.DataTypeValueUId);
+	}
+
+	private static object? NormalizeBindingRowValue(DataBindingColumnDefinition column, object? convertedValue) {
+		if (!RequiresDisplayValue(column) || convertedValue is not null) {
+			return convertedValue;
+		}
+
+		return "null";
+	}
+
+	private static bool IsNullLikeValue(object? value) {
+		return value is null ||
+			string.Equals(Convert.ToString(value, CultureInfo.InvariantCulture), "null", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private void WriteLocalizationFiles(
@@ -885,7 +1016,135 @@ internal sealed class DataBindingSchemaClient(IApplicationClient applicationClie
 			schemaResponse.Schema.UId,
 			schemaResponse.Schema.Name,
 			schemaResponse.Schema.PrimaryColumnUId,
-			columns);
+			columns,
+			schemaResponse.Schema.PrimaryDisplayColumnName ??
+			ResolvePrimaryDisplayColumnName(schemaResponse.Schema));
+	}
+
+	private static string? ResolvePrimaryDisplayColumnName(DataBindingRuntimeSchemaPayload schemaPayload) {
+		if (!string.IsNullOrWhiteSpace(schemaPayload.PrimaryDisplayColumnName)) {
+			return schemaPayload.PrimaryDisplayColumnName;
+		}
+
+		if (schemaPayload.PrimaryDisplayColumnUId is Guid primaryDisplayColumnUId &&
+			schemaPayload.Columns?.Items is not null) {
+			foreach (DataBindingRuntimeSchemaColumnPayload column in schemaPayload.Columns.Items.Values) {
+				if (column.UId == primaryDisplayColumnUId) {
+					return column.Name;
+				}
+			}
+		}
+
+		return null;
+	}
+}
+
+internal sealed class DataBindingDisplayValueResolver(
+	IDataBindingSchemaClient schemaClient,
+	IApplicationClient applicationClient,
+	IServiceUrlBuilder serviceUrlBuilder) : IDataBindingDisplayValueResolver {
+	public bool TryResolveDisplayValue(DataBindingColumnDefinition column, object? value, out string? displayValue) {
+		displayValue = null;
+		if (string.IsNullOrWhiteSpace(column.ReferenceSchemaName) || value is null) {
+			return false;
+		}
+
+		string normalizedValue = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+		if (string.IsNullOrWhiteSpace(normalizedValue) ||
+			string.Equals(normalizedValue, "null", StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+
+		DataBindingSchema referenceSchema = schemaClient.Fetch(column.ReferenceSchemaName);
+		string? displayColumnName = ResolveDisplayColumnName(referenceSchema);
+		if (string.IsNullOrWhiteSpace(displayColumnName)) {
+			return false;
+		}
+
+		string response = applicationClient.ExecutePostRequest(
+			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+			BuildSelectDisplayValueRequest(column.ReferenceSchemaName, displayColumnName, normalizedValue));
+		using JsonDocument responseDocument = JsonDocument.Parse(response);
+		if (!responseDocument.RootElement.TryGetProperty("rows", out JsonElement rows) ||
+			rows.ValueKind != JsonValueKind.Array ||
+			rows.GetArrayLength() == 0) {
+			return false;
+		}
+
+		JsonElement row = rows[0];
+		if (!row.TryGetProperty(displayColumnName, out JsonElement displayValueElement)) {
+			return false;
+		}
+
+		displayValue = displayValueElement.ValueKind switch {
+			JsonValueKind.String => displayValueElement.GetString(),
+			JsonValueKind.Null => null,
+			_ => displayValueElement.GetRawText().Trim('"')
+		};
+		return displayValue is not null;
+	}
+
+	private static string? ResolveDisplayColumnName(DataBindingSchema schema) {
+		if (!string.IsNullOrWhiteSpace(schema.PrimaryDisplayColumnName)) {
+			return schema.PrimaryDisplayColumnName;
+		}
+
+		return schema.Columns.FirstOrDefault(column =>
+				string.Equals(column.Name, "Name", StringComparison.OrdinalIgnoreCase))?.Name
+			?? schema.Columns.FirstOrDefault(column =>
+				string.Equals(column.Name, "Caption", StringComparison.OrdinalIgnoreCase))?.Name;
+	}
+
+	private static string BuildSelectDisplayValueRequest(
+		string rootSchemaName,
+		string displayColumnName,
+		string value) {
+		return $$"""
+			{
+			  "rootSchemaName": "{{rootSchemaName}}",
+			  "filters": {
+			    "isEnabled": true,
+			    "trimDateTimeParameterToDate": false,
+			    "filterType": 6,
+			    "logicalOperation": 0,
+			    "items": {
+			      "idFilter": {
+			        "filterType": 1,
+			        "comparisonType": 3,
+			        "isEnabled": true,
+			        "trimDateTimeParameterToDate": false,
+			        "leftExpression": {
+			          "expressionType": 0,
+			          "columnPath": "Id"
+			        },
+			        "isAggregative": false,
+			        "dataValueType": 0,
+			        "rightExpression": {
+			          "expressionType": 2,
+			          "parameter": {
+			            "dataValueType": 0,
+			            "value": "{{value}}",
+			            "className": "Terrasoft.Parameter"
+			          },
+			          "className": "Terrasoft.ParameterExpression"
+			        },
+			        "className": "Terrasoft.CompareFilter"
+			      }
+			    }
+			  },
+			  "useLocalization": true,
+			  "columns": {
+			    "items": {
+			      "{{displayColumnName}}": {
+			        "expression": {
+			          "expressionType": 0,
+			          "columnPath": "{{displayColumnName}}"
+			        }
+			      }
+			    }
+			  }
+			}
+			""";
 	}
 }
 
@@ -1253,7 +1512,12 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 	}
 }
 
-internal sealed record DataBindingSchema(Guid UId, string Name, Guid PrimaryColumnUId, IReadOnlyList<DataBindingSchemaColumn> Columns);
+internal sealed record DataBindingSchema(
+	Guid UId,
+	string Name,
+	Guid PrimaryColumnUId,
+	IReadOnlyList<DataBindingSchemaColumn> Columns,
+	string? PrimaryDisplayColumnName = null);
 
 internal sealed record DataBindingSchemaColumn(
 	Guid UId,
@@ -1261,6 +1525,8 @@ internal sealed record DataBindingSchemaColumn(
 	int DataValueType,
 	string? ReferenceSchemaName,
 	Guid? TemplateDataTypeValueUId = null);
+
+internal sealed record DataBindingParsedInputValue(JsonNode? ValueNode, bool HasDisplayValue, string? DisplayValue);
 
 internal sealed class DataBindingRuntimeDescriptor {
 	public required string Name { get; init; }
@@ -1329,6 +1595,12 @@ internal sealed class DataBindingRuntimeSchemaPayload {
 
 	[JsonPropertyName("name")]
 	public string Name { get; set; } = string.Empty;
+
+	[JsonPropertyName("primaryDisplayColumnName")]
+	public string? PrimaryDisplayColumnName { get; set; }
+
+	[JsonPropertyName("primaryDisplayColumnUId")]
+	public Guid? PrimaryDisplayColumnUId { get; set; }
 }
 
 internal sealed class DataBindingRuntimeSchemaColumns {
@@ -1398,6 +1670,9 @@ internal sealed class DataBindingColumnDefinition {
 
 	[JsonPropertyName("DataTypeValueUId")]
 	public Guid DataTypeValueUId { get; set; }
+
+	[JsonPropertyName("ReferenceSchemaName")]
+	public string? ReferenceSchemaName { get; set; }
 }
 
 internal sealed class DataBindingPackageDataFile {
@@ -1419,4 +1694,7 @@ internal sealed class DataBindingRowValue {
 
 	[JsonPropertyName("Value")]
 	public object? Value { get; set; }
+
+	[JsonPropertyName("DisplayValue")]
+	public string? DisplayValue { get; set; }
 }

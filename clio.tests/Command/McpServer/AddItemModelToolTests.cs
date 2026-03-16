@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command;
@@ -8,6 +9,8 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.ModelBuilder;
 using Clio.Project;
+using ConsoleTables;
+using FluentValidation.Results;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -171,27 +174,164 @@ public sealed class AddItemModelToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects nonexistent folders before command execution so add-item-model does not silently create an unexpected path.")]
-	public void AddItemModel_Should_Reject_Nonexistent_Folder() {
+	[Description("Creates a missing absolute local folder before command execution so add-item-model stays aligned with the wrapped model-generation command.")]
+	public void AddItemModel_Should_Create_Missing_Absolute_Folder() {
 		// Arrange
 		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		TestLogger logger = new();
+		FakeAddItemCommand resolvedCommand = new(logger, fileSystem);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
+		commandResolver.Resolve<AddItemCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
+		string missingFolder = @"C:\Missing\Models";
 
 		// Act
 		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
 			"Contoso.Models",
-			@"C:\Missing\Models",
+			missingFolder,
+			"dev"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the tool should create a missing absolute folder before executing add-item model generation");
+		fileSystem.Directory.Exists(missingFolder).Should().BeTrue(
+			because: "the missing folder should be created before command execution");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should still receive add-item options after folder creation");
+		resolvedCommand.CapturedOptions!.DestinationPath.Should().Be(missingFolder,
+			because: "the created absolute folder should become the destination path passed to the command");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Compacts repeated per-model progress output into one MCP summary line while keeping non-progress messages visible.")]
+	public void AddItemModel_Should_Compact_Progress_Into_Summary_Message() {
+		// Arrange
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		fileSystem.AddDirectory(@"C:\Models");
+		TestLogger logger = new();
+		FakeAddItemCommand resolvedCommand = new(
+			logger,
+			fileSystem,
+			onExecute: _ => {
+				logger.WriteInfo("Generating models...");
+				logger.WriteLine(@"Models will be generated in directory: C:\Models");
+				logger.Write("Generated: 1 models from 3\r");
+				logger.Write("Generated: 2 models from 3\r");
+				logger.Write("Generated: 3 models from 3\r");
+				logger.WriteLine();
+			});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<AddItemCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
+
+		// Act
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+			"Contoso.Models",
+			@"C:\Models",
+			"dev"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "successful generation should still report a successful command result after compaction");
+		result.Output.Should().Contain(message =>
+			message.LogDecoratorType == LogDecoratorType.Info &&
+			Equals(message.Value, "Generating models..."),
+			because: "non-progress info messages should remain visible after compaction");
+		result.Output.Should().Contain(message =>
+			message.LogDecoratorType == LogDecoratorType.None &&
+			Equals(message.Value, @"Models will be generated in directory: C:\Models"),
+			because: "non-progress undecorated messages should remain visible after compaction");
+		result.Output.Should().Contain(message =>
+			message.LogDecoratorType == LogDecoratorType.Info &&
+			Equals(message.Value, "Generated 3 models; requested filter: none."),
+			because: "the MCP result should append one compact summary derived from the final progress message");
+		result.Output.Should().NotContain(message =>
+			Equals(message.Value, "Generated: 1 models from 3\r") ||
+			Equals(message.Value, "Generated: 2 models from 3\r") ||
+			Equals(message.Value, "Generated: 3 models from 3\r"),
+			because: "repeated per-model progress messages should be removed from the MCP result");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to counting generated model files when the command output does not include a final progress line.")]
+	public void AddItemModel_Should_Fallback_To_File_Count_For_Summary() {
+		// Arrange
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		fileSystem.AddDirectory(@"C:\Models");
+		TestLogger logger = new();
+		FakeAddItemCommand resolvedCommand = new(
+			logger,
+			fileSystem,
+			onExecute: options => {
+				fileSystem.AddFile(Path.Combine(options.DestinationPath, "Account.cs"), new MockFileData("// model"));
+				fileSystem.AddFile(Path.Combine(options.DestinationPath, "Contact.cs"), new MockFileData("// model"));
+				fileSystem.AddFile(Path.Combine(options.DestinationPath, "BaseModelExtensions.cs"), new MockFileData("// helper"));
+			});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<AddItemCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
+
+		// Act
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+			"Contoso.Models",
+			@"C:\Models",
+			"dev"));
+
+		// Assert
+		result.Output.Should().Contain(message =>
+			message.LogDecoratorType == LogDecoratorType.Info &&
+			Equals(message.Value, "Generated 2 models; requested filter: none."),
+			because: "the MCP result should count generated model files when progress output is unavailable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves warnings and errors while still removing repeated progress noise from failed or partial command output.")]
+	public void AddItemModel_Should_Preserve_Warnings_And_Errors_During_Compaction() {
+		// Arrange
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		fileSystem.AddDirectory(@"C:\Models");
+		TestLogger logger = new();
+		FakeAddItemCommand resolvedCommand = new(
+			logger,
+			fileSystem,
+			onExecute: _ => {
+				logger.WriteLine(@"Models will be generated in directory: C:\Models");
+				logger.Write("Generated: 1 models from 3\r");
+				logger.WriteWarning("One schema was skipped.");
+				logger.WriteError("Model generation failed.");
+			},
+			exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<AddItemCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
+
+		// Act
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+			"Contoso.Models",
+			@"C:\Models",
 			"dev"));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
-			because: "the tool should fail fast when the requested folder does not exist");
-		result.Output.Should().ContainSingle(message =>
-			message.GetType() == typeof(ErrorMessage) &&
-			Equals(message.Value, @"Folder path not found: C:\Missing\Models"),
-			because: "the validation failure should explain that the target folder was not found");
-		commandResolver.DidNotReceiveWithAnyArgs().Resolve<AddItemCommand>(default!);
+			because: "the command failure should still be surfaced after output compaction");
+		result.Output.Should().Contain(message =>
+			message.LogDecoratorType == LogDecoratorType.Warning &&
+			Equals(message.Value, "One schema was skipped."),
+			because: "warning messages should be preserved during output compaction");
+		result.Output.Should().Contain(message =>
+			message.LogDecoratorType == LogDecoratorType.Error &&
+			Equals(message.Value, "Model generation failed."),
+			because: "error messages should be preserved during output compaction");
+		result.Output.Should().NotContain(message =>
+			Equals(message.Value, "Generated: 1 models from 3\r"),
+			because: "progress noise should still be removed on failure");
+		result.Output.Should().NotContain(message =>
+			message.LogDecoratorType == LogDecoratorType.Info &&
+			Equals(message.Value, "Generated 1 models; requested filter: none."),
+			because: "the MCP tool should not append a success summary when generation fails");
 	}
 
 	[Test]
@@ -215,27 +355,59 @@ public sealed class AddItemModelToolTests {
 			because: "the prompt should keep the folder argument visible to callers");
 		prompt.Should().Contain("`environment-name`",
 			because: "the prompt should keep the environment-name argument visible to callers");
-		prompt.Should().Contain("existing local absolute directory",
-			because: "the prompt should explain the folder validation rule");
+		prompt.Should().Contain("created if it does not exist",
+			because: "the prompt should explain that the tool creates the output folder when needed");
 	}
 
 	private sealed class FakeAddItemCommand : AddItemCommand {
+		private readonly Action<AddItemOptions>? _onExecute;
+		private readonly int _exitCode;
+
 		public AddItemOptions? CapturedOptions { get; private set; }
 
-		public FakeAddItemCommand()
+		public FakeAddItemCommand(
+			ILogger logger = null!,
+			System.IO.Abstractions.IFileSystem fileSystem = null!,
+			Action<AddItemOptions>? onExecute = null,
+			int exitCode = 0)
 			: base(
 				Substitute.For<IApplicationClient>(),
 				Substitute.For<IServiceUrlBuilder>(),
 				new AddItemOptionsValidator(),
 				Substitute.For<IVsProjectFactory>(),
-				Substitute.For<ILogger>(),
-				new MockFileSystem(new Dictionary<string, MockFileData>(), @"C:\"), 
+				logger ?? Substitute.For<ILogger>(),
+				fileSystem ?? new MockFileSystem(new Dictionary<string, MockFileData>(), @"C:\"),
 				Substitute.For<IModelBuilder>()) {
+			_onExecute = onExecute;
+			_exitCode = exitCode;
 		}
 
 		public override int Execute(AddItemOptions options) {
 			CapturedOptions = options;
-			return 0;
+			_onExecute?.Invoke(options);
+			return _exitCode;
 		}
+	}
+
+	private sealed class TestLogger : ILogger {
+		List<LogMessage> ILogger.LogMessages => LogMessages;
+		bool ILogger.PreserveMessages { get; set; }
+		internal List<LogMessage> LogMessages { get; } = [];
+
+		public void ClearMessages() => LogMessages.Clear();
+		public IDisposable BeginScopedFileSink(string logFilePath) => Substitute.For<IDisposable>();
+		public void Start(string logFilePath = "") { }
+		public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer) { }
+		public void StartWithStream() { }
+		public void Stop() { }
+		public void Write(string value) => LogMessages.Add(new UndecoratedMessage(value));
+		public void WriteLine() => LogMessages.Add(new UndecoratedMessage(string.Empty));
+		public void WriteLine(string value) => LogMessages.Add(new UndecoratedMessage(value));
+		public void WriteWarning(string value) => LogMessages.Add(new WarningMessage(value));
+		public void WriteError(string value) => LogMessages.Add(new ErrorMessage(value));
+		public void WriteInfo(string value) => LogMessages.Add(new InfoMessage(value));
+		public void WriteDebug(string value) => LogMessages.Add(new DebugMessage(value));
+		public void PrintTable(ConsoleTable table) => LogMessages.Add(new TableMessage(table));
+		public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) { }
 	}
 }

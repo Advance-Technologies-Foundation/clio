@@ -237,19 +237,18 @@ clio push-pkg --id 22966 10096
 ```
 
 > [!IMPORTANT]
-> When you work with packages from Application Hub, you need use command push-app with same parameters like push-pkg. For example
+> When you work with packages from Application Hub, use `install-application`
+> (aliases: `push-app`, `install-app`) with the same package path argument. For example:
 
-```
-clio push-app C:\Packages\package.gz
-```
-
-To enable configuration error checking during installation, use the `--check-configuration-errors` flag:
-
-```
-clio push-app C:\Packages\package.gz --check-configuration-errors true
+```bash
+clio install-application C:\Packages\package.gz -e <ENVIRONMENT_NAME>
 ```
 
-The `--check-configuration-errors` flag enables validation of compilation and configuration errors during installation. If the flag is set and there are compilation or configuration errors, the installation will stop and return an error with detailed information about the problems. If the flag is not set, the installation will proceed without checking for configuration errors.
+To stop installation when compilation errors are detected, use the `--check-compilation-errors` flag:
+
+```bash
+clio push-app C:\Packages\package.gz --check-compilation-errors true -e <ENVIRONMENT_NAME>
+```
 ## compile-package
 
 To compile package
@@ -766,6 +765,7 @@ clio update -y
 
 # Application
 - [Deploy application](#deploy-application)
+- [Install application](#install-application)
 - [Uninstall application](#uninstall-app-remote)
 - [List installed applications](#get-app-list)
 - [Upload Licenses](#lic)
@@ -800,6 +800,27 @@ clio deploy-application <APP_NAME|APP_CODE> -e <SOURCE_ENVIRONMENT_NAME> -d <DES
 clio deploy-app <APP_NAME|APP_CODE> -d <DESTINATION_ENVIRONMENT_NAME>
 ````
 
+## install-application
+
+Install an application package into a Creatio environment:
+
+```bash
+clio install-application <PACKAGE_PATH> -e <ENVIRONMENT_NAME>
+```
+
+Aliases: `push-app`, `install-app`
+
+To stop installation when compilation errors are detected:
+
+```bash
+clio install-application <PACKAGE_PATH> --check-compilation-errors true -e <ENVIRONMENT_NAME>
+```
+
+To write an installation report to a file:
+
+```bash
+clio install-application <PACKAGE_PATH> -r install.log -e <ENVIRONMENT_NAME>
+```
 
 
 ## uninstall-app-remote
@@ -2716,6 +2737,8 @@ Behavior:
 - Writes `descriptor.json`, `data.json`, and `filter.json`
 - Creates template `Localization/data.en-US.json` when `--values` is omitted
 - Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
+- For lookup and image-reference columns, writes both `Value` and `DisplayValue` into `data.json`
+- Lookup and image-reference values may use `{"value":"...","displayValue":"..."}`; if `create-data-binding` is already using Creatio runtime data, clio resolves a missing `displayValue` automatically
 - For image-content columns, a string value that points to an existing local file inside the workspace is base64-encoded before writing `data.json`
 - `SysModule.IconBackground` accepts only this palette: `#A6DE00`, `#20A959`, `#22AC14`, `#FFAC07`, `#FF8800`, `#F9307F`, `#FF602E`, `#FF4013`, `#B87CCF`, `#7848EE`, `#247EE5`, `#0058EF`, `#009DE3`, `#4F43C2`, `#08857E`, `#00BFA5`
 - Writes additional localization files from `--localizations`
@@ -2731,6 +2754,8 @@ clio create-data-binding -e dev --package Custom --schema SysSettings --workspac
 clio create-data-binding -e dev --package Custom --schema UsrCustomEntity --workspace-path C:\Work\MyWorkspace --values "{\"Name\":\"Runtime schema row\"}"
 
 clio create-data-binding --package Custom --schema SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
+
+clio create-data-binding --package Custom --schema SysModule --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
 ```
 
 ## add-data-binding-row
@@ -2745,6 +2770,7 @@ Behavior:
 - Resolves column names from the existing binding descriptor
 - Upserts rows by primary-key value
 - Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
+- For non-null lookup and image-reference columns, `--values` should use `{"value":"...","displayValue":"..."}` so the binding keeps both identifier and display text
 - For image-content columns, a string value that points to an existing local file inside the workspace is base64-encoded before writing `data.json`
 - `SysModule.IconBackground` accepts only this palette: `#A6DE00`, `#20A959`, `#22AC14`, `#FFAC07`, `#FF8800`, `#F9307F`, `#FF602E`, `#FF4013`, `#B87CCF`, `#7848EE`, `#247EE5`, `#0058EF`, `#009DE3`, `#4F43C2`, `#08857E`, `#00BFA5`
 - Updates `Localization/data.<culture>.json` files when `--localizations` is supplied
@@ -2756,6 +2782,8 @@ Example:
 clio add-data-binding-row --package Custom --binding-name SysSettings --values "{\"Name\":\"New name\"}"
 
 clio add-data-binding-row --package Custom --binding-name SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
+
+clio add-data-binding-row --package Custom --binding-name SysModule --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
 ```
 
 ## remove-data-binding-row

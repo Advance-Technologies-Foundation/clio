@@ -18,7 +18,7 @@ clio add-data-binding-row [options]
 |----------|-------------|---------|
 | `--package` | Target package name | `--package Custom` |
 | `--binding-name` | Binding folder name under package `Data` | `--binding-name SysSettings` |
-| `--values` | JSON object keyed by column name for the row payload. If the GUID primary key column is omitted or null, it is generated automatically. For image-content columns, pass either a base64 string or a local file path inside the workspace and clio encodes the file | `--values "{\"Name\":\"Value\"}"` |
+| `--values` | JSON object keyed by column name for the row payload. If the GUID primary key column is omitted or null, it is generated automatically. For non-null lookup and image-reference columns, use an object like `{"value":"...","displayValue":"..."}`. For image-content columns, pass either a base64 string or a local file path inside the workspace and clio encodes the file | `--values "{\"Name\":\"Value\"}"` |
 
 ### Optional Arguments
 
@@ -32,6 +32,7 @@ clio add-data-binding-row [options]
 - Loads `descriptor.json` to resolve column names to `SchemaColumnUId` values
 - Uses the primary key defined in the binding descriptor as the row identity
 - Generates a GUID primary key when the binding primary key is GUID-based and the payload omits it or sets it to `null`
+- For non-null lookup and image-reference columns, writes `SchemaColumnUId`, `Value`, and `DisplayValue` into `data.json`
 - If an image-content column receives a string that points to an existing local file inside the workspace, clio reads that file and writes its base64 content into `data.json`
 - `SysModule.IconBackground` accepts only the predefined 16-color palette
 - Replaces an existing row when the same primary-key value already exists
@@ -54,6 +55,21 @@ For image-content columns such as `SysModule.Image16` or `SysModule.Image20`, th
 {
   "Code": "UsrModule",
   "Image16": "assets/icon.png"
+}
+```
+
+For non-null lookup and image-reference columns, use the structured object form so the local binding keeps both the identifier and display text:
+
+```json
+{
+  "FolderMode": {
+    "value": "b659d704-3955-e011-981f-00155d043204",
+    "displayValue": "Folders"
+  },
+  "Logo": {
+    "value": "1171d0f0-63eb-4bd1-a50b-001ecbaf0001",
+    "displayValue": "Module logo"
+  }
 }
 ```
 
@@ -100,11 +116,19 @@ clio add-data-binding-row --package Custom --binding-name SysModule \
   --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
 ```
 
+### Add a SysModule Row with Explicit Lookup Display Text
+
+```bash
+clio add-data-binding-row --package Custom --binding-name SysModule \
+  --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
+```
+
 ## Validation and Requirements
 
 - The workspace must be resolvable and must contain the target package
 - The binding directory and its `descriptor.json` and `data.json` files must already exist
 - The row payload may omit the binding primary key only when that key is Guid-based; in that case the command generates it automatically
+- Non-null lookup and image-reference values must include `displayValue` because `add-data-binding-row` works only from local binding files
 - Localized columns must be string-compatible according to the binding descriptor
 - Image-content file-path values are resolved relative to `--workspace-path` when it is supplied, otherwise relative to the resolved current workspace
 - Image-content file-path values must stay inside the resolved workspace; paths outside it are rejected

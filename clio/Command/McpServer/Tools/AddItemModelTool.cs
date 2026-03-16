@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using System.Threading;
 using Clio.Common;
@@ -41,18 +43,27 @@ public sealed class AddItemModelTool(
 			return new CommandExecutionResult(1, [new ErrorMessage(folderValidationError)]);
 		}
 
+		string fullFolderPath = fileSystem.Path.GetFullPath(args.Folder);
+		try {
+			fileSystem.Directory.CreateDirectory(fullFolderPath);
+		}
+		catch (Exception exception) {
+			return new CommandExecutionResult(1, [new ErrorMessage(
+				$"Failed to create output folder '{fullFolderPath}': {exception.Message}")]);
+		}
+
 		AddItemOptions options = new() {
 			ItemType = "model",
 			CreateAll = true,
 			Namespace = args.Namespace,
-			DestinationPath = fileSystem.Path.GetFullPath(args.Folder),
+			DestinationPath = fullFolderPath,
 			Environment = args.EnvironmentName
 		};
 		AddItemCommand command = commandResolver.Resolve<AddItemCommand>(options);
-		return Execute(command, options);
+		return Execute(command, options, fullFolderPath);
 	}
 
-	private CommandExecutionResult Execute(AddItemCommand command, AddItemOptions options) {
+	private CommandExecutionResult Execute(AddItemCommand command, AddItemOptions options, string outputFolderPath) {
 		int exitCode = -1;
 		lock (CommandExecutionLock) {
 			bool previousPreserveMessages = logger.PreserveMessages;
@@ -62,13 +73,13 @@ public sealed class AddItemModelTool(
 				Thread.Sleep(500);
 				CommandExecutionResult result = new(exitCode, [.. logger.LogMessages.ToList()]);
 				logger.ClearMessages();
-				return result;
+				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);
 			}
 			catch (Exception exception) {
 				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(exception.Message)];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
-				return result;
+				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;
@@ -90,11 +101,7 @@ internal static class AddItemModelToolPathValidator {
 		if (!IsAbsolutePath(fileSystem, folder)) {
 			return $"Folder path must be absolute: {folder}";
 		}
-
-		string fullPath = fileSystem.Path.GetFullPath(folder);
-		return !fileSystem.Directory.Exists(fullPath)
-			? $"Folder path not found: {fullPath}"
-			: null;
+		return null;
 	}
 
 	private static bool IsAbsolutePath(IFileSystem fileSystem, string path) {
@@ -115,6 +122,58 @@ internal static class AddItemModelToolPathValidator {
 	}
 }
 
+internal static partial class AddItemModelToolOutputCompactor {
+	private const string BaseModelExtensionsFileName = "BaseModelExtensions.cs";
+
+	[GeneratedRegex(@"^Generated:\s*(?<count>\d+)\s+models\s+from\s+\d+\s*$", RegexOptions.CultureInvariant)]
+	private static partial Regex ProgressMessageRegex();
+
+	internal static CommandExecutionResult Compact(
+		CommandExecutionResult result,
+		IFileSystem fileSystem,
+		string outputFolderPath) {
+		List<LogMessage> compactedMessages = [];
+		int? generatedModelCount = null;
+
+		foreach (LogMessage message in result.Output ?? []) {
+			string messageText = message.Value?.ToString() ?? string.Empty;
+			string normalizedMessageText = messageText.Trim().TrimEnd('\r');
+			Match progressMatch = ProgressMessageRegex().Match(normalizedMessageText);
+			if (progressMatch.Success) {
+				generatedModelCount = int.Parse(progressMatch.Groups["count"].Value);
+				continue;
+			}
+
+			if (message.LogDecoratorType == LogDecoratorType.None &&
+				string.IsNullOrWhiteSpace(normalizedMessageText)) {
+				continue;
+			}
+
+			compactedMessages.Add(message);
+		}
+
+		if (result.ExitCode == 0) {
+			int summaryCount = generatedModelCount ?? CountGeneratedModels(fileSystem, outputFolderPath);
+			compactedMessages.Add(new InfoMessage($"Generated {summaryCount} models; requested filter: none."));
+		}
+
+		return new CommandExecutionResult(result.ExitCode, compactedMessages, result.LogFilePath);
+	}
+
+	private static int CountGeneratedModels(IFileSystem fileSystem, string outputFolderPath) {
+		if (!fileSystem.Directory.Exists(outputFolderPath)) {
+			return 0;
+		}
+
+		return fileSystem.Directory
+			.GetFiles(outputFolderPath, "*.cs", SearchOption.TopDirectoryOnly)
+			.Count(filePath => !string.Equals(
+				fileSystem.Path.GetFileName(filePath),
+				BaseModelExtensionsFileName,
+				StringComparison.OrdinalIgnoreCase));
+	}
+}
+
 /// <summary>
 /// MCP arguments for the <c>add-item-model</c> tool.
 /// </summary>
@@ -125,7 +184,7 @@ public sealed record AddItemModelArgs(
 	string Namespace,
 
 	[property: JsonPropertyName("folder")]
-	[property: Description("Absolute local folder where model files will be created")]
+	[property: Description("Absolute local folder where model files will be created; the folder will be created if missing")]
 	[property: Required]
 	string Folder,
 

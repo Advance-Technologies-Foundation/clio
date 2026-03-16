@@ -195,6 +195,7 @@ public class BindingsModule {
 		services.AddTransient<IDataBindingSchemaResolver, DataBindingSchemaResolver>();
 		services.AddTransient<IDataBindingSerializer, DataBindingSerializer>();
 		services.AddTransient<IDataBindingValueConverter, DataBindingValueConverter>();
+		services.AddTransient<IDataBindingDisplayValueResolver, DataBindingDisplayValueResolver>();
 		services.AddTransient<IDataBindingService, DataBindingService>();
 		services.AddTransient<CreateDataBindingCommand>();
 		services.AddTransient<AddDataBindingRowCommand>();

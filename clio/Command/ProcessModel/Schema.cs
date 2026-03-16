@@ -513,6 +513,10 @@ public static class DataValueTypeMap{
 
 	internal static bool IsImageContent(Guid dataValueTypeUId) => dataValueTypeUId == ImageContentDataValueTypeUId;
 
+	internal static bool IsImageReference(Guid dataValueTypeUId) => dataValueTypeUId == ImageReferenceDataValueTypeUId;
+
+	internal static bool IsLookup(Guid dataValueTypeUId) => dataValueTypeUId == LookupDataValueTypeUId;
+
 
 	/// <summary>
 	/// Boolean data value type Id.

@@ -31,8 +31,10 @@ public static class DataBindingPrompt {
 		 Otherwise pass `environment-name` `{environmentName ?? "<required for non-templated schema>"}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default>"}` and `install-type` `{installType}`.
 		 Use `values` `{values ?? "<not provided>"}` when an initial row should be created. If that payload omits the
-		 GUID primary key column or sets it to null, the tool generates it automatically. For image-content columns,
-		 `values` may contain either an existing base64 string or a local file path inside the workspace that clio
+		 GUID primary key column or sets it to null, the tool generates it automatically. For lookup and
+		 image-reference columns, `values` may use an object with `value` and `displayValue` properties.
+		 If `displayValue` is omitted and the tool is already using Creatio runtime data, clio resolves it automatically.
+		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside the workspace that clio
 		 will encode. For `SysModule.IconBackground`, only the predefined 16-color palette is allowed. Use
 		 `localizations` `{localizations ?? "<not provided>"}` when localized row values must be written too.
 		 """;
@@ -52,6 +54,8 @@ public static class DataBindingPrompt {
 		 `{bindingName}` under package `{packageName}`.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided and use `values` `{values}`.
 		 If that payload omits the GUID primary key column or sets it to null, the tool generates it automatically.
+		 For non-null lookup and image-reference columns, `values` should use an object like
+		 an object with `value` and `displayValue` properties so the binding row keeps both identifiers and display text.
 		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside
 		 the workspace that clio will encode. For `SysModule.IconBackground`, only the predefined 16-color palette
 		 is allowed.

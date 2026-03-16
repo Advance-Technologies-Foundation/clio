@@ -26,7 +26,7 @@ clio create-data-binding [options]
 | `--workspace-path` | Workspace root path. Defaults to the current workspace | `--workspace-path C:\Work\MyWorkspace` |
 | `--binding-name` | Binding folder name. Defaults to `<schema>` | `--binding-name SysSettings` |
 | `--install-type` | Descriptor install type. Default is `0` | `--install-type 3` |
-| `--values` | JSON object keyed by column name for the initial row. If the GUID primary key column is omitted or null, it is generated automatically. For image-content columns, pass either a base64 string or a local file path inside the workspace and clio encodes the file | `--values "{\"Name\":\"Value\"}"` |
+| `--values` | JSON object keyed by column name for the initial row. If the GUID primary key column is omitted or null, it is generated automatically. For lookup and image-reference columns, pass either a scalar value or an object like `{"value":"...","displayValue":"..."}`. When runtime lookup data is available, `create-data-binding` resolves a missing `displayValue` automatically. For image-content columns, pass either a base64 string or a local file path inside the workspace and clio encodes the file | `--values "{\"Name\":\"Value\"}"` |
 | `--localizations` | JSON object keyed by culture and column name | `--localizations "{\"ru-RU\":{\"Name\":\"Значение\"}}"` |
 
 ### Environment Configuration
@@ -63,6 +63,8 @@ Generated files:
 - If `--values` is omitted, creates a single template row with all schema columns and empty placeholder values
 - If `--values` is supplied, keeps only the primary key column plus the explicitly provided columns
 - If the primary key column is GUID-based and omitted or set to `null` in `--values`, generates it automatically
+- For lookup and image-reference columns, writes `SchemaColumnUId`, `Value`, and `DisplayValue` into `data.json`
+- If a lookup or image-reference value omits `displayValue`, `create-data-binding` resolves it only when runtime lookup metadata and data are available; otherwise the command fails with a payload-shape error
 - If an image-content column receives a string that points to an existing local file inside the workspace, clio reads that file and writes its base64 content into `data.json`
 - `SysModule.IconBackground` accepts only the predefined 16-color palette
 - Rejects unknown columns instead of silently writing invalid files
@@ -85,6 +87,29 @@ For image-content columns such as `SysModule.Image16` or `SysModule.Image20`, th
 {
   "Code": "UsrModule",
   "Image16": "assets/icon.png"
+}
+```
+
+For lookup and image-reference columns, prefer the structured object form when you already know the display text:
+
+```json
+{
+  "FolderMode": {
+    "value": "b659d704-3955-e011-981f-00155d043204",
+    "displayValue": "Folders"
+  },
+  "Logo": {
+    "value": "1171d0f0-63eb-4bd1-a50b-001ecbaf0001",
+    "displayValue": "Module logo"
+  }
+}
+```
+
+When `create-data-binding` is already using Creatio runtime metadata, you may omit `displayValue` and let clio resolve it:
+
+```json
+{
+  "StatusId": "5d4f7d77-286a-4f02-9fa0-4cb4d1c0d111"
 }
 ```
 
@@ -148,6 +173,13 @@ clio create-data-binding --package Custom --schema SysModule \
   --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
 ```
 
+### Create a Binding with Explicit Lookup Display Text
+
+```bash
+clio create-data-binding --package Custom --schema SysModule \
+  --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
+```
+
 ## Validation and Requirements
 
 - For templated schemas such as `SysSettings` and `SysModule`, `--environment` and `--uri` are optional
@@ -157,6 +189,7 @@ clio create-data-binding --package Custom --schema SysModule \
 - The resolved schema must exist and expose a primary column
 - `--install-type` must be between `0` and `3`
 - Value parsing enforces supported data types including Guid, bool, numeric, DateTime, and string-compatible values
+- Lookup and image-reference columns accept either a scalar JSON value or an object with `value` and `displayValue`
 - Image-content file-path values are resolved relative to `--workspace-path` when it is supplied, otherwise relative to the resolved current workspace
 - Image-content file-path values must stay inside the resolved workspace; paths outside it are rejected
 - `SysModule.IconBackground` values outside the predefined 16-color palette are rejected

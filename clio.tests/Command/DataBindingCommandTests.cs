@@ -49,7 +49,9 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(SchemaResponseJson);
+			.Returns(callInfo => BuildApplicationClientResponse(
+				callInfo.ArgAt<string>(0),
+				callInfo.ArgAt<string>(1)));
 		_logger = Substitute.For<ILogger>();
 		_workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		_workspacePathBuilder.RootPath.Returns(WorkspaceRoot);
@@ -57,6 +59,8 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest)
 			.Returns("http://localhost/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select)
+			.Returns("http://localhost/0/DataService/json/SyncReply/SelectQuery");
 
 		containerBuilder.AddTransient(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _logger);
@@ -200,6 +204,75 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"b039feb0-ee7c-4884-8aa6-d6d45d84316f\"",
 			because: "Logo and Image32 must keep the checked-in image-reference data type identifier from the checked-in binding");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Description("Writes the caller-provided DisplayValue for lookup and image-reference columns when create-data-binding receives the structured object payload shape.")]
+	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Lookup_And_ImageReference_Columns() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule",
+			ValuesJson =
+				"""{"Code":"UsrModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Provided folder mode"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Provided module logo"}}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "structured lookup and image-reference payloads with explicit displayValue should be accepted");
+		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		dataJson.Should().Contain("\"DisplayValue\": \"Provided folder mode\"",
+			because: "lookup columns should preserve the caller-supplied display value");
+		dataJson.Should().Contain("\"DisplayValue\": \"Provided module logo\"",
+			because: "image-reference columns should preserve the caller-supplied display value");
+	}
+
+	[Test]
+	[Description("Resolves DisplayValue from Creatio for lookup columns during create-data-binding when the caller supplies only the lookup identifier and runtime access is available.")]
+	public void Execute_Should_Resolve_DisplayValue_For_Lookup_Columns_When_Runtime_Access_Is_Available() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "UsrLookupBinding",
+			ValuesJson =
+				"""{"Name":"Lookup row","StatusId":"5d4f7d77-286a-4f02-9fa0-4cb4d1c0d111"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding should backfill display values when the runtime schema and select query are available");
+		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\UsrLookupBinding\data.json");
+		dataJson.Should().Contain("\"DisplayValue\": \"Resolved status\"",
+			because: "lookup rows should serialize the resolved display text alongside the identifier");
+	}
+
+	[Test]
+	[Description("Rejects non-null lookup payloads without DisplayValue during create-data-binding when no runtime lookup data is available to resolve it.")]
+	public void Execute_Should_Fail_When_Lookup_DisplayValue_Is_Missing_Offline() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule",
+			ValuesJson =
+				"""{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "offline create-data-binding cannot infer lookup display text from local template metadata alone");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("FolderMode") &&
+			message.Contains("requires displayValue")));
 	}
 
 	[Test]
@@ -361,6 +434,90 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	  "success": true
 	}
 	""";
+
+	private const string LookupBindingSchemaResponseJson = """
+	{
+	  "schema": {
+	    "columns": {
+	      "Items": {
+	        "ae0e45ca-c495-4fe7-a39d-3ab7278e1617": {
+	          "uId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+	          "name": "Id",
+	          "dataValueType": 0
+	        },
+	        "736c30a7-c0ec-4fa9-b034-2552b319b633": {
+	          "uId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
+	          "name": "Name",
+	          "dataValueType": 28
+	        },
+	        "11111111-1111-1111-1111-111111111111": {
+	          "uId": "11111111-1111-1111-1111-111111111111",
+	          "name": "StatusId",
+	          "dataValueType": 10,
+	          "referenceSchemaName": "UsrStatus"
+	        }
+	      }
+	    },
+	    "primaryColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+	    "uId": "22222222-2222-2222-2222-222222222222",
+	    "name": "UsrLookupBinding"
+	  },
+	  "success": true
+	}
+	""";
+
+	private const string StatusSchemaResponseJson = """
+	{
+	  "schema": {
+	    "columns": {
+	      "Items": {
+	        "33333333-3333-3333-3333-333333333333": {
+	          "uId": "33333333-3333-3333-3333-333333333333",
+	          "name": "Id",
+	          "dataValueType": 0
+	        },
+	        "44444444-4444-4444-4444-444444444444": {
+	          "uId": "44444444-4444-4444-4444-444444444444",
+	          "name": "Name",
+	          "dataValueType": 28
+	        }
+	      }
+	    },
+	    "primaryColumnUId": "33333333-3333-3333-3333-333333333333",
+	    "primaryDisplayColumnName": "Name",
+	    "uId": "55555555-5555-5555-5555-555555555555",
+	    "name": "UsrStatus"
+	  },
+	  "success": true
+	}
+	""";
+
+	private const string StatusSelectResponseJson = """
+	{
+	  "rows": [
+	    {
+	      "Name": "Resolved status"
+	    }
+	  ]
+	}
+	""";
+
+	private static string BuildApplicationClientResponse(string url, string requestBody) {
+		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
+			requestBody.Contains("\"rootSchemaName\": \"UsrStatus\"", StringComparison.Ordinal)) {
+			return StatusSelectResponseJson;
+		}
+
+		if (requestBody.Contains("\"Name\":\"UsrLookupBinding\"", StringComparison.Ordinal)) {
+			return LookupBindingSchemaResponseJson;
+		}
+
+		if (requestBody.Contains("\"Name\":\"UsrStatus\"", StringComparison.Ordinal)) {
+			return StatusSchemaResponseJson;
+		}
+
+		return SchemaResponseJson;
+	}
 }
 
 [TestFixture]
@@ -495,6 +652,20 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			        "IsKey": false,
 			        "ColumnName": "IconBackground",
 			        "DataTypeValueUId": "325a73b8-0f47-44a0-8412-7606f78003ac"
+			      },
+			      {
+			        "ColumnUId": "d3afc924-2d21-4c0e-b2f3-9f8c180221f9",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "FolderMode",
+			        "DataTypeValueUId": "b295071f-7ea9-4e62-8d1a-919bf3732ff2"
+			      },
+			      {
+			        "ColumnUId": "380d55b9-487c-429b-9aff-e04101ffc307",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "Logo",
+			        "DataTypeValueUId": "b039feb0-ee7c-4884-8aa6-d6d45d84316f"
 			      }
 			    ]
 			  }
@@ -636,6 +807,51 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		result.Should().Be(1,
 			because: "add-data-binding-row should reject SysModule IconBackground colors outside the allowed palette");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must use one of the predefined colors")));
+	}
+
+	[Test]
+	[Description("Writes caller-provided DisplayValue for local lookup and image-reference columns when add-data-binding-row receives the structured object payload shape.")]
+	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Local_Lookup_And_ImageReference_Columns() {
+		// Arrange
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName,
+			BindingName = "SysModule",
+			ValuesJson =
+				"""{"Code":"UsrModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Folder mode display"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Logo display"}}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "local add-data-binding-row should keep explicit display values for lookup and image-reference columns");
+		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		dataJson.Should().Contain("\"DisplayValue\": \"Folder mode display\"",
+			because: "lookup rows should serialize the provided display text");
+		dataJson.Should().Contain("\"DisplayValue\": \"Logo display\"",
+			because: "image-reference rows should serialize the provided display text");
+	}
+
+	[Test]
+	[Description("Rejects non-null local lookup payloads without DisplayValue during add-data-binding-row because the command works only from local binding files and cannot resolve display text remotely.")]
+	public void Execute_Should_Fail_When_Local_Lookup_DisplayValue_Is_Missing() {
+		// Arrange
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName,
+			BindingName = "SysModule",
+			ValuesJson = """{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "local add-data-binding-row cannot infer lookup display text from the descriptor alone");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("FolderMode") &&
+			message.Contains("requires displayValue")));
 	}
 }
 
