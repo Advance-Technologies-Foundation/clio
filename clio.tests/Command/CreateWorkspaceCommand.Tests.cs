@@ -28,6 +28,11 @@ public class CreateWorkspaceCommandTests
 		var logger = Substitute.For<ILogger>();
 		var installedApplication = Substitute.For<IInstalledApplication>();
 		var fileSystem = Substitute.For<IFileSystem>();
+		
+		fileSystem.Combine(Arg.Any<string[]>())
+				  .Returns(callInfo => 
+					  Path.Combine(callInfo.Arg<string[]>()));
+		
 		ConfigurePathOperations(fileSystem);
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
@@ -63,6 +68,11 @@ public class CreateWorkspaceCommandTests
 		var logger = Substitute.For<ILogger>();
 		var installedApplication = Substitute.For<IInstalledApplication>();
 		var fileSystem = Substitute.For<IFileSystem>();
+		
+		fileSystem.Combine(Arg.Any<string[]>())
+			.Returns(callInfo => 
+				Path.Combine(callInfo.Arg<string[]>()));
+		
 		ConfigurePathOperations(fileSystem);
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
@@ -122,7 +132,16 @@ public class CreateWorkspaceCommandTests
 		var workspace = Substitute.For<IWorkspace>();
 		var logger = Substitute.For<ILogger>();
 		var installedApplication = Substitute.For<IInstalledApplication>();
-		var fileSystem = Substitute.For<IFileSystem>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+
+		fileSystem.Combine(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => Path.Combine(callInfo.Arg<string>(), callInfo.Arg<string>()));
+		
+		fileSystem.Combine(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => Path.Combine(callInfo.Arg<string>(), callInfo.Arg<string>(), callInfo.Arg<string>()));
+		
+		
+		
 		ConfigurePathOperations(fileSystem);
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
@@ -152,19 +171,22 @@ public class CreateWorkspaceCommandTests
 	[Description("When --directory is provided with --empty, create-workspace should create the workspace under that explicit absolute directory.")]
 	public void Execute_ShouldCreateWorkspaceUnderExplicitDirectory_WhenDirectoryProvided() {
 		// Arrange
-		var workspace = Substitute.For<IWorkspace>();
-		var logger = Substitute.For<ILogger>();
-		var installedApplication = Substitute.For<IInstalledApplication>();
-		var fileSystem = Substitute.For<IFileSystem>();
+		IWorkspace workspace = Substitute.For<IWorkspace>();
+		ILogger logger = Substitute.For<ILogger>();
+		IInstalledApplication installedApplication = Substitute.For<IInstalledApplication>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Combine(Arg.Any<string[]>())
+				  .Returns(callInfo => 
+					  Path.Combine(callInfo.Arg<string[]>()));
 		ConfigurePathOperations(fileSystem);
-		var settingsRepository = Substitute.For<ISettingsRepository>();
-		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
-		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		fileSystem.ExistsDirectory(@"C:\workspaces").Returns(true);
 		fileSystem.ExistsDirectory(@"C:\workspaces\my-workspace").Returns(false);
-		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
+		CreateWorkspaceCommand command = new (workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
-		var options = new CreateWorkspaceCommandOptions {
+		CreateWorkspaceCommandOptions options = new () {
 			WorkspaceName = "my-workspace",
 			Empty = true,
 			Directory = @"C:\workspaces"
@@ -188,6 +210,9 @@ public class CreateWorkspaceCommandTests
 		var logger = Substitute.For<ILogger>();
 		var installedApplication = Substitute.For<IInstalledApplication>();
 		var fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Combine(Arg.Any<string[]>())
+				  .Returns(callInfo => 
+					  Path.Combine(callInfo.Arg<string[]>()));
 		ConfigurePathOperations(fileSystem);
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
@@ -329,7 +354,7 @@ public class CreateWorkspaceCommandTests
 			.Returns(callInfo => Path.IsPathRooted(callInfo.Arg<string>()));
 		fileSystem.GetFullPath(Arg.Any<string>())
 			.Returns(callInfo => Path.GetFullPath(callInfo.Arg<string>()));
-		fileSystem.CombinePaths(Arg.Any<string[]>())
+		fileSystem.Combine(Arg.Any<string[]>())
 			.Returns(callInfo => Path.Combine(callInfo.Arg<string[]>()));
 		fileSystem.DirectorySeparatorChar.Returns(Path.DirectorySeparatorChar);
 	}

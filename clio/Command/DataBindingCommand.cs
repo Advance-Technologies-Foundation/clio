@@ -36,7 +36,7 @@ public class CreateDataBindingOptions : EnvironmentOptions {
 	[Option("install-type", Required = false, Default = 0, HelpText = "Descriptor install type")]
 	public int InstallType { get; set; }
 
-	[Option("values", Required = false, HelpText = "Row values as JSON object keyed by column name")]
+	[Option("values", Required = false, HelpText = "Row values as JSON object keyed by column name. Image content columns accept either a base64 string or a local file path to encode")]
 	public string? ValuesJson { get; set; }
 
 	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
@@ -57,7 +57,7 @@ public class AddDataBindingRowOptions {
 	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
 	public string BindingName { get; set; } = string.Empty;
 
-	[Option("values", Required = true, HelpText = "Row values as JSON object keyed by column name")]
+	[Option("values", Required = true, HelpText = "Row values as JSON object keyed by column name. Image content columns accept either a base64 string or a local file path to encode")]
 	public string ValuesJson { get; set; } = string.Empty;
 
 	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
@@ -190,7 +190,12 @@ internal interface IDataBindingSerializer {
 }
 
 internal interface IDataBindingValueConverter {
-	object? ConvertValue(JsonNode? valueNode, Guid dataTypeUId, string columnName, bool allowEmptyString);
+	object? ConvertValue(
+		JsonNode? valueNode,
+		Guid dataTypeUId,
+		string columnName,
+		bool allowEmptyString,
+		string? fileBasePath = null);
 
 	string NormalizeKeyValue(object? value, Guid dataTypeUId);
 
@@ -221,7 +226,7 @@ internal sealed class DataBindingService(
 		string bindingName = string.IsNullOrWhiteSpace(options.BindingName)
 			? options.SchemaName
 			: options.BindingName.Trim();
-		string bindingDirectoryPath = fileSystem.CombinePaths(packagePath, DataFolderName, bindingName);
+		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
 
 		DataBindingDescriptorFile? existingDescriptor = TryReadDescriptor(bindingDirectoryPath);
 		if (existingDescriptor is not null &&
@@ -230,7 +235,7 @@ internal sealed class DataBindingService(
 				$"Binding '{bindingName}' already exists for schema '{existingDescriptor.Descriptor.Schema.Name}'.");
 		}
 
-		fileSystem.CreateDirectoryIfNotExists(fileSystem.CombinePaths(packagePath, DataFolderName));
+		fileSystem.CreateDirectoryIfNotExists(fileSystem.Combine(packagePath, DataFolderName));
 		fileSystem.CreateDirectoryIfNotExists(bindingDirectoryPath);
 
 		Dictionary<string, JsonNode?>? values = ParseColumnObject(options.ValuesJson, "values", required: false);
@@ -251,15 +256,21 @@ internal sealed class DataBindingService(
 
 		DataBindingPackageDataFile dataFile = isTemplate
 			? BuildTemplateData(descriptorColumns)
-			: BuildDataFile(schema, descriptorColumns, values!, allowEmptyPrimaryKey: false, autoGeneratePrimaryKey: true);
+			: BuildDataFile(
+				schema,
+				descriptorColumns,
+				values!,
+				allowEmptyPrimaryKey: false,
+				autoGeneratePrimaryKey: true,
+				valueFileBasePath: workspaceRoot);
 
-		fileSystem.WriteAllTextToFile(fileSystem.CombinePaths(bindingDirectoryPath, DescriptorFileName),
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DescriptorFileName),
 			serializer.SerializeDescriptor(descriptor));
-		fileSystem.WriteAllTextToFile(fileSystem.CombinePaths(bindingDirectoryPath, DataFileName),
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName),
 			serializer.SerializePackageData(dataFile));
-		fileSystem.WriteAllTextToFile(fileSystem.CombinePaths(bindingDirectoryPath, FilterFileName), string.Empty);
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, FilterFileName), string.Empty);
 
-		string localizationDirectoryPath = fileSystem.CombinePaths(bindingDirectoryPath, LocalizationFolderName);
+		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		fileSystem.DeleteDirectoryIfExists(localizationDirectoryPath);
 		fileSystem.CreateDirectoryIfNotExists(localizationDirectoryPath);
 		WriteLocalizationFiles(
@@ -268,7 +279,8 @@ internal sealed class DataBindingService(
 			dataFile,
 			localizations,
 			createTemplateDefault: isTemplate,
-			descriptorColumns);
+			descriptorColumns,
+			valueFileBasePath: workspaceRoot);
 	}
 
 	public void AddOrUpdateRow(AddDataBindingRowOptions options) {
@@ -285,7 +297,12 @@ internal sealed class DataBindingService(
 			ParseLocalizations(options.LocalizationsJson);
 
 		DataBindingRuntimeDescriptor runtimeDescriptor = DataBindingRuntimeDescriptor.FromDescriptor(descriptor, valueConverter);
-		DataBindingRow newRow = BuildRow(runtimeDescriptor, values, allowEmptyPrimaryKey: false, autoGeneratePrimaryKey: true);
+		DataBindingRow newRow = BuildRow(
+			runtimeDescriptor,
+			values,
+			allowEmptyPrimaryKey: false,
+			autoGeneratePrimaryKey: true,
+			valueFileBasePath: workspaceRoot);
 		string key = GetPrimaryKey(newRow, runtimeDescriptor);
 		int existingIndex = FindRowIndex(dataFile.PackageData, runtimeDescriptor, key);
 		if (existingIndex >= 0) {
@@ -295,9 +312,9 @@ internal sealed class DataBindingService(
 			dataFile.PackageData.Add(newRow);
 		}
 
-		fileSystem.WriteAllTextToFile(fileSystem.CombinePaths(bindingDirectoryPath, DataFileName),
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName),
 			serializer.SerializePackageData(dataFile));
-		UpdateLocalizationFilesForRow(bindingDirectoryPath, runtimeDescriptor, key, localizations);
+		UpdateLocalizationFilesForRow(bindingDirectoryPath, runtimeDescriptor, key, localizations, workspaceRoot);
 	}
 
 	public void RemoveRow(RemoveDataBindingRowOptions options) {
@@ -320,7 +337,7 @@ internal sealed class DataBindingService(
 		}
 
 		dataFile.PackageData.RemoveAt(rowIndex);
-		fileSystem.WriteAllTextToFile(fileSystem.CombinePaths(bindingDirectoryPath, DataFileName),
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName),
 			serializer.SerializePackageData(dataFile));
 		RemoveLocalizationRows(bindingDirectoryPath, runtimeDescriptor, normalizedKeyValue);
 	}
@@ -375,7 +392,7 @@ internal sealed class DataBindingService(
 			throw new InvalidOperationException($"Workspace path not found: {rootPath}");
 		}
 
-		string workspaceSettingsPath = fileSystem.CombinePaths(rootPath, ".clio", "workspaceSettings.json");
+		string workspaceSettingsPath = fileSystem.Combine(rootPath, ".clio", "workspaceSettings.json");
 		if (!fileSystem.ExistsFile(workspaceSettingsPath)) {
 			throw new InvalidOperationException(
 				$"Workspace root was not detected at '{rootPath}'. Run the command from a workspace or supply --workspace-path.");
@@ -385,7 +402,7 @@ internal sealed class DataBindingService(
 	}
 
 	private string ResolvePackagePath(string workspaceRoot, string packageName) {
-		string packagePath = fileSystem.CombinePaths(workspaceRoot, "packages", packageName);
+		string packagePath = fileSystem.Combine(workspaceRoot, "packages", packageName);
 		if (!fileSystem.ExistsDirectory(packagePath)) {
 			throw new InvalidOperationException($"Package directory not found: {packagePath}");
 		}
@@ -395,7 +412,7 @@ internal sealed class DataBindingService(
 
 	private string ResolveBindingDirectory(string workspaceRoot, string packageName, string bindingName) {
 		string packagePath = ResolvePackagePath(workspaceRoot, packageName);
-		string bindingDirectoryPath = fileSystem.CombinePaths(packagePath, DataFolderName, bindingName);
+		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
 		if (!fileSystem.ExistsDirectory(bindingDirectoryPath)) {
 			throw new InvalidOperationException($"Binding directory not found: {bindingDirectoryPath}");
 		}
@@ -404,7 +421,7 @@ internal sealed class DataBindingService(
 	}
 
 	private DataBindingDescriptorFile? TryReadDescriptor(string bindingDirectoryPath) {
-		string descriptorPath = fileSystem.CombinePaths(bindingDirectoryPath, DescriptorFileName);
+		string descriptorPath = fileSystem.Combine(bindingDirectoryPath, DescriptorFileName);
 		if (!fileSystem.ExistsFile(descriptorPath)) {
 			return null;
 		}
@@ -423,7 +440,7 @@ internal sealed class DataBindingService(
 	}
 
 	private DataBindingPackageDataFile ReadDataFile(string bindingDirectoryPath) {
-		string dataPath = fileSystem.CombinePaths(bindingDirectoryPath, DataFileName);
+		string dataPath = fileSystem.Combine(bindingDirectoryPath, DataFileName);
 		if (!fileSystem.ExistsFile(dataPath)) {
 			throw new InvalidOperationException($"Binding data file not found in '{bindingDirectoryPath}'.");
 		}
@@ -505,7 +522,8 @@ internal sealed class DataBindingService(
 				IsForceUpdate = false,
 				IsKey = column.UId == schema.PrimaryColumnUId,
 				ColumnName = column.Name,
-				DataTypeValueUId = DataValueTypeMap.FromRuntimeValueType(column.DataValueType)
+				DataTypeValueUId = column.TemplateDataTypeValueUId
+					?? DataValueTypeMap.FromRuntimeValueType(column.DataValueType)
 			})
 			.OrderBy(column => column.ColumnName, StringComparer.Ordinal)
 			.ToList();
@@ -554,11 +572,12 @@ internal sealed class DataBindingService(
 		IReadOnlyCollection<DataBindingColumnDefinition> descriptorColumns,
 		Dictionary<string, JsonNode?> values,
 		bool allowEmptyPrimaryKey,
-		bool autoGeneratePrimaryKey) {
+		bool autoGeneratePrimaryKey,
+		string? valueFileBasePath = null) {
 		DataBindingRuntimeDescriptor descriptor =
 			DataBindingRuntimeDescriptor.FromSchema(schema, descriptorColumns, valueConverter);
 		return new DataBindingPackageDataFile {
-			PackageData = [BuildRow(descriptor, values, allowEmptyPrimaryKey, autoGeneratePrimaryKey)]
+			PackageData = [BuildRow(descriptor, values, allowEmptyPrimaryKey, autoGeneratePrimaryKey, valueFileBasePath)]
 		};
 	}
 
@@ -566,7 +585,8 @@ internal sealed class DataBindingService(
 		DataBindingRuntimeDescriptor descriptor,
 		Dictionary<string, JsonNode?> values,
 		bool allowEmptyPrimaryKey,
-		bool autoGeneratePrimaryKey = false) {
+		bool autoGeneratePrimaryKey = false,
+		string? valueFileBasePath = null) {
 		Dictionary<string, JsonNode?> resolvedValues = EnsurePrimaryKeyValue(descriptor, values, autoGeneratePrimaryKey);
 		List<DataBindingRowValue> row = [];
 		foreach ((string columnName, JsonNode? node) in resolvedValues.OrderBy(item => item.Key, StringComparer.Ordinal)) {
@@ -578,7 +598,9 @@ internal sealed class DataBindingService(
 				node,
 				column.DataTypeValueUId,
 				column.ColumnName,
-				allowEmptyString: allowEmptyPrimaryKey || !column.IsKey);
+				allowEmptyString: allowEmptyPrimaryKey || !column.IsKey,
+				fileBasePath: valueFileBasePath);
+			converted = DataBindingDomainRules.NormalizeValue(descriptor.Name, column.ColumnName, converted);
 			row.Add(new DataBindingRowValue {
 				SchemaColumnUId = column.ColumnUId,
 				Value = converted
@@ -673,7 +695,8 @@ internal sealed class DataBindingService(
 		DataBindingPackageDataFile dataFile,
 		Dictionary<string, Dictionary<string, JsonNode?>>? localizations,
 		bool createTemplateDefault,
-		IReadOnlyCollection<DataBindingColumnDefinition> descriptorColumns) {
+		IReadOnlyCollection<DataBindingColumnDefinition> descriptorColumns,
+		string? valueFileBasePath = null) {
 		DataBindingRuntimeDescriptor descriptor =
 			DataBindingRuntimeDescriptor.FromSchema(schema, descriptorColumns, valueConverter);
 		DataBindingRow sourceRow = dataFile.PackageData.Single();
@@ -684,7 +707,7 @@ internal sealed class DataBindingService(
 		if (defaultTemplateRow is not null) {
 			DataBindingPackageDataFile defaultFile = new() { PackageData = [defaultTemplateRow] };
 			fileSystem.WriteAllTextToFile(
-				fileSystem.CombinePaths(localizationDirectoryPath, "data.en-US.json"),
+				fileSystem.Combine(localizationDirectoryPath, "data.en-US.json"),
 				serializer.SerializePackageData(defaultFile));
 		}
 
@@ -694,10 +717,10 @@ internal sealed class DataBindingService(
 
 		string primaryKey = GetPrimaryKey(sourceRow, descriptor);
 		foreach ((string culture, Dictionary<string, JsonNode?> cultureValues) in localizations) {
-			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, primaryKey, cultureValues);
+			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, primaryKey, cultureValues, valueFileBasePath);
 			DataBindingPackageDataFile localizedFile = new() { PackageData = [localizedRow] };
 			fileSystem.WriteAllTextToFile(
-				fileSystem.CombinePaths(localizationDirectoryPath, $"data.{culture}.json"),
+				fileSystem.Combine(localizationDirectoryPath, $"data.{culture}.json"),
 				serializer.SerializePackageData(localizedFile));
 		}
 	}
@@ -706,8 +729,9 @@ internal sealed class DataBindingService(
 		string bindingDirectoryPath,
 		DataBindingRuntimeDescriptor descriptor,
 		string normalizedKey,
-		Dictionary<string, Dictionary<string, JsonNode?>>? localizations) {
-		string localizationDirectoryPath = fileSystem.CombinePaths(bindingDirectoryPath, LocalizationFolderName);
+		Dictionary<string, Dictionary<string, JsonNode?>>? localizations,
+		string? valueFileBasePath = null) {
+		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		if (!fileSystem.ExistsDirectory(localizationDirectoryPath)) {
 			if (localizations is null) {
 				return;
@@ -721,11 +745,11 @@ internal sealed class DataBindingService(
 		}
 
 		foreach ((string culture, Dictionary<string, JsonNode?> cultureValues) in localizations) {
-			string culturePath = fileSystem.CombinePaths(localizationDirectoryPath, $"data.{culture}.json");
+			string culturePath = fileSystem.Combine(localizationDirectoryPath, $"data.{culture}.json");
 			DataBindingPackageDataFile localizationFile = fileSystem.ExistsFile(culturePath)
 				? JsonSerializer.Deserialize<DataBindingPackageDataFile>(fileSystem.ReadAllText(culturePath), DataBindingJson.Options) ?? new DataBindingPackageDataFile()
 				: new DataBindingPackageDataFile();
-			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, normalizedKey, cultureValues);
+			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, normalizedKey, cultureValues, valueFileBasePath);
 			int existingIndex = FindRowIndex(localizationFile.PackageData, descriptor, normalizedKey);
 			if (existingIndex >= 0) {
 				localizationFile.PackageData[existingIndex] = localizedRow;
@@ -739,7 +763,7 @@ internal sealed class DataBindingService(
 	}
 
 	private void RemoveLocalizationRows(string bindingDirectoryPath, DataBindingRuntimeDescriptor descriptor, string normalizedKeyValue) {
-		string localizationDirectoryPath = fileSystem.CombinePaths(bindingDirectoryPath, LocalizationFolderName);
+		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		if (!fileSystem.ExistsDirectory(localizationDirectoryPath)) {
 			return;
 		}
@@ -763,7 +787,8 @@ internal sealed class DataBindingService(
 	private DataBindingRow BuildLocalizationRow(
 		DataBindingRuntimeDescriptor descriptor,
 		string normalizedKey,
-		Dictionary<string, JsonNode?> values) {
+		Dictionary<string, JsonNode?> values,
+		string? valueFileBasePath = null) {
 		List<DataBindingRowValue> row = [
 			new DataBindingRowValue {
 				SchemaColumnUId = descriptor.PrimaryColumn.ColumnUId,
@@ -785,7 +810,12 @@ internal sealed class DataBindingService(
 			row.Add(new DataBindingRowValue {
 				SchemaColumnUId = column.ColumnUId,
 				ColumnName = column.ColumnName,
-				Value = valueConverter.ConvertValue(node, column.DataTypeValueUId, column.ColumnName, allowEmptyString: true)
+				Value = valueConverter.ConvertValue(
+					node,
+					column.DataTypeValueUId,
+					column.ColumnName,
+					allowEmptyString: true,
+					fileBasePath: valueFileBasePath)
 			});
 		}
 
@@ -924,6 +954,40 @@ internal sealed class DataBindingTemplateCatalog : IDataBindingTemplateSchemaCat
 						"ValueTypeName",
 						28,
 						null)
+				]),
+			["SysModule"] = new(
+				new Guid("2b2ed767-0b4b-4a7b-9de2-d48e14a2c0c5"),
+				"SysModule",
+				new Guid("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"),
+				[
+					new DataBindingSchemaColumn(new Guid("bd3cf32d-f9b5-471b-a0ca-f541296b979d"), "Attribute", 27, null),
+					new DataBindingSchemaColumn(new Guid("327a0dc4-df63-4f6e-9d33-bc403d284cb6"), "CardSchemaUId", 0, null),
+					new DataBindingSchemaColumn(new Guid("cb4bb1d2-d369-406e-8150-502dd7af2199"), "CardModuleUId", 0, null),
+					new DataBindingSchemaColumn(new Guid("3da3c3b2-02fb-4cca-80c3-7946d4e8f565"), "Caption", 27, null),
+					new DataBindingSchemaColumn(new Guid("e0c474a3-e4bc-457e-bb67-c1ec1b399f60"), "Code", 28, null),
+					new DataBindingSchemaColumn(new Guid("48b260f5-5aad-608c-73a9-2b835ef697f4"), "Description", 29, null),
+					new DataBindingSchemaColumn(new Guid("d3afc924-2d21-4c0e-b2f3-9f8c180221f9"), "FolderMode", 10, null),
+					new DataBindingSchemaColumn(new Guid("eea74681-e019-4885-9a1e-e8261f2665ea"), "GlobalSearchAvailable", 12, null),
+					new DataBindingSchemaColumn(new Guid("a0fd39b2-b680-4515-ac3c-72322db4f1b8"), "HasActions", 12, null),
+					new DataBindingSchemaColumn(new Guid("34dfc288-1b25-4d53-bdf3-16b58a84e276"), "HasAnalytics", 12, null),
+					new DataBindingSchemaColumn(new Guid("80769c54-f4f4-43cb-93f8-0824715969a6"), "HasRecent", 12, null),
+					new DataBindingSchemaColumn(new Guid("9a366fd1-19c8-4ba7-9bdd-039f164c08ec"), "HelpContextId", 28, null),
+					new DataBindingSchemaColumn(new Guid("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0, null),
+					new DataBindingSchemaColumn(new Guid("48ed5be5-6dcd-44ba-6294-a29c8daef880"), "IconBackground", 27, null),
+					new DataBindingSchemaColumn(new Guid("6d827ba7-a622-47cc-8f11-b40b91c7441a"), "Image16", 14, null, new Guid("fa6e6e49-b996-475e-a77e-73904e4c5a88")),
+					new DataBindingSchemaColumn(new Guid("ed272316-b65f-41db-a9b4-e53ab939e4d6"), "Image20", 14, null, new Guid("fa6e6e49-b996-475e-a77e-73904e4c5a88")),
+					new DataBindingSchemaColumn(new Guid("63f1eb37-455a-4a53-ace2-fa5ef4c3d10f"), "Image32", 1, null, new Guid("b039feb0-ee7c-4884-8aa6-d6d45d84316f")),
+					new DataBindingSchemaColumn(new Guid("dedaabd6-732d-47ac-b229-50a8ee02292c"), "IsSystem", 12, null),
+					new DataBindingSchemaColumn(new Guid("380d55b9-487c-429b-9aff-e04101ffc307"), "Logo", 1, null, new Guid("b039feb0-ee7c-4884-8aa6-d6d45d84316f")),
+					new DataBindingSchemaColumn(new Guid("74a0895a-c418-9012-441c-0c888293e434"), "MobileSectionSchemaUId", 0, null),
+					new DataBindingSchemaColumn(new Guid("7b904e78-84bf-408c-a7a1-1287e66837d3"), "ModuleHeader", 27, null),
+					new DataBindingSchemaColumn(new Guid("af5bbb5e-9c78-44b7-8fdd-2bfc4353b4a8"), "SectionSchemaUId", 0, null),
+					new DataBindingSchemaColumn(new Guid("d57c3c34-e293-4aed-bff6-91dc90408958"), "SectionModuleSchemaUId", 0, null),
+					new DataBindingSchemaColumn(new Guid("3f098e0d-6cbd-4e8f-bc3e-00709f2d8d82"), "SysModuleEntity", 10, null),
+					new DataBindingSchemaColumn(new Guid("e6243d2b-cc8f-4b2d-8646-36bac9fb48e9"), "SysModuleVisa", 10, null),
+					new DataBindingSchemaColumn(new Guid("b3fefb7f-2aab-4b16-97aa-6ca3f3bd7ac2"), "SysPageSchemaUId", 0, null),
+					new DataBindingSchemaColumn(new Guid("1e4741cc-9a6e-446f-9865-5f5910fadd67"), "Type", 4, null),
+					new DataBindingSchemaColumn(new Guid("f3a29fb6-f13d-443e-8360-d4f51e8bcec8"), "TypeColumnValue", 0, null)
 				])
 		};
 
@@ -951,8 +1015,79 @@ internal sealed class DataBindingSerializer : IDataBindingSerializer {
 	}
 }
 
+internal enum SysModuleAllowedIconBackgroundColor {
+	HexA6DE00,
+	Hex20A959,
+	Hex22AC14,
+	HexFFAC07,
+	HexFF8800,
+	HexF9307F,
+	HexFF602E,
+	HexFF4013,
+	HexB87CCF,
+	Hex7848EE,
+	Hex247EE5,
+	Hex0058EF,
+	Hex009DE3,
+	Hex4F43C2,
+	Hex08857E,
+	Hex00BFA5
+}
+
+internal static class DataBindingDomainRules {
+	private static readonly IReadOnlyDictionary<SysModuleAllowedIconBackgroundColor, string> SysModuleIconBackgroundPalette =
+		new Dictionary<SysModuleAllowedIconBackgroundColor, string> {
+			[SysModuleAllowedIconBackgroundColor.HexA6DE00] = "#A6DE00",
+			[SysModuleAllowedIconBackgroundColor.Hex20A959] = "#20A959",
+			[SysModuleAllowedIconBackgroundColor.Hex22AC14] = "#22AC14",
+			[SysModuleAllowedIconBackgroundColor.HexFFAC07] = "#FFAC07",
+			[SysModuleAllowedIconBackgroundColor.HexFF8800] = "#FF8800",
+			[SysModuleAllowedIconBackgroundColor.HexF9307F] = "#F9307F",
+			[SysModuleAllowedIconBackgroundColor.HexFF602E] = "#FF602E",
+			[SysModuleAllowedIconBackgroundColor.HexFF4013] = "#FF4013",
+			[SysModuleAllowedIconBackgroundColor.HexB87CCF] = "#B87CCF",
+			[SysModuleAllowedIconBackgroundColor.Hex7848EE] = "#7848EE",
+			[SysModuleAllowedIconBackgroundColor.Hex247EE5] = "#247EE5",
+			[SysModuleAllowedIconBackgroundColor.Hex0058EF] = "#0058EF",
+			[SysModuleAllowedIconBackgroundColor.Hex009DE3] = "#009DE3",
+			[SysModuleAllowedIconBackgroundColor.Hex4F43C2] = "#4F43C2",
+			[SysModuleAllowedIconBackgroundColor.Hex08857E] = "#08857E",
+			[SysModuleAllowedIconBackgroundColor.Hex00BFA5] = "#00BFA5"
+		};
+
+	private static readonly IReadOnlyDictionary<string, string> SysModuleIconBackgroundLookup =
+		SysModuleIconBackgroundPalette.Values.ToDictionary(color => color, color => color, StringComparer.OrdinalIgnoreCase);
+
+	public static object? NormalizeValue(string bindingName, string columnName, object? value) {
+		if (!string.Equals(bindingName, "SysModule", StringComparison.OrdinalIgnoreCase) ||
+			!string.Equals(columnName, "IconBackground", StringComparison.OrdinalIgnoreCase) ||
+			value is not string stringValue ||
+			string.IsNullOrWhiteSpace(stringValue)) {
+			return value;
+		}
+
+		if (SysModuleIconBackgroundLookup.TryGetValue(stringValue, out string? normalizedColor)) {
+			return normalizedColor;
+		}
+
+		throw new InvalidOperationException(
+			$"Column 'IconBackground' for binding 'SysModule' must use one of the predefined colors: {string.Join(", ", SysModuleIconBackgroundPalette.Values)}.");
+	}
+}
+
 internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
-	public object? ConvertValue(JsonNode? valueNode, Guid dataTypeUId, string columnName, bool allowEmptyString) {
+	private readonly IFileSystem _fileSystem;
+
+	public DataBindingValueConverter(IFileSystem fileSystem) {
+		_fileSystem = fileSystem;
+	}
+
+	public object? ConvertValue(
+		JsonNode? valueNode,
+		Guid dataTypeUId,
+		string columnName,
+		bool allowEmptyString,
+		string? fileBasePath = null) {
 		if (valueNode is null) {
 			return null;
 		}
@@ -1034,7 +1169,7 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 					throw new InvalidOperationException($"Column '{columnName}' cannot be empty.");
 				}
 
-				return stringValue;
+				return TryConvertImageContentFile(stringValue, dataTypeUId, fileBasePath) ?? stringValue;
 			}
 		}
 
@@ -1044,7 +1179,7 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 				throw new InvalidOperationException($"Column '{columnName}' cannot be empty.");
 			}
 
-			return stringValue;
+			return TryConvertImageContentFile(stringValue, dataTypeUId, fileBasePath) ?? stringValue;
 		}
 
 		throw new InvalidOperationException(
@@ -1069,11 +1204,63 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 	public bool IsStringLike(Guid dataTypeUId) {
 		return DataValueTypeMap.Resolve(dataTypeUId) == typeof(string);
 	}
+
+	private string? TryConvertImageContentFile(string stringValue, Guid dataTypeUId, string? fileBasePath) {
+		if (!DataValueTypeMap.IsImageContent(dataTypeUId) ||
+			string.IsNullOrWhiteSpace(stringValue) ||
+			string.Equals(stringValue, "null", StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+
+		string filePath = ResolvePotentialFilePath(stringValue, fileBasePath);
+		if (!_fileSystem.ExistsFile(filePath)) {
+			return null;
+		}
+
+		EnsureFileIsInsideWorkspace(filePath, fileBasePath);
+
+		return Convert.ToBase64String(_fileSystem.ReadAllBytes(filePath));
+	}
+
+	private string ResolvePotentialFilePath(string stringValue, string? fileBasePath) {
+		if (_fileSystem.IsPathRooted(stringValue)) {
+			return _fileSystem.GetFullPath(stringValue);
+		}
+
+		if (!string.IsNullOrWhiteSpace(fileBasePath)) {
+			return _fileSystem.GetFullPath(_fileSystem.Combine(fileBasePath, stringValue));
+		}
+
+		return _fileSystem.GetFullPath(stringValue);
+	}
+
+	private void EnsureFileIsInsideWorkspace(string filePath, string? fileBasePath) {
+		if (string.IsNullOrWhiteSpace(fileBasePath)) {
+			return;
+		}
+
+		string workspaceRoot = _fileSystem.GetFullPath(fileBasePath)
+			.TrimEnd(_fileSystem.DirectorySeparatorChar);
+		string normalizedFilePath = _fileSystem.GetFullPath(filePath);
+		if (string.Equals(normalizedFilePath, workspaceRoot, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException($"Image file path must point to a file inside the workspace: {normalizedFilePath}");
+		}
+
+		string workspacePrefix = workspaceRoot + _fileSystem.DirectorySeparatorChar;
+		if (!normalizedFilePath.StartsWith(workspacePrefix, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException($"Image file path must stay inside the workspace: {normalizedFilePath}");
+		}
+	}
 }
 
 internal sealed record DataBindingSchema(Guid UId, string Name, Guid PrimaryColumnUId, IReadOnlyList<DataBindingSchemaColumn> Columns);
 
-internal sealed record DataBindingSchemaColumn(Guid UId, string Name, int DataValueType, string? ReferenceSchemaName);
+internal sealed record DataBindingSchemaColumn(
+	Guid UId,
+	string Name,
+	int DataValueType,
+	string? ReferenceSchemaName,
+	Guid? TemplateDataTypeValueUId = null);
 
 internal sealed class DataBindingRuntimeDescriptor {
 	public required string Name { get; init; }

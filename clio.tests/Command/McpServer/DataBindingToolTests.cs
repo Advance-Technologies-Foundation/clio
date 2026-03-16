@@ -34,6 +34,8 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		_mockFileSystem.AddFile(Path.Combine(_workspaceRoot, ".clio", "workspaceSettings.json"), new MockFileData("{}"));
 		_mockFileSystem.AddDirectory(Path.Combine(_workspaceRoot, "packages", _packageName));
 		_mockFileSystem.AddFile(Path.Combine(_workspaceRoot, "packages", _packageName, "descriptor.json"), new MockFileData("{}"));
+		_mockFileSystem.AddDirectory(Path.Combine(_workspaceRoot, "assets"));
+		_mockFileSystem.AddFile(Path.Combine(_workspaceRoot, "assets", "icon.png"), new MockFileData(new byte[] { 1, 2, 3 }));
 		_mockFileSystem.AddDirectory(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings"));
 		_mockFileSystem.AddFile(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings", "descriptor.json"), new MockFileData("""
 		{
@@ -217,6 +219,33 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Encodes a local image file when the MCP create-data-binding payload targets an image-content column so callers can pass a file path instead of pre-encoded base64.")]
+	public void CreateDataBinding_Should_Encode_Image_File_For_ImageContent_Column() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateDataBindingTool tool = new(
+			Container.GetRequiredService<CreateDataBindingCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver,
+			Container.GetRequiredService<IDataBindingTemplateCatalog>());
+
+		// Act
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+			null,
+			_packageName,
+			"SysModule",
+			_workspaceRoot,
+			ValuesJson: """{"Code":"UsrImageModule","Image16":"assets\\icon.png"}"""));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the MCP create-data-binding wrapper should accept a local image file path for image-content columns");
+		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysModule", "data.json"));
+		dataJson.Should().Contain("\"Value\": \"AQID\"",
+			because: "the create-data-binding MCP flow should base64-encode the referenced image file");
+	}
+
+	[Test]
 	[Description("Resolves the environment-aware create-data-binding command for schemas that are not covered by the built-in offline template catalog.")]
 	public void CreateDataBinding_Should_Resolve_Command_For_NonTemplated_Schema() {
 		// Arrange
@@ -285,8 +314,16 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			because: "the create prompt should keep the local workspace requirement visible");
 		createPrompt.Should().Contain("built-in offline template",
 			because: "the create prompt should explain when environment-name can be omitted");
+		createPrompt.Should().Contain("image-content",
+			because: "the create prompt should explain that image-content columns can accept local file paths");
+		createPrompt.Should().Contain("16-color palette",
+			because: "the create prompt should mention the SysModule.IconBackground palette restriction");
 		addPrompt.Should().Contain(AddDataBindingRowTool.AddDataBindingRowToolName,
 			because: "the add-row prompt should reference the exact production MCP tool name");
+		addPrompt.Should().Contain("image-content",
+			because: "the add-row prompt should explain that image-content columns can accept local file paths");
+		addPrompt.Should().Contain("16-color palette",
+			because: "the add-row prompt should mention the SysModule.IconBackground palette restriction");
 		removePrompt.Should().Contain(RemoveDataBindingRowTool.RemoveDataBindingRowToolName,
 			because: "the remove-row prompt should reference the exact production MCP tool name");
 	}

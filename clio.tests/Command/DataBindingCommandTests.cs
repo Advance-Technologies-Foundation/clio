@@ -39,7 +39,9 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	protected override MockFileSystem CreateFs() {
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
 			[$@"{WorkspaceRoot}\.clio\workspaceSettings.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\descriptor.json"] = new("{}")
+			[$@"{WorkspaceRoot}\packages\{PackageName}\descriptor.json"] = new("{}"),
+			[$@"{WorkspaceRoot}\assets\icon.png"] = new(new byte[] { 1, 2, 3 }),
+			[@"C:\outside\icon.png"] = new(new byte[] { 9, 9, 9 })
 		}, WorkspaceRoot);
 	}
 
@@ -174,6 +176,115 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	}
 
 	[Test]
+	[Description("Creates a SysModule binding from the built-in offline template and preserves the checked-in image data-type identifiers for Image16 and Image20 without calling Creatio.")]
+	public void Execute_Should_Create_SysModule_Template_With_Image_DataType_Guids() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the built-in SysModule template should allow offline binding creation");
+		string descriptorJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\descriptor.json");
+		descriptorJson.Should().Contain("\"ColumnName\": \"Image16\"",
+			because: "the SysModule template should include the small image column");
+		descriptorJson.Should().Contain("\"ColumnName\": \"Image20\"",
+			because: "the SysModule template should include the medium image column");
+		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"fa6e6e49-b996-475e-a77e-73904e4c5a88\"",
+			because: "Image16 and Image20 must keep the filesystem-compatible image-content data type identifier from the checked-in binding");
+		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"b039feb0-ee7c-4884-8aa6-d6d45d84316f\"",
+			because: "Logo and Image32 must keep the checked-in image-reference data type identifier from the checked-in binding");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Description("Base64-encodes a local file path when create-data-binding writes an image-content column instead of requiring the caller to supply an already encoded string.")]
+	public void Execute_Should_Encode_Image_File_For_ImageContent_Column() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule",
+			ValuesJson = """{"Code":"UsrImageModule","Image16":"assets\\icon.png"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding should accept a local image file path for image-content columns");
+		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		dataJson.Should().Contain("\"SchemaColumnUId\": \"6d827ba7-a622-47cc-8f11-b40b91c7441a\"",
+			because: "the selected image-content column should be written to the row payload");
+		dataJson.Should().Contain("\"Value\": \"AQID\"",
+			because: "the command should base64-encode the file bytes for image-content values");
+	}
+
+	[Test]
+	[Description("Normalizes SysModule IconBackground to the predefined palette value when create-data-binding receives an allowed color.")]
+	public void Execute_Should_Normalize_Allowed_SysModule_IconBackground_Color() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule",
+			ValuesJson = """{"Code":"UsrModule","IconBackground":"#a6de00"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "allowed SysModule colors should pass validation during create-data-binding");
+		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		dataJson.Should().Contain("\"Value\": \"#A6DE00\"",
+			because: "allowed SysModule colors should be normalized to the predefined palette value");
+	}
+
+	[Test]
+	[Description("Rejects SysModule IconBackground values that are not part of the predefined 16-color palette.")]
+	public void Execute_Should_Reject_Invalid_SysModule_IconBackground_Color() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule",
+			ValuesJson = """{"Code":"UsrModule","IconBackground":"#123456"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "create-data-binding should reject SysModule IconBackground colors outside the allowed palette");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must use one of the predefined colors")));
+	}
+
+	[Test]
+	[Description("Rejects image-content file paths that point outside the resolved workspace so data-binding cannot read arbitrary local files.")]
+	public void Execute_Should_Reject_Image_File_Outside_Workspace() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule",
+			ValuesJson = """{"Code":"UsrImageModule","Image16":"C:\\outside\\icon.png"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "image-content file input must stay inside the resolved workspace");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must stay inside the workspace")));
+	}
+
+	[Test]
 	[Description("Requires --environment or --uri for schemas that are not covered by the built-in offline template catalog.")]
 	public void Execute_Should_Fail_Without_Environment_For_NonTemplated_Schema() {
 		// Arrange
@@ -277,6 +388,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
 			[$@"{WorkspaceRoot}\.clio\workspaceSettings.json"] = new("{}"),
 			[$@"{WorkspaceRoot}\packages\{PackageName}\descriptor.json"] = new("{}"),
+			[$@"{WorkspaceRoot}\assets\icon.png"] = new(new byte[] { 1, 2, 3 }),
 			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\descriptor.json"] = new("""
 			{
 			  "Descriptor": {
@@ -342,6 +454,55 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			      ]
 			    }
 			  ]
+			}
+			""")
+			,
+			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\descriptor.json"] = new("""
+			{
+			  "Descriptor": {
+			    "UId": "0c75996c-164e-af1b-81c9-c0fa2c3ab0ab",
+			    "Name": "SysModule",
+			    "InstallType": 0,
+			    "Schema": {
+			      "UId": "2b2ed767-0b4b-4a7b-9de2-d48e14a2c0c5",
+			      "Name": "SysModule"
+			    },
+			    "Columns": [
+			      {
+			        "ColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+			        "IsForceUpdate": false,
+			        "IsKey": true,
+			        "ColumnName": "Id",
+			        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
+			      },
+			      {
+			        "ColumnUId": "e0c474a3-e4bc-457e-bb67-c1ec1b399f60",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "Code",
+			        "DataTypeValueUId": "ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd"
+			      },
+			      {
+			        "ColumnUId": "6d827ba7-a622-47cc-8f11-b40b91c7441a",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "Image16",
+			        "DataTypeValueUId": "fa6e6e49-b996-475e-a77e-73904e4c5a88"
+			      },
+			      {
+			        "ColumnUId": "48ed5be5-6dcd-44ba-6294-a29c8daef880",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "IconBackground",
+			        "DataTypeValueUId": "325a73b8-0f47-44a0-8412-7606f78003ac"
+			      }
+			    ]
+			  }
+			}
+			"""),
+			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json"] = new("""
+			{
+			  "PackageData": []
 			}
 			""")
 		}, WorkspaceRoot);
@@ -435,6 +596,46 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			because: "the row payload should still be written after the generated key is injected");
 		dataJson.Should().NotContain("\"Value\": null",
 			because: "the primary key should not be serialized as a null value");
+	}
+
+	[Test]
+	[Description("Base64-encodes a local file path when add-data-binding-row writes an image-content column instead of requiring a pre-encoded string.")]
+	public void Execute_Should_Encode_Image_File_For_ImageContent_Column() {
+		// Arrange
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName,
+			BindingName = "SysModule",
+			ValuesJson = """{"Code":"UsrImageModule","Image16":"assets\\icon.png"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "add-data-binding-row should accept a local image file path for image-content columns");
+		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		dataJson.Should().Contain("\"Value\": \"AQID\"",
+			because: "the command should base64-encode the file bytes before writing the binding row");
+	}
+
+	[Test]
+	[Description("Rejects SysModule IconBackground values outside the predefined 16-color palette when add-data-binding-row updates a local binding.")]
+	public void Execute_Should_Reject_Invalid_SysModule_IconBackground_Color() {
+		// Arrange
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName,
+			BindingName = "SysModule",
+			ValuesJson = """{"Code":"UsrModule","IconBackground":"#123456"}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "add-data-binding-row should reject SysModule IconBackground colors outside the allowed palette");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must use one of the predefined colors")));
 	}
 }
 

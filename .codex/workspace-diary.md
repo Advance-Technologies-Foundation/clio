@@ -890,3 +890,31 @@ Decision: Kept the real template source `.gitignore`, added a surrogate `clio/tp
 Discovery: Even when the generated `.nuspec` explicitly listed `tpl/workspace/.gitignore` in `tools/net8.0/any`, the final `.nupkg` still dropped that entry; a non-dot surrogate filename packs correctly and can be renamed safely during workspace creation.
 Files: clio/clio.csproj, clio/tpl/workspace/gitignore.txt, clio/Workspace/WorkspaceCreator.cs, .codex/workspace-diary.md
 Impact: Installed `clio` tool packages now preserve the workspace gitignore content via a packaged surrogate, and `create-workspace` produces `.gitignore` correctly in both local-dev and packaged-tool flows.
+
+## 2026-03-15 14:40 – Add offline SysModule data-binding template
+Context: User wanted a built-in offline template for `SysModule`, using the checked-in binding under `spec/data-binding/DataBindingPkg/Data/SysModule` as the source of truth and with special attention to `Image16`/`Image20`.
+Decision: Extended template columns so offline templates can carry exact `DataTypeValueUId` overrides from checked-in descriptors, then added `SysModule` to `DataBindingTemplateCatalog` using the checked-in schema metadata instead of relying on runtime data-value-type integers.
+Discovery: The provided `dbhub` MCP surface was not exposed in this session, and direct runtime creation of `SysModule` fails on unsupported runtime image types; using explicit template `DataTypeValueUId` values avoided broad runtime-schema changes while preserving the exact checked-in GUIDs for `Image16`, `Image20`, `Logo`, and `Image32`. `DataValueTypeMap.Resolve` still needed the two image GUIDs mapped as string-compatible so row operations can round-trip base64/null image values from the filesystem.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/ProcessModel/Schema.cs, clio.tests/Command/DataBindingCommandTests.cs, .codex/workspace-diary.md
+Impact: `create-data-binding --schema SysModule` now works offline with descriptor types matching the checked-in binding, and image columns use the correct filesystem-oriented type GUIDs instead of being coerced through the runtime map.
+
+## 2026-03-15 16:22 – SysModule template validation
+Context: Validated the built-in SysModule data-binding template against the live d2 database and the checked-in sample binding.
+Decision: Treat the checked-in binding as the filesystem baseline and compare both it and the code template to live column metadata from dbhub.
+Discovery: SysModule DB metadata, sample descriptor, and template code are aligned on schema UId, key column, column UIds, and special image type handling; the binding intentionally omits five system columns (CreatedOn, CreatedById, ModifiedOn, ModifiedById, ProcessListeners).
+Files: C:\Projects\clio\clio\Command\DataBindingCommand.cs, C:\Projects\clio\spec\data-binding\DataBindingPkg\Data\SysModule\descriptor.json, C:\Projects\clio\spec\data-binding\DataBindingPkg\Data\SysModule\data.json, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future SysModule template changes can use the checked-in binding as a reliable offline source, with image columns preserved as base64 payloads and image-lookup columns preserved as lookup GUID fields.
+
+## 2026-03-15 17:05 – Support image files in data-binding values
+Context: User wanted image-content data-binding columns to accept local image files instead of requiring pre-encoded base64 strings, with docs and MCP contract updated.
+Decision: Added image-content file-path support in the shared data-binding value converter so create/add commands and MCP tools can encode files automatically, but restricted file reads to paths inside the resolved workspace to avoid arbitrary local-file reads.
+Discovery: The first implementation needed a workspace-boundary guard and consistent workspace-root resolution for localization values as well as main row values; after tightening that, targeted command tests and MCP E2E passed.
+Files: C:\Projects\clio\clio\Command\DataBindingCommand.cs, C:\Projects\clio\clio\Command\ProcessModel\Schema.cs, C:\Projects\clio\clio\Command\McpServer\Tools\DataBindingTool.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\DataBindingPrompt.cs, C:\Projects\clio\clio.tests\Command\DataBindingCommandTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\DataBindingToolTests.cs, C:\Projects\clio\clio.mcp.e2e\DataBindingToolE2ETests.cs, C:\Projects\clio\clio\help\en\create-data-binding.txt, C:\Projects\clio\clio\help\en\add-data-binding-row.txt, C:\Projects\clio\clio\docs\commands\create-data-binding.md, C:\Projects\clio\clio\docs\commands\add-data-binding-row.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future data-binding work can rely on a single image-file encoding path across CLI and MCP, with workspace-scoped file resolution documented and covered by tests.
+
+## 2026-03-15 17:08 – Enforce SysModule IconBackground palette
+Context: User added an HTML reference with the 16 allowed SysModule colors and wanted data binding to reject any other IconBackground values.
+Decision: Added a single enum-backed domain rule in data-binding row construction so both `create-data-binding` and `add-data-binding-row` validate and normalize `SysModule.IconBackground` consistently.
+Discovery: Accepting palette values case-insensitively but persisting them in canonical uppercase hex form keeps bindings stable while remaining easy to use from CLI and MCP.
+Files: C:\Projects\clio\clio\Command\DataBindingCommand.cs, C:\Projects\clio\clio\Command\McpServer\Tools\DataBindingTool.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\DataBindingPrompt.cs, C:\Projects\clio\clio.tests\Command\DataBindingCommandTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\DataBindingToolTests.cs, C:\Projects\clio\clio.mcp.e2e\DataBindingToolE2ETests.cs, C:\Projects\clio\clio\help\en\create-data-binding.txt, C:\Projects\clio\clio\help\en\add-data-binding-row.txt, C:\Projects\clio\clio\docs\commands\create-data-binding.md, C:\Projects\clio\clio\docs\commands\add-data-binding-row.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: SysModule bindings now enforce the same predefined color palette across CLI, MCP, tests, and generated filesystem data.

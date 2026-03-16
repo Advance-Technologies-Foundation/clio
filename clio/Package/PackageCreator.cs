@@ -94,12 +94,11 @@ public class PackageCreator : IPackageCreator{
 			HelpLink = "",
 			Color = "#FFAC07",
 			Version = "0.1.0",
+			RequiredPlatformVersion = "8.3.3",
 			Code = packageName,
-			Packages = new List<Package> {
-				package
-			}
+			Packages = [package]
 		};
-		string appDescriptorPath = Path.Combine(packagesPath, packageName, "Files", "app-descriptor.json");
+		string appDescriptorPath = _fileSystem.Combine(packagesPath, packageName, "Files", "app-descriptor.json");
 		SaveAppDescriptorToFile(addDescriptorDto, appDescriptorPath);
 	}
 
@@ -132,7 +131,7 @@ public class PackageCreator : IPackageCreator{
 
 	private void ApplyMacrosToCsProjFile(string packagesPath, string packageName) {
 		string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
-		string csProjPath = Path.Combine(packageFilesPath, $"{packageName}.csproj");
+		string csProjPath = _fileSystem.Combine(packageFilesPath, $"{packageName}.csproj");
 		string csProjContent = _fileSystem.ReadAllText(csProjPath);
 		string newCsProjContent = csProjContent
 								  .Replace("#PackageName#", packageName)
@@ -143,7 +142,7 @@ public class PackageCreator : IPackageCreator{
 
 	private void ApplyMacrosToProjectFiles(string packagesPath, string packageName) {
 		string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
-		string packageNameTargetPropsPath = Path.Combine(packageFilesPath, "Directory.Build.targets");
+		string packageNameTargetPropsPath = _fileSystem.Combine(packageFilesPath, "Directory.Build.targets");
 		string packageNameTargetPropsContent = _fileSystem.ReadAllText(packageNameTargetPropsPath);
 		string newPackageNameTargetPropsContent = packageNameTargetPropsContent
 												  .Replace("#PackageName#", packageName)
@@ -171,12 +170,12 @@ public class PackageCreator : IPackageCreator{
 
 	private void CreatePackageDescriptorToFileSystem(string packagePath, string packageName) {
 		PackageDescriptorDto descriptor = CreatePackageDescriptor(packageName);
-		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
+		string descriptorPath = _fileSystem.Combine(packagePath, "descriptor.json");
 		_jsonConverter.SerializeObjectToFile(descriptor, descriptorPath);
 	}
 
 	private void CreatePackageIfNotExists(string packagesPath, string packageName) {
-		string packagePath = Path.Combine(packagesPath, packageName);
+		string packagePath = _fileSystem.Combine(packagesPath, packageName);
 		if (_fileSystem.ExistsDirectory(packagePath)) {
 			throw new InvalidOperationException($"Directory '{packagePath}' already exists");
 		}
@@ -195,7 +194,7 @@ public class PackageCreator : IPackageCreator{
 	}
 
 	private Package GetPackageFromDescriptor(string packagePath, string packageName) {
-		string descriptorContent = _fileSystem.ReadAllText(Path.Combine(packagePath, packageName, "descriptor.json"));
+		string descriptorContent = _fileSystem.ReadAllText(_fileSystem.Combine(packagePath, packageName, "descriptor.json"));
 		PackageDescriptorDto packageDescriptor = JsonSerializer.Deserialize<PackageDescriptorDto>(descriptorContent);
 		return new Package {
 			UId = packageDescriptor.Descriptor.UId.ToString(),
@@ -219,7 +218,7 @@ public class PackageCreator : IPackageCreator{
 
 	private void RenameTemplatePackageNameCsproj(string packagesPath, string packageName) {
 		string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
-		string templatePackageNameCsprojPath = Path.Combine(packageFilesPath, "PackageName.csproj");
+		string templatePackageNameCsprojPath = _fileSystem.Combine(packageFilesPath, "PackageName.csproj");
 		string newPackageNameCsprojPath = _standalonePackageFileManager
 			.BuildStandaloneProjectPath(packagesPath, packageName);
 		_fileSystem.MoveFile(templatePackageNameCsprojPath, newPackageNameCsprojPath);
@@ -303,6 +302,7 @@ public class AppDescriptorJson{
 	public string Color { get; set; }
 
 	public string Version { get; set; }
+	public string RequiredPlatformVersion { get; set; } = "8.3.3";
 
 	public string MarketplaceLink { get; set; }
 

@@ -24,7 +24,9 @@ OPTIONS
     --workspace-path       Workspace root path. Defaults to the current workspace
     --values               JSON object keyed by column name for the row payload.
                            If the GUID primary key column is omitted or null,
-                           it is generated automatically
+                           it is generated automatically. For image-content
+                           columns, pass either a base64 string or a local file
+                           path inside the workspace and clio encodes the file
     --localizations        Optional JSON object keyed by culture and column name
 
 EXAMPLES
@@ -34,10 +36,16 @@ EXAMPLES
     # Replace an existing row and update localization data
     clio add-data-binding-row --package Custom --binding-name SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"New name\"}" --localizations "{\"en-US\":{\"Name\":\"Localized name\"}}'
 
+    # Add a SysModule row using a local image file for Image16
+    clio add-data-binding-row --package Custom --binding-name SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
+
 NOTES
     - The binding must already exist locally
     - The row key is the primary column marked in descriptor.json
     - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically
+    - For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
+    - SysModule IconBackground only accepts these colors:
+      #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5
     - Unknown columns in --values or --localizations are rejected
     - Existing rows with the same primary key are replaced instead of duplicated
 

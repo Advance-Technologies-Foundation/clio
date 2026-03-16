@@ -99,14 +99,15 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 
 		if (options.Empty) {
 			if (string.IsNullOrWhiteSpace(options.WorkspaceName)) {
-				throw new ArgumentException("WorkspaceName is required when using --empty.", nameof(options.WorkspaceName));
+				throw new ArgumentException("WorkspaceName is required when using --empty.", nameof(options));
 			}
 			if (_fileSystem.IsPathRooted(options.WorkspaceName)) {
 				throw new InvalidOperationException("WorkspaceName must be a relative folder name.");
 			}
 
 			string baseDirectory = ResolveEmptyWorkspaceBaseDirectory(options);
-			string destinationPath = _fileSystem.GetFullPath(_fileSystem.CombinePaths(baseDirectory, options.WorkspaceName));
+			string workspacePath = _fileSystem.Combine(baseDirectory, options.WorkspaceName); // Validate that the combination is valid (e.g. no invalid chars)
+			string destinationPath = _fileSystem.GetFullPath(workspacePath);
 			string baseFullPath = _fileSystem.GetFullPath(baseDirectory);
 			string baseDirectoryWithSeparator = baseFullPath.TrimEnd(_fileSystem.DirectorySeparatorChar) + _fileSystem.DirectorySeparatorChar;
 			if (!destinationPath.StartsWith(baseDirectoryWithSeparator,

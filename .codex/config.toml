@@ -21,3 +21,11 @@ config_file = "./agents/code-quality-reviewer.toml"
 [mcp_servers.clio]
 command = "clio"
 enabled = false
+
+[mcp_servers.dbhub]
+command = "npx"
+args = ["@bytebase/dbhub@latest", "--transport", "stdio", "--id", "d2", "--dsn","postgresql://postgres:Supervisor@localhost:5433/NoFs_n8"]
+
+[mcp_servers.RedisMCPServer]
+command = "uvx"
+args = ["--from", "redis-mcp-server@latest", "redis-mcp-server", "--url", "redis://localhost:6379/29"]

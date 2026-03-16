@@ -85,19 +85,24 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		return GetFileHash(algorithm, first) == GetFileHash(algorithm, second);
 	}
 
-	public string CombinePaths(params string[] paths) {
-		return Path.Combine(paths);
+	public string Combine(params string[] paths) {
+		return msFileSystem.Path.Combine(paths);
 	}
+	public string Combine(string path1, string path2) => 
+		msFileSystem.Path.Combine(path1, path2);
+	public string Combine(string path1, string path2, string path3) => msFileSystem.Path.Combine(path1, path2, path3);
+	public string Combine(string path1, string path2, string path3, string path4) => msFileSystem.Path.Combine(path1, path2, path3, path4);
 
+	
 	public string ConvertToRelativePath(string path, string rootDirectoryPath) {
-		rootDirectoryPath = rootDirectoryPath.TrimEnd(Path.DirectorySeparatorChar);
+		rootDirectoryPath = rootDirectoryPath.TrimEnd(msFileSystem.Path.DirectorySeparatorChar);
 		int rootDirectoryPathLength = rootDirectoryPath.Length;
-		string relativePath = path.Substring(rootDirectoryPathLength);
-		return relativePath.TrimStart(Path.DirectorySeparatorChar);
+		string relativePath = path[rootDirectoryPathLength..];
+		return relativePath.TrimStart(msFileSystem.Path.DirectorySeparatorChar);
 	}
 
 	public string GetFullPath(string path) {
-		return Path.GetFullPath(path);
+		return msFileSystem.Path.GetFullPath(path);
 	}
 
 	public void CopyDirectory(string source, string destination, bool overwrite) {
@@ -105,11 +110,11 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		destination.CheckArgumentNullOrWhiteSpace(nameof(destination));
 		CreateOrOverwriteExistsDirectoryIfNeeded(destination, overwrite);
 		foreach (string filePath in msFileSystem.Directory.GetFiles(source)) {
-			msFileSystem.File.Copy(filePath, Path.Combine(destination, Path.GetFileName(filePath)), true);
+			msFileSystem.File.Copy(filePath, msFileSystem.Path.Combine(destination, msFileSystem.Path.GetFileName(filePath)), true);
 		}
 
 		foreach (string directoryPath in msFileSystem.Directory.GetDirectories(source)) {
-			CopyDirectory(directoryPath, Path.Combine(destination, Path.GetFileName(directoryPath)), overwrite);
+			CopyDirectory(directoryPath, msFileSystem.Path.Combine(destination, msFileSystem.Path.GetFileName(directoryPath)), overwrite);
 		}
 	}
 
@@ -119,13 +124,13 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		CreateOrOverwriteExistsDirectoryIfNeeded(destination, overwrite);
 		foreach (string filePath in msFileSystem.Directory.GetFiles(source)) {
 			if (!filter(filePath)) {
-				msFileSystem.File.Copy(filePath, Path.Combine(destination, Path.GetFileName(filePath)), true);
+				msFileSystem.File.Copy(filePath, msFileSystem.Path.Combine(destination, msFileSystem.Path.GetFileName(filePath)), true);
 			}
 		}
 
 		foreach (string directoryPath in msFileSystem.Directory.GetDirectories(source)) {
 			if (!filter(directoryPath)) {
-				CopyDirectory(directoryPath, Path.Combine(destination, Path.GetFileName(directoryPath)), overwrite);
+				CopyDirectory(directoryPath, msFileSystem.Path.Combine(destination, msFileSystem.Path.GetFileName(directoryPath)), overwrite);
 			}
 		}
 	}
@@ -140,7 +145,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		foreach (string sourceFilePath in filesPaths) {
 			Ms.IFileInfoFactory fileInfoFactory = msFileSystem.FileInfo;
 			Ms.IFileInfo sourceFileInfo = fileInfoFactory.New(sourceFilePath);
-			string destinationFilePath = Path.Combine(destinationDirectory, sourceFileInfo.Name);
+			string destinationFilePath = msFileSystem.Path.Combine(destinationDirectory, sourceFileInfo.Name);
 			msFileSystem.File.Copy(sourceFilePath, destinationFilePath, overwrite);
 		}
 	}
@@ -269,8 +274,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 
 	public string ExtractFileNameFromPath(string filePath) {
 		filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
-		FileInfo packageFileInfo = new(filePath);
-		return GetFileNameWithoutExtension(packageFileInfo);
+		return GetFileNameWithoutExtension(GetFilesInfos(filePath));
 	}
 
 	public Ms.FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share) {
@@ -287,11 +291,11 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		filePath.CheckArgumentNullOrWhiteSpace(nameof(filePath));
 		destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
 		string fileName = ExtractFileNameFromPath(filePath);
-		return Path.Combine(destinationPath, fileName);
+		return msFileSystem.Path.Combine(destinationPath, fileName);
 	}
 
 	public bool IsPathRooted(string path) {
-		return Path.IsPathRooted(path);
+		return msFileSystem.Path.IsPathRooted(path);
 	}
 
 	public string[] GetDirectories(string directoryPath) {
@@ -377,10 +381,9 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		return BitConverter.ToString(hash).Replace("-", string.Empty);
 	}
 
-	public string GetFileNameWithoutExtension(FileInfo fileInfo) {
+	public string GetFileNameWithoutExtension(Ms.IFileInfo fileInfo) {
 		fileInfo.CheckArgumentNull(nameof(fileInfo));
-		return fileInfo.Name
-					   .Substring(0, fileInfo.Name.Length - fileInfo.Extension.Length);
+		return fileInfo.Name[..^fileInfo.Extension.Length];
 	}
 
 	public string[] GetFiles(string directoryPath) {
@@ -394,17 +397,16 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		return msFileSystem.Directory.GetFiles(directoryPath, searchPattern, searchOption);
 	}
 
-	public FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption) {
+	public Ms.IFileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption) {
 		directoryPath.CheckArgumentNullOrWhiteSpace(nameof(directoryPath));
-		DirectoryInfo directoryInfo = new(directoryPath);
+
+		var directoryInfo= msFileSystem.DirectoryInfo.New(directoryPath);
 
 		//TODO: Discuss with P.Makarchuk
 		//directoryInfo.GetFiles causes System.IO.DirectoryNotFoundException when Schemas does not exist 
-		if (directoryInfo.Exists) {
-			return directoryInfo.GetFiles(searchPattern, searchOption);
-		}
-
-		return new FileInfo[0];
+		return directoryInfo.Exists 
+			? directoryInfo.GetFiles(searchPattern, searchOption) 
+			: [];
 	}
 
 	public Ms.IFileInfo GetFilesInfos(string filePath) {

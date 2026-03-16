@@ -1,12 +1,14 @@
 ﻿using System.IO;
+using System.IO.Abstractions;
 using System.Text.Json;
 using Clio.Requests;
 using CreatioModel;
+using Clio.Common;
+using Clio.WebApplication;
+using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Package
 {
-	using Clio.Common;
-	using Clio.WebApplication;
 
 	public class ApplicationInstaller : BasePackageInstaller, IApplicationInstaller
 	{
@@ -39,13 +41,12 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private bool InternalUnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings, object o,
-			string reportPath){
+		private bool InternalUnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings){
 			IApplicationClient client = _applicationClientFactory.CreateClient(environmentSettings);
 			string completeUrl = GetCompleteUrl(UnInstallUrl, environmentSettings);
 			_logger.WriteInfo($"Uninstalling {appInfo.Code}");
 			string result = client.ExecutePostRequest(completeUrl, "\"" + appInfo.Id + "\"");
-			_logger.WriteInfo($"Application {appInfo.Code} uninstalled");
+			_logger.WriteInfo($"Application {appInfo.Code} uninstalled {result ?? ""}");
 			return true;
 		}
 
@@ -53,10 +54,10 @@ namespace Clio.Package
 
 		#region Methods: Protected
 
-		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions)
-		{
-			string code = _fileSystem.GetFileNameWithoutExtension(new FileInfo(fileName));
-			var request = new InstallAppRequest {
+		protected override string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions) {
+			IFileInfo fileInfo = _fileSystem.GetFilesInfos(fileName);
+			string code = _fileSystem.GetFileNameWithoutExtension(fileInfo);
+			InstallAppRequest request = new() {
 				Name = code,
 				Code = code,
 				ZipPackageName = fileName,
@@ -79,7 +80,7 @@ namespace Clio.Package
 
 		public bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
 			string reportPath = null){
-			return InternalUnInstall(appInfo, environmentSettings, null, reportPath);
+			return InternalUnInstall(appInfo, environmentSettings);
 		}
 
 		#endregion

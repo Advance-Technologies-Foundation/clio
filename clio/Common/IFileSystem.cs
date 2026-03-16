@@ -97,13 +97,13 @@ namespace Clio.Common
 
 		string ExtractFileExtensionFromPath(string filePath);
 
-		string GetFileNameWithoutExtension(FileInfo fileInfo);
+		string GetFileNameWithoutExtension(IFileInfo fileInfo);
 
 		string[] GetFiles(string directoryPath);
 
 		string[] GetFiles(string directoryPath, string searchPattern, SearchOption searchOption);
 
-		FileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption);
+		
 
 		/// <summary>
 		/// Checks if the file at the given path is read-only.
@@ -209,8 +209,12 @@ namespace Clio.Common
 		/// </summary>
 		/// <param name="paths">Path fragments to combine.</param>
 		/// <returns>The combined path.</returns>
-		string CombinePaths(params string[] paths);
-
+		string Combine(params string[] paths);
+		// string Combine(string path1, string path2);
+		// string Combine(string path1, string path2, string path3);
+		// string Combine(string path1, string path2, string path3, string path4);
+		
+		
 		/// <summary>
 		/// Resolves the absolute path for a path fragment.
 		/// </summary>
@@ -269,7 +273,10 @@ namespace Clio.Common
 		/// <remarks>Uses <see cref="FileSystem.Algorithm.MD5"/> by default</remarks>
 		/// <exception cref="FileNotFoundException">when either of the files is not found</exception>
 		bool CompareFiles(string fileName1, string fileName2);
-		IFileInfo GetFilesInfos(string fileName);
+		
+		public IFileInfo GetFilesInfos(string fileName);
+		public IFileInfo[] GetFilesInfos(string directoryPath, string searchPattern, SearchOption searchOption);
+		
 
 		#endregion
 

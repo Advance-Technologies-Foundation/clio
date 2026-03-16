@@ -112,8 +112,8 @@ namespace Clio.Workspaces
 		}
 
 		private void NormalizeWorkspaceGitIgnore() {
-			string gitIgnorePath = _fileSystem.CombinePaths(RootPath, ".gitignore");
-			string fallbackGitIgnorePath = _fileSystem.CombinePaths(RootPath, "gitignore.txt");
+			string gitIgnorePath = _fileSystem.Combine(RootPath, ".gitignore");
+			string fallbackGitIgnorePath = _fileSystem.Combine(RootPath, "gitignore.txt");
 			if (_fileSystem.ExistsFile(gitIgnorePath)) {
 				_fileSystem.DeleteFileIfExists(fallbackGitIgnorePath);
 				return;

@@ -27,11 +27,13 @@ public static class DataBindingPrompt {
 		 Use clio mcp server `{CreateDataBindingTool.CreateDataBindingToolName}` to create or regenerate a data binding
 		 for schema `{schemaName}` in package `{packageName}`.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided.
-		 If `{schemaName}` is covered by a built-in offline template such as `SysSettings`, omit `environment-name`.
+		 If `{schemaName}` is covered by a built-in offline template such as `SysSettings` or `SysModule`, omit `environment-name`.
 		 Otherwise pass `environment-name` `{environmentName ?? "<required for non-templated schema>"}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default>"}` and `install-type` `{installType}`.
 		 Use `values` `{values ?? "<not provided>"}` when an initial row should be created. If that payload omits the
-		 GUID primary key column or sets it to null, the tool generates it automatically. Use
+		 GUID primary key column or sets it to null, the tool generates it automatically. For image-content columns,
+		 `values` may contain either an existing base64 string or a local file path inside the workspace that clio
+		 will encode. For `SysModule.IconBackground`, only the predefined 16-color palette is allowed. Use
 		 `localizations` `{localizations ?? "<not provided>"}` when localized row values must be written too.
 		 """;
 
@@ -50,6 +52,9 @@ public static class DataBindingPrompt {
 		 `{bindingName}` under package `{packageName}`.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided and use `values` `{values}`.
 		 If that payload omits the GUID primary key column or sets it to null, the tool generates it automatically.
+		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside
+		 the workspace that clio will encode. For `SysModule.IconBackground`, only the predefined 16-color palette
+		 is allowed.
 		 Use `localizations` `{localizations ?? "<not provided>"}` only when localized row values must also be updated.
 		 """;
 

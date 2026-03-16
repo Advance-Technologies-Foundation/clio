@@ -462,6 +462,8 @@ public static class DataValueTypeMap{
 		{} when dataValueTypeUId == PhoneTextDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == WebTextDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == EmailTextDataValueTypeUId => typeof(string),
+		{} when dataValueTypeUId == ImageReferenceDataValueTypeUId => typeof(string),
+		{} when dataValueTypeUId == ImageContentDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == RichTextDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == SecureTextDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == HashTextDataValueTypeUId => typeof(string),
@@ -509,6 +511,8 @@ public static class DataValueTypeMap{
 			$"Runtime dataValueType '{runtimeDataValueType}' is not supported for data-binding generation.")
 	};
 
+	internal static bool IsImageContent(Guid dataValueTypeUId) => dataValueTypeUId == ImageContentDataValueTypeUId;
+
 
 	/// <summary>
 	/// Boolean data value type Id.
@@ -554,6 +558,16 @@ public static class DataValueTypeMap{
 	/// Email data value type Id.
 	/// </summary>
 	private static readonly Guid EmailTextDataValueTypeUId  = new ("{66CBA64C-DAF1-4F36-B8EA-73C0D695D90C}");
+
+	/// <summary>
+	/// Image reference data value type Id.
+	/// </summary>
+	private static readonly Guid ImageReferenceDataValueTypeUId = new ("{B039FEB0-EE7C-4884-8AA6-D6D45D84316F}");
+
+	/// <summary>
+	/// Image content data value type Id.
+	/// </summary>
+	private static readonly Guid ImageContentDataValueTypeUId = new ("{FA6E6E49-B996-475E-A77E-73904E4C5A88}");
 
 	/// <summary>
 	/// Rich text data value type Id.

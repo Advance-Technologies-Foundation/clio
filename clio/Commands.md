@@ -2596,11 +2596,13 @@ clio create-data-binding [ -e <ENVIRONMENT_NAME> | --uri <APPLICATION_URI> ] --p
 
 Behavior:
 - Uses built-in offline template metadata when the requested schema is covered by the template catalog
-- In v1, `SysSettings` is available offline and template metadata always takes precedence over runtime schema fetches
+- In v1, `SysSettings` and `SysModule` are available offline and template metadata always takes precedence over runtime schema fetches
 - Creates or updates `<workspace>/packages/<package>/Data/<binding-name>`
 - Writes `descriptor.json`, `data.json`, and `filter.json`
 - Creates template `Localization/data.en-US.json` when `--values` is omitted
 - Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
+- For image-content columns, a string value that points to an existing local file inside the workspace is base64-encoded before writing `data.json`
+- `SysModule.IconBackground` accepts only this palette: `#A6DE00`, `#20A959`, `#22AC14`, `#FFAC07`, `#FF8800`, `#F9307F`, `#FF602E`, `#FF4013`, `#B87CCF`, `#7848EE`, `#247EE5`, `#0058EF`, `#009DE3`, `#4F43C2`, `#08857E`, `#00BFA5`
 - Writes additional localization files from `--localizations`
 - Rejects unknown columns and bindings that already target another schema
 
@@ -2612,6 +2614,8 @@ clio create-data-binding --package Custom --schema SysSettings
 clio create-data-binding -e dev --package Custom --schema SysSettings --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrSetting\",\"Name\":\"Setting name\"}"
 
 clio create-data-binding -e dev --package Custom --schema UsrCustomEntity --workspace-path C:\Work\MyWorkspace --values "{\"Name\":\"Runtime schema row\"}"
+
+clio create-data-binding --package Custom --schema SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
 ```
 
 ## add-data-binding-row
@@ -2626,6 +2630,8 @@ Behavior:
 - Resolves column names from the existing binding descriptor
 - Upserts rows by primary-key value
 - Auto-generates the GUID primary key when `--values` omits it or sets it to `null`
+- For image-content columns, a string value that points to an existing local file inside the workspace is base64-encoded before writing `data.json`
+- `SysModule.IconBackground` accepts only this palette: `#A6DE00`, `#20A959`, `#22AC14`, `#FFAC07`, `#FF8800`, `#F9307F`, `#FF602E`, `#FF4013`, `#B87CCF`, `#7848EE`, `#247EE5`, `#0058EF`, `#009DE3`, `#4F43C2`, `#08857E`, `#00BFA5`
 - Updates `Localization/data.<culture>.json` files when `--localizations` is supplied
 - Works entirely from the local binding files once the binding exists, including offline-template bindings
 
@@ -2633,6 +2639,8 @@ Example:
 
 ```bash
 clio add-data-binding-row --package Custom --binding-name SysSettings --values "{\"Name\":\"New name\"}"
+
+clio add-data-binding-row --package Custom --binding-name SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
 ```
 
 ## remove-data-binding-row
