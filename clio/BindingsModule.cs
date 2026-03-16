@@ -315,6 +315,9 @@ public class BindingsModule {
 		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateEntitySchemaCommand>();
+		services.AddTransient<ModifyEntitySchemaColumnCommand>();
+		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
+		services.AddTransient<GetEntitySchemaPropertiesCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
