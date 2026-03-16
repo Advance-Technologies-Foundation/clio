@@ -939,3 +939,10 @@ Decision: Replaced direct `Console.WriteLine` calls in `PushWorkspaceCommand` wi
 Discovery: `PushWorkspaceCommand` already had a narrow set of progress messages, so the fix was isolated to dependency injection and message routing without changing command behavior or MCP wiring.
 Files: C:\Projects\clio\clio\Command\PushWorkspaceCommand.cs, C:\Projects\clio\clio.tests\Command\McpServer\WorkspaceSyncToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: `PushWorkspaceCommand` no longer emits `CLIO002` for console logging, and the workspace-sync MCP test fixture remains aligned with the command constructor.
+
+## 2026-03-16 10:58 – Silence CommonProgramTest console spam
+Context: User reported that `CommonProgramTest` printed real logger output to the console, making CI logs noisy and harder to read.
+Decision: Marked the fixture non-parallel and redirected `Console.Out` and `Console.Error` to `TextWriter.Null` for the duration of each test, restoring the original writers in teardown.
+Discovery: The fixture assertions do not depend on console text, so suppressing the global writers at fixture scope removes the noise without changing test intent; the global console redirect needs non-parallel execution to avoid cross-test interference.
+Files: C:\Projects\clio\clio.tests\CommonProgramTest.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `CommonProgramTest` no longer floods CI output with logger text while still exercising `Program.Main` behavior.
