@@ -2434,6 +2434,26 @@ clio add-schema <SCHEMA_NAME> -t source-code -p <PACKAGE_NAME>
 
 Generate a model to start a business process with ATF.Repository package.
 
+```bash
+clio generate-process-model <Code> [options]
+```
+
+Arguments:
+
+`Code` (pos. 0): Process code as it appears in the Creatio process designer.
+
+Options:
+
+`-d, --DestinationPath` (string): Destination folder or explicit `.cs` file path. Default is current directory.
+
+`-n, --Namespace` (string): Namespace for the generated class. Default is `AtfTIDE.ProcessModels`.
+
+`-x, --Culture` (string): Culture used to resolve localized captions and descriptions. Default is `en-US`.
+
+`-e, --Environment` (string): Registered environment name.
+
+When `DestinationPath` points to a folder, the command writes `<Code>.cs` inside that folder. When it points to a `.cs` file, the command writes the generated model to that exact file.
+
 
 ## switch-nuget-to-dll-reference
 

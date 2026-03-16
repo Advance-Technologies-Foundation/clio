@@ -42,7 +42,7 @@ internal class AddItemOptions : EnvironmentOptions{
 	public bool CreateAll { get; set; }
 
 	[Option('x', "Culture", Required = false, HelpText = "Description culture", Default = "en-US")]
-	public string Culture { get; set; }
+	public string Culture { get; set; } = "en-US";
 
 	#endregion
 }

@@ -11,5 +11,7 @@ internal sealed class McpE2ESettings {
 internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
+	public string? ProcessCode { get; set; }
+
 	public string SeedKeyPrefix { get; set; } = "clio-mcp-e2e";
 }

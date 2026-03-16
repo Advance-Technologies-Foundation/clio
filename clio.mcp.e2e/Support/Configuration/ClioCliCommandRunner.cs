@@ -7,6 +7,9 @@ using FluentAssertions;
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal static class ClioCliCommandRunner {
+	private const int CliogateReadinessAttempts = 12;
+	private static readonly TimeSpan CliogateReadinessDelay = TimeSpan.FromSeconds(5);
+
 	public static async Task<ClioCliCommandResult> RunAsync(
 		McpE2ESettings settings,
 		IReadOnlyList<string> arguments,
@@ -59,6 +62,7 @@ internal static class ClioCliCommandRunner {
 			["install-gate", "-e", environmentName],
 			cancellationToken: cancellationToken);
 		if (installResult.ExitCode == 0) {
+			await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
 			return;
 		}
 
@@ -73,6 +77,41 @@ internal static class ClioCliCommandRunner {
 		cliogateAlreadyAvailable.Should().BeTrue(
 			because:
 			$"the arrange step must either install cliogate successfully or confirm that get-pkg-list already works. install stderr: {installResult.StandardError}. install stdout: {installResult.StandardOutput}. verification stdout: {getPkgListResult.StandardOutput}. verification stderr: {getPkgListResult.StandardError}");
+		await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
+	}
+
+	private static async Task WaitForCliogateReadinessAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		ClioCliCommandResult? lastResult = null;
+		for (int attempt = 0; attempt < CliogateReadinessAttempts; attempt++) {
+			lastResult = await RunAsync(
+				settings,
+				["get-pkg-list", "-e", environmentName, "--Json", "true"],
+				cancellationToken: cancellationToken);
+			if (lastResult.ExitCode == 0 &&
+				TryReadSuccessFlag(lastResult.StandardOutput, out bool success) &&
+				success) {
+				return;
+			}
+
+			if (attempt < CliogateReadinessAttempts - 1) {
+				await Task.Delay(CliogateReadinessDelay, cancellationToken);
+			}
+		}
+
+		lastResult.Should().NotBeNull(
+			because: "cliogate readiness polling should capture the last command result for diagnostics");
+		lastResult!.ExitCode.Should().Be(0,
+			because:
+			$"cliogate should become ready before destructive MCP tests proceed. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
+		TryReadSuccessFlag(lastResult.StandardOutput, out bool finalSuccess).Should().BeTrue(
+			because:
+			$"cliogate readiness polling should end only after get-pkg-list reports success. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
+		finalSuccess.Should().BeTrue(
+			because:
+			$"cliogate should become ready before destructive MCP tests proceed. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
 	}
 
 	private static bool TryReadSuccessFlag(string output, out bool success) {

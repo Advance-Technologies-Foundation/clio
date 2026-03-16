@@ -174,6 +174,7 @@ internal class Program {
 	];
 
 	internal static bool IsCfgOpenCommand;
+	internal static bool IsMcpServerMode { get; private set; }
 	public static IAppUpdater _appUpdater;
 
 	private static string[] NormalizeCommandLineArgs(string[] args) {
@@ -655,6 +656,7 @@ internal class Program {
 			}
 
 			bool isMcp = args.Contains("mcp-server");
+			IsMcpServerMode = isMcp;
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");

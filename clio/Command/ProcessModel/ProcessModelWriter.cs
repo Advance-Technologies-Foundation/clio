@@ -4,18 +4,30 @@ using System.Linq;
 using System.Text;
 using System.Web;
 using IFileSystem = Clio.Common.IFileSystem;
-using Path = System.IO.Path;
 
 namespace Clio.Command.ProcessModel;
 
+/// <summary>
+/// Writes generated process-model source files to disk.
+/// </summary>
 public interface IProcessModelWriter{
+	/// <summary>
+	/// Writes the generated process model to either an explicit file path or a destination folder.
+	/// </summary>
+	/// <param name="processModel">The generated process model metadata.</param>
+	/// <param name="nameSpace">The namespace for the generated class.</param>
+	/// <param name="filePath">The target file path or destination folder path.</param>
+	/// <param name="culture">The culture used to resolve localized captions and descriptions.</param>
 	void WriteFileFromModel(ProcessModel processModel, string nameSpace, string filePath, string culture);
 }
 
+/// <summary>
+/// Default file-system-backed implementation of <see cref="IProcessModelWriter"/>.
+/// </summary>
 public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 	public void WriteFileFromModel(ProcessModel processModel, string nameSpace, string fileOrFolderPath, string culture) {
 		string fileContent = CreateFileContent(processModel, nameSpace, culture);
-		WriteFle(processModel, fileContent, fileOrFolderPath);
+		WriteFile(processModel, fileContent, fileOrFolderPath);
 	}
 	
 	
@@ -65,15 +77,54 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 		return builder.ToString();
 	}
 
-	private void WriteFle(ProcessModel processModel, string content, string fileOrFolderPath ) {
-		string path = Path.Join(Environment.CurrentDirectory, fileOrFolderPath);
-		string dirName = Path.GetDirectoryName(path);
-		fileSystem.CreateDirectoryIfNotExists(dirName);
-		string filePath = Path.Combine(dirName, $"{processModel.Code}.cs");
+	private void WriteFile(ProcessModel processModel, string content, string fileOrFolderPath) {
+		string filePath = ResolveOutputFilePath(processModel, fileOrFolderPath);
+		string? directoryPath = GetParentDirectoryPath(filePath);
+		if (!string.IsNullOrWhiteSpace(directoryPath)) {
+			fileSystem.CreateDirectoryIfNotExists(directoryPath);
+		}
+
 		if (fileSystem.ExistsFile(filePath)) {
 			fileSystem.DeleteFile(filePath);
 		}
+
 		fileSystem.WriteAllTextToFile(filePath, content);
+	}
+
+	private string ResolveOutputFilePath(ProcessModel processModel, string fileOrFolderPath) {
+		if (IsExplicitFilePath(fileOrFolderPath)) {
+			return fileOrFolderPath;
+		}
+
+		return fileSystem.Combine(fileOrFolderPath, $"{processModel.Code}.cs");
+	}
+
+	private bool IsExplicitFilePath(string fileOrFolderPath) {
+		if (fileSystem.ExistsDirectory(fileOrFolderPath)) {
+			return false;
+		}
+
+		if (fileSystem.ExistsFile(fileOrFolderPath)) {
+			return true;
+		}
+
+		if (fileOrFolderPath.EndsWith(fileSystem.DirectorySeparatorChar) ||
+			fileOrFolderPath.EndsWith('/')) {
+			return false;
+		}
+
+		return !string.IsNullOrWhiteSpace(fileSystem.ExtractFileExtensionFromPath(fileOrFolderPath));
+	}
+
+	private static string? GetParentDirectoryPath(string filePath) {
+		int lastSeparatorIndex = filePath.LastIndexOfAny(['\\', '/']);
+		return lastSeparatorIndex switch {
+			< 0 => null,
+			0 => filePath[..1],
+			2 when filePath.Length > 2 && filePath[1] == ':' &&
+				(filePath[2] == '\\' || filePath[2] == '/') => filePath[..3],
+			_ => filePath[..lastSeparatorIndex]
+		};
 	}
 	
 	private static (string main, List<string> classes) GenerateStringForProperty(ProcessModel processModel, string culture) {

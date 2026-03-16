@@ -104,11 +104,13 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	private void WriteErrorInternal(string value){
-		Console.ForegroundColor = ConsoleColor.Red;
 		string linePrefix = GetLinePrefix("[ERR]");
-		Console.Error.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.Error.WriteLine(value);
+		if (!Program.IsMcpServerMode) {
+			Console.ForegroundColor = ConsoleColor.Red;
+			Console.Error.Write(linePrefix);
+			Console.ForegroundColor = _defaultConsoleColor;
+			Console.Error.WriteLine(value);
+		}
 		//Console.WriteLine(value);
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
@@ -120,10 +122,12 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	private void WriteInfoInternal(string value){
 		string linePrefix = GetLinePrefix("[INF]");
-		Console.ForegroundColor = ConsoleColor.Green;
-		Console.Out.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.Out.WriteLine(value);
+		if (!Program.IsMcpServerMode) {
+			Console.ForegroundColor = ConsoleColor.Green;
+			Console.Out.Write(linePrefix);
+			Console.ForegroundColor = _defaultConsoleColor;
+			Console.Out.WriteLine(value);
+		}
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
@@ -131,17 +135,21 @@ public class ConsoleLogger : ILogger, IDisposable{
 	
 	private void PrintDebugInternal(string value){
 		string linePrefix = GetLinePrefix("[DBG]");
-		Console.ForegroundColor = ConsoleColor.DarkYellow;
-		Console.Out.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.Out.WriteLine(value);
+		if (!Program.IsMcpServerMode) {
+			Console.ForegroundColor = ConsoleColor.DarkYellow;
+			Console.Out.Write(linePrefix);
+			Console.ForegroundColor = _defaultConsoleColor;
+			Console.Out.WriteLine(value);
+		}
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");
 	}
 
 	private void WriteLineInternal(string value){
-		Console.Out.WriteLine(value);
+		if (!Program.IsMcpServerMode) {
+			Console.Out.WriteLine(value);
+		}
 		string linePrefix = GetLinePrefix();
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
@@ -149,11 +157,13 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	private void WriteWarningInternal(string value){
-		Console.ForegroundColor = ConsoleColor.DarkYellow;
 		string linePrefix = GetLinePrefix("[WAR]");
-		Console.Out.Write(linePrefix);
-		Console.ForegroundColor = _defaultConsoleColor;
-		Console.Out.WriteLine(value);
+		if (!Program.IsMcpServerMode) {
+			Console.ForegroundColor = ConsoleColor.DarkYellow;
+			Console.Out.Write(linePrefix);
+			Console.ForegroundColor = _defaultConsoleColor;
+			Console.Out.WriteLine(value);
+		}
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
 		_creatioLogStreamer?.WriteLine($"{linePrefix}{value}");

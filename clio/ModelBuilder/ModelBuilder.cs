@@ -24,6 +24,8 @@ internal class ModelBuilder : IModelBuilder{
 	#region Constants: Private
 
 	private const string DefaultNamespace = "Models";
+	private const int SchemaRequestRetryCount = 3;
+	private const int SchemaRequestDelaySeconds = 2;
 
 	#endregion
 
@@ -31,6 +33,7 @@ internal class ModelBuilder : IModelBuilder{
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly Dictionary<string, List<DetailConnection>> _detailConnectionsByMasterSchema = new();
+	private readonly ILogger _logger;
 	private readonly Dictionary<string, Schema> _schemas = new();
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -41,10 +44,11 @@ internal class ModelBuilder : IModelBuilder{
 	#region Constructors: Public
 
 	public ModelBuilder(IApplicationClient applicationClient,
-		IWorkingDirectoriesProvider workingDirectoriesProvider, IServiceUrlBuilder serviceUrlBuilder) {
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
 		_applicationClient = applicationClient;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_logger = logger;
 	}
 
 	#endregion
@@ -338,7 +342,11 @@ internal class ModelBuilder : IModelBuilder{
 	}
 
 	private void GetEntitySchemasAsync() {
-		string responseJson = _applicationClient.ExecutePostRequest(EntitySchemaManagerRequestUrl, string.Empty);
+		string responseJson = _applicationClient.ExecutePostRequest(
+			EntitySchemaManagerRequestUrl,
+			string.Empty,
+			retryCount: SchemaRequestRetryCount,
+			delaySec: SchemaRequestDelaySeconds);
 
 		JsonSerializerSettings settings = new() {
 			NullValueHandling = NullValueHandling.Ignore
@@ -355,13 +363,24 @@ internal class ModelBuilder : IModelBuilder{
 	private void GetRuntimeEntitySchema(KeyValuePair<string, Schema> schema) {
 		string definition
 			= _applicationClient.ExecutePostRequest(RuntimeEntitySchemaRequestUrl,
-				$"{{\"Name\" : \"{schema.Key}\"}}");
+				$"{{\"Name\" : \"{schema.Key}\"}}",
+				retryCount: SchemaRequestRetryCount,
+				delaySec: SchemaRequestDelaySeconds);
 
-		JToken jt = JToken.Parse(definition);
+		JToken jt;
+		try {
+			jt = JToken.Parse(definition);
+		}
+		catch (JsonReaderException exception) {
+			string responsePreview = definition.Length > 200 ? definition[..200] : definition;
+			throw new InvalidOperationException(
+				$"Failed to parse runtime schema '{schema.Key}'. Response starts with: {responsePreview}",
+				exception);
+		}
 		JToken items = jt.SelectToken("$.schema.columns.Items");
 
 		if (items == null) {
-			Console.WriteLine($"Schema {schema.Key} not found");
+			_logger.WriteLine($"Schema {schema.Key} not found");
 			return;
 		}
 
@@ -383,6 +402,18 @@ internal class ModelBuilder : IModelBuilder{
 		}
 	}
 
+	private void PopulateRuntimeSchemas() {
+		if (Program.IsMcpServerMode) {
+			foreach (KeyValuePair<string, Schema> schema in _schemas) {
+				GetRuntimeEntitySchema(schema);
+			}
+
+			return;
+		}
+
+		Parallel.ForEach(_schemas, new ParallelOptions { MaxDegreeOfParallelism = 4 }, GetRuntimeEntitySchema);
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -390,14 +421,13 @@ internal class ModelBuilder : IModelBuilder{
 	public void GetModels(AddItemOptions opts) {
 		_opts = opts;
 		GetEntitySchemasAsync();
-
-		Parallel.ForEach(_schemas, new ParallelOptions { MaxDegreeOfParallelism = 4 }, GetRuntimeEntitySchema);
+		PopulateRuntimeSchemas();
 		BuildDetailConnections();
 		if (string.IsNullOrWhiteSpace(_opts.DestinationPath)) {
 			_opts.DestinationPath = _workingDirectoriesProvider.CurrentDirectory;
 		}
 
-		Console.WriteLine($"Models will be generated in directory: {_opts.DestinationPath}");
+		_logger.WriteLine($"Models will be generated in directory: {_opts.DestinationPath}");
 		DirectoryInfo di = new(_opts.DestinationPath);
 		if (!di.Exists) {
 			di.Create();
@@ -407,11 +437,11 @@ internal class ModelBuilder : IModelBuilder{
 		foreach (KeyValuePair<string, Schema> schema in _schemas) {
 			string filePath = Path.Combine(_opts.DestinationPath, schema.Key + ".cs");
 			File.WriteAllText(filePath, CreateClassFileText(schema));
-			Console.Write($"Generated: {++i} models from {_schemas.Count}\r");
+			_logger.Write($"Generated: {++i} models from {_schemas.Count}\r");
 		}
 
 		CreateExtensionClass(_opts.Namespace ?? DefaultNamespace);
-		Console.WriteLine();
+		_logger.WriteLine();
 	}
 
 	#endregion
