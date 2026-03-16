@@ -119,8 +119,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.UId == NameColumnUId);
 		savedColumn.Name.Should().Be("PrimaryOwner", because: "rename should update the column code");
-		savedColumn.Caption.Single().Value.Should().Be("Primary owner", because: "title should be updated");
-		savedColumn.Description.Single().Value.Should().Be("Main owner reference",
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("Primary owner",
+			because: "title should be updated for the effective current culture without assuming a single localization entry");
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Description).Should().Be("Main owner reference",
 			because: "description should be updated");
 		savedColumn.ReferenceSchema.Name.Should().Be("Contact",
 			because: "lookup reference changes must be reflected in the saved payload");
