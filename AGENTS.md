@@ -131,6 +131,9 @@ Treat custom `CLIO*` diagnostics as actionable and rely on `clio/.editorconfig` 
 - `CLIO9xx`: experimental/incubation (low importance).
 - Because `.editorconfig` cannot define numeric ranges directly, add explicit per-ID severity entries for each new rule.
 - Favor fixing diagnostics over suppressing; if suppression is required, add a short justification comment near the suppression.
+- When modifying an existing file, fix relevant `CLIO*` warnings in that file within the edited scope instead of leaving them behind.
+- Never introduce new `CLIO*` warnings in newly added or modified code.
+- Treat clean `CLIO*` diagnostics in modified files as part of task acceptance.
 
 ### CLIO001 specifics
 

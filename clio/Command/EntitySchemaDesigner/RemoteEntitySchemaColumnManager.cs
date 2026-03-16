@@ -9,6 +9,20 @@ namespace Clio.Command.EntitySchemaDesigner;
 
 public interface IRemoteEntitySchemaColumnManager
 {
+	/// <summary>
+	/// Returns a structured snapshot of schema properties for the requested remote entity schema.
+	/// </summary>
+	/// <param name="options">Options that identify the package, schema, and remote environment.</param>
+	/// <returns>Structured schema properties for MCP and CLI formatting.</returns>
+	EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options);
+
+	/// <summary>
+	/// Returns a structured snapshot of column properties for the requested remote entity schema column.
+	/// </summary>
+	/// <param name="options">Options that identify the package, schema, column, and remote environment.</param>
+	/// <returns>Structured column properties for MCP and CLI formatting.</returns>
+	EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options);
+
 	void ModifyColumn(ModifyEntitySchemaColumnOptions options);
 	void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options);
 	void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options);
@@ -42,7 +56,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				RemoveColumn(schema, options.ColumnName);
 				break;
 			default:
-				throw new InvalidOperationException($"Unsupported action '{options.Action}'.");
+				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
 		}
 
 		_entitySchemaDesignerClient.SaveSchema(schema, options);
@@ -50,31 +64,57 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			$"Column '{options.ColumnName}' action '{options.Action}' completed for schema '{options.SchemaName}'.");
 	}
 
-	public void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
+	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		return new EntitySchemaColumnPropertiesInfo(
+			schema.Name,
+			schema.Package?.Name ?? options.Package,
+			column.Name,
+			source,
+			EntitySchemaDesignerSupport.GetLocalizableValue(column.Caption, cultureName),
+			EntitySchemaDesignerSupport.GetLocalizableValue(column.Description, cultureName),
+			GetFriendlyTypeName(column.DataValueType),
+			IsRequired(column.RequirementType),
+			column.Indexed,
+			column.IsValueCloneable,
+			column.IsTrackChangesInDB,
+			column.DefValue?.Value?.ToString(),
+			column.ReferenceSchema?.Name,
+			column.List,
+			column.CascadeConnection,
+			column.DoNotControlIntegrity,
+			column.MultiLineText,
+			column.LocalizableText,
+			column.AccentInsensitive,
+			column.Masked,
+			column.FormatValidated,
+			column.UseSeconds);
+	}
+
+	public void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
+		EntitySchemaColumnPropertiesInfo column = GetColumnProperties(options);
 		WriteInfo("Entity schema column properties");
-		WriteInfo($"Schema: {schema.Name}");
-		WriteInfo($"Package: {schema.Package?.Name ?? options.Package}");
-		WriteInfo($"Column: {column.Name}");
-		WriteInfo($"Source: {source}");
-		WriteInfo($"Title: {EntitySchemaDesignerSupport.GetLocalizableValue(column.Caption, cultureName) ?? "<none>"}");
-		WriteInfo(
-			$"Description: {EntitySchemaDesignerSupport.GetLocalizableValue(column.Description, cultureName) ?? "<none>"}");
-		WriteInfo($"Type: {GetFriendlyTypeName(column.DataValueType)}");
-		WriteInfo($"Required: {FormatRequired(column.RequirementType)}");
+		WriteInfo($"Schema: {column.SchemaName}");
+		WriteInfo($"Package: {column.PackageName}");
+		WriteInfo($"Column: {column.ColumnName}");
+		WriteInfo($"Source: {column.Source}");
+		WriteInfo($"Title: {FormatText(column.Title)}");
+		WriteInfo($"Description: {FormatText(column.Description)}");
+		WriteInfo($"Type: {column.Type}");
+		WriteInfo($"Required: {FormatBoolean(column.Required)}");
 		WriteInfo($"Indexed: {FormatBoolean(column.Indexed)}");
-		WriteInfo($"Cloneable: {FormatBoolean(column.IsValueCloneable)}");
-		WriteInfo($"Track changes: {FormatBoolean(column.IsTrackChangesInDB)}");
-		WriteInfo($"Default value: {column.DefValue?.Value?.ToString() ?? "<none>"}");
-		WriteInfo($"Reference schema: {column.ReferenceSchema?.Name ?? "<none>"}");
-		WriteInfo($"Simple lookup: {FormatBoolean(column.List)}");
-		WriteInfo($"Cascade: {FormatBoolean(column.CascadeConnection)}");
+		WriteInfo($"Cloneable: {FormatBoolean(column.Cloneable)}");
+		WriteInfo($"Track changes: {FormatBoolean(column.TrackChanges)}");
+		WriteInfo($"Default value: {FormatText(column.DefaultValue)}");
+		WriteInfo($"Reference schema: {FormatText(column.ReferenceSchemaName)}");
+		WriteInfo($"Simple lookup: {FormatBoolean(column.SimpleLookup)}");
+		WriteInfo($"Cascade: {FormatBoolean(column.Cascade)}");
 		WriteInfo($"Do not control integrity: {FormatBoolean(column.DoNotControlIntegrity)}");
-		WriteInfo($"Multiline text: {FormatBoolean(column.MultiLineText)}");
+		WriteInfo($"Multiline text: {FormatBoolean(column.MultilineText)}");
 		WriteInfo($"Localizable text: {FormatBoolean(column.LocalizableText)}");
 		WriteInfo($"Accent insensitive: {FormatBoolean(column.AccentInsensitive)}");
 		WriteInfo($"Masked: {FormatBoolean(column.Masked)}");
@@ -82,30 +122,56 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Use seconds: {FormatBoolean(column.UseSeconds)}");
 	}
 
-	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {
+	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
+		return new EntitySchemaPropertiesInfo(
+			schema.Name,
+			EntitySchemaDesignerSupport.GetLocalizableValue(schema.Caption, cultureName),
+			EntitySchemaDesignerSupport.GetLocalizableValue(schema.Description, cultureName),
+			schema.Package?.Name ?? package.Descriptor.Name,
+			schema.ParentSchema?.Name,
+			schema.ExtendParent,
+			schema.PrimaryColumn?.Name,
+			schema.PrimaryDisplayColumn?.Name,
+			ownColumns.Count,
+			inheritedColumns.Count,
+			schema.Indexes?.Count() ?? 0,
+			schema.IsTrackChangesInDB,
+			schema.IsDBView,
+			schema.IsSSPAvailable,
+			schema.IsVirtual,
+			schema.UseRecordDeactivation,
+			schema.ShowInAdvancedMode,
+			schema.AdministratedByOperations,
+			schema.AdministratedByColumns,
+			schema.AdministratedByRecords,
+			schema.UseDenyRecordRights,
+			schema.UseLiveEditing);
+	}
+
+	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {
+		EntitySchemaPropertiesInfo schema = GetSchemaProperties(options);
 		WriteInfo("Entity schema properties");
 		WriteInfo($"Name: {schema.Name}");
-		WriteInfo($"Title: {EntitySchemaDesignerSupport.GetLocalizableValue(schema.Caption, cultureName) ?? "<none>"}");
-		WriteInfo(
-			$"Description: {EntitySchemaDesignerSupport.GetLocalizableValue(schema.Description, cultureName) ?? "<none>"}");
-		WriteInfo($"Package: {schema.Package?.Name ?? package.Descriptor.Name}");
-		WriteInfo($"Parent schema: {schema.ParentSchema?.Name ?? "<none>"}");
+		WriteInfo($"Title: {FormatText(schema.Title)}");
+		WriteInfo($"Description: {FormatText(schema.Description)}");
+		WriteInfo($"Package: {schema.PackageName}");
+		WriteInfo($"Parent schema: {FormatText(schema.ParentSchemaName)}");
 		WriteInfo($"Extend parent: {FormatBoolean(schema.ExtendParent)}");
-		WriteInfo($"Primary column: {schema.PrimaryColumn?.Name ?? "<none>"}");
-		WriteInfo($"Primary display column: {schema.PrimaryDisplayColumn?.Name ?? "<none>"}");
-		WriteInfo($"Own columns: {ownColumns.Count}");
-		WriteInfo($"Inherited columns: {inheritedColumns.Count}");
-		WriteInfo($"Indexes: {schema.Indexes?.Count() ?? 0}");
-		WriteInfo($"Track changes in DB: {FormatBoolean(schema.IsTrackChangesInDB)}");
-		WriteInfo($"DB view: {FormatBoolean(schema.IsDBView)}");
-		WriteInfo($"SSP available: {FormatBoolean(schema.IsSSPAvailable)}");
-		WriteInfo($"Virtual: {FormatBoolean(schema.IsVirtual)}");
+		WriteInfo($"Primary column: {FormatText(schema.PrimaryColumnName)}");
+		WriteInfo($"Primary display column: {FormatText(schema.PrimaryDisplayColumnName)}");
+		WriteInfo($"Own columns: {schema.OwnColumnCount}");
+		WriteInfo($"Inherited columns: {schema.InheritedColumnCount}");
+		WriteInfo($"Indexes: {schema.IndexesCount}");
+		WriteInfo($"Track changes in DB: {FormatBoolean(schema.TrackChangesInDb)}");
+		WriteInfo($"DB view: {FormatBoolean(schema.DbView)}");
+		WriteInfo($"SSP available: {FormatBoolean(schema.SspAvailable)}");
+		WriteInfo($"Virtual: {FormatBoolean(schema.Virtual)}");
 		WriteInfo($"Use record deactivation: {FormatBoolean(schema.UseRecordDeactivation)}");
 		WriteInfo($"Show in advanced mode: {FormatBoolean(schema.ShowInAdvancedMode)}");
 		WriteInfo($"Administrated by operations: {FormatBoolean(schema.AdministratedByOperations)}");
@@ -231,7 +297,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 					options);
 				column.ReferenceSchema = CreateReferenceSchema(referenceSchema);
 			} else if (column.ReferenceSchema == null) {
-				throw new InvalidOperationException(
+				throw new EntitySchemaDesignerException(
 					$"Lookup column '{options.ColumnName}' must specify --reference-schema.");
 			}
 			if (options.SimpleLookup.HasValue) {
@@ -279,7 +345,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return currentReference;
 		}
 		if (!string.IsNullOrWhiteSpace(requiredReferenceName) && fallbackColumn == null) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				$"Cannot remove column '{removedColumn.Name}' because it is the {requiredReferenceName.ToLowerInvariant()} and no valid fallback exists.");
 		}
 		return fallbackColumn;
@@ -291,13 +357,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		bool isDateTime = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["datetime"];
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
-				throw new InvalidOperationException("Lookup columns require --reference-schema.");
+				throw new EntitySchemaDesignerException("Lookup columns require --reference-schema.");
 			}
 		} else if (!string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
 			|| options.SimpleLookup.HasValue
 			|| options.Cascade.HasValue
 			|| options.DoNotControlIntegrity.HasValue) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				"Lookup-specific options can be used only when the effective column type is Lookup.");
 		}
 
@@ -306,12 +372,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			|| options.AccentInsensitive.HasValue
 			|| options.Masked.HasValue
 			|| options.FormatValidated.HasValue)) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				"Text-specific options can be used only when the effective column type is Text.");
 		}
 
 		if (!isDateTime && options.UseSeconds.HasValue) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				"--use-seconds can be used only when the effective column type is DateTime.");
 		}
 	}
@@ -327,11 +393,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaColumnDto inheritedColumn = (schema.InheritedColumns?.ToList() ?? []).FirstOrDefault(column =>
 			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 		if (inheritedColumn != null) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				$"Column '{columnName}' is inherited and read-only in v1.");
 		}
 
-		throw new InvalidOperationException(
+		throw new EntitySchemaDesignerException(
 			$"Column '{columnName}' was not found in schema '{schema.Name}'.");
 	}
 
@@ -348,7 +414,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return (inheritedColumn, "inherited");
 		}
 
-		throw new InvalidOperationException(
+		throw new EntitySchemaDesignerException(
 			$"Column '{columnName}' was not found in schema '{schema.Name}'.");
 	}
 
@@ -357,7 +423,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			.Any(column => column.UId != excludeUId
 				&& string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase));
 		if (hasDuplicate) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				$"Column '{name}' already exists in schema '{schema.Name}'.");
 		}
 	}
@@ -372,7 +438,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			},
 			options);
 		EntityDesignSchemaDto schema = response.Schema
-			?? throw new InvalidOperationException(
+			?? throw new EntitySchemaDesignerException(
 				$"GetSchemaDesignItem returned no schema for '{schemaName}'.");
 		schema.Columns = schema.Columns?.ToList() ?? [];
 		schema.InheritedColumns = schema.InheritedColumns?.ToList() ?? [];
@@ -382,10 +448,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static int ParseSupportedType(string typeName, string actionName) {
 		if (string.IsNullOrWhiteSpace(typeName)) {
-			throw new InvalidOperationException($"--type is required for '{actionName}' action.");
+			throw new EntitySchemaDesignerException($"--type is required for '{actionName}' action.");
 		}
 		if (!EntitySchemaDesignerSupport.SupportedDataValueTypes.TryGetValue(typeName.Trim(), out int dataValueType)) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				$"Unsupported type '{typeName}'. Supported types: {EntitySchemaDesignerSupport.GetSupportedTypesList()}.");
 		}
 		return dataValueType;
@@ -402,7 +468,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			options);
 		ManagerItemDto referenceSchema = response.Items?.FirstOrDefault(item =>
 			string.Equals(item.Name, referenceSchemaName, StringComparison.OrdinalIgnoreCase));
-		return referenceSchema ?? throw new InvalidOperationException(
+		return referenceSchema ?? throw new EntitySchemaDesignerException(
 			$"Reference schema '{referenceSchemaName}' was not found.");
 	}
 
@@ -418,7 +484,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = _applicationPackageListProvider.GetPackages()
 			.FirstOrDefault(item =>
 				string.Equals(item.Descriptor.Name, packageName, StringComparison.OrdinalIgnoreCase));
-		return package ?? throw new InvalidOperationException($"Package '{packageName}' was not found.");
+		return package ?? throw new EntitySchemaDesignerException($"Package '{packageName}' was not found.");
 	}
 
 	private static List<EntitySchemaColumnDto> GetAllColumns(EntityDesignSchemaDto schema) {
@@ -429,7 +495,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static EntitySchemaColumnAction NormalizeAction(string action) {
 		if (!Enum.TryParse(action, true, out EntitySchemaColumnAction normalizedAction)) {
-			throw new InvalidOperationException(
+			throw new EntitySchemaDesignerException(
 				$"Unsupported action '{action}'. Supported actions: add, modify, remove.");
 		}
 		return normalizedAction;
@@ -458,12 +524,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			};
 	}
 
-	private static string FormatRequired(int requirementType) {
-		return requirementType == (int)EntitySchemaColumnRequirementType.None ? "false" : "true";
+	private static bool IsRequired(int requirementType) {
+		return requirementType != (int)EntitySchemaColumnRequirementType.None;
 	}
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatText(string? value) {
+		return string.IsNullOrWhiteSpace(value) ? "<none>" : value;
 	}
 
 	private void WriteInfo(string message) {

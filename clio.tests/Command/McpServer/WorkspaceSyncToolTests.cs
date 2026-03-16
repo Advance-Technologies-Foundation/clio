@@ -251,6 +251,7 @@ public sealed class WorkspaceSyncToolTests {
 				Substitute.For<IApplicationClientFactory>(),
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
+				Substitute.For<ILogger>(),
 				new LinkWorkspaceWithTideRepositoryCommand(
 					Substitute.For<ATF.Repository.Providers.IDataProvider>(),
 					Substitute.For<IWorkspace>())) {

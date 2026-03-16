@@ -37,8 +37,8 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 
 	public override int Execute(GetEntitySchemaColumnPropertiesOptions options) {
 		try {
-			Validate(options);
-			_columnManager.PrintColumnProperties(options);
+			EntitySchemaColumnPropertiesInfo properties = GetColumnProperties(options);
+			WriteColumnProperties(properties);
 			return 0;
 		} catch (Exception exception) {
 			_logger.WriteError(exception.Message);
@@ -46,16 +46,55 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 		}
 	}
 
+	internal EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
+		Validate(options);
+		return _columnManager.GetColumnProperties(options);
+	}
+
 	private static void Validate(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new InvalidOperationException("Package is required.");
+			throw new ArgumentException("Package is required.", nameof(options.Package));
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new InvalidOperationException("Schema name is required.");
+			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
 		}
 		if (string.IsNullOrWhiteSpace(options.ColumnName)) {
-			throw new InvalidOperationException("Column name is required.");
+			throw new ArgumentException("Column name is required.", nameof(options.ColumnName));
 		}
+	}
+
+	private void WriteColumnProperties(EntitySchemaColumnPropertiesInfo properties) {
+		_logger.WriteInfo("Entity schema column properties");
+		_logger.WriteInfo($"Schema: {properties.SchemaName}");
+		_logger.WriteInfo($"Package: {properties.PackageName}");
+		_logger.WriteInfo($"Column: {properties.ColumnName}");
+		_logger.WriteInfo($"Source: {properties.Source}");
+		_logger.WriteInfo($"Title: {FormatText(properties.Title)}");
+		_logger.WriteInfo($"Description: {FormatText(properties.Description)}");
+		_logger.WriteInfo($"Type: {properties.Type}");
+		_logger.WriteInfo($"Required: {FormatBoolean(properties.Required)}");
+		_logger.WriteInfo($"Indexed: {FormatBoolean(properties.Indexed)}");
+		_logger.WriteInfo($"Cloneable: {FormatBoolean(properties.Cloneable)}");
+		_logger.WriteInfo($"Track changes: {FormatBoolean(properties.TrackChanges)}");
+		_logger.WriteInfo($"Default value: {FormatText(properties.DefaultValue)}");
+		_logger.WriteInfo($"Reference schema: {FormatText(properties.ReferenceSchemaName)}");
+		_logger.WriteInfo($"Simple lookup: {FormatBoolean(properties.SimpleLookup)}");
+		_logger.WriteInfo($"Cascade: {FormatBoolean(properties.Cascade)}");
+		_logger.WriteInfo($"Do not control integrity: {FormatBoolean(properties.DoNotControlIntegrity)}");
+		_logger.WriteInfo($"Multiline text: {FormatBoolean(properties.MultilineText)}");
+		_logger.WriteInfo($"Localizable text: {FormatBoolean(properties.LocalizableText)}");
+		_logger.WriteInfo($"Accent insensitive: {FormatBoolean(properties.AccentInsensitive)}");
+		_logger.WriteInfo($"Masked: {FormatBoolean(properties.Masked)}");
+		_logger.WriteInfo($"Format validated: {FormatBoolean(properties.FormatValidated)}");
+		_logger.WriteInfo($"Use seconds: {FormatBoolean(properties.UseSeconds)}");
+	}
+
+	private static string FormatBoolean(bool value) {
+		return value ? "true" : "false";
+	}
+
+	private static string FormatText(string? value) {
+		return string.IsNullOrWhiteSpace(value) ? "<none>" : value;
 	}
 }

@@ -1,4 +1,5 @@
 using System;
+using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -32,7 +33,8 @@ internal class RemoteEntitySchemaDesignerClientTests
 			.Returns("{\"success\":true,\"schema\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrCodex0307\",\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}");
 
 		// Act
-		DesignerResponse<EntityDesignSchemaDto> response = _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> response =
+			_client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
 			Name = "UsrCodex0307",
 			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
 			UseFullHierarchy = true
@@ -53,7 +55,8 @@ internal class RemoteEntitySchemaDesignerClientTests
 			.Returns("\"{\\\"success\\\":true,\\\"schema\\\":{\\\"uId\\\":\\\"11111111-1111-1111-1111-111111111111\\\",\\\"name\\\":\\\"UsrCodex0307\\\",\\\"columns\\\":[],\\\"inheritedColumns\\\":[],\\\"indexes\\\":[]}}\"");
 
 		// Act
-		DesignerResponse<EntityDesignSchemaDto> response = _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> response =
+			_client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
 			Name = "UsrCodex0307",
 			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
 			UseFullHierarchy = true

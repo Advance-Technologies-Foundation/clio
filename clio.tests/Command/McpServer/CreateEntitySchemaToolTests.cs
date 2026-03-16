@@ -1,15 +1,31 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using ModelContextProtocol.Server;
 
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 public class CreateEntitySchemaToolTests {
+
+	[Test]
+	[Description("Advertises a stable MCP tool name for remote entity schema creation.")]
+	[Category("Unit")]
+	public void CreateEntitySchemaTool_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+
+		// Act
+		string toolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
+
+		// Assert
+		toolName.Should().Be("create-entity-schema",
+			because: "tests and MCP callers should use the shared production constant");
+	}
 
 	[Test]
 	[Description("Resolves the create entity schema command for the requested environment and maps structured MCP column inputs into command options.")]
@@ -54,6 +70,26 @@ public class CreateEntitySchemaToolTests {
 			"Owner:Lookup:Owner:Contact"
 		}, "because MCP structured columns should map to the command column format");
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Marks create-entity-schema as destructive because it mutates a remote Creatio package.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Be_Marked_As_Destructive() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CreateEntitySchemaTool)
+			.GetMethod(nameof(CreateEntitySchemaTool.CreateEntitySchema))!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(
+			because: "creating a remote entity schema changes the target package state");
 	}
 
 	[Test]

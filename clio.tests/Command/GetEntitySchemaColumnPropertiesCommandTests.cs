@@ -30,27 +30,52 @@ internal class GetEntitySchemaColumnPropertiesCommandTests : BaseCommandTests<Ge
 
 	[Test]
 	[Description("Prints column properties when all required identifiers are provided.")]
-	public void Execute_CallsColumnManager_WhenOptionsAreValid() {
+	public void Execute_ReadsStructuredColumnProperties_WhenOptionsAreValid() {
 		// Arrange
-		var options = new GetEntitySchemaColumnPropertiesOptions {
+		GetEntitySchemaColumnPropertiesOptions options = new() {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			ColumnName = "Name"
 		};
+		_columnManager.GetColumnProperties(options).Returns(new EntitySchemaColumnPropertiesInfo(
+			"UsrVehicle",
+			"UsrPkg",
+			"Name",
+			"own",
+			"Vehicle name",
+			"Readable vehicle name",
+			"Text",
+			true,
+			true,
+			false,
+			true,
+			"Vehicle",
+			null,
+			false,
+			false,
+			false,
+			true,
+			true,
+			true,
+			false,
+			false,
+			false));
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(0, because: "valid read options should call the remote reader");
-		_columnManager.Received(1).PrintColumnProperties(options);
+		_columnManager.Received(1).GetColumnProperties(options);
+		_logger.Received(1).WriteInfo("Entity schema column properties");
+		_logger.Received(1).WriteInfo("Source: own");
 	}
 
 	[Test]
 	[Description("Rejects requests that omit the column name.")]
 	public void Execute_ReturnsFailure_WhenColumnNameIsMissing() {
 		// Arrange
-		var options = new GetEntitySchemaColumnPropertiesOptions {
+		GetEntitySchemaColumnPropertiesOptions options = new() {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			ColumnName = ""
@@ -61,7 +86,7 @@ internal class GetEntitySchemaColumnPropertiesCommandTests : BaseCommandTests<Ge
 
 		// Assert
 		result.Should().Be(1, because: "column identity is required for a column read");
-		_columnManager.DidNotReceiveWithAnyArgs().PrintColumnProperties(default);
+		_columnManager.DidNotReceiveWithAnyArgs().GetColumnProperties(default);
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Column name is required.")));
 	}
 }

@@ -30,26 +30,51 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 
 	[Test]
 	[Description("Prints schema properties when all required identifiers are provided.")]
-	public void Execute_CallsColumnManager_WhenOptionsAreValid() {
+	public void Execute_ReadsStructuredSchemaProperties_WhenOptionsAreValid() {
 		// Arrange
-		var options = new GetEntitySchemaPropertiesOptions {
+		GetEntitySchemaPropertiesOptions options = new() {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle"
 		};
+		_columnManager.GetSchemaProperties(options).Returns(new EntitySchemaPropertiesInfo(
+			"UsrVehicle",
+			"Vehicle",
+			"Vehicle catalog",
+			"UsrPkg",
+			"BaseEntity",
+			true,
+			"Id",
+			"Name",
+			2,
+			1,
+			3,
+			true,
+			false,
+			true,
+			false,
+			false,
+			true,
+			false,
+			true,
+			false,
+			false,
+			true));
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(0, because: "valid schema read options should call the remote reader");
-		_columnManager.Received(1).PrintSchemaProperties(options);
+		_columnManager.Received(1).GetSchemaProperties(options);
+		_logger.Received(1).WriteInfo("Entity schema properties");
+		_logger.Received(1).WriteInfo("Parent schema: BaseEntity");
 	}
 
 	[Test]
 	[Description("Rejects requests that omit the schema name.")]
 	public void Execute_ReturnsFailure_WhenSchemaNameIsMissing() {
 		// Arrange
-		var options = new GetEntitySchemaPropertiesOptions {
+		GetEntitySchemaPropertiesOptions options = new() {
 			Package = "UsrPkg",
 			SchemaName = ""
 		};
@@ -59,7 +84,7 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 
 		// Assert
 		result.Should().Be(1, because: "schema identity is required for a schema read");
-		_columnManager.DidNotReceiveWithAnyArgs().PrintSchemaProperties(default);
+		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Schema name is required.")));
 	}
 }

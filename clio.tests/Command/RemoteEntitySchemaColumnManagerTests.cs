@@ -38,15 +38,15 @@ internal class RemoteEntitySchemaColumnManagerTests
 				UId = PackageUId
 			}, string.Empty, Enumerable.Empty<string>())
 		});
-		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>())
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
 			.Returns(callInfo => {
 				_savedSchema = callInfo.ArgAt<EntityDesignSchemaDto>(0);
-				return new SaveDesignItemDesignerResponse {
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse {
 					Success = true,
 					SchemaUId = _savedSchema.UId
 				};
 			});
-		_designerClient.GetAvailableReferenceSchemas(Arg.Any<GetAvailableSchemasRequestDto>(), Arg.Any<RemoteCommandOptions>())
+		_designerClient.GetAvailableReferenceSchemas(Arg.Any<GetAvailableSchemasRequestDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
 			.Returns(new AvailableEntitySchemasResponse {
 				Success = true,
 				Items = [
@@ -179,10 +179,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		Action act = () => _manager.ModifyColumn(options);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
+		act.Should().Throw<EntitySchemaDesignerException>()
 			.WithMessage("*inherited and read-only*",
 				because: "inherited columns are explicitly out of scope for v1 mutations");
-		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
 	[Test]
@@ -203,10 +204,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		Action act = () => _manager.ModifyColumn(options);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
+		act.Should().Throw<EntitySchemaDesignerException>()
 			.WithMessage("*already exists*",
 				because: "column names must remain unique across the design schema");
-		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
 	[Test]
@@ -227,10 +229,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		Action act = () => _manager.ModifyColumn(options);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
+		act.Should().Throw<EntitySchemaDesignerException>()
 			.WithMessage("*require --reference-schema*",
 				because: "lookup columns cannot be created without a target schema");
-		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
 	[Test]
@@ -251,10 +254,76 @@ internal class RemoteEntitySchemaColumnManagerTests
 		Action act = () => _manager.ModifyColumn(options);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
+		act.Should().Throw<EntitySchemaDesignerException>()
 			.WithMessage("*no valid fallback exists*",
 				because: "schemas must keep a valid primary guid column");
-		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Returns structured schema properties so CLI and MCP can share the same projection.")]
+	public void GetSchemaProperties_ReturnsStructuredSchemaProperties() {
+		// Arrange
+		EntitySchemaColumnDto idColumn = CreateGuidColumn("Id", IdColumnUId);
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [idColumn, nameColumn],
+			inheritedColumns: [CreateLookupColumn("Owner", CodeColumnUId, "Contact")],
+			primaryColumn: idColumn,
+			primaryDisplayColumn: nameColumn);
+		_loadedSchema.ParentSchema = new EntityDesignSchemaDto {
+			Name = "BaseEntity"
+		};
+		_loadedSchema.ExtendParent = true;
+		_loadedSchema.IsTrackChangesInDB = true;
+		_loadedSchema.Indexes = [new object(), new object()];
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle"
+		});
+
+		// Assert
+		result.Name.Should().Be("UsrVehicle", because: "the schema name should be preserved in the structured result");
+		result.ParentSchemaName.Should().Be("BaseEntity", because: "parent schema should be projected");
+		result.OwnColumnCount.Should().Be(2, because: "own column count should be included in the structured result");
+		result.InheritedColumnCount.Should().Be(1,
+			because: "inherited column count should be included in the structured result");
+		result.TrackChangesInDb.Should().BeTrue(
+			because: "schema flags should remain available to both MCP and CLI formatters");
+	}
+
+	[Test]
+	[Description("Returns structured column properties so CLI and MCP can share the same projection.")]
+	public void GetColumnProperties_ReturnsStructuredColumnProperties() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.Indexed = true;
+		nameColumn.MultiLineText = true;
+		nameColumn.LocalizableText = true;
+		nameColumn.AccentInsensitive = true;
+		nameColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = "Vehicle"
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "Name"
+		});
+
+		// Assert
+		result.ColumnName.Should().Be("Name", because: "the requested column name should be preserved");
+		result.Source.Should().Be("own", because: "the result should indicate whether the column is own or inherited");
+		result.Type.Should().Be("Text", because: "the friendly data type should be projected");
+		result.DefaultValue.Should().Be("Vehicle", because: "default values should remain available in the structured result");
+		result.MultilineText.Should().BeTrue(because: "text-specific flags should be projected");
 	}
 
 	[Test]
@@ -346,8 +415,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	private void SetupLoadedSchema() {
-		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(), Arg.Any<RemoteCommandOptions>())
-			.Returns(new DesignerResponse<EntityDesignSchemaDto> {
+		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true,
 				Schema = _loadedSchema
 			});
@@ -362,11 +432,14 @@ internal class RemoteEntitySchemaColumnManagerTests
 		return new EntityDesignSchemaDto {
 			UId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
 			Name = "UsrVehicle",
-			Package = new WorkspacePackageDto {
+			Package = new Clio.Command.EntitySchemaDesigner.WorkspacePackageDto {
 				UId = PackageUId,
 				Name = "UsrPkg"
 			},
-			Caption = [new LocalizableStringDto { CultureName = "en-US", Value = "Vehicle" }],
+			Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+				CultureName = "en-US",
+				Value = "Vehicle"
+			}],
 			Columns = ownColumns,
 			InheritedColumns = inheritedColumns?.ToList() ?? [],
 			Indexes = [],
@@ -380,7 +453,10 @@ internal class RemoteEntitySchemaColumnManagerTests
 			UId = uId,
 			Name = name,
 			DataValueType = 0,
-			Caption = [new LocalizableStringDto { CultureName = "en-US", Value = name }]
+			Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+				CultureName = "en-US",
+				Value = name
+			}]
 		};
 	}
 
@@ -389,7 +465,10 @@ internal class RemoteEntitySchemaColumnManagerTests
 			UId = uId,
 			Name = name,
 			DataValueType = 1,
-			Caption = [new LocalizableStringDto { CultureName = "en-US", Value = name }]
+			Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+				CultureName = "en-US",
+				Value = name
+			}]
 		};
 	}
 
@@ -398,11 +477,17 @@ internal class RemoteEntitySchemaColumnManagerTests
 			UId = uId,
 			Name = name,
 			DataValueType = 10,
-			Caption = [new LocalizableStringDto { CultureName = "en-US", Value = name }],
+			Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+				CultureName = "en-US",
+				Value = name
+			}],
 			ReferenceSchema = new EntityDesignSchemaDto {
 				UId = Guid.NewGuid(),
 				Name = referenceSchemaName,
-				Caption = [new LocalizableStringDto { CultureName = "en-US", Value = referenceSchemaName }]
+				Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+					CultureName = "en-US",
+					Value = referenceSchemaName
+				}]
 			}
 		};
 	}
