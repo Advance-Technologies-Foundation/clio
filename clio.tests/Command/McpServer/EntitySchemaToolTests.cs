@@ -1,0 +1,279 @@
+using System.Collections.Generic;
+using System.Linq;
+using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.McpServer.Prompts;
+using Clio.Command.McpServer.Tools;
+using Clio.Common;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+using ModelContextProtocol.Server;
+
+namespace Clio.Tests.Command.McpServer;
+
+[TestFixture]
+public sealed class EntitySchemaToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises stable MCP tool names for the entity schema tool family so tests and callers share the same identifiers.")]
+	public void EntitySchemaTools_Should_Advertise_Stable_Tool_Names() {
+		// Arrange
+
+		// Act
+		string[] toolNames = [
+			CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+		];
+
+		// Assert
+		toolNames.Should().Equal(new[] {
+				"create-entity-schema",
+				"get-entity-schema-properties",
+				"get-entity-schema-column-properties",
+				"modify-entity-schema-column"
+			},
+			because: "the entity schema MCP tool identifiers should remain stable for callers and tests");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns structured schema properties from the resolved environment-specific command.")]
+	public void GetEntitySchemaProperties_Should_Return_Structured_Result() {
+		// Arrange
+		EntitySchemaPropertiesInfo expectedResult = new(
+			"UsrVehicle",
+			"Vehicle",
+			"Vehicle catalog",
+			"UsrPkg",
+			"BaseEntity",
+			false,
+			"Id",
+			"Name",
+			2,
+			1,
+			3,
+			true,
+			false,
+			true,
+			false,
+			false,
+			true,
+			false,
+			true,
+			false,
+			false,
+			true);
+		IRemoteEntitySchemaColumnManager columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(expectedResult);
+		GetEntitySchemaPropertiesCommand resolvedCommand = new(columnManager, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(resolvedCommand);
+		GetEntitySchemaPropertiesTool tool = new(
+			new GetEntitySchemaPropertiesCommand(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()),
+			ConsoleLogger.Instance,
+			commandResolver);
+
+		// Act
+		EntitySchemaPropertiesInfo result = tool.GetEntitySchemaProperties(
+			new GetEntitySchemaPropertiesArgs("dev", "UsrPkg", "UsrVehicle"));
+
+		// Assert
+		result.Should().BeEquivalentTo(expectedResult,
+			because: "the read-only MCP tool should return the structured schema snapshot from the resolved command");
+		commandResolver.Received(1).Resolve<GetEntitySchemaPropertiesCommand>(Arg.Is<GetEntitySchemaPropertiesOptions>(
+			options => options.Environment == "dev" && options.Package == "UsrPkg" && options.SchemaName == "UsrVehicle"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns structured column properties from the resolved environment-specific command.")]
+	public void GetEntitySchemaColumnProperties_Should_Return_Structured_Result() {
+		// Arrange
+		EntitySchemaColumnPropertiesInfo expectedResult = new(
+			"UsrVehicle",
+			"UsrPkg",
+			"Name",
+			"own",
+			"Vehicle name",
+			"Readable vehicle name",
+			"Text",
+			true,
+			true,
+			false,
+			true,
+			"Vehicle",
+			null,
+			false,
+			false,
+			false,
+			true,
+			true,
+			true,
+			false,
+			false,
+			false);
+		IRemoteEntitySchemaColumnManager columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		columnManager.GetColumnProperties(Arg.Any<GetEntitySchemaColumnPropertiesOptions>()).Returns(expectedResult);
+		GetEntitySchemaColumnPropertiesCommand resolvedCommand = new(columnManager, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetEntitySchemaColumnPropertiesCommand>(Arg.Any<GetEntitySchemaColumnPropertiesOptions>())
+			.Returns(resolvedCommand);
+		GetEntitySchemaColumnPropertiesTool tool = new(
+			new GetEntitySchemaColumnPropertiesCommand(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()),
+			ConsoleLogger.Instance,
+			commandResolver);
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = tool.GetEntitySchemaColumnProperties(
+			new GetEntitySchemaColumnPropertiesArgs("dev", "UsrPkg", "UsrVehicle", "Name"));
+
+		// Assert
+		result.Should().BeEquivalentTo(expectedResult,
+			because: "the read-only MCP tool should return the structured column snapshot from the resolved command");
+		commandResolver.Received(1).Resolve<GetEntitySchemaColumnPropertiesCommand>(
+			Arg.Is<GetEntitySchemaColumnPropertiesOptions>(options =>
+				options.Environment == "dev"
+				&& options.Package == "UsrPkg"
+				&& options.SchemaName == "UsrVehicle"
+				&& options.ColumnName == "Name"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps structured MCP mutation arguments into modify-entity-schema-column command options.")]
+	public void ModifyEntitySchemaColumn_Should_Map_All_Arguments() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"Name",
+			NewName: "DisplayName",
+			Type: "Text",
+			Title: "Vehicle name",
+			Description: "Readable vehicle name",
+			ReferenceSchemaName: "Contact",
+			IsRequired: true,
+			Indexed: true,
+			Cloneable: false,
+			TrackChanges: true,
+			DefaultValue: "Vehicle",
+			MultilineText: true,
+			LocalizableText: true,
+			AccentInsensitive: true,
+			Masked: false,
+			FormatValidated: false,
+			UseSeconds: false,
+			SimpleLookup: false,
+			Cascade: false,
+			DoNotControlIntegrity: false));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the tool should forward a valid modify request through the resolved command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped mutation options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
+			because: "the requested environment must be preserved");
+		resolvedCommand.CapturedOptions.Package.Should().Be("UsrPkg",
+			because: "the package name must be preserved");
+		resolvedCommand.CapturedOptions.SchemaName.Should().Be("UsrVehicle",
+			because: "the schema name must be preserved");
+		resolvedCommand.CapturedOptions.Action.Should().Be("modify",
+			because: "the requested mutation action must be preserved");
+		resolvedCommand.CapturedOptions.ColumnName.Should().Be("Name",
+			because: "the target column name must be preserved");
+		resolvedCommand.CapturedOptions.NewName.Should().Be("DisplayName",
+			because: "rename options should be mapped");
+		resolvedCommand.CapturedOptions.ReferenceSchemaName.Should().Be("Contact",
+			because: "lookup reference changes should be mapped");
+		resolvedCommand.CapturedOptions.Required.Should().BeTrue(
+			because: "nullable boolean mutation flags should be mapped");
+		resolvedCommand.CapturedOptions.LocalizableText.Should().BeTrue(
+			because: "text-specific options should be mapped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks the entity schema read tools as read-only and the mutating tools as destructive.")]
+	[TestCase(typeof(CreateEntitySchemaTool), nameof(CreateEntitySchemaTool.CreateEntitySchema), false, true)]
+	[TestCase(typeof(GetEntitySchemaPropertiesTool), nameof(GetEntitySchemaPropertiesTool.GetEntitySchemaProperties), true, false)]
+	[TestCase(typeof(GetEntitySchemaColumnPropertiesTool), nameof(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnProperties), true, false)]
+	[TestCase(typeof(ModifyEntitySchemaColumnTool), nameof(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumn), false, true)]
+	public void EntitySchemaTools_Should_Advertise_Safety_Metadata(
+		System.Type toolType,
+		string methodName,
+		bool readOnly,
+		bool destructive) {
+		// Arrange
+		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool actualReadOnly = attribute.ReadOnly;
+		bool actualDestructive = attribute.Destructive;
+
+		// Assert
+		actualReadOnly.Should().Be(readOnly,
+			because: "the tool metadata should distinguish read-only and mutating entity schema operations");
+		actualDestructive.Should().Be(destructive,
+			because: "the tool metadata should warn clients before mutating remote schema state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Prompt guidance for entity schema tools references the exact production tool names and argument shapes.")]
+	public void EntitySchemaPrompt_Should_Reference_Production_Tool_Names() {
+		// Arrange
+
+		// Act
+		string createPrompt = EntitySchemaPrompt.CreateEntitySchema("UsrPkg", "UsrVehicle", "Vehicle", "dev");
+		string schemaPrompt = EntitySchemaPrompt.GetEntitySchemaProperties("UsrPkg", "UsrVehicle", "dev");
+		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrPkg", "UsrVehicle", "Name", "dev");
+		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "modify", "Name", "dev");
+
+		// Assert
+		createPrompt.Should().Contain(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			because: "create prompt guidance should reference the exact production tool name");
+		schemaPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+			because: "schema-read prompt guidance should reference the exact production tool name");
+		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+			because: "column-read prompt guidance should reference the exact production tool name");
+		modifyPrompt.Should().Contain(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+			because: "modify prompt guidance should reference the exact production tool name");
+		modifyPrompt.Should().Contain("type",
+			because: "mutation prompt guidance should remind callers about action-specific options");
+	}
+
+	private sealed class FakeModifyEntitySchemaColumnCommand : ModifyEntitySchemaColumnCommand {
+		public ModifyEntitySchemaColumnOptions CapturedOptions { get; private set; }
+
+		public FakeModifyEntitySchemaColumnCommand()
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(ModifyEntitySchemaColumnOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+}

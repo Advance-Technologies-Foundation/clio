@@ -1,0 +1,41 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-entity-schema-column-properties - Get column properties from a remote Creatio entity schema
+
+SYNOPSIS
+    clio get-entity-schema-column-properties [OPTIONS]
+
+DESCRIPTION
+    Loads the full entity schema design item from the remote Creatio environment
+    and prints a human-readable summary for the requested column. Own columns are
+    searched first, then inherited columns.
+
+OPTIONS
+    --package              Target package name
+    --schema-name          Entity schema name
+    --column-name          Column name
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Read properties of an own column
+    clio get-entity-schema-column-properties -e dev --package Custom --schema-name UsrVehicle --column-name Name
+
+    # Read properties of an inherited column
+    clio get-entity-schema-column-properties -e dev --package Custom --schema-name UsrVehicle --column-name Owner
+
+NOTES
+    - output is human-readable text, not JSON
+    - the report includes whether the column is own or inherited
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-entity-schema-properties, modify-entity-schema-column

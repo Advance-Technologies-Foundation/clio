@@ -95,7 +95,8 @@ public sealed class PushWorkspaceTool(
 		[Description("Push-workspace parameters")] [Required] PushWorkspaceArgs args
 	) {
 		PushWorkspaceCommandOptions options = new() {
-			Environment = args.EnvironmentName
+			Environment = args.EnvironmentName,
+			UseApplicationInstaller = true
 		};
 		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<PushWorkspaceCommand>(options));
 	}

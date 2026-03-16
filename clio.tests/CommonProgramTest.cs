@@ -11,8 +11,26 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[NonParallelizable]
 internal class CommonProgramTest : BaseClioModuleTests{
+	private TextWriter _originalConsoleError;
+	private TextWriter _originalConsoleOut;
+
 	#region Methods: Public
+
+	public override void Setup() {
+		base.Setup();
+		_originalConsoleOut = Console.Out;
+		_originalConsoleError = Console.Error;
+		Console.SetOut(TextWriter.Null);
+		Console.SetError(TextWriter.Null);
+	}
+
+	public override void TearDown() {
+		Console.SetOut(_originalConsoleOut);
+		Console.SetError(_originalConsoleError);
+		base.TearDown();
+	}
 
 	[Test]
 	public void ApplyEnvManifestOptionsTest() {
@@ -123,7 +141,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	public void IsCfgOpenCommand_WithCfgOpenArguments_ShouldBeTrue() {
 		// Arrange
-		string[] args = new[] { "cfg", "open" };
+		string[] args = ["cfg", "open"];
 		Program.IsCfgOpenCommand = false; // Reset the value before the test
 
 		// Act
