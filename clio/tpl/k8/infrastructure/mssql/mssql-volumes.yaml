@@ -12,4 +12,5 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/mnt/clio-infrastructure/mssql"
+    path: "{{CLIO_INFRA_ROOT}}/mssql"
+    type: DirectoryOrCreate

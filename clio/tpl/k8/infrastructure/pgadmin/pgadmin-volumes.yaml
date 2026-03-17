@@ -12,7 +12,8 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/mnt/clio-infrastructure/pgadmin"
+    path: "{{CLIO_INFRA_ROOT}}/pgadmin"
+    type: DirectoryOrCreate
 
 ---
 kind: PersistentVolumeClaim
