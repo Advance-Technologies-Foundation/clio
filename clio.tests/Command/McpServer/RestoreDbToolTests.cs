@@ -15,7 +15,6 @@ using FluentValidation.Results;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
-using FluentAssertions;
 
 namespace Clio.Tests.Command.McpServer;
 

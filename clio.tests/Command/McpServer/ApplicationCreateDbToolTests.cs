@@ -4,8 +4,6 @@ using Clio.Common;
 using Clio.Common.McpProtocol;
 using NSubstitute;
 using NUnit.Framework;
-using FluentAssertions;
-using FluentAssertions;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -59,7 +57,7 @@ public class ApplicationCreateDbToolTests
 
 		var result = _tool.CreateApplication(args);
 
-		result.ExitCode.Should().Be(0);
+		Assert.AreEqual(0, result.ExitCode);
 		_mockClient.Received(1).CallToolAsync("application.create", Arg.Any<Dictionary<string, object>>());
 	}
 
@@ -91,6 +89,6 @@ public class ApplicationCreateDbToolTests
 
 		var result = _tool.CreateApplication(args);
 
-		result.ExitCode.Should().Be(1);
+		Assert.AreEqual(1, result.ExitCode);
 	}
 }
