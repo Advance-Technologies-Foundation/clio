@@ -258,6 +258,13 @@ Discovery: Invocation-only matching on methods declared by System.Console misses
 Files: Clio.Analyzers/ConsoleOutputAnalyzer.cs, Clio.Analyzers.Tests/ConsoleOutputAnalyzerTests.cs, .codex/workspace-diary.md
 Impact: CLIO002 now enforces logger-only output policy for additional real-world console patterns previously slipping through.
 
+## 2026-03-17 00:00 – Create release 8.0.2.28
+Context: User requested running the release flow from the release prompt instructions.
+Decision: Verified `gh` installation and auth, confirmed latest tag `8.0.2.27`, reused already-updated `AssemblyVersion` `8.0.2.28`, then created and pushed tag `8.0.2.28` and published the GitHub release with `gh release create`.
+Discovery: `clio/clio.csproj` was already aligned to the next release version before tagging, so no project-file edit was required during the release run.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Release `8.0.2.28` is published and CI/CD can now build, test, and publish artifacts from the release tag.
+
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
 Decision: Injected IProcessExecutor into RestoreDbCommand and replaced ExecutePgRestoreCommand low-level Process/ProcessStartInfo logic with ProcessExecutionOptions + ExecuteWithRealtimeOutputAsync, preserving debug and throttled progress logging behavior.
