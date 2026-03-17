@@ -5,17 +5,15 @@ using Clio.Common.McpProtocol;
 using NSubstitute;
 using NUnit.Framework;
 using FluentAssertions;
-using FluentAssertions;
 
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
-public class ApplicationCreateDbToolTests
+public class BindingDbToolsTests
 {
 	private IMcpHttpClientFactory _mockFactory;
 	private IMcpHttpClient _mockClient;
 	private ILogger _mockLogger;
-	private ApplicationCreateDbTool _tool;
 
 	[SetUp]
 	public void Setup()
@@ -26,20 +24,17 @@ public class ApplicationCreateDbToolTests
 
 		_mockFactory.CreateClient(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
 			.Returns(_mockClient);
-
-		_tool = new ApplicationCreateDbTool(_mockFactory, _mockLogger);
 	}
 
 	[Test]
-	public void CreateApplication_WithValidArgs_CallsMcpBackend()
+	public void CreateBinding_WithValidArgs_CallsMcpBackend()
 	{
-		var args = new ApplicationCreateDbArgs
+		var tool = new BindingCreateDbTool(_mockFactory, _mockLogger);
+		var args = new BindingCreateDbArgs
 		{
-			Name = "TestApp",
-			Code = "UsrTestApp",
-			TemplateCode = "AppFreedomUI",
-			IconBackground = "#FF5733",
-			EnvironmentName = "dev",
+			SchemaName = "UsrTestEntity",
+			PackageUId = "12345678-1234-1234-1234-123456789012",
+			RowsJson = "[{\"UsrName\":\"Test\"}]",
 			Uri = "http://localhost:5001",
 			Login = "Supervisor",
 			Password = "Supervisor"
@@ -49,29 +44,27 @@ public class ApplicationCreateDbToolTests
 		{
 			Content = new List<McpContent>
 			{
-				new() { Type = "text", Text = "Application created successfully" }
+				new() { Type = "text", Text = "Binding created successfully" }
 			},
 			IsError = false
 		};
 
-		_mockClient.CallToolAsync("application.create", Arg.Any<Dictionary<string, object>>())
+		_mockClient.CallToolAsync("binding.create", Arg.Any<Dictionary<string, object>>())
 			.Returns(System.Threading.Tasks.Task.FromResult(mcpResult));
 
-		var result = _tool.CreateApplication(args);
+		var result = tool.CreateBinding(args);
 
 		result.ExitCode.Should().Be(0);
-		_mockClient.Received(1).CallToolAsync("application.create", Arg.Any<Dictionary<string, object>>());
+		_mockClient.Received(1).CallToolAsync("binding.create", Arg.Any<Dictionary<string, object>>());
 	}
 
 	[Test]
-	public void CreateApplication_WithError_ReturnsErrorResult()
+	public void GetColumns_WithValidArgs_CallsMcpBackend()
 	{
-		var args = new ApplicationCreateDbArgs
+		var tool = new BindingGetColumnsDbTool(_mockFactory, _mockLogger);
+		var args = new BindingGetColumnsDbArgs
 		{
-			Name = "TestApp",
-			Code = "UsrTestApp",
-			TemplateCode = "AppFreedomUI",
-			IconBackground = "#FF5733",
+			SchemaName = "Contact",
 			Uri = "http://localhost:5001",
 			Login = "Supervisor",
 			Password = "Supervisor"
@@ -81,16 +74,17 @@ public class ApplicationCreateDbToolTests
 		{
 			Content = new List<McpContent>
 			{
-				new() { Type = "text", Text = "Application creation failed" }
+				new() { Type = "text", Text = "[\"Id\",\"Name\",\"CreatedOn\"]" }
 			},
-			IsError = true
+			IsError = false
 		};
 
-		_mockClient.CallToolAsync("application.create", Arg.Any<Dictionary<string, object>>())
+		_mockClient.CallToolAsync("binding.get_columns", Arg.Any<Dictionary<string, object>>())
 			.Returns(System.Threading.Tasks.Task.FromResult(mcpResult));
 
-		var result = _tool.CreateApplication(args);
+		var result = tool.GetColumns(args);
 
-		result.ExitCode.Should().Be(1);
+		result.ExitCode.Should().Be(0);
+		_mockClient.Received(1).CallToolAsync("binding.get_columns", Arg.Any<Dictionary<string, object>>());
 	}
 }

@@ -10,6 +10,7 @@ using Clio.Common;
 using Clio.Common.McpProtocol;
 using NSubstitute;
 using NUnit.Framework;
+using FluentAssertions;
 
 namespace Clio.Tests.Common;
 
@@ -28,7 +29,7 @@ public class McpHttpClientTests
 	public void Constructor_CreatesClient()
 	{
 		var client = new McpHttpClient(_mockLogger);
-		Assert.IsNotNull(client);
+		client.Should().NotBeNull();
 	}
 
 	[Test]
