@@ -12,10 +12,12 @@ namespace Clio.Command.McpServer.Tools;
 public class BindingCreateDbTool : BaseMcpBackendTool<BindingCreateDbOptions>
 {
 	internal const string ToolName = "binding-create-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public BindingCreateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public BindingCreateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -40,7 +42,7 @@ public class BindingCreateDbTool : BaseMcpBackendTool<BindingCreateDbOptions>
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "binding.create", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "binding.create", arguments, _commandResolver);
 	}
 }
 
@@ -48,10 +50,12 @@ public class BindingCreateDbTool : BaseMcpBackendTool<BindingCreateDbOptions>
 public class BindingGetColumnsDbTool : BaseMcpBackendTool<BindingGetColumnsDbOptions>
 {
 	internal const string ToolName = "binding-get-columns-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public BindingGetColumnsDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public BindingGetColumnsDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -74,7 +78,7 @@ public class BindingGetColumnsDbTool : BaseMcpBackendTool<BindingGetColumnsDbOpt
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "binding.get_columns", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "binding.get_columns", arguments, _commandResolver);
 	}
 }
 

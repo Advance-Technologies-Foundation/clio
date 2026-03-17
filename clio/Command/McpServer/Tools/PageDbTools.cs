@@ -12,10 +12,12 @@ namespace Clio.Command.McpServer.Tools;
 public class PageGetDbTool : BaseMcpBackendTool<PageGetDbOptions>
 {
 	internal const string ToolName = "page-get-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public PageGetDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public PageGetDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -43,7 +45,7 @@ public class PageGetDbTool : BaseMcpBackendTool<PageGetDbOptions>
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "page.get", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "page.get", arguments, _commandResolver);
 	}
 }
 
@@ -51,10 +53,12 @@ public class PageGetDbTool : BaseMcpBackendTool<PageGetDbOptions>
 public class PageUpdateDbTool : BaseMcpBackendTool<PageUpdateDbOptions>
 {
 	internal const string ToolName = "page-update-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public PageUpdateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public PageUpdateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -79,7 +83,7 @@ public class PageUpdateDbTool : BaseMcpBackendTool<PageUpdateDbOptions>
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "page.update", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "page.update", arguments, _commandResolver);
 	}
 }
 
@@ -87,10 +91,12 @@ public class PageUpdateDbTool : BaseMcpBackendTool<PageUpdateDbOptions>
 public class PageListDbTool : BaseMcpBackendTool<PageListDbOptions>
 {
 	internal const string ToolName = "page-list-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public PageListDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public PageListDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -110,7 +116,7 @@ public class PageListDbTool : BaseMcpBackendTool<PageListDbOptions>
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "page.list", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "page.list", arguments, _commandResolver);
 	}
 }
 

@@ -12,10 +12,12 @@ namespace Clio.Command.McpServer.Tools;
 public class EntityCreateDbTool : BaseMcpBackendTool<EntityCreateDbOptions>
 {
 	internal const string ToolName = "entity-create-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public EntityCreateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public EntityCreateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -50,7 +52,7 @@ public class EntityCreateDbTool : BaseMcpBackendTool<EntityCreateDbOptions>
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "entity.create", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "entity.create", arguments, _commandResolver);
 	}
 }
 
@@ -58,10 +60,12 @@ public class EntityCreateDbTool : BaseMcpBackendTool<EntityCreateDbOptions>
 public class EntityCreateLookupDbTool : BaseMcpBackendTool<EntityCreateLookupDbOptions>
 {
 	internal const string ToolName = "entity-create-lookup-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public EntityCreateLookupDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public EntityCreateLookupDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -86,7 +90,7 @@ public class EntityCreateLookupDbTool : BaseMcpBackendTool<EntityCreateLookupDbO
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "entity.create_lookup", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "entity.create_lookup", arguments, _commandResolver);
 	}
 }
 
@@ -94,10 +98,12 @@ public class EntityCreateLookupDbTool : BaseMcpBackendTool<EntityCreateLookupDbO
 public class EntityUpdateDbTool : BaseMcpBackendTool<EntityUpdateDbOptions>
 {
 	internal const string ToolName = "entity-update-db";
+	private readonly IToolCommandResolver _commandResolver;
 
-	public EntityUpdateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
+	public EntityUpdateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
 		: base(mcpClientFactory, logger)
 	{
+		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -122,7 +128,7 @@ public class EntityUpdateDbTool : BaseMcpBackendTool<EntityUpdateDbOptions>
 			Password = args.Password
 		};
 
-		return ExecuteMcpTool(options, "entity.update", arguments);
+		return ExecuteMcpToolWithEnvironment(options, "entity.update", arguments, _commandResolver);
 	}
 }
 

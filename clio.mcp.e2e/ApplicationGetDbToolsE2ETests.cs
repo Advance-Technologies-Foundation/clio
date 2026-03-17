@@ -31,8 +31,11 @@ public sealed class ApplicationGetInfoDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["appCode"] = "CoreCRM",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["appCode"] = "CoreCRM",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -62,11 +65,16 @@ public sealed class ApplicationGetListDbToolE2ETests
 		McpE2ESettings settings = TestConfiguration.Load();
 		string environmentName = settings.Sandbox.EnvironmentName;
 
+		TestContext.WriteLine($"Testing {ToolName} with environment: {environmentName}");
+
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, CancellationToken.None);
 
 		var args = new Dictionary<string, object>
 		{
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -74,7 +82,21 @@ public sealed class ApplicationGetListDbToolE2ETests
 			args,
 			CancellationToken.None);
 
-		result.IsError.Should().BeFalse("getting application list should succeed");
+		if (result.IsError == true)
+		{
+			TestContext.WriteLine("ERROR: Tool returned error!");
+			TestContext.WriteLine($"Content count: {result.Content?.Count ?? 0}");
+			if (result.Content != null)
+			{
+				foreach (var item in result.Content)
+				{
+					TestContext.WriteLine($"  - Type: {item.Type}");
+					TestContext.WriteLine($"  - ToString: {item}");
+				}
+			}
+		}
+
+		(result.IsError == true).Should().BeFalse("getting application list should succeed");
 		result.Content.Should().NotBeEmpty("result should contain application list");
 	}
 }
