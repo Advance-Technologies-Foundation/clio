@@ -12,12 +12,10 @@ namespace Clio.Command.McpServer.Tools;
 public class EntityCheckNameDbTool : BaseMcpBackendTool<EntityCheckNameDbOptions>
 {
 	internal const string ToolName = "entity-check-name-db";
-	private readonly IToolCommandResolver _commandResolver;
 
-	public EntityCheckNameDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
+	public EntityCheckNameDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
 		: base(mcpClientFactory, logger)
 	{
-		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -40,7 +38,7 @@ public class EntityCheckNameDbTool : BaseMcpBackendTool<EntityCheckNameDbOptions
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "entity.check_name_taken", arguments, _commandResolver);
+		return ExecuteMcpTool(options, "entity.check_name_taken", arguments);
 	}
 }
 
@@ -48,12 +46,10 @@ public class EntityCheckNameDbTool : BaseMcpBackendTool<EntityCheckNameDbOptions
 public class EntityListPackagesDbTool : BaseMcpBackendTool<EntityListPackagesDbOptions>
 {
 	internal const string ToolName = "entity-list-packages-db";
-	private readonly IToolCommandResolver _commandResolver;
 
-	public EntityListPackagesDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
+	public EntityListPackagesDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
 		: base(mcpClientFactory, logger)
 	{
-		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -73,7 +69,7 @@ public class EntityListPackagesDbTool : BaseMcpBackendTool<EntityListPackagesDbO
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "entity.list_packages", arguments, _commandResolver);
+		return ExecuteMcpTool(options, "entity.list_packages", arguments);
 	}
 }
 
@@ -81,12 +77,10 @@ public class EntityListPackagesDbTool : BaseMcpBackendTool<EntityListPackagesDbO
 public class EntityGetSchemaDbTool : BaseMcpBackendTool<EntityGetSchemaDbOptions>
 {
 	internal const string ToolName = "entity-get-schema-db";
-	private readonly IToolCommandResolver _commandResolver;
 
-	public EntityGetSchemaDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
+	public EntityGetSchemaDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
 		: base(mcpClientFactory, logger)
 	{
-		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -114,7 +108,7 @@ public class EntityGetSchemaDbTool : BaseMcpBackendTool<EntityGetSchemaDbOptions
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "entity.get_schema", arguments, _commandResolver);
+		return ExecuteMcpTool(options, "entity.get_schema", arguments);
 	}
 }
 

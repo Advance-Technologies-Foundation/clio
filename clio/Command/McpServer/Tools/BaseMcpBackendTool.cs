@@ -57,12 +57,7 @@ public abstract class BaseMcpBackendTool<T> where T : EnvironmentOptions
 			catch (Exception ex)
 			{
 				_logger.WriteError($"MCP tool '{mcpToolName}' failed: {ex.Message}");
-				if (ex.InnerException != null)
-				{
-					_logger.WriteError($"Inner exception: {ex.InnerException.Message}");
-				}
-				_logger.WriteError($"Stack trace: {ex.StackTrace}");
-				return new CommandExecutionResult(1, [.. _logger.LogMessages, new ErrorMessage($"{ex.Message}\n{ex.StackTrace}")]);
+				return new CommandExecutionResult(1, [.. _logger.LogMessages, new ErrorMessage(ex.Message)]);
 			}
 			finally
 			{
@@ -84,25 +79,10 @@ public abstract class BaseMcpBackendTool<T> where T : EnvironmentOptions
 				$"{GetType().Name} requires IToolCommandResolver for environment-based operations.");
 		}
 
-		try
-		{
-			_logger.WriteInfo($"Resolving environment settings for: {options.Environment ?? options.Uri}");
-			var environmentSettings = commandResolver.ResolveEnvironmentSettings(options);
-			_logger.WriteInfo($"Environment settings resolved: Uri={environmentSettings.Uri}, Login={environmentSettings.Login}");
-			
-			var mcpClient = _mcpClientFactory.CreateClient(environmentSettings);
-			return ExecuteMcpToolCore(mcpClient, mcpToolName, arguments);
-		}
-		catch (Exception ex)
-		{
-			_logger.WriteError($"Failed to resolve environment or create MCP client: {ex.Message}");
-			if (ex.InnerException != null)
-			{
-				_logger.WriteError($"Inner exception: {ex.InnerException.Message}");
-			}
-			_logger.WriteError($"Stack trace: {ex.StackTrace}");
-			return new CommandExecutionResult(1, [.. _logger.LogMessages, new ErrorMessage($"{ex.Message}\n{ex.StackTrace}")]);
-		}
+		var environmentSettings = commandResolver.ResolveEnvironmentSettings(options);
+		
+		var mcpClient = _mcpClientFactory.CreateClient(environmentSettings);
+		return ExecuteMcpToolCore(mcpClient, mcpToolName, arguments);
 	}
 
 	private CommandExecutionResult ExecuteMcpToolCore(
@@ -139,12 +119,7 @@ public abstract class BaseMcpBackendTool<T> where T : EnvironmentOptions
 			catch (Exception ex)
 			{
 				_logger.WriteError($"MCP tool '{mcpToolName}' failed: {ex.Message}");
-				if (ex.InnerException != null)
-				{
-					_logger.WriteError($"Inner exception: {ex.InnerException.Message}");
-				}
-				_logger.WriteError($"Stack trace: {ex.StackTrace}");
-				return new CommandExecutionResult(1, [.. _logger.LogMessages, new ErrorMessage($"{ex.Message}\n{ex.StackTrace}")]);
+				return new CommandExecutionResult(1, [.. _logger.LogMessages, new ErrorMessage(ex.Message)]);
 			}
 			finally
 			{

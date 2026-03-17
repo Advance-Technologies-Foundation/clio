@@ -12,12 +12,10 @@ namespace Clio.Command.McpServer.Tools;
 public class ApplicationGetInfoDbTool : BaseMcpBackendTool<ApplicationGetInfoDbOptions>
 {
 	internal const string ToolName = "application-get-info-db";
-	private readonly IToolCommandResolver _commandResolver;
 
-	public ApplicationGetInfoDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
+	public ApplicationGetInfoDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
 		: base(mcpClientFactory, logger)
 	{
-		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -47,7 +45,7 @@ public class ApplicationGetInfoDbTool : BaseMcpBackendTool<ApplicationGetInfoDbO
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "application.get_info", arguments, _commandResolver);
+		return ExecuteMcpTool(options, "application.get_info", arguments);
 	}
 }
 
@@ -55,12 +53,10 @@ public class ApplicationGetInfoDbTool : BaseMcpBackendTool<ApplicationGetInfoDbO
 public class ApplicationGetListDbTool : BaseMcpBackendTool<ApplicationGetListDbOptions>
 {
 	internal const string ToolName = "application-get-list-db";
-	private readonly IToolCommandResolver _commandResolver;
 
-	public ApplicationGetListDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
+	public ApplicationGetListDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
 		: base(mcpClientFactory, logger)
 	{
-		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -80,7 +76,7 @@ public class ApplicationGetListDbTool : BaseMcpBackendTool<ApplicationGetListDbO
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "application.get_list", arguments, _commandResolver);
+		return ExecuteMcpTool(options, "application.get_list", arguments);
 	}
 }
 

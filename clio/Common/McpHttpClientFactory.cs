@@ -46,15 +46,8 @@ public class McpHttpClientFactory : IMcpHttpClientFactory
 
 	public IMcpHttpClient CreateClient(string url, string username, string password)
 	{
-		if (string.IsNullOrEmpty(url))
-		{
-			throw new ArgumentNullException(nameof(url));
-		}
-
-		var mcpUrl = url.TrimEnd('/') + "/mcp";
-		
 		var client = new McpHttpClient(_logger);
-		client.InitializeAsync(mcpUrl, username, password)
+		client.InitializeAsync(url, username, password)
 			.GetAwaiter()
 			.GetResult();
 		return client;

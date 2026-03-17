@@ -12,12 +12,10 @@ namespace Clio.Command.McpServer.Tools;
 public class ApplicationCreateDbTool : BaseMcpBackendTool<ApplicationCreateDbOptions>
 {
 	internal const string ToolName = "application-create-db";
-	private readonly IToolCommandResolver _commandResolver;
 
-	public ApplicationCreateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger, IToolCommandResolver commandResolver)
+	public ApplicationCreateDbTool(IMcpHttpClientFactory mcpClientFactory, ILogger logger)
 		: base(mcpClientFactory, logger)
 	{
-		_commandResolver = commandResolver;
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -63,7 +61,7 @@ public class ApplicationCreateDbTool : BaseMcpBackendTool<ApplicationCreateDbOpt
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "application.create", arguments, _commandResolver);
+		return ExecuteMcpTool(options, "application.create", arguments);
 	}
 }
 
