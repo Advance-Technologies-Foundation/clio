@@ -15,10 +15,29 @@ internal static class EntitySchemaDesignerSupport
 		new(StringComparer.OrdinalIgnoreCase) {
 			["guid"] = 0,
 			["text"] = 1,
+			["text50"] = 27,
+			["text250"] = 28,
+			["textUnlimited"] = 29,
+			["text500"] = 30,
+			["phoneNumber"] = 42,
+			["webLink"] = 44,
+			["email"] = 45,
+			["richText"] = 43,
+			
 			["integer"] = 4,
 			["datetime"] = 7,
 			["lookup"] = 10,
-			["boolean"] = 12
+			["boolean"] = 12,
+			["decimal0"] = 47,
+			["decimal1"] = 31,
+			["decimal2"] = 32,
+			["decimal3"] = 33,
+			["decimal4"] = 34,
+			["decimal8"] = 40,
+			["currency0"] = 48,
+			["currency1"] = 49,
+			["currency2"] = 6,
+			["currency3"] = 50
 		};
 
 	internal static string GetCurrentCultureName() {
