@@ -25,10 +25,10 @@ public sealed class ApplicationCreateDbToolE2ETests
 	[AllureDescription("Calls application-create-db through the real MCP server and verifies successful application creation.")]
 	public async Task ApplicationCreateDb_Should_Create_Application_Successfully()
 	{
-		McpE2ESettings settings = TestConfiguration.Load();
-		string environmentName = settings.Sandbox.EnvironmentName;
+		McpE2ESettings settings = McpE2ESettings.Load();
+		string environmentName = settings.EnvironmentName;
 
-		await using McpServerSession session = await McpServerSession.StartAsync(TestConfiguration.Load(), CancellationToken.None);
+		await using McpServerSession session = await McpServerSession.StartAsync(McpE2ESettings.Load());
 
 		var args = new Dictionary<string, object>
 		{
@@ -39,10 +39,10 @@ public sealed class ApplicationCreateDbToolE2ETests
 			["environmentName"] = environmentName
 		};
 
-		CallToolResult result = await session.CallToolAsync(
+		CallToolResult result = await session.Client.CallToolAsync(
 			ToolName,
 			args,
-			CancellationToken.None);
+			session.CancellationToken);
 
 		result.IsError.Should().BeFalse("application creation should succeed");
 		result.Content.Should().NotBeEmpty("result should contain response content");
@@ -55,10 +55,10 @@ public sealed class ApplicationCreateDbToolE2ETests
 	[AllureDescription("Calls application-create-db with missing required parameters and verifies error handling.")]
 	public async Task ApplicationCreateDb_Should_Report_Validation_Errors()
 	{
-		McpE2ESettings settings = TestConfiguration.Load();
-		string environmentName = settings.Sandbox.EnvironmentName;
+		McpE2ESettings settings = McpE2ESettings.Load();
+		string environmentName = settings.EnvironmentName;
 
-		await using McpServerSession session = await McpServerSession.StartAsync(TestConfiguration.Load(), CancellationToken.None);
+		await using McpServerSession session = await McpServerSession.StartAsync(McpE2ESettings.Load());
 
 		var args = new Dictionary<string, object>
 		{
@@ -66,10 +66,10 @@ public sealed class ApplicationCreateDbToolE2ETests
 			["environmentName"] = environmentName
 		};
 
-		CallToolResult result = await session.CallToolAsync(
+		CallToolResult result = await session.Client.CallToolAsync(
 			ToolName,
 			args,
-			CancellationToken.None);
+			session.CancellationToken);
 
 		result.IsError.Should().BeTrue("missing required parameters should cause validation error");
 	}
