@@ -82,8 +82,7 @@ public class McpHttpClient : IMcpHttpClient, IDisposable
 		}
 
 		var content = await response.Content.ReadAsStringAsync(cancellationToken);
-		var jsonContent = ParseSseContent(content);
-		var mcpResponse = JsonSerializer.Deserialize<McpResponse>(jsonContent, JsonOptions);
+		var mcpResponse = JsonSerializer.Deserialize<McpResponse>(content, JsonOptions);
 		
 		if (mcpResponse?.Error != null)
 		{
@@ -91,19 +90,6 @@ public class McpHttpClient : IMcpHttpClient, IDisposable
 		}
 
 		return _sessionId;
-	}
-
-	private static string ParseSseContent(string sseContent)
-	{
-		var lines = sseContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-		foreach (var line in lines)
-		{
-			if (line.StartsWith("data: "))
-			{
-				return line.Substring(6);
-			}
-		}
-		throw new InvalidOperationException($"No data line found in SSE response. Content: {sseContent}");
 	}
 
 	public async Task<McpToolCallResult> CallToolAsync(
@@ -130,8 +116,7 @@ public class McpHttpClient : IMcpHttpClient, IDisposable
 		var response = await SendMcpRequestAsync(toolCallRequest, cancellationToken);
 		var content = await response.Content.ReadAsStringAsync(cancellationToken);
 		
-		var jsonContent = ParseSseContent(content);
-		var mcpResponse = JsonSerializer.Deserialize<McpResponse>(jsonContent, JsonOptions);
+		var mcpResponse = JsonSerializer.Deserialize<McpResponse>(content, JsonOptions);
 		
 		if (mcpResponse?.Error != null)
 		{

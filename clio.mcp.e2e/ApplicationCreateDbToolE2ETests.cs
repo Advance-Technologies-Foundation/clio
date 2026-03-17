@@ -32,14 +32,11 @@ public sealed class ApplicationCreateDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["args"] = new Dictionary<string, object>
-			{
-				["name"] = $"TestApp_{DateTime.Now:yyyyMMddHHmmss}",
-				["code"] = $"UsrTestApp{DateTime.Now:yyyyMMddHHmmss}",
-				["templateCode"] = "AppFreedomUI",
-				["iconBackground"] = "#FF5733",
-				["environmentName"] = environmentName
-			}
+			["name"] = $"TestApp_{DateTime.Now:yyyyMMddHHmmss}",
+			["code"] = $"UsrTestApp{DateTime.Now:yyyyMMddHHmmss}",
+			["templateCode"] = "AppFreedomUI",
+			["iconBackground"] = "#FF5733",
+			["environmentName"] = environmentName
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -65,11 +62,8 @@ public sealed class ApplicationCreateDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["args"] = new Dictionary<string, object>
-			{
-				["name"] = "TestApp",
-				["environmentName"] = environmentName
-			}
+			["name"] = "TestApp",
+			["environmentName"] = environmentName
 		};
 
 		CallToolResult result = await session.CallToolAsync(

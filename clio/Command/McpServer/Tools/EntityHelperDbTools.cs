@@ -40,7 +40,7 @@ public class EntityCheckNameDbTool : BaseMcpBackendTool<EntityCheckNameDbOptions
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "entity.check_name", arguments, _commandResolver);
+		return ExecuteMcpToolWithEnvironment(options, "entity.check_name_taken", arguments, _commandResolver);
 	}
 }
 
@@ -73,7 +73,7 @@ public class EntityListPackagesDbTool : BaseMcpBackendTool<EntityListPackagesDbO
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "entity.list_parents", arguments, _commandResolver);
+		return ExecuteMcpToolWithEnvironment(options, "entity.list_packages", arguments, _commandResolver);
 	}
 }
 
@@ -98,7 +98,7 @@ public class EntityGetSchemaDbTool : BaseMcpBackendTool<EntityGetSchemaDbOptions
 	{
 		var arguments = new Dictionary<string, object>
 		{
-			["name"] = args.SchemaName
+			["schemaName"] = args.SchemaName
 		};
 
 		if (!string.IsNullOrEmpty(args.PackageUId))
@@ -114,7 +114,7 @@ public class EntityGetSchemaDbTool : BaseMcpBackendTool<EntityGetSchemaDbOptions
 			Password = args.Password
 		};
 
-		return ExecuteMcpToolWithEnvironment(options, "entity.get_schema_info", arguments, _commandResolver);
+		return ExecuteMcpToolWithEnvironment(options, "entity.get_schema", arguments, _commandResolver);
 	}
 }
 

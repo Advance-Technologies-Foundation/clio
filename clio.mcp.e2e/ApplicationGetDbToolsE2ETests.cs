@@ -38,27 +38,12 @@ public sealed class ApplicationGetInfoDbToolE2ETests
 			}
 		};
 
-		TestContext.WriteLine($"Testing {ToolName} with environment: {environmentName}");
 		CallToolResult result = await session.CallToolAsync(
 			ToolName,
 			args,
 			CancellationToken.None);
 
-		if (result.IsError == true)
-		{
-			TestContext.WriteLine("ERROR: Tool returned error!");
-			TestContext.WriteLine($"Content count: {result.Content?.Count ?? 0}");
-			if (result.Content != null)
-			{
-				foreach (var item in result.Content)
-				{
-					TestContext.WriteLine($"  - Type: {item.Type}");
-					TestContext.WriteLine($"  - ToString: {item}");
-				}
-			}
-		}
-
-		(result.IsError == true).Should().BeFalse("getting application info should succeed");
+		result.IsError.Should().BeFalse("getting application info should succeed");
 		result.Content.Should().NotBeEmpty("result should contain application info");
 	}
 }
