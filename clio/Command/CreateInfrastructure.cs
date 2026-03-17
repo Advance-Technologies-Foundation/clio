@@ -52,7 +52,24 @@ public class CreateInfrastructureOptions{
 
 public class CreateInfrastructureCommand(IFileSystem fileSystem, IInfrastructurePathProvider infrastructurePathProvider,
 	ILogger logger) : Command<CreateInfrastructureOptions>{
-	
+
+	#region Methods: Private
+
+	private void ProcessTemplateFile(string path, IDictionary<string, string> replacements) {
+		if (!fileSystem.ExistsFile(path)) {
+			return;
+		}
+
+		string content = fileSystem.ReadAllText(path);
+		foreach (KeyValuePair<string, string> kvp in replacements) {
+			content = content.Replace(kvp.Key, kvp.Value);
+		}
+
+		fileSystem.WriteAllTextToFile(path, content);
+	}
+
+	#endregion
+
 	#region Methods: Public
 
 	public override int Execute(CreateInfrastructureOptions options) {
@@ -73,29 +90,19 @@ public class CreateInfrastructureCommand(IFileSystem fileSystem, IInfrastructure
 			{ "{{MSSQL_REQUEST_CPU}}", options.MssqlRequestCpu }
 		};
 
-		// Process PostgreSQL StatefulSet
-		string postgresStatefulSetPath =
-			fileSystem.NormalizeFilePathByPlatform($"{to}/postgres/postgres-stateful-set.yaml");
-		if (fileSystem.ExistsFile(postgresStatefulSetPath)) {
-			string content = fileSystem.ReadAllText(postgresStatefulSetPath);
-			foreach (KeyValuePair<string, string> kvp in replacements) {
-				content = content.Replace(kvp.Key, kvp.Value);
-			}
+		string persistentInfrastructureRoot = "/mnt/data/clio-infrastructure";
+		replacements.Add("{{CLIO_INFRA_ROOT}}", persistentInfrastructureRoot);
 
-			fileSystem.WriteAllTextToFile(postgresStatefulSetPath, content);
-		}
-
-		// Process MSSQL StatefulSet
-		string mssqlStatefulSetPath =
-			fileSystem.NormalizeFilePathByPlatform($"{to}/mssql/mssql-stateful-set.yaml");
-		if (fileSystem.ExistsFile(mssqlStatefulSetPath)) {
-			string content = fileSystem.ReadAllText(mssqlStatefulSetPath);
-			foreach (KeyValuePair<string, string> kvp in replacements) {
-				content = content.Replace(kvp.Key, kvp.Value);
-			}
-
-			fileSystem.WriteAllTextToFile(mssqlStatefulSetPath, content);
-		}
+		ProcessTemplateFile(fileSystem.NormalizeFilePathByPlatform($"{to}/postgres/postgres-stateful-set.yaml"),
+			replacements);
+		ProcessTemplateFile(fileSystem.NormalizeFilePathByPlatform($"{to}/mssql/mssql-stateful-set.yaml"),
+			replacements);
+		ProcessTemplateFile(fileSystem.NormalizeFilePathByPlatform($"{to}/postgres/postgres-volumes.yaml"),
+			replacements);
+		ProcessTemplateFile(fileSystem.NormalizeFilePathByPlatform($"{to}/mssql/mssql-volumes.yaml"),
+			replacements);
+		ProcessTemplateFile(fileSystem.NormalizeFilePathByPlatform($"{to}/pgadmin/pgadmin-volumes.yaml"),
+			replacements);
 
 
 		// Display resource configuration

@@ -140,7 +140,8 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/mnt/clio-infrastructure/postgres/data"
+    path: "{{CLIO_INFRA_ROOT}}/postgres/data"
+    type: DirectoryOrCreate
 
 ---
 kind: PersistentVolume
@@ -157,4 +158,5 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/mnt/clio-infrastructure/postgres/backup-images"
+    path: "{{CLIO_INFRA_ROOT}}/postgres/backup-images"
+    type: DirectoryOrCreate

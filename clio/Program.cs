@@ -819,13 +819,14 @@ internal class Program {
 		string helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
-		if(args.Length >= 2 && (args[1] == "--HELP" || args[1] == "-H")) {
+		// Default: console help via LocalHelpViewer; use --WEB / -W to open browser
+		if(args.Length >= 2 && (args[1] == "--WEB" || args[1] == "-W")) {
 			IServiceProvider bm = new BindingsModule().Register();
-			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
+			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<WikiHelpViewer>();
 		}
 		else {
 			IServiceProvider bm = new BindingsModule().Register();
-			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<WikiHelpViewer>();
+			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
 		}
 		
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
