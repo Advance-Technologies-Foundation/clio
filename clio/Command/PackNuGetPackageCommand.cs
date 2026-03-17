@@ -61,7 +61,7 @@ namespace Clio.Command
 		#region Methods: Private
 
 		private PackageDependency ParseDependency(string dependencyDescription) {
-			string[] dependencyItems = dependencyDescription.Split([':'], StringSplitOptions.RemoveEmptyEntries);
+			string[] dependencyItems = dependencyDescription.Split(new[] {':'}, StringSplitOptions.RemoveEmptyEntries);
 			if (dependencyItems.Length != 2) {
 				throw new ArgumentException($"Wrong format the dependency: '{dependencyDescription}'. " 
 				                            + "The format the dependency mast be: '<PackageName>:<PackageVersion>'");
