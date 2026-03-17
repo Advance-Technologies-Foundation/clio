@@ -13,6 +13,8 @@ public interface IServiceUrlBuilder
 
 	string Build(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings);
 
+	string BuildMcpUrl(EnvironmentSettings environmentSettings);
+
 	#endregion
 
 }
