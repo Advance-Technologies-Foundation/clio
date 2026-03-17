@@ -115,10 +115,20 @@ public class EntityUpdateDbTool : BaseMcpBackendTool<EntityUpdateDbOptions>
 	{
 		var arguments = new Dictionary<string, object>
 		{
-			["schemaName"] = args.SchemaName,
+			["entityUId"] = args.EntityUId,
 			["packageUId"] = args.PackageUId,
-			["columnsJson"] = args.ColumnsJson
+			["operationsJson"] = args.OperationsJson
 		};
+
+		if (!string.IsNullOrEmpty(args.SchemaName))
+		{
+			arguments["schemaName"] = args.SchemaName;
+		}
+
+		if (!string.IsNullOrEmpty(args.Caption))
+		{
+			arguments["caption"] = args.Caption;
+		}
 
 		var options = new EntityUpdateDbOptions
 		{
@@ -222,20 +232,28 @@ public class EntityCreateLookupDbArgs
 
 public class EntityUpdateDbArgs
 {
-	[JsonPropertyName("schemaName")]
-	[Description("Schema name to update")]
+	[JsonPropertyName("entityUId")]
+	[Description("Entity UId (GUID from entity.create response)")]
 	[Required]
-	public string SchemaName { get; set; }
+	public string EntityUId { get; set; }
 
 	[JsonPropertyName("packageUId")]
 	[Description("Package GUID")]
 	[Required]
 	public string PackageUId { get; set; }
 
-	[JsonPropertyName("columnsJson")]
-	[Description("JSON array of column operations (ADD/UPDATE/DELETE)")]
+	[JsonPropertyName("operationsJson")]
+	[Description("JSON array of operations: {operation, column}. Operations: addColumn, updateColumn, removeColumn")]
 	[Required]
-	public string ColumnsJson { get; set; }
+	public string OperationsJson { get; set; }
+
+	[JsonPropertyName("schemaName")]
+	[Description("Entity schema name (optional, read from DB if not provided)")]
+	public string SchemaName { get; set; }
+
+	[JsonPropertyName("caption")]
+	[Description("Human-readable caption (optional, read from DB if not provided)")]
+	public string Caption { get; set; }
 
 	[JsonPropertyName("environmentName")]
 	[Description("Creatio environment name")]

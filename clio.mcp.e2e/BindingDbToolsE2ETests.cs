@@ -30,10 +30,14 @@ public sealed class BindingCreateDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["schemaName"] = "UsrTestEntity",
-			["packageUId"] = "12345678-1234-1234-1234-123456789012",
-			["rowsJson"] = "[{\"UsrName\":\"Test\",\"UsrValue\":123}]",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["packageUId"] = "12345678-1234-1234-1234-123456789012",
+				["schemaName"] = "UsrTestEntity",
+				["bindingName"] = "UsrTestEntity_Data",
+				["rowsJson"] = "[{\"UsrName\":\"Test\",\"UsrValue\":123}]",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -67,8 +71,11 @@ public sealed class BindingGetColumnsDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["schemaName"] = "Contact",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["schemaName"] = "Contact",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(

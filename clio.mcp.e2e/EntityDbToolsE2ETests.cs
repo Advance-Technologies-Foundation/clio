@@ -30,10 +30,13 @@ public sealed class EntityCreateDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["packageUId"] = "12345678-1234-1234-1234-123456789012",
-			["name"] = $"UsrTestEntity{DateTime.Now:yyyyMMddHHmmss}",
-			["caption"] = "Test Entity",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["packageUId"] = "12345678-1234-1234-1234-123456789012",
+				["name"] = $"UsrTestEntity{DateTime.Now:yyyyMMddHHmmss}",
+				["caption"] = "Test Entity",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -67,10 +70,13 @@ public sealed class EntityCreateLookupDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["packageUId"] = "12345678-1234-1234-1234-123456789012",
-			["name"] = $"UsrTestLookup{DateTime.Now:yyyyMMddHHmmss}",
-			["caption"] = "Test Lookup",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["packageUId"] = "12345678-1234-1234-1234-123456789012",
+				["name"] = $"UsrTestLookup{DateTime.Now:yyyyMMddHHmmss}",
+				["caption"] = "Test Lookup",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -104,16 +110,31 @@ public sealed class EntityCheckNameDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["name"] = "Contact",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["name"] = "Contact",
+				["environmentName"] = environmentName
+			}
 		};
 
-		CallToolResult result = await session.CallToolAsync(
-			ToolName,
-			args,
-			CancellationToken.None);
+		TestContext.WriteLine($"About to call {ToolName}...");
+		CallToolResult? result = null;
+		try
+		{
+			result = await session.CallToolAsync(
+				ToolName,
+				args,
+				CancellationToken.None);
+			TestContext.WriteLine($"Result: {(result == null ? "NULL!" : $"IsError={result.IsError}, Content={result.Content?.Count}")}");
+		}
+		catch (Exception ex)
+		{
+			TestContext.WriteLine($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+			throw;
+		}
 
-		result.IsError.Should().BeFalse("checking name should succeed");
+		result.Should().NotBeNull("CallToolAsync should return a result");
+		(result.IsError == true).Should().BeFalse("checking name should succeed");
 		result.Content.Should().NotBeEmpty("result should contain availability info");
 	}
 }
@@ -139,15 +160,40 @@ public sealed class EntityListPackagesDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["environmentName"] = environmentName
+			}
 		};
 
-		CallToolResult result = await session.CallToolAsync(
-			ToolName,
-			args,
-			CancellationToken.None);
+		TestContext.WriteLine($"Testing {ToolName} with environment: {environmentName}");
+		CallToolResult? result = null;
+		try
+		{
+			result = await session.CallToolAsync(
+				ToolName,
+				args,
+				CancellationToken.None);
+			TestContext.WriteLine($"Result received: IsError={result?.IsError}, Content count={result?.Content?.Count}");
+			if (result?.IsError == true && result.Content != null)
+			{
+				foreach (var item in result.Content)
+				{
+					TestContext.WriteLine($"  Error: {item.Type} - {item}");
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			TestContext.WriteLine($"EXCEPTION during CallToolAsync:");
+			TestContext.WriteLine($"  Type: {ex.GetType().Name}");
+			TestContext.WriteLine($"  Message: {ex.Message}");
+			TestContext.WriteLine($"  Stack: {ex.StackTrace}");
+			throw;
+		}
 
-		result.IsError.Should().BeFalse("listing packages should succeed");
+		result.Should().NotBeNull("CallToolAsync should return a result");
+		(result.IsError == true).Should().BeFalse("listing packages should succeed");
 		result.Content.Should().NotBeEmpty("result should contain package list");
 	}
 }
@@ -173,8 +219,11 @@ public sealed class EntityGetSchemaDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["schemaName"] = "Contact",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["schemaName"] = "Contact",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(

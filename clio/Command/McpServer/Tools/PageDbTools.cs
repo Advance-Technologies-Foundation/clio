@@ -29,7 +29,7 @@ public class PageGetDbTool : BaseMcpBackendTool<PageGetDbOptions>
 	{
 		var arguments = new Dictionary<string, object>
 		{
-			["pageName"] = args.PageName
+			["schemaName"] = args.PageName
 		};
 
 		if (!string.IsNullOrEmpty(args.PackageUId))
@@ -70,9 +70,9 @@ public class PageUpdateDbTool : BaseMcpBackendTool<PageUpdateDbOptions>
 	{
 		var arguments = new Dictionary<string, object>
 		{
-			["pageName"] = args.PageName,
+			["schemaName"] = args.PageName,
 			["packageUId"] = args.PackageUId,
-			["schemaJson"] = args.SchemaJson
+			["body"] = args.SchemaJson
 		};
 
 		var options = new PageUpdateDbOptions

@@ -29,8 +29,9 @@ public class BindingCreateDbTool : BaseMcpBackendTool<BindingCreateDbOptions>
 	{
 		var arguments = new Dictionary<string, object>
 		{
-			["schemaName"] = args.SchemaName,
 			["packageUId"] = args.PackageUId,
+			["schemaName"] = args.SchemaName,
+			["bindingName"] = args.BindingName,
 			["rowsJson"] = args.RowsJson
 		};
 
@@ -92,15 +93,20 @@ public class BindingGetColumnsDbOptions : EnvironmentOptions
 
 public class BindingCreateDbArgs
 {
+	[JsonPropertyName("packageUId")]
+	[Description("Package GUID")]
+	[Required]
+	public string PackageUId { get; set; }
+
 	[JsonPropertyName("schemaName")]
 	[Description("Schema name for the binding")]
 	[Required]
 	public string SchemaName { get; set; }
 
-	[JsonPropertyName("packageUId")]
-	[Description("Package GUID")]
+	[JsonPropertyName("bindingName")]
+	[Description("Name for the binding folder (e.g., SysModule_UsrTodoTask)")]
 	[Required]
-	public string PackageUId { get; set; }
+	public string BindingName { get; set; }
 
 	[JsonPropertyName("rowsJson")]
 	[Description("JSON array of binding rows")]

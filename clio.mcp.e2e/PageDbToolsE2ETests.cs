@@ -26,20 +26,41 @@ public sealed class PageGetDbToolE2ETests
 		McpE2ESettings settings = TestConfiguration.Load();
 		string environmentName = settings.Sandbox.EnvironmentName;
 
+		TestContext.WriteLine($"Starting test for {ToolName}");
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, CancellationToken.None);
+		TestContext.WriteLine("Session started");
 
 		var args = new Dictionary<string, object>
 		{
-			["pageName"] = "AccountPageV2",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["pageName"] = "AccountPageV2",
+				["environmentName"] = environmentName
+			}
 		};
 
-		CallToolResult result = await session.CallToolAsync(
-			ToolName,
-			args,
-			CancellationToken.None);
+		TestContext.WriteLine($"Calling tool {ToolName}...");
+		CallToolResult? result = null;
+		try
+		{
+			result = await session.CallToolAsync(
+				ToolName,
+				args,
+				CancellationToken.None);
+			TestContext.WriteLine($"Result: IsError={result?.IsError}, Content count={result?.Content?.Count}");
+		}
+		catch (Exception ex)
+		{
+			TestContext.WriteLine($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+			if (ex.InnerException != null)
+			{
+				TestContext.WriteLine($"Inner: {ex.InnerException.Message}");
+			}
+			throw;
+		}
 
-		result.IsError.Should().BeFalse("getting page should succeed");
+		result.Should().NotBeNull("CallToolAsync should return result");
+		(result.IsError == true).Should().BeFalse("getting page should succeed");
 		result.Content.Should().NotBeEmpty("result should contain page schema");
 	}
 }
@@ -65,7 +86,10 @@ public sealed class PageListDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
@@ -99,10 +123,13 @@ public sealed class PageUpdateDbToolE2ETests
 
 		var args = new Dictionary<string, object>
 		{
-			["pageName"] = "NonExistentPage",
-			["packageUId"] = "12345678-1234-1234-1234-123456789012",
-			["schemaJson"] = "{}",
-			["environmentName"] = environmentName
+			["args"] = new Dictionary<string, object>
+			{
+				["pageName"] = "NonExistentPage",
+				["packageUId"] = "12345678-1234-1234-1234-123456789012",
+				["schemaJson"] = "{}",
+				["environmentName"] = environmentName
+			}
 		};
 
 		CallToolResult result = await session.CallToolAsync(
