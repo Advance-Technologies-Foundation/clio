@@ -17,7 +17,7 @@ public abstract class BaseResource(IFileSystem fileSystem){
 		try{
 			List<Type> optionTypes = Assembly.GetExecutingAssembly().GetTypes().Where(t =>
 				t.CustomAttributes.Any(attribute => attribute.AttributeType == typeof(VerbAttribute))
-				&& (t.GetCustomAttribute<VerbAttribute>()?.Name == ResourceName || t.GetCustomAttribute<VerbAttribute>()!.Aliases.Contains(ResourceName))
+				&& (t.GetCustomAttribute<VerbAttribute>()?.Name == ResourceName || t.GetCustomAttribute<VerbAttribute>()!.Aliases.ContainsAny([ResourceName]))
 			).ToList();
 				
 			if (optionTypes.Count == 0) {
