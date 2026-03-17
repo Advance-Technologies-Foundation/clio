@@ -358,7 +358,6 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<IMcpHttpClientFactory, McpHttpClientFactory>();
 		services.AddTransient<McpServerCommand>();
 		services.AddMcpServer()
 				.WithStdioServerTransport()

@@ -10,8 +10,6 @@ For MCP implementation work in this directory, explicitly use the `create-mcp-to
 
 Prefer deriving MCP tools from `clio\Command\McpServer\Tools\BaseTool.cs`.
 
-For tools that call backend MCP server, use `BaseMcpBackendTool<T>`.
-
 Use one of these two execution paths:
 
 - `InternalExecute(options)`
@@ -21,38 +19,6 @@ Use one of these two execution paths:
 - `InternalExecute<TCommand>(options)`
   Use this when `options` inherit from `EnvironmentOptions` and the command depends on environment-bound services such as `IApplicationClient`, `EnvironmentSettings`, or `IServiceUrlBuilder`.
   This resolves a fresh command instance for the environment carried by the current MCP call and avoids reusing the stale startup-time command.
-
-- `ExecuteMcpTool(options, toolName, arguments)` (from `BaseMcpBackendTool`)
-  Use this when the tool calls backend Creatio MCP server (DB-first approach).
-  This handles MCP HTTP communication, session management, and error handling.
-
-## Backend MCP Tools (DB-first)
-
-Tools with `-db` suffix call the Creatio backend MCP server for DB-first operations:
-
-**Application tools:**
-- `application-create-db` - Create applications
-- `application-get-info-db` - Get application info
-- `application-get-list-db` - List applications
-
-**Entity tools:**
-- `entity-create-db` - Create entity schemas
-- `entity-create-lookup-db` - Create lookup schemas
-- `entity-update-db` - Update entity schemas
-- `entity-check-name-db` - Check if name is taken
-- `entity-list-packages-db` - List packages
-- `entity-get-schema-db` - Get schema details
-
-**Binding tools:**
-- `binding-create-db` - Create data bindings
-- `binding-get-columns-db` - Get binding columns
-
-**Page tools:**
-- `page-get-db` - Get Freedom UI page
-- `page-update-db` - Update Freedom UI page
-- `page-list-db` - List Freedom UI pages
-
-These tools use `BaseMcpBackendTool<T>` and call backend via `McpHttpClient`.
 
 ## Environment-sensitive commands
 

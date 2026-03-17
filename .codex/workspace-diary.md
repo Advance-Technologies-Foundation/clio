@@ -421,13 +421,6 @@ Decision: Updated command reference examples/aliases to match current CLI metada
 Discovery: `publish-app` and `new-ui-project` examples were incomplete for required parameters; `env-ui` alias in reference diverged from actual verb aliases (`gui`, `far`).
 Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/.DS_Store, .codex/workspace-diary.md
 Impact: Skill docs now avoid known false examples, reduce credential leakage risk in copy-paste scenarios, and keep repository contents cleaner across platforms.
-
-## 2026-03-03 12:55 – Fix delete-pkg-remote silent failure
-Context: clio delete-pkg-remote always reported "Done" even when the server returned an error. Backend (AppInstallerService.svc/DeletePackage) returns BaseResponse with success/errorInfo fields, but DeletePackageCommand never checked the response.
-Decision: Added ProceedResponse override using System.Text.Json to parse response, check success field, and report errors with errorInfo.message. Followed UploadLicensesCommand pattern.
-Discovery: ConsoleLogger.cs has pre-existing build errors on .NET 8 (uses \e escape sequences requiring C# 13). Build cannot complete on master due to this unrelated issue.
-Files: clio/Command/DeletePackageCommand.cs, clio.tests/Command/DeletePackageCommand.Tests.cs
-Impact: delete-pkg-remote now correctly reports failures instead of silently succeeding. Tests migrated to BaseCommandTests pattern with 7 test cases covering all response scenarios.
 ## 2026-03-03 10:35 – Replace ShowAppListCommand Console.WriteLine usage
 Context: User requested fixing specific CLIO002 warnings in ShowAppListCommand.cs for direct Console.WriteLine calls.
 Decision: Replaced all Console.WriteLine calls in ShowAppListCommand with ILogger.WriteLine/WriteWarning while preserving message text and formatting behavior.

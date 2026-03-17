@@ -180,12 +180,6 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 	public string Build(KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
 		Build(KnownRoutes[knownRoute], environmentSettings);
 
-	public string BuildMcpUrl(EnvironmentSettings environmentSettings)
-	{
-		_environmentSettings = environmentSettings;
-		return CreateUrl("/mcp");
-	}
-
 	#endregion
 
 }

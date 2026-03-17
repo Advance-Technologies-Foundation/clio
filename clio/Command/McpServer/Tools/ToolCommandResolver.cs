@@ -17,13 +17,6 @@ public interface IToolCommandResolver {
 	/// <returns>A command instance configured for the requested target.</returns>
 	TCommand Resolve<TCommand>(EnvironmentOptions options);
 	TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options);
-	
-	/// <summary>
-	/// Resolves environment settings for the provided environment options.
-	/// </summary>
-	/// <param name="options">Environment options</param>
-	/// <returns>Resolved environment settings</returns>
-	EnvironmentSettings ResolveEnvironmentSettings(EnvironmentOptions options);
 }
 
 /// <summary>
@@ -64,25 +57,5 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 		EnvironmentSettings settings = new EnvironmentSettings().Fill(options);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
-	}
-	
-	public EnvironmentSettings ResolveEnvironmentSettings(EnvironmentOptions options) {
-		ArgumentNullException.ThrowIfNull(options);
-		if (!string.IsNullOrWhiteSpace(options.Environment)) {
-			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
-				throw new InvalidOperationException(
-					$"Environment with key '{options.Environment}' not found. Check your clio configuration.");
-			}
-			EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment)
-				?? throw new InvalidOperationException(
-					$"Environment with key '{options.Environment}' not found. Check your clio configuration.");
-			return settings.Fill(options);
-		}
-		EnvironmentSettings newSettings = new EnvironmentSettings().Fill(options);
-		if (string.IsNullOrWhiteSpace(newSettings.Uri)) {
-			throw new InvalidOperationException(
-				"Either a configured environment name or an explicit URI is required for MCP command execution.");
-		}
-		return newSettings;
 	}
 }
