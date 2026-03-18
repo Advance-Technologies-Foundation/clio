@@ -15,20 +15,27 @@ namespace ClioGate.Functions.SQL
 		}
 
 		public static string ExecuteSQL(string script, UserConnection userConnection) {
-			script = script.Replace("|nl|", Environment.NewLine);
-			var query = new CustomQuery(userConnection, script);
-			var isChangeStateScript = GetIsChangeStateScript(script);
-			if (isChangeStateScript) {
-				var count = query.Execute();
-				return count.ToString();
+
+			try {
+				script = script.Replace("|nl|", Environment.NewLine);
+				var query = new CustomQuery(userConnection, script);
+				var isChangeStateScript = GetIsChangeStateScript(script);
+				if (isChangeStateScript) {
+					var count = query.Execute();
+					return count.ToString();
+				}
+				
+				var records = query.ExecuteReader(userConnection.EnsureDBConnection());
+				var dataTable = new DataTable {
+					TableName = "clioTable"
+				};
+				dataTable.Load(records);
+				return JsonConvert.SerializeObject(dataTable, Formatting.Indented);
+				
 			}
-			
-			var records = query.ExecuteReader(userConnection.EnsureDBConnection());
-			var dataTable = new DataTable {
-				TableName = "clioTable"
-			};
-			dataTable.Load(records);
-			return JsonConvert.SerializeObject(dataTable, Formatting.Indented);
+			catch (Exception e) {
+				return "ExecuteSQL ERROR: " + e.Message;
+			}
 		}
 	}
 }

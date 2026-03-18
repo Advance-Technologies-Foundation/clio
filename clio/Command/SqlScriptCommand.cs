@@ -45,8 +45,15 @@ namespace Clio.Command.SqlScriptCommand
 			ClioGateWay = clioGateway;
 		}
 
-		protected override string ClioGateMinVersion { get; } = "2.0.0.32";
+		protected override string ClioGateMinVersion { get; } = "2.0.0.41";
 		private static string GetSqlScriptResult(string serverResponse, string viewType, string filePath) {
+			
+			bool isError = TryGetError(serverResponse, out var errorMessage);
+			if (isError) {
+				return errorMessage;
+			}
+			
+			
 			if (serverResponse == "[]") {
 				return string.Empty;
 			}
@@ -74,6 +81,14 @@ namespace Clio.Command.SqlScriptCommand
 			return formatResult;
 		}
 
+		private static bool TryGetError(string json, out string errorMessage) {
+			if (json.StartsWith("ExecuteSQL ERROR: ")) {
+				errorMessage = json["ExecuteSQL ERROR: ".Length..];
+				return true;
+			}
+			errorMessage = string.Empty;
+			return false;
+		}
 		private static ConsoleTable CreateConsoleTable(DataTable dataTable) {
 			var table = new ConsoleTable();
 			foreach (var column in dataTable.Columns) {

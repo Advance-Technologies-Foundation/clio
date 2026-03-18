@@ -1002,3 +1002,11 @@ Decision: Added a dedicated `install-application` MCP tool and prompt, mapped `n
 Discovery: The local `clio` debug output is often file-locked by a running process, so focused validation is more reliable when tests are executed with isolated `OutDir` and `BaseIntermediateOutputPath` values; the success E2E can verify a real side effect by asserting the requested install report file is created.
 Files: C:\Projects\clio\clio\Command\InstallApplicationOptions.cs, C:\Projects\clio\clio\Command\McpServer\Tools\InstallApplicationTool.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\InstallApplicationPrompt.cs, C:\Projects\clio\clio.tests\Command\InstallApplicationCommandTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\InstallApplicationToolTests.cs, C:\Projects\clio\clio.mcp.e2e\InstallApplicationToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\Support\Configuration\McpE2ESettings.cs, C:\Projects\clio\clio.mcp.e2e\appsettings.example.json, C:\Projects\clio\clio.mcp.e2e\appsettings.json, C:\Projects\clio\clio\help\en\install-application.txt, C:\Projects\clio\clio\docs\commands\install-application.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future environment-sensitive MCP tools can reuse the same pattern for environment-only tool contracts, logger-backed command output, report-file side-effect assertions, and isolated-output test execution when local debug binaries are locked.
+
+## 2026-03-18 00:00 – Remove cliogate analyzer project dependency
+Context: User reported `NETSDK1005` when building `cliogate` because the project imported `Clio.Analyzers` as an analyzer reference even though the analyzer project does not target `netstandard2.0`.
+Decision: Removed the analyzer `ProjectReference` from `cliogate/cliogate.csproj` so `cliogate` no longer depends on `Clio.Analyzers` during restore or build.
+Discovery: `clio` already scopes its analyzer reference differently, while `cliogate` was the only production project directly coupling its restore graph to the analyzer target frameworks.
+Files: C:\Projects\clio\cliogate\cliogate.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `cliogate` restore/build no longer fails on analyzer target mismatch; existing package compatibility/reference warnings remain unchanged and are unrelated to the removed analyzer dependency.
+
