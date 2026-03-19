@@ -258,6 +258,13 @@ Discovery: Invocation-only matching on methods declared by System.Console misses
 Files: Clio.Analyzers/ConsoleOutputAnalyzer.cs, Clio.Analyzers.Tests/ConsoleOutputAnalyzerTests.cs, .codex/workspace-diary.md
 Impact: CLIO002 now enforces logger-only output policy for additional real-world console patterns previously slipping through.
 
+## 2026-03-19 00:00 – Push workspace backup investigation
+Context: Investigated why `pushw --Safe true` still performs package backup before install on a development environment.
+Decision: No code change; documented the actual call chain and current behavior.
+Discovery: `PushWorkspaceCommand` always routes through `WorkspaceInstaller` to `BasePackageInstaller.InstallPackedPackage`, which unconditionally calls `CreateBackupPackage` before installation. The `--Safe` option is not consulted there; current `Safe` handling in `EnvironmentSettings.Fill` only prompts based on the stored environment setting `this.Safe`, not the command-line `options.Safe` value.
+Files: clio/Command/PushWorkspaceCommand.cs, clio/Workspace/WorkspaceInstaller.cs, clio/Package/BasePackageInstaller.cs, clio/Environment/ConfigurationOptions.cs
+Impact: Future fixes should make backup behavior explicit/configurable and should not rely on `--Safe` for install-time backup control.
+
 ## 2026-03-17 00:00 – Create release 8.0.2.28
 Context: User requested running the release flow from the release prompt instructions.
 Decision: Verified `gh` installation and auth, confirmed latest tag `8.0.2.27`, reused already-updated `AssemblyVersion` `8.0.2.28`, then created and pushed tag `8.0.2.28` and published the GitHub release with `gh release create`.
