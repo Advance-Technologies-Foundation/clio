@@ -365,17 +365,17 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	#endregion
 
-	public static readonly Func<object, string> WrapRed = s => $"\e[31m{s}\e[0m";
-	public static readonly Func<object, string> WrapYellow = s => $"\e[33m{s}\e[0m";
-	public static readonly Func<object, string> WrapBlue = s => $"\e[34m{s}\e[0m";
-	public static readonly Func<object, string> WrapGreen = s => $"\e[32m{s}\e[0m";
-	public static readonly Func<object, string> WrapDarkYellow = s => $"\e[93m{s}\e[0m";
-	public static readonly Func<object, string> WhapCayenne = s => $"\e[91m{s}\e[0m";
+	public static readonly Func<object, string> WrapRed = s => $"\x1b[31m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapYellow = s => $"\x1b[33m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapBlue = s => $"\x1b[34m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapGreen = s => $"\x1b[32m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapDarkYellow = s => $"\x1b[93m{s}\x1b[0m";
+	public static readonly Func<object, string> WhapCayenne = s => $"\x1b[91m{s}\x1b[0m";
 	
-	public static readonly Func<object, string> WrapBold = s => $"\e[1m{s}\e[0m";
-	public static readonly Func<object, string> WrapUnderline = s => $"\e[4m{s}\e[0m";
-	public static readonly Func<object, string> WrapItalic = s => $"\e[3m{s}\e[0m";
-	public static readonly Func<object, string> WrapStrikeThrough = s => $"\e[9m{s}\e[0m";
+	public static readonly Func<object, string> WrapBold = s => $"\x1b[1m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapUnderline = s => $"\x1b[4m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapItalic = s => $"\x1b[3m{s}\x1b[0m";
+	public static readonly Func<object, string> WrapStrikeThrough = s => $"\x1b[9m{s}\x1b[0m";
 	
 	
 	private static bool SupportsAnsiEscapeCodes() =>

@@ -45,7 +45,7 @@ public class GetHelpResources(IFileSystem fileSystem){
 	private static List<Type> GetOptionTypes(string commandName) {
 		List<Type> optionTypes = Assembly.GetExecutingAssembly().GetTypes().Where(t =>
 			t.CustomAttributes.Any(attribute => attribute.AttributeType == typeof(VerbAttribute))
-			&& (t.GetCustomAttribute<VerbAttribute>()?.Name == commandName || t.GetCustomAttribute<VerbAttribute>()!.Aliases.ContainsAny([commandName]))
+			&& (t.GetCustomAttribute<VerbAttribute>()?.Name == commandName || t.GetCustomAttribute<VerbAttribute>()!.Aliases.Contains(commandName))
 		).ToList();
 		return optionTypes;
 	}

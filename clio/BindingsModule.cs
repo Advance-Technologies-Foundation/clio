@@ -165,6 +165,9 @@ public class BindingsModule {
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
+		services.AddTransient<PageListCommand>();
+		services.AddTransient<PageGetCommand>();
+		services.AddTransient<PageUpdateCommand>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGatePkgCommand>();
 		services.AddTransient<PingAppCommand>();
