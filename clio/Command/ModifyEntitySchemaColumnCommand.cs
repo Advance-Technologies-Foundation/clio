@@ -26,7 +26,13 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 	[Option("new-name", Required = false, HelpText = "New column name for rename operations")]
 	public string NewName { get; set; }
 
-	[Option("type", Required = false, HelpText = "Column type. Supported values: Guid, Text, Integer, Boolean, DateTime, Lookup")]
+	[Option("type", Required = false, HelpText = """
+												 Column type. Supported values:
+												 Guid, Integer, Boolean, DateTime, Lookup, 
+												 Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
+												 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
+												 Currency0, Currency1, Currency2, Currency3
+												 """)]
 	public string Type { get; set; }
 
 	[Option("title", Required = false, HelpText = "Column title/caption")]

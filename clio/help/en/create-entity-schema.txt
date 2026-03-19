@@ -17,11 +17,12 @@ DESCRIPTION
 
     Supported column types:
     - Guid
-    - Text
+    - Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
     - Integer
+    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,Currency0, Currency1, Currency2, Currency3
     - Boolean
     - DateTime
-    - Lookup (requires a reference schema name)
+    - Lookup (requires --reference-schema)
 
 OPTIONS
     --package              Target package name

@@ -130,11 +130,8 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 /// <summary>
 /// MCP tool surface for remote entity schema column mutations.
 /// </summary>
-public sealed class ModifyEntitySchemaColumnTool(
-	ModifyEntitySchemaColumnCommand command,
-	ILogger logger,
-	IToolCommandResolver commandResolver)
-	: BaseTool<ModifyEntitySchemaColumnOptions>(command, logger, commandResolver) {
+public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand command, ILogger logger,
+	IToolCommandResolver commandResolver) : BaseTool<ModifyEntitySchemaColumnOptions>(command, logger, commandResolver) {
 
 	internal const string ModifyEntitySchemaColumnToolName = "modify-entity-schema-column";
 
@@ -315,7 +312,13 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	string? NewName = null,
 
 	[property: JsonPropertyName("type")]
-	[property: Description("Column type. Supported values: Guid, Text, Integer, Boolean, DateTime, Lookup.")]
+	[property: Description("""
+						   Column type. Supported values:
+						   Guid, Integer, Boolean, DateTime, Lookup, 
+						   Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
+						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
+						   Currency0, Currency1, Currency2, Currency3
+						   """)]
 	string? Type = null,
 
 	[property: JsonPropertyName("title")]
