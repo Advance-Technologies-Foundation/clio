@@ -18,8 +18,7 @@ public class UpdateEntitySchemaOptions : RemoteCommandOptions
 	public string SchemaName { get; set; }
 
 	[Option("operation", Required = true,
-		HelpText = "Structured operation JSON. Repeat or separate multiple values with ';'.",
-		Separator = ';')]
+		HelpText = "Structured operation JSON. Repeat the option for multiple values.")]
 	public IEnumerable<string> Operations { get; set; }
 }
 
@@ -109,10 +108,11 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 	public override int Execute(UpdateEntitySchemaOptions options) {
 		try {
 			Validate(options);
-			foreach (ModifyEntitySchemaColumnOptions operation in BuildColumnMutations(options)) {
+			List<ModifyEntitySchemaColumnOptions> operations = [.. BuildColumnMutations(options)];
+			foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 				ModifyEntitySchemaColumnCommand.ValidateOptions(operation);
-				_columnManager.ModifyColumn(operation);
 			}
+			_columnManager.ModifyColumns(operations);
 			_logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception exception) {

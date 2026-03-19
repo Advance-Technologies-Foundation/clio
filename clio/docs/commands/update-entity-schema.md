@@ -13,7 +13,7 @@ column operations and reuses the same validation and DB-first save flow as `modi
 
 - `--package` (required): Target package name
 - `--schema-name` (required): Entity schema name
-- `--operation` (required, repeatable): Structured operation JSON
+- `--operation` (required, repeatable): Structured operation JSON. Repeat the option for each payload.
 - `-e, --environment` (required): Target environment
 
 Each operation uses fields such as:
@@ -46,5 +46,6 @@ clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
 
 - operations are applied in order
 - execution stops on the first failed operation
+- the batch is saved and materialized once after all operations are applied
 - use this command when the caller already knows a full batch of entity column mutations
 - use `modify-entity-schema-column` for one-off single-column changes

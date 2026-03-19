@@ -40,7 +40,8 @@ OPTIONS
                            <name>:<type>[:<title>[:<refSchema>]]
                            or JSON with name/type/title or caption/
                            reference-schema-name/required/
-                           default-value-source/default-value
+                           default-value-source/default-value.
+                           Repeat the option for multiple columns
 
     Environment options are also available:
     -e, --Environment      Environment name from the registered configuration

@@ -1631,7 +1631,7 @@ clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title 
 - `--title <TITLE>` (required): Entity schema title/caption
 - `--parent <SCHEMA_NAME>` (optional): Parent schema name
 - `--extend-parent` (optional): Create a replacement schema; requires `--parent`
-- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`
+- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns
 - `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
 
 **Supported types:**
@@ -1727,7 +1727,7 @@ clio update-entity-schema --package <PACKAGE_NAME> --schema-name <SCHEMA_NAME> -
 **Options:**
 - `--package <PACKAGE_NAME>` (required): Target package name
 - `--schema-name <SCHEMA_NAME>` (required): Entity schema name
-- `--operation <OPERATION_JSON>` (required, repeatable): Structured JSON operation. Repeat the option or separate multiple values with `;`
+- `--operation <OPERATION_JSON>` (required, repeatable): Structured JSON operation. Repeat the option for each payload
 - `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
 
 **Examples:**

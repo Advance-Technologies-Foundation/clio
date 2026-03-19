@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using CommandLine;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -48,24 +50,24 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 
 		// Assert
 		result.Should().Be(0, because: "valid batch requests should execute through the existing column mutation flow");
-		_columnManager.Received(1).ModifyColumn(Arg.Is<ModifyEntitySchemaColumnOptions>(mutation =>
-			mutation.Environment == "dev"
-			&& mutation.Package == "UsrPkg"
-			&& mutation.SchemaName == "UsrVehicle"
-			&& mutation.Action == "add"
-			&& mutation.ColumnName == "UsrStatus"
-			&& mutation.Type == "Lookup"
-			&& mutation.Title == "Status"
-			&& mutation.ReferenceSchemaName == "UsrVehicleStatus"
-			&& mutation.Required == true));
-		_columnManager.Received(1).ModifyColumn(Arg.Is<ModifyEntitySchemaColumnOptions>(mutation =>
-			mutation.Environment == "dev"
-			&& mutation.Package == "UsrPkg"
-			&& mutation.SchemaName == "UsrVehicle"
-			&& mutation.Action == "modify"
-			&& mutation.ColumnName == "UsrDueDate"
-			&& mutation.Title == "Due date"
-			&& mutation.DefaultValueSource == "None"));
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 2
+			&& mutations.ElementAt(0).Environment == "dev"
+			&& mutations.ElementAt(0).Package == "UsrPkg"
+			&& mutations.ElementAt(0).SchemaName == "UsrVehicle"
+			&& mutations.ElementAt(0).Action == "add"
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Type == "Lookup"
+			&& mutations.ElementAt(0).Title == "Status"
+			&& mutations.ElementAt(0).ReferenceSchemaName == "UsrVehicleStatus"
+			&& mutations.ElementAt(0).Required == true
+			&& mutations.ElementAt(1).Environment == "dev"
+			&& mutations.ElementAt(1).Package == "UsrPkg"
+			&& mutations.ElementAt(1).SchemaName == "UsrVehicle"
+			&& mutations.ElementAt(1).Action == "modify"
+			&& mutations.ElementAt(1).ColumnName == "UsrDueDate"
+			&& mutations.ElementAt(1).Title == "Due date"
+			&& mutations.ElementAt(1).DefaultValueSource == "None"));
 		_logger.Received(1).WriteInfo("Done");
 	}
 
@@ -85,7 +87,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 
 		// Assert
 		result.Should().Be(1, because: "a batch update without operations is invalid");
-		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumn(default!);
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("At least one operation is required.")));
 	}
@@ -106,8 +108,34 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 
 		// Assert
 		result.Should().Be(1, because: "malformed operation payloads should fail validation early");
-		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumn(default!);
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("Operation payload at index 0 is not valid JSON.")));
+	}
+
+	[Test]
+	[Description("Preserves semicolons inside structured JSON --operation payloads so valid titles and defaults are not split by the command-line parser.")]
+	public void Parse_Should_Preserve_Semicolons_In_Json_Operation_Payload() {
+		// Arrange
+		string jsonOperation = """{"action":"modify","column-name":"Status","title":"Needs;Review","default-value-source":"Const","default-value":"A;B"}""";
+		string[] arguments = [
+			"--package", "UsrPkg",
+			"--schema-name", "UsrVehicle",
+			"--operation", jsonOperation
+		];
+		UpdateEntitySchemaOptions? parsedOptions = null;
+
+		// Act
+		ParserResult<UpdateEntitySchemaOptions> parseResult = Parser.Default
+			.ParseArguments<UpdateEntitySchemaOptions>(arguments)
+			.WithParsed(result => parsedOptions = result);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.Parsed,
+			because: "valid structured JSON operation payloads should remain intact during CLI parsing");
+		parsedOptions.Should().NotBeNull(
+			because: "a successful parse should produce update-entity-schema options");
+		parsedOptions!.Operations.Should().BeEquivalentTo([jsonOperation],
+			because: "semicolons inside a JSON title or default value are part of the operation payload, not separators");
 	}
 }

@@ -35,16 +35,23 @@ public sealed class CreateEntitySchemaTool(
 	public CommandExecutionResult CreateEntitySchema(
 		[Description("Create-entity-schema parameters")] [Required] CreateEntitySchemaArgs args
 	) {
-		CreateEntitySchemaOptions options = new() {
+		CreateEntitySchemaOptions options = CreateOptions(args, args.ParentSchemaName, args.ExtendParent);
+		return InternalExecute<CreateEntitySchemaCommand>(options);
+	}
+
+	internal static CreateEntitySchemaOptions CreateOptions(
+		EntitySchemaCreateArgsBase args,
+		string? parentSchemaName,
+		bool extendParent) {
+		return new CreateEntitySchemaOptions {
 			Package = args.PackageName,
 			SchemaName = args.SchemaName,
 			Title = args.Title,
-			ParentSchemaName = args.ParentSchemaName,
-			ExtendParent = args.ExtendParent,
+			ParentSchemaName = parentSchemaName,
+			ExtendParent = extendParent,
 			Columns = SerializeColumns(args.Columns),
 			Environment = args.EnvironmentName
 		};
-		return InternalExecute<CreateEntitySchemaCommand>(options);
 	}
 
 	internal static IEnumerable<string>? SerializeColumns(IEnumerable<CreateEntitySchemaColumnArgs>? columns) {
@@ -117,15 +124,10 @@ public sealed class CreateLookupTool(
 	public CommandExecutionResult CreateLookup(
 		[Description("Create-lookup parameters")] [Required] CreateLookupArgs args
 	) {
-		CreateEntitySchemaOptions options = new() {
-			Package = args.PackageName,
-			SchemaName = args.SchemaName,
-			Title = args.Title,
-			ParentSchemaName = BaseLookupParentSchemaName,
-			ExtendParent = false,
-			Columns = CreateEntitySchemaTool.SerializeColumns(args.Columns),
-			Environment = args.EnvironmentName
-		};
+		CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
+			args,
+			BaseLookupParentSchemaName,
+			extendParent: false);
 		return InternalExecute<CreateEntitySchemaCommand>(options);
 	}
 }
@@ -270,9 +272,9 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 }
 
 /// <summary>
-/// Arguments for the <c>create-entity-schema</c> MCP tool.
+/// Shared request contract for MCP tools that create remote entity schemas.
 /// </summary>
-public sealed record CreateEntitySchemaArgs(
+public abstract record EntitySchemaCreateArgsBase(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Target package name on the Creatio environment")]
 	[property: Required]
@@ -293,6 +295,20 @@ public sealed record CreateEntitySchemaArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	[property: JsonPropertyName("columns")]
+	[property: Description("Optional initial columns to add to the schema.")]
+	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
+);
+
+/// <summary>
+/// Arguments for the <c>create-entity-schema</c> MCP tool.
+/// </summary>
+public sealed record CreateEntitySchemaArgs(
+	string PackageName,
+	string SchemaName,
+	string Title,
+	string EnvironmentName,
+
 	[property: JsonPropertyName("parent-schema-name")]
 	[property: Description("Optional parent schema name")]
 	string? ParentSchemaName = null,
@@ -301,39 +317,20 @@ public sealed record CreateEntitySchemaArgs(
 	[property: Description("Create a replacement schema. Requires parent-schema-name.")]
 	bool ExtendParent = false,
 
-	[property: JsonPropertyName("columns")]
-	[property: Description("Optional initial columns to add to the schema.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
-);
+) : EntitySchemaCreateArgsBase(PackageName, SchemaName, Title, EnvironmentName, Columns);
 
 /// <summary>
 /// Arguments for the <c>create-lookup</c> MCP tool.
 /// </summary>
 public sealed record CreateLookupArgs(
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name on the Creatio environment")]
-	[property: Required]
 	string PackageName,
-
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Lookup schema name. Maximum length is 22 characters.")]
-	[property: Required]
 	string SchemaName,
-
-	[property: JsonPropertyName("title")]
-	[property: Description("Lookup schema title or caption")]
-	[property: Required]
 	string Title,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
-	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("columns")]
-	[property: Description("Optional initial columns to add to the lookup schema.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
-);
+) : EntitySchemaCreateArgsBase(PackageName, SchemaName, Title, EnvironmentName, Columns);
 
 /// <summary>
 /// Arguments for the <c>update-entity-schema</c> MCP tool.

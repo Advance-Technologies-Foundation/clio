@@ -249,6 +249,53 @@ public class CreateEntitySchemaToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("Serializes advanced create-lookup column metadata as structured JSON so lookup creation keeps parity with create-entity-schema.")]
+	[Category("Unit")]
+	public void CreateLookup_Should_Serialize_Advanced_Column_Metadata_As_Json() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+			"MyPackage",
+			"UsrOrderStatus",
+			"Order status",
+			"docker_fix2",
+			[
+				new CreateEntitySchemaColumnArgs("Status", "ShortText", "Status") {
+					Required = true,
+					DefaultValueSource = "Const",
+					DefaultValue = "Draft"
+				}
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the lookup adapter should preserve valid advanced create-column metadata");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the serialized lookup create-column payload");
+		string serializedColumn = resolvedCommand.CapturedOptions!.Columns!.Single();
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("Status",
+			because: "structured serialization should preserve the column name");
+		document.RootElement.GetProperty("type").GetString().Should().Be("ShortText",
+			because: "structured serialization should preserve the requested type alias");
+		document.RootElement.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "structured serialization should preserve required metadata");
+		document.RootElement.GetProperty("default-value-source").GetString().Should().Be("Const",
+			because: "structured serialization should preserve the requested default source");
+		document.RootElement.GetProperty("default-value").GetString().Should().Be("Draft",
+			because: "structured serialization should preserve the default value");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeCreateEntitySchemaCommand : CreateEntitySchemaCommand {
 		public CreateEntitySchemaOptions CapturedOptions { get; private set; }
 

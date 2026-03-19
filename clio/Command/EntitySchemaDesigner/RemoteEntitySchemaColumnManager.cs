@@ -10,6 +10,12 @@ namespace Clio.Command.EntitySchemaDesigner;
 public interface IRemoteEntitySchemaColumnManager
 {
 	/// <summary>
+	/// Applies one or more column mutations to the same remote schema and persists the result once.
+	/// </summary>
+	/// <param name="options">Ordered mutation list that targets the same package, schema, and environment.</param>
+	void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options);
+
+	/// <summary>
 	/// Returns a structured snapshot of schema properties for the requested remote entity schema.
 	/// </summary>
 	/// <param name="options">Options that identify the package, schema, and remote environment.</param>
@@ -23,8 +29,22 @@ public interface IRemoteEntitySchemaColumnManager
 	/// <returns>Structured column properties for MCP and CLI formatting.</returns>
 	EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options);
 
+	/// <summary>
+	/// Applies a single column mutation to a remote schema.
+	/// </summary>
+	/// <param name="options">Mutation details for the target package, schema, and column.</param>
 	void ModifyColumn(ModifyEntitySchemaColumnOptions options);
+
+	/// <summary>
+	/// Prints column properties in CLI-friendly text form.
+	/// </summary>
+	/// <param name="options">Options that identify the package, schema, column, and remote environment.</param>
 	void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options);
+
+	/// <summary>
+	/// Prints schema properties in CLI-friendly text form.
+	/// </summary>
+	/// <param name="options">Options that identify the package, schema, and remote environment.</param>
 	void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options);
 }
 
@@ -42,40 +62,44 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	public void ModifyColumn(ModifyEntitySchemaColumnOptions options) {
+		ModifyColumns([options]);
+	}
+
+	public void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options) {
 		ArgumentNullException.ThrowIfNull(options);
-		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
-		EntitySchemaColumnAction action = NormalizeAction(options.Action);
-		switch (action) {
-			case EntitySchemaColumnAction.Add:
-				AddColumn(schema, package, options);
-				break;
-			case EntitySchemaColumnAction.Modify:
-				ModifyColumn(schema, package, options);
-				break;
-			case EntitySchemaColumnAction.Remove:
-				RemoveColumn(schema, options.ColumnName);
-				break;
-			default:
-				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
+		List<ModifyEntitySchemaColumnOptions> operations = options.ToList();
+		if (operations.Count == 0) {
+			throw new EntitySchemaDesignerException("At least one column mutation is required.");
 		}
 
-		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
-		VerifyColumnMutation(schema.Name, package.Descriptor.UId, action, options);
+		ModifyEntitySchemaColumnOptions rootOperation = operations[0];
+		PackageInfo package = ResolvePackage(rootOperation.Package);
+		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
+		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			ApplyColumnMutation(schema, package, operation);
+		}
+
+		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, rootOperation);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
 			throw new EntitySchemaDesignerException(
 				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
 		}
-		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
+		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, rootOperation);
 		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
-			options);
+			rootOperation);
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
 			throw new EntitySchemaDesignerException(
 				$"Schema '{schema.Name}' was saved but is not available in runtime.");
 		}
-		_logger.WriteInfo(
-			$"Column '{options.ColumnName}' action '{options.Action}' completed for schema '{options.SchemaName}'.");
+
+		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, rootOperation);
+		VerifyColumnMutations(reloadedSchema, operations);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			_logger.WriteInfo(
+				$"Column '{operation.ColumnName}' action '{operation.Action}' completed for schema '{operation.SchemaName}'.");
+		}
 	}
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
@@ -553,12 +577,55 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		};
 	}
 
-	private void VerifyColumnMutation(
-		string schemaName,
-		Guid packageUId,
+	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+		EntitySchemaColumnAction action = NormalizeAction(options.Action);
+		switch (action) {
+			case EntitySchemaColumnAction.Add:
+				AddColumn(schema, package, options);
+				return;
+			case EntitySchemaColumnAction.Modify:
+				ModifyColumn(schema, package, options);
+				return;
+			case EntitySchemaColumnAction.Remove:
+				RemoveColumn(schema, options.ColumnName);
+				return;
+			default:
+				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
+		}
+	}
+
+	private static void EnsureBatchTargetsSingleSchema(
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations,
+		ModifyEntitySchemaColumnOptions rootOperation) {
+		bool hasDifferentTarget = operations.Any(operation =>
+			!string.Equals(operation.Package, rootOperation.Package, StringComparison.OrdinalIgnoreCase)
+			|| !string.Equals(operation.SchemaName, rootOperation.SchemaName, StringComparison.OrdinalIgnoreCase)
+			|| !string.Equals(operation.Environment, rootOperation.Environment, StringComparison.Ordinal)
+			|| !string.Equals(operation.Uri, rootOperation.Uri, StringComparison.Ordinal)
+			|| !string.Equals(operation.Login, rootOperation.Login, StringComparison.Ordinal)
+			|| !string.Equals(operation.Password, rootOperation.Password, StringComparison.Ordinal)
+			|| !string.Equals(operation.ClientId, rootOperation.ClientId, StringComparison.Ordinal)
+			|| !string.Equals(operation.ClientSecret, rootOperation.ClientSecret, StringComparison.Ordinal)
+			|| !string.Equals(operation.AuthAppUri, rootOperation.AuthAppUri, StringComparison.Ordinal));
+		if (hasDifferentTarget) {
+			throw new EntitySchemaDesignerException(
+				"All batch column mutations must target the same package, schema, and environment.");
+		}
+	}
+
+	private void VerifyColumnMutations(
+		EntityDesignSchemaDto reloadedSchema,
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
+			VerifyColumnMutation(reloadedSchema, action, operation);
+		}
+	}
+
+	private static void VerifyColumnMutation(
+		EntityDesignSchemaDto reloadedSchema,
 		EntitySchemaColumnAction action,
 		ModifyEntitySchemaColumnOptions options) {
-		EntityDesignSchemaDto reloadedSchema = LoadSchema(schemaName, packageUId, options);
 		string expectedColumnName = !string.IsNullOrWhiteSpace(options.NewName)
 			? options.NewName.Trim()
 			: options.ColumnName.Trim();

@@ -28,7 +28,7 @@ clio create-entity-schema [options]
 |----------|-------------|---------|
 | `--parent` | Parent schema name | `--parent BaseEntity` |
 | `--extend-parent` | Create a replacement schema. Requires `--parent` | `--extend-parent` |
-| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value` | `--column "Name:Text:Name"` |
+| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
 
 ### Environment Configuration
 
@@ -110,6 +110,7 @@ clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Acc
 - For schemas without a parent, `Id:Guid` is created automatically if no Guid column is supplied.
 - If no primary display column is defined, the first text-like column is used.
 - The command accepts frontend-style aliases such as `ShortText`, `Float`, `Date`, and `Time`, and maps them to the closest supported designer types.
+- Repeat `--column` for multiple entries; semicolons inside JSON payloads are treated as content, not separators.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the schema cannot be read back.
 - Schema names longer than 22 characters are rejected locally before the server call.
 
