@@ -17,7 +17,8 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null, bool useApplicationInstaller = false);
+		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null,
+			bool useApplicationInstaller = false, bool createBackup = true);
 
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
@@ -139,14 +140,15 @@ namespace Clio.Workspaces
 			return applicationZip;
 		}
 
-		private void InstallApplication(string applicationZip, bool useApplicationInstaller = false){
+		private void InstallApplication(string applicationZip, bool useApplicationInstaller = false,
+			bool createBackup = true){
 			if (useApplicationInstaller && _applicationInstaller != null) {
 				_logger.WriteInfo($"Installing workspace packages using ApplicationInstaller...");
-				_applicationInstaller.Install(applicationZip, _environmentSettings);
+				_applicationInstaller.Install(applicationZip, _environmentSettings, createBackup: createBackup);
 				_logger.WriteInfo("Installation completed successfully.");
 			} else {
 				_logger.WriteInfo($"Installing workspace packages using PackageInstaller...");
-				_packageInstaller.Install(applicationZip, _environmentSettings);
+				_packageInstaller.Install(applicationZip, _environmentSettings, createBackup: createBackup);
 			}
 		}
 
@@ -163,7 +165,8 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
-		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null, bool useApplicationInstaller = false){
+		public void Install(IEnumerable<string> packages, string creatioPackagesZipName = null,
+			bool useApplicationInstaller = false, bool createBackup = true){
 			creatioPackagesZipName ??= CreatioPackagesZipName;
 			
 			if (useApplicationInstaller && _applicationInstaller == null) {
@@ -179,7 +182,7 @@ namespace Clio.Workspaces
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
-				InstallApplication(applicationZip, useApplicationInstaller);
+				InstallApplication(applicationZip, useApplicationInstaller, createBackup);
 				BuildStandalonePackagesIfNeeded();
 			});
 		}

@@ -96,7 +96,8 @@ public sealed class PushWorkspaceTool(
 	) {
 		PushWorkspaceCommandOptions options = new() {
 			Environment = args.EnvironmentName,
-			UseApplicationInstaller = true
+			UseApplicationInstaller = true,
+			SkipBackup = args.SkipBackup
 		};
 		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<PushWorkspaceCommand>(options));
 	}
@@ -142,7 +143,11 @@ public sealed record PushWorkspaceArgs(
 	[property: JsonPropertyName("workspace-path")]
 	[property: Description("Absolute path to the local workspace to push")]
 	[property: Required]
-	string WorkspacePath
+	string WorkspacePath,
+
+	[property: JsonPropertyName("skip-backup")]
+	[property: Description("When true, skips package backup before workspace install")]
+	bool? SkipBackup = null
 );
 
 /// <summary>

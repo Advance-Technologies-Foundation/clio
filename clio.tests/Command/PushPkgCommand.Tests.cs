@@ -84,4 +84,55 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 		result.Should().Be(1);
 	}
 
+	[Test]
+	[Description("Passes createBackup=true to the package installer when skip-backup is not specified so existing CLI behavior is preserved.")]
+	public void Execute_Should_Preserve_Backup_When_SkipBackup_Is_Not_Specified() {
+		// Arrange
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
+		PushPkgOptions options = new() {
+			Name = "Pkg"
+		};
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
+				Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(true);
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the command should succeed when package installation succeeds");
+		_packageInstaller.Received(1).Install(
+			options.Name,
+			Arg.Any<EnvironmentSettings>(),
+			Arg.Any<PackageInstallOptions>(),
+			options.ReportPath,
+			true);
+	}
+
+	[Test]
+	[Description("Passes createBackup=false to the package installer only when skip-backup is explicitly set to true.")]
+	public void Execute_Should_Disable_Backup_When_SkipBackup_Is_True() {
+		// Arrange
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
+		PushPkgOptions options = new() {
+			Name = "Pkg",
+			SkipBackup = true
+		};
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
+				Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(true);
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the command should still install successfully when backup is explicitly skipped");
+		_packageInstaller.Received(1).Install(
+			options.Name,
+			Arg.Any<EnvironmentSettings>(),
+			Arg.Any<PackageInstallOptions>(),
+			options.ReportPath,
+			false);
+	}
+
 }

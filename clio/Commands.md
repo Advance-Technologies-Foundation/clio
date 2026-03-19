@@ -230,6 +230,13 @@ for get installation log file specify report path parameter
 clio push-pkg <PACKAGE_NAME> -r log.txt
 ```
 
+To skip the pre-install package backup explicitly, pass `--skip-backup true`.
+If the option is omitted, the existing backup behavior is preserved.
+
+```bash
+clio push-pkg <PACKAGE_NAME> --skip-backup true
+```
+
 install one or more applications from marketplace.creatio.com
 
 ```
@@ -1506,6 +1513,13 @@ clio push-workspace -e demo
 Options:
 - `--unlock` (optional): Unlock workspace package after installing workspace to the environment.
 - `--use-application-installer` (optional): Use application installation flow instead of package installation flow.
+- `--skip-backup` (optional): Skip package backup before workspace install only when explicitly set to `true`.
+
+Example without backup:
+
+```bash
+clio push-workspace -e demo --skip-backup true
+```
 
 **IMPORTANT**: Workspaces available from clio 3.0.1.2 and above, and for full support developer flow you must install additional system package **cliogate** to you environment.
 

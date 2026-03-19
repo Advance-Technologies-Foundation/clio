@@ -43,6 +43,9 @@
 		[Option("force-compilation", Required = false, HelpText = "Runs compilation after install package")]
 		public bool ForceCompilation { get; set; }
 
+		[Option("skip-backup", Required = false, HelpText = "Skip package backup before install when explicitly set to true")]
+		public bool? SkipBackup { get; set; }
+
 		#endregion
 
 	}
@@ -110,6 +113,7 @@
 		public override int Execute(PushPkgOptions options)
 		{
 			PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
+			bool createBackup = options.SkipBackup != true;
 			bool success = false;
 			try
 			{
@@ -124,7 +128,7 @@
 						}).Wait();
 						
 						bool _loopSuccess = _packageInstaller.Install(fullPath, _environmentSettings,
-							packageInstallOptions, options.ReportPath);
+							packageInstallOptions, options.ReportPath, createBackup);
 						Console.WriteLine(_loopSuccess ? $"Done installing app by id: {MarketplaceId}" : $"Error installing app by id: {MarketplaceId}");
 					}
 					success = true;
@@ -132,7 +136,7 @@
 				else
 				{
 					success = _packageInstaller.Install(options.Name, _environmentSettings,
-						packageInstallOptions, options.ReportPath);
+						packageInstallOptions, options.ReportPath, createBackup);
 				}
 				if (options.ForceCompilation && success) {
 					CompileConfigurationOptions compileOptions = CreateFromPushPkgOptions(options);

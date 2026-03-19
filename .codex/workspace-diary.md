@@ -272,6 +272,13 @@ Discovery: `clio/clio.csproj` was already aligned to the next release version be
 Files: clio/clio.csproj, .codex/workspace-diary.md
 Impact: Release `8.0.2.28` is published and CI/CD can now build, test, and publish artifacts from the release tag.
 
+## 2026-03-19 00:00 – Add explicit skip-backup option for push commands
+Context: User requested a separate parameter to disable package backup for `pushw` and `push-pkg`, while preserving existing behavior when the parameter is omitted.
+Decision: Added nullable `skip-backup` options on `push-workspace` and `push-pkg`, propagated them through workspace/package/application installer flows as `createBackup`, and kept backup enabled unless the caller explicitly passes `true`.
+Discovery: `push-workspace` already has MCP coverage, so the tool contract, prompt guidance, unit tests, and MCP E2E schema assertions also needed alignment; `push-pkg` currently has no MCP artifact, so no MCP addition was required there.
+Files: clio/Command/PushWorkspaceCommand.cs, clio/Command/PushPackageCommand.cs, clio/Workspace/IWorkspace.cs, clio/Workspace/Workspace.cs, clio/Workspace/WorkspaceInstaller.cs, clio/Package/BasePackageInstaller.cs, clio/Package/IPackageInstaller.cs, clio/Package/PackageInstaller.cs, clio/Package/IApplicationInstaller.cs, clio/Package/ApplicationInstaller.cs, clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs, clio/Commands.md, clio/help/en/push-pkg.txt, clio.tests/Command/PushPkgCommand.Tests.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Dev and CI callers can now opt out of backup explicitly without changing the default install safety behavior for existing commands and integrations.
+
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
 Decision: Injected IProcessExecutor into RestoreDbCommand and replaced ExecutePgRestoreCommand low-level Process/ProcessStartInfo logic with ProcessExecutionOptions + ExecuteWithRealtimeOutputAsync, preserving debug and throttled progress logging behavior.

@@ -204,12 +204,15 @@
 		}
 
 		private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
-			PackageInstallOptions packageInstallOptions) {
+			PackageInstallOptions packageInstallOptions, bool createBackup) {
 			string packageName = UploadPackage(filePath, environmentSettings);
 			string packageCode = packageName.Split('.')[0];
 			_logger.WriteInfo($"{environmentSettings.Uri}");
-			if (!CreateBackupPackage(packageCode, filePath, environmentSettings)) {
+			if (createBackup && !CreateBackupPackage(packageCode, filePath, environmentSettings)) {
 				return (false, "Dont created backup.");
+			}
+			if (!createBackup) {
+				_logger.WriteInfo("Package backup skipped.");
 			}
 			(bool success, string logText) =
 				InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);
@@ -227,13 +230,14 @@
 		}
 
 		private (bool, string) InstallPackageFromFolder(string packageFolderPath,
-			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions){
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions, bool createBackup){
 			var packedFilePath = $"{packageFolderPath}.gz";
 			_packageArchiver.Pack(packageFolderPath, packedFilePath, false, true);
 			bool success = false;
 			string logText;
 			try {
-				(success, logText) = InstallPackedPackage(packedFilePath, environmentSettings, packageInstallOptions);
+				(success, logText) = InstallPackedPackage(packedFilePath, environmentSettings, packageInstallOptions,
+					createBackup);
 			} finally {
 				_fileSystem.DeleteFile(packedFilePath);
 			}
@@ -241,15 +245,16 @@
 		}
 
 		private (bool, string) InstallPackage(string packagePackedFileOrFolderPath,
-			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions, bool createBackup) {
 			bool success = false;
 			string logText = null;
 			if (_fileSystem.ExistsFile(packagePackedFileOrFolderPath)) {
 				(success, logText) =
-					InstallPackedPackage(packagePackedFileOrFolderPath, environmentSettings, packageInstallOptions);
+					InstallPackedPackage(packagePackedFileOrFolderPath, environmentSettings, packageInstallOptions,
+						createBackup);
 			} else if (_fileSystem.ExistsDirectory(packagePackedFileOrFolderPath)) {
 				(success, logText) = InstallPackageFromFolder(packageFolderPath: packagePackedFileOrFolderPath,
-					environmentSettings, packageInstallOptions);
+					environmentSettings, packageInstallOptions, createBackup);
 			} else {
 				_logger.WriteLine($"Specified package not found by path {packagePackedFileOrFolderPath}");
 			}
@@ -261,11 +266,12 @@
 		#region Methods: Protected
 
 		protected bool InternalInstall(string packagePath, EnvironmentSettings environmentSettings = null,
-			PackageInstallOptions packageInstallOptions = null, string reportPath = null){
+			PackageInstallOptions packageInstallOptions = null, string reportPath = null, bool createBackup = true){
 			environmentSettings ??= _environmentSettings;
 			packagePath = _fileSystem.GetCurrentDirectoryIfEmpty(packagePath);
 			_reportPath = reportPath;
-			(bool success, string logText) = InstallPackage(packagePath, environmentSettings, packageInstallOptions);
+			(bool success, string logText) = InstallPackage(packagePath, environmentSettings, packageInstallOptions,
+				createBackup);
 			SaveLogFile(logText, reportPath);
 			return success;
 		}

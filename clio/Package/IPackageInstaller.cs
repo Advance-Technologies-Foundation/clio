@@ -9,7 +9,7 @@
 		#region Methods: Public
 
 		bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			PackageInstallOptions packageInstallOptions = null, string reportPath = null);
+			PackageInstallOptions packageInstallOptions = null, string reportPath = null, bool createBackup = true);
 
 		#endregion
 

@@ -26,6 +26,7 @@ public static class WorkspaceSyncPrompt {
 		 Use clio mcp server `{PushWorkspaceTool.PushWorkspaceToolName}` tool to push the workspace at
 		 `{workspacePath}` to Creatio environment `{environmentName}`.
 		 Pass `workspace-path` exactly as provided and use `environment-name` `{environmentName}`.
+		 Include `skip-backup` only when you explicitly want to skip the pre-install package backup.
 		 """;
 
 	/// <summary>
