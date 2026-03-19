@@ -333,9 +333,9 @@ public sealed record CreateLookupArgs(
 ) : EntitySchemaCreateArgsBase(PackageName, SchemaName, Title, EnvironmentName, Columns);
 
 /// <summary>
-/// Arguments for the <c>update-entity-schema</c> MCP tool.
+/// Shared request contract containing environment, package, and schema name properties.
 /// </summary>
-public sealed record UpdateEntitySchemaArgs(
+public abstract record EntitySchemaTargetArgsBase(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
 	[property: Required]
@@ -349,13 +349,22 @@ public sealed record UpdateEntitySchemaArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Entity schema name")]
 	[property: Required]
+	string SchemaName
+);
+
+/// <summary>
+/// Arguments for the <c>update-entity-schema</c> MCP tool.
+/// </summary>
+public sealed record UpdateEntitySchemaArgs(
+	string EnvironmentName,
+	string PackageName,
 	string SchemaName,
 
 	[property: JsonPropertyName("operations")]
 	[property: Description("Batch column operations to apply in order.")]
 	[property: Required]
 	IEnumerable<UpdateEntitySchemaOperationArgs> Operations
-);
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>
 /// Structured column input for the <c>create-entity-schema</c> MCP tool.
@@ -401,164 +410,9 @@ public sealed record CreateEntitySchemaColumnArgs(
 }
 
 /// <summary>
-/// Structured operation input for the <c>update-entity-schema</c> MCP tool.
+/// Shared column-modification properties used by both single-column and batch MCP tools.
 /// </summary>
-public sealed record UpdateEntitySchemaOperationArgs(
-	[property: JsonPropertyName("action")]
-	[property: Description("Column action: add, modify, or remove")]
-	[property: Required]
-	string Action,
-
-	[property: JsonPropertyName("column-name")]
-	[property: Description("Target column name")]
-	[property: Required]
-	string ColumnName,
-
-	[property: JsonPropertyName("new-name")]
-	[property: Description("New column name for rename operations")]
-	string? NewName = null,
-
-	[property: JsonPropertyName("type")]
-	[property: Description("Column type for add operations or explicit type changes.")]
-	string? Type = null,
-
-	[property: JsonPropertyName("title")]
-	[property: Description("Column title or caption")]
-	string? Title = null,
-
-	[property: JsonPropertyName("description")]
-	[property: Description("Column description")]
-	string? Description = null,
-
-	[property: JsonPropertyName("reference-schema-name")]
-	[property: Description("Lookup reference schema name")]
-	string? ReferenceSchemaName = null,
-
-	[property: JsonPropertyName("required")]
-	[property: Description("Set the required flag")]
-	bool? IsRequired = null,
-
-	[property: JsonPropertyName("indexed")]
-	[property: Description("Set the indexed flag")]
-	bool? Indexed = null,
-
-	[property: JsonPropertyName("cloneable")]
-	[property: Description("Set the cloneable flag")]
-	bool? Cloneable = null,
-
-	[property: JsonPropertyName("track-changes")]
-	[property: Description("Set the track-changes flag")]
-	bool? TrackChanges = null,
-
-	[property: JsonPropertyName("default-value")]
-	[property: Description("Set a constant default value")]
-	string? DefaultValue = null,
-
-	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Default value source: Const or None")]
-	string? DefaultValueSource = null,
-
-	[property: JsonPropertyName("multiline-text")]
-	[property: Description("Set the multi-line text flag")]
-	bool? MultilineText = null,
-
-	[property: JsonPropertyName("localizable-text")]
-	[property: Description("Set the localizable text flag")]
-	bool? LocalizableText = null,
-
-	[property: JsonPropertyName("accent-insensitive")]
-	[property: Description("Set the accent-insensitive flag")]
-	bool? AccentInsensitive = null,
-
-	[property: JsonPropertyName("masked")]
-	[property: Description("Set the masked flag")]
-	bool? Masked = null,
-
-	[property: JsonPropertyName("format-validated")]
-	[property: Description("Set the format-validated flag")]
-	bool? FormatValidated = null,
-
-	[property: JsonPropertyName("use-seconds")]
-	[property: Description("Set the use-seconds flag")]
-	bool? UseSeconds = null,
-
-	[property: JsonPropertyName("simple-lookup")]
-	[property: Description("Set the simple-lookup flag")]
-	bool? SimpleLookup = null,
-
-	[property: JsonPropertyName("cascade")]
-	[property: Description("Set the cascade-connection flag")]
-	bool? Cascade = null,
-
-	[property: JsonPropertyName("do-not-control-integrity")]
-	[property: Description("Set the do-not-control-integrity flag")]
-	bool? DoNotControlIntegrity = null
-);
-
-/// <summary>
-/// Arguments for the <c>get-entity-schema-properties</c> MCP tool.
-/// </summary>
-public sealed record GetEntitySchemaPropertiesArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
-	[property: Required]
-	string EnvironmentName,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name on the Creatio environment")]
-	[property: Required]
-	string PackageName,
-
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name")]
-	[property: Required]
-	string SchemaName
-);
-
-/// <summary>
-/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
-/// </summary>
-public sealed record GetEntitySchemaColumnPropertiesArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
-	[property: Required]
-	string EnvironmentName,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name on the Creatio environment")]
-	[property: Required]
-	string PackageName,
-
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name")]
-	[property: Required]
-	string SchemaName,
-
-	[property: JsonPropertyName("column-name")]
-	[property: Description("Column name")]
-	[property: Required]
-	string ColumnName
-);
-
-/// <summary>
-/// Arguments for the <c>modify-entity-schema-column</c> MCP tool.
-/// </summary>
-public sealed record ModifyEntitySchemaColumnArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
-	[property: Required]
-	string EnvironmentName,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name on the Creatio environment")]
-	[property: Required]
-	string PackageName,
-
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name")]
-	[property: Required]
-	string SchemaName,
-
+public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("action")]
 	[property: Description("Column action: add, modify, or remove")]
 	[property: Required]
@@ -656,3 +510,103 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	[property: Description("Set the do-not-control-integrity flag")]
 	bool? DoNotControlIntegrity = null
 );
+
+/// <summary>
+/// Structured operation input for the <c>update-entity-schema</c> MCP tool.
+/// </summary>
+public sealed record UpdateEntitySchemaOperationArgs(
+	string Action,
+	string ColumnName,
+	string? NewName = null,
+	string? Type = null,
+	string? Title = null,
+	string? Description = null,
+	string? ReferenceSchemaName = null,
+	bool? IsRequired = null,
+	bool? Indexed = null,
+	bool? Cloneable = null,
+	bool? TrackChanges = null,
+	string? DefaultValue = null,
+	string? DefaultValueSource = null,
+	bool? MultilineText = null,
+	bool? LocalizableText = null,
+	bool? AccentInsensitive = null,
+	bool? Masked = null,
+	bool? FormatValidated = null,
+	bool? UseSeconds = null,
+	bool? SimpleLookup = null,
+	bool? Cascade = null,
+	bool? DoNotControlIntegrity = null
+) : ColumnModificationArgsBase(Action, ColumnName, NewName, Type, Title, Description,
+	ReferenceSchemaName, IsRequired, Indexed, Cloneable, TrackChanges, DefaultValue,
+	DefaultValueSource, MultilineText, LocalizableText, AccentInsensitive, Masked,
+	FormatValidated, UseSeconds, SimpleLookup, Cascade, DoNotControlIntegrity);
+
+/// <summary>
+/// Arguments for the <c>get-entity-schema-properties</c> MCP tool.
+/// </summary>
+public sealed record GetEntitySchemaPropertiesArgs(
+	string EnvironmentName,
+	string PackageName,
+	string SchemaName
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+
+/// <summary>
+/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
+/// </summary>
+public sealed record GetEntitySchemaColumnPropertiesArgs(
+	string EnvironmentName,
+	string PackageName,
+	string SchemaName,
+
+	[property: JsonPropertyName("column-name")]
+	[property: Description("Column name")]
+	[property: Required]
+	string ColumnName
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+
+/// <summary>
+/// Arguments for the <c>modify-entity-schema-column</c> MCP tool.
+/// </summary>
+public sealed record ModifyEntitySchemaColumnArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Creatio environment name")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Target package name on the Creatio environment")]
+	[property: Required]
+	string PackageName,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name")]
+	[property: Required]
+	string SchemaName,
+
+	string Action,
+	string ColumnName,
+	string? NewName = null,
+	string? Type = null,
+	string? Title = null,
+	string? Description = null,
+	string? ReferenceSchemaName = null,
+	bool? IsRequired = null,
+	bool? Indexed = null,
+	bool? Cloneable = null,
+	bool? TrackChanges = null,
+	string? DefaultValue = null,
+	string? DefaultValueSource = null,
+	bool? MultilineText = null,
+	bool? LocalizableText = null,
+	bool? AccentInsensitive = null,
+	bool? Masked = null,
+	bool? FormatValidated = null,
+	bool? UseSeconds = null,
+	bool? SimpleLookup = null,
+	bool? Cascade = null,
+	bool? DoNotControlIntegrity = null
+) : ColumnModificationArgsBase(Action, ColumnName, NewName, Type, Title, Description,
+	ReferenceSchemaName, IsRequired, Indexed, Cloneable, TrackChanges, DefaultValue,
+	DefaultValueSource, MultilineText, LocalizableText, AccentInsensitive, Masked,
+	FormatValidated, UseSeconds, SimpleLookup, Cascade, DoNotControlIntegrity);
