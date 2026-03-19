@@ -140,6 +140,7 @@ internal class Program {
 		typeof(UninstallCreatioCommandOptions),
 		typeof(AddSchemaOptions),
 		typeof(CreateEntitySchemaOptions),
+		typeof(UpdateEntitySchemaOptions),
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
@@ -312,6 +313,7 @@ internal class Program {
 					UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
 					AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
 					CreateEntitySchemaOptions opts => Resolve<CreateEntitySchemaCommand>(opts).Execute(opts),
+					UpdateEntitySchemaOptions opts => Resolve<UpdateEntitySchemaCommand>(opts).Execute(opts),
 					ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
 					GetEntitySchemaColumnPropertiesOptions opts =>
 						Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),

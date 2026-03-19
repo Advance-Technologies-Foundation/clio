@@ -15,6 +15,8 @@ internal interface IRemoteEntitySchemaDesignerClient
 	BoolResponse CheckUniqueSchemaName(string managerName, string schemaName, Guid excludeUId, RemoteCommandOptions options);
 	DesignerResponse<EntityDesignSchemaDto> GetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
+	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
+	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
 }
 
 internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesignerClient
@@ -75,10 +77,37 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		return Post<EntityDesignSchemaDto, SaveDesignItemDesignerResponse>("SaveSchema", schema, options);
 	}
 
+	public BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options) {
+		return PostToUrl<SchemaDesignerRequestDto, BaseResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest),
+			new SchemaDesignerRequestDto {
+				SaveSchemaDbStructure = [schemaUId]
+			},
+			options,
+			"SaveSchemaDbStructure");
+	}
+
+	public RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options) {
+		return PostToUrl<RuntimeEntitySchemaRequestDto, RuntimeEntitySchemaResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest),
+			new RuntimeEntitySchemaRequestDto {
+				UId = schemaUId
+			},
+			options,
+			"GetRuntimeEntitySchema");
+	}
+
 	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options)
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string url = BuildDesignerMethodUrl(methodName);
+		return PostToUrl<TRequest, TResponse>(url, request, options, methodName);
+	}
+
+	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, RemoteCommandOptions options,
+		string methodName)
+		where TRequest : class
+		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
 		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
 			options.RetryDelay);

@@ -24,14 +24,18 @@ public sealed class EntitySchemaToolTests {
 		// Act
 		string[] toolNames = [
 			CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			CreateLookupTool.CreateLookupToolName,
+			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 		];
 
 		// Assert
-		toolNames.Should().Equal(new[] {
+			toolNames.Should().Equal(new[] {
 				"create-entity-schema",
+				"create-lookup",
+				"update-entity-schema",
 				"get-entity-schema-properties",
 				"get-entity-schema-column-properties",
 				"modify-entity-schema-column"
@@ -106,6 +110,7 @@ public sealed class EntitySchemaToolTests {
 			true,
 			false,
 			true,
+			"Const",
 			"Vehicle",
 			null,
 			false,
@@ -145,6 +150,54 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps structured batch MCP mutation arguments into update-entity-schema command options.")]
+	public void UpdateEntitySchema_Should_Map_All_Arguments() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand defaultCommand = new();
+		FakeUpdateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			[
+				new UpdateEntitySchemaOperationArgs(
+					"add",
+					"UsrStatus",
+					Type: "Lookup",
+					Title: "Status",
+					ReferenceSchemaName: "UsrVehicleStatus",
+					IsRequired: true),
+				new UpdateEntitySchemaOperationArgs(
+					"modify",
+					"UsrDueDate",
+					Title: "Due date",
+					DefaultValueSource: "None")
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the tool should forward a valid batch update through the resolved command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped batch update options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev");
+		resolvedCommand.CapturedOptions.Package.Should().Be("UsrPkg");
+		resolvedCommand.CapturedOptions.SchemaName.Should().Be("UsrVehicle");
+		resolvedCommand.CapturedOptions.Operations.Should().HaveCount(2);
+		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"action\":\"add\"");
+		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"column-name\":\"UsrStatus\"");
+		resolvedCommand.CapturedOptions.Operations!.Last().Should().Contain("\"default-value-source\":\"None\"");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps structured MCP mutation arguments into modify-entity-schema-column command options.")]
 	public void ModifyEntitySchemaColumn_Should_Map_All_Arguments() {
 		// Arrange
@@ -171,6 +224,7 @@ public sealed class EntitySchemaToolTests {
 			Indexed: true,
 			Cloneable: false,
 			TrackChanges: true,
+			DefaultValueSource: "Const",
 			DefaultValue: "Vehicle",
 			MultilineText: true,
 			LocalizableText: true,
@@ -205,6 +259,8 @@ public sealed class EntitySchemaToolTests {
 			because: "lookup reference changes should be mapped");
 		resolvedCommand.CapturedOptions.Required.Should().BeTrue(
 			because: "nullable boolean mutation flags should be mapped");
+		resolvedCommand.CapturedOptions.DefaultValueSource.Should().Be("Const",
+			because: "default-value-source should be mapped for mutation flows that need explicit clearing or const defaults");
 		resolvedCommand.CapturedOptions.LocalizableText.Should().BeTrue(
 			because: "text-specific options should be mapped");
 	}
@@ -213,6 +269,8 @@ public sealed class EntitySchemaToolTests {
 	[Category("Unit")]
 	[Description("Marks the entity schema read tools as read-only and the mutating tools as destructive.")]
 	[TestCase(typeof(CreateEntitySchemaTool), nameof(CreateEntitySchemaTool.CreateEntitySchema), false, true)]
+	[TestCase(typeof(CreateLookupTool), nameof(CreateLookupTool.CreateLookup), false, true)]
+	[TestCase(typeof(UpdateEntitySchemaTool), nameof(UpdateEntitySchemaTool.UpdateEntitySchema), false, true)]
 	[TestCase(typeof(GetEntitySchemaPropertiesTool), nameof(GetEntitySchemaPropertiesTool.GetEntitySchemaProperties), true, false)]
 	[TestCase(typeof(GetEntitySchemaColumnPropertiesTool), nameof(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnProperties), true, false)]
 	[TestCase(typeof(ModifyEntitySchemaColumnTool), nameof(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumn), false, true)]
@@ -247,6 +305,8 @@ public sealed class EntitySchemaToolTests {
 
 		// Act
 		string createPrompt = EntitySchemaPrompt.CreateEntitySchema("UsrPkg", "UsrVehicle", "Vehicle", "dev");
+		string lookupPrompt = EntitySchemaPrompt.CreateLookup("UsrPkg", "UsrOrderStatus", "Order status", "dev");
+		string updatePrompt = EntitySchemaPrompt.UpdateEntitySchema("UsrPkg", "UsrVehicle", "dev");
 		string schemaPrompt = EntitySchemaPrompt.GetEntitySchemaProperties("UsrPkg", "UsrVehicle", "dev");
 		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrPkg", "UsrVehicle", "Name", "dev");
 		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "modify", "Name", "dev");
@@ -254,6 +314,12 @@ public sealed class EntitySchemaToolTests {
 		// Assert
 		createPrompt.Should().Contain(CreateEntitySchemaTool.CreateEntitySchemaToolName,
 			because: "create prompt guidance should reference the exact production tool name");
+		lookupPrompt.Should().Contain(CreateLookupTool.CreateLookupToolName,
+			because: "lookup prompt guidance should reference the exact production tool name");
+		lookupPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
+		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
+			because: "batch update prompt guidance should reference the exact production tool name");
 		schemaPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "schema-read prompt guidance should reference the exact production tool name");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
@@ -272,6 +338,19 @@ public sealed class EntitySchemaToolTests {
 		}
 
 		public override int Execute(ModifyEntitySchemaColumnOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
+		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
+
+		public FakeUpdateEntitySchemaCommand()
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(UpdateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			return 0;
 		}

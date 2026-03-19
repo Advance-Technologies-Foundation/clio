@@ -113,4 +113,25 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("Remove action does not accept column property options.")));
 	}
+
+	[Test]
+	[Description("Treats default-value-source as a mutable option so callers can explicitly clear or apply defaults without changing other fields.")]
+	public void Execute_CallsColumnManager_WhenModifyOnlyChangesDefaultValueSource() {
+		// Arrange
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Name",
+			DefaultValueSource = "None"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "explicit default source changes should count as a valid modification request");
+		_columnManager.Received(1).ModifyColumn(options);
+		_logger.Received(1).WriteInfo("Done");
+	}
 }

@@ -76,7 +76,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		SaveUserTaskSchema = 28,
 		GetAvailableEntitySchemas = 29,
 		ServiceBasePath = 30,
-		GetApplicationInfo = 31
+		GetApplicationInfo = 31,
+		SchemaDesignerRequest = 32
 
 	}
 
@@ -122,6 +123,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetAvailableEntitySchemas, "ServiceModel/SchemaDataDesignerService.svc/GetAvailableEntitySchemas"},
 		{KnownRoute.ServiceBasePath, "ServiceModel/EntitySchemaDesignerService.svc"},
 		{KnownRoute.GetApplicationInfo, "ServiceModel/ApplicationInfoService.svc/GetApplicationInfo"},
+		{KnownRoute.SchemaDesignerRequest, "DataService/json/SyncReply/SchemaDesignerRequest"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

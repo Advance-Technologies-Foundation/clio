@@ -11,6 +11,7 @@ DESCRIPTION
     Loads the full entity schema design item from the remote Creatio environment
     and prints a human-readable schema summary with package, parent schema,
     primary columns, column counts, indexes, and major schema flags.
+    This is the canonical verification path after create-entity-schema.
 
 OPTIONS
     --package              Target package name
@@ -29,6 +30,7 @@ EXAMPLES
 NOTES
     - output is human-readable text, not JSON
     - the report includes own and inherited column counts
+    - schema mutations are expected to be readable here immediately after save
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

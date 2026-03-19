@@ -77,6 +77,7 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 		_logger.WriteInfo($"Indexed: {FormatBoolean(properties.Indexed)}");
 		_logger.WriteInfo($"Cloneable: {FormatBoolean(properties.Cloneable)}");
 		_logger.WriteInfo($"Track changes: {FormatBoolean(properties.TrackChanges)}");
+		_logger.WriteInfo($"Default value source: {FormatText(properties.DefaultValueSource)}");
 		_logger.WriteInfo($"Default value: {FormatText(properties.DefaultValue)}");
 		_logger.WriteInfo($"Reference schema: {FormatText(properties.ReferenceSchemaName)}");
 		_logger.WriteInfo($"Simple lookup: {FormatBoolean(properties.SimpleLookup)}");
