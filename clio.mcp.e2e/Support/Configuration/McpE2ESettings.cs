@@ -15,5 +15,11 @@ internal sealed class SandboxSettings {
 
 	public string? ApplicationPackagePath { get; set; }
 
+	public string? ApplicationTemplateCode { get; set; }
+
+	public string? ApplicationIconId { get; set; }
+
+	public string? ApplicationIconBackground { get; set; }
+
 	public string SeedKeyPrefix { get; set; } = "clio-mcp-e2e";
 }
