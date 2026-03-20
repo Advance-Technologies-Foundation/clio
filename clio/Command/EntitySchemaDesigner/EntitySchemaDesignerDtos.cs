@@ -57,6 +57,33 @@ internal sealed class SaveDesignItemDesignerResponse : BaseResponse
 	public Guid SchemaUId { get; set; }
 }
 
+internal sealed class SchemaDesignerRequestDto
+{
+	[JsonProperty("saveSchemaDBStructure")]
+	public List<Guid> SaveSchemaDbStructure { get; set; } = [];
+}
+
+internal sealed class RuntimeEntitySchemaRequestDto
+{
+	[JsonProperty("uId")]
+	public Guid UId { get; set; }
+}
+
+internal sealed class RuntimeEntitySchemaResponse : BaseResponse
+{
+	[JsonProperty("schema")]
+	public RuntimeEntitySchemaDto Schema { get; set; }
+}
+
+internal sealed class RuntimeEntitySchemaDto
+{
+	[JsonProperty("uId")]
+	public Guid UId { get; set; }
+
+	[JsonProperty("name")]
+	public string Name { get; set; }
+}
+
 internal sealed class ManagerItemDto
 {
 	[JsonProperty("uId")]

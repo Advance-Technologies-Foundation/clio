@@ -10,6 +10,12 @@ namespace Clio.Command.EntitySchemaDesigner;
 public interface IRemoteEntitySchemaColumnManager
 {
 	/// <summary>
+	/// Applies one or more column mutations to the same remote schema and persists the result once.
+	/// </summary>
+	/// <param name="options">Ordered mutation list that targets the same package, schema, and environment.</param>
+	void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options);
+
+	/// <summary>
 	/// Returns a structured snapshot of schema properties for the requested remote entity schema.
 	/// </summary>
 	/// <param name="options">Options that identify the package, schema, and remote environment.</param>
@@ -23,8 +29,22 @@ public interface IRemoteEntitySchemaColumnManager
 	/// <returns>Structured column properties for MCP and CLI formatting.</returns>
 	EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options);
 
+	/// <summary>
+	/// Applies a single column mutation to a remote schema.
+	/// </summary>
+	/// <param name="options">Mutation details for the target package, schema, and column.</param>
 	void ModifyColumn(ModifyEntitySchemaColumnOptions options);
+
+	/// <summary>
+	/// Prints column properties in CLI-friendly text form.
+	/// </summary>
+	/// <param name="options">Options that identify the package, schema, column, and remote environment.</param>
 	void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options);
+
+	/// <summary>
+	/// Prints schema properties in CLI-friendly text form.
+	/// </summary>
+	/// <param name="options">Options that identify the package, schema, and remote environment.</param>
 	void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options);
 }
 
@@ -42,26 +62,44 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	public void ModifyColumn(ModifyEntitySchemaColumnOptions options) {
+		ModifyColumns([options]);
+	}
+
+	public void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options) {
 		ArgumentNullException.ThrowIfNull(options);
-		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
-		switch (NormalizeAction(options.Action)) {
-			case EntitySchemaColumnAction.Add:
-				AddColumn(schema, package, options);
-				break;
-			case EntitySchemaColumnAction.Modify:
-				ModifyColumn(schema, package, options);
-				break;
-			case EntitySchemaColumnAction.Remove:
-				RemoveColumn(schema, options.ColumnName);
-				break;
-			default:
-				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
+		List<ModifyEntitySchemaColumnOptions> operations = options.ToList();
+		if (operations.Count == 0) {
+			throw new EntitySchemaDesignerException("At least one column mutation is required.");
 		}
 
-		_entitySchemaDesignerClient.SaveSchema(schema, options);
-		_logger.WriteInfo(
-			$"Column '{options.ColumnName}' action '{options.Action}' completed for schema '{options.SchemaName}'.");
+		ModifyEntitySchemaColumnOptions rootOperation = operations[0];
+		PackageInfo package = ResolvePackage(rootOperation.Package);
+		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
+		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			ApplyColumnMutation(schema, package, operation);
+		}
+
+		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, rootOperation);
+		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
+		if (schemaUId == Guid.Empty) {
+			throw new EntitySchemaDesignerException(
+				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
+		}
+		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, rootOperation);
+		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
+			rootOperation);
+		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
+			throw new EntitySchemaDesignerException(
+				$"Schema '{schema.Name}' was saved but is not available in runtime.");
+		}
+
+		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, rootOperation);
+		VerifyColumnMutations(reloadedSchema, operations);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			_logger.WriteInfo(
+				$"Column '{operation.ColumnName}' action '{operation.Action}' completed for schema '{operation.SchemaName}'.");
+		}
 	}
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
@@ -77,11 +115,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			source,
 			EntitySchemaDesignerSupport.GetLocalizableValue(column.Caption, cultureName),
 			EntitySchemaDesignerSupport.GetLocalizableValue(column.Description, cultureName),
-			GetFriendlyTypeName(column.DataValueType),
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
 			IsRequired(column.RequirementType),
 			column.Indexed,
 			column.IsValueCloneable,
 			column.IsTrackChangesInDB,
+			EntitySchemaDesignerSupport.GetFriendlyDefaultValueSource(column.DefValue),
 			column.DefValue?.Value?.ToString(),
 			column.ReferenceSchema?.Name,
 			column.List,
@@ -109,6 +148,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Indexed: {FormatBoolean(column.Indexed)}");
 		WriteInfo($"Cloneable: {FormatBoolean(column.Cloneable)}");
 		WriteInfo($"Track changes: {FormatBoolean(column.TrackChanges)}");
+		WriteInfo($"Default value source: {FormatText(column.DefaultValueSource)}");
 		WriteInfo($"Default value: {FormatText(column.DefaultValue)}");
 		WriteInfo($"Reference schema: {FormatText(column.ReferenceSchemaName)}");
 		WriteInfo($"Simple lookup: {FormatBoolean(column.SimpleLookup)}");
@@ -207,12 +247,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			CascadeConnection = options.Cascade ?? false,
 			DoNotControlIntegrity = options.DoNotControlIntegrity ?? false
 		};
-		if (options.DefaultValue != null) {
-			column.DefValue = new EntitySchemaColumnDefValueDto {
-				ValueSourceType = EntitySchemaColumnDefSource.Const,
-				Value = options.DefaultValue
-			};
-		}
+		ApplyDefaultValue(column, options, preserveWhenUnspecified: false);
 
 		if (dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"]) {
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
@@ -265,12 +300,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.TrackChanges.HasValue) {
 			column.IsTrackChangesInDB = options.TrackChanges.Value;
 		}
-		if (options.DefaultValue != null) {
-			column.DefValue = new EntitySchemaColumnDefValueDto {
-				ValueSourceType = EntitySchemaColumnDefSource.Const,
-				Value = options.DefaultValue
-			};
-		}
+		ApplyDefaultValue(column, options, preserveWhenUnspecified: true);
 		if (options.MultilineText.HasValue) {
 			column.MultiLineText = options.MultilineText.Value;
 		}
@@ -353,8 +383,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ValidateOptionsForType(ModifyEntitySchemaColumnOptions options, int dataValueType, bool isAdd) {
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
-		bool isText = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["text"];
-		bool isDateTime = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["datetime"];
+		bool isText = EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType);
+		bool isDateTime = EntitySchemaDesignerSupport.IsDateTimeLikeDataValueType(dataValueType);
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
 				throw new EntitySchemaDesignerException("Lookup columns require --reference-schema.");
@@ -379,6 +409,18 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (!isDateTime && options.UseSeconds.HasValue) {
 			throw new EntitySchemaDesignerException(
 				"--use-seconds can be used only when the effective column type is DateTime.");
+		}
+
+		EntitySchemaColumnDefSource? defaultValueSource =
+			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
+		if (defaultValueSource == EntitySchemaColumnDefSource.None && options.DefaultValue != null) {
+			throw new EntitySchemaDesignerException(
+				"--default-value cannot be used when --default-value-source is None.");
+		}
+
+		if (defaultValueSource == EntitySchemaColumnDefSource.Const && options.DefaultValue == null) {
+			throw new EntitySchemaDesignerException(
+				"--default-value is required when --default-value-source is Const.");
 		}
 	}
 
@@ -450,7 +492,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (string.IsNullOrWhiteSpace(typeName)) {
 			throw new EntitySchemaDesignerException($"--type is required for '{actionName}' action.");
 		}
-		if (!EntitySchemaDesignerSupport.SupportedDataValueTypes.TryGetValue(typeName.Trim(), out int dataValueType)) {
+		if (!EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType)) {
 			throw new EntitySchemaDesignerException(
 				$"Unsupported type '{typeName}'. Supported types: {EntitySchemaDesignerSupport.GetSupportedTypesList()}.");
 		}
@@ -507,25 +549,105 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			: (int)EntitySchemaColumnRequirementType.None;
 	}
 
-	private static string GetFriendlyTypeName(int? dataValueType) {
-		if (dataValueType == null) {
-			return "<none>";
-		}
-
-		return EntitySchemaDesignerSupport.SupportedDataValueTypes
-			.FirstOrDefault(pair => pair.Value == dataValueType.Value).Key switch {
-				"guid" => "Guid",
-				"text" => "Text",
-				"integer" => "Integer",
-				"datetime" => "DateTime",
-				"lookup" => "Lookup",
-				"boolean" => "Boolean",
-				_ => dataValueType.Value.ToString()
-			};
-	}
-
 	private static bool IsRequired(int requirementType) {
 		return requirementType != (int)EntitySchemaColumnRequirementType.None;
+	}
+
+	private static void ApplyDefaultValue(
+		EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options,
+		bool preserveWhenUnspecified) {
+		EntitySchemaColumnDefSource? defaultValueSource =
+			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
+		if (defaultValueSource == null && options.DefaultValue == null) {
+			if (!preserveWhenUnspecified) {
+				column.DefValue = null;
+			}
+			return;
+		}
+
+		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
+			column.DefValue = null;
+			return;
+		}
+
+		column.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = defaultValueSource ?? EntitySchemaColumnDefSource.Const,
+			Value = options.DefaultValue
+		};
+	}
+
+	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+		EntitySchemaColumnAction action = NormalizeAction(options.Action);
+		switch (action) {
+			case EntitySchemaColumnAction.Add:
+				AddColumn(schema, package, options);
+				return;
+			case EntitySchemaColumnAction.Modify:
+				ModifyColumn(schema, package, options);
+				return;
+			case EntitySchemaColumnAction.Remove:
+				RemoveColumn(schema, options.ColumnName);
+				return;
+			default:
+				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
+		}
+	}
+
+	private static void EnsureBatchTargetsSingleSchema(
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations,
+		ModifyEntitySchemaColumnOptions rootOperation) {
+		bool hasDifferentTarget = operations.Any(operation =>
+			!string.Equals(operation.Package, rootOperation.Package, StringComparison.OrdinalIgnoreCase)
+			|| !string.Equals(operation.SchemaName, rootOperation.SchemaName, StringComparison.OrdinalIgnoreCase)
+			|| !string.Equals(operation.Environment, rootOperation.Environment, StringComparison.Ordinal)
+			|| !string.Equals(operation.Uri, rootOperation.Uri, StringComparison.Ordinal)
+			|| !string.Equals(operation.Login, rootOperation.Login, StringComparison.Ordinal)
+			|| !string.Equals(operation.Password, rootOperation.Password, StringComparison.Ordinal)
+			|| !string.Equals(operation.ClientId, rootOperation.ClientId, StringComparison.Ordinal)
+			|| !string.Equals(operation.ClientSecret, rootOperation.ClientSecret, StringComparison.Ordinal)
+			|| !string.Equals(operation.AuthAppUri, rootOperation.AuthAppUri, StringComparison.Ordinal));
+		if (hasDifferentTarget) {
+			throw new EntitySchemaDesignerException(
+				"All batch column mutations must target the same package, schema, and environment.");
+		}
+	}
+
+	private void VerifyColumnMutations(
+		EntityDesignSchemaDto reloadedSchema,
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
+			VerifyColumnMutation(reloadedSchema, action, operation);
+		}
+	}
+
+	private static void VerifyColumnMutation(
+		EntityDesignSchemaDto reloadedSchema,
+		EntitySchemaColumnAction action,
+		ModifyEntitySchemaColumnOptions options) {
+		string expectedColumnName = !string.IsNullOrWhiteSpace(options.NewName)
+			? options.NewName.Trim()
+			: options.ColumnName.Trim();
+		bool ownColumnExists = (reloadedSchema.Columns?.ToList() ?? []).Any(column =>
+			string.Equals(column.Name, expectedColumnName, StringComparison.OrdinalIgnoreCase));
+
+		switch (action) {
+			case EntitySchemaColumnAction.Add:
+			case EntitySchemaColumnAction.Modify:
+				if (!ownColumnExists) {
+					throw new EntitySchemaDesignerException(
+						$"Column '{expectedColumnName}' could not be reloaded after save.");
+				}
+				break;
+			case EntitySchemaColumnAction.Remove:
+				if ((reloadedSchema.Columns?.ToList() ?? []).Any(column =>
+					string.Equals(column.Name, options.ColumnName, StringComparison.OrdinalIgnoreCase))) {
+					throw new EntitySchemaDesignerException(
+						$"Column '{options.ColumnName}' is still present after save.");
+				}
+				break;
+		}
 	}
 
 	private static string FormatBoolean(bool value) {

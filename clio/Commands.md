@@ -1622,23 +1622,42 @@ clio itide -e demo
 Create a new entity schema in a remote Creatio package.
 
 ```bash
-clio create-entity-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
+clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title <TITLE> -e <ENVIRONMENT_NAME> [--column <COLUMN_SPEC>]
 ```
 
 **Options:**
-- `<SCHEMA_NAME>` (required): Name of the entity schema to create
+- `--package <PACKAGE_NAME>` (required): Target package name
+- `--name <SCHEMA_NAME>` (required): Name of the entity schema to create
+- `--title <TITLE>` (required): Entity schema title/caption
+- `--parent <SCHEMA_NAME>` (optional): Parent schema name
+- `--extend-parent` (optional): Create a replacement schema; requires `--parent`
+- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns
 - `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
-- `-p, --package <PACKAGE_NAME>` (optional): Target package name
+
+**Supported types:**
+- `Guid`
+- `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`
+- `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`
+- `Integer`, `Float`
+- `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`
+- `Currency0`, `Currency1`, `Currency2`, `Currency3`
+- `Boolean`
+- `Date`, `DateTime`, `Time`
+- `Lookup`
 
 **Examples:**
 
 ```bash
-# Create entity schema in default package
-clio create-entity-schema MyEntity -e dev
+# Create entity schema in a package
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev
 
-# Create entity schema in specific package
-clio create-entity-schema MyEntity -p MyPackage -e dev
+# Create with structured column metadata
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
 ```
+
+**Notes:**
+- Current `clio` entity-schema tools are the supported ADAC integration surface; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Save succeeds only when the schema can be reloaded immediately after `SaveSchema`
 
 ## modify-entity-schema-column
 
@@ -1654,7 +1673,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--action <add|modify|remove>` (required): Column mutation type
 - `--column-name <COLUMN_NAME>` (required): Target column name
 - `--new-name <COLUMN_NAME>` (optional): Rename the column
-- `--type <Guid|Text|Integer|Boolean|DateTime|Lookup>` (optional for modify, required for add): Column type
+- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
 - `--title <CAPTION>` (optional): Column caption
 - `--description <TEXT>` (optional): Column description
 - `--reference-schema <SCHEMA_NAME>` (optional): Reference schema for lookup columns
@@ -1662,6 +1681,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--indexed <true|false>` (optional): Indexed flag
 - `--cloneable <true|false>` (optional): Cloneable flag
 - `--track-changes <true|false>` (optional): Track changes flag
+- `--default-value-source <Const|None>` (optional): Default value source
 - `--default-value <VALUE>` (optional): Constant default value
 - `--multiline-text <true|false>` (optional): Text-only flag
 - `--localizable-text <true|false>` (optional): Text-only flag
@@ -1683,6 +1703,9 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --
 # Modify a lookup column
 clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --reference-schema Contact -e dev
 
+# Clear a default value
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --action modify --column-name Status --default-value-source None -e dev
+
 # Remove an own column
 clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --action remove --column-name LegacyCode -e dev
 ```
@@ -1690,6 +1713,41 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --
 **Notes:**
 - v1 mutates own columns only; inherited columns are read-only
 - remove clears direct schema-level references to the removed column and validates required fallbacks locally
+- `--default-value-source None` clears the stored default value; `Const` requires `--default-value`
+- Save succeeds only when the mutated column can be read back immediately after `SaveSchema`
+
+## update-entity-schema
+
+Apply a batch of structured column operations to a remote entity schema.
+
+```bash
+clio update-entity-schema --package <PACKAGE_NAME> --schema-name <SCHEMA_NAME> --operation <OPERATION_JSON> -e <ENVIRONMENT_NAME>
+```
+
+**Options:**
+- `--package <PACKAGE_NAME>` (required): Target package name
+- `--schema-name <SCHEMA_NAME>` (required): Entity schema name
+- `--operation <OPERATION_JSON>` (required, repeatable): Structured JSON operation. Repeat the option for each payload
+- `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
+
+**Examples:**
+
+```bash
+# Add two columns in one batch
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
+  --operation "{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Lookup\",\"title\":\"Status\",\"reference-schema-name\":\"UsrVehicleStatus\",\"required\":true}" ^
+  --operation "{\"action\":\"add\",\"column-name\":\"UsrDueDate\",\"type\":\"Date\",\"title\":\"Due date\"}"
+
+# Rename a column and clear its default in one batch
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
+  --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" ^
+  --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+```
+
+**Notes:**
+- each operation uses the same column-level contract as `modify-entity-schema-column`
+- operations run in order and stop on the first failure
+- this is the clio-native batch alternative to frontend-style `entity.update.operationsJson`
 
 ## get-entity-schema-column-properties
 
@@ -1715,6 +1773,11 @@ clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVe
 clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVehicle --column-name Owner -e dev
 ```
 
+**Notes:**
+- own columns are searched first, then inherited columns
+- the readback includes `default-value-source` and `default-value`
+- this is the canonical verification path after `modify-entity-schema-column`
+
 ## get-entity-schema-properties
 
 Print a human-readable summary of a remote entity schema.
@@ -1734,6 +1797,10 @@ clio get-entity-schema-properties --package <PACKAGE_NAME> --schema-name <SCHEMA
 # Read entity schema properties
 clio get-entity-schema-properties --package MyPackage --schema-name UsrVehicle -e dev
 ```
+
+**Notes:**
+- the summary includes column counts, parent schema, primary columns, indexes, and key schema flags
+- this is the canonical verification path after `create-entity-schema`
 
 ## add-user-task
 

@@ -4,6 +4,7 @@ using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Common.Responses;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
@@ -32,6 +33,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_logger = Substitute.For<ILogger>();
+		_savedSchema = null;
+		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
 				Name = "UsrPkg",
@@ -45,6 +48,18 @@ internal class RemoteEntitySchemaColumnManagerTests
 					Success = true,
 					SchemaUId = _savedSchema.UId
 				};
+			});
+		_designerClient.SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new BaseResponse {
+				Success = true
+			});
+		_designerClient.GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(callInfo => new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto {
+					UId = callInfo.ArgAt<Guid>(0),
+					Name = (_savedSchema ?? _loadedSchema)?.Name ?? "UsrVehicle"
+				}
 			});
 		_designerClient.GetAvailableReferenceSchemas(Arg.Any<GetAvailableSchemasRequestDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
 			.Returns(new AvailableEntitySchemasResponse {
@@ -90,6 +105,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "description should be stored as a localizable designer field");
 		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Name",
 			because: "the first text column should become primary display when none exists");
+		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
+		_designerClient.Received(1).GetRuntimeEntitySchema(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
 	[Test]
@@ -129,6 +146,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 		savedColumn.IsValueCloneable.Should().BeTrue(because: "unspecified flags must be preserved");
 		savedColumn.RequirementType.Should().Be((int)EntitySchemaColumnRequirementType.ApplicationLevel,
 			because: "unspecified required settings must be preserved");
+		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
+		_designerClient.Received(1).GetRuntimeEntitySchema(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
 	[Test]
@@ -301,6 +320,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void GetColumnProperties_ReturnsStructuredColumnProperties() {
 		// Arrange
 		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.DataValueType = 27;
 		nameColumn.Indexed = true;
 		nameColumn.MultiLineText = true;
 		nameColumn.LocalizableText = true;
@@ -322,9 +342,64 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		result.ColumnName.Should().Be("Name", because: "the requested column name should be preserved");
 		result.Source.Should().Be("own", because: "the result should indicate whether the column is own or inherited");
-		result.Type.Should().Be("Text", because: "the friendly data type should be projected");
+		result.Type.Should().Be("ShortText", because: "frontend-compatible aliases should be projected for supported designer text subtypes");
+		result.DefaultValueSource.Should().Be("Const", because: "the structured result should preserve the explicit default source");
 		result.DefaultValue.Should().Be("Vehicle", because: "default values should remain available in the structured result");
 		result.MultilineText.Should().BeTrue(because: "text-specific flags should be projected");
+	}
+
+	[Test]
+	[Description("Clears a saved default value when modify requests default-value-source none without requiring other field changes.")]
+	public void ModifyColumn_ClearsDefaultValue_WhenDefaultValueSourceIsNone() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = "Vehicle"
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Name",
+			DefaultValueSource = "None"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "Name");
+		savedColumn.DefValue.Should().BeNull(
+			because: "explicit None should clear the persisted default value instead of preserving stale data");
+	}
+
+	[Test]
+	[Description("Accepts frontend-style type aliases when adding columns and maps them to the closest supported designer types.")]
+	public void ModifyColumn_AddsOwnColumn_FromFrontendTypeAlias() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Status",
+			Type = "ShortText",
+			Title = "Status"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "Status");
+		addedColumn.DataValueType.Should().Be(27,
+			because: "frontend ShortText aliases should map to the closest supported designer value");
+		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Status",
+			because: "frontend text aliases should still count as display-capable text columns");
 	}
 
 	[Test]
@@ -354,6 +429,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_logger.Received().WriteInfo("Entity schema column properties");
 		_logger.Received().WriteInfo("Source: own");
 		_logger.Received().WriteInfo("Type: Text");
+		_logger.Received().WriteInfo("Default value source: Const");
 		_logger.Received().WriteInfo("Indexed: true");
 		_logger.Received().WriteInfo("Default value: Vehicle");
 	}
@@ -418,9 +494,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private void SetupLoadedSchema() {
 		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
 				Arg.Any<Clio.Command.RemoteCommandOptions>())
-			.Returns(new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true,
-				Schema = _loadedSchema
+				Schema = _savedSchema ?? _loadedSchema
 			});
 	}
 

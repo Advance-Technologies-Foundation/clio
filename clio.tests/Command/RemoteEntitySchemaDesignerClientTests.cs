@@ -2,6 +2,7 @@ using System;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Common.Responses;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -65,5 +66,55 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Assert
 		response.Should().NotBeNull(because: "legacy escaped payloads should still be supported");
 		response.Schema.Name.Should().Be("UsrCodex0307", because: "fallback correction should preserve the schema");
+	}
+
+	[Test]
+	[Description("Posts schema UIds to SchemaDesignerRequest so saved entity schemas can be materialized in the runtime database.")]
+	public void SaveSchemaDbStructure_PostsSchemaDesignerRequest() {
+		// Arrange
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest)
+			.Returns("http://local/DataService/json/SyncReply/SchemaDesignerRequest");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":true}");
+		Guid schemaUId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+		// Act
+		BaseResponse response = _client.SaveSchemaDbStructure(schemaUId, new RemoteCommandOptions());
+
+		// Assert
+		response.Success.Should().BeTrue();
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/DataService/json/SyncReply/SchemaDesignerRequest",
+			Arg.Is<string>(body => body.Contains("saveSchemaDBStructure") && body.Contains(schemaUId.ToString())),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Loads runtime entity schemas by UId so callers can verify DB-first availability after SaveSchemaDBStructure.")]
+	public void GetRuntimeEntitySchema_PostsRuntimeSchemaRequest() {
+		// Arrange
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest)
+			.Returns("http://local/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+		Guid schemaUId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":true,\"schema\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrRuntimeVehicle\"}}");
+
+		// Act
+		RuntimeEntitySchemaResponse response = _client.GetRuntimeEntitySchema(schemaUId, new RemoteCommandOptions());
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Schema.Should().NotBeNull();
+		response.Schema!.Name.Should().Be("UsrRuntimeVehicle");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/DataService/json/SyncReply/RuntimeEntitySchemaRequest",
+			Arg.Is<string>(body => body.Contains("\"uId\"") && body.Contains(schemaUId.ToString())),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
 	}
 }

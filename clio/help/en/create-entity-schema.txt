@@ -15,13 +15,19 @@ DESCRIPTION
     parent schema, applies the requested name, title, and initial columns, and
     then saves the result.
 
+    Current clio entity-schema commands are the supported ADAC integration
+    contract. Keep using create-entity-schema / modify-entity-schema-column
+    rather than frontend-only aliases like entity.create / entity.update.
+
     Supported column types:
     - Guid
-    - Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+    - Text, ShortText, MediumText, LongText, MaxSizeText
+    - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
     - Integer
-    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,Currency0, Currency1, Currency2, Currency3
+    - Float
+    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
     - Boolean
-    - DateTime
+    - Date, DateTime, Time
     - Lookup (requires --reference-schema)
 
 OPTIONS
@@ -32,6 +38,10 @@ OPTIONS
     --extend-parent        Create a replacement schema. Requires --parent
     --column               Column definition in format
                            <name>:<type>[:<title>[:<refSchema>]]
+                           or JSON with name/type/title or caption/
+                           reference-schema-name/required/
+                           default-value-source/default-value.
+                           Repeat the option for multiple columns
 
     Environment options are also available:
     -e, --Environment      Environment name from the registered configuration
@@ -49,6 +59,9 @@ EXAMPLES
     # Create a lookup column
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "Owner:Lookup:Owner:Contact"
 
+    # Create a column with frontend-style type alias and default metadata
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
+
     # Create a schema inheriting from a parent schema
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
 
@@ -59,7 +72,8 @@ NOTES
     - The command works against a remote Creatio environment only
     - Package resolution requires cliogate to be installed on the target environment
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
-    - If no display column is set, the first Text column is used as primary display column
+    - If no display column is set, the first text-like column is used as primary display column
+    - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
     - Schema names longer than 22 characters are rejected before the server call
 
 REPORTING BUGS

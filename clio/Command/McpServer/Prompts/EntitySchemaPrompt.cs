@@ -40,9 +40,64 @@ public static class EntitySchemaPrompt {
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
 		 Include `columns` only when the request explicitly describes initial fields. For `Lookup` columns,
-		 provide `reference-schema-name`.
+		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
+		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
+		 When the caller needs richer metadata, each `columns` item can also include `required`,
+		 `default-value-source`, `default-value`, and frontend-style type aliases such as `ShortText` or `Date`.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
+		 """;
+
+	/// <summary>
+	/// Builds a prompt that directs the agent to create a remote lookup schema through MCP.
+	/// </summary>
+	[McpServerPrompt(Name = CreateLookupTool.CreateLookupToolName),
+		Description("Prompt to create a remote lookup schema")]
+	public static string CreateLookup(
+		[Required]
+		[Description("Target package name")]
+		string packageName,
+		[Required]
+		[Description("Lookup schema name")]
+		string schemaName,
+		[Required]
+		[Description("Lookup schema title")]
+		string title,
+		[Required]
+		[Description("Creatio environment name")]
+		string environmentName) =>
+		$"""
+		 Use clio mcp server `{CreateLookupTool.CreateLookupToolName}` to create lookup schema
+		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
+		 Use this tool when the caller explicitly requested a lookup entity. The tool always creates the schema
+		 with parent `BaseLookup`, so do not pass parent override arguments. Include `columns` only when the
+		 request explicitly describes initial fields. After creation, verify the result with
+		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` as the canonical post-create read
+		 path.
+		 """;
+
+	/// <summary>
+	/// Builds a prompt that directs the agent to apply batch schema mutations through MCP.
+	/// </summary>
+	[McpServerPrompt(Name = UpdateEntitySchemaTool.UpdateEntitySchemaToolName),
+		Description("Prompt to apply batch entity schema mutations")]
+	public static string UpdateEntitySchema(
+		[Required]
+		[Description("Target package name")]
+		string packageName,
+		[Required]
+		[Description("Entity schema name")]
+		string schemaName,
+		[Required]
+		[Description("Creatio environment name")]
+		string environmentName) =>
+		$"""
+		 Use clio mcp server `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}` to apply a batch of column
+		 mutations to entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
+		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Encode all column
+		 changes in the ordered `operations` array. Each operation uses clio-native fields such as `action`,
+		 `column-name`, `type`, `title`, `reference-schema-name`, and `default-value-source`; do not translate
+		 them into frontend `entity.update.operationsJson`.
 		 """;
 
 	/// <summary>
@@ -119,6 +174,9 @@ public static class EntitySchemaPrompt {
 		 environment `{environmentName}`.
 		 Pass only the option fields required for the requested action. For `add`, supply `type`; for `Lookup`,
 		 also supply `reference-schema-name`. For `modify`, include only the fields that should change. For
-		 `remove`, do not pass property-change options.
+		 `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
+		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
+		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`, plus explicit
+		 `default-value-source` values `Const` or `None`.
 		 """;
 }

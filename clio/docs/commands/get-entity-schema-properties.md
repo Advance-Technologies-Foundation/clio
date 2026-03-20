@@ -27,6 +27,7 @@ clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehic
 
 - output is human-readable text and includes column counts, indexes, and key schema flags
 - the summary includes primary and primary display columns when they are defined
+- this command is the canonical readback path after `create-entity-schema`
 
 ## Related Commands
 

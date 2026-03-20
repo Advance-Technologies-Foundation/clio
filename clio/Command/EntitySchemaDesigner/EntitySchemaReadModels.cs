@@ -45,6 +45,7 @@ public sealed record EntitySchemaColumnPropertiesInfo(
 	[property: JsonPropertyName("indexed")] bool Indexed,
 	[property: JsonPropertyName("cloneable")] bool Cloneable,
 	[property: JsonPropertyName("track-changes")] bool TrackChanges,
+	[property: JsonPropertyName("default-value-source")] string? DefaultValueSource,
 	[property: JsonPropertyName("default-value")] string? DefaultValue,
 	[property: JsonPropertyName("reference-schema-name")] string? ReferenceSchemaName,
 	[property: JsonPropertyName("simple-lookup")] bool SimpleLookup,
