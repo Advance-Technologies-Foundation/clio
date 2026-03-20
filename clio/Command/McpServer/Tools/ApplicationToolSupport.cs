@@ -1,0 +1,44 @@
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Clio.Command.McpServer.Tools;
+
+internal static class ApplicationToolResultMapper {
+	public static ApplicationContextResponse Map(ApplicationInfoResult result) {
+		return new ApplicationContextResponse(
+			true,
+			result.PackageUId,
+			result.PackageName,
+			result.Entities
+				.Select(entity => new ApplicationEntityResult(
+					entity.UId,
+					entity.Name,
+					entity.Caption,
+					entity.Columns
+						.Select(column => new ApplicationColumnResult(
+							column.Name,
+							column.Caption,
+							column.DataValueType,
+							column.ReferenceSchema))
+						.ToList()))
+				.ToList());
+	}
+}
+
+internal static class ApplicationToolHelper {
+	public static ApplicationListResponse CreateListResponse(IReadOnlyList<ApplicationListItemResult> applications) {
+		return new ApplicationListResponse(true, applications);
+	}
+
+	public static ApplicationListResponse CreateListErrorResponse(string message) {
+		return new ApplicationListResponse(false, Error: message);
+	}
+
+	public static ApplicationContextResponse CreateContextResponse(ApplicationContextResponse response) {
+		return response;
+	}
+
+	public static ApplicationContextResponse CreateContextErrorResponse(string message) {
+		return new ApplicationContextResponse(false, Error: message);
+	}
+}
