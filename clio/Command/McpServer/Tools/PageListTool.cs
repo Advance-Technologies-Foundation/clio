@@ -1,11 +1,9 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
-using Newtonsoft.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -30,30 +28,9 @@ Uri = args.Uri,
 Login = args.Login,
 Password = args.Password
 };
-try {
 PageListCommand resolvedCommand = ResolveCommand<PageListCommand>(options);
-logger.PreserveMessages = true;
-int exitCode = resolvedCommand.Execute(options);
-logger.PreserveMessages = false;
-var logMessage = logger.LogMessages.FirstOrDefault(m => m is InfoMessage);
-if (logMessage != null && !string.IsNullOrWhiteSpace(logMessage.Value?.ToString())) {
-var response = JsonConvert.DeserializeObject<PageListResponse>(logMessage.Value.ToString());
-logger.ClearMessages();
+resolvedCommand.TryListPages(options, out PageListResponse response);
 return response;
-}
-logger.ClearMessages();
-return new PageListResponse {
-Success = false,
-Error = "Failed to execute command"
-};
-}
-catch (Exception ex) {
-logger.ClearMessages();
-return new PageListResponse {
-Success = false,
-Error = ex.Message
-};
-}
 }
 }
 

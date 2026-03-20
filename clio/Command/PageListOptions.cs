@@ -32,7 +32,7 @@ _serviceUrlBuilder = serviceUrlBuilder;
 _logger = logger;
 }
 
-public override int Execute(PageListOptions options) {
+public bool TryListPages(PageListOptions options, out PageListResponse response) {
 try {
 var filters = new JObject {
 ["filterType"] = 6,
@@ -45,7 +45,6 @@ var filters = new JObject {
 }
 }
 };
-
 if (!string.IsNullOrWhiteSpace(options.PackageName)) {
 filters["items"]["PackageName"] = new JObject {
 ["filterType"] = 1,
@@ -54,7 +53,6 @@ filters["items"]["PackageName"] = new JObject {
 ["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.PackageName}}
 };
 }
-
 if (!string.IsNullOrWhiteSpace(options.SearchPattern)) {
 filters["items"]["Name"] = new JObject {
 ["filterType"] = 1,
@@ -63,7 +61,6 @@ filters["items"]["Name"] = new JObject {
 ["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SearchPattern}}
 };
 }
-
 var selectQuery = new JObject {
 ["rootSchemaName"] = "SysSchema",
 ["operationType"] = 0,
@@ -101,22 +98,15 @@ var selectQuery = new JObject {
 },
 ["rowCount"] = options.Limit
 };
-
 string url = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 string requestBody = selectQuery.ToString(Formatting.None);
 string responseJson = _applicationClient.ExecutePostRequest(url, requestBody);
-var response = JObject.Parse(responseJson);
-
-if (!(response["success"]?.Value<bool>() ?? false)) {
-var errorResponse = new PageListResponse {
-Success = false,
-Error = "Query failed"
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+var rawResponse = JObject.Parse(responseJson);
+if (!(rawResponse["success"]?.Value<bool>() ?? false)) {
+response = new PageListResponse { Success = false, Error = "Query failed" };
+return false;
 }
-
-var rows = response["rows"] as JArray ?? new JArray();
+var rows = rawResponse["rows"] as JArray ?? new JArray();
 var pages = new List<PageListItem>();
 foreach (var row in rows) {
 pages.Add(new PageListItem {
@@ -125,19 +115,23 @@ UId = row["UId"]?.ToString(),
 PackageName = row["PackageName"]?.ToString()
 });
 }
-
-var successResponse = new PageListResponse {
+response = new PageListResponse {
 Success = true,
 Count = pages.Count,
 Pages = pages
 };
-_logger.WriteInfo(JsonConvert.SerializeObject(successResponse));
-return 0;
+return true;
 }
 catch (Exception ex) {
-_logger.WriteError(ex.ToString());
-return 1;
+response = new PageListResponse { Success = false, Error = ex.Message };
+return false;
 }
+}
+
+public override int Execute(PageListOptions options) {
+bool success = TryListPages(options, out PageListResponse response);
+_logger.WriteInfo(JsonConvert.SerializeObject(response));
+return success ? 0 : 1;
 }
 }
 }

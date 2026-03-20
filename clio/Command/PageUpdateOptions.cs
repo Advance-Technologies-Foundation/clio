@@ -24,25 +24,6 @@ private readonly IApplicationClient _applicationClient;
 private readonly IServiceUrlBuilder _serviceUrlBuilder;
 private readonly ILogger _logger;
 
-private static readonly string[] PAGE_MARKERS = {
-"SCHEMA_DEPS",
-"SCHEMA_ARGS",
-"SCHEMA_VIEW_CONFIG_DIFF",
-"SCHEMA_HANDLERS",
-"SCHEMA_CONVERTERS",
-"SCHEMA_VALIDATORS"
-};
-
-private static readonly string[] PAGE_FORM_MARKERS = {
-"SCHEMA_VIEW_MODEL_CONFIG",
-"SCHEMA_MODEL_CONFIG"
-};
-
-private static readonly string[] PAGE_LIST_MARKERS = {
-"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
-"SCHEMA_MODEL_CONFIG_DIFF"
-};
-
 public PageUpdateCommand(
 IApplicationClient applicationClient,
 IServiceUrlBuilder serviceUrlBuilder,
@@ -52,60 +33,32 @@ _serviceUrlBuilder = serviceUrlBuilder;
 _logger = logger;
 }
 
-private int GetMarkerOccurrences(string body, string marker) {
-if (string.IsNullOrEmpty(body)) return 0;
-string searchPattern = $"/* Start:{marker}";
-int count = 0;
-int index = 0;
-while ((index = body.IndexOf(searchPattern, index, StringComparison.Ordinal)) != -1) {
-count++;
-index += searchPattern.Length;
-}
-return count;
-}
-
-private List<string> GetMissingPageMarkers(string body) {
-var missingMarkers = PAGE_MARKERS.Where(m => GetMarkerOccurrences(body, m) != 2).ToList();
-bool hasFormMarkers = PAGE_FORM_MARKERS.All(m => GetMarkerOccurrences(body, m) == 2);
-bool hasListMarkers = PAGE_LIST_MARKERS.All(m => GetMarkerOccurrences(body, m) == 2);
-if (!hasFormMarkers && !hasListMarkers) {
-missingMarkers.AddRange(PAGE_FORM_MARKERS);
-missingMarkers.AddRange(PAGE_LIST_MARKERS);
-}
-return missingMarkers;
-}
-
-public override int Execute(PageUpdateOptions options) {
+public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 try {
 if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = "schemaName is required"
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = "schemaName is required" };
+return false;
 }
-
 if (string.IsNullOrWhiteSpace(options.Body)) {
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = "body is required and must not be empty"
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = "body is required and must not be empty" };
+return false;
 }
-
-var missingMarkers = GetMissingPageMarkers(options.Body);
-if (missingMarkers.Count > 0) {
-var errorResponse = new PageUpdateResponse {
+var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
+if (!integrityResult.IsValid) {
+response = new PageUpdateResponse {
 Success = false,
-Error = $"Body is missing required marker pairs: {string.Join("; ", missingMarkers)}"
+Error = $"Body is missing required marker pairs: {string.Join("; ", integrityResult.Errors)}"
 };
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+return false;
 }
-
-// Step 1: Get schema metadata from SysSchema
+var syntaxResult = SchemaValidationService.ValidateJsSyntax(options.Body);
+if (!syntaxResult.IsValid) {
+response = new PageUpdateResponse {
+Success = false,
+Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
+};
+return false;
+}
 var metadataQuery = new JObject {
 ["rootSchemaName"] = "SysSchema",
 ["operationType"] = 0,
@@ -145,70 +98,44 @@ var metadataQuery = new JObject {
 },
 ["rowCount"] = 1
 };
-
 string dataServiceUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 string metadataJson = _applicationClient.ExecutePostRequest(dataServiceUrl, metadataQuery.ToString(Formatting.None));
 var metadataResponse = JObject.Parse(metadataJson);
-
 if (!(metadataResponse["success"]?.Value<bool>() ?? false)) {
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = "Failed to query schema metadata"
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = "Failed to query schema metadata" };
+return false;
 }
-
 var rows = metadataResponse["rows"] as JArray ?? new JArray();
 if (rows.Count == 0) {
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = $"Schema '{options.SchemaName}' not found"
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = $"Schema '{options.SchemaName}' not found" };
+return false;
 }
-
 string schemaUId = rows[0]["UId"]?.ToString();
-
 if (options.DryRun) {
-var dryRunResponse = new PageUpdateResponse {
+response = new PageUpdateResponse {
 Success = true,
 SchemaName = options.SchemaName,
 BodyLength = options.Body.Length,
 DryRun = true
 };
-_logger.WriteInfo(JsonConvert.SerializeObject(dryRunResponse));
-return 0;
+return true;
 }
-
-// Step 2: Get full schema from ClientUnitSchemaDesignerService
 var getSchemaRequest = new JObject {
 ["schemaUId"] = schemaUId,
 ["useFullHierarchy"] = false
 };
-
 string designerUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
 string getSchemaJson = _applicationClient.ExecutePostRequest(designerUrl, getSchemaRequest.ToString(Formatting.None));
 var getSchemaResponse = JObject.Parse(getSchemaJson);
-
 if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] == null) {
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = $"Failed to load schema '{options.SchemaName}'"
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = $"Failed to load schema '{options.SchemaName}'" };
+return false;
 }
-
-// Step 3: Modify body and save
 var schemaToSave = getSchemaResponse["schema"] as JObject;
 schemaToSave["body"] = options.Body;
-
 string saveUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
 var saveResponse = JObject.Parse(saveJson);
-
 if (!(saveResponse["success"]?.Value<bool>() ?? false)) {
 string errorMessage = "Failed to save page schema";
 var validationErrors = saveResponse["validationErrors"] as JArray;
@@ -222,31 +149,27 @@ var addonsErrors = saveResponse["addonsErrors"] as JArray;
 if (addonsErrors != null && addonsErrors.Count > 0) {
 errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
 }
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = errorMessage
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = errorMessage };
+return false;
 }
-
-var successResponse = new PageUpdateResponse {
+response = new PageUpdateResponse {
 Success = true,
 SchemaName = options.SchemaName,
 BodyLength = options.Body.Length,
 DryRun = false
 };
-_logger.WriteInfo(JsonConvert.SerializeObject(successResponse));
-return 0;
+return true;
 }
 catch (Exception ex) {
-var errorResponse = new PageUpdateResponse {
-Success = false,
-Error = ex.Message
-};
-_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
-return 1;
+response = new PageUpdateResponse { Success = false, Error = ex.Message };
+return false;
 }
+}
+
+public override int Execute(PageUpdateOptions options) {
+bool success = TryUpdatePage(options, out PageUpdateResponse response);
+_logger.WriteInfo(JsonConvert.SerializeObject(response));
+return success ? 0 : 1;
 }
 }
 }
