@@ -423,6 +423,8 @@ clio restore-db --dbServerName my-local-mssql --dbName mydb --backupPath /path/t
 - `--drop-if-exists` (optional): Automatically drops existing database if present without prompting
   - By default, if a database with the same name exists, the restore operation will fail
   - Use this flag to automatically remove the existing database before restore
+- `--disable-reset-password` (optional, hidden, default: `true`): Reuses the same post-restore password-reset disabling behavior as `deploy-creatio`
+  - Set it to `false` to skip that step explicitly
 
 ### Features
 - **Connection Testing**: Tests database connectivity before attempting restore
@@ -435,6 +437,8 @@ clio restore-db --dbServerName my-local-mssql --dbName mydb --backupPath /path/t
 - **Existing Database Handling**: 
   - By default, fails if database already exists
   - With `--drop-if-exists` flag, automatically drops existing database before restore
+- **Password Reset Handling**:
+  - Reuses the same optional post-restore password-reset disabling helper as `deploy-creatio`
 - **PostgreSQL Tools Detection**: Automatically finds `pg_restore` in PATH or common installation locations
 - **Comprehensive Error Messages**: Provides detailed error messages with actionable suggestions
 
@@ -471,6 +475,11 @@ clio restore-db --dbServerName my-local-mssql --dbName creatiodev --backupPath d
 **Restore with automatic database drop (if exists):**
 ```bash
 clio restore-db --dbServerName my-local-postgres --dbName creatiodev --backupPath database.backup --drop-if-exists
+```
+
+**Restore and skip the password-reset disabling step:**
+```bash
+clio restore-db --dbServerName my-local-postgres --dbName creatiodev --backupPath database.backup --disable-reset-password false
 ```
 
 **Restore with explicit PostgreSQL tools path:**
@@ -2521,12 +2530,14 @@ clio nuget2dll <PACKAGE_NAME>
 
 To connect your package from workspace to local system in file design mode use command
 
-**On Windows (with environment name):**
+For full documentation, see [`link-from-repository`](./docs/commands/link-from-repository.md).
+
+**With registered environment name (Windows, macOS, Linux):**
 ```
 clio link-from-repository -e MyEnvironment --repoPath {Path to workspace packages folder} --packages {package name or *}
 ```
 
-**On Windows/macOS/Linux (with direct path):**
+**With direct package path (Windows, macOS, Linux):**
 ```
 clio link-from-repository --envPkgPath {Path to environment package folder} --repoPath {Path to workspace packages folder} --packages {package name or *}
 ```
@@ -2549,8 +2560,8 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 ```
 
 **Notes:**
-- On Windows, you can use environment name if it's registered in clio settings
-- On macOS and Linux, you must use the `--envPkgPath` with the direct file path
+- `-e/--Environment` works on all platforms when the registered environment has `EnvironmentPath` configured and the local package folder exists under it
+- On Windows, clio still falls back to IIS/URL discovery for older registrations that do not have a usable `EnvironmentPath`
 - Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
 ## link core src
@@ -4274,50 +4285,61 @@ The command reads `ConnectionStrings.config` and parses connection parameters to
 The `set-fsm-config` command is used to configure the file system mode properties
 in the configuration file of a Creatio application.
 
+For full documentation, see [`set-fsm-config`](./docs/commands/set-fsm-config.md).
+
 ### Syntax
 ```bash
-clio set-fsm-config [options]
+clio set-fsm-config <IsFsm> [options]
 ```
 
 ### Options
 - `--physicalPath` (optional): Specifies the path to the application.
-- `--environmentName` (optional): Specifies the environment name.
+- `-e`, `--Environment` (optional): Specifies the registered environment name.
 - `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Platform notes
+- On Windows the command checks `Web.config` and `Terrasoft.WebHost.dll.config`.
+- On macOS and Linux the command supports NET8 environments and uses the registered `EnvironmentPath` or the provided `--physicalPath`.
 
 ### Examples
 Enable file system mode for a specific environment:
 ```bash
-clio set-fsm-config --environmentName MyEnvironment on
+clio set-fsm-config on -e MyEnvironment
 ```
 
 Specify a physical path to configure file system mode:
 ```bash
-clio set-fsm-config --physicalPath "C:\\inetpub\\wwwroot\\MyApp" off
+clio set-fsm-config off --physicalPath "C:\\inetpub\\wwwroot\\MyApp"
 ```
 
 ## Turn File-System Mode On/Off
 
 The `turn-fsm` command is used to toggle the file system mode (FSM) on or off for a Creatio environment. When FSM is turned on, it configures the environment and loads packages to the file system. When FSM is turned off, it loads packages to the database and then configures the environment.
 
+For full documentation, see [`turn-fsm`](./docs/commands/turn-fsm.md).
+
 ### Syntax
 ```bash
-clio turn-fsm [options]
+clio turn-fsm <IsFsm> [options]
 ```
 
 ### Options
 - `--physicalPath` (optional): Specifies the path to the application.
-- `--environmentName` (optional): Specifies the environment name.
+- `-e`, `--Environment` (optional): Specifies the registered environment name.
 - `IsFsm` (required): Specifies whether to enable or disable file system mode. Accepts `on` or `off`.
+
+### Platform notes
+- On macOS and Linux the command supports NET8 environments and resolves the local config file through the registered `EnvironmentPath` or the provided `--physicalPath`.
 
 ### Examples
 Turn on file system mode for a specific environment:
 ```bash
-clio turn-fsm --environmentName MyEnvironment on
+clio turn-fsm on -e MyEnvironment
 ```
 
 Turn off file system mode for a specific environment:
 ```bash
-clio turn-fsm --environmentName MyEnvironment off
+clio turn-fsm off -e MyEnvironment
 ```
 
 ## Workspace Solution Generation (.slnx)

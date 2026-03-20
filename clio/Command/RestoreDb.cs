@@ -16,6 +16,13 @@ namespace Clio.Command;
 
 [Verb("restore-db", Aliases = ["rdb"], HelpText = "Restores database from backup file")]
 public class RestoreDbCommandOptions : EnvironmentOptions{
+	/// <summary>
+	/// Gets or sets a value indicating whether the post-restore forced-password-reset disabling script may run.
+	/// </summary>
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = true,
+		HelpText = "Disables reset password after restore")]
+	public bool DisableResetPassword { get; set; } = true;
+
 	[Option( "dbName", Required = false, HelpText = "dbName")]
 	public string DbName { get; set; }
 	
@@ -97,9 +104,11 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	public override int Execute(RestoreDbCommandOptions options) {
 		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("restore-db");
 		try {
+			int result;
 
 			if (!string.IsNullOrEmpty(options.DbServerName)) {
-				return RestoreToLocalServer(options);
+				result = RestoreToLocalServer(options);
+				return result;
 			}
 
 			if (!string.IsNullOrEmpty(options.BackupPath)) {
@@ -107,7 +116,12 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 				if (Path.GetExtension(options.BackupPath) == ".backup") {
 				
 					_logger.WriteInfo($"Restoring database from backup file: {options.BackupPath}");
-					return RestorePg(options.DbName, options.BackupPath);
+					result = RestorePg(options.DbName, options.BackupPath);
+					if (result == 0) {
+						TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, options.DbName,
+							options.BackupPath);
+					}
+					return result;
 				}
 			
 				if (_fileSystem.ExistsDirectory(options.BackupPath)) {
@@ -118,15 +132,24 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 						return 1;
 					}
 					_logger.WriteInfo($"Restoring database from backup file: {backupFiles[0]}");
-					return RestorePg(options.DbName, backupFiles[0]);
+					result = RestorePg(options.DbName, backupFiles[0]);
+					if (result == 0) {
+						TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, options.DbName,
+							options.BackupPath);
+					}
+					return result;
 				}
 			}
 		
 			EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
-			int result = env.DbServer.Uri.Scheme switch {
+			result = env.DbServer.Uri.Scheme switch {
 				"mssql" => RestoreMs(env.DbServer, env.DbName, options.Force, env.BackupFilePath),
 				var _ => HandleIncorrectUri(options.Uri)
 			};
+			if (result == 0) {
+				TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.MsSql, env.DbName,
+					options.BackupPath ?? env.BackupFilePath);
+			}
 			_logger.WriteLine("Done");
 			return result;
 		}
@@ -181,6 +204,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 	private int RestoreToLocalServer(RestoreDbCommandOptions options) {
 		LocalDbServerConfiguration config = _settingsRepository.GetLocalDbServer(options.DbServerName);
+		string originalBackupPath = options.BackupPath;
 		
 		if (config == null) {
 			var availableServers = _settingsRepository.GetLocalDbServerNames().ToList();
@@ -256,11 +280,20 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 			_logger.WriteInfo($"Restoring {detectedType} backup to {config.DbType} server...");
 
-			return dbType switch {
+			int result = dbType switch {
 				"mssql" => RestoreMssqlToLocalServer(config, backupPath, options.DbName, options.DropIfExists),
 				"postgres" or "postgresql" => RestorePostgresToLocalServer(config, backupPath, options.DbName, options.DropIfExists),
 				_ => HandleUnsupportedDbType(config.DbType)
 			};
+			if (result == 0) {
+				InstallerHelper.DatabaseType databaseType = dbType switch {
+					"mssql" => InstallerHelper.DatabaseType.MsSql,
+					"postgres" or "postgresql" => InstallerHelper.DatabaseType.Postgres,
+					var _ => InstallerHelper.DatabaseType.Postgres
+				};
+				TryDisableForcedPasswordReset(options, databaseType, options.DbName, originalBackupPath);
+			}
+			return result;
 		} finally {
 			if (!string.IsNullOrEmpty(extractedPath) && _fileSystem.ExistsFile(extractedPath)) {
 				try {
@@ -455,6 +488,20 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	private int HandleUnsupportedDbType(string dbType) {
 		_logger.WriteError($"Database type '{dbType}' is not supported. Supported types: mssql, postgres");
 		return 1;
+	}
+
+	private void TryDisableForcedPasswordReset(
+		RestoreDbCommandOptions options,
+		InstallerHelper.DatabaseType dbType,
+		string databaseName,
+		string backupPath) {
+		PfInstallerOptions installerOptions = new() {
+			DisableResetPassword = options.DisableResetPassword,
+			DbServerName = options.DbServerName,
+			SiteName = databaseName,
+			ZipFile = backupPath ?? string.Empty
+		};
+		_creatioInstallerService.TryDisableForcedPasswordReset(installerOptions, dbType);
 	}
 
 	private void WriteNativeLogLine(string line) {

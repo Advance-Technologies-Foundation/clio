@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
 using System.Xml;
 using Clio.Common;
 using Clio.Command;
@@ -30,8 +31,9 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		base.Setup();
 		_validator = Substitute.For<IValidator<SetFsmConfigOptions>>();
 		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_fileSystem = new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem());
 		_logger = Substitute.For<ILogger>();
-		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _logger);
+		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _fileSystem, _logger);
 	}
 
 	#endregion
@@ -40,6 +42,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 	private IValidator<SetFsmConfigOptions> _validator;
 	private ISettingsRepository _settingsRepository;
+	private Clio.Common.IFileSystem _fileSystem;
 	private ILogger _logger;
 	private SetFsmConfigCommand _command;
 
@@ -469,37 +472,34 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	
 	[Test]
 	[Category("Unit")]
-	[Description("Verifies OS-specific behavior for non-Windows platforms.")]
-	public void Execute_Should_Throw_OnNonWindows() {
+	[Description("Verifies that non-Windows platforms reject registered non-NET8 environments.")]
+	public void Execute_Should_Throw_OnNonWindows_WhenEnvironmentIsNotNetCore() {
 		if(OperatingSystem.IsWindows()) {
-			// This test is only relevant for Windows OS
 			return;
 		}
 		
 		// Arrange
-		SetFsmConfigOptions options = new() { IsFsm = "on" };
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "test-env" };
 		_validator.Validate(options).Returns(new ValidationResult());
 		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
 
-		// Act & Assert
+		// Act
 		Action act = () => _command.Execute(options);
-		if (OperatingSystem.IsMacOS()) {
-			act.Should().Throw<Exception>()
-				.WithMessage("On macOS this command is supported only for NET8 (IsNetCore=true) environments.");
-			return;
-		}
+
+		// Assert
 		act.Should().Throw<Exception>()
-			.WithMessage("This command is only supported on Windows and macOS.");
+			.WithMessage("On macOS and Linux this command is supported only for NET8 (IsNetCore=true) environments.");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Verifies that on macOS environment name is resolved via EnvironmentPath for NET8 environments.")]
-	public void Execute_UsesEnvironmentPath_OnMacOs_WhenNetCore() {
-		if(!OperatingSystem.IsMacOS()) {
+	[Description("Verifies that non-Windows platforms resolve EnvironmentPath for NET8 environments.")]
+	public void Execute_UsesEnvironmentPath_OnNonWindows_WhenNetCore() {
+		if(OperatingSystem.IsWindows()) {
 			return;
 		}
 
+		// Arrange
 		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 		Directory.CreateDirectory(tempDir);
 		string configPath = Path.Combine(tempDir, "Terrasoft.WebHost.dll.config");
@@ -507,11 +507,37 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "test-env" };
 		_validator.Validate(options).Returns(new ValidationResult());
-		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = true, Uri = "http://localhost" });
-		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(new EnvironmentSettings { IsNetCore = true, EnvironmentPath = tempDir, Uri = "http://localhost" });
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = true, EnvironmentPath = tempDir, Uri = "http://localhost" });
 
+		// Act
 		int result = _command.Execute(options);
-		result.Should().Be(0);
+
+		// Assert
+		result.Should().Be(0, "because non-Windows NET8 environments should use EnvironmentPath directly");
+
+		Directory.Delete(tempDir, true);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that a direct physical path works without registered environment settings when the config file exists.")]
+	public void Execute_UsesPhysicalPath_WithoutRegisteredEnvironment_WhenConfigExists() {
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configName = OperatingSystem.IsWindows() ? "Web.config" : "Terrasoft.WebHost.dll.config";
+		string configPath = Path.Combine(tempDir, configName);
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+
+		SetFsmConfigOptions options = new() { IsFsm = "on", PhysicalPath = tempDir };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns((EnvironmentSettings)null!);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the command should infer the config file from the provided physical path");
 
 		Directory.Delete(tempDir, true);
 	}

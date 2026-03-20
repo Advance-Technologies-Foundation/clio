@@ -25,7 +25,8 @@ namespace Clio.Command.CreatioInstallCommand;
 /// <summary>
 ///     Defines operations for deploying a Creatio application and restoring its database.
 /// </summary>
-public interface ICreatioInstallerService{
+public interface ICreatioInstallerService {
+	
 	#region Methods: Public
 
 	/// <summary>
@@ -43,6 +44,13 @@ public interface ICreatioInstallerService{
 	/// <param name="options">Parsed deploy-creatio command options.</param>
 	/// <returns><c>0</c> on success; non-zero otherwise.</returns>
 	int Execute(PfInstallerOptions options);
+
+	/// <summary>
+	/// Attempts to disable forced password reset for a restored or deployed database when the option and environment allow it.
+	/// </summary>
+	/// <param name="options">Options that describe the restored or deployed package/database context.</param>
+	/// <param name="dbType">Resolved database type for the current restore or deployment flow.</param>
+	void TryDisableForcedPasswordReset(PfInstallerOptions options, InstallerHelper.DatabaseType dbType);
 
 	/// <summary>
 	///     Resolves a build artifact path based on product, database type, and runtime platform.
@@ -819,19 +827,19 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			   };
 	}
 
-	private void TryDisableForcedPasswordReset(PfInstallerOptions options, InstallerHelper.DatabaseType dbType) {
+	public void TryDisableForcedPasswordReset(PfInstallerOptions options, InstallerHelper.DatabaseType dbType) {
 		if (!options.DisableResetPassword) {
 			_logger.WriteInfo("Disable reset password - skipped because option value is false");
 			return;
 		}
 
-		if (!_creatioPackageVersionParser.TryParseVersion(options.ZipFile, out Version packageVersion)) {
-			return;
-		}
-
-		if (packageVersion < ResetPasswordChangeVersion) {
-			return;
-		}
+		// if (!_creatioPackageVersionParser.TryParseVersion(options.ZipFile, out Version packageVersion)) {
+		// 	return;
+		// }
+		//
+		// if (packageVersion < ResetPasswordChangeVersion) {
+		// 	return;
+		// }
 
 		if (!_corporateEnvironmentDetector.IsCorporateEnvironment()) {
 			_logger.WriteInfo(

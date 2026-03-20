@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.IO.Abstractions;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
@@ -366,6 +367,7 @@ public sealed class FsmModeToolTests
 				new SetFsmConfigCommand(
 					Substitute.For<IValidator<SetFsmConfigOptions>>(),
 					Substitute.For<ISettingsRepository>(),
+					new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
 					Substitute.For<ILogger>()),
 				new LoadPackagesToFileSystemCommand(
 					Substitute.For<Clio.Package.IFileDesignModePackages>(),

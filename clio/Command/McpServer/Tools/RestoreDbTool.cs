@@ -46,7 +46,8 @@ public class RestoreDbTool(
 			Environment = args.EnvironmentName,
 			BackupPath = args.BackupPath,
 			DbName = args.DbName,
-			Force = args.Force
+			Force = args.Force,
+			DisableResetPassword = args.DisableResetPassword
 		};
 		return InternalExecute<RestoreDbCommand>(options);
 	}
@@ -66,7 +67,8 @@ public class RestoreDbTool(
 			DbWorknigFolder = args.DbWorkingFolder,
 			BackUpFilePath = args.BackupPath,
 			DbName = args.DbName,
-			Force = args.Force
+			Force = args.Force,
+			DisableResetPassword = args.DisableResetPassword
 		};
 		return InternalExecute(options);
 	}
@@ -83,7 +85,8 @@ public class RestoreDbTool(
 			DbServerName = args.DbServerName,
 			BackupPath = args.BackupPath,
 			DbName = args.DbName,
-			DropIfExists = args.DropIfExists
+			DropIfExists = args.DropIfExists,
+			DisableResetPassword = args.DisableResetPassword
 		};
 		return InternalExecute(options);
 	}
@@ -108,7 +111,11 @@ public sealed record RestoreDbByEnvironmentArgs(
 
 	[property: JsonPropertyName("force")]
 	[property: Description("Force overwrite behavior in legacy environment restore mode")]
-	bool Force = false);
+	bool Force = false,
+
+	[property: JsonPropertyName("disableResetPassword")]
+	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
+	bool DisableResetPassword = true);
 
 /// <summary>
 /// MCP arguments for restoring a database by explicit database credentials.
@@ -143,7 +150,11 @@ public sealed record RestoreDbByCredentialsArgs(
 
 	[property: JsonPropertyName("force")]
 	[property: Description("Force overwrite behavior in legacy restore mode")]
-	bool Force = false);
+	bool Force = false,
+
+	[property: JsonPropertyName("disableResetPassword")]
+	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
+	bool DisableResetPassword = true);
 
 /// <summary>
 /// MCP arguments for restoring a database to a configured local database server.
@@ -166,4 +177,8 @@ public sealed record RestoreDbToLocalServerArgs(
 
 	[property: JsonPropertyName("dropIfExists")]
 	[property: Description("Automatically drop an existing database if present")]
-	bool DropIfExists = false);
+	bool DropIfExists = false,
+
+	[property: JsonPropertyName("disableResetPassword")]
+	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
+	bool DisableResetPassword = true);

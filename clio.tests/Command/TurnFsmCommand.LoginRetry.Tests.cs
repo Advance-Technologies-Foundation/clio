@@ -1,4 +1,5 @@
 using System;
+using System.IO.Abstractions;
 using System.Threading;
 using Clio.Command;
 using Clio.Common;
@@ -27,7 +28,11 @@ public class TurnFsmCommandLoginRetryTests {
 		settingsRepository.GetEnvironment(Arg.Any<string>()).Returns(new EnvironmentSettings { IsNetCore = true });
 		ILogger logger = Substitute.For<ILogger>();
 
-		SetFsmConfigCommand setFsmConfigCommand = Substitute.ForPartsOf<SetFsmConfigCommand>(validator, settingsRepository, logger);
+		SetFsmConfigCommand setFsmConfigCommand = Substitute.ForPartsOf<SetFsmConfigCommand>(
+			validator,
+			settingsRepository,
+			new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
+			logger);
 		setFsmConfigCommand.Execute(Arg.Any<SetFsmConfigOptions>()).Returns(0);
 
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();

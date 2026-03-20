@@ -26,6 +26,7 @@ clio restore-db [options]
 | `--backupPath` | Yes for local/local-style restore | Path to `.backup`, `.bak`, or a Creatio ZIP containing `db/*.backup` or `db/*.bak`. |
 | `--dbServerName` | No | Local/local-style database server key from `appsettings.json`. When omitted, clio uses the existing Kubernetes/environment behavior. |
 | `--drop-if-exists` | No | Automatically drops the target database if it already exists. |
+| `--disable-reset-password` | No | Hidden advanced option. Defaults to `true` and reuses the same post-restore password-reset disabling behavior as `deploy-creatio`. Set it to `false` to skip that step. |
 
 ## Local Server Configuration
 
@@ -74,6 +75,7 @@ When `--dbServerName` is specified, clio:
 - rejects PostgreSQL-to-MSSQL and MSSQL-to-PostgreSQL mismatches before restore
 - restores PostgreSQL with local `pg_restore`
 - restores MSSQL with the existing local SQL Server flow
+- reuses the `deploy-creatio` forced-password-reset disabling helper after a successful restore when the option remains enabled
 - writes both normal clio output and native PostgreSQL/MSSQL restore output into the temp database-operation log artifact
 
 When `--dbServerName` is omitted, clio preserves the existing Kubernetes/environment-based behavior.
@@ -106,6 +108,13 @@ Restore and drop the existing database automatically:
 ```bash
 clio restore-db --dbServerName docker-postgres --dbName creatiodev \
   --backupPath "C:\Creatio\database.backup" --drop-if-exists
+```
+
+Restore and skip the password-reset disabling step:
+
+```bash
+clio restore-db --dbServerName docker-postgres --dbName creatiodev \
+  --backupPath "C:\Creatio\database.backup" --disable-reset-password false
 ```
 
 ## Troubleshooting

@@ -13,12 +13,14 @@ DESCRIPTION
 
     You can provide either:
     - --physicalPath (path to the environment folder)
-    - --environmentName (registered environment)
+    - -e / --Environment (registered environment)
 
-    Note: On macOS this command is supported only for .NET (NET8) environments.
+    On Windows the command updates either Web.config or Terrasoft.WebHost.dll.config.
+    On macOS and Linux it supports NET8 environments and uses the registered EnvironmentPath
+    or the provided --physicalPath to find Terrasoft.WebHost.dll.config.
 
 EXAMPLE
-    clio set-fsm-config --environmentName MyEnvironment on
+    clio set-fsm-config -e MyEnvironment on
 
     clio set-fsm-config --physicalPath "/path/to/creatio" off
 

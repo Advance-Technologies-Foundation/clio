@@ -15,12 +15,17 @@ DESCRIPTION
     - Loads packages to the database
     - Updates configuration to disable File Design Mode
 
-    Note: On macOS this command is supported only for .NET (NET8) environments.
+    Use either:
+    - --physicalPath (path to the environment folder)
+    - -e / --Environment (registered environment)
+
+    On macOS and Linux this command supports NET8 environments and relies on the registered
+    EnvironmentPath or the provided --physicalPath to update the local config file.
 
 EXAMPLE
-    clio turn-fsm --environmentName MyEnvironment on
+    clio turn-fsm -e MyEnvironment on
 
-    clio turn-fsm --environmentName MyEnvironment off
+    clio turn-fsm -e MyEnvironment off
 
     clio turn-fsm --physicalPath "/path/to/creatio" on
 

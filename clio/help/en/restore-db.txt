@@ -114,6 +114,11 @@ OPTIONS
         Automatically drop existing database if present without prompting
         Local/local-style restore only
 
+    --disable-reset-password
+        Hidden advanced option, default: true
+        Reuses the same post-restore password-reset disabling behavior as
+        deploy-creatio. Set to false to skip that step.
+
 EXAMPLE
     Restore from ZIP file (Creatio installation package):
     clio restore-db --dbServerName my-local-mssql --dbName creatiodev
@@ -160,6 +165,11 @@ EXAMPLE
     clio restore-db --dbServerName docker-postgres --dbName creatiodev
                     --backupPath C:\Creatio\database.backup --drop-if-exists
 
+    Restore and skip the password-reset disabling step:
+    clio restore-db --dbServerName docker-postgres --dbName creatiodev
+                    --backupPath C:\Creatio\database.backup
+                    --disable-reset-password false
+
 FEATURES
     - Connection Testing: Tests database connectivity before attempting restore
     - Automatic Type Detection: Determines backup type from file extension
@@ -168,6 +178,8 @@ FEATURES
     - Temp Log Artifact: Always writes command output plus PostgreSQL/MSSQL
                          native restore output into a temp log file
     - Existing Database Handling: Supports automatic drop before restore
+    - Password Reset Handling: Reuses the same optional post-restore
+                              password-reset disabling step as deploy-creatio
     - PostgreSQL Tools Detection: Automatically finds pg_restore in PATH or
                                   configured pgToolsPath
     - Comprehensive Error Messages: Provides detailed error messages with

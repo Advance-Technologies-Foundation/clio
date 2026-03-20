@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using Clio.Command;
+using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.ScenarioHandlers;
@@ -56,7 +57,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 			DbName = options.DbName,
 			BackupFilePath = options.BackUpFilePath
 		});
-		RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository, null, 
+		RestoreDbCommand sut = new (logger, fileSystem, dbClientFactory, settingsRepository, Substitute.For<ICreatioInstallerService>(), 
 			Substitute.For<IDbConnectionTester>(), Substitute.For<IBackupFileDetector>(), 
 			Substitute.For<IPostgresToolsPathDetector>(), Substitute.For<IProcessExecutor>());
 		

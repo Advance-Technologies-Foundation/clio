@@ -362,6 +362,15 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 	[Description("Should successfully restore MSSQL backup to local server")]
 	public void Execute_RestoresMssqlBackupSuccessfully() {
 		// Arrange
+		PfInstallerOptions? capturedInstallerOptions = null;
+		InstallerHelper.DatabaseType? capturedDbType = null;
+		_creatioInstallerService
+			.When(service => service.TryDisableForcedPasswordReset(Arg.Any<PfInstallerOptions>(), Arg.Any<InstallerHelper.DatabaseType>()))
+			.Do(callInfo => {
+				capturedInstallerOptions = callInfo.ArgAt<PfInstallerOptions>(0);
+				capturedDbType = callInfo.ArgAt<InstallerHelper.DatabaseType>(1);
+			});
+
 		var config = new LocalDbServerConfiguration {
 			DbType = "mssql",
 			Hostname = "localhost",
@@ -396,6 +405,68 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		result.Should().Be(0, "because restore should succeed");
 		mssql.Received(1).RestoreDatabase("testdb", "backup.bak", Arg.Any<Action<string>>());
 		_logger.Received().WriteInfo(Arg.Is<string>(s => s.Contains("Successfully restored")));
+		capturedInstallerOptions.Should().NotBeNull(
+			because: "successful restore-db execution should reuse the shared password-reset helper");
+		capturedInstallerOptions!.DisableResetPassword.Should().BeTrue(
+			because: "restore-db should keep the same default disable-reset-password behavior as deploy-creatio");
+		capturedDbType.Should().Be(InstallerHelper.DatabaseType.MsSql,
+			because: "the shared helper should receive the resolved MSSQL database type");
+	}
+
+	[Test]
+	[Description("Should forward disable-reset-password false to the shared post-restore helper for local PostgreSQL restore")]
+	public void Execute_WhenDisableResetPasswordIsFalse_ForwardsFlagToSharedHelper() {
+		// Arrange
+		PfInstallerOptions? capturedInstallerOptions = null;
+		InstallerHelper.DatabaseType? capturedDbType = null;
+		_creatioInstallerService
+			.When(service => service.TryDisableForcedPasswordReset(Arg.Any<PfInstallerOptions>(), Arg.Any<InstallerHelper.DatabaseType>()))
+			.Do(callInfo => {
+				capturedInstallerOptions = callInfo.ArgAt<PfInstallerOptions>(0);
+				capturedDbType = callInfo.ArgAt<InstallerHelper.DatabaseType>(1);
+			});
+
+		var config = new LocalDbServerConfiguration {
+			DbType = "postgres",
+			Hostname = "localhost",
+			Port = 5432,
+			Username = "postgres",
+			Password = "postgres"
+		};
+
+		_settingsRepository.GetLocalDbServer("my-postgres").Returns(config);
+		_fileSystem.ExistsFile("backup.backup").Returns(true);
+		_dbConnectionTester.TestConnection(config).Returns(new ConnectionTestResult { Success = true });
+		_backupFileDetector.DetectBackupType("backup.backup").Returns(BackupFileType.PostgresBackup);
+		_postgresToolsPathDetector.GetPgRestorePath(null).Returns("/usr/bin/pg_restore");
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+
+		var postgres = Substitute.For<Postgres>();
+		postgres.CheckDbExists("testdb").Returns(false);
+		postgres.CreateDb("testdb").Returns(true);
+		_dbClientFactory.CreatePostgres("localhost", 5432, "postgres", "postgres").Returns(postgres);
+
+		var options = new RestoreDbCommandOptions {
+			DbServerName = "my-postgres",
+			BackupPath = "backup.backup",
+			DbName = "testdb",
+			DisableResetPassword = false
+		};
+
+		var sut = CreateSut();
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the PostgreSQL restore should still succeed when the password-reset step is skipped");
+		capturedInstallerOptions.Should().NotBeNull(
+			because: "successful restore-db execution should still call the shared helper with the forwarded option state");
+		capturedInstallerOptions!.DisableResetPassword.Should().BeFalse(
+			because: "restore-db should forward disable-reset-password=false into the shared helper");
+		capturedDbType.Should().Be(InstallerHelper.DatabaseType.Postgres,
+			because: "the shared helper should receive the resolved PostgreSQL database type");
 	}
 
 	[Test]

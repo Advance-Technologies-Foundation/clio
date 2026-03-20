@@ -44,7 +44,7 @@ public sealed class RestoreDbToolE2ETests {
 		JsonElement localInputSchema = JsonSerializer.SerializeToElement(localServerTool.ProtocolTool.InputSchema);
 		localInputSchema.GetProperty("properties").GetProperty("args").GetProperty("properties").EnumerateObject()
 			.Select(property => property.Name)
-			.Should().BeEquivalentTo(["dbServerName", "backupPath", "dbName", "dropIfExists"],
+			.Should().BeEquivalentTo(["dbServerName", "backupPath", "dbName", "dropIfExists", "disableResetPassword"],
 				because: "the local restore-db MCP tool should advertise the approved local restore argument contract");
 	}
 
