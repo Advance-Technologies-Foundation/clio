@@ -1,0 +1,48 @@
+COMMAND TYPE
+    Package Management commands
+
+NAME
+    update-entity-schema - Apply batch column operations to a remote Creatio entity schema
+
+SYNOPSIS
+    clio update-entity-schema [OPTIONS]
+
+DESCRIPTION
+    Applies an ordered batch of structured column operations to an existing remote
+    entity schema.
+
+    This command is the clio-native batch mutation contract for entity schemas.
+    Each operation uses the same column-level semantics as
+    modify-entity-schema-column, but several mutations can be applied in one
+    request.
+
+OPTIONS
+    --package              Target package name
+    --schema-name          Entity schema name
+    --operation            Structured operation JSON. Repeat the option for
+                           multiple values
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Add two columns in one batch
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Lookup\",\"title\":\"Status\",\"reference-schema-name\":\"UsrVehicleStatus\",\"required\":true}" --operation "{\"action\":\"add\",\"column-name\":\"UsrDueDate\",\"type\":\"Date\",\"title\":\"Due date\"}"
+
+    # Rename a column and clear its default in one batch
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+
+NOTES
+    - operations are applied in order
+    - execution stops on the first failed operation
+    - the batch is saved and materialized once after all operations are applied
+    - this is the clio-native alternative to frontend-style entity.update.operationsJson
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    modify-entity-schema-column, get-entity-schema-properties

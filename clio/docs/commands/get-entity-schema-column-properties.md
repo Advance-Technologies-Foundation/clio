@@ -36,6 +36,8 @@ clio get-entity-schema-column-properties -e dev --package Custom --schema-name U
 
 - own columns are searched first, then inherited columns
 - output is human-readable text and includes the column source
+- the summary includes both `default-value-source` and `default-value`
+- this command is the canonical readback path after `modify-entity-schema-column`
 
 ## Related Commands
 

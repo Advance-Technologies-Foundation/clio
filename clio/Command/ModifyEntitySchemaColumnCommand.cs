@@ -28,8 +28,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 
 	[Option("type", Required = false, HelpText = """
 												 Column type. Supported values:
-												 Guid, Integer, Boolean, DateTime, Lookup, 
-												 Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
+												 Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+												 Text, ShortText, MediumText, LongText, MaxSizeText,
+												 Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
 												 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 												 Currency0, Currency1, Currency2, Currency3
 												 """)]
@@ -58,6 +59,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 
 	[Option("default-value", Required = false, HelpText = "Set a constant default value")]
 	public string DefaultValue { get; set; }
+
+	[Option("default-value-source", Required = false, HelpText = "Default value source: Const or None")]
+	public string DefaultValueSource { get; set; }
 
 	[Option("multiline-text", Required = false, HelpText = "Set multi-line text flag")]
 	public bool? MultilineText { get; set; }
@@ -102,7 +106,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 
 	public override int Execute(ModifyEntitySchemaColumnOptions options) {
 		try {
-			Validate(options);
+			ValidateOptions(options);
 			_columnManager.ModifyColumn(options);
 			_logger.WriteInfo("Done");
 			return 0;
@@ -112,7 +116,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 		}
 	}
 
-	private static void Validate(ModifyEntitySchemaColumnOptions options) {
+	internal static void ValidateOptions(ModifyEntitySchemaColumnOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
 			throw new ArgumentException("Package is required.", nameof(options.Package));
@@ -152,6 +156,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 			|| options.Indexed.HasValue
 			|| options.Cloneable.HasValue
 			|| options.TrackChanges.HasValue
+			|| !string.IsNullOrWhiteSpace(options.DefaultValueSource)
 			|| options.DefaultValue != null
 			|| options.MultilineText.HasValue
 			|| options.LocalizableText.HasValue

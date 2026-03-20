@@ -24,7 +24,7 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 	[Option("extend-parent", Required = false, Default = false, HelpText = "Create replacement schema")]
 	public bool ExtendParent { get; set; }
 
-	[Option("column", Required = false, HelpText = "Column spec <name>:<type>[:<title>[:<refSchema>]]", Separator = ';')]
+	[Option("column", Required = false, HelpText = "Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with name/type/title/reference-schema-name/required/default-value-source/default-value. Repeat the option for multiple columns.")]
 	public IEnumerable<string> Columns { get; set; }
 }
 

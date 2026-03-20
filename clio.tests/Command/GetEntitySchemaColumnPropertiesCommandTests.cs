@@ -49,6 +49,7 @@ internal class GetEntitySchemaColumnPropertiesCommandTests : BaseCommandTests<Ge
 			true,
 			false,
 			true,
+			"Const",
 			"Vehicle",
 			null,
 			false,
@@ -69,6 +70,7 @@ internal class GetEntitySchemaColumnPropertiesCommandTests : BaseCommandTests<Ge
 		_columnManager.Received(1).GetColumnProperties(options);
 		_logger.Received(1).WriteInfo("Entity schema column properties");
 		_logger.Received(1).WriteInfo("Source: own");
+		_logger.Received(1).WriteInfo("Default value source: Const");
 	}
 
 	[Test]

@@ -23,18 +23,19 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class EntitySchemaToolE2ETests {
 	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
+	private const string CreateLookupToolName = CreateLookupTool.CreateLookupToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
 
 	[Test]
-	[Description("Creates a remote entity schema, reads its structured properties, adds a column, and reads the structured column properties through the real MCP server.")]
+	[Description("Creates a remote entity schema, reads its structured properties, adds, modifies, and removes a column, and verifies the structured readbacks through the real MCP server.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ReadSchemaToolName)]
 	[AllureTag(ReadColumnToolName)]
 	[AllureTag(ModifyToolName)]
-	[AllureName("Entity schema MCP tools complete a create read modify flow")]
-	[AllureDescription("Arranges a unique package in the sandbox environment through the real CLI, then exercises create-entity-schema, get-entity-schema-properties, modify-entity-schema-column, and get-entity-schema-column-properties through the real MCP server and verifies real remote side effects.")]
+	[AllureName("Entity schema MCP tools complete a create read add modify remove flow")]
+	[AllureDescription("Arranges a unique package in the sandbox environment through the real CLI, then exercises create-entity-schema, get-entity-schema-properties, modify-entity-schema-column, and get-entity-schema-column-properties through the real MCP server and verifies real remote side effects plus structured readback parsing.")]
 	public async Task EntitySchemaTools_Should_Complete_Create_Read_Modify_Flow() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
@@ -42,8 +43,12 @@ public sealed class EntitySchemaToolE2ETests {
 		// Act
 		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		CommandExecutionEnvelope addResult = await ActAddEntitySchemaColumnAsync(arrangeContext);
+		EntitySchemaColumnPropertiesInfo addedColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext);
 		CommandExecutionEnvelope modifyResult = await ActModifyEntitySchemaColumnAsync(arrangeContext);
-		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext);
+		EntitySchemaColumnPropertiesInfo modifiedColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext);
+		CommandExecutionEnvelope removeResult = await ActRemoveEntitySchemaColumnAsync(arrangeContext);
+		EntitySchemaPropertiesInfo schemaPropertiesAfterRemove = await ActGetSchemaPropertiesAsync(arrangeContext);
 
 		// Assert
 		AssertCommandSucceeded(createResult,
@@ -51,11 +56,46 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertIncludesInfoMessage(createResult,
 			"successful schema creation should emit progress output");
 		AssertSchemaProperties(schemaProperties, arrangeContext);
+		AssertCommandSucceeded(addResult,
+			"modify-entity-schema-column should succeed when adding a valid own text-like column");
+		AssertIncludesInfoMessage(addResult,
+			"successful add mutation should emit progress output");
+		AssertAddedColumnProperties(addedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(modifyResult,
-			"modify-entity-schema-column should succeed when adding a valid own text column");
+			"modify-entity-schema-column should succeed when updating the previously added own column");
 		AssertIncludesInfoMessage(modifyResult,
-			"successful column modification should emit progress output");
-		AssertColumnProperties(columnProperties, arrangeContext);
+			"successful modify mutation should emit progress output");
+		AssertModifiedColumnProperties(modifiedColumnProperties, arrangeContext);
+		AssertCommandSucceeded(removeResult,
+			"modify-entity-schema-column should succeed when removing the previously added own column");
+		AssertIncludesInfoMessage(removeResult,
+			"successful remove mutation should emit progress output");
+		AssertSchemaPropertiesAfterRemove(schemaProperties, schemaPropertiesAfterRemove, arrangeContext);
+	}
+
+	[Test]
+	[Description("Creates a remote lookup schema through MCP and verifies the resulting schema inherits from BaseLookup.")]
+	[AllureTag(CreateLookupToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Create lookup MCP tool creates a BaseLookup schema")]
+	[AllureDescription("Arranges a unique package in the sandbox environment through the real CLI, then exercises create-lookup and get-entity-schema-properties through the real MCP server and verifies real remote side effects plus BaseLookup inheritance.")]
+	public async Task CreateLookup_Should_Create_BaseLookup_Schema() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateLookupAsync(arrangeContext);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"create-lookup should succeed for a valid sandbox environment and prepared package");
+		AssertIncludesInfoMessage(createResult,
+			"successful lookup creation should emit progress output");
+		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
+			because: "the created lookup should be readable through the structured schema properties tool");
+		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
+			because: "create-lookup should force BaseLookup inheritance");
 	}
 
 	[Test]
@@ -135,6 +175,28 @@ public sealed class EntitySchemaToolE2ETests {
 		// Assert
 		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
 			"unknown environment names should fail before column mutations start");
+	}
+
+	[Test]
+	[Description("Reports a readable failure when create-lookup is invoked with an unknown environment name.")]
+	[AllureTag(CreateLookupToolName)]
+	[AllureName("Create lookup reports invalid environment failures")]
+	[AllureDescription("Uses the real MCP server to call create-lookup with a guaranteed-missing environment name and verifies the failure is surfaced to the caller.")]
+	public async Task CreateLookup_Should_Report_Invalid_Environment() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await CallCreateLookupAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"UsrPkg",
+			"UsrBadLookup",
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
+			"unknown environment names should fail before remote lookup creation starts");
 	}
 
 	[AllureStep("Arrange sandbox package and MCP session for entity schema tools")]
@@ -228,7 +290,7 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[AllureStep("Act by invoking modify-entity-schema-column through MCP")]
-	private static async Task<CommandExecutionEnvelope> ActModifyEntitySchemaColumnAsync(
+	private static async Task<CommandExecutionEnvelope> ActAddEntitySchemaColumnAsync(
 		EntitySchemaArrangeContext arrangeContext) {
 		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
 			arrangeContext.Session,
@@ -238,9 +300,59 @@ public sealed class EntitySchemaToolE2ETests {
 			"add",
 			arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token,
-			type: "Text",
+			type: "ShortText",
 			title: "Vehicle code",
-			indexed: true);
+			indexed: true,
+			defaultValueSource: "Const",
+			defaultValue: "Draft");
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking create-lookup through MCP")]
+	private static async Task<CommandExecutionEnvelope> ActCreateLookupAsync(EntitySchemaArrangeContext arrangeContext) {
+		CallToolResult callResult = await CallCreateLookupAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token,
+			columns: [
+				new Dictionary<string, object?> {
+					["name"] = arrangeContext.InitialColumnName,
+					["type"] = "Text",
+					["title"] = "Lookup name"
+				}
+			]);
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking modify-entity-schema-column through MCP for modify")]
+	private static async Task<CommandExecutionEnvelope> ActModifyEntitySchemaColumnAsync(
+		EntitySchemaArrangeContext arrangeContext) {
+		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			"modify",
+			arrangeContext.AddedColumnName,
+			arrangeContext.CancellationTokenSource.Token,
+			title: "Vehicle code updated",
+			defaultValueSource: "None");
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking modify-entity-schema-column through MCP for remove")]
+	private static async Task<CommandExecutionEnvelope> ActRemoveEntitySchemaColumnAsync(
+		EntitySchemaArrangeContext arrangeContext) {
+		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			"remove",
+			arrangeContext.AddedColumnName,
+			arrangeContext.CancellationTokenSource.Token);
 		return McpCommandExecutionParser.Extract(callResult);
 	}
 
@@ -276,6 +388,31 @@ public sealed class EntitySchemaToolE2ETests {
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
 					["title"] = "Vehicle",
+					["columns"] = columns
+				}
+			},
+			cancellationToken);
+	}
+
+	private static async Task<CallToolResult> CallCreateLookupAsync(
+		McpServerSession session,
+		string environmentName,
+		string packageName,
+		string schemaName,
+		CancellationToken cancellationToken,
+		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
+		tools.Select(tool => tool.Name).Should().Contain(CreateLookupToolName,
+			because: "the create-lookup MCP tool must be advertised before the end-to-end call can be executed");
+
+		return await session.CallToolAsync(
+			CreateLookupToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["schema-name"] = schemaName,
+					["title"] = "Order status",
 					["columns"] = columns
 				}
 			},
@@ -338,7 +475,9 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken,
 		string? type = null,
 		string? title = null,
-		bool? indexed = null) {
+		bool? indexed = null,
+		string? defaultValueSource = null,
+		string? defaultValue = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ModifyToolName,
 			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
@@ -358,6 +497,12 @@ public sealed class EntitySchemaToolE2ETests {
 		}
 		if (indexed.HasValue) {
 			args["indexed"] = indexed.Value;
+		}
+		if (!string.IsNullOrWhiteSpace(defaultValueSource)) {
+			args["default-value-source"] = defaultValueSource;
+		}
+		if (defaultValue is not null) {
+			args["default-value"] = defaultValue;
 		}
 
 		return await session.CallToolAsync(
@@ -392,19 +537,48 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[AllureStep("Assert structured column properties")]
-	private static void AssertColumnProperties(EntitySchemaColumnPropertiesInfo properties, EntitySchemaArrangeContext arrangeContext) {
+	private static void AssertAddedColumnProperties(EntitySchemaColumnPropertiesInfo properties, EntitySchemaArrangeContext arrangeContext) {
 		properties.SchemaName.Should().Be(arrangeContext.SchemaName,
 			because: "the structured result should identify the mutated schema");
 		properties.ColumnName.Should().Be(arrangeContext.AddedColumnName,
 			because: "the added column should be readable through the structured column properties tool");
 		properties.Source.Should().Be("own",
 			because: "columns added through modify-entity-schema-column should be reported as own columns");
-		properties.Type.Should().Be("Text",
-			because: "the structured result should preserve the added column type");
+		properties.Type.Should().Be("ShortText",
+			because: "the structured result should preserve the added frontend-compatible column type alias");
 		properties.Title.Should().Be("Vehicle code",
 			because: "the structured result should preserve the added column title");
 		properties.Indexed.Should().BeTrue(
 			because: "the structured result should preserve boolean mutation flags");
+		properties.DefaultValueSource.Should().Be("Const",
+			because: "the structured result should preserve explicit default-value-source metadata");
+		properties.DefaultValue.Should().Be("Draft",
+			because: "the structured result should preserve the configured default value");
+	}
+
+	[AllureStep("Assert structured modified column properties")]
+	private static void AssertModifiedColumnProperties(EntitySchemaColumnPropertiesInfo properties, EntitySchemaArrangeContext arrangeContext) {
+		properties.SchemaName.Should().Be(arrangeContext.SchemaName,
+			because: "the structured result should still identify the mutated schema after modify");
+		properties.ColumnName.Should().Be(arrangeContext.AddedColumnName,
+			because: "the modified column should still be addressable by the same name");
+		properties.Title.Should().Be("Vehicle code updated",
+			because: "the structured result should preserve the updated column title");
+		properties.DefaultValueSource.Should().BeNull(
+			because: "clearing a default should be reflected in the structured result");
+		properties.DefaultValue.Should().BeNull(
+			because: "clearing a default should remove the stored value from the structured result");
+	}
+
+	[AllureStep("Assert schema properties after remove")]
+	private static void AssertSchemaPropertiesAfterRemove(
+		EntitySchemaPropertiesInfo propertiesBeforeAdd,
+		EntitySchemaPropertiesInfo propertiesAfterRemove,
+		EntitySchemaArrangeContext arrangeContext) {
+		propertiesAfterRemove.Name.Should().Be(arrangeContext.SchemaName,
+			because: "the schema should remain readable after removing the added column");
+		propertiesAfterRemove.OwnColumnCount.Should().Be(propertiesBeforeAdd.OwnColumnCount,
+			because: "removing the added column should restore the original own column count");
 	}
 
 	[AllureStep("Assert top-level MCP failure is readable")]
@@ -448,7 +622,7 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken) {
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
-			["push-workspace", "-e", environmentName, "--use-application-installer", "true"],
+			["push-workspace", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
 	}

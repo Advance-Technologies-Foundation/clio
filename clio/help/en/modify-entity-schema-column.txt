@@ -19,11 +19,13 @@ DESCRIPTION
 
     Supported types for add and modify:
     - Guid
-    - Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+    - Text, ShortText, MediumText, LongText, MaxSizeText
+    - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
     - Integer
-    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,Currency0, Currency1, Currency2, Currency3
+    - Float
+    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
     - Boolean
-    - DateTime
+    - Date, DateTime, Time
     - Lookup (requires --reference-schema)
 
 OPTIONS
@@ -40,6 +42,7 @@ OPTIONS
     --indexed                      Set indexed flag
     --cloneable                    Set make-copy flag
     --track-changes                Set update-change-log flag
+    --default-value-source         Default value source: Const or None
     --default-value                Set a constant default value
     --multiline-text               Set multi-line text flag (Text only)
     --localizable-text             Set localizable text flag (Text only)
@@ -67,6 +70,9 @@ EXAMPLES
     # Rename and update a column
     clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --title "Primary owner"
 
+    # Clear a previously configured default value
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --default-value-source None
+
     # Remove an own column
     clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
 
@@ -74,6 +80,7 @@ NOTES
     - v1 allows mutations for own columns only; inherited columns are read-only
     - remove clears schema-level references to the deleted column and validates required fallbacks locally
     - unspecified modify options are preserved as-is in the saved payload
+    - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

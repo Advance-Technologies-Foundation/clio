@@ -364,7 +364,7 @@ namespace Clio
 
 		private void InitSettings() {
 			try {
-				var filePath = Path.Combine(Environment.CurrentDirectory, AppSettingsFilePath);
+				var filePath = AppSettingsFilePath;
 				if (FileSystem.File.Exists(filePath)) {
 					var fileContent = FileSystem.File.ReadAllText(filePath);
 					if (!String.IsNullOrWhiteSpace(fileContent)) {

@@ -10,7 +10,9 @@ SYNOPSIS
 DESCRIPTION
     Loads the full entity schema design item from the remote Creatio environment
     and prints a human-readable summary for the requested column. Own columns are
-    searched first, then inherited columns.
+    searched first, then inherited columns. The summary includes the resolved
+    default value source and is the canonical verification path after
+    create-entity-schema / modify-entity-schema-column calls.
 
 OPTIONS
     --package              Target package name
@@ -33,6 +35,7 @@ EXAMPLES
 NOTES
     - output is human-readable text, not JSON
     - the report includes whether the column is own or inherited
+    - the report includes both default-value-source and default-value
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

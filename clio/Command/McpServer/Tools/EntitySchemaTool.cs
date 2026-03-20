@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -34,33 +35,129 @@ public sealed class CreateEntitySchemaTool(
 	public CommandExecutionResult CreateEntitySchema(
 		[Description("Create-entity-schema parameters")] [Required] CreateEntitySchemaArgs args
 	) {
-		CreateEntitySchemaOptions options = new() {
-			Package = args.PackageName,
-			SchemaName = args.SchemaName,
-			Title = args.Title,
-			ParentSchemaName = args.ParentSchemaName,
-			ExtendParent = args.ExtendParent,
-			Columns = SerializeColumns(args.Columns),
-			Environment = args.EnvironmentName
-		};
+		CreateEntitySchemaOptions options = CreateOptions(args, args.ParentSchemaName, args.ExtendParent);
 		return InternalExecute<CreateEntitySchemaCommand>(options);
 	}
 
-	private static IEnumerable<string>? SerializeColumns(IEnumerable<CreateEntitySchemaColumnArgs>? columns) {
+	internal static CreateEntitySchemaOptions CreateOptions(
+		EntitySchemaCreateArgsBase args,
+		string? parentSchemaName,
+		bool extendParent) {
+		return new CreateEntitySchemaOptions {
+			Package = args.PackageName,
+			SchemaName = args.SchemaName,
+			Title = args.Title,
+			ParentSchemaName = parentSchemaName,
+			ExtendParent = extendParent,
+			Columns = SerializeColumns(args.Columns),
+			Environment = args.EnvironmentName
+		};
+	}
+
+	internal static IEnumerable<string>? SerializeColumns(IEnumerable<CreateEntitySchemaColumnArgs>? columns) {
 		return columns?
 			.Select(SerializeColumn)
 			.ToList();
 	}
 
 	private static string SerializeColumn(CreateEntitySchemaColumnArgs column) {
+		if (RequiresStructuredSerialization(column)) {
+			return JsonSerializer.Serialize(new Dictionary<string, object?> {
+				["name"] = column.Name?.Trim(),
+				["type"] = column.Type?.Trim(),
+				["title"] = GetEffectiveColumnTitle(column),
+				["reference-schema-name"] = string.IsNullOrWhiteSpace(column.ReferenceSchemaName)
+					? null
+					: column.ReferenceSchemaName.Trim(),
+				["required"] = column.Required,
+				["default-value-source"] = column.DefaultValueSource,
+				["default-value"] = column.DefaultValue
+			});
+		}
+
 		List<string?> segments = [column.Name?.Trim(), column.Type?.Trim()];
 		if (!string.IsNullOrWhiteSpace(column.ReferenceSchemaName)) {
-			segments.Add(column.Title?.Trim() ?? string.Empty);
+			segments.Add(GetEffectiveColumnTitle(column)?.Trim() ?? string.Empty);
 			segments.Add(column.ReferenceSchemaName.Trim());
-		} else if (!string.IsNullOrWhiteSpace(column.Title)) {
-			segments.Add(column.Title.Trim());
+		} else if (!string.IsNullOrWhiteSpace(GetEffectiveColumnTitle(column))) {
+			segments.Add(GetEffectiveColumnTitle(column)!.Trim());
 		}
 		return string.Join(":", segments);
+	}
+
+	private static string? GetEffectiveColumnTitle(CreateEntitySchemaColumnArgs column) {
+		return !string.IsNullOrWhiteSpace(column.Title)
+			? column.Title
+			: column.Caption;
+	}
+
+	private static bool RequiresStructuredSerialization(CreateEntitySchemaColumnArgs column) {
+		return column.Required.HasValue
+			|| !string.IsNullOrWhiteSpace(column.DefaultValueSource)
+			|| column.DefaultValue != null;
+	}
+}
+
+/// <summary>
+/// MCP tool surface for remote lookup schema creation.
+/// </summary>
+public sealed class CreateLookupTool(
+	CreateEntitySchemaCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<CreateEntitySchemaOptions>(command, logger, commandResolver) {
+
+	internal const string CreateLookupToolName = "create-lookup";
+	private const string BaseLookupParentSchemaName = "BaseLookup";
+
+	/// <summary>
+	/// Creates a remote lookup schema in a package on the requested Creatio environment.
+	/// </summary>
+	[McpServerTool(Name = CreateLookupToolName, ReadOnly = false, Destructive = true, Idempotent = false,
+		OpenWorld = false)]
+	[Description("""
+				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
+				 
+				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
+				 entity instead of a generic entity schema.
+				 """)]
+	public CommandExecutionResult CreateLookup(
+		[Description("Create-lookup parameters")] [Required] CreateLookupArgs args
+	) {
+		CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
+			args,
+			BaseLookupParentSchemaName,
+			extendParent: false);
+		return InternalExecute<CreateEntitySchemaCommand>(options);
+	}
+}
+
+/// <summary>
+/// MCP tool surface for batch remote entity schema column mutations.
+/// </summary>
+public sealed class UpdateEntitySchemaTool(
+	UpdateEntitySchemaCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<UpdateEntitySchemaOptions>(command, logger, commandResolver) {
+
+	internal const string UpdateEntitySchemaToolName = "update-entity-schema";
+
+	/// <summary>
+	/// Applies a batch of add/modify/remove column operations to a remote entity schema.
+	/// </summary>
+	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
+		OpenWorld = false)]
+	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.")]
+	public CommandExecutionResult UpdateEntitySchema(
+		[Description("Update-entity-schema parameters")] [Required] UpdateEntitySchemaArgs args) {
+		UpdateEntitySchemaOptions options = new() {
+			Environment = args.EnvironmentName,
+			Package = args.PackageName,
+			SchemaName = args.SchemaName,
+			Operations = args.Operations.Select(operation => JsonSerializer.Serialize(operation)).ToList()
+		};
+		return InternalExecute<UpdateEntitySchemaCommand>(options);
 	}
 }
 
@@ -158,6 +255,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 			Indexed = args.Indexed,
 			Cloneable = args.Cloneable,
 			TrackChanges = args.TrackChanges,
+			DefaultValueSource = args.DefaultValueSource,
 			DefaultValue = args.DefaultValue,
 			MultilineText = args.MultilineText,
 			LocalizableText = args.LocalizableText,
@@ -174,9 +272,9 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 }
 
 /// <summary>
-/// Arguments for the <c>create-entity-schema</c> MCP tool.
+/// Shared request contract for MCP tools that create remote entity schemas.
 /// </summary>
-public sealed record CreateEntitySchemaArgs(
+public abstract record EntitySchemaCreateArgsBase(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Target package name on the Creatio environment")]
 	[property: Required]
@@ -197,6 +295,20 @@ public sealed record CreateEntitySchemaArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	[property: JsonPropertyName("columns")]
+	[property: Description("Optional initial columns to add to the schema.")]
+	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
+);
+
+/// <summary>
+/// Arguments for the <c>create-entity-schema</c> MCP tool.
+/// </summary>
+public sealed record CreateEntitySchemaArgs(
+	string PackageName,
+	string SchemaName,
+	string Title,
+	string EnvironmentName,
+
 	[property: JsonPropertyName("parent-schema-name")]
 	[property: Description("Optional parent schema name")]
 	string? ParentSchemaName = null,
@@ -205,38 +317,25 @@ public sealed record CreateEntitySchemaArgs(
 	[property: Description("Create a replacement schema. Requires parent-schema-name.")]
 	bool ExtendParent = false,
 
-	[property: JsonPropertyName("columns")]
-	[property: Description("Optional initial columns to add to the schema.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
-);
+) : EntitySchemaCreateArgsBase(PackageName, SchemaName, Title, EnvironmentName, Columns);
 
 /// <summary>
-/// Structured column input for the <c>create-entity-schema</c> MCP tool.
+/// Arguments for the <c>create-lookup</c> MCP tool.
 /// </summary>
-public sealed record CreateEntitySchemaColumnArgs(
-	[property: JsonPropertyName("name")]
-	[property: Description("Column name")]
-	[property: Required]
-	string Name,
+public sealed record CreateLookupArgs(
+	string PackageName,
+	string SchemaName,
+	string Title,
+	string EnvironmentName,
 
-	[property: JsonPropertyName("type")]
-	[property: Description("Column type. Supported values: Guid, Text, Integer, Boolean, DateTime, Lookup.")]
-	[property: Required]
-	string Type,
-
-	[property: JsonPropertyName("title")]
-	[property: Description("Optional column title or caption")]
-	string? Title = null,
-
-	[property: JsonPropertyName("reference-schema-name")]
-	[property: Description("Required when type is Lookup. Use an entity schema name like Contact or Account.")]
-	string? ReferenceSchemaName = null
-);
+	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
+) : EntitySchemaCreateArgsBase(PackageName, SchemaName, Title, EnvironmentName, Columns);
 
 /// <summary>
-/// Arguments for the <c>get-entity-schema-properties</c> MCP tool.
+/// Shared request contract containing environment, package, and schema name properties.
 /// </summary>
-public sealed record GetEntitySchemaPropertiesArgs(
+public abstract record EntitySchemaTargetArgsBase(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
 	[property: Required]
@@ -254,49 +353,66 @@ public sealed record GetEntitySchemaPropertiesArgs(
 );
 
 /// <summary>
-/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
+/// Arguments for the <c>update-entity-schema</c> MCP tool.
 /// </summary>
-public sealed record GetEntitySchemaColumnPropertiesArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
-	[property: Required]
+public sealed record UpdateEntitySchemaArgs(
 	string EnvironmentName,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name on the Creatio environment")]
-	[property: Required]
 	string PackageName,
-
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name")]
-	[property: Required]
 	string SchemaName,
 
-	[property: JsonPropertyName("column-name")]
-	[property: Description("Column name")]
+	[property: JsonPropertyName("operations")]
+	[property: Description("Batch column operations to apply in order.")]
 	[property: Required]
-	string ColumnName
-);
+	IEnumerable<UpdateEntitySchemaOperationArgs> Operations
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>
-/// Arguments for the <c>modify-entity-schema-column</c> MCP tool.
+/// Structured column input for the <c>create-entity-schema</c> MCP tool.
 /// </summary>
-public sealed record ModifyEntitySchemaColumnArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+public sealed record CreateEntitySchemaColumnArgs(
+	[property: JsonPropertyName("name")]
+	[property: Description("Column name")]
 	[property: Required]
-	string EnvironmentName,
+	string Name,
 
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name on the Creatio environment")]
+	[property: JsonPropertyName("type")]
+	[property: Description("""
+						  Column type. Supported values:
+						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
+						  Integer, Float, Boolean, Date, DateTime, Time, Lookup.
+						  """)]
 	[property: Required]
-	string PackageName,
+	string Type,
 
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name")]
-	[property: Required]
-	string SchemaName,
+	[property: JsonPropertyName("title")]
+	[property: Description("Optional column title or caption")]
+	string? Title = null,
 
+	[property: JsonPropertyName("reference-schema-name")]
+	[property: Description("Required when type is Lookup. Use an entity schema name like Contact or Account.")]
+	string? ReferenceSchemaName = null
+) {
+	[property: JsonPropertyName("caption")]
+	[property: Description("Optional alias for title when the caller uses caption terminology.")]
+	public string? Caption { get; init; }
+
+	[property: JsonPropertyName("required")]
+	[property: Description("Optional required flag for the created column.")]
+	public bool? Required { get; init; }
+
+	[property: JsonPropertyName("default-value-source")]
+	[property: Description("Optional default value source. Supported values: Const, None.")]
+	public string? DefaultValueSource { get; init; }
+
+	[property: JsonPropertyName("default-value")]
+	[property: Description("Optional constant default value.")]
+	public string? DefaultValue { get; init; }
+}
+
+/// <summary>
+/// Shared column-modification properties used by both single-column and batch MCP tools.
+/// </summary>
+public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("action")]
 	[property: Description("Column action: add, modify, or remove")]
 	[property: Required]
@@ -314,8 +430,9 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	[property: JsonPropertyName("type")]
 	[property: Description("""
 						   Column type. Supported values:
-						   Guid, Integer, Boolean, DateTime, Lookup, 
-						   Text, Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
+						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						   Text, ShortText, MediumText, LongText, MaxSizeText,
+						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 						   Currency0, Currency1, Currency2, Currency3
 						   """)]
@@ -353,6 +470,10 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	[property: Description("Set a constant default value")]
 	string? DefaultValue = null,
 
+	[property: JsonPropertyName("default-value-source")]
+	[property: Description("Default value source: Const or None")]
+	string? DefaultValueSource = null,
+
 	[property: JsonPropertyName("multiline-text")]
 	[property: Description("Set the multi-line text flag")]
 	bool? MultilineText = null,
@@ -389,3 +510,103 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	[property: Description("Set the do-not-control-integrity flag")]
 	bool? DoNotControlIntegrity = null
 );
+
+/// <summary>
+/// Structured operation input for the <c>update-entity-schema</c> MCP tool.
+/// </summary>
+public sealed record UpdateEntitySchemaOperationArgs(
+	string Action,
+	string ColumnName,
+	string? NewName = null,
+	string? Type = null,
+	string? Title = null,
+	string? Description = null,
+	string? ReferenceSchemaName = null,
+	bool? IsRequired = null,
+	bool? Indexed = null,
+	bool? Cloneable = null,
+	bool? TrackChanges = null,
+	string? DefaultValue = null,
+	string? DefaultValueSource = null,
+	bool? MultilineText = null,
+	bool? LocalizableText = null,
+	bool? AccentInsensitive = null,
+	bool? Masked = null,
+	bool? FormatValidated = null,
+	bool? UseSeconds = null,
+	bool? SimpleLookup = null,
+	bool? Cascade = null,
+	bool? DoNotControlIntegrity = null
+) : ColumnModificationArgsBase(Action, ColumnName, NewName, Type, Title, Description,
+	ReferenceSchemaName, IsRequired, Indexed, Cloneable, TrackChanges, DefaultValue,
+	DefaultValueSource, MultilineText, LocalizableText, AccentInsensitive, Masked,
+	FormatValidated, UseSeconds, SimpleLookup, Cascade, DoNotControlIntegrity);
+
+/// <summary>
+/// Arguments for the <c>get-entity-schema-properties</c> MCP tool.
+/// </summary>
+public sealed record GetEntitySchemaPropertiesArgs(
+	string EnvironmentName,
+	string PackageName,
+	string SchemaName
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+
+/// <summary>
+/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
+/// </summary>
+public sealed record GetEntitySchemaColumnPropertiesArgs(
+	string EnvironmentName,
+	string PackageName,
+	string SchemaName,
+
+	[property: JsonPropertyName("column-name")]
+	[property: Description("Column name")]
+	[property: Required]
+	string ColumnName
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+
+/// <summary>
+/// Arguments for the <c>modify-entity-schema-column</c> MCP tool.
+/// </summary>
+public sealed record ModifyEntitySchemaColumnArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Creatio environment name")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Target package name on the Creatio environment")]
+	[property: Required]
+	string PackageName,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name")]
+	[property: Required]
+	string SchemaName,
+
+	string Action,
+	string ColumnName,
+	string? NewName = null,
+	string? Type = null,
+	string? Title = null,
+	string? Description = null,
+	string? ReferenceSchemaName = null,
+	bool? IsRequired = null,
+	bool? Indexed = null,
+	bool? Cloneable = null,
+	bool? TrackChanges = null,
+	string? DefaultValue = null,
+	string? DefaultValueSource = null,
+	bool? MultilineText = null,
+	bool? LocalizableText = null,
+	bool? AccentInsensitive = null,
+	bool? Masked = null,
+	bool? FormatValidated = null,
+	bool? UseSeconds = null,
+	bool? SimpleLookup = null,
+	bool? Cascade = null,
+	bool? DoNotControlIntegrity = null
+) : ColumnModificationArgsBase(Action, ColumnName, NewName, Type, Title, Description,
+	ReferenceSchemaName, IsRequired, Indexed, Cloneable, TrackChanges, DefaultValue,
+	DefaultValueSource, MultilineText, LocalizableText, AccentInsensitive, Masked,
+	FormatValidated, UseSeconds, SimpleLookup, Cascade, DoNotControlIntegrity);

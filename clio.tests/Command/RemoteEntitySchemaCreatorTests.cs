@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -48,6 +49,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload()
 	{
 		string saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
@@ -58,6 +61,14 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
 				saveBody = body;
 				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -87,6 +98,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+		saveDbStructureCalled.Should().BeTrue(because: "entity creation must materialize DB structure after saving schema metadata");
+		runtimeVerifyCalled.Should().BeTrue(because: "entity creation must verify runtime availability after DB structure materialization");
 
 		var json = JObject.Parse(saveBody);
 		json["name"]!.Value<string>().Should().Be("UsrVehicle");
@@ -101,6 +114,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	[Test]
 	public void Create_CreatesSchemaWithParent_AndCallsAssignParentSchema()
 	{
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, _) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
@@ -116,6 +131,14 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrAccount\"}}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -139,6 +162,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+		saveDbStructureCalled.Should().BeTrue();
+		runtimeVerifyCalled.Should().BeTrue();
 	}
 
 	[Test]
@@ -238,6 +263,66 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("Parses structured JSON create-column specs so MCP callers can send required flags, default metadata, and frontend-style type aliases without relying on the legacy colon format.")]
+	public void Create_CreatesSchema_FromStructuredJsonColumnSpec() {
+		// Arrange
+		string saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "Status",
+			type = "ShortText",
+			title = "Status",
+			required = true,
+			default_value_source = "Const",
+			default_value = "Draft"
+		}).Replace("default_value_source", "default-value-source").Replace("default_value", "default-value");
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		var json = JObject.Parse(saveBody);
+		JToken savedColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "Status");
+		savedColumn["type"]!.Value<int>().Should().Be(27,
+			because: "frontend ShortText aliases should map to the closest supported designer type");
+		savedColumn["requirementType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnRequirementType.ApplicationLevel,
+			because: "structured create-column specs should preserve required metadata");
+		savedColumn["defValue"]!["valueSourceType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const,
+			because: "structured create-column specs should preserve the explicit default source");
+		savedColumn["defValue"]!["value"]!.Value<string>().Should().Be("Draft",
+			because: "structured create-column specs should preserve the requested default value");
+		saveDbStructureCalled.Should().BeTrue();
+		runtimeVerifyCalled.Should().BeTrue();
+	}
+
 	private void SetupApplicationClient(Func<string, string, string> handler)
 	{
 		_applicationClient.ExecutePostRequest(
@@ -246,6 +331,28 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				Arg.Any<int>(),
 				Arg.Any<int>(),
 				Arg.Any<int>())
-			.Returns(callInfo => handler(callInfo.ArgAt<string>(0), callInfo.ArgAt<string>(1)));
+			.Returns(callInfo => {
+				string url = callInfo.ArgAt<string>(0);
+				string body = callInfo.ArgAt<string>(1);
+				if (url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)) {
+					string schemaName = JObject.Parse(body)["name"]!.Value<string>()!;
+					return JsonSerializer.Serialize(new {
+						success = true,
+						schema = new {
+							uId = "22222222-2222-2222-2222-222222222222",
+							name = schemaName,
+							package = new {
+								uId = "11111111-1111-1111-1111-111111111111",
+								name = "UsrPkg"
+							},
+							columns = Array.Empty<object>(),
+							inheritedColumns = Array.Empty<object>(),
+							indexes = Array.Empty<object>()
+						}
+					});
+				}
+
+				return handler(url, body);
+			});
 	}
 }

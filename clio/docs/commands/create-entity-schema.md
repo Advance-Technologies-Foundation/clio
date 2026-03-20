@@ -4,6 +4,8 @@
 
 Creates a remote entity schema inside an existing Creatio package by calling `EntitySchemaDesignerService`. This command is intended for environment-side schema creation from `clio`, not for generating local package files.
 
+Current `clio` entity-schema commands are also the supported ADAC integration surface. Keep using `create-entity-schema` and `modify-entity-schema-column`; frontend-only aliases such as `entity.create` or `entity.update` are conceptual only and are not the direct `clio` API.
+
 ## Usage
 
 ```bash
@@ -26,7 +28,7 @@ clio create-entity-schema [options]
 |----------|-------------|---------|
 | `--parent` | Parent schema name | `--parent BaseEntity` |
 | `--extend-parent` | Create a replacement schema. Requires `--parent` | `--extend-parent` |
-| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` | `--column "Name:Text:Name"` |
+| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
 
 ### Environment Configuration
 
@@ -41,10 +43,19 @@ clio create-entity-schema [options]
 
 - `Guid`
 - `Text`
+- `ShortText`
+- `MediumText`
+- `LongText`
+- `MaxSizeText`
 - `Integer`
+- `Float`
 - `Boolean`
+- `Date`
 - `DateTime`
+- `Time`
 - `Lookup` with required reference schema name
+
+The command also accepts designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 
@@ -70,6 +81,13 @@ clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Veh
   --column "Owner:Lookup:Owner:Contact"
 ```
 
+### Create a Column from Structured JSON Metadata
+
+```bash
+clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
+  --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
+```
+
 ### Create a Schema with Inheritance
 
 ```bash
@@ -90,7 +108,10 @@ clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Acc
   3. `SaveSchema`
 - Package resolution relies on the package list API, so `cliogate` must be installed on the target environment.
 - For schemas without a parent, `Id:Guid` is created automatically if no Guid column is supplied.
-- If no primary display column is defined, the first `Text` column is used.
+- If no primary display column is defined, the first text-like column is used.
+- The command accepts frontend-style aliases such as `ShortText`, `Float`, `Date`, and `Time`, and maps them to the closest supported designer types.
+- Repeat `--column` for multiple entries; semicolons inside JSON payloads are treated as content, not separators.
+- After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the schema cannot be read back.
 - Schema names longer than 22 characters are rejected locally before the server call.
 
 ## Output

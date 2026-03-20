@@ -4,6 +4,8 @@
 
 Adds, modifies, or removes one own column in a remote Creatio entity schema by loading the current design item, mutating it locally, and saving it back through `EntitySchemaDesignerService`.
 
+This command is the supported ADAC-compatible mutation surface in `clio`. Batch-style frontend update plans should be decomposed into repeated `modify-entity-schema-column` calls rather than translated into a different `clio` tool name.
+
 ## Usage
 
 ```bash
@@ -32,6 +34,7 @@ clio modify-entity-schema-column [options]
 | `--indexed` | Set indexed flag | `--indexed true` |
 | `--cloneable` | Set cloneable flag | `--cloneable true` |
 | `--track-changes` | Set track changes flag | `--track-changes true` |
+| `--default-value-source` | Default value source: `Const` or `None` | `--default-value-source Const` |
 | `--default-value` | Set a constant default value | `--default-value "New"` |
 | `--multiline-text` | Text-only flag | `--multiline-text true` |
 | `--localizable-text` | Text-only flag | `--localizable-text true` |
@@ -47,10 +50,19 @@ clio modify-entity-schema-column [options]
 
 - `Guid`
 - `Text`
+- `ShortText`
+- `MediumText`
+- `LongText`
+- `MaxSizeText`
 - `Integer`
+- `Float`
 - `Boolean`
+- `Date`
 - `DateTime`
+- `Time`
 - `Lookup`
+
+The command also accepts designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 
@@ -72,6 +84,12 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --title "Primary owner" --reference-schema Contact
 ```
 
+### Clear a Default Value
+
+```bash
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --default-value-source None
+```
+
 ### Remove a Column
 
 ```bash
@@ -83,6 +101,9 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 - `modify` updates only explicitly supplied options and preserves the rest of the column payload.
 - `remove` works for own columns only and clears direct schema-level references to the removed column.
 - inherited columns are readable but not mutable in v1.
+- frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time` are accepted and mapped to the closest supported designer types.
+- `--default-value-source None` clears the stored default value; `Const` requires `--default-value`.
+- After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the mutated column cannot be read back.
 
 ## Related Commands
 
