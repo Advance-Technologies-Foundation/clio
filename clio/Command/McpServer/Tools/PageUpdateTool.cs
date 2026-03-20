@@ -1,9 +1,11 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using Newtonsoft.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -18,7 +20,7 @@ internal const string ToolName = "page-update";
 
 [McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 [Description("Update Freedom UI page schema body")]
-public CommandExecutionResult UpdatePage([Required] PageUpdateArgs args) {
+public PageUpdateResponse UpdatePage([Required] PageUpdateArgs args) {
 PageUpdateOptions options = new() {
 SchemaName = args.SchemaName,
 Body = args.Body,
@@ -29,10 +31,28 @@ Login = args.Login,
 Password = args.Password
 };
 try {
-return InternalExecute<PageUpdateCommand>(options);
+PageUpdateCommand resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
+logger.PreserveMessages = true;
+int exitCode = resolvedCommand.Execute(options);
+logger.PreserveMessages = false;
+var logMessage = logger.LogMessages.FirstOrDefault(m => m is InfoMessage);
+if (logMessage != null && !string.IsNullOrWhiteSpace(logMessage.Value?.ToString())) {
+var response = JsonConvert.DeserializeObject<PageUpdateResponse>(logMessage.Value.ToString());
+logger.ClearMessages();
+return response;
+}
+logger.ClearMessages();
+return new PageUpdateResponse {
+Success = false,
+Error = "Failed to execute command"
+};
 }
 catch (Exception ex) {
-return new CommandExecutionResult(1, [new ErrorMessage(ex.Message)]);
+logger.ClearMessages();
+return new PageUpdateResponse {
+Success = false,
+Error = ex.Message
+};
 }
 }
 }

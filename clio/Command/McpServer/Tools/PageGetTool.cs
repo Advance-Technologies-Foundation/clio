@@ -1,9 +1,11 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using Newtonsoft.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -18,7 +20,7 @@ internal const string ToolName = "page-get";
 
 [McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 [Description("Get Freedom UI page schema body")]
-public CommandExecutionResult GetPage([Required] PageGetArgs args) {
+public PageGetResponse GetPage([Required] PageGetArgs args) {
 PageGetOptions options = new() {
 SchemaName = args.SchemaName,
 Environment = args.EnvironmentName,
@@ -27,10 +29,28 @@ Login = args.Login,
 Password = args.Password
 };
 try {
-return InternalExecute<PageGetCommand>(options);
+PageGetCommand resolvedCommand = ResolveCommand<PageGetCommand>(options);
+logger.PreserveMessages = true;
+int exitCode = resolvedCommand.Execute(options);
+logger.PreserveMessages = false;
+var logMessage = logger.LogMessages.FirstOrDefault(m => m is InfoMessage);
+if (logMessage != null && !string.IsNullOrWhiteSpace(logMessage.Value?.ToString())) {
+var response = JsonConvert.DeserializeObject<PageGetResponse>(logMessage.Value.ToString());
+logger.ClearMessages();
+return response;
+}
+logger.ClearMessages();
+return new PageGetResponse {
+Success = false,
+Error = "Failed to execute command"
+};
 }
 catch (Exception ex) {
-return new CommandExecutionResult(1, [new ErrorMessage(ex.Message)]);
+logger.ClearMessages();
+return new PageGetResponse {
+Success = false,
+Error = ex.Message
+};
 }
 }
 }

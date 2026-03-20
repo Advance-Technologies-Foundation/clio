@@ -50,7 +50,7 @@ if (!string.IsNullOrWhiteSpace(options.PackageName)) {
 filters["items"]["PackageName"] = new JObject {
 ["filterType"] = 1,
 ["comparisonType"] = 3,
-["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "PackageName"},
+["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "SysPackage.Name"},
 ["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.PackageName}}
 };
 }
@@ -65,33 +65,73 @@ filters["items"]["Name"] = new JObject {
 }
 
 var selectQuery = new JObject {
-["rootSchemaName"] = "VwSysSchemaInfo",
+["rootSchemaName"] = "SysSchema",
 ["operationType"] = 0,
 ["filters"] = filters,
 ["columns"] = new JObject {
 ["items"] = new JObject {
-["Name"] = new JObject(),
-["UId"] = new JObject(),
-["PackageName"] = new JObject()
+["Name"] = new JObject {
+["expression"] = new JObject {
+["expressionType"] = 0,
+["columnPath"] = "Name"
+},
+["orderDirection"] = 0,
+["orderPosition"] = -1,
+["isVisible"] = true
+},
+["UId"] = new JObject {
+["expression"] = new JObject {
+["expressionType"] = 0,
+["columnPath"] = "UId"
+},
+["orderDirection"] = 0,
+["orderPosition"] = -1,
+["isVisible"] = true
+},
+["PackageName"] = new JObject {
+["expression"] = new JObject {
+["expressionType"] = 0,
+["columnPath"] = "SysPackage.Name"
+},
+["orderDirection"] = 0,
+["orderPosition"] = -1,
+["isVisible"] = true
+}
 }
 },
 ["rowCount"] = options.Limit
 };
 
 string url = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-string responseJson = _applicationClient.ExecutePostRequest(url, selectQuery.ToString(Formatting.None));
+string requestBody = selectQuery.ToString(Formatting.None);
+string responseJson = _applicationClient.ExecutePostRequest(url, requestBody);
 var response = JObject.Parse(responseJson);
 
 if (!(response["success"]?.Value<bool>() ?? false)) {
-_logger.WriteError("Query failed");
+var errorResponse = new PageListResponse {
+Success = false,
+Error = "Query failed"
+};
+_logger.WriteInfo(JsonConvert.SerializeObject(errorResponse));
 return 1;
 }
 
 var rows = response["rows"] as JArray ?? new JArray();
-_logger.WriteInfo($"Found {rows.Count} page(s)");
+var pages = new List<PageListItem>();
 foreach (var row in rows) {
-_logger.WriteInfo($"  - {row["Name"]} ({row["PackageName"]})");
+pages.Add(new PageListItem {
+Name = row["Name"]?.ToString(),
+UId = row["UId"]?.ToString(),
+PackageName = row["PackageName"]?.ToString()
+});
 }
+
+var successResponse = new PageListResponse {
+Success = true,
+Count = pages.Count,
+Pages = pages
+};
+_logger.WriteInfo(JsonConvert.SerializeObject(successResponse));
 return 0;
 }
 catch (Exception ex) {

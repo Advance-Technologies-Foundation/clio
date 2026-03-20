@@ -36,8 +36,10 @@ using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.Utilities;
+using Clio.Command.McpServer.Tools;
 using Clio.Workspace;
 using Clio.Workspaces;
+using Clio.UserEnvironment;
 using Clio.YAML;
 using Creatio.Client;
 using FluentValidation;
@@ -79,6 +81,9 @@ public class BindingsModule {
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
+		
+		// Register SettingsRepository for environment resolution
+		services.AddSingleton<ISettingsRepository>(new SettingsRepository(_fileSystem));
 
 		EnvironmentSettings activeSettings = settings;
 		if (activeSettings is null) {
@@ -168,6 +173,12 @@ public class BindingsModule {
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		
+		// MCP Tools
+		services.AddTransient<PageListTool>();
+		services.AddTransient<PageGetTool>();
+		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGatePkgCommand>();
 		services.AddTransient<PingAppCommand>();
