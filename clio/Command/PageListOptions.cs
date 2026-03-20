@@ -19,6 +19,12 @@ namespace Clio.Command {
 	}
 
 	public class PageListCommand : Command<PageListOptions> {
+		private const string ExpressionTypeKey = "expressionType";
+		private const string ColumnPathKey = "columnPath";
+		private const string FilterTypeKey = "filterType";
+		private const string ItemsKey = "items";
+		private const string ExpressionKey = "expression";
+
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -35,30 +41,30 @@ namespace Clio.Command {
 		public bool TryListPages(PageListOptions options, out PageListResponse response) {
 			try {
 				var filters = new JObject {
-					["filterType"] = 6,
-					["items"] = new JObject {
+					[FilterTypeKey] = 6,
+					[ItemsKey] = new JObject {
 						["ManagerName"] = new JObject {
-							["filterType"] = 1,
+							[FilterTypeKey] = 1,
 							["comparisonType"] = 3,
-							["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "ManagerName"},
-							["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
+							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
+							["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
 						}
 					}
 				};
 				if (!string.IsNullOrWhiteSpace(options.PackageName)) {
-					filters["items"]["PackageName"] = new JObject {
-						["filterType"] = 1,
+					filters[ItemsKey]["PackageName"] = new JObject {
+						[FilterTypeKey] = 1,
 						["comparisonType"] = 3,
-						["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "SysPackage.Name"},
-						["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.PackageName}}
+						["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name"},
+						["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.PackageName}}
 					};
 				}
 				if (!string.IsNullOrWhiteSpace(options.SearchPattern)) {
-					filters["items"]["Name"] = new JObject {
-						["filterType"] = 1,
+					filters[ItemsKey]["Name"] = new JObject {
+						[FilterTypeKey] = 1,
 						["comparisonType"] = 11,
-						["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "Name"},
-						["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SearchPattern}}
+						["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"},
+						["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SearchPattern}}
 					};
 				}
 				var selectQuery = new JObject {
@@ -66,29 +72,29 @@ namespace Clio.Command {
 					["operationType"] = 0,
 					["filters"] = filters,
 					["columns"] = new JObject {
-						["items"] = new JObject {
+						[ItemsKey] = new JObject {
 							["Name"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "Name"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "Name"
 								},
 								["orderDirection"] = 0,
 								["orderPosition"] = -1,
 								["isVisible"] = true
 							},
 							["UId"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "UId"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "UId"
 								},
 								["orderDirection"] = 0,
 								["orderPosition"] = -1,
 								["isVisible"] = true
 							},
 							["PackageName"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "SysPackage.Name"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "SysPackage.Name"
 								},
 								["orderDirection"] = 0,
 								["orderPosition"] = -1,

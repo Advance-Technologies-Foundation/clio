@@ -13,6 +13,10 @@ namespace Clio.Command {
 	}
 
 	public class PageGetCommand : Command<PageGetOptions> {
+		private const string ExpressionTypeKey = "expressionType";
+		private const string ColumnPathKey = "columnPath";
+		private const string ExpressionKey = "expression";
+
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -42,43 +46,43 @@ namespace Clio.Command {
 								["comparisonType"] = 3,
 								["isEnabled"] = true,
 								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "Name"},
-								["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SchemaName}}
+								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"},
+								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SchemaName}}
 							},
 							["filter1"] = new JObject {
 								["filterType"] = 1,
 								["comparisonType"] = 3,
 								["isEnabled"] = true,
 								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "ManagerName"},
-								["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
+								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
+								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
 							}
 						}
 					},
 					["columns"] = new JObject {
 						["items"] = new JObject {
 							["Name"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "Name"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "Name"
 								}
 							},
 							["UId"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "UId"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "UId"
 								}
 							},
 							["PackageName"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "SysPackage.Name"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "SysPackage.Name"
 								}
 							},
 							["ParentSchemaName"] = new JObject {
-								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "[SysSchema:Id:Parent].Name"
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "[SysSchema:Id:Parent].Name"
 								}
 							}
 						}

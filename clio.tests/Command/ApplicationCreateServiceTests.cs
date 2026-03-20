@@ -559,7 +559,7 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default!);
 	}
 
-	private void ConfigureCreateSuccessForCode()
+	private void ConfigureCreateSuccessForCode(string appCode = "UsrCodexApp")
     {
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),

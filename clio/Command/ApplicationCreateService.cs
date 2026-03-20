@@ -388,7 +388,7 @@ public sealed class ApplicationCreateService(
 		string failurePrefix,
 		Exception? fallbackException = null)
 	{
-		InvalidOperationException? lastLoadException = null;
+		InvalidOperationException lastLoadException = null!;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++)
 		{
 			try
@@ -406,14 +406,14 @@ public sealed class ApplicationCreateService(
 		}
 
 		string failureMessage = $"{failurePrefix} after {PollAttempts} attempts.";
-		if (!string.IsNullOrWhiteSpace(lastLoadException?.Message))
+		if (!string.IsNullOrWhiteSpace(lastLoadException.Message))
 		{
 			failureMessage = $"{failureMessage} Last error: {lastLoadException.Message}";
 		}
 
 		throw new InvalidOperationException(
 			failureMessage,
-			lastLoadException ?? fallbackException);
+			lastLoadException);
 	}
 
 	private static bool IsTimeout(Exception exception)

@@ -20,6 +20,9 @@ namespace Clio.Command {
 	}
 
 	public class PageUpdateCommand : Command<PageUpdateOptions> {
+		private const string ExpressionTypeKey = "expressionType";
+		private const string ColumnPathKey = "columnPath";
+
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -35,28 +38,9 @@ namespace Clio.Command {
 
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
-				if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-					response = new PageUpdateResponse { Success = false, Error = "schemaName is required" };
-					return false;
-				}
-				if (string.IsNullOrWhiteSpace(options.Body)) {
-					response = new PageUpdateResponse { Success = false, Error = "body is required and must not be empty" };
-					return false;
-				}
-				var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
-				if (!integrityResult.IsValid) {
-					response = new PageUpdateResponse {
-						Success = false,
-						Error = $"Body is missing required marker pairs: {string.Join("; ", integrityResult.Errors)}"
-					};
-					return false;
-				}
-				var syntaxResult = SchemaValidationService.ValidateJsSyntax(options.Body);
-				if (!syntaxResult.IsValid) {
-					response = new PageUpdateResponse {
-						Success = false,
-						Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
-					};
+				PageUpdateResponse validationError = ValidateInput(options);
+				if (validationError != null) {
+					response = validationError;
 					return false;
 				}
 				var metadataQuery = new JObject {
@@ -73,16 +57,16 @@ namespace Clio.Command {
 								["comparisonType"] = 3,
 								["isEnabled"] = true,
 								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "Name"},
-								["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SchemaName}}
+								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"},
+								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SchemaName}}
 							},
 							["filter1"] = new JObject {
 								["filterType"] = 1,
 								["comparisonType"] = 3,
 								["isEnabled"] = true,
 								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {["expressionType"] = 0, ["columnPath"] = "ManagerName"},
-								["rightExpression"] = new JObject {["expressionType"] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
+								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
+								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
 							}
 						}
 					},
@@ -90,8 +74,8 @@ namespace Clio.Command {
 						["items"] = new JObject {
 							["UId"] = new JObject {
 								["expression"] = new JObject {
-									["expressionType"] = 0,
-									["columnPath"] = "UId"
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "UId"
 								}
 							}
 						}
@@ -170,6 +154,30 @@ namespace Clio.Command {
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		private static PageUpdateResponse ValidateInput(PageUpdateOptions options) {
+			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+				return new PageUpdateResponse { Success = false, Error = "schemaName is required" };
+			}
+			if (string.IsNullOrWhiteSpace(options.Body)) {
+				return new PageUpdateResponse { Success = false, Error = "body is required and must not be empty" };
+			}
+			var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
+			if (!integrityResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body is missing required marker pairs: {string.Join("; ", integrityResult.Errors)}"
+				};
+			}
+			var syntaxResult = SchemaValidationService.ValidateJsSyntax(options.Body);
+			if (!syntaxResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
+				};
+			}
+			return null;
 		}
 	}
 }

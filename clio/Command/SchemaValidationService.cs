@@ -63,99 +63,12 @@ public static class SchemaValidationService
 		int length = jsBody.Length;
 		while (i < length) {
 			char c = jsBody[i];
-			if (c == '/' && i + 1 < length && jsBody[i + 1] == '/') {
-				i += 2;
-				while (i < length && jsBody[i] != '\n' && jsBody[i] != '\r') {
-					i++;
-				}
-				continue;
+			int next = TrySkipToken(jsBody, i, length, c, stack, result);
+			if (!result.IsValid) {
+				return result;
 			}
-			if (c == '/' && i + 1 < length && jsBody[i + 1] == '*') {
-				int commentStart = i;
-				i += 2;
-				bool closed = false;
-				while (i + 1 < length) {
-					if (jsBody[i] == '*' && jsBody[i + 1] == '/') {
-						i += 2;
-						closed = true;
-						break;
-					}
-					i++;
-				}
-				if (!closed) {
-					result.IsValid = false;
-					result.Errors.Add($"Unterminated block comment at position {commentStart}.");
-					return result;
-				}
-				continue;
-			}
-			if (c == '\'' || c == '"') {
-				char quote = c;
-				int stringStart = i;
-				i++;
-				while (i < length) {
-					if (jsBody[i] == '\\') {
-						i += 2;
-						continue;
-					}
-					if (jsBody[i] == quote) {
-						i++;
-						break;
-					}
-					if (jsBody[i] == '\n' || jsBody[i] == '\r') {
-						result.IsValid = false;
-						result.Errors.Add($"Unterminated string literal at position {stringStart}.");
-						return result;
-					}
-					i++;
-				}
-				continue;
-			}
-			if (c == '`') {
-				int templateStart = i;
-				i++;
-				while (i < length) {
-					if (jsBody[i] == '\\') {
-						i += 2;
-						continue;
-					}
-					if (jsBody[i] == '`') {
-						i++;
-						break;
-					}
-					i++;
-				}
-				if (i > length || (i == length && jsBody[length - 1] != '`')) {
-					result.IsValid = false;
-					result.Errors.Add($"Unterminated template literal at position {templateStart}.");
-					return result;
-				}
-				continue;
-			}
-			if (c == '(' || c == '{' || c == '[') {
-				stack.Push((c, i));
-				i++;
-				continue;
-			}
-			if (c == ')' || c == '}' || c == ']') {
-				if (stack.Count == 0) {
-					result.IsValid = false;
-					result.Errors.Add($"Unexpected closing '{c}' at position {i} with no matching opening bracket.");
-					return result;
-				}
-				var (openBracket, openPos) = stack.Pop();
-				char expected = c switch {
-					')' => '(',
-					'}' => '{',
-					']' => '[',
-					_ => '\0'
-				};
-				if (openBracket != expected) {
-					result.IsValid = false;
-					result.Errors.Add($"Mismatched bracket: '{openBracket}' at position {openPos} closed by '{c}' at position {i}.");
-					return result;
-				}
-				i++;
+			if (next != i) {
+				i = next;
 				continue;
 			}
 			i++;
@@ -166,6 +79,116 @@ public static class SchemaValidationService
 			result.Errors.Add($"Unclosed '{bracket}' at position {pos}.");
 		}
 		return result;
+	}
+
+	private static int TrySkipToken(string jsBody, int i, int length, char c,
+		Stack<(char bracket, int position)> stack, SchemaValidationResult result) {
+		if (c == '/' && i + 1 < length) {
+			if (jsBody[i + 1] == '/') {
+				return SkipLineComment(jsBody, i, length);
+			}
+			if (jsBody[i + 1] == '*') {
+				return SkipBlockComment(jsBody, i, length, result);
+			}
+		}
+		if (c == '\'' || c == '"') {
+			return SkipStringLiteral(jsBody, i, length, c, result);
+		}
+		if (c == '`') {
+			return SkipTemplateLiteral(jsBody, i, length, result);
+		}
+		if (c == '(' || c == '{' || c == '[') {
+			stack.Push((c, i));
+			return i + 1;
+		}
+		if (c == ')' || c == '}' || c == ']') {
+			return ProcessClosingBracket(c, i, stack, result);
+		}
+		return i;
+	}
+
+	private static int SkipLineComment(string jsBody, int i, int length) {
+		i += 2;
+		while (i < length && jsBody[i] != '\n' && jsBody[i] != '\r') {
+			i++;
+		}
+		return i;
+	}
+
+	private static int SkipBlockComment(string jsBody, int i, int length, SchemaValidationResult result) {
+		int commentStart = i;
+		i += 2;
+		while (i + 1 < length) {
+			if (jsBody[i] == '*' && jsBody[i + 1] == '/') {
+				return i + 2;
+			}
+			i++;
+		}
+		result.IsValid = false;
+		result.Errors.Add($"Unterminated block comment at position {commentStart}.");
+		return i;
+	}
+
+	private static int SkipStringLiteral(string jsBody, int i, int length, char quote, SchemaValidationResult result) {
+		int stringStart = i;
+		i++;
+		while (i < length) {
+			if (jsBody[i] == '\\') {
+				i += 2;
+				continue;
+			}
+			if (jsBody[i] == quote) {
+				return i + 1;
+			}
+			if (jsBody[i] == '\n' || jsBody[i] == '\r') {
+				result.IsValid = false;
+				result.Errors.Add($"Unterminated string literal at position {stringStart}.");
+				return i;
+			}
+			i++;
+		}
+		return i;
+	}
+
+	private static int SkipTemplateLiteral(string jsBody, int i, int length, SchemaValidationResult result) {
+		int templateStart = i;
+		i++;
+		while (i < length) {
+			if (jsBody[i] == '\\') {
+				i += 2;
+				continue;
+			}
+			if (jsBody[i] == '`') {
+				return i + 1;
+			}
+			i++;
+		}
+		if (i > length || (i == length && jsBody[length - 1] != '`')) {
+			result.IsValid = false;
+			result.Errors.Add($"Unterminated template literal at position {templateStart}.");
+		}
+		return i;
+	}
+
+	private static int ProcessClosingBracket(char c, int i,
+		Stack<(char bracket, int position)> stack, SchemaValidationResult result) {
+		if (stack.Count == 0) {
+			result.IsValid = false;
+			result.Errors.Add($"Unexpected closing '{c}' at position {i} with no matching opening bracket.");
+			return i + 1;
+		}
+		var (openBracket, openPos) = stack.Pop();
+		char expected = c switch {
+			')' => '(',
+			'}' => '{',
+			']' => '[',
+			_ => '\0'
+		};
+		if (openBracket != expected) {
+			result.IsValid = false;
+			result.Errors.Add($"Mismatched bracket: '{openBracket}' at position {openPos} closed by '{c}' at position {i}.");
+		}
+		return i + 1;
 	}
 }
 

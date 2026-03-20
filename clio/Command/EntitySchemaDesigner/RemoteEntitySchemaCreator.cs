@@ -258,11 +258,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string name = structuredColumn.Name?.Trim();
 		string type = structuredColumn.Type?.Trim();
 		ValidateSupportedColumnValues(columnSpec, name, type);
-		string title = !string.IsNullOrWhiteSpace(structuredColumn.Title)
-			? structuredColumn.Title.Trim()
-			: !string.IsNullOrWhiteSpace(structuredColumn.Caption)
-				? structuredColumn.Caption.Trim()
-				: name;
+		string title = ResolveTitle(structuredColumn, name);
 		string? referenceSchemaName = string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)
 			? null
 			: structuredColumn.ReferenceSchemaName.Trim();
@@ -340,6 +336,16 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		ValidateLookupReferenceSchema(columnSpec, type, referenceSchemaName);
 
 		return new ParsedColumn(name, type, title, referenceSchemaName, null, null, null);
+	}
+
+	private static string ResolveTitle(StructuredColumnSpec column, string fallbackName) {
+		if (!string.IsNullOrWhiteSpace(column.Title)) {
+			return column.Title.Trim();
+		}
+		if (!string.IsNullOrWhiteSpace(column.Caption)) {
+			return column.Caption.Trim();
+		}
+		return fallbackName;
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

@@ -11,6 +11,7 @@ internal static class EntitySchemaDesignerSupport
 {
 	internal const string DefaultCultureName = "en-US";
 	internal const string EntitySchemaManagerName = "EntitySchemaManager";
+	private const string DateTimeTypeName = "datetime";
 
 	internal static readonly Dictionary<string, int> SupportedDataValueTypes =
 		new(StringComparer.OrdinalIgnoreCase) {
@@ -26,7 +27,7 @@ internal static class EntitySchemaDesignerSupport
 			["richText"] = 43,
 			
 			["integer"] = 4,
-			["datetime"] = 7,
+			[DateTimeTypeName] = 7,
 			["lookup"] = 10,
 			["boolean"] = 12,
 			["decimal0"] = 47,
@@ -48,8 +49,8 @@ internal static class EntitySchemaDesignerSupport
 			["longtext"] = "text500",
 			["maxsizetext"] = "textUnlimited",
 			["float"] = "decimal2",
-			["date"] = "datetime",
-			["time"] = "datetime"
+			["date"] = DateTimeTypeName,
+			["time"] = DateTimeTypeName
 		};
 
 	private static readonly HashSet<int> TextDataValueTypes = [
@@ -164,7 +165,7 @@ internal static class EntitySchemaDesignerSupport
 	}
 
 	internal static bool IsDateTimeLikeDataValueType(int dataValueType) {
-		return dataValueType == SupportedDataValueTypes["datetime"];
+		return dataValueType == SupportedDataValueTypes[DateTimeTypeName];
 	}
 
 	internal static string GetFriendlyTypeName(int? dataValueType) {

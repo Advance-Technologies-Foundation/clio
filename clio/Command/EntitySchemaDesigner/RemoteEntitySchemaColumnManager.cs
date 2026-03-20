@@ -613,7 +613,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
-	private void VerifyColumnMutations(
+	private static void VerifyColumnMutations(
 		EntityDesignSchemaDto reloadedSchema,
 		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {

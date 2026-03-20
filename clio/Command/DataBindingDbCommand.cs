@@ -259,7 +259,7 @@ internal sealed class DataBindingDbService(
 		}
 	}
 
-	private void ValidateEnvironment(EnvironmentOptions options) {
+	private static void ValidateEnvironment(EnvironmentOptions options) {
 		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrWhiteSpace(options.Uri)) {
 			throw new InvalidOperationException("--environment or --uri is required.");
 		}
