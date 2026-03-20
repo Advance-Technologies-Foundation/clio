@@ -41,10 +41,11 @@ public sealed class ApplicationCreateService(
 	private const int PollAttempts = 15;
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
 	private static readonly Regex TimeoutRegex = new(
-		@"(?is)(App Installer CreateApp request failed.*timeout of \d+ms exceeded|timeout of \d+ms exceeded)");
+		@"(?is)(App Installer CreateApp request failed.*timeout of \d+ms exceeded|timeout of \d+ms exceeded)",
+		RegexOptions.None, TimeSpan.FromSeconds(5));
 	private static readonly Regex PascalCaseWordRegex = new(
 		@"([A-Z]+(?=$|[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+)",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled, TimeSpan.FromSeconds(5));
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -179,7 +180,7 @@ public sealed class ApplicationCreateService(
 
 	private static string GenerateCodeFromName(string name)
 	{
-		string[] segments = Regex.Split(name.Trim(), @"[^\p{L}\p{Nd}]+")
+		string[] segments = Regex.Split(name.Trim(), @"[^\p{L}\p{Nd}]+", RegexOptions.None, TimeSpan.FromSeconds(5))
 			.Where(segment => !string.IsNullOrWhiteSpace(segment))
 			.ToArray();
 		StringBuilder builder = new("Usr");
@@ -249,7 +250,7 @@ public sealed class ApplicationCreateService(
 			throw new ArgumentException("Application code is required.", nameof(code));
 		}
 
-		string[] words = Regex.Split(trimmedCode, @"[^\p{L}\p{Nd}]+")
+		string[] words = Regex.Split(trimmedCode, @"[^\p{L}\p{Nd}]+", RegexOptions.None, TimeSpan.FromSeconds(5))
 			.Where(segment => !string.IsNullOrWhiteSpace(segment))
 			.ToArray();
 		if (words.Length == 0)

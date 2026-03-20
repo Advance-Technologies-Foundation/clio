@@ -20,6 +20,8 @@ public static class SchemaValidationService
 		new[] { "SCHEMA_MODEL_CONFIG_DIFF", "SCHEMA_MODEL_CONFIG" }
 	};
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
 	}
@@ -33,7 +35,7 @@ public static class SchemaValidationService
 		}
 		foreach (string markerName in RequiredMarkerNames) {
 			string pattern = BuildMarkerPattern(markerName);
-			if (!Regex.IsMatch(jsBody, pattern, RegexOptions.Singleline)) {
+			if (!Regex.IsMatch(jsBody, pattern, RegexOptions.Singleline, RegexTimeout)) {
 				result.IsValid = false;
 				result.Errors.Add(markerName);
 			}
@@ -41,8 +43,8 @@ public static class SchemaValidationService
 		foreach (string[] pair in AlternateMarkerPairs) {
 			string pattern0 = BuildMarkerPattern(pair[0]);
 			string pattern1 = BuildMarkerPattern(pair[1]);
-			bool hasFirst = Regex.IsMatch(jsBody, pattern0, RegexOptions.Singleline);
-			bool hasSecond = Regex.IsMatch(jsBody, pattern1, RegexOptions.Singleline);
+			bool hasFirst = Regex.IsMatch(jsBody, pattern0, RegexOptions.Singleline, RegexTimeout);
+			bool hasSecond = Regex.IsMatch(jsBody, pattern1, RegexOptions.Singleline, RegexTimeout);
 			if (!hasFirst && !hasSecond) {
 				result.IsValid = false;
 				result.Errors.Add($"{pair[0]} or {pair[1]}");

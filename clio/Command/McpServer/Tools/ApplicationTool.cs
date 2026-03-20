@@ -95,7 +95,7 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 	/// <summary>
 	/// Creates a Creatio application and returns the same structured payload as application-get-info.
 	/// </summary>
-	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = false, Idempotent = false,
+	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns the created application context.")]
 	public ApplicationContextResponse ApplicationCreate(

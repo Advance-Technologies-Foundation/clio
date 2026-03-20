@@ -443,14 +443,21 @@ internal sealed class DataBindingDbService(
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
 			BuildLookupBindingRequestBody(packageUId, bindingName));
-
 		using JsonDocument document = JsonDocument.Parse(response);
-		if (!document.RootElement.TryGetProperty("rows", out JsonElement rows) ||
+		JsonElement root = document.RootElement;
+		if (root.TryGetProperty("success", out JsonElement successElement) && !successElement.GetBoolean()) {
+			string errorMessage = root.TryGetProperty("responseStatus", out JsonElement status)
+				&& status.TryGetProperty("Message", out JsonElement msg)
+				? msg.GetString() ?? "Unknown error"
+				: "Unknown error";
+			throw new InvalidOperationException(
+				$"Failed to query binding '{bindingName}': {errorMessage}");
+		}
+		if (!root.TryGetProperty("rows", out JsonElement rows) ||
 			rows.ValueKind != JsonValueKind.Array ||
 			rows.GetArrayLength() == 0) {
 			return (default, false);
 		}
-
 		return (rows[0].Clone(), true);
 	}
 
