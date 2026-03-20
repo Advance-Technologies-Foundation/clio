@@ -86,6 +86,8 @@
     <Compile Remove="Examples\WebFarm\Node1-Main\**" />
     <Compile Remove="Examples\WebFarm\Node1-Main\ErrorPage.aspx" />
     <Compile Remove="samplefiles\**\*.cs" />
+    <Compile Remove="testbin\**" />
+    <Compile Remove="testobj\**" />
 
     <None Include="Examples\Sites\N8_Site\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

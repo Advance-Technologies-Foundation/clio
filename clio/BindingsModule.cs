@@ -214,6 +214,10 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingCommand>();
 		services.AddTransient<AddDataBindingRowCommand>();
 		services.AddTransient<RemoveDataBindingRowCommand>();
+		services.AddTransient<IDataBindingDbService, DataBindingDbService>();
+		services.AddTransient<CreateDataBindingDbCommand>();
+		services.AddTransient<UpsertDataBindingRowDbCommand>();
+		services.AddTransient<RemoveDataBindingRowDbCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();

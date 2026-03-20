@@ -2788,6 +2788,9 @@ clio mock-data -m .\Models -d .\Tests\Data -e prod --exclude-models VwSys
 - [Create data binding](#create-data-binding)
 - [Add data binding row](#add-data-binding-row)
 - [Remove data binding row](#remove-data-binding-row)
+- [Create data binding (DB-first)](#create-data-binding-db)
+- [Upsert data binding row (DB-first)](#upsert-data-binding-row-db)
+- [Remove data binding row (DB-first)](#remove-data-binding-row-db)
 
 ## create-data-binding
 
@@ -2871,6 +2874,65 @@ Example:
 
 ```bash
 clio remove-data-binding-row --package Custom --binding-name SysSettings --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+```
+
+## create-data-binding-db
+
+Create a DB-first package data binding by persisting row data directly to the remote Creatio database.
+
+```bash
+clio create-data-binding-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --schema <SCHEMA_NAME> [--binding-name <BINDING_NAME>] [--rows <JSON_ARRAY>]
+```
+
+Behavior:
+- Resolves the package UId from the remote environment
+- Fetches the entity schema column list from Creatio
+- Calls `SchemaDataDesignerService.svc/SaveSchema` to create or update the binding schema data record in the DB
+- `--rows` must be a JSON array of objects, each with a `values` key: `[{"values":{"Name":"Row name"}},...]`
+- To sync the result to a local workspace, use `restore-workspace` separately
+
+Example:
+
+```bash
+clio create-data-binding-db -e dev --package Custom --schema SysSettings --binding-name UsrMyBinding --rows "[{\"values\":{\"Name\":\"My row\",\"Code\":\"UsrMyRow\"}}]"
+```
+
+## upsert-data-binding-row-db
+
+Upsert a single row in a DB-first package data binding.
+
+```bash
+clio upsert-data-binding-row-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --binding-name <BINDING_NAME> --values <JSON>
+```
+
+Behavior:
+- Calls `SchemaDataDesignerService.svc/SaveSchema` to upsert the given row in the remote DB
+- To sync the result to a local workspace, use `restore-workspace` separately
+
+Example:
+
+```bash
+clio upsert-data-binding-row-db -e dev --package Custom --binding-name SysSettings --values "{\"Name\":\"Updated name\",\"Code\":\"UsrSetting\"}"
+```
+
+## remove-data-binding-row-db
+
+Remove a row from a DB-first package data binding. Deletes the package schema data record from the DB when no bound rows remain.
+
+```bash
+clio remove-data-binding-row-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --binding-name <BINDING_NAME> --key-value <PRIMARY_KEY_VALUE>
+```
+
+Behavior:
+- Looks up the entity schema name from the remote `SysPackageSchemaData` table
+- Fetches bound rows via `GetBoundSchemaData`
+- Deletes the entity record via `DeleteQuery`
+- When no rows remain, deletes the binding schema data record via `DeletePackageSchemaDataRequest`
+
+Example:
+
+```bash
+clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettings --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
 ```
 
 ## get-app-hash

@@ -77,7 +77,22 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		GetAvailableEntitySchemas = 29,
 		ServiceBasePath = 30,
 		GetApplicationInfo = 31,
-		SchemaDesignerRequest = 32
+		SchemaDesignerRequest = 32,
+
+		/// <summary>
+		///     Saves or creates package data binding schema data via the schema designer service.
+		/// </summary>
+		SaveSchemaData = 33,
+
+		/// <summary>
+		///     Deletes package data binding schema data from the remote DB.
+		/// </summary>
+		DeletePackageSchemaData = 34,
+
+		/// <summary>
+		///     Retrieves bound schema data rows from the remote DB.
+		/// </summary>
+		GetBoundSchemaData = 35
 
 	}
 
@@ -124,6 +139,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ServiceBasePath, "ServiceModel/EntitySchemaDesignerService.svc"},
 		{KnownRoute.GetApplicationInfo, "ServiceModel/ApplicationInfoService.svc/GetApplicationInfo"},
 		{KnownRoute.SchemaDesignerRequest, "DataService/json/SyncReply/SchemaDesignerRequest"},
+		{KnownRoute.SaveSchemaData, "ServiceModel/SchemaDataDesignerService.svc/SaveSchema"},
+		{KnownRoute.DeletePackageSchemaData, "DataService/json/SyncReply/DeletePackageSchemaDataRequest"},
+		{KnownRoute.GetBoundSchemaData, "ServiceModel/SchemaDataDesignerService.svc/GetBoundSchemaData"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
