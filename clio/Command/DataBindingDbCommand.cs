@@ -173,17 +173,24 @@ internal sealed class DataBindingDbService(
 		DataBindingDbSchema schema = FetchSchema(options.SchemaName);
 		List<Dictionary<string, JsonNode?>>? rows = ParseRowsJson(options.RowsJson);
 
-		List<string> boundRecordIds = [];
+		Guid? existingBindingUId = TryLookupBindingUId(packageRef.UId, bindingName);
+		List<string> boundRecordIds = existingBindingUId.HasValue
+			? FetchExistingBoundRecordIds(existingBindingUId.Value)
+			: [];
+
 		if (rows is { Count: > 0 }) {
 			foreach (Dictionary<string, JsonNode?> row in rows) {
 				string rowId = EnsureRowId(row);
 				InsertEntityRow(options.SchemaName, row, schema.SchemaColumns);
-				boundRecordIds.Add(rowId);
+				if (!boundRecordIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
+					boundRecordIds.Add(rowId);
+				}
 			}
 		}
 
 		string requestBody = BuildSaveSchemaDataRequest(
-			packageRef, bindingName, options.SchemaName, schema, boundRecordIds);
+			packageRef, bindingName, options.SchemaName, schema, boundRecordIds,
+			existingBindingUId);
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSchemaData),
 			requestBody);
@@ -200,10 +207,13 @@ internal sealed class DataBindingDbService(
 		Dictionary<string, JsonNode?> values = ParseValues(options.ValuesJson);
 
 		string rowId = EnsureRowId(values);
-		InsertEntityRow(entitySchemaName, values, schema.SchemaColumns);
-
 		List<string> existingIds = FetchExistingBoundRecordIds(bindingUId);
-		if (!existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
+		bool rowAlreadyBound = existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase);
+
+		if (rowAlreadyBound) {
+			UpdateEntityRow(entitySchemaName, rowId, values, schema.SchemaColumns);
+		} else {
+			InsertEntityRow(entitySchemaName, values, schema.SchemaColumns);
 			existingIds.Add(rowId);
 		}
 
@@ -429,7 +439,7 @@ internal sealed class DataBindingDbService(
 	private static string BuildGetBoundSchemaDataBody(Guid bindingUId) =>
 		$$"""{"uId":"{{bindingUId}}"}""";
 
-	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName) {
+	private (JsonElement FirstRow, bool Found) QueryBindingRow(Guid packageUId, string bindingName) {
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
 			BuildLookupBindingRequestBody(packageUId, bindingName));
@@ -438,11 +448,19 @@ internal sealed class DataBindingDbService(
 		if (!document.RootElement.TryGetProperty("rows", out JsonElement rows) ||
 			rows.ValueKind != JsonValueKind.Array ||
 			rows.GetArrayLength() == 0) {
+			return (default, false);
+		}
+
+		return (rows[0].Clone(), true);
+	}
+
+	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName) {
+		(JsonElement firstRow, bool found) = QueryBindingRow(packageUId, bindingName);
+		if (!found) {
 			throw new InvalidOperationException(
 				$"Binding '{bindingName}' was not found in the remote environment.");
 		}
 
-		JsonElement firstRow = rows[0];
 		string entitySchemaName = firstRow.TryGetProperty("EntitySchemaName", out JsonElement schemaNameElement)
 			? schemaNameElement.GetString() ?? bindingName
 			: bindingName;
@@ -453,6 +471,18 @@ internal sealed class DataBindingDbService(
 			: Guid.Empty;
 
 		return (entitySchemaName, bindingUId);
+	}
+
+	private Guid? TryLookupBindingUId(Guid packageUId, string bindingName) {
+		(JsonElement firstRow, bool found) = QueryBindingRow(packageUId, bindingName);
+		if (!found) {
+			return null;
+		}
+
+		return firstRow.TryGetProperty("UId", out JsonElement uidElement)
+			&& Guid.TryParse(uidElement.GetString(), out Guid parsed)
+			? parsed
+			: null;
 	}
 
 	private List<Dictionary<string, JsonNode?>> FetchBoundRows(Guid bindingUId) {
@@ -507,20 +537,50 @@ internal sealed class DataBindingDbService(
 		ThrowIfUnsuccessful(response, "DeleteQuery");
 	}
 
+	private void UpdateEntityRow(
+		string rootSchemaName,
+		string rowId,
+		Dictionary<string, JsonNode?> values,
+		IReadOnlyList<DataBindingSchemaColumn> schemaColumns) {
+		var columnItems = new Dictionary<string, object>();
+		foreach (KeyValuePair<string, JsonNode?> kv in values) {
+			if (string.Equals(kv.Key, "Id", StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+
+			int dataValueType = ResolveInsertDataValueType(kv.Key, schemaColumns);
+			columnItems[kv.Key] = new {
+				expressionType = 2,
+				parameter = new {
+					dataValueType,
+					value = kv.Value?.ToString() ?? ""
+				}
+			};
+		}
+
+		if (columnItems.Count == 0) {
+			return;
+		}
+
+		var body = new {
+			rootSchemaName,
+			columnValues = new { items = columnItems },
+			filters = BuildPrimaryKeyFilter(rowId)
+		};
+
+		string response = applicationClient.ExecutePostRequest(
+			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update),
+			JsonSerializer.Serialize(body));
+		ThrowIfUnsuccessful(response, "UpdateQuery");
+	}
+
 	private void InsertEntityRow(
 		string rootSchemaName,
 		Dictionary<string, JsonNode?> values,
 		IReadOnlyList<DataBindingSchemaColumn> schemaColumns) {
 		var columnItems = new Dictionary<string, object>();
 		foreach (KeyValuePair<string, JsonNode?> kv in values) {
-			DataBindingSchemaColumn? col = schemaColumns
-				.FirstOrDefault(c => string.Equals(c.Name, kv.Key, StringComparison.OrdinalIgnoreCase));
-			int dataValueType = col?.DataValueType ?? 1;
-			// InsertQuery parameter dataValueType: normalize text subtypes to 1 (Text)
-			if (dataValueType is 28 or 26 or 27 or 29 or 30) {
-				dataValueType = 1;
-			}
-
+			int dataValueType = ResolveInsertDataValueType(kv.Key, schemaColumns);
 			columnItems[kv.Key] = new {
 				expressionType = 2,
 				parameter = new {
@@ -540,6 +600,50 @@ internal sealed class DataBindingDbService(
 			JsonSerializer.Serialize(body));
 		ThrowIfUnsuccessful(response, "InsertQuery");
 	}
+
+	/// <summary>
+	/// Resolves the Creatio <c>dataValueType</c> integer suitable for Insert/Update query parameters.
+	/// Text subtypes are normalized to <c>1</c> (Text) because the DataService does not accept sub-type integers.
+	/// </summary>
+	private static int ResolveInsertDataValueType(
+		string columnName,
+		IReadOnlyList<DataBindingSchemaColumn> schemaColumns) {
+		DataBindingSchemaColumn? col = schemaColumns
+			.FirstOrDefault(c => string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase));
+		int dataValueType = col?.DataValueType ?? 1;
+		// Normalize text subtypes to 1 (Text) for Insert/Update query parameters
+		if (dataValueType is 26 or 27 or 28 or 29 or 30) {
+			dataValueType = 1;
+		}
+
+		return dataValueType;
+	}
+
+	private static object BuildPrimaryKeyFilter(string keyValue) => new {
+		filterType = 6,
+		isEnabled = true,
+		trimDateTimeParameterToDate = false,
+		logicalOperation = 0,
+		items = new {
+			primaryFilter = new {
+				filterType = 1,
+				comparisonType = 3,
+				isEnabled = true,
+				trimDateTimeParameterToDate = false,
+				leftExpression = new {
+					expressionType = 0,
+					columnPath = "Id"
+				},
+				rightExpression = new {
+					expressionType = 2,
+					parameter = new {
+						dataValueType = 0,
+						value = keyValue
+					}
+				}
+			}
+		}
+	};
 
 	private static string EnsureRowId(Dictionary<string, JsonNode?> values) {
 		if (values.TryGetValue("Id", out JsonNode? idNode) && idNode is not null) {
