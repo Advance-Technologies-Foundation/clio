@@ -135,6 +135,24 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertToolIsAdvertisedAsDestructive(tools, RestoreToolName);
 	}
 
+	[Test]
+	[Description("Starts the real clio MCP server, inspects push-workspace tool discovery metadata, and verifies that skip-backup is exposed as an optional input argument.")]
+	[AllureTag(PushToolName)]
+	[AllureName("Push workspace advertises optional skip-backup argument")]
+	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that push-workspace exposes the optional skip-backup argument for callers that explicitly want to skip the pre-install backup.")]
+	public async Task PushWorkspace_Tool_Should_Advertise_Optional_SkipBackup_Argument() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+
+		// Assert
+		AssertPushWorkspaceToolAdvertisesSkipBackup(tools);
+	}
+
 	[AllureStep("Arrange workspace-sync invalid-environment MCP session")]
 	private static async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-{toolPrefix}-mcp-e2e-{Guid.NewGuid():N}");
@@ -311,6 +329,24 @@ public sealed class WorkspaceSyncToolE2ETests {
 			because: "the MCP server should expose tool annotations for clients that apply safety policies");
 		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
 			because: "workspace-sync tools mutate local workspace state and/or the target environment");
+	}
+
+	[AllureStep("Assert push-workspace MCP schema advertises optional skip-backup argument")]
+	private static void AssertPushWorkspaceToolAdvertisesSkipBackup(IList<McpClientTool> tools) {
+		McpClientTool tool = tools.Single(tool => tool.Name == PushToolName);
+		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
+		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
+		JsonElement argsProperties = argsSchema.GetProperty("properties");
+		string[] requiredArgs = argsSchema.GetProperty("required").EnumerateArray()
+			.Select(item => item.GetString()!)
+			.ToArray();
+
+		argsProperties.TryGetProperty("skip-backup", out JsonElement skipBackupProperty).Should().BeTrue(
+			because: "push-workspace callers need an explicit way to disable backup without changing the default behavior");
+		skipBackupProperty.GetProperty("type").GetString().Should().Be("boolean",
+			because: "skip-backup should be modeled as a boolean MCP input");
+		requiredArgs.Should().NotContain("skip-backup",
+			because: "backup skipping must remain opt-in and the default behavior should still create backups when the argument is omitted");
 	}
 
 	[AllureStep("Assert get-pkg-list returns the pushed package")]

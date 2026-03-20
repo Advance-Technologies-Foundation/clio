@@ -192,9 +192,10 @@ public class Workspace : IWorkspace{
 		return _composableApplicationManager.GetCode(_workspacePathBuilder.PackagesFolderPath);
 	}
 
-	public void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false) {
+	public void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false,
+			bool createBackup = true) {
 		IEnumerable<string> filteredPackages = GetFilteredPackages();
-		_workspaceInstaller.Install(filteredPackages, creatioPackagesZipName, useApplicationInstaller);
+		_workspaceInstaller.Install(filteredPackages, creatioPackagesZipName, useApplicationInstaller, createBackup);
 	}
 
 	public void InstallUsingApplicationInstaller(string creatioPackagesZipName = null) {

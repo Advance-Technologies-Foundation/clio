@@ -27,6 +27,9 @@ OPTIONS
 
     --Maintainer            -m          Maintainer name
 
+    --skip-backup                       Skip package backup before install only
+                                        when explicitly set to true
+
 EXAMPLE
     clio push-pkg <PACKAGE_NAME>
         install package from directory you can use the next command: for non 
@@ -46,6 +49,10 @@ EXAMPLE
 
     clio push-pkg <PACKAGE_NAME> -r log.txt
         installation log file specify report path parameter
+
+    clio push-pkg <PACKAGE_NAME> --skip-backup true
+        install package without creating backup first; omitted option keeps
+        the existing backup behavior
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

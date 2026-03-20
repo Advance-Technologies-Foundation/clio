@@ -66,10 +66,45 @@ public sealed class WorkspaceSyncToolTests {
 				because: "the resolved push-workspace command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
 				because: "the requested environment name must be preserved for push-workspace");
-			resolvedCommand.CapturedWorkingDirectory.Should().Be(workspacePath,
+			NormalizeTempPathAlias(resolvedCommand.CapturedWorkingDirectory).Should().Be(
+				NormalizeTempPathAlias(workspacePath),
 				because: "push-workspace must execute from the requested workspace path");
 			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
 				because: "the MCP tool should restore the original working directory after push-workspace execution");
+		}
+		finally {
+			ConsoleLogger.Instance.ClearMessages();
+			Directory.SetCurrentDirectory(originalDirectory);
+			Directory.Delete(workspacePath, recursive: true);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards skip-backup to push-workspace only when the caller explicitly sets it in MCP arguments.")]
+	public void PushWorkspace_Should_Forward_SkipBackup_When_Requested() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string originalDirectory = Directory.GetCurrentDirectory();
+		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"pushw-skip-backup-{Guid.NewGuid():N}")).FullName;
+		FakePushWorkspaceCommand defaultCommand = new();
+		FakePushWorkspaceCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PushWorkspaceCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
+
+		try {
+			// Act
+			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("dev", workspacePath, true));
+
+			// Assert
+			result.ExitCode.Should().Be(0,
+				because: "the MCP tool should remain executable when skip-backup is explicitly requested");
+			resolvedCommand.CapturedOptions.Should().NotBeNull(
+				because: "the resolved push-workspace command should receive the forwarded MCP options");
+			resolvedCommand.CapturedOptions!.SkipBackup.Should().BeTrue(
+				because: "the MCP wrapper should preserve an explicitly requested backup skip flag");
 		}
 		finally {
 			ConsoleLogger.Instance.ClearMessages();
@@ -108,7 +143,8 @@ public sealed class WorkspaceSyncToolTests {
 				because: "the resolved restore-workspace command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
 				because: "the requested environment name must be preserved for restore-workspace");
-			resolvedCommand.CapturedWorkingDirectory.Should().Be(workspacePath,
+			NormalizeTempPathAlias(resolvedCommand.CapturedWorkingDirectory).Should().Be(
+				NormalizeTempPathAlias(workspacePath),
 				because: "restore-workspace must execute from the requested workspace path");
 			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
 				because: "the MCP tool should restore the original working directory after restore-workspace execution");
@@ -262,6 +298,16 @@ public sealed class WorkspaceSyncToolTests {
 			CapturedWorkingDirectory = Directory.GetCurrentDirectory();
 			return 0;
 		}
+	}
+
+	private static string? NormalizeTempPathAlias(string? path) {
+		if (path is null) {
+			return null;
+		}
+
+		return path.StartsWith("/private/var/", StringComparison.Ordinal)
+			? path.Substring("/private".Length)
+			: path;
 	}
 
 	private sealed class FakeRestoreWorkspaceCommand : RestoreWorkspaceCommand {

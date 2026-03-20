@@ -14,6 +14,10 @@ namespace Clio.Command;
 public class PushWorkspaceCommandOptions : EnvironmentOptions{
 	#region Properties: Public
 
+	[Option("skip-backup", Required = false,
+		HelpText = "Skip package backup before install when explicitly set to true")]
+	public bool? SkipBackup { get; set; }
+
 	[Option("unlock", Required = false,
 		HelpText = "Unlock workspace package after install workspace to the environment")]
 	public bool NeedUnlockPackage { get; set; }
@@ -102,7 +106,9 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 		try {
 			_logger.WriteInfo("Push workspace...");
 			CallbackInfo(options.CallbackProcess, "Push workspace...");
-			_workspace.Install(useApplicationInstaller: options.UseApplicationInstaller);
+			_workspace.Install(
+				useApplicationInstaller: options.UseApplicationInstaller,
+				createBackup: options.SkipBackup != true);
 
 			if (!string.IsNullOrEmpty(options.TideRepositoryId)) {
 				try {

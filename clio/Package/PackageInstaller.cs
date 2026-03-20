@@ -49,9 +49,10 @@
 
 		#region Methods: Public
 
-		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null, 
-				PackageInstallOptions packageInstallOptions = null, string reportPath = null)  {
-			return InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath);
+		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
+				PackageInstallOptions packageInstallOptions = null, string reportPath = null,
+				bool createBackup = true)  {
+			return InternalInstall(packagePath, environmentSettings, packageInstallOptions, reportPath, createBackup);
 		}
 
 		#endregion

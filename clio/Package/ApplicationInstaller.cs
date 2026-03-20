@@ -72,10 +72,10 @@ namespace Clio.Package
 		#region Methods: Public
 
 		public bool Install(string packagePath, EnvironmentSettings environmentSettings = null,
-			string reportPath = null, bool? checkCompilationErrors = null)
+			string reportPath = null, bool? checkCompilationErrors = null, bool createBackup = true)
 		{
 			_checkCompilationErrors = checkCompilationErrors;
-			return InternalInstall(packagePath, environmentSettings, null, reportPath);
+			return InternalInstall(packagePath, environmentSettings, null, reportPath, createBackup);
 		}
 
 		public bool UnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings = null,
