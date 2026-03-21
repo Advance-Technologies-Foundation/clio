@@ -18,7 +18,7 @@ public sealed class PageGetTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get Freedom UI page schema body")]
-	public PageGetResponse GetPage([Required] PageGetArgs args) {
+	public PageGetResponse GetPage([Description("Parameters: schemaName (required); environmentName, uri, login, password (optional)")] [Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,

@@ -66,7 +66,7 @@ public sealed record ApplicationCreateArgs(
 	string? Description = null,
 
 	[property: JsonPropertyName("icon-id")]
-	[property: Description("Optional application icon identifier, or 'auto' to resolve a random icon.")]
+	[property: Description("Optional application icon GUID (e.g. '00000000-0000-0000-0000-000000000000'), or 'auto' to resolve a random icon.")]
 	string? IconId = null,
 
 	[property: JsonPropertyName("client-type-id")]

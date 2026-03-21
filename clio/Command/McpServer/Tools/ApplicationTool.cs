@@ -26,7 +26,7 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 		OpenWorld = false)]
 	[Description("Gets list of all applications from Creatio through backend MCP.")]
 	public ApplicationListResponse ApplicationGetList(
-		[Description("application-get-list parameters")]
+		[Description("Parameters: environment-name (required)")]
 		[Required]
 		ApplicationGetListArgs args) {
 		try {
@@ -61,7 +61,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 		OpenWorld = false)]
 	[Description("Gets application information from Creatio through backend MCP. Returns application context with packages and entities.")]
 	public ApplicationContextResponse ApplicationGetInfo(
-		[Description("application-get-info parameters")]
+		[Description("Parameters: environment-name (required), app-id or app-code (exactly one required)")]
 		[Required]
 		ApplicationGetInfoArgs args) {
 		try {
@@ -99,7 +99,7 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns the created application context.")]
 	public ApplicationContextResponse ApplicationCreate(
-		[Description("application-create parameters")]
+		[Description("Parameters: environment-name, name, code, template-code, icon-background (all required); description, icon-id, client-type-id (optional)")]
 		[Required]
 		ApplicationCreateArgs args) {
 		try {

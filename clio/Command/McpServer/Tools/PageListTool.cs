@@ -18,7 +18,7 @@ public sealed class PageListTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("List Freedom UI pages in Creatio")]
-	public PageListResponse ListPages([Required] PageListArgs args) {
+	public PageListResponse ListPages([Description("Parameters: packageName, searchPattern, limit, environmentName (all optional)")] [Required] PageListArgs args) {
 		PageListOptions options = new() {
 			PackageName = args.PackageName,
 			SearchPattern = args.SearchPattern,
