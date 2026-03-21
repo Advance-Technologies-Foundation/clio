@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using Clio;
 using Clio.UserEnvironment;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,8 +22,14 @@ public interface IToolCommandResolver {
 
 /// <summary>
 /// Creates isolated command instances for MCP tool execution targets.
+/// Caches <see cref="IServiceProvider"/> per environment key so that a single
+/// <see cref="IApplicationClient"/> (and its authenticated HTTP session) is reused
+/// across successive tool calls targeting the same Creatio instance.
 /// </summary>
 public class ToolCommandResolver(ISettingsRepository settingsRepository) : IToolCommandResolver {
+
+	private static readonly ConcurrentDictionary<string, IServiceProvider> ContainerCache = new(StringComparer.OrdinalIgnoreCase);
+
 	/// <summary>
 	/// Resolves a command against an explicit environment or URI-based target.
 	/// </summary>
@@ -49,9 +56,12 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 					"Either a configured environment name or an explicit URI is required for MCP command execution.");
 			}
 		}
-		IServiceProvider container = new BindingsModule().Register(settings);
+		string cacheKey = options.Environment ?? settings.Uri ?? "default";
+		IServiceProvider container = ContainerCache.GetOrAdd(cacheKey,
+			_ => new BindingsModule().Register(settings));
 		return container.GetRequiredService<TCommand>();
 	}
+
 	public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		EnvironmentSettings settings = new EnvironmentSettings().Fill(options);
