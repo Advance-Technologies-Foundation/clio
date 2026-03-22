@@ -108,7 +108,7 @@ namespace Clio.Command {
 					["schemaUId"] = schemaUId,
 					["useFullHierarchy"] = false
 				};
-				string designerUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+				string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
 				string getSchemaJson = _applicationClient.ExecutePostRequest(designerUrl, getSchemaRequest.ToString(Formatting.None));
 				var getSchemaResponse = JObject.Parse(getSchemaJson);
 				if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] == null) {
@@ -117,7 +117,7 @@ namespace Clio.Command {
 				}
 				var schemaToSave = getSchemaResponse["schema"] as JObject;
 				schemaToSave["body"] = options.Body;
-				string saveUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+				string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 				string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
 				var saveResponse = JObject.Parse(saveJson);
 				if (!(saveResponse["success"]?.Value<bool>() ?? false)) {

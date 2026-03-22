@@ -107,7 +107,7 @@ namespace Clio.Command {
 					["schemaUId"] = schemaUId,
 					["useFullHierarchy"] = false
 				};
-				string designerUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+				string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
 				string bodyJson = _applicationClient.ExecutePostRequest(designerUrl, bodyRequest.ToString(Formatting.None));
 				var bodyResponse = JObject.Parse(bodyJson);
 				if (!(bodyResponse["success"]?.Value<bool>() ?? false)) {
