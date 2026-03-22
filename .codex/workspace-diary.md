@@ -1045,3 +1045,24 @@ Discovery: The existing `LinkFromRepositoryTool` MCP surface already matched the
 Files: C:\Projects\clio\clio\Command\Link4RepoCommand.cs, C:\Projects\clio\clio.tests\Command\Link4RepoCommand.Tests.cs, C:\Projects\clio\clio.tests\Command\McpServer\LinkFromRepositoryToolTests.cs, C:\Projects\clio\clio\help\en\link-from-repository.txt, C:\Projects\clio\clio\docs\commands\link-from-repository.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Registered environments with a valid `EnvironmentPath` now support `clio l4r -e` across Windows, Linux, and macOS, while Windows users still retain compatibility with the previous host-discovery fallback.
 
+## 2026-03-21 12:40 – Add restore-db ZIP/template restore flow
+Context: User needed `clio rdb` to restore directly from PostgreSQL ZIP backups and to support `--as-template` so a ZIP can create only a reusable template database.
+Decision: Added direct backup handling in `RestoreDbCommand` for PostgreSQL `.backup` files and ZIP packages, introduced `--as-template`, split template creation into a reusable `ICreatioInstallerService.EnsurePgTemplate` path, and kept local-server restore behavior aligned for both normal restores and template-only mode.
+Discovery: The previous command path only understood ZIP backups inside the `--dbServerName` local-server branch and would dereference `env.DbServer.Uri` when a ZIP was passed without that option; MCP, tests, and command docs all needed updates because `dbName` is no longer required when `--as-template` is used.
+Files: C:\Projects\clio\clio\Command\RestoreDb.cs, C:\Projects\clio\clio\Command\CreatioInstallCommand\CreatioInstallerService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\RestoreDbTool.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\RestoreDbPrompt.cs, C:\Projects\clio\clio.tests\Command\RestoreDb.Tests.cs, C:\Projects\clio\clio.tests\Command\RestoreDb.LocalServer.Tests.cs, C:\Projects\clio\clio.tests\Command\McpServer\RestoreDbToolTests.cs, C:\Projects\clio\clio.mcp.e2e\RestoreDbToolE2ETests.cs, C:\Projects\clio\clio\help\en\restore-db.txt, C:\Projects\clio\clio\docs\commands\restore-db.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future restore-db work can treat PostgreSQL ZIP packages as first-class inputs, create reusable templates without provisioning a target database, and rely on aligned CLI, MCP, and test coverage for that contract.
+
+## 2026-03-21 13:05 – Apply password-reset flow to ZIP template restore
+Context: After the ZIP/template restore work, user reported that the post-restore password-reset handling was not being applied consistently for ZIP-based template creation.
+Decision: Changed restore-db template flows to resolve and log the effective template database name, exposed `ICreatioInstallerService.EnsurePgTemplateAndGetName`, and invoked `TryDisableForcedPasswordReset` against the actual template database for both direct ZIP and local PostgreSQL template restores.
+Discovery: The original ZIP restore path already applied password-reset handling for concrete database restores, but template-only mode had no reliable way to know the created template database name, so the follow-up script was skipped entirely.
+Files: C:\Projects\clio\clio\Command\RestoreDb.cs, C:\Projects\clio\clio\Command\CreatioInstallCommand\CreatioInstallerService.cs, C:\Projects\clio\clio.tests\Command\RestoreDb.Tests.cs, C:\Projects\clio\clio.tests\Command\RestoreDb.LocalServer.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: ZIP-backed template creation now reports the effective template name and runs the same password-reset follow-up logic as a normal restore, preventing another silent mismatch between restore modes.
+
+## 2026-03-21 13:18 – Allow dropping PostgreSQL template databases
+Context: User hit a restore-db failure when `--drop-if-exists --as-template` tried to replace an existing PostgreSQL template and PostgreSQL rejected dropping a template database directly.
+Decision: Updated the shared `Postgres.DropDb` helper to clear `pg_database.datistemplate` before terminating sessions and issuing `DROP DATABASE`, so all template-replacement flows can reuse the same drop path.
+Discovery: Both restore-db and installer service template-refresh flows already relied on `Postgres.DropDb`, so fixing the low-level helper removed the bug in every caller without needing MCP or CLI contract changes.
+Files: C:\Projects\clio\clio\Common\db\Postgres.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Existing PostgreSQL templates can now be replaced safely with `--drop-if-exists`, avoiding the previous `[ERROR] cannot drop a template database` failure during template refresh.
+

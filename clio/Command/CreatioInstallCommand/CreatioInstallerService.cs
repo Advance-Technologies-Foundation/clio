@@ -53,6 +53,25 @@ public interface ICreatioInstallerService {
 	void TryDisableForcedPasswordReset(PfInstallerOptions options, InstallerHelper.DatabaseType dbType);
 
 	/// <summary>
+	/// Ensures that a PostgreSQL template exists for the specified unpacked backup source.
+	/// </summary>
+	/// <param name="unzippedDirectoryPath">Directory containing the unpacked PostgreSQL backup file.</param>
+	/// <param name="templateName">Optional logical source name used for template lookup metadata.</param>
+	/// <param name="dropIfExists">When <c>true</c>, drops an existing matching template before recreating it.</param>
+	/// <returns><c>0</c> on success; non-zero otherwise.</returns>
+	int EnsurePgTemplate(string unzippedDirectoryPath, string templateName = "", bool dropIfExists = false);
+
+	/// <summary>
+	/// Ensures that a PostgreSQL template exists and returns the effective template database name.
+	/// </summary>
+	/// <param name="unzippedDirectoryPath">Directory containing the unpacked PostgreSQL backup file.</param>
+	/// <param name="templateName">Optional logical source name used for template lookup metadata.</param>
+	/// <param name="dropIfExists">When <c>true</c>, drops an existing matching template before recreating it.</param>
+	/// <returns>The effective template database name, or <see langword="null"/> when creation fails.</returns>
+	string EnsurePgTemplateAndGetName(string unzippedDirectoryPath, string templateName = "",
+		bool dropIfExists = false);
+
+	/// <summary>
 	///     Resolves a build artifact path based on product, database type, and runtime platform.
 	/// </summary>
 	/// <param name="product">Product name or product key.</param>
@@ -1177,16 +1196,64 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	/// <inheritdoc />
 	public int DoPgWork(string unzippedDirectoryPath, string destDbName, string templateName = "") {
+		string? resolvedTemplateName = EnsurePgTemplateCore(unzippedDirectoryPath, templateName, false);
+		if (string.IsNullOrWhiteSpace(resolvedTemplateName)) {
+			return 1;
+		}
+
+		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
+		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		postgres.CreateDbFromTemplate(resolvedTemplateName, destDbName);
+		_logger.WriteInfo($"[Database created] - {destDbName}");
+		return 0;
+	}
+
+	/// <summary>
+	/// Ensures that a PostgreSQL template exists for the specified unpacked backup source.
+	/// </summary>
+	/// <param name="unzippedDirectoryPath">Directory containing the unpacked PostgreSQL backup file.</param>
+	/// <param name="templateName">Optional logical source name used for template lookup metadata.</param>
+	/// <param name="dropIfExists">When <c>true</c>, drops an existing matching template before recreating it.</param>
+	/// <returns><c>0</c> on success; non-zero otherwise.</returns>
+	public int EnsurePgTemplate(string unzippedDirectoryPath, string templateName = "", bool dropIfExists = false) {
+		return string.IsNullOrWhiteSpace(EnsurePgTemplateCore(unzippedDirectoryPath, templateName, dropIfExists))
+			? 1
+			: 0;
+	}
+
+	/// <summary>
+	/// Ensures that a PostgreSQL template exists and returns the effective template database name.
+	/// </summary>
+	/// <param name="unzippedDirectoryPath">Directory containing the unpacked PostgreSQL backup file.</param>
+	/// <param name="templateName">Optional logical source name used for template lookup metadata.</param>
+	/// <param name="dropIfExists">When <c>true</c>, drops an existing matching template before recreating it.</param>
+	/// <returns>The effective template database name, or <see langword="null"/> when creation fails.</returns>
+	public string EnsurePgTemplateAndGetName(string unzippedDirectoryPath, string templateName = "",
+		bool dropIfExists = false) {
+		return EnsurePgTemplateCore(unzippedDirectoryPath, templateName, dropIfExists);
+	}
+
+	private string? EnsurePgTemplateCore(string unzippedDirectoryPath, string templateName, bool dropIfExists) {
 		// Use templateName for metadata if provided, otherwise use directory name
 		string actualSourceName = string.IsNullOrWhiteSpace(templateName)
 			? _msFileSystem.Path.GetFileName(unzippedDirectoryPath)
 			: templateName;
-
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
 		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
 		// Try to find the existing template by source file
 		string existingTemplate = postgres.FindTemplateBySourceFile(actualSourceName);
+		if (!string.IsNullOrWhiteSpace(existingTemplate) && dropIfExists) {
+			_logger.WriteWarning(
+				$"[Database restore] - Dropping existing template '{existingTemplate}' for source '{actualSourceName}'");
+			if (!postgres.DropDb(existingTemplate)) {
+				_logger.WriteError(
+					$"[Database restore failed] - Failed to drop existing template '{existingTemplate}'");
+				return null;
+			}
+
+			existingTemplate = null;
+		}
 
 		string tmpDbName;
 		if (!string.IsNullOrEmpty(existingTemplate)) {
@@ -1199,10 +1266,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			tmpDbName = $"template_{Guid.NewGuid():N}";
 			CreatePgTemplate(unzippedDirectoryPath, tmpDbName, actualSourceName);
 		}
-
-		postgres.CreateDbFromTemplate(tmpDbName, destDbName);
-		_logger.WriteInfo($"[Database created] - {destDbName}");
-		return 0;
+		return tmpDbName;
 	}
 
 	/// <summary>

@@ -2,11 +2,9 @@
 
 ## Purpose
 
-Restores a database from a backup file either to the default Kubernetes database flow or to a configured local/local-style database server.
+Restores a database from a backup file or Creatio ZIP package, or creates only a reusable PostgreSQL template from that backup.
 
-For PostgreSQL running in Docker, use `--dbServerName` with a `db` entry that points to the published host/port. In that mode clio runs `pg_restore` on the machine running clio and keeps the backup file on the local filesystem. It does not copy the `.backup` file into Docker or Kubernetes.
-
-Every `restore-db` invocation also creates a temp database-operation log file. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tools return the same path in `log-file-path`.
+Every `restore-db` invocation creates a temp database-operation log file. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tools return the same path in `log-file-path`.
 
 ## Usage
 
@@ -22,11 +20,33 @@ clio restore-db [options]
 
 | Argument | Required | Description |
 |---|---|---|
-| `--dbName` | Yes | Database name to create or restore. |
-| `--backupPath` | Yes for local/local-style restore | Path to `.backup`, `.bak`, or a Creatio ZIP containing `db/*.backup` or `db/*.bak`. |
-| `--dbServerName` | No | Local/local-style database server key from `appsettings.json`. When omitted, clio uses the existing Kubernetes/environment behavior. |
-| `--drop-if-exists` | No | Automatically drops the target database if it already exists. |
+| `--backupPath` | Yes | Path to `.backup`, `.bak`, or a Creatio ZIP containing `db/*.backup` or `db/*.bak`. |
+| `--dbName` | Yes unless `--as-template` | Database name to create or restore. |
+| `--dbServerName` | No | Local database server key from `appsettings.json`. When omitted, PostgreSQL `.backup` and ZIP flows can still run directly. |
+| `--drop-if-exists` | No | Drops the existing database before restore. In `--as-template` mode, drops the matching existing PostgreSQL template before recreating it. |
+| `--as-template` | No | Creates or refreshes only the PostgreSQL template and does not create the target database. Supported only for PostgreSQL `.backup` or ZIP sources. |
 | `--disable-reset-password` | No | Hidden advanced option. Defaults to `true` and reuses the same post-restore password-reset disabling behavior as `deploy-creatio`. Set it to `false` to skip that step. |
+
+## Behavior
+
+When `--backupPath` points to a PostgreSQL `.backup` file or a ZIP package that contains `db/*.backup`, `restore-db` can now work without `--dbServerName`.
+
+When `--dbServerName` is specified, clio:
+
+- loads the configured server from `appsettings.json`
+- tests the connection before making any restore changes
+- detects the backup type from file extension
+- rejects PostgreSQL-to-MSSQL and MSSQL-to-PostgreSQL mismatches before restore
+- restores PostgreSQL by creating or reusing a template and then creating the target database from that template
+- restores MSSQL with the existing local SQL Server flow
+
+When `--as-template` is specified, clio:
+
+- requires a PostgreSQL `.backup` or PostgreSQL ZIP source
+- creates or refreshes only the reusable PostgreSQL template
+- skips target database creation
+- treats `--drop-if-exists` as "drop the existing matching template before recreating it"
+- does not run the post-restore password-reset helper because no target database is created
 
 ## Local Server Configuration
 
@@ -61,39 +81,44 @@ Add a `db` section to `appsettings.json`:
 Configuration notes:
 
 - `dbType` supports `postgres` and `mssql`.
-- For Docker PostgreSQL, `hostname` and `port` must be the host-reachable endpoint, such as `localhost:5433` or `host.docker.internal:5432`.
 - `pgToolsPath` is optional, but `pg_restore` must be available on the machine running clio.
 - When `enabled` is `false`, the entry is ignored by clio commands.
 
-## Behavior
-
-When `--dbServerName` is specified, clio:
-
-- loads the configured server from `appsettings.json`
-- tests the connection before making any restore changes
-- detects the backup type from file extension
-- rejects PostgreSQL-to-MSSQL and MSSQL-to-PostgreSQL mismatches before restore
-- restores PostgreSQL with local `pg_restore`
-- restores MSSQL with the existing local SQL Server flow
-- reuses the `deploy-creatio` forced-password-reset disabling helper after a successful restore when the option remains enabled
-- writes both normal clio output and native PostgreSQL/MSSQL restore output into the temp database-operation log artifact
-
-When `--dbServerName` is omitted, clio preserves the existing Kubernetes/environment-based behavior.
-
 ## Examples
 
-Restore PostgreSQL to a Docker-published host port:
+Restore PostgreSQL from ZIP without `--dbServerName`:
+
+```bash
+clio restore-db --backupPath "C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip" \
+  --dbName creatiodev --drop-if-exists
+```
+
+Create or refresh only a PostgreSQL template from ZIP:
+
+```bash
+clio restore-db --backupPath "C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip" \
+  --as-template --drop-if-exists
+```
+
+Restore PostgreSQL to a configured local server:
 
 ```bash
 clio restore-db --dbServerName docker-postgres --dbName creatiodev \
   --backupPath "C:\Creatio\database.backup"
 ```
 
-Restore PostgreSQL from a Creatio ZIP package:
+Restore PostgreSQL ZIP to a configured local server:
 
 ```bash
 clio restore-db --dbServerName docker-postgres --dbName creatiodev \
-  --backupPath "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
+  --backupPath "C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip"
+```
+
+Create or refresh only the local PostgreSQL template:
+
+```bash
+clio restore-db --dbServerName docker-postgres \
+  --backupPath "C:\Creatio\database.backup" --as-template --drop-if-exists
 ```
 
 Restore MSSQL to a configured local server:
@@ -103,20 +128,6 @@ clio restore-db --dbServerName my-local-mssql --dbName creatiodev \
   --backupPath "C:\Creatio\database.bak"
 ```
 
-Restore and drop the existing database automatically:
-
-```bash
-clio restore-db --dbServerName docker-postgres --dbName creatiodev \
-  --backupPath "C:\Creatio\database.backup" --drop-if-exists
-```
-
-Restore and skip the password-reset disabling step:
-
-```bash
-clio restore-db --dbServerName docker-postgres --dbName creatiodev \
-  --backupPath "C:\Creatio\database.backup" --disable-reset-password false
-```
-
 ## Troubleshooting
 
 `pg_restore not found`
@@ -124,18 +135,11 @@ clio restore-db --dbServerName docker-postgres --dbName creatiodev \
 - Install PostgreSQL client tools on the machine running clio.
 - Add the PostgreSQL `bin` directory to `PATH`.
 - Or set `pgToolsPath` in `appsettings.json`.
-- For Docker PostgreSQL, remember clio still runs `pg_restore` on the host.
-
-Connection test failed
-
-- Verify the database server is running and reachable.
-- Check `hostname`, `port`, `username`, and `password`.
-- For Docker PostgreSQL, run `docker ps` and verify the PostgreSQL container port is published to the host.
 
 Backup type mismatch
 
-- Use `.backup` with PostgreSQL.
-- Use `.bak` with MSSQL.
+- Use `.backup` or PostgreSQL ZIP packages with PostgreSQL/template mode.
+- Use `.bak` or MSSQL ZIP packages with MSSQL local server mode.
 
 Database operation log
 

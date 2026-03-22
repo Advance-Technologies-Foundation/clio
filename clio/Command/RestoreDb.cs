@@ -36,6 +36,13 @@ public class RestoreDbCommandOptions : EnvironmentOptions{
 	[Option("drop-if-exists", Required = false, 
 		HelpText = "Automatically drops existing database if present without prompting")]
 	public bool DropIfExists { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether restore-db should create or refresh only the PostgreSQL template.
+	/// </summary>
+	[Option("as-template", Required = false,
+		HelpText = "Create or refresh only the PostgreSQL template without creating a target database")]
+	public bool AsTemplate { get; set; }
 	
 }
 
@@ -104,44 +111,28 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	public override int Execute(RestoreDbCommandOptions options) {
 		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("restore-db");
 		try {
+			int? directBackupRestoreResult = TryHandleDirectBackupRestore(options);
+			if (directBackupRestoreResult.HasValue) {
+				return directBackupRestoreResult.Value;
+			}
+
 			int result;
 
 			if (!string.IsNullOrEmpty(options.DbServerName)) {
 				result = RestoreToLocalServer(options);
 				return result;
 			}
-
-			if (!string.IsNullOrEmpty(options.BackupPath)) {
-			
-				if (Path.GetExtension(options.BackupPath) == ".backup") {
-				
-					_logger.WriteInfo($"Restoring database from backup file: {options.BackupPath}");
-					result = RestorePg(options.DbName, options.BackupPath);
-					if (result == 0) {
-						TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, options.DbName,
-							options.BackupPath);
-					}
-					return result;
-				}
-			
-				if (_fileSystem.ExistsDirectory(options.BackupPath)) {
-					string[] backupFiles = _fileSystem.GetFiles(
-						options.BackupPath, "*.backup", SearchOption.AllDirectories);
-					if (backupFiles.Length == 0) {
-						_logger.WriteError($"No .backup files found in directory: {options.BackupPath}");
-						return 1;
-					}
-					_logger.WriteInfo($"Restoring database from backup file: {backupFiles[0]}");
-					result = RestorePg(options.DbName, backupFiles[0]);
-					if (result == 0) {
-						TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, options.DbName,
-							options.BackupPath);
-					}
-					return result;
-				}
-			}
 		
 			EnvironmentSettings env = _settingsRepository.GetEnvironment(options);
+			if (env.DbServer?.Uri == null) {
+				_logger.WriteError("Database server configuration is required for this restore mode.");
+				return 1;
+			}
+
+			if (options.AsTemplate) {
+				_logger.WriteError("--as-template is supported only for PostgreSQL .backup files or ZIP packages.");
+				return 1;
+			}
 			result = env.DbServer.Uri.Scheme switch {
 				"mssql" => RestoreMs(env.DbServer, env.DbName, options.Force, env.BackupFilePath),
 				var _ => HandleIncorrectUri(options.Uri)
@@ -189,7 +180,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		_logger.WriteInfo("Started db restore...");
 		DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
 			dbName,
-			Path.GetFileName(backUpFilePath),
+			GetFileName(backUpFilePath),
 			WriteNativeLogLine);
 		int result = restoreResult.Success ? 0 : 1;
 		_logger.WriteInfo($"Created database {dbName} from file {backUpFilePath}");
@@ -197,9 +188,25 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	}
 
 	private int RestorePg(string dbName, string backupFilePath ){
-		string directoryPath = Path.GetDirectoryName(backupFilePath);
-		string templateName = Path.GetFileNameWithoutExtension(backupFilePath);
+		string directoryPath = GetDirectoryName(backupFilePath);
+		string templateName = GetFileNameWithoutExtension(backupFilePath);
 		return _creatioInstallerService.DoPgWork(directoryPath, dbName, templateName);
+	}
+
+	private int RestorePg(string dbName, string backupFilePath, string sourceTemplateName) {
+		string directoryPath = GetDirectoryName(backupFilePath);
+		string templateName = string.IsNullOrWhiteSpace(sourceTemplateName)
+			? GetFileNameWithoutExtension(backupFilePath)
+			: sourceTemplateName;
+		return _creatioInstallerService.DoPgWork(directoryPath, dbName, templateName);
+	}
+
+	private string EnsurePgTemplateAndGetName(string backupFilePath, string sourceTemplateName, bool dropIfExists) {
+		string directoryPath = GetDirectoryName(backupFilePath);
+		string templateName = string.IsNullOrWhiteSpace(sourceTemplateName)
+			? GetFileNameWithoutExtension(backupFilePath)
+			: sourceTemplateName;
+		return _creatioInstallerService.EnsurePgTemplateAndGetName(directoryPath, templateName, dropIfExists);
 	}
 
 	private int RestoreToLocalServer(RestoreDbCommandOptions options) {
@@ -225,16 +232,20 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 			return 1;
 		}
 
-		if (string.IsNullOrEmpty(options.DbName)) {
+		if (!options.AsTemplate && string.IsNullOrEmpty(options.DbName)) {
 			_logger.WriteError("DbName is required when restoring to local server");
 			return 1;
+		}
+
+		if (options.AsTemplate && !string.IsNullOrEmpty(options.DbName)) {
+			_logger.WriteWarning("DbName is ignored when --as-template is specified.");
 		}
 
 		string backupPath = options.BackupPath;
 		string extractedPath = null;
 
 		try {
-			if (Path.GetExtension(backupPath).ToLowerInvariant() == ".zip") {
+			if (GetFileExtension(backupPath) == ".zip") {
 				_logger.WriteInfo($"ZIP file detected, extracting backup file...");
 				extractedPath = ExtractBackupFromZip(backupPath, config.DbType);
 				if (string.IsNullOrEmpty(extractedPath)) {
@@ -282,22 +293,35 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 			int result = dbType switch {
 				"mssql" => RestoreMssqlToLocalServer(config, backupPath, options.DbName, options.DropIfExists),
-				"postgres" or "postgresql" => RestorePostgresToLocalServer(config, backupPath, options.DbName, options.DropIfExists),
+				"postgres" or "postgresql" => RestorePostgresToLocalServer(
+					config,
+					backupPath,
+					options.DbName,
+					options.DropIfExists,
+					options.AsTemplate,
+					originalBackupPath),
 				_ => HandleUnsupportedDbType(config.DbType)
 			};
-			if (result == 0) {
+			if (result == 0 && !options.AsTemplate) {
 				InstallerHelper.DatabaseType databaseType = dbType switch {
 					"mssql" => InstallerHelper.DatabaseType.MsSql,
 					"postgres" or "postgresql" => InstallerHelper.DatabaseType.Postgres,
 					var _ => InstallerHelper.DatabaseType.Postgres
 				};
 				TryDisableForcedPasswordReset(options, databaseType, options.DbName, originalBackupPath);
+			} else if (result == 0 && options.AsTemplate && (dbType == "postgres" || dbType == "postgresql")) {
+				string templateName = TryResolveLocalPostgresTemplateName(config, originalBackupPath);
+				if (!string.IsNullOrWhiteSpace(templateName)) {
+					_logger.WriteInfo($"Template database name: {templateName}");
+					TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, templateName,
+						originalBackupPath);
+				}
 			}
 			return result;
 		} finally {
 			if (!string.IsNullOrEmpty(extractedPath) && _fileSystem.ExistsFile(extractedPath)) {
 				try {
-					string extractedDir = Path.GetDirectoryName(extractedPath);
+					string extractedDir = GetDirectoryName(extractedPath);
 					if (_fileSystem.ExistsDirectory(extractedDir)) {
 						_fileSystem.DeleteDirectory(extractedDir, true);
 						_logger.WriteInfo("Cleaned up temporary extracted files");
@@ -310,26 +334,50 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	}
 
 	private string ExtractBackupFromZip(string zipPath, string dbType) {
+		return ExtractBackupFromZip(zipPath, dbType, out _);
+	}
+
+	private string ExtractBackupFromZip(string zipPath, string dbType, out BackupFileType backupType) {
+		backupType = BackupFileType.Unknown;
 		try {
-			string tempDir = Path.Combine(Path.GetTempPath(), $"clio_restore_{Guid.NewGuid():N}");
+			string tempDir = CombinePath(Path.GetTempPath(), $"clio_restore_{Guid.NewGuid():N}");
 			_fileSystem.CreateDirectory(tempDir);
 
 			_logger.WriteInfo($"Extracting ZIP file to temporary directory: {tempDir}");
 
 			using var archive = System.IO.Compression.ZipFile.OpenRead(zipPath);
-			string searchPattern = dbType?.ToLowerInvariant() == "mssql" ? "*.bak" : "*.backup";
-				
-			var backupEntry = archive.Entries
-									 .FirstOrDefault(e => e.FullName.Contains("db/") && 
-														  Path.GetExtension(e.Name).ToLowerInvariant() == (dbType?.ToLowerInvariant() == "mssql" ? ".bak" : ".backup"));
+			string? preferredExtension = dbType?.ToLowerInvariant() switch {
+				"mssql" => ".bak",
+				"postgres" or "postgresql" => ".backup",
+				var _ => null
+			};
+			string searchPattern = preferredExtension ?? "*.backup or *.bak";
+			var backupEntries = archive.Entries
+				.Where(e => !string.IsNullOrWhiteSpace(e.Name))
+				.Where(e => e.FullName.Contains("db/") || e.FullName.Contains("db\\") ||
+					(!e.FullName.Contains('/') && !e.FullName.Contains('\\')))
+				.Where(e => {
+					string extension = GetFileExtension(e.Name);
+					return extension is ".backup" or ".bak";
+				})
+				.ToList();
+
+			var backupEntry = !string.IsNullOrWhiteSpace(preferredExtension)
+				? backupEntries.FirstOrDefault(e => GetFileExtension(e.Name) == preferredExtension)
+				: backupEntries
+					.OrderByDescending(e => GetFileExtension(e.Name) == ".backup")
+					.FirstOrDefault();
 
 			if (backupEntry == null) {
 				_logger.WriteError($"No backup file found in ZIP. Expected a file in 'db/' folder with extension {searchPattern}");
 				return null;
 			}
 
-			string extractPath = Path.Combine(tempDir, backupEntry.Name);
+			string extractPath = CombinePath(tempDir, backupEntry.Name);
 			backupEntry.ExtractToFile(extractPath);
+			backupType = GetFileExtension(backupEntry.Name) == ".bak"
+				? BackupFileType.MssqlBackup
+				: BackupFileType.PostgresBackup;
 				
 			_logger.WriteInfo($"Extracted: {backupEntry.FullName} ({backupEntry.Length / 1024 / 1024} MB)");
 				
@@ -358,8 +406,8 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 			string dataPath = mssql.GetDataPath();
 			_logger.WriteInfo($"SQL Server data path: {dataPath}");
 
-			string backupFileName = Path.GetFileName(backupPath);
-			string destinationPath = Path.Combine(dataPath, backupFileName);
+			string backupFileName = GetFileName(backupPath);
+			string destinationPath = CombinePath(dataPath, backupFileName);
 
 			_logger.WriteInfo($"Copying backup file to SQL Server data directory...");
 			_fileSystem.CopyFiles(new[] { backupPath }, dataPath, true);
@@ -385,7 +433,13 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		}
 	}
 
-	private int RestorePostgresToLocalServer(LocalDbServerConfiguration config, string backupPath, string dbName, bool dropIfExists) {
+	private int RestorePostgresToLocalServer(
+		LocalDbServerConfiguration config,
+		string backupPath,
+		string dbName,
+		bool dropIfExists,
+		bool asTemplate = false,
+		string sourcePath = null) {
 		string pgRestorePath = _postgresToolsPathDetector.GetPgRestorePath(config.PgToolsPath);
 		
 		if (string.IsNullOrEmpty(pgRestorePath)) {
@@ -402,44 +456,103 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 		try {
 			Postgres postgres = _dbClientFactory.CreatePostgres(config.Hostname, config.Port, config.Username, config.Password);
-			
-			if (postgres.CheckDbExists(dbName)) {
-				if (!dropIfExists) {
-					_logger.WriteError($"Database {dbName} already exists. Use --drop-if-exists flag to automatically drop it.");
+			if (!asTemplate) {
+				if (postgres.CheckDbExists(dbName)) {
+					if (!dropIfExists) {
+						_logger.WriteError($"Database {dbName} already exists. Use --drop-if-exists flag to automatically drop it.");
+						return 1;
+					}
+					_logger.WriteWarning($"Database {dbName} already exists");
+					_logger.WriteWarning("Dropping existing database...");
+					postgres.DropDb(dbName);
+					_logger.WriteInfo($"Dropped existing database {dbName}");
+				}
+
+				_logger.WriteInfo($"Creating database {dbName}...");
+				bool dbCreated = postgres.CreateDb(dbName);
+				if (!dbCreated) {
+					_logger.WriteError($"Failed to create database {dbName}");
 					return 1;
 				}
-				_logger.WriteWarning($"Database {dbName} already exists");
-				_logger.WriteWarning("Dropping existing database...");
-				postgres.DropDb(dbName);
-				_logger.WriteInfo($"Dropped existing database {dbName}");
-			}
 
-			_logger.WriteInfo($"Creating database {dbName}...");
-			bool dbCreated = postgres.CreateDb(dbName);
-			
-			if (!dbCreated) {
-				_logger.WriteError($"Failed to create database {dbName}");
+				_logger.WriteInfo($"Database {dbName} created successfully");
+				_logger.WriteInfo($"Starting restore from {backupPath}...");
+				_logger.WriteInfo($"Running local pg_restore against {config.Hostname}:{config.Port}. The backup file stays on the host filesystem and is not copied into Docker or Kubernetes.");
+				if (Program.IsDebugMode) {
+					_logger.WriteInfo("This may take several minutes depending on database size. Detailed progress will be shown below:");
+				} else {
+					_logger.WriteInfo("This may take several minutes depending on database size. Run with --debug flag to see detailed progress.");
+				}
+
+				int restoreExitCode = ExecutePgRestoreCommand(pgRestorePath, config, backupPath, dbName);
+				if (restoreExitCode == 0) {
+					_logger.WriteInfo($"Successfully restored database {dbName} from {backupPath}");
+					return 0;
+				}
+
+				_logger.WriteError($"pg_restore failed with exit code {restoreExitCode}");
 				return 1;
 			}
 
-			_logger.WriteInfo($"Database {dbName} created successfully");
-			_logger.WriteInfo($"Starting restore from {backupPath}...");
-            _logger.WriteInfo($"Running local pg_restore against {config.Hostname}:{config.Port}. The backup file stays on the host filesystem and is not copied into Docker or Kubernetes.");
-			if (Program.IsDebugMode) {
-				_logger.WriteInfo("This may take several minutes depending on database size. Detailed progress will be shown below:");
-			} else {
-				_logger.WriteInfo("This may take several minutes depending on database size. Run with --debug flag to see detailed progress.");
+			string sourceFileName = !string.IsNullOrEmpty(sourcePath)
+				? GetFileNameWithoutExtension(sourcePath)
+				: GetFileNameWithoutExtension(backupPath);
+			string templateName = postgres.FindTemplateBySourceFile(sourceFileName);
+
+			if (!string.IsNullOrWhiteSpace(templateName) && dropIfExists) {
+				_logger.WriteWarning(
+					$"Template '{templateName}' already exists for source '{sourceFileName}'. Dropping existing template...");
+				if (!postgres.DropDb(templateName)) {
+					_logger.WriteError($"Failed to drop template database {templateName}");
+					return 1;
+				}
+
+				_logger.WriteInfo($"Dropped template database {templateName}");
+				templateName = null;
 			}
 
-			int exitCode = ExecutePgRestoreCommand(pgRestorePath, config, backupPath, dbName);
-			
-			if (exitCode == 0) {
-				_logger.WriteInfo($"Successfully restored database {dbName} from {backupPath}");
-				return 0;
+			if (string.IsNullOrWhiteSpace(templateName)) {
+				templateName = $"template_{Guid.NewGuid():N}";
+				_logger.WriteInfo($"Template for '{sourceFileName}' does not exist, creating '{templateName}'...");
+				_logger.WriteInfo($"Creating template database {templateName}...");
+				bool templateCreated = postgres.CreateDb(templateName);
+
+				if (!templateCreated) {
+					_logger.WriteError($"Failed to create template database {templateName}");
+					return 1;
+				}
+
+				_logger.WriteInfo($"Template database {templateName} created successfully");
+				_logger.WriteInfo($"Starting restore from {backupPath}...");
+				_logger.WriteInfo($"Running local pg_restore against {config.Hostname}:{config.Port}. The backup file stays on the host filesystem and is not copied into Docker or Kubernetes.");
+				if (Program.IsDebugMode) {
+					_logger.WriteInfo("This may take several minutes depending on database size. Detailed progress will be shown below:");
+				} else {
+					_logger.WriteInfo("This may take several minutes depending on database size. Run with --debug flag to see detailed progress.");
+				}
+
+				int exitCode = ExecutePgRestoreCommand(pgRestorePath, config, backupPath, templateName);
+				if (exitCode != 0) {
+					_logger.WriteError($"pg_restore failed with exit code {exitCode}");
+					return 1;
+				}
+
+				_logger.WriteInfo($"Setting database {templateName} as template...");
+				bool setAsTemplate = postgres.SetDatabaseAsTemplate(templateName);
+				if (!setAsTemplate) {
+					_logger.WriteError($"Failed to set database {templateName} as template");
+					return 1;
+				}
+
+				string metadata = $"sourceFile:{sourceFileName}|createdDate:{DateTime.UtcNow:o}|version:1.0";
+				postgres.SetDatabaseComment(templateName, metadata);
+				_logger.WriteInfo($"Template database {templateName} created successfully with source reference: {sourceFileName}");
 			} else {
-				_logger.WriteError($"pg_restore failed with exit code {exitCode}");
-				return 1;
+				_logger.WriteInfo($"Found existing template '{templateName}' for source '{sourceFileName}', skipping restore");
 			}
+
+			_logger.WriteInfo($"Template database {templateName} is ready.");
+			return 0;
 		} catch (Exception ex) {
 			_logger.WriteError($"Error restoring PostgreSQL database: {ex.Message}");
 			return 1;
@@ -504,6 +617,19 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		_creatioInstallerService.TryDisableForcedPasswordReset(installerOptions, dbType);
 	}
 
+	private string TryResolveLocalPostgresTemplateName(LocalDbServerConfiguration config, string sourcePath) {
+		try {
+			Postgres postgres = _dbClientFactory.CreatePostgres(config.Hostname, config.Port, config.Username,
+				config.Password);
+			string sourceFileName = GetFileNameWithoutExtension(sourcePath);
+			return postgres.FindTemplateBySourceFile(sourceFileName);
+		}
+		catch (Exception ex) {
+			_logger.WriteWarning($"Failed to resolve template name for password reset: {ex.Message}");
+			return null;
+		}
+	}
+
 	private void WriteNativeLogLine(string line) {
 		_dbOperationLogContextAccessor.CurrentSession?.WriteNativeLine(line);
 	}
@@ -518,6 +644,147 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 	private static string FormatProcessOutputLine(string line, ProcessOutputStream stream) {
 		return stream == ProcessOutputStream.StdErr ? $"[STDERR] {line}" : line;
+	}
+
+	private string GetFileExtension(string path) =>
+		GetPathExtension(path).ToLowerInvariant();
+
+	private string GetFileName(string path) {
+		int lastSeparatorIndex = Math.Max(path.LastIndexOf('\\'), path.LastIndexOf('/'));
+		return lastSeparatorIndex >= 0
+			? path[(lastSeparatorIndex + 1)..]
+			: path;
+	}
+
+	private string GetFileNameWithoutExtension(string path) {
+		string fileName = GetFileName(path);
+		string extension = GetPathExtension(fileName);
+		return string.IsNullOrEmpty(extension)
+			? fileName
+			: fileName[..^extension.Length];
+	}
+
+	private string GetDirectoryName(string path) {
+		int lastSeparatorIndex = Math.Max(path.LastIndexOf('\\'), path.LastIndexOf('/'));
+		return lastSeparatorIndex > 0
+			? path[..lastSeparatorIndex]
+			: string.Empty;
+	}
+
+	private string CombinePath(params string[] parts) {
+		string separator = parts.Any(part => part.Contains('\\')) ? "\\" : "/";
+		IEnumerable<string> sanitizedParts = parts
+			.Where(part => !string.IsNullOrWhiteSpace(part))
+			.Select(part => part.TrimEnd('\\', '/'))
+			.Select((part, index) => index == 0 ? part : part.TrimStart('\\', '/'));
+		return string.Join(separator, sanitizedParts);
+	}
+
+	private static string GetPathExtension(string path) {
+		string fileName = path.Replace('\\', '/');
+		int lastSeparatorIndex = fileName.LastIndexOf('/');
+		if (lastSeparatorIndex >= 0) {
+			fileName = fileName[(lastSeparatorIndex + 1)..];
+		}
+
+		int lastDotIndex = fileName.LastIndexOf('.');
+		return lastDotIndex >= 0
+			? fileName[lastDotIndex..]
+			: string.Empty;
+	}
+
+	private int? TryHandleDirectBackupRestore(RestoreDbCommandOptions options) {
+		if (string.IsNullOrWhiteSpace(options.BackupPath) || !string.IsNullOrWhiteSpace(options.DbServerName)) {
+			return null;
+		}
+
+		string backupPath = options.BackupPath;
+		string? extractedPath = null;
+		string? sourceTemplateName = null;
+		BackupFileType detectedType = BackupFileType.Unknown;
+
+		try {
+			string extension = GetFileExtension(backupPath);
+			if (extension == ".backup") {
+				detectedType = BackupFileType.PostgresBackup;
+				sourceTemplateName = GetFileNameWithoutExtension(backupPath);
+			} else if (extension == ".zip") {
+				sourceTemplateName = GetFileNameWithoutExtension(backupPath);
+				extractedPath = ExtractBackupFromZip(backupPath, null, out detectedType);
+				if (string.IsNullOrWhiteSpace(extractedPath)) {
+					return 1;
+				}
+
+				backupPath = extractedPath;
+			} else if (_fileSystem.ExistsDirectory(backupPath)) {
+				string[] backupFiles = _fileSystem.GetFiles(backupPath, "*.backup", SearchOption.AllDirectories);
+				if (backupFiles.Length == 0) {
+					_logger.WriteError($"No .backup files found in directory: {options.BackupPath}");
+					return 1;
+				}
+
+				detectedType = BackupFileType.PostgresBackup;
+				backupPath = backupFiles[0];
+				sourceTemplateName = GetFileNameWithoutExtension(backupPath);
+			} else {
+				return null;
+			}
+
+			if (detectedType == BackupFileType.PostgresBackup) {
+				if (options.AsTemplate) {
+					if (!string.IsNullOrWhiteSpace(options.DbName)) {
+						_logger.WriteWarning("DbName is ignored when --as-template is specified.");
+					}
+
+					_logger.WriteInfo($"Creating PostgreSQL template from backup file: {backupPath}");
+					string templateName = EnsurePgTemplateAndGetName(backupPath, sourceTemplateName,
+						options.DropIfExists);
+					if (string.IsNullOrWhiteSpace(templateName)) {
+						return 1;
+					}
+
+					_logger.WriteInfo($"Template database name: {templateName}");
+					TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, templateName,
+						options.BackupPath);
+					return 0;
+				}
+
+				if (string.IsNullOrWhiteSpace(options.DbName)) {
+					_logger.WriteError("DbName is required unless --as-template is specified.");
+					return 1;
+				}
+
+				_logger.WriteInfo($"Restoring database from backup file: {backupPath}");
+				int restoreResult = RestorePg(options.DbName, backupPath, sourceTemplateName);
+				if (restoreResult == 0) {
+					TryDisableForcedPasswordReset(options, InstallerHelper.DatabaseType.Postgres, options.DbName,
+						options.BackupPath);
+				}
+
+				return restoreResult;
+			}
+
+			if (options.AsTemplate) {
+				_logger.WriteError("--as-template is supported only for PostgreSQL backups.");
+				return 1;
+			}
+
+			return null;
+		}
+		finally {
+			if (!string.IsNullOrWhiteSpace(extractedPath) && _fileSystem.ExistsFile(extractedPath)) {
+				try {
+					string? extractedDirectory = GetDirectoryName(extractedPath);
+					if (!string.IsNullOrWhiteSpace(extractedDirectory) && _fileSystem.ExistsDirectory(extractedDirectory)) {
+						_fileSystem.DeleteDirectory(extractedDirectory, true);
+						_logger.WriteInfo("Cleaned up temporary extracted files");
+					}
+				}
+				catch {
+					// Ignore cleanup errors.
+				}
+			}
+		}
 	}
 	
 	

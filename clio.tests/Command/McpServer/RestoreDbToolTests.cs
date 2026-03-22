@@ -71,7 +71,7 @@ public sealed class RestoreDbToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<RestoreDbCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		RestoreDbTool tool = new(defaultCommand, logger, commandResolver, dbOperationLogContextAccessor);
-		RestoreDbByEnvironmentArgs args = new("sandbox", @"C:\backups\db.backup", "sandbox_db", true, false);
+		RestoreDbByEnvironmentArgs args = new("sandbox", @"C:\backups\db.backup", "sandbox_db", true, true, false);
 
 		// Act
 		CommandExecutionResult result = tool.RestoreByEnvironment(args);
@@ -84,6 +84,7 @@ public sealed class RestoreDbToolTests {
 			options.BackupPath == @"C:\backups\db.backup" &&
 			options.DbName == "sandbox_db" &&
 			options.Force &&
+			options.AsTemplate &&
 			!options.DisableResetPassword));
 		defaultCommand.ReceivedOptions.Should().BeNull(
 			because: "environment-based MCP execution should use the resolved command instance");
@@ -97,6 +98,8 @@ public sealed class RestoreDbToolTests {
 			because: "dbName should map directly to RestoreDbCommandOptions.DbName");
 		resolvedCommand.ReceivedOptions.Force.Should().BeTrue(
 			because: "force should be preserved for legacy environment-based restore flows");
+		resolvedCommand.ReceivedOptions.AsTemplate.Should().BeTrue(
+			because: "asTemplate should map directly to the restore-db command options");
 		resolvedCommand.ReceivedOptions.DisableResetPassword.Should().BeFalse(
 			because: "disableResetPassword should map directly to the restore-db command options");
 		result.LogFilePath.Should().NotBeNullOrWhiteSpace(
@@ -122,6 +125,7 @@ public sealed class RestoreDbToolTests {
 			@"C:\backups\db.bak",
 			"sandbox_db",
 			true,
+			true,
 			false);
 
 		// Act
@@ -144,6 +148,8 @@ public sealed class RestoreDbToolTests {
 			because: "dbName should map into the legacy direct restore options");
 		command.ReceivedOptions.Force.Should().BeTrue(
 			because: "force should be preserved for legacy overwrite behavior");
+		command.ReceivedOptions.AsTemplate.Should().BeTrue(
+			because: "asTemplate should map into the legacy direct restore options");
 		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
 			because: "disableResetPassword should map into the legacy direct restore options");
 		result.LogFilePath.Should().NotBeNullOrWhiteSpace(
@@ -161,7 +167,7 @@ public sealed class RestoreDbToolTests {
 			new DbOperationLogSessionFactory(logger, dbOperationLogContextAccessor);
 		FakeRestoreDbCommand command = new(logger, exitCode: 0, dbOperationLogSessionFactory);
 		RestoreDbTool tool = new(command, logger, Substitute.For<IToolCommandResolver>(), dbOperationLogContextAccessor);
-		RestoreDbToLocalServerArgs args = new("local-sql", @"C:\backups\db.bak", "sandbox_db", true, false);
+		RestoreDbToLocalServerArgs args = new("local-sql", @"C:\backups\db.bak", "sandbox_db", true, true, false);
 
 		// Act
 		CommandExecutionResult result = tool.RestoreToLocalServer(args);
@@ -177,6 +183,8 @@ public sealed class RestoreDbToolTests {
 			because: "dbName should map directly into RestoreDbCommandOptions.DbName");
 		command.ReceivedOptions.DropIfExists.Should().BeTrue(
 			because: "dropIfExists should be preserved for the local restore flow");
+		command.ReceivedOptions.AsTemplate.Should().BeTrue(
+			because: "asTemplate should be preserved for the local restore flow");
 		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
 			because: "disableResetPassword should be preserved for the local restore flow");
 		result.LogFilePath.Should().NotBeNullOrWhiteSpace(
@@ -205,14 +213,20 @@ public sealed class RestoreDbToolTests {
 			because: "the environment restore prompt should tell agents where detailed restore diagnostics are returned");
 		environmentPrompt.Should().Contain("disableResetPassword",
 			because: "the environment restore prompt should mention how to skip the password-reset script when needed");
+		environmentPrompt.Should().Contain("asTemplate",
+			because: "the environment restore prompt should explain template-only PostgreSQL execution");
 		credentialsPrompt.Should().Contain("log-file-path",
 			because: "the credentials restore prompt should tell agents where detailed restore diagnostics are returned");
 		credentialsPrompt.Should().Contain("disableResetPassword",
 			because: "the credentials restore prompt should mention how to skip the password-reset script when needed");
+		credentialsPrompt.Should().Contain("asTemplate",
+			because: "the credentials restore prompt should explain template-only PostgreSQL execution");
 		localPrompt.Should().Contain("log-file-path",
 			because: "the local-server restore prompt should tell agents where detailed restore diagnostics are returned");
 		localPrompt.Should().Contain("disableResetPassword",
 			because: "the local-server restore prompt should mention how to skip the password-reset script when needed");
+		localPrompt.Should().Contain("asTemplate",
+			because: "the local-server restore prompt should explain template-only PostgreSQL execution");
 	}
 
 	private static McpServerToolAttribute GetToolAttribute(string methodName) {

@@ -189,6 +189,11 @@ public class Postgres : IPostgres
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
+
+			// PostgreSQL refuses to drop databases marked as templates until the flag is cleared.
+			using NpgsqlCommand clearTemplateFlagCmd = dataSource.CreateCommand(
+				$"UPDATE pg_database SET datistemplate='false' WHERE datname='{dbName}'");
+			clearTemplateFlagCmd.ExecuteNonQuery();
 			
 			string killSqlConnections = @$"
 			SELECT pg_terminate_backend(pg_stat_activity.pid)

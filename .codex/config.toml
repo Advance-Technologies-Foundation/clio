@@ -1,3 +1,7 @@
+model_reasoning_effort = "medium"
+plan_mode_reasoning_effort = "high"
+personality = "pragmatic"
+
 [agents.reviewer]
 description = "Find security, correctness, and test risks in code."
 config_file = "./agents/reviewer.toml"

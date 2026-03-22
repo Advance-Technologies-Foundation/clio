@@ -873,6 +873,60 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 			}
 		}
 	}
+
+	[Test]
+	[Description("Should create or refresh only the local PostgreSQL template when as-template is specified")]
+	public void Execute_WhenAsTemplateIsSpecifiedForLocalPostgres_CreatesTemplateOnly() {
+		// Arrange
+		var config = new LocalDbServerConfiguration {
+			DbType = "postgres",
+			Hostname = "localhost",
+			Port = 5433,
+			Username = "postgres",
+			Password = "postgres"
+		};
+
+		_settingsRepository.GetLocalDbServer("docker-postgres").Returns(config);
+		_fileSystem.ExistsFile("template-source.backup").Returns(true);
+		_dbConnectionTester.TestConnection(config).Returns(new ConnectionTestResult { Success = true });
+		_backupFileDetector.DetectBackupType("template-source.backup").Returns(BackupFileType.PostgresBackup);
+		_postgresToolsPathDetector.GetPgRestorePath(null).Returns("/usr/bin/pg_restore");
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+
+		var postgres = Substitute.For<Postgres>();
+		postgres.FindTemplateBySourceFile("template-source").Returns("template_existing");
+		postgres.DropDb("template_existing").Returns(true);
+		postgres.CreateDb(Arg.Any<string>()).Returns(true);
+		postgres.SetDatabaseAsTemplate(Arg.Any<string>()).Returns(true);
+		postgres.SetDatabaseComment(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+		_dbClientFactory.CreatePostgres("localhost", 5433, "postgres", "postgres").Returns(postgres);
+
+		var options = new RestoreDbCommandOptions {
+			DbServerName = "docker-postgres",
+			BackupPath = "template-source.backup",
+			AsTemplate = true,
+			DropIfExists = true
+		};
+
+		var sut = CreateSut();
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "as-template should stop after the PostgreSQL template is refreshed");
+		postgres.Received(1).DropDb("template_existing");
+		postgres.DidNotReceive().CreateDbFromTemplate(Arg.Any<string>(), Arg.Any<string>());
+		_creatioInstallerService.Received(1).TryDisableForcedPasswordReset(
+			Arg.Is<PfInstallerOptions>(o => o.SiteName == "template_existing" &&
+				o.DbServerName == "docker-postgres" &&
+				o.ZipFile == "template-source.backup" &&
+				o.DisableResetPassword),
+			InstallerHelper.DatabaseType.Postgres);
+		_logger.Received().WriteInfo(Arg.Is<string>(message => message.Contains("Template database name: template_existing")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message => message.Contains("Template database") || message.Contains("is ready")));
+	}
 	private RestoreDbCommand CreateSut() {
 		return new RestoreDbCommand(
 			_logger,
