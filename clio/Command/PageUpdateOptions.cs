@@ -2,6 +2,10 @@ namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.Linq;
+	using System.Net;
+	using System.Net.Http;
+	using System.Net.Http.Headers;
+	using System.Text;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -34,6 +38,51 @@ namespace Clio.Command {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
+		}
+
+		/// <summary>
+		/// Execute HTTP POST request with Basic Authentication.
+		/// This bypasses CreatioClient's session management and uses fresh credentials on every request.
+		/// </summary>
+		private string ExecutePostWithBasicAuth(string url, string requestData, string login, string password, int timeoutMs = 100000) {
+			using (var httpClient = new HttpClient()) {
+				httpClient.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+				
+				string authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{login}:{password}"));
+				httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+				
+				var content = new StringContent(requestData, Encoding.UTF8, "application/json");
+				
+				HttpResponseMessage httpResponse;
+				try {
+					httpResponse = httpClient.PostAsync(url, content).Result;
+				}
+				catch (AggregateException ex) {
+					throw new HttpRequestException($"HTTP request failed: {ex.InnerException?.Message ?? ex.Message}", ex.InnerException);
+				}
+				
+				if (!httpResponse.IsSuccessStatusCode) {
+					string errorBody = "";
+					try {
+						errorBody = httpResponse.Content.ReadAsStringAsync().Result;
+					}
+					catch { }
+					
+					throw new HttpRequestException(
+						$"HTTP {(int)httpResponse.StatusCode} {httpResponse.ReasonPhrase}. " +
+						$"URL: {url}. " +
+						(string.IsNullOrWhiteSpace(errorBody) ? "" : $"Body: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}")
+					);
+				}
+				
+				string responseBody = httpResponse.Content.ReadAsStringAsync().Result;
+				
+				if (string.IsNullOrWhiteSpace(responseBody)) {
+					throw new HttpRequestException($"Empty response body from {url}");
+				}
+				
+				return responseBody;
+			}
 		}
 
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
@@ -104,12 +153,21 @@ namespace Clio.Command {
 					};
 					return true;
 				}
+				
+				if (string.IsNullOrWhiteSpace(options.Login) || string.IsNullOrWhiteSpace(options.Password)) {
+					response = new PageUpdateResponse { 
+						Success = false, 
+						Error = "Login and Password are required for page-update operation" 
+					};
+					return false;
+				}
+				
 				var getSchemaRequest = new JObject {
 					["schemaUId"] = schemaUId,
 					["useFullHierarchy"] = false
 				};
 				string designerUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-				string getSchemaJson = _applicationClient.ExecutePostRequest(designerUrl, getSchemaRequest.ToString(Formatting.None));
+				string getSchemaJson = ExecutePostWithBasicAuth(designerUrl, getSchemaRequest.ToString(Formatting.None), options.Login, options.Password);
 				var getSchemaResponse = JObject.Parse(getSchemaJson);
 				if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] == null) {
 					response = new PageUpdateResponse { Success = false, Error = $"Failed to load schema '{options.SchemaName}'" };
@@ -118,7 +176,7 @@ namespace Clio.Command {
 				var schemaToSave = getSchemaResponse["schema"] as JObject;
 				schemaToSave["body"] = options.Body;
 				string saveUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
-				string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
+				string saveJson = ExecutePostWithBasicAuth(saveUrl, schemaToSave.ToString(Formatting.None), options.Login, options.Password);
 				var saveResponse = JObject.Parse(saveJson);
 				if (!(saveResponse["success"]?.Value<bool>() ?? false)) {
 					string errorMessage = "Failed to save page schema";
@@ -143,6 +201,10 @@ namespace Clio.Command {
 					DryRun = false
 				};
 				return true;
+			}
+			catch (HttpRequestException ex) {
+				response = new PageUpdateResponse { Success = false, Error = $"HTTP error: {ex.Message}" };
+				return false;
 			}
 			catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };

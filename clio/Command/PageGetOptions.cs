@@ -1,6 +1,10 @@
 namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
+	using System.Net;
+	using System.Net.Http;
+	using System.Net.Http.Headers;
+	using System.Text;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -28,6 +32,51 @@ namespace Clio.Command {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
+		}
+
+		/// <summary>
+		/// Execute HTTP POST request with Basic Authentication.
+		/// This bypasses CreatioClient's session management and uses fresh credentials on every request.
+		/// </summary>
+		private string ExecutePostWithBasicAuth(string url, string requestData, string login, string password, int timeoutMs = 100000) {
+			using (var httpClient = new HttpClient()) {
+				httpClient.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+				
+				string authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{login}:{password}"));
+				httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+				
+				var content = new StringContent(requestData, Encoding.UTF8, "application/json");
+				
+				HttpResponseMessage httpResponse;
+				try {
+					httpResponse = httpClient.PostAsync(url, content).Result;
+				}
+				catch (AggregateException ex) {
+					throw new HttpRequestException($"HTTP request failed: {ex.InnerException?.Message ?? ex.Message}", ex.InnerException);
+				}
+				
+				if (!httpResponse.IsSuccessStatusCode) {
+					string errorBody = "";
+					try {
+						errorBody = httpResponse.Content.ReadAsStringAsync().Result;
+					}
+					catch { }
+					
+					throw new HttpRequestException(
+						$"HTTP {(int)httpResponse.StatusCode} {httpResponse.ReasonPhrase}. " +
+						$"URL: {url}. " +
+						(string.IsNullOrWhiteSpace(errorBody) ? "" : $"Body: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}")
+					);
+				}
+				
+				string responseBody = httpResponse.Content.ReadAsStringAsync().Result;
+				
+				if (string.IsNullOrWhiteSpace(responseBody)) {
+					throw new HttpRequestException($"Empty response body from {url}");
+				}
+				
+				return responseBody;
+			}
 		}
 
 		public bool TryGetPage(PageGetOptions options, out PageGetResponse response) {
@@ -107,8 +156,17 @@ namespace Clio.Command {
 					["schemaUId"] = schemaUId,
 					["useFullHierarchy"] = false
 				};
+				
+				if (string.IsNullOrWhiteSpace(options.Login) || string.IsNullOrWhiteSpace(options.Password)) {
+					response = new PageGetResponse { 
+						Success = false, 
+						Error = "Login and Password are required for page-get operation" 
+					};
+					return false;
+				}
+				
 				string designerUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-				string bodyJson = _applicationClient.ExecutePostRequest(designerUrl, bodyRequest.ToString(Formatting.None));
+				string bodyJson = ExecutePostWithBasicAuth(designerUrl, bodyRequest.ToString(Formatting.None), options.Login, options.Password);
 				var bodyResponse = JObject.Parse(bodyJson);
 				if (!(bodyResponse["success"]?.Value<bool>() ?? false)) {
 					response = new PageGetResponse { Success = false, Error = "Failed to load schema body" };
@@ -128,6 +186,10 @@ namespace Clio.Command {
 					Body = body
 				};
 				return true;
+			}
+			catch (HttpRequestException ex) {
+				response = new PageGetResponse { Success = false, Error = $"HTTP error: {ex.Message}" };
+				return false;
 			}
 			catch (Exception ex) {
 				response = new PageGetResponse { Success = false, Error = ex.Message };
