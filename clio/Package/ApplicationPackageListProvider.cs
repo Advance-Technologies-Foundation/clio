@@ -55,7 +55,8 @@ namespace Clio.Package
 
 		private static readonly JsonSerializerOptions JsonOptions = new()
 		{
-			PropertyNameCaseInsensitive = true
+			PropertyNameCaseInsensitive = true,
+			NumberHandling = JsonNumberHandling.AllowReadingFromString
 		};
 
 		private static object BuildSysPackageQuery(IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters) =>
@@ -106,7 +107,7 @@ namespace Clio.Package
 			SysPackageSelectQueryResponseDto response =
 				SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
 					_applicationClient, _serviceUrlBuilder, query);
-			return response.Rows.Select(CreatePackageInfo);
+			return (response.Rows ?? []).Select(CreatePackageInfo);
 		}
 
 		#endregion
@@ -116,7 +117,23 @@ namespace Clio.Package
 		private sealed class FilterOptions
 		{
 			[JsonPropertyName("isCustomer")]
+			[JsonConverter(typeof(BoolOrStringConverter))]
 			public bool IsCustomer { get; set; }
+		}
+
+		private sealed class BoolOrStringConverter : JsonConverter<bool>
+		{
+			public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+				reader.TokenType switch {
+					JsonTokenType.True => true,
+					JsonTokenType.False => false,
+					JsonTokenType.String => bool.TryParse(reader.GetString(), out bool v) && v,
+					JsonTokenType.Number => reader.GetInt32() != 0,
+					_ => false
+				};
+
+			public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) =>
+				writer.WriteBooleanValue(value);
 		}
 
 		private sealed class SysPackageSelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto

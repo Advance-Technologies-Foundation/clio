@@ -140,5 +140,28 @@ internal class ApplicationPackageListProviderTest
 
 		capturedBody.Should().Contain("InstallType", "because isCustomer filter should add InstallType condition");
 	}
+
+	[Test]
+	[Description("GetPackages with isCustomer as string true includes InstallType filter (WorkspaceCreator compat)")]
+	public void GetPackages_WithCustomerFilterAsString_IncludesInstallTypeFilter() {
+		string capturedBody = string.Empty;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => capturedBody = body))
+			.Returns("{\"success\":true,\"rows\":[]}");
+
+		_sut.GetPackages("{\"isCustomer\": \"true\"}");
+
+		capturedBody.Should().Contain("InstallType", "because string 'true' should be treated as boolean true for backward compatibility");
+	}
+
+	[Test]
+	[Description("GetPackages handles null rows in response without throwing")]
+	public void GetPackages_NullRowsInResponse_ReturnsEmpty() {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true}");
+
+		IEnumerable<PackageInfo> result = _sut.GetPackages();
+
+		result.Should().BeEmpty("because null rows should be treated as empty collection");
+	}
 }
 
