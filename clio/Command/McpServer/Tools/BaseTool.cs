@@ -13,7 +13,7 @@ public abstract class BaseTool<T>(
 	ILogger logger,
 	IToolCommandResolver commandResolver = null,
 	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
-	private static readonly object CommandExecutionLock = new();
+	private static readonly object CommandExecutionLock = McpToolExecutionLock.SyncRoot;
 
 	private protected static object CommandExecutionSyncRoot => CommandExecutionLock;
 
