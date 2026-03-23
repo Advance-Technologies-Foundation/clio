@@ -1,0 +1,131 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    build-docker-image - Build a Docker image for a Creatio .NET 8+ distribution
+
+DESCRIPTION
+    Builds a Docker image from either a Creatio ZIP archive or an already extracted
+    application directory. The command resolves a bundled template (`dev`, `prod`)
+    or a custom template directory, stages the application into a temporary Docker
+    build context, and invokes the local docker CLI.
+
+    The command supports only Creatio .NET 8+ distributions. .NET Framework
+    distributions are rejected before any docker command is executed.
+
+    Image naming is automatic:
+    - Repository: creatio-<template-name>
+    - Tag: sanitized source archive or directory name
+    - OCI label: org.creatio.database-source=<original source archive or directory name>
+
+    Examples:
+    - template `dev` + source `8.3.3_StudioNet8.zip` -> `creatio-dev:8.3.3_studionet8`
+    - template `prod` + source folder `release-build` -> `creatio-prod:release-build`
+
+SYNOPSIS
+    clio build-docker-image --from <PATH> --template <NAME_OR_PATH> [OPTIONS]
+
+OPTIONS
+    --from PATH
+        Required. Path to a Creatio ZIP archive or extracted application directory.
+
+    --template NAME_OR_PATH
+        Required. Bundled template name (`dev`, `prod`) or custom template directory path.
+
+    --output-path PATH
+        Optional. Save the built image into a local tar file by running docker save.
+        Useful for air-gapped environments or offline transport.
+
+    --registry PREFIX
+        Optional. Registry or repository prefix used for docker push.
+        The command tags the built image as:
+            <PREFIX>/creatio-<template-name>:<tag>
+        and then pushes that tagged image.
+
+SUPPORTED INPUTS
+    ZIP archive:
+        - The archive is extracted into a temporary directory before build.
+
+    Extracted directory:
+        - The directory is used directly.
+
+    Runtime validation:
+        - The source must contain Terrasoft.WebHost.dll and Terrasoft.WebHost.dll.config
+        - Sources that look like .NET Framework deployments (for example Web.config
+          without Terrasoft.WebHost.dll) are rejected
+
+TEMPLATES
+    Bundled templates:
+        dev     Development-oriented image with supervisor, SSH, and code-server
+        prod    Production-oriented image that supervises only the Creatio app and keeps .NET SDK 8.0 available for in-app builds
+
+    Bundled templates are copied to the clio settings folder:
+        Windows:        %LOCALAPPDATA%\creatio\clio\docker-templates
+        macOS/Linux:    ~/.local/creatio/clio/docker-templates
+
+    Custom templates:
+        Pass an absolute or relative directory path to --template.
+        The directory must contain a Dockerfile.
+
+BEHAVIOR
+    1. Resolve and validate source path
+    2. Resolve and validate template
+    3. Prepare a temporary Docker build context
+    4. Run docker --version
+    5. Run docker build
+    6. Optionally run docker save
+    7. Optionally run docker tag + docker push
+    8. Clean up temporary files
+
+EXAMPLES
+    Build a local development image from a ZIP archive:
+        clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
+
+    Build a production image from an extracted directory:
+        clio build-docker-image --from "/opt/builds/creatio-net8" --template prod
+
+    Build and export a tar file:
+        clio build-docker-image \
+          --from "/opt/builds/creatio-net8" \
+          --template prod \
+          --output-path "/tmp/creatio-prod.tar"
+
+    Build, export, and push in one command:
+        clio build-docker-image \
+          --from "C:\Creatio\8.3.3_StudioNet8.zip" \
+          --template prod \
+          --output-path "C:\Images\creatio-prod.tar" \
+          --registry "ghcr.io/acme"
+
+    Use a custom template directory:
+        clio build-docker-image \
+          --from "/opt/builds/creatio-net8" \
+          --template "/workspace/docker-templates/custom-prod"
+
+OUTPUT
+    On success, the command logs:
+    - Resolved source path
+    - Resolved template path
+    - Local image reference
+    - Optional tar output path
+    - Optional pushed registry image reference
+
+    The built image also includes:
+    - OCI label `org.creatio.database-source` with the original source payload name
+
+TROUBLESHOOTING
+    "Docker is not installed or not available in PATH"
+        Install Docker and make sure the `docker` executable is available on PATH.
+
+    "Bundled Docker template 'X' was not found"
+        Use one of the bundled templates (`dev`, `prod`) or pass a valid template directory.
+
+    "Docker template directory 'X' must contain a Dockerfile"
+        Add a Dockerfile to the custom template directory.
+
+    "looks like a .NET Framework Creatio distribution"
+        Use a Creatio .NET 8+ distribution. .NET Framework builds are not supported
+        for Docker image creation.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

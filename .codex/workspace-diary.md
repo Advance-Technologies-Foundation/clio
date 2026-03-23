@@ -286,307 +286,40 @@ Discovery: Constructor-based tests for RestoreDb required DI argument updates to
 Files: clio/Command/RestoreDb.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, clio.tests/Command/RestoreDb.Tests.cs, .codex/workspace-diary.md
 Impact: RestoreDb no longer triggers CLIO004 in this file and pg_restore execution now follows shared process abstraction.
 
-## 2026-02-23 - Clear CLIO warnings in RegisterCommand.cs
-Context: User requested resolving all CLIO diagnostics reported in RegisterCommand.cs.
-Decision: Reworked RegisterCommand/UnregisterCommand to use ILogger + IProcessExecutor + System.IO.Abstractions IFileSystem, removed direct Console/Process/System.IO usage, switched Program verb mapping from CreateCommand<> to Resolve<> for DI-backed construction, and replaced CreatioEnvironment manual construction with AppContext.BaseDirectory path resolution.
-Discovery: ICreatioEnvironment is internal, so it cannot appear in a public constructor signature; AppContext.BaseDirectory keeps behavior and avoids CLIO001.
-Files: clio/Command/RegisterCommand.cs, clio/Program.cs, .codex/workspace-diary.md
-Impact: RegisterCommand.cs no longer emits CLIO001/002/003/004 diagnostics while preserving register/unregister command behavior.
+## 2026-03-23 00:00 – Document prod Docker cache strategy guidance
+Context: User asked whether the prod Dockerfile can "export everything up to line 19" to speed up image rebuilds.
+Decision: Advised that Docker already caches lines 1-19 as stable layers when the daemon cache is preserved, and recommended either a named base stage / separately tagged intermediate image or BuildKit cache export/import for environments with ephemeral caches.
+Discovery: `BuildDockerImageService.CreateBuildContext` always copies the template and `source/` into a temporary context, so repository-root `.dockerignore` rules do not control that staged context; the main invalidation point in the template is `COPY source/ ./`, not the apt/entrypoint layers.
+Files: C:\Projects\clio\clio\tpl\docker-templates\prod\Dockerfile, C:\Projects\clio\clio\Command\BuildDockerImageService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future Docker build-performance questions can start from the correct cache boundary in the prod template and distinguish between local layer reuse versus exported remote/intermediate cache strategies.
 
-## 2026-02-23 - Add tests for RegisterCommand/UnregisterCommand after abstraction migration
-Context: User requested test coverage for RegisterCommand after replacing direct Console/Process/System.IO usage with abstractions.
-Decision: Added RegisterCommandTests with cross-platform-safe cases: non-Windows register behavior, unregister success path (verifying process commands), and unregister exception handling.
-Discovery: RegisterCommand OS-branch behavior is platform-dependent; non-Windows test is intentionally skipped on Windows to keep suite executable across OSes.
-Files: clio.tests/Command/RegisterCommand.Tests.cs, .codex/workspace-diary.md
-Impact: Command now has direct unit coverage validating logger and process-executor interactions introduced by abstraction refactor.
+## 2026-03-23 16:45 – Reuse creatio-base stage in dev Docker template
+Context: User requested aligning the dev Docker image with the prod cache strategy by reusing a shared `creatio-base` layer.
+Decision: Split the dev Dockerfile into a `creatio-base` stage for the common .NET SDK and base OS dependencies, then kept SSH, code-server, and the global `clio` tool in the dev-only final stage.
+Discovery: The dev template still carried the older fragile XML `sed` expression; switching it to the same delimiter-safe form as prod removed a latent build failure while preserving behavior.
+Files: C:\Projects\clio\clio\tpl\docker-templates\dev\Dockerfile, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Dev and prod templates now share the same cached foundation, which reduces duplicated base setup work and keeps future dependency changes easier to reason about.
 
-## 2026-02-23 - Register RegisterCommand tests use DI-resolved SUT and teardown call reset
-Context: User requested RegisterCommand tests to register test doubles through AdditionalRegistrations, resolve system-under-test from DI, and clear mock interactions between tests.
-Decision: Added explicit DI registrations for RegisterCommand and UnregisterCommand in test AdditionalRegistrations so setup resolves both commands from the container; kept logger/process-executor substitutes registered as singletons; retained TearDown call reset with ClearReceivedCalls on both substitutes.
-Discovery: Base test module does not auto-register concrete command types without interface mapping, so container resolution fails unless commands are explicitly added for this test fixture.
-Files: clio.tests/Command/RegisterCommand.Tests.cs, .codex/workspace-diary.md
-Impact: RegisterCommand test fixture now matches repository DI testing style and avoids cross-test interference from stale substitute invocations.
+## 2026-03-23 18:15 – Add deep-link environment registration with login/password
+Context: User needed a generic external-link flow to register a new environment with URI, login, password, runtime flags, and environment path.
+Decision: Added a new `clio://RegisterEnvironment` handler that parses the requested query arguments and forwards them into the existing `RegAppCommand`/`RegAppOptions` flow instead of creating a separate registration path.
+Discovery: `RegisterOAuthCredentials` was the only existing deep-link registration flow; `RegAppOptions` already supported `Uri`, `Login`, `Password`, `IsNetCore`, `Safe`, and `EnvironmentPath`, so the missing piece was only a generic external-link handler plus validator/test coverage. When no explicit environment name is supplied, deriving it from the URI host and port gives a stable default.
+Files: C:\Projects\clio\clio\Requests\RegisterEnvironment.cs, C:\Projects\clio\clio.tests\Requests\RegisterEnvironmentHandlerTests.cs, C:\Projects\clio\clio.tests\Validators\ExternalLinkOptionsValidator.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future tooling can register local or password-based environments through a single deep link without relying on the OAuth-only registration path.
 
-## 2026-02-23 - Align command-test conventions in RegisterCommand tests and AGENTS
-Context: User requested removing redundant UnitTests category from a BaseCommandTests-based fixture and documenting command test conventions.
-Decision: Removed `[Category("UnitTests")]` from `RegisterCommandTests` and added a new `## Command tests` section in `AGENTS.md` defining BaseCommandTests usage, DI registration via `AdditionalRegistrations`, container-resolved SUT setup, and teardown call clearing.
-Discovery: `BaseCommandTests<TOptions>` already provides command-test categorization context, so explicit UnitTests category is unnecessary and was intentionally removed.
-Files: clio.tests/Command/RegisterCommand.Tests.cs, AGENTS.md, .codex/workspace-diary.md
-Impact: Test fixture now follows the agreed command-test style and repository guidance now explicitly captures the expected DI-based testing pattern.
+## 2026-03-23 18:35 – Add deep-link environment unregister by name
+Context: User requested a matching external-link flow to remove a registered environment by its name.
+Decision: Added `clio://UnregisterEnvironment?name=...` and mapped it directly to the existing `UnregAppCommand` so environment removal reuses the current repository deletion behavior instead of introducing a second unregister implementation.
+Discovery: `ExternalLink` validation only needed the new request type name to exist plus a valid query shape; the simplest reliable test for the handler is asserting the underlying `ISettingsRepository.RemoveEnvironment(name)` side effect through the real `UnregAppCommand`.
+Files: C:\Projects\clio\clio\Requests\UnregisterEnvironment.cs, C:\Projects\clio\clio.tests\Requests\UnregisterEnvironmentHandlerTests.cs, C:\Projects\clio\clio.tests\Validators\ExternalLinkOptionsValidator.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future tooling can both add and remove environments through deep links without shelling out to separate explicit CLI commands.
 
-## 2026-02-23 - Enforce process exit-code checks in register/unregister commands
-Context: User requested register and unregister commands to fail with non-zero exit code and clear error messaging when process execution fails.
-Decision: Replaced fire-and-forget string-only process calls with `IProcessExecutor.ExecuteAndCaptureAsync` checks in both RegisterCommand and UnregisterCommand, validating `Started` and `ExitCode == 0` before continuing.
-Discovery: Existing unregister help text claimed idempotent success when registry keys are missing; this no longer matches behavior once non-zero exit codes are treated as failures.
-Files: clio/Command/RegisterCommand.cs, clio.tests/Command/RegisterCommand.Tests.cs, clio/help/en/register.txt, clio/help/en/unregister.txt, clio/Commands.md, .codex/workspace-diary.md
-Impact: Registry command failures are now surfaced to users immediately with error logs and non-zero command exit codes; tests and docs now reflect enforced failure semantics.
-
-## 2026-02-23 - Add dedicated UnregisterCommand test fixture
-Context: User requested explicit unit tests for UnregisterCommand.
-Decision: Split unregister scenarios out of RegisterCommandTests and created `UnregisterCommandTests : BaseCommandTests<UnregisterOptions>` with DI-based setup, AdditionalRegistrations, and teardown call clearing.
-Discovery: Because `UnregisterOptions` is internal, the test fixture class must be internal to avoid CS0060 inconsistent accessibility.
-Files: clio.tests/Command/RegisterCommand.Tests.cs, clio.tests/Command/UnregisterCommand.Tests.cs, .codex/workspace-diary.md
-Impact: Unregister behavior now has dedicated, focused coverage for success, exception, and non-zero exit code paths while keeping RegisterCommand tests scoped to register behavior.
-
-## 2026-02-23 - Restore RegisterCommand test coverage via OS abstraction
-Context: User reported RegisterCommandTests coverage regressed to a single non-Windows case after splitting unregister tests.
-Decision: Introduced `IOperationSystem` and injected it into RegisterCommand so tests can deterministically cover Windows/admin and registry import result paths without relying on host OS or privileges.
-Discovery: Static `OperationSystem.Current` checks prevented practical unit coverage for success and admin-path failures; abstraction eliminated environment coupling.
-Files: clio/Common/System.cs, clio/Command/RegisterCommand.cs, clio.tests/Command/RegisterCommand.Tests.cs, .codex/workspace-diary.md
-Impact: RegisterCommand tests now cover non-Windows, no-admin, first import failure, and successful Windows registration paths while keeping tests cross-platform executable.
-
-## 2026-02-23 - Fix full-suite regressions from CreatioPackage logger null and test CWD leakage
-Context: User reported 10 failing tests after recent command/test refactors.
-Decision: Added logger fallback in CreatioPackage process execution (`_logger ?? ConsoleLogger.Instance`) and hardened `CreatioPkgTests` by wrapping `Environment.CurrentDirectory` and `PATH` mutations in `try/finally` with guaranteed restoration.
-Discovery: A null logger in `CreatioPackage.ExecuteDotnetCommand` caused package creation failures, and failing integration tests left process CWD altered, cascading into unrelated YAML scenario test failures.
-Files: clio/Package/CreatioPackage.cs, clio.tests/CreatioPkgTests.cs, .codex/workspace-diary.md
-Impact: Full `clio.tests` suite now passes again with no cascading environment-state pollution between tests.
-
-## 2026-02-23 - Fix CreateInfrastructure CLIO002/CLIO003 and align create-k8-files docs
-Context: User requested clearing specific CLIO002 and CLIO003 diagnostics in CreateInfrastructure.cs.
-Decision: Replaced the four flagged deployment-instruction Console.WriteLine calls with ConsoleLogger.Instance.WriteLine, and replaced System.IO.Path usage with Clio.Common.IFileSystem abstraction (GetFilesInfos(...).DirectoryName + NormalizeFilePathByPlatform).
-Discovery: Command docs for create-k8-files were missing the existing -p/--path option, so required doc surfaces needed alignment even though runtime behavior did not change.
-Files: clio/Command/CreateInfrastructure.cs, clio/help/en/create-k8-files.txt, clio/docs/commands/CreateK8FilesCommand.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Requested CreateInfrastructure CLIO002/CLIO003 warnings are removed and command documentation now reflects current options consistently across help/index/detail docs.
-
-
-## 2026-02-23 - Fix CLIO003 in InfrastructurePathProvider
-Context: User requested removal of CLIO003 warning in InfrastructurePathProvider.cs.
-Decision: Removed System.IO.Path usage and switched default infrastructure path composition to a separator-safe string interpolation ({SettingsRepository.AppSettingsFolderPath}/infrastructure).
-Discovery: This was a localized CLIO003 issue; no command options or behavior contract changed.
-Files: clio/Common/InfrastructurePathProvider.cs, .codex/workspace-diary.md
-Impact: InfrastructurePathProvider no longer emits CLIO003 while preserving resolved default path behavior.
-
-
-## 2026-02-23 - Use abstraction Path.Join in InfrastructurePathProvider
-Context: User requested using Path.Join (cross-platform) instead of manual string concatenation in InfrastructurePathProvider.
-Decision: Refactored InfrastructurePathProvider to use System.IO.Abstractions.IFileSystem.Path.Join, switched dependent constructors to DI-only usage (removed fallback 
-ew InfrastructurePathProvider()), and updated Create/Deploy infrastructure tests accordingly.
-Discovery: DeployInfrastructureCommand and related tests required constructor wiring updates when CreateInfrastructureCommand stopped using optional provider fallback; command behavior/docs remained unchanged.
-Files: clio/Common/InfrastructurePathProvider.cs, clio/Command/CreateInfrastructure.cs, clio/Command/OpenInfrastructureCommand.cs, clio/Command/DeployInfrastructureCommand.cs, clio.tests/Common/InfrastructurePathProviderTests.cs, clio.tests/Command/CreateInfrastructureCommand.Tests.cs, clio.tests/Command/DeployInfrastructureCommandTests.cs, .codex/workspace-diary.md
-Impact: InfrastructurePathProvider now uses cross-platform Path.Join through abstraction and no longer emits CLIO003 for this file, with DI/test graph kept compilable.
-
-
-## 2026-02-23 - Performance audit hotspots in clio runtime paths
-Context: User requested a targeted performance review focused on CPU/memory hotspots, allocation pressure, I/O latency, async contention, and benchmark coverage.
-Decision: Performed static hotspot analysis across command/runtime paths and prioritized issues by runtime risk (busy waits, sync-over-async blocking, unbounded parallelism, and high-allocation full-materialization patterns).
-Discovery: High-impact risks are concentrated in SafeDeleteDirectory busy-wait loop, deploy/install retry loops using Thread.Sleep, sync-over-async call chains in updater/NuGet/K8/IIS paths, and unbounded Parallel.ForEach in downloader; no benchmark harness references were found.
-Files: clio/Common/FileSystem.cs, clio/Command/DeployInfrastructureCommand.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/AppUpdater.cs, clio/Package/NuGet/NuGetManager.cs, clio/Package/NuGet/NugetPackageRestorer.cs, clio/WebApplication/Downloader.cs, clio/ComposableApplication/ComposableApplicationManager.cs, clio/Common/K8/k8Commands.cs, clio/Common/IIS/WindowsIISAppPoolManager.cs, .codex/workspace-diary.md
-Impact: Future optimization work can start from ranked hotspots with concrete remediation paths and benchmark-gap visibility.
-
-## 2026-02-23 - Reviewer B performance regression audit for f3d29c87..HEAD
-Context: User requested a performance-focused review of refactor changes between f3d29c87 and HEAD.
-Decision: Prgsioritized findin where refactoring introduced measurable algorithmic/resource risks (output buffering growth, sync-over-async blocking, avoidable allocations).
-Discovery: ProcessExecutor now unconditionally accumulates all stdout/stderr lines, which increases memory pressure for verbose long-running commands (pg_restore call paths in RestoreDb and CreatioInstallerService). NuGet refactor introduced .Result blocking in manager/restorer call chains and extra immutable materialization in version parsing.
-Files: clio/Common/ProcessExecutor.cs, clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Package/NuGet/NuGetManager.cs, clio/Package/NuGet/NugetPackageRestorer.cs, clio/Package/NuGet/NugetPackagesProvider.cs, .codex/workspace-diary.md
-Impact: Provides targeted remediation points to reduce memory growth during restore operations and remove blocking/allocation overhead in NuGet version resolution.
-## 2026-02-23 - Security review of refactor range f3d29c87..HEAD
-Context: User requested reviewer-C style security-focused review of refactoring changes between f3d29c87 and HEAD.
-Decision: Performed diff-driven analysis centered on process execution, shell invocation, DB restore command construction, and secret handling paths.
-Discovery: No critical/high-confidence RCE was introduced; identified medium risk from string-based argument composition in centralized ProcessExecutor usage and low risk from fire-and-forget launch failures being swallowed.
-Files: clio/Common/ProcessExecutor.cs, clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/RegisterCommand.cs, clio/Command/UnregisterCommand.cs, .codex/workspace-diary.md
-Impact: Captures concrete security hardening priorities for process execution API and command argument handling in future refactors.
-
-## 2026-02-23 - Refactor review from f3d29c87
-Context: User requested a multi-angle review of all committed changes from f3d29c87..HEAD, focused on correctness, maintainability, performance regressions, and security implications.
-Decision: Performed parallel agent review (correctness/maintainability, performance, security) and validated findings with local source inspection and test execution.
-Discovery: High-confidence regressions are concentrated around process execution semantics (fire-and-forget/start failure handling), kubectl preflight reliability, and stderr routing impact on existing tests; performance risk observed from unconditional process output buffering and sync-over-async NuGet calls; security risk observed in string-concatenated process arguments for pg_restore.
-Files: clio/Common/ProcessExecutor.cs, clio/Command/DeployInfrastructureCommand.cs, clio/Command/OpenAppCommand.cs, clio/Common/ConsoleLogger.cs, clio/Package/NuGet/NuGetManager.cs, clio/Package/NuGet/NugetPackageRestorer.cs, clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Common/ConsoleLoggerTests.cs, clio.tests/Command/LastCompilationLogCommandTestFixture.cs, .codex/workspace-diary.md
-Impact: Provides a prioritized defect/risk list for follow-up fixes after the large refactor and records validated hotspots to accelerate remediation.
-
-Findings
-
-1. High: process-start failures are silently swallowed in the new executor compatibility API, breaking preflight correctness.
-   ProcessExecutor.cs:225 (/C:/Projects/clio/clio/Common/ProcessExecutor.cs:225) ignores FireAndForgetAsync result and returns success-like output; ProcessExecutor.cs:286 (/C:/Projects/clio/clio/Common/ProcessExecutor.cs:286) returns Started=false instead of throwing on start failure.
-   DeployInfrastructureCommand still relies on exception flow in DeployInfrastructureCommand.cs:96 (/C:/Projects/clio/clio/Command/DeployInfrastructureCommand.cs:96), DeployInfrastructureCommand.cs:99 (/C:/Projects/clio/clio/Command/DeployInfrastructureCommand.cs:99), so missing kubectl can be reported as installed.
-2. High: false-success path in browser launch on macOS.
-   OpenAppCommand.cs:39 (/C:/Projects/clio/clio/Command/OpenAppCommand.cs:39) uses waitForExit:false; with current executor behavior, launch failure is not propagated, and command can still return 0.
-3. Medium: regression in logging stream behavior breaks existing command/test expectations.
-   Errors were moved to stderr in ConsoleLogger.cs:93 (/C:/Projects/clio/clio/Common/ConsoleLogger.cs:93), ConsoleLogger.cs:95 (/C:/Projects/clio/clio/Common/ConsoleLogger.cs:95).
-   Current suite shows failing assertions tied to this behavior change: ConsoleLoggerTests.cs:19 (/C:/Projects/clio/clio.tests/Common/ConsoleLoggerTests.cs:19), ConsoleLoggerTests.cs:58 (/C:/Projects/clio/clio.tests/Common/ConsoleLoggerTests.cs:58), LastCompilationLogCommandTestFixture.cs:76 (/C:/Projects/clio/clio.tests/Command/
-   LastCompilationLogCommandTestFixture.cs:76).
-4. Medium: negative performance risk from unconditional full output buffering for long-running processes.
-   ProcessExecutor.cs:371 (/C:/Projects/clio/clio/Common/ProcessExecutor.cs:371) appends every output line to in-memory buffers even for realtime flows used by restore/deploy paths: RestoreDb.cs:414 (/C:/Projects/clio/clio/Command/RestoreDb.cs:414), CreatioInstallerService.cs:496 (/C:/Projects/clio/clio/Command/CreatioInstallCommand/
-   CreatioInstallerService.cs:496).
-   This can create large allocation/GC pressure on verbose pg_restore output.
-5. Medium: sync-over-async introduced in NuGet path after async refactor.
-   Blocking .Result calls at NuGetManager.cs:209 (/C:/Projects/clio/clio/Package/NuGet/NuGetManager.cs:209) and NugetPackageRestorer.cs:72 (/C:/Projects/clio/clio/Package/NuGet/NugetPackageRestorer.cs:72) can reduce throughput and raise deadlock risk in future hosted/sync-context scenarios.
-6. Medium (security): argument injection surface in command-line construction for pg_restore.
-   RestoreDb.cs:391 (/C:/Projects/clio/clio/Command/RestoreDb.cs:391) builds raw argument string from config/user-derived fields (Hostname, Username, dbName) and passes through generic string-based executor API (ProcessExecutor.cs:278 (/C:/Projects/clio/clio/Common/ProcessExecutor.cs:278)).
-   Use tokenized argument APIs (ArgumentList) and stricter input validation to reduce injection risk.
-
-## 2026-02-26 21:27 – Проектный аудит качества/перф/безопасности
-Context: Пользователь запросил общий анализ кода проекта с акцентом на практические риски.
-Decision: Выполнен статический обзор по трем направлениям (code quality, performance, security), плюс `dotnet build` и `dotnet test` для подтверждения фактического состояния.
-Discovery: Обнаружены 8 падающих тестов в `StartCommand`/`StopCommand`, риск утечки секрета в `NuGetManager.Push` (API key в аргументах процесса), а также системный техдолг по CLIO-анализаторам (952 warning при сборке).
-Files: clio/Command/StartCommand.cs, clio/Command/StopCommand.cs, clio/Common/ProcessExecutor.cs, clio/Command/RestoreDb.cs, clio/Package/NuGet/NuGetManager.cs, clio/Package/NuGet/NugetPackageRestorer.cs, clio/Common/FileSystem.cs, clio.tests/Command/StartCommand.Tests.cs, clio.tests/Command/StopCommand.Tests.cs, .codex/workspace-diary.md
-Impact: Зафиксирован приоритетный бэклог исправлений для надежности команд запуска/остановки, безопасности вызовов внешних утилит и снижения технического долга по архитектурным правилам.
-
-## 2026-02-28 01:28 – Review skill docs for .github/skills/clio
-Context: User requested a review of `.github/skills/clio` with focus on practical defects.
-Decision: Compared skill/reference markdown examples and aliases against actual command metadata in `[Verb(...)]` attributes and command option requirements.
-Discovery: Found concrete mismatches that can break usage (`env-ui` alias documented as `ui`, invalid minimal examples for `publish-app` and `new-ui-project`), plus a committed `.DS_Store` artifact and plaintext-secret examples without safety note.
-Files: .github/skills/clio/SKILL.md, .github/skills/clio/references/commands-reference.md, .github/skills/clio/.DS_Store, clio/Command/EnvManageUiCommand.cs, clio/Command/CreateUiProjectCommand.cs, clio/Command/PublishWorkspaceCommand.cs
-Impact: Future updates can prioritize correcting broken examples/aliases first to reduce failed command attempts and avoid accidental secret exposure in copied templates.
-
-## 2026-02-28 01:54 – Apply fixes for .github/skills/clio review findings
-Context: User asked to implement fixes after review of `.github/skills/clio`.
-Decision: Updated command reference examples/aliases to match current CLI metadata, replaced plaintext credential examples with placeholders plus explicit security note, and removed macOS `.DS_Store` artifact from the skill folder.
-Discovery: `publish-app` and `new-ui-project` examples were incomplete for required parameters; `env-ui` alias in reference diverged from actual verb aliases (`gui`, `far`).
-Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/.DS_Store, .codex/workspace-diary.md
-Impact: Skill docs now avoid known false examples, reduce credential leakage risk in copy-paste scenarios, and keep repository contents cleaner across platforms.
-## 2026-03-03 10:35 – Replace ShowAppListCommand Console.WriteLine usage
-Context: User requested fixing specific CLIO002 warnings in ShowAppListCommand.cs for direct Console.WriteLine calls.
-Decision: Replaced all Console.WriteLine calls in ShowAppListCommand with ILogger.WriteLine/WriteWarning while preserving message text and formatting behavior.
-Discovery: Targeted warnings were removed, but the file still has separate CLIO002 diagnostics for Console.Out and Console.OutputEncoding usages not requested in this task.
-Files: clio/Command/ShowAppListCommand.cs, .codex/workspace-diary.md
-Impact: ShowAppListCommand now follows logging abstraction for line output and no longer uses direct Console.WriteLine.
-## 2026-03-04 07:41 – Add assert local scope for DB and Redis validation
-Context: User requested extending AssertCommand so local infrastructure (local DB used by deploy-creatio RestoreToLocalDb and local Redis assumption in UpdateConnectionString) can be asserted similarly to k8 scope.
-Decision: Added `local` assert scope with dedicated `ILocalDatabaseAssertion` and `ILocalRedisAssertion` services, introduced shared `IRedisDatabaseSelector` for empty-db discovery, and refactored CreatioInstallerService to use the shared selector instead of duplicated static Redis discovery logic.
-Discovery: `AssertOptions.DatabaseMinimum` defaults to `0` when options are instantiated directly in tests, so local request detection must treat only values `>1` as explicit db-min override and normalize minimum to 1 before local DB assertions.
-Files: clio/Command/AssertCommand.cs, clio/Command/AssertOptions.cs, clio/Common/Assertions/AssertionScope.cs, clio/Common/Assertions/LocalDatabaseAssertion.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio/Common/Database/RedisDatabaseSelector.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/BindingsModule.cs, clio.tests/Command/AssertCommand.Tests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Assert now supports deterministic local DB and local Redis validation paths aligned with deployment assumptions, and command docs are synchronized across help/index/detail surfaces.
-
-## 2026-03-04 08:48 – deploy-creatio corporate-gated reset-password script
-Context: Needed deploy-creatio to auto-apply a DB script for Creatio packages >= 8.3.3 while enforcing corporate-network/domain constraints and honoring the hidden option toggle.
-Decision: Added three focused services (package version parser, corporate environment detector, password-reset SQL executor) and invoked them from CreatioInstallerService right after successful DB restore; failures are warning-only and deployment continues.
-Discovery: Corporate eligibility is implemented as OR logic (Windows tscrm domain via whoami OR successful ping to tscrm.com); version parsing must be based on package filename prefix and skip silently when unparsable.
-Files: clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/CreatioPackageVersionParser.cs, clio/Command/CreatioInstallCommand/CorporateEnvironmentDetector.cs, clio/Command/CreatioInstallCommand/PasswordResetScriptExecutor.cs, clio.tests/Command/CreatioInstallCommand/CreatioPackageVersionParserTests.cs, clio.tests/Command/CreatioInstallCommand/CorporateEnvironmentDetectorTests.cs, clio/help/en/deploy-creatio.txt, clio/docs/commands/deploy-creatio.md, clio/Commands.md
-Impact: deploy-creatio now handles Supervisor password-reset disabling safely for eligible environments across both local and Kubernetes DB targets, with synchronized command documentation and targeted test coverage.
-
-## 2026-03-04 09:12 – Unify Redis assertion DTO across local and k8 scopes
-Context: User requested LocalRedisAssertion and K8RedisAssertion to return the same payload and to replace ambiguous `db` with a clearer name.
-Decision: Introduced a shared `RedisAssertionResolvedDto` and made both assertions emit it; renamed output field to `firstAvailableDb` and aligned behavior by resolving empty DB in k8 via `IRedisDatabaseSelector`.
-Discovery: To guarantee same data contract across scopes, k8 redis assertion must fail discovery when first available DB cannot be resolved, rather than returning partial host/port data.
-Files: clio/Common/Assertions/RedisAssertionResolvedDto.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio/Common/Kubernetes/K8RedisAssertion.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio.tests/Common/Kubernetes/K8RedisAssertionTests.cs, clio.tests/Command/AssertCommand.Tests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Redis assertion output is now explicit and consistent between local and k8 scopes, simplifying downstream parsing and reducing ambiguity in assert results.
-
-## 2026-03-04 09:58 – Assert local multi-server discovery and scope-wide --all presets
-Context: User requested assert local to support k8-style db invocation without `--db-server-name`, and added scope-wide `--all` behavior for `local|k8|fs`.
-Decision: Added `--all` to assert options with explicit mixed-option rejection, implemented local DB discovery across all configured local db servers when `--db-server-name` is omitted, and added fs all-mode defaults (`iis-clio-root-path` + Windows current-user full-control ACL check).
-Discovery: In command tests, `AssertOptions` instantiated with `new` has `DatabaseMinimum=0` (attribute default not applied), so `--all` mixed-option detection must treat only values `>1` as explicit `--db-min` overrides.
-Files: clio/Command/AssertOptions.cs, clio/Command/AssertCommand.cs, clio/Common/Assertions/LocalDatabaseAssertion.cs, clio.tests/Command/AssertCommand.Tests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Assert command now supports local multi-db validation patterns from config, adds deterministic full-scope presets via `--all`, and keeps docs/help synchronized with runtime behavior.
-
-## 2026-03-04 10:26 – Switch fs --all ACL identity to IIS_IUSRS group
-Context: User requested `clio assert fs --all` to validate IIS worker-group permissions (`IIS_IUSRS`) instead of current-user identity.
-Decision: Updated fs all-mode to resolve Windows identity candidates in order (`BUILTIN\\IIS_IUSRS`, then `IIS_IUSRS`) and run full-control ACL assertion against the resolved group; added explicit FsUser failure when neither identity resolves.
-Discovery: Existing fs all-mode tests were missing; command tests can validate identity routing by asserting JSON output contains `IIS_IUSRS` on Windows and by verifying non-Windows path-only behavior for fs all-mode.
-Files: clio/Command/AssertCommand.cs, clio.tests/Command/AssertCommand.Tests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: fs full validation now matches IIS deployment expectations by checking ACLs for IIS_IUSRS group rather than the invoking user account.
-
-## 2026-03-04 11:20 – Add enabled local DB server filtering across local operations
-Context: Needed `db` configuration to support per-server enable/disable and ensure assert/deploy/restore ignore disabled servers.
-Decision: Added `Enabled` (default true) to `LocalDbServerConfiguration`, centralized filtering in `SettingsRepository.GetLocalDbServer*`, updated local assertion failure semantics for no enabled servers, and aligned local deploy/restore error handling to report disabled-or-missing server names.
-Discovery: Repository-level filtering automatically enforces the policy across AssertCommand local scope, CreatioInstallerService local flows, and RestoreDb without duplicating per-command checks.
-Files: clio/Common/db/LocalDbServerConfiguration.cs, clio/Environment/ConfigurationOptions.cs, clio/Common/Assertions/LocalDatabaseAssertion.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/RestoreDb.cs, clio/tpl/jsonschema/schema.json.tpl, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, clio/help/en/assert.txt, clio/help/en/deploy-creatio.txt, clio/help/en/restore-db.txt, clio/docs/commands/AssertCommand.md, clio/docs/commands/deploy-creatio.md, clio/Commands.md
-Impact: Local DB server enablement is now a single source of truth in config; commands and assertions consistently skip disabled servers and provide explicit diagnostics when no enabled servers are available.
-
-## 2026-03-04 12:01 – Add configurable local Redis servers for assert and deploy-creatio
-Context: User requested Redis configuration parity with local DB servers: multiple named servers, default selection, optional ACL credentials, and command-level server selection.
-Decision: Introduced `redis`/`defaultRedis` settings support with `Enabled` flag, added local Redis resolver service with explicit/default/single/fallback selection logic, extended Redis DB discovery to accept credentials, and wired `--redis-server-name` into `assert local` and `deploy-creatio`.
-Discovery: Backward compatibility is preserved by falling back to `localhost:6379` only when Redis configuration section is absent; if multiple enabled Redis servers exist without default, command fails with actionable diagnostics.
-Files: clio/Common/db/LocalRedisServerConfiguration.cs, clio/Common/db/LocalRedisServerResolver.cs, clio/Environment/ISettingsRepository.cs, clio/Environment/ConfigurationOptions.cs, clio/Common/Database/RedisDatabaseSelector.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio/Command/AssertOptions.cs, clio/Command/AssertCommand.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/tpl/jsonschema/schema.json.tpl, clio.tests/Common/db/LocalRedisServerResolverTests.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio.tests/Command/AssertCommand.Tests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/help/en/deploy-creatio.txt, clio/docs/commands/deploy-creatio.md, clio/Commands.md
-Impact: Local Redis is now configurable and selectable across commands, authenticated Redis deployments are supported for DB auto-selection and generated connection strings, and command docs/help remain synchronized.
-
-## 2026-03-04 12:31 – Enforce strict local Redis auth validation in assert
-Context: User reported `assert local --all` passing even when Redis credentials were configured but ACL auth was not enforced on Redis server.
-Decision: Added `IRedisAuthenticationValidator` and integrated it into local Redis assertion flow so that when Username/Password are configured, clio verifies anonymous access is blocked; otherwise assertion fails at `RedisConnect`.
-Discovery: Strict check is policy-based and independent from connectivity/ping success with configured credentials, preventing false-positive passes on non-authenticated Redis setups.
-Files: clio/Common/Assertions/RedisAuthenticationValidator.cs, clio/Common/Assertions/LocalRedisAssertion.cs, clio.tests/Common/Assertions/LocalRedisAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md
-Impact: `assert local` now validates security posture for configured Redis credentials and surfaces misconfigured/non-enforced auth early in local infrastructure checks.
-
-## 2026-03-04 13:05 – Enforce PostgreSQL 16+ in assert for k8 and local
-Context: User requested AssertCommand to require PostgreSQL version 16 or higher for both Kubernetes and local scopes.
-Decision: Added shared PostgresVersionPolicy helper usage in K8DatabaseAssertion and retained LocalDatabaseAssertion floor enforcement, making version floor checks execute for discovered postgres servers even when --db-check version is not specified.
-Discovery: Existing local multi-server tests needed explicit capability checker setup because postgres floor checks now run on default local assertions; isolated test OutputPath/IntermediateOutputPath avoids active clio binary lock during test execution.
-Files: clio/Common/Database/PostgresVersionPolicy.cs, clio/Common/Kubernetes/K8DatabaseAssertion.cs, clio.tests/Common/Kubernetes/K8DatabaseAssertionTests.cs, clio.tests/Common/Assertions/LocalDatabaseAssertionTests.cs, clio/help/en/assert.txt, clio/docs/commands/AssertCommand.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Assert now consistently blocks unsupported PostgreSQL versions (<16) across both local and k8 infrastructure checks, with synchronized CLI/docs behavior and targeted regression coverage.
-
-## 2026-03-05 22:32 – Add regression tests for Unix rooted path normalization
-Context: User asked whether commit 611529b4 (absolute Unix path root separator restore in FileSystem.NormalizeFilePathByPlatform) required tests.
-Decision: Added two focused unit tests to cover absolute repeated-separator path normalization and relative mixed-separator normalization behavior.
-Discovery: There was no existing direct test coverage for NormalizeFilePathByPlatform; running tests required isolated OutputPath/IntermediateOutputPath due a locked clio.exe in default bin folder.
-Files: clio.tests/Common/FileSystem.Tests.cs, .codex/workspace-diary.md
-Impact: Prevents regressions where rooted Unix-like paths lose leading separator after normalization and confirms relative paths stay relative.
-
-## 2026-03-07 11:55 – Merge entity schema and user task branches with create-entity-schema MCP tool
-Context: User requested merging `create-UserTask-Schema` and `entity-schema-create-command` into a shared branch, then adding MCP support for `create-entity-schema`.
-Decision: Created `codex/common`, resolved merge conflicts by keeping both feature sets registered, added `create-entity-schema` MCP tool/prompt support, and hardened `ToolCommandResolver` to reject unknown environments instead of falling back to default localhost credentials.
-Discovery: Lookup column serialization must preserve the empty title slot (`Name:Lookup::RefSchema`) when a reference schema is provided without an explicit title; otherwise the remote parser misreads the lookup reference.
-Files: clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/Command/McpServer/Tools/CreateEntitySchemaTool.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, .codex/workspace-diary.md
-Impact: The merged branch now exposes both schema features together and can safely create remote entity schemas through MCP without silently targeting an unintended environment.
-
-## 2026-03-06 13:26 – Fix local PostgreSQL pg_restore argument order for Docker-hosted restores
-Context: User needed `restore-db` and `deploy-creatio` to restore into PostgreSQL running in Docker via published host port, and the first runtime attempt failed after creating the database.
-Decision: Kept the local-server flow for `--dbServerName`/`--db-server-name`, fixed `pg_restore` argument ordering so flags precede the backup file path, and relaxed the zip-backup test to assert an extracted `.backup` path instead of a hard-coded filename.
-Discovery: `pg_restore` rejected the old command line because `--no-owner` and `--no-privileges` were placed after the positional backup file; once reordered, the repo-built `clio.exe` restored successfully to `localhost:5432` using the host file directly.
-Files: clio/Command/RestoreDb.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/RestoreDb.LocalServer.Tests.cs, .codex/workspace-diary.md
-Impact: Local and Docker-hosted PostgreSQL restores now execute correctly through the host `pg_restore` binary without copying backup files into Kubernetes or containers.
-
-## 2026-03-08 10:20 – Validate user task code before remote draft creation
-Context: The `CreateUserTaskCommandTests.Execute_Should_Return_Error_When_Code_Does_Not_Start_With_Usr` regression showed that invalid user task codes still triggered the remote `CreateNewSchema` call.
-Decision: Moved `ValidateUserTaskCode` execution to the start of `ExecuteRemoteCommand` and passed the validated value into the later schema-mapping step instead of re-validating after the remote draft was created.
-Discovery: The old flow validated inside `ApplyRequestedValues`, which happens only after `CreateNewSchema` returns, so an invalid `Code` could still create remote side effects before the command failed locally.
-Files: clio/Command/CreateUserTaskCommand.cs, .codex/workspace-diary.md
-Impact: Invalid user task codes now fail fast locally, matching test expectations and avoiding unnecessary remote schema draft creation.
-
-## 2026-03-08 10:42 – Preserve nested add-parameter-items in MCP user task tools
-Context: Code review flagged that nested `add-parameter-items[].items` were accepted by the MCP contract but silently dropped during serialization.
-Decision: Made `UserTaskToolSupport.SerializeParameterItemDefinitions` recurse through nested `UserTaskParameterItemArgs.Items` and extended the MCP tool test to assert a grandchild item is serialized.
-Discovery: The tool already handled recursion for `add-parameters[].items`; only the `add-parameter-items` path lacked the same traversal.
-Files: clio/Command/McpServer/Tools/UserTaskTool.cs, clio.tests/Command/McpServer/UserTaskToolTests.cs, .codex/workspace-diary.md
-Impact: Nested composite-list child items provided through MCP are now preserved instead of being silently lost.
-
-## 2026-03-08 15:02 – Restrict delete-schema to schema workspace item types
-Context: Code review flagged that delete-schema matched workspace items only by package/name, which could target a same-named non-schema artifact.
-Decision: Added an explicit workspace-item type allowlist in DeleteSchemaCommand and covered mixed-type same-name selection with a regression test.
-Discovery: Existing delete-schema help and MCP prompt/tool already matched the intended behavior closely enough, so no doc or MCP text changes were required for this internal selection fix.
-Files: clio/Command/DeleteSchemaCommand.cs, clio.tests/Command/DeleteSchemaCommandTests.cs, .codex/workspace-diary.md
-Impact: delete-schema now ignores non-schema workspace items that share a name with the requested schema and only submits schema-type artifacts for deletion.
-
-## 2026-03-08 17:40 – Standardize MCP prompt containers as static utility classes
-Context: SonarQube flagged DeleteSchemaPrompt as a utility class that should not be instantiable, and the user asked for a local rule to keep future prompt files aligned.
-Decision: Added a prompt-folder `AGENTS.md` that requires `public static class` prompt containers, then updated all existing MCP prompt types in that directory to static utility form with XML documentation.
-Discovery: MCP prompt discovery still works with static classes because registration depends on type and method attributes, not on instance construction.
-Files: clio/Command/McpServer/Prompts/AGENTS.md, clio/Command/McpServer/Prompts/ClearRedisPrompt.cs, clio/Command/McpServer/Prompts/CreateEntitySchemaPrompt.cs, clio/Command/McpServer/Prompts/DeleteSchemaPrompt.cs, clio/Command/McpServer/Prompts/LoadPackagesPrompt.cs, clio/Command/McpServer/Prompts/LookupHelpPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio/Command/McpServer/Prompts/RestartPrompt.cs, clio/Command/McpServer/Prompts/UserTaskPrompt.cs, .codex/workspace-diary.md
-Impact: Future MCP prompts in this folder now have a documented utility-class convention, and existing prompts no longer trigger the Sonar utility-class complaint.
-
-## 2026-03-08 18:26 – Reduce ParseColumns complexity and tighten entity column validation
-Context: User asked for a review of RemoteEntitySchemaCreator changes and specifically to address SonarQube's cognitive-complexity complaint on ParseColumns.
-Decision: Split ParseColumns into focused helper methods for format, type, title, and lookup validation, and added a regression that rejects four-part non-lookup column specs instead of silently discarding the final segment.
-Discovery: The existing create-entity-schema help already described the fourth segment as a lookup-only reference schema, so the stricter validation aligned with current docs and MCP behavior without further contract updates.
-Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, .codex/workspace-diary.md
-Impact: ParseColumns is easier to reason about, Sonar should stop flagging its cognitive complexity, and invalid non-lookup column definitions now fail fast before save.
-
-## 2026-03-09 15:34 – Add first clear-redis MCP E2E harness
-Context: User requested the first real `clio.mcp.e2e` test to exercise MCP end-to-end behavior for the destructive `clear-redis` tool.
-Decision: Implemented a sandbox-only E2E harness that starts the external `clio mcp-server` over stdio, drives it through the official `ModelContextProtocol` client, loads settings from `appsettings.json` plus environment variables, and verifies Redis side effects instead of only MCP response shape.
-Discovery: In the current `ModelContextProtocol` 1.0.0 client surface, `McpClient.ListToolsAsync` returns `IList<McpClientTool>`, `StructuredContent` is easiest to deserialize via `JsonSerializer.Serialize(...)`, and disposing `McpClient` is sufficient for the stdio test session in this harness.
-Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/clio.mcp.e2e.csproj, clio.mcp.e2e/appsettings.json, clio.mcp.e2e/appsettings.example.json, clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/McpE2ESettings.cs, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, clio.mcp.e2e/Support/Mcp/ClioProcessDescriptor.cs, clio.mcp.e2e/Support/Mcp/ClioExecutableResolver.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/Support/Redis/RedisSandboxClient.cs, clio.mcp.e2e/Support/Results/CommandExecutionEnvelope.cs, .codex/workspace-diary.md
-Impact: `clio.mcp.e2e` now has a reusable foundation for destructive MCP integration tests, and the initial `clear-redis` path is ready to run once sandbox settings and explicit opt-in are provided.
-
-## 2026-03-09 16:02 – Resolve sandbox connection strings from clio environment path
-Context: User clarified that the E2E suite should accept only a registered `clio` environment key and derive infrastructure details from that environment's `EnvironmentPath`.
-Decision: Replaced direct Redis connection string config with runtime resolution through `SettingsRepository.FindEnvironment`, recursive `ConnectionStrings.config` discovery, and XML extraction of both `redis` and `db` connection strings; refactored the clear-redis test into explicit `[AllureStep]` methods for Arrange, Act, and Assert and marked the fixture with `[AllureFeature("Essential features")]`.
-Discovery: The `clio envs` source of truth is the registered environment entry itself, so using `SettingsRepository` gives the same `EnvironmentPath` data without shelling out, and the current Creatio `ConnectionStrings.config` convention exposes the relevant entries under `add name="redis"` and `add name="db"`.
-Files: clio.mcp.e2e/AGENTS.md, clio.mcp.e2e/appsettings.json, clio.mcp.e2e/appsettings.example.json, clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/Support/Configuration/McpE2ESettings.cs, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentContext.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentResolver.cs, .codex/workspace-diary.md
-Impact: Future destructive MCP tests can target any registered sandbox by name and reuse the same resolved Redis/DB context, while Allure reports now show the test as explicit AAA steps.
-
-## 2026-03-09 16:18 – Align clear-redis E2E with real clio env and Redis formats
-Context: Running the new clear-redis E2E test showed two runtime mismatches: the test-host `SettingsRepository` did not surface the same `EnvironmentPath` as `clio envs`, and Creatio Redis connection strings were not directly usable by `StackExchange.Redis`.
-Decision: Switched environment-path lookup to invoke the real `clio envs <name> --format raw` command via the same executable resolver used for the MCP server, added Creatio-to-StackExchange Redis connection string translation at the test client boundary, and made MCP result parsing accept either structured payloads or content-based fallbacks before inferring exit code 0 from a non-error result.
-Discovery: On this machine `clio envs docker_fix2 --format raw` returns the needed `EnvironmentPath` even when the in-process test host does not, and the current clear-redis MCP tool returns a successful result without guaranteed `StructuredContent`, so end-to-end assertions must tolerate the actual wire shape.
-Files: clio.mcp.e2e/Support/Mcp/ClioExecutableResolver.cs, clio.mcp.e2e/Support/Configuration/ClioEnvironmentCommandResolver.cs, clio.mcp.e2e/Support/Configuration/SandboxEnvironmentResolver.cs, clio.mcp.e2e/Support/Redis/RedisSandboxClient.cs, clio.mcp.e2e/ClearRedisToolE2ETests.cs, .codex/workspace-diary.md
-Impact: The first destructive MCP E2E test now passes against a real registered sandbox environment instead of relying on assumptions about config storage or result serialization.
-
-## 2026-03-09 16:27 – Standardize MCP E2E Allure metadata and assertion steps
-Context: User requested richer Allure metadata for MCP tests and finer-grained assertion visibility in the report.
-Decision: Standardized the clear-redis E2E test to use `AllureTag` for the tool under test together with human-readable `AllureName` and `AllureDescription`, removed the placeholder story attribute, and split the assert phase into separate `[AllureStep]` methods with their own `AllureDescription` entries.
-Discovery: Keeping the test body as a thin AAA coordinator while moving each assertion into its own named step produces a much clearer Allure report without changing the runtime behavior of the end-to-end flow.
-Files: clio.mcp.e2e/ClearRedisToolE2ETests.cs, clio.mcp.e2e/AGENTS.md, .codex/workspace-diary.md
-Impact: Future MCP E2E fixtures now have a concrete reporting convention that makes failures easier to interpret directly from Allure.
+## 2026-03-23 18:50 – Fix MediatR container validation after adding unregister deep link
+Context: After adding `UnregisterEnvironmentHandler`, unrelated tests such as `SetApplicationIconCommand_CallsComposableAppmanager` started failing during test fixture setup.
+Decision: Registered `UnregAppCommand` in the main DI container so MediatR-discovered request handlers depending on it can be constructed during service-provider validation.
+Discovery: The failures were not specific to the application-icon command; `BindingsModule` scans the whole assembly for MediatR handlers, and the new `UnregisterEnvironmentHandler` introduced a constructor dependency on `UnregAppCommand` that was never previously registered. Any test that built the full container failed before reaching its own assertions.
+Files: C:\Projects\clio\clio\BindingsModule.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Full-container tests are stable again, and future MediatR handler additions that depend on commands need corresponding DI registrations or interface-based dependencies.
 
 ## 2026-03-09 16:58 – Add clear-redis success log assertion and invalid-environment E2E coverage
 Context: User asked to align the clear-redis MCP E2E tests with the new tool-name constants, assert that successful output contains an `Info` message type, and add a negative case for an invalid environment name.
@@ -1066,9 +799,3 @@ Discovery: Both restore-db and installer service template-refresh flows already 
 Files: C:\Projects\clio\clio\Common\db\Postgres.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Existing PostgreSQL templates can now be replaced safely with `--drop-if-exists`, avoiding the previous `[ERROR] cannot drop a template database` failure during template refresh.
 
-## 2026-03-22 21:30 – Composite MCP tools: schema-sync and page-sync
-Context: MCP clients making sequential calls (5 for schema setup, 9 for page sync) pay per-call overhead: 500ms Thread.Sleep, global lock acquisition, JSON-RPC round-trip. Spec doc: ai-driven-app-creation/docs/optimization/02-clio-composite-tools.md
-Decision: Created two new MCP-only tools (schema-sync, page-sync) that batch operations in a single lock/sleep. Extracted CommandExecutionLock from BaseTool<T> to McpToolExecutionLock static class — this also fixed a latent bug where the generic static field created per-T locks instead of a true global lock.
-Discovery: ConsoleLogger.Instance is a process-wide singleton shared across all DI containers (including environment-specific ones created by ToolCommandResolver), so log capture works correctly from composite tools. PageUpdateCommand.TryUpdatePage and PageGetCommand.TryGetPage return structured responses (not exit codes), while entity schema commands use Execute() returning int exit codes — composite tools use the appropriate pattern for each.
-Files: clio/Command/McpServer/Tools/McpToolExecutionLock.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/BaseTool.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, clio/docs/commands/schema-sync.md, clio/docs/commands/page-sync.md
-Impact: AI agents can now reduce 5 schema calls to 1 (~4.5s saved) and 9 page calls to 1 (~8.7s saved). MCP prompts reviewed — no existing prompts reference the atomic tools being composited, so no prompt updates needed. These are MCP-only tools (no CLI verb), documented in docs/commands/ only.

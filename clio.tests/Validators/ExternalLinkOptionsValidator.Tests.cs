@@ -55,6 +55,8 @@ public class ExternalLinkOptionsValidatorTestCase{
 	[Category("Unit")]
 	[Description("Validates that properly formatted clio:// URIs with valid commands are accepted")]
 	[TestCase("clio://IISScannerRequest/?return=count")]
+	[TestCase("clio://RegisterEnvironment/?uri=http://localhost:5000&login=Supervisor&password=Supervisor")]
+	[TestCase("clio://UnregisterEnvironment/?name=studio-dev")]
 	public void ExternalLinkOptionsValidator_ShouldValidate_As_Valid(string content) {
 		// Arrange
 		ExternalLinkOptions request = new() {
@@ -161,6 +163,8 @@ public class ExternalLinkOptionsValidatorTestCase{
 	[TestCase("clio://IISScannerRequest/?return=count")]
 	[TestCase("clio://Restart/?return=count")]
 	[TestCase("clio://OpenUrl/?return=count")]
+	[TestCase("clio://RegisterEnvironment/?uri=http://localhost:5000&login=Supervisor&password=Supervisor")]
+	[TestCase("clio://UnregisterEnvironment/?name=studio-dev")]
 	public void ExternalLinkValidator_ShouldValidate_As_Valid_WhenCommandFound(string content) {
 		// Arrange
 		ExternalLinkOptions request = new() {
