@@ -1,6 +1,5 @@
 namespace Clio.Command {
 	using System;
-	using System.Collections.Generic;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -13,9 +12,6 @@ namespace Clio.Command {
 	}
 
 	public class PageGetCommand : Command<PageGetOptions> {
-		private const string ExpressionTypeKey = "expressionType";
-		private const string ColumnPathKey = "columnPath";
-		private const string ExpressionKey = "expression";
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -32,82 +28,21 @@ namespace Clio.Command {
 
 		public bool TryGetPage(PageGetOptions options, out PageGetResponse response) {
 			try {
-				var metadataQuery = new JObject {
-					["rootSchemaName"] = "SysSchema",
-					["operationType"] = 0,
-					["filters"] = new JObject {
-						["filterType"] = 6,
-						["logicalOperation"] = 0,
-						["isEnabled"] = true,
-						["trimDateTimeParameterToDate"] = false,
-						["items"] = new JObject {
-							["filter0"] = new JObject {
-								["filterType"] = 1,
-								["comparisonType"] = 3,
-								["isEnabled"] = true,
-								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"},
-								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SchemaName}}
-							},
-							["filter1"] = new JObject {
-								["filterType"] = 1,
-								["comparisonType"] = 3,
-								["isEnabled"] = true,
-								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
-								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
-							}
-						}
-					},
-					["columns"] = new JObject {
-						["items"] = new JObject {
-							["Name"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "Name"
-								}
-							},
-							["UId"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "UId"
-								}
-							},
-							["PackageName"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "SysPackage.Name"
-								}
-							},
-							["ParentSchemaName"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "[SysSchema:Id:Parent].Name"
-								}
-							}
-						}
-					},
-					["rowCount"] = 1
-				};
-				string dataServiceUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-				string metadataJson = _applicationClient.ExecutePostRequest(dataServiceUrl, metadataQuery.ToString(Formatting.None));
-				var metadataResponse = JObject.Parse(metadataJson);
-				if (!(metadataResponse["success"]?.Value<bool>() ?? false)) {
-					response = new PageGetResponse { Success = false, Error = "Failed to query schema metadata" };
+				var (metadata, error) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+					_applicationClient, _serviceUrlBuilder, options.SchemaName,
+					("Name", "Name"), ("UId", "UId"),
+					("PackageName", "SysPackage.Name"),
+					("ParentSchemaName", "[SysSchema:Id:Parent].Name"));
+				if (metadata == null) {
+					response = new PageGetResponse { Success = false, Error = error };
 					return false;
 				}
-				var rows = metadataResponse["rows"] as JArray ?? new JArray();
-				if (rows.Count == 0) {
-					response = new PageGetResponse { Success = false, Error = $"Schema '{options.SchemaName}' not found" };
-					return false;
-				}
-				var metadata = rows[0];
 				string schemaUId = metadata["UId"]?.ToString();
 				var bodyRequest = new JObject {
 					["schemaUId"] = schemaUId,
 					["useFullHierarchy"] = false
 				};
-				string designerUrl = _serviceUrlBuilder.Build("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+				string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
 				string bodyJson = _applicationClient.ExecutePostRequest(designerUrl, bodyRequest.ToString(Formatting.None));
 				var bodyResponse = JObject.Parse(bodyJson);
 				if (!(bodyResponse["success"]?.Value<bool>() ?? false)) {

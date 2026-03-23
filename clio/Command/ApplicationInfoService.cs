@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.UserEnvironment;
+using static Clio.Package.SelectQueryHelper;
 
 namespace Clio.Command;
 
@@ -31,9 +32,6 @@ public sealed class ApplicationInfoService(
 	IApplicationClientFactory applicationClientFactory)
 	: IApplicationInfoService
 {
-	private const int GuidDataValueType = 0;
-	private const int TextDataValueType = 1;
-
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true
@@ -350,106 +348,6 @@ public sealed class ApplicationInfoService(
 			]);
 	}
 
-	private static object BuildSelectQuery(
-		string rootSchemaName,
-		IReadOnlyList<SelectQueryColumnDefinition> columns,
-		IReadOnlyList<SelectQueryFilterDefinition> filters)
-	{
-		Dictionary<string, object> columnItems = columns
-			.ToDictionary(
-				column => column.Alias,
-				column => (object)new
-				{
-					expression = new
-					{
-						expressionType = 0,
-						columnPath = column.Path
-					},
-					orderDirection = 0,
-					orderPosition = -1,
-					isVisible = true
-				},
-				StringComparer.Ordinal);
-
-		Dictionary<string, object> filterItems = filters
-			.Select((filter, index) => new { filter, index })
-			.ToDictionary(
-				item => $"filter{item.index}",
-				item => (object)new
-				{
-					filterType = 1,
-					comparisonType = 3,
-					isEnabled = true,
-					trimDateTimeParameterToDate = false,
-					leftExpression = new
-					{
-						expressionType = 0,
-						columnPath = item.filter.ColumnPath
-					},
-					rightExpression = new
-					{
-						expressionType = 2,
-						parameter = new
-						{
-							value = item.filter.Value,
-							dataValueType = item.filter.DataValueType
-						}
-					}
-				},
-				StringComparer.Ordinal);
-
-		return new
-		{
-			rootSchemaName,
-			operationType = 0,
-			allColumns = false,
-			isDistinct = false,
-			ignoreDisplayValues = false,
-			rowCount = -1,
-			rowsOffset = -1,
-			isPageable = false,
-			conditionalValues = (object?)null,
-			isHierarchical = false,
-			hierarchicalMaxDepth = 0,
-			hierarchicalColumnFiltersValue = new
-			{
-				filterType = 6,
-				isEnabled = true,
-				items = new Dictionary<string, object>(),
-				logicalOperation = 0,
-				trimDateTimeParameterToDate = false
-			},
-			hierarchicalColumnName = (string?)null,
-			hierarchicalColumnValue = (object?)null,
-			hierarchicalFullDataLoad = false,
-			useLocalization = true,
-			useRecordDeactivation = false,
-			columns = new
-			{
-				items = columnItems
-			},
-			filters = new
-			{
-				filterType = 6,
-				isEnabled = true,
-				trimDateTimeParameterToDate = false,
-				logicalOperation = 0,
-				items = filterItems
-			},
-			__type = "Terrasoft.Nui.ServiceModel.DataContract.SelectQuery",
-			queryKind = 0,
-			serverESQCacheParameters = new
-			{
-				cacheLevel = 0,
-				cacheGroup = string.Empty,
-				cacheItemName = string.Empty
-			},
-			queryOptimize = false,
-			useMetrics = false,
-			querySource = 0
-		};
-	}
-
 	private static object? ConvertJsonElement(JsonElement? element)
 	{
 		if (!element.HasValue)
@@ -474,10 +372,6 @@ public sealed class ApplicationInfoService(
 			_ => element.ToString()
 		};
 	}
-
-	private sealed record SelectQueryColumnDefinition(string Path, string Alias);
-
-	private sealed record SelectQueryFilterDefinition(string ColumnPath, object Value, int DataValueType);
 
 	private abstract class SelectQueryResponseBaseDto
 	{

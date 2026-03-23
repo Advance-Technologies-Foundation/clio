@@ -18,7 +18,7 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body")]
-	public PageUpdateResponse UpdatePage([Required] PageUpdateArgs args) {
+	public PageUpdateResponse UpdatePage([Description("Parameters: schemaName, body (required); dryRun, environmentName, uri, login, password (optional)")] [Required] PageUpdateArgs args) {
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,

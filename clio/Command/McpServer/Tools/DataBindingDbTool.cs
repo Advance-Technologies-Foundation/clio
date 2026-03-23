@@ -20,7 +20,7 @@ public class CreateDataBindingDbTool(
 		OpenWorld = false)]
 	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database.")]
 	public CommandExecutionResult CreateDataBindingDb(
-		[Description("create-data-binding-db parameters")]
+		[Description("Parameters: environment-name, package-name, schema-name (all required); binding-name, rows (optional)")]
 		[Required]
 		CreateDataBindingDbArgs args) {
 		CreateDataBindingDbOptions options = new() {
@@ -48,7 +48,7 @@ public class UpsertDataBindingRowDbTool(
 		OpenWorld = false)]
 	[Description("Upserts a single row in a remote DB-first data binding.")]
 	public CommandExecutionResult UpsertDataBindingRowDb(
-		[Description("upsert-data-binding-row-db parameters")]
+		[Description("Parameters: environment-name, package-name, binding-name, values (all required)")]
 		[Required]
 		UpsertDataBindingRowDbArgs args) {
 		UpsertDataBindingRowDbOptions options = new() {
@@ -75,7 +75,7 @@ public class RemoveDataBindingRowDbTool(
 		OpenWorld = false)]
 	[Description("Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when no bound rows remain.")]
 	public CommandExecutionResult RemoveDataBindingRowDb(
-		[Description("remove-data-binding-row-db parameters")]
+		[Description("Parameters: environment-name, package-name, binding-name, key-value (all required)")]
 		[Required]
 		RemoveDataBindingRowDbArgs args) {
 		RemoveDataBindingRowDbOptions options = new() {

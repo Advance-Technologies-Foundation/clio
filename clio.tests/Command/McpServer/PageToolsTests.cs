@@ -163,4 +163,217 @@ public class PageToolsTests {
 		exitCode.Should().Be(0, "because TryListPages succeeded");
 		logger.Received(1).WriteInfo(Arg.Is<string>(s => s.Contains("Page1")));
 	}
+
+	[Test]
+	[Description("TryGetPage calls ServiceUrlBuilder without /0/ prefix for DesignerService URL")]
+	public void TryGetPage_UsesCorrectDesignerServiceUrl_WithoutDoubleZeroPrefix() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema")
+			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject {
+					["Name"] = "TestPage_FormPage",
+					["UId"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+					["PackageName"] = "TestPkg",
+					["ParentSchemaName"] = "PageWithTabsFreedomTemplate"
+				}
+			}
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["body"] = "define(\"TestPage_FormPage\", [], function() { return {}; });"
+			}
+		};
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex == 1
+					? metadataResponse.ToString()
+					: getSchemaResponse.ToString();
+			});
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageGetOptions { SchemaName = "TestPage_FormPage" };
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+		result.Should().BeTrue();
+		response.Success.Should().BeTrue();
+		response.Body.Should().Contain("TestPage_FormPage");
+		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build(Arg.Is<string>(s => s.Contains("/0/ServiceModel")));
+	}
+
+	[Test]
+	[Description("TryGetPage returns body and metadata when schema is found")]
+	public void TryGetPage_WhenSchemaExists_ReturnsBodyAndMetadata() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => $"http://test{ci.Arg<string>()}");
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject {
+					["Name"] = "UsrApp_FormPage",
+					["UId"] = "11111111-2222-3333-4444-555555555555",
+					["PackageName"] = "UsrApp",
+					["ParentSchemaName"] = "PageWithTabsFreedomTemplate"
+				}
+			}
+		};
+		string expectedBody = "define(\"UsrApp_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return {}; });";
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["body"] = expectedBody }
+		};
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => (++callIndex) == 1 ? metadataResponse.ToString() : getSchemaResponse.ToString());
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageGetOptions { SchemaName = "UsrApp_FormPage" };
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+		result.Should().BeTrue();
+		response.SchemaName.Should().Be("UsrApp_FormPage");
+		response.SchemaUId.Should().Be("11111111-2222-3333-4444-555555555555");
+		response.PackageName.Should().Be("UsrApp");
+		response.ParentSchemaName.Should().Be("PageWithTabsFreedomTemplate");
+		response.Body.Should().Be(expectedBody);
+	}
+
+	[Test]
+	[Description("TryGetPage returns error when schema not found in SysSchema")]
+	public void TryGetPage_WhenSchemaNotFound_ReturnsError() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://test/url");
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageGetOptions { SchemaName = "NonExistentPage" };
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+		result.Should().BeFalse();
+		response.Error.Should().Contain("NonExistentPage").And.Contain("not found");
+	}
+
+	[Test]
+	[Description("TryUpdatePage calls ServiceUrlBuilder without /0/ prefix for both GetSchema and SaveSchema")]
+	public void TryUpdatePage_UsesCorrectDesignerServiceUrls_WithoutDoubleZeroPrefix() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema")
+			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema")
+			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["UId"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }
+			}
+		};
+		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["body"] = "old body",
+				["name"] = "Test_FormPage"
+			}
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return getSchemaResponse.ToString();
+				return saveResponse.ToString();
+			});
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageUpdateOptions {
+			SchemaName = "Test_FormPage",
+			Body = validBody,
+			DryRun = false
+		};
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+		result.Should().BeTrue();
+		response.Success.Should().BeTrue();
+		response.BodyLength.Should().Be(validBody.Length);
+		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+		serviceUrlBuilder.DidNotReceive().Build(Arg.Is<string>(s => s.Contains("/0/ServiceModel")));
+	}
+
+	[Test]
+	[Description("TryUpdatePage with dryRun skips GetSchema and SaveSchema calls")]
+	public void TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["UId"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageUpdateOptions {
+			SchemaName = "Test_FormPage",
+			Body = validBody,
+			DryRun = true
+		};
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+		result.Should().BeTrue();
+		response.DryRun.Should().BeTrue();
+		response.BodyLength.Should().Be(validBody.Length);
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+	}
+
+	[Test]
+	[Description("TryUpdatePage returns error when schema not found")]
+	public void TryUpdatePage_WhenSchemaNotFound_ReturnsError() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://test/url");
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		string validBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageUpdateOptions {
+			SchemaName = "MissingPage",
+			Body = validBody,
+			DryRun = false
+		};
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+		result.Should().BeFalse();
+		response.Error.Should().Contain("MissingPage").And.Contain("not found");
+	}
 }

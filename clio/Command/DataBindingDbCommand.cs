@@ -84,7 +84,14 @@ public class CreateDataBindingDbCommand(IDataBindingDbService dataBindingDbServi
 	/// <inheritdoc />
 	public override int Execute(CreateDataBindingDbOptions options) {
 		try {
-			dataBindingDbService.CreateBinding(options);
+			DataBindingResult result = dataBindingDbService.CreateBinding(options);
+			foreach (DataBindingCreatedRow row in result.CreatedRows) {
+				string valuesPreview = string.Join(", ",
+					row.Values
+						.Where(kv => !string.Equals(kv.Key, "Id", StringComparison.OrdinalIgnoreCase))
+						.Select(kv => $"{kv.Key}={kv.Value}"));
+				logger.WriteInfo($"Created row: {row.Id} ({valuesPreview})");
+			}
 			logger.WriteInfo("Done");
 			return 0;
 		}
@@ -141,7 +148,7 @@ public interface IDataBindingDbService {
 	/// <summary>
 	/// Creates a remote DB-first binding for the specified schema.
 	/// </summary>
-	void CreateBinding(CreateDataBindingDbOptions options);
+	DataBindingResult CreateBinding(CreateDataBindingDbOptions options);
 
 	/// <summary>
 	/// Upserts a single row in a remote DB-first binding.
@@ -161,7 +168,7 @@ internal sealed class DataBindingDbService(
 	IDataBindingSchemaClient schemaClient,
 	EnvironmentSettings environmentSettings) : IDataBindingDbService {
 
-	public void CreateBinding(CreateDataBindingDbOptions options) {
+	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		ValidateEnvironment(options);
 
@@ -178,6 +185,7 @@ internal sealed class DataBindingDbService(
 			? FetchExistingBoundRecordIds(existingBindingUId.Value)
 			: [];
 
+		List<DataBindingCreatedRow> createdRows = [];
 		if (rows is { Count: > 0 }) {
 			foreach (Dictionary<string, JsonNode?> row in rows) {
 				string rowId = EnsureRowId(row);
@@ -185,6 +193,9 @@ internal sealed class DataBindingDbService(
 				if (!boundRecordIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
 					boundRecordIds.Add(rowId);
 				}
+				createdRows.Add(new DataBindingCreatedRow(
+					rowId,
+					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 			}
 		}
 
@@ -195,6 +206,8 @@ internal sealed class DataBindingDbService(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSchemaData),
 			requestBody);
 		ThrowIfUnsuccessful(response, "SaveSchema");
+
+		return new DataBindingResult(bindingName, createdRows);
 	}
 
 	public void UpsertRow(UpsertDataBindingRowDbOptions options) {
@@ -778,3 +791,17 @@ internal sealed record DataBindingDbSchema(
 /// Holds resolved package identity — UId and Name — needed by the SaveSchema endpoint.
 /// </summary>
 internal sealed record PackageRef(Guid UId, string Name);
+
+/// <summary>
+/// Result of a <see cref="DataBindingDbService.CreateBinding"/> operation.
+/// </summary>
+public sealed record DataBindingResult(
+	string BindingName,
+	IReadOnlyList<DataBindingCreatedRow> CreatedRows);
+
+/// <summary>
+/// Represents a single row created by <see cref="DataBindingDbService.CreateBinding"/>.
+/// </summary>
+public sealed record DataBindingCreatedRow(
+	string Id,
+	IReadOnlyDictionary<string, string?> Values);
