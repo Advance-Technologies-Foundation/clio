@@ -3244,6 +3244,7 @@ clio stop --all
 - [Generate deployment scripts](#create-k8-files)
 - [Deploy infrastructure](#deploy-infrastructure)
 - [Delete infrastructure](#delete-infrastructure)
+- [Build Docker image](#build-docker-image)
 - [Install Creatio](#deploy-creatio)
 - [List Creatio hosts](#hosts)
 - [Stop Creatio hosts](#stop)
@@ -3998,6 +3999,51 @@ You may need to close all Explorer windows and open them again. Find Creatio ins
 You should see `clio: deploy Creatio` menu item. Click on the menu item and follow the prompts.
 You may need _**Administrator**_ privileges.
 > Other OS use command to install Creatio
+
+## build-docker-image
+
+Build a Docker image for a Creatio `.NET 8+` distribution from either a ZIP archive or an extracted application directory.
+
+`.NET Framework` distributions are not supported by this command.
+
+```bash
+clio build-docker-image --from <zip-or-folder> --template <name-or-path> [options]
+```
+
+### Options
+
+- `--from <Path>` - Required. Path to a Creatio ZIP archive or extracted application directory
+- `--template <NameOrPath>` - Required. Bundled template name (`dev`, `prod`) or custom template directory path
+- `--output-path <Path>` - Optional. Save the built image to a tar file with `docker save`
+- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`
+
+### Behavior
+
+- Accepts only `.NET 8+` Creatio payloads
+- Rejects `.NET Framework` distributions before Docker execution
+- Copies bundled templates to the local clio settings folder under `docker-templates`
+- Creates a temporary Docker build context and cleans it up after execution
+- Adds OCI label `org.creatio.database-source` with the original source payload name
+- Can build, save, and push in a single run
+
+### Bundled templates
+
+- `dev` includes supervisor, SSH, and code-server for development workflows
+- `prod` supervises only the app process and is based on `.NET SDK 8.0` so Creatio can still invoke `dotnet build` inside the container
+
+### Examples
+
+```bash
+clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
+```
+
+```bash
+clio build-docker-image \
+  --from "/opt/builds/creatio-net8" \
+  --template prod \
+  --output-path "/tmp/creatio-prod.tar" \
+  --registry "ghcr.io/acme"
+```
 
 ## deploy-creatio
 

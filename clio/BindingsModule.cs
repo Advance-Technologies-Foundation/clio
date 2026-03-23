@@ -141,6 +141,8 @@ public class BindingsModule {
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
 		services.AddTransient<InstallerCommand>();
+		services.AddTransient<IDockerTemplatePathProvider, DockerTemplatePathProvider>();
+		services.AddTransient<IBuildDockerImageService, BuildDockerImageService>();
 
 		if (_fileSystem is not null) {
 			services.AddSingleton(_fileSystem);
@@ -168,6 +170,7 @@ public class BindingsModule {
 		services.AddTransient<FeatureCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
+		services.AddTransient<BuildDockerImageCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
 		services.AddTransient<PageListCommand>();
@@ -244,6 +247,7 @@ public class BindingsModule {
 		services.AddTransient<ExternalLinkCommand>();
 		services.AddTransient<PowerShellFactory>();
 		services.AddTransient<RegAppCommand>();
+		services.AddTransient<UnregAppCommand>();
 		services.AddTransient<RestartCommand>();
 		services.AddTransient<StartCommand>();
 		services.AddTransient<StopCommand>();
