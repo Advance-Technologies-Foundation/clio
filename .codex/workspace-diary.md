@@ -439,6 +439,13 @@ Discovery: The prior guidance strongly encouraged E2E for MCP work but still lef
 Files: AGENTS.md, clio/Command/McpServer/AGENTS.md, clio.mcp.e2e/AGENTS.md, .codex/skills/create-mcp-tool/SKILL.md, .codex/skills/test-mcp-tool/SKILL.md, .codex/workspace-diary.md
 Impact: Future MCP tool tasks should now include real `clio mcp-server` end-to-end coverage automatically, and agents should extend the harness instead of treating E2E as optional.
 
+## 2026-03-23 19:10 – Create release 8.0.2.36
+Context: User confirmed the `/release` flow for the current repository state.
+Decision: Verified `gh` installation and authentication, took latest tag `8.0.2.35`, updated `AssemblyVersion` in `clio/clio.csproj` to `8.0.2.36`, then created and pushed tag `8.0.2.36` and published the GitHub release with `gh release create`.
+Discovery: The repository release scripts still use the tag-based release flow without an intermediate version-bump commit, so the run stayed aligned with existing project practice.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Release `8.0.2.36` is published and CI/CD can now build, test, and publish artifacts from the new release tag.
+
 ## 2026-03-09 21:29 – Add link-from-repository MCP E2E coverage
 Context: After exposing `link-from-repository` as an MCP tool, the user required real end-to-end coverage instead of unit mapping tests only.
 Decision: Added a dedicated `clio.mcp.e2e` fixture covering direct-path success plus failure paths for both MCP methods, and ran it against the isolated `clio.dll` build via `McpE2E__ClioProcessPath` to avoid the locked default debug executable.
