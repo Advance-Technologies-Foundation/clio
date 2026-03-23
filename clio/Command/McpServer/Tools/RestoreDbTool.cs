@@ -47,6 +47,7 @@ public class RestoreDbTool(
 			BackupPath = args.BackupPath,
 			DbName = args.DbName,
 			Force = args.Force,
+			AsTemplate = args.AsTemplate,
 			DisableResetPassword = args.DisableResetPassword
 		};
 		return InternalExecute<RestoreDbCommand>(options);
@@ -68,6 +69,7 @@ public class RestoreDbTool(
 			BackUpFilePath = args.BackupPath,
 			DbName = args.DbName,
 			Force = args.Force,
+			AsTemplate = args.AsTemplate,
 			DisableResetPassword = args.DisableResetPassword
 		};
 		return InternalExecute(options);
@@ -86,6 +88,7 @@ public class RestoreDbTool(
 			BackupPath = args.BackupPath,
 			DbName = args.DbName,
 			DropIfExists = args.DropIfExists,
+			AsTemplate = args.AsTemplate,
 			DisableResetPassword = args.DisableResetPassword
 		};
 		return InternalExecute(options);
@@ -112,6 +115,10 @@ public sealed record RestoreDbByEnvironmentArgs(
 	[property: JsonPropertyName("force")]
 	[property: Description("Force overwrite behavior in legacy environment restore mode")]
 	bool Force = false,
+
+	[property: JsonPropertyName("asTemplate")]
+	[property: Description("Create or refresh only the PostgreSQL template without creating a target database")]
+	bool AsTemplate = false,
 
 	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
@@ -152,6 +159,10 @@ public sealed record RestoreDbByCredentialsArgs(
 	[property: Description("Force overwrite behavior in legacy restore mode")]
 	bool Force = false,
 
+	[property: JsonPropertyName("asTemplate")]
+	[property: Description("Create or refresh only the PostgreSQL template without creating a target database")]
+	bool AsTemplate = false,
+
 	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
 	bool DisableResetPassword = true);
@@ -178,6 +189,10 @@ public sealed record RestoreDbToLocalServerArgs(
 	[property: JsonPropertyName("dropIfExists")]
 	[property: Description("Automatically drop an existing database if present")]
 	bool DropIfExists = false,
+
+	[property: JsonPropertyName("asTemplate")]
+	[property: Description("Create or refresh only the PostgreSQL template without creating a target database")]
+	bool AsTemplate = false,
 
 	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]

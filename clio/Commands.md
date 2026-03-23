@@ -341,7 +341,7 @@ clio restore-configuration -f
 
 ## restore-db
 
-Restores a database from a backup file to either a Kubernetes cluster or a local database server.
+Restores a database from a backup file or Creatio ZIP package, or creates only a reusable PostgreSQL template from that backup.
 
 Every `restore-db` invocation creates a temp database-operation log file. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tools return the same path in `log-file-path`.
 
@@ -398,9 +398,14 @@ To restore to a local database server, add a `db` section to your `appsettings.j
 
 ### Usage
 
-#### Restore to Kubernetes cluster (existing behavior):
+#### Restore PostgreSQL from ZIP without `--dbServerName`:
 ```bash
-clio restore-db --dbName mydb --backupPath /path/to/backup.backup
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip --dbName mydb --drop-if-exists
+```
+
+#### Create or refresh only a PostgreSQL template:
+```bash
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip --as-template --drop-if-exists
 ```
 
 #### Restore to local database server:
@@ -413,16 +418,19 @@ clio restore-db --dbServerName my-local-mssql --dbName mydb --backupPath /path/t
 ```
 
 ### Options
-- `--dbName` (required): Name of the database to create/restore
-- `--backupPath` (required when using `--dbServerName`): Path to the backup file
+- `--dbName` (required unless `--as-template`): Name of the database to create/restore
+- `--backupPath` (required): Path to the backup file or ZIP archive
   - `.backup` extension for PostgreSQL backups
   - `.bak` extension for MSSQL backups
+  - `.zip` archive containing `db/*.backup` or `db/*.bak`
 - `--dbServerName` (optional): Name of the database server configuration from `appsettings.json`
   - If specified, restores to the configured local server
-  - If not specified, uses existing Kubernetes/environment-based behavior
+  - If not specified, PostgreSQL `.backup` and ZIP flows can still run directly
 - `--drop-if-exists` (optional): Automatically drops existing database if present without prompting
   - By default, if a database with the same name exists, the restore operation will fail
-  - Use this flag to automatically remove the existing database before restore
+  - In `--as-template` mode, drops the existing matching PostgreSQL template before recreating it
+- `--as-template` (optional): Create or refresh only the PostgreSQL template without creating a target database
+  - Supported only for PostgreSQL `.backup` or ZIP sources
 - `--disable-reset-password` (optional, hidden, default: `true`): Reuses the same post-restore password-reset disabling behavior as `deploy-creatio`
   - Set it to `false` to skip that step explicitly
 
@@ -437,6 +445,9 @@ clio restore-db --dbServerName my-local-mssql --dbName mydb --backupPath /path/t
 - **Existing Database Handling**: 
   - By default, fails if database already exists
   - With `--drop-if-exists` flag, automatically drops existing database before restore
+- **Template Mode**:
+  - PostgreSQL `.backup` and ZIP sources can create or refresh only the reusable template
+  - `--drop-if-exists` recreates the matching template instead of keeping it
 - **Password Reset Handling**:
   - Reuses the same optional post-restore password-reset disabling helper as `deploy-creatio`
 - **PostgreSQL Tools Detection**: Automatically finds `pg_restore` in PATH or common installation locations
@@ -452,7 +463,17 @@ The command provides detailed error messages for common issues:
 
 ### Examples
 
-**Restore from ZIP file (Creatio installation package):**
+**Restore from ZIP file (Creatio installation package) without `--dbServerName`:**
+```bash
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip --dbName creatiodev --drop-if-exists
+```
+
+**Create or refresh only a PostgreSQL template from ZIP:**
+```bash
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip --as-template --drop-if-exists
+```
+
+**Restore from ZIP file to local server:**
 ```bash
 clio restore-db --dbServerName my-local-mssql --dbName creatiodev --backupPath C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip
 ```
