@@ -1,6 +1,5 @@
 namespace Clio.Command {
 	using System;
-	using System.Collections.Generic;
 	using System.Linq;
 	using Clio.Common;
 	using CommandLine;
@@ -20,8 +19,6 @@ namespace Clio.Command {
 	}
 
 	public class PageUpdateCommand : Command<PageUpdateOptions> {
-		private const string ExpressionTypeKey = "expressionType";
-		private const string ColumnPathKey = "columnPath";
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -43,58 +40,14 @@ namespace Clio.Command {
 					response = validationError;
 					return false;
 				}
-				var metadataQuery = new JObject {
-					["rootSchemaName"] = "SysSchema",
-					["operationType"] = 0,
-					["filters"] = new JObject {
-						["filterType"] = 6,
-						["logicalOperation"] = 0,
-						["isEnabled"] = true,
-						["trimDateTimeParameterToDate"] = false,
-						["items"] = new JObject {
-							["filter0"] = new JObject {
-								["filterType"] = 1,
-								["comparisonType"] = 3,
-								["isEnabled"] = true,
-								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"},
-								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SchemaName}}
-							},
-							["filter1"] = new JObject {
-								["filterType"] = 1,
-								["comparisonType"] = 3,
-								["isEnabled"] = true,
-								["trimDateTimeParameterToDate"] = false,
-								["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
-								["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
-							}
-						}
-					},
-					["columns"] = new JObject {
-						["items"] = new JObject {
-							["UId"] = new JObject {
-								["expression"] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "UId"
-								}
-							}
-						}
-					},
-					["rowCount"] = 1
-				};
-				string dataServiceUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-				string metadataJson = _applicationClient.ExecutePostRequest(dataServiceUrl, metadataQuery.ToString(Formatting.None));
-				var metadataResponse = JObject.Parse(metadataJson);
-				if (!(metadataResponse["success"]?.Value<bool>() ?? false)) {
-					response = new PageUpdateResponse { Success = false, Error = "Failed to query schema metadata" };
+				var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+					_applicationClient, _serviceUrlBuilder, options.SchemaName,
+					("UId", "UId"));
+				if (metadata == null) {
+					response = new PageUpdateResponse { Success = false, Error = queryError };
 					return false;
 				}
-				var rows = metadataResponse["rows"] as JArray ?? new JArray();
-				if (rows.Count == 0) {
-					response = new PageUpdateResponse { Success = false, Error = $"Schema '{options.SchemaName}' not found" };
-					return false;
-				}
-				string schemaUId = rows[0]["UId"]?.ToString();
+				string schemaUId = metadata["UId"]?.ToString();
 				if (options.DryRun) {
 					response = new PageUpdateResponse {
 						Success = true,
