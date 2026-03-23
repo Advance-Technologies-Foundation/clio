@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using Clio;
 using Clio.UserEnvironment;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,7 +58,7 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 					"Either a configured environment name or an explicit URI is required for MCP command execution.");
 			}
 		}
-		string cacheKey = options.Environment ?? settings.Uri ?? "default";
+		string cacheKey = BuildCacheKey(options, settings);
 		IServiceProvider container = ContainerCache.GetOrAdd(cacheKey,
 			_ => new BindingsModule().Register(settings));
 		return container.GetRequiredService<TCommand>();
@@ -67,5 +69,18 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 		EnvironmentSettings settings = new EnvironmentSettings().Fill(options);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
+	}
+
+	private static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
+		string identity = options.Environment
+			?? settings.Uri
+			?? "default";
+		string credentials = string.Concat(
+			settings.Login ?? string.Empty, "|",
+			settings.Password ?? string.Empty, "|",
+			settings.ClientId ?? string.Empty, "|",
+			settings.IsNetCore.ToString());
+		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(credentials));
+		return $"{identity}:{Convert.ToHexString(hash)[..16]}";
 	}
 }
