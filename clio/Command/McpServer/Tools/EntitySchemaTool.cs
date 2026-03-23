@@ -33,7 +33,7 @@ public sealed class CreateEntitySchemaTool(
 				 local source files. The package must already exist on the target environment.
 				 """)]
 	public CommandExecutionResult CreateEntitySchema(
-		[Description("Create-entity-schema parameters")] [Required] CreateEntitySchemaArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title (all required); columns, parent-schema-name, extend-parent (optional)")] [Required] CreateEntitySchemaArgs args
 	) {
 		CreateEntitySchemaOptions options = CreateOptions(args, args.ParentSchemaName, args.ExtendParent);
 		return InternalExecute<CreateEntitySchemaCommand>(options);
@@ -122,7 +122,7 @@ public sealed class CreateLookupTool(
 				 entity instead of a generic entity schema.
 				 """)]
 	public CommandExecutionResult CreateLookup(
-		[Description("Create-lookup parameters")] [Required] CreateLookupArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title (all required); columns (optional)")] [Required] CreateLookupArgs args
 	) {
 		CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
 			args,
@@ -150,7 +150,7 @@ public sealed class UpdateEntitySchemaTool(
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.")]
 	public CommandExecutionResult UpdateEntitySchema(
-		[Description("Update-entity-schema parameters")] [Required] UpdateEntitySchemaArgs args) {
+		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		UpdateEntitySchemaOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
@@ -179,7 +179,7 @@ public sealed class GetEntitySchemaPropertiesTool(
 		OpenWorld = false)]
 	[Description("Returns structured properties for the specified remote Creatio entity schema.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("Get-entity-schema-properties parameters")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("Parameters: environment-name, package-name, schema-name (all required)")] [Required] GetEntitySchemaPropertiesArgs args) {
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
@@ -209,7 +209,7 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 		Idempotent = true, OpenWorld = false)]
 	[Description("Returns structured properties for the specified remote Creatio entity schema column.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
-		[Description("Get-entity-schema-column-properties parameters")] [Required]
+		[Description("Parameters: environment-name, package-name, schema-name, column-name (all required)")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {
 		GetEntitySchemaColumnPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -239,7 +239,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		OpenWorld = false)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
-		[Description("Modify-entity-schema-column parameters")] [Required] ModifyEntitySchemaColumnArgs args) {
+		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		ModifyEntitySchemaColumnOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
