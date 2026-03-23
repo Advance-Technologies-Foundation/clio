@@ -6,9 +6,9 @@
       Steps:
       1) Confirm .NET SDK is available (`dotnet --version`). If missing, prompt the user to install the .NET 8 SDK (link: https://dotnet.microsoft.com/download) and stop.
       2) Use the workspace root as the working directory.
-      3) Run the Debug build:
-         - macOS/Linux: `dotnet build clio/clio.csproj -c Debug`
-         - Windows: `dotnet build clio\\clio.csproj -c Debug`
+      3) Run the Debug build (always use `--no-incremental` to prevent stale binary issues):
+         - macOS/Linux: `dotnet build clio/clio.csproj -c Debug --no-incremental`
+         - Windows: `dotnet build clio\\clio.csproj -c Debug --no-incremental`
       4) Stream the build output. On success, summarize the key info: configuration=Debug, target framework, and output path. On failure, highlight the first useful error and suggest re-run with `-bl` for a binlog if needed.
       5) Do not run tests automatically.
 

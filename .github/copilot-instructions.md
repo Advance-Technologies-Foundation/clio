@@ -41,7 +41,8 @@ Automates version management and release creation with comprehensive changelog g
 Builds the clio project in Debug configuration for development and testing.
 
 **Usage:** `/debug_build`
-- Executes `dotnet build clio/clio.csproj -c Debug`
+- Executes `dotnet build clio/clio.csproj -c Debug --no-incremental`
+- The `--no-incremental` flag is **mandatory** — incremental builds may silently keep stale compiled code for modified files, causing runtime failures that are extremely hard to diagnose (e.g., entity MCP tools returning "Package not found" because an old `ApplicationPackageListProvider` with cliogate dependency was still in the binary)
 - Compiles the project with debug symbols
 - Generates NuGet package in Debug configuration
 - Useful for local development and debugging
