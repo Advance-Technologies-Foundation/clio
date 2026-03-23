@@ -1,0 +1,21 @@
+NAME
+    ref-to - Change Creatio package project core paths
+
+DESCRIPTION
+    Updates project references so a package points to the intended Creatio core paths.
+
+SYNOPSIS
+    clio ref-to [OPTIONS]
+
+OPTIONS
+    Supports the canonical ref-to command options.
+
+EXAMPLES
+    clio ref-to --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    switch-nuget-to-dll-reference - Switch project references to DLLs
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -1,0 +1,21 @@
+NAME
+    restore-nuget-pkg - Restore NuGet package to a folder
+
+DESCRIPTION
+    Downloads and restores the requested NuGet package contents to a local folder.
+
+SYNOPSIS
+    clio restore-nuget-pkg [OPTIONS]
+
+OPTIONS
+    Supports the canonical restore-nuget-pkg command options.
+
+EXAMPLES
+    clio restore-nuget-pkg --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    install-nuget-pkg - Install a NuGet package to an environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

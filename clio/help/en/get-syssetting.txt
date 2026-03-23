@@ -1,0 +1,34 @@
+NAME
+    get-syssetting - alias entry for set-syssetting
+
+DESCRIPTION
+    The get-syssetting entry is handled by the set-syssetting command implementation.
+    Use it when you need to read the current value of a system setting.
+
+SYNOPSIS
+    clio get-syssetting <SETTING_CODE> [OPTIONS]
+
+OPTIONS
+    <SETTING_CODE>
+        System setting code to read
+
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+    -u, --uri
+    -l, --Login
+    -p, --Password
+        Direct connection parameters instead of using -e
+
+EXAMPLES
+    clio get-syssetting FeatureToggle -e dev
+        Read a system setting from the dev environment
+
+    clio get-syssetting MaxLoginAttempts -u https://myapp.creatio.com -l administrator -p password
+        Read a system setting using direct connection parameters
+
+SEE ALSO
+    set-syssetting - Shared implementation and primary local help page
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

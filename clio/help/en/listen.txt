@@ -1,0 +1,21 @@
+NAME
+    listen - Subscribe to a websocket
+
+DESCRIPTION
+    Opens a websocket subscription and streams messages from the selected source.
+
+SYNOPSIS
+    clio listen [OPTIONS]
+
+OPTIONS
+    Supports the canonical listen command options.
+
+EXAMPLES
+    clio listen --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    callservice - Invoke a service request manually
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

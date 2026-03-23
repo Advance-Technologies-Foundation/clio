@@ -1,0 +1,22 @@
+NAME
+    save-state - Save state of Creatio instance to file
+
+DESCRIPTION
+    Saves the current environment state to a manifest file for later reuse or comparison.
+
+SYNOPSIS
+    clio save-state [OPTIONS]
+
+OPTIONS
+    Supports the canonical save-state command options.
+
+EXAMPLES
+    clio save-state --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    apply-manifest - Apply a previously saved manifest
+    show-diff - Compare saved state with another source
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

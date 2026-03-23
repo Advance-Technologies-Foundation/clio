@@ -1,0 +1,31 @@
+NAME
+    ping - alias for ping-app
+
+DESCRIPTION
+    The ping command is an alias for ping-app.
+    It verifies connectivity and credentials for the selected Creatio environment.
+
+SYNOPSIS
+    clio ping <ENVIRONMENT_NAME> [OPTIONS]
+
+OPTIONS
+    <ENVIRONMENT_NAME>
+        Registered environment name to verify
+
+    -u, --uri
+    -l, --Login
+    -p, --Password
+        Direct connection parameters instead of using a registered environment
+
+EXAMPLES
+    clio ping dev
+        Check connectivity using a registered environment
+
+    clio ping -u https://myapp.creatio.com -l administrator -p password
+        Check connectivity using direct connection parameters
+
+SEE ALSO
+    ping-app - Canonical command name
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

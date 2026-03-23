@@ -1,0 +1,31 @@
+NAME
+    convert - Convert package to project
+
+DESCRIPTION
+    Converts one or more package folders into project structure used by clio.
+
+SYNOPSIS
+    clio convert [OPTIONS]
+
+OPTIONS
+    -p, --Path <PACKAGE_FOLDER>
+        Path to the package folder root
+
+    <package names>
+        Optional package name or comma-separated package names
+
+    -c, --ConvertSourceCode
+        Convert source code schemas into file-based representation
+
+EXAMPLES
+    clio convert -p ./Pkg MyPackage
+        Convert one package to project structure
+
+    clio convert -p ./Pkg
+        Convert all packages in the folder
+
+SEE ALSO
+    new-pkg - Create a new package structure
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

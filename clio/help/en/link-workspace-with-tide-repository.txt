@@ -1,0 +1,21 @@
+NAME
+    link-workspace-with-tide-repository - Link workspace with T.I.D.E. repository
+
+DESCRIPTION
+    Connects a workspace to a T.I.D.E. repository layout for collaborative development.
+
+SYNOPSIS
+    clio link-workspace-with-tide-repository [OPTIONS]
+
+OPTIONS
+    Supports the canonical link-workspace-with-tide-repository command options.
+
+EXAMPLES
+    clio link-workspace-with-tide-repository --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    install-tide - Install T.I.D.E. into the environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

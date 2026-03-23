@@ -25,6 +25,9 @@ COMMANDS
 
     push-pkg                install     Install package on a web application
 
+    compile-package         comp-pkg    Compile one or more packages on a web
+                                        application
+
     delete-pkg-remote       delete      Delete package from a web application
 
     new-pkg                 init        Create a new creatio package in

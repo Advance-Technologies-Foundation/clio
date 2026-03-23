@@ -1,0 +1,28 @@
+NAME
+    set-webservice-url - Set base url for web service
+
+DESCRIPTION
+    Stores or updates the base URL assigned to a configured web service.
+
+SYNOPSIS
+    clio set-webservice-url <SERVICE_NAME> <URL> [OPTIONS]
+
+OPTIONS
+    <SERVICE_NAME>
+        Web service name to update
+
+    <URL>
+        New base URL for the service
+
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio set-webservice-url CustomerApi https://api.example.com -e dev
+        Set a service URL in the dev environment
+
+SEE ALSO
+    get-webservice-url - Read configured service URLs
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -1,0 +1,32 @@
+NAME
+    pkg-hotfix - Enable or disable package hotfix state
+
+DESCRIPTION
+    Changes the hotfix mode state for a package in the selected environment.
+
+SYNOPSIS
+    clio pkg-hotfix <PACKAGE_NAME> <true|false> [OPTIONS]
+
+OPTIONS
+    <PACKAGE_NAME>
+        Package name to update
+
+    <true|false>
+        Desired hotfix mode state
+
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio pkg-hotfix MyPackage true -e dev
+        Enable hotfix mode for a package
+
+    clio pkg-hotfix MyPackage false -e dev
+        Disable hotfix mode for a package
+
+SEE ALSO
+    activate-pkg - Activate a package
+    deactivate-pkg - Deactivate a package
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

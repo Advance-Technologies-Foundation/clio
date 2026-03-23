@@ -1,0 +1,21 @@
+NAME
+    push-nuget-pkg - Push package on NuGet server
+
+DESCRIPTION
+    Publishes a prepared NuGet package to the configured NuGet feed.
+
+SYNOPSIS
+    clio push-nuget-pkg [OPTIONS]
+
+OPTIONS
+    Supports the canonical push-nuget-pkg command options.
+
+EXAMPLES
+    clio push-nuget-pkg --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    pack-nuget-pkg - Build a NuGet package before publishing
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

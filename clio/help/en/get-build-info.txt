@@ -1,0 +1,21 @@
+NAME
+    get-build-info - Get build information
+
+DESCRIPTION
+    Displays build or installer metadata associated with a Creatio distribution.
+
+SYNOPSIS
+    clio get-build-info [OPTIONS]
+
+OPTIONS
+    Supports the canonical get-build-info command options.
+
+EXAMPLES
+    clio get-build-info --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    deploy-creatio - Deploy a Creatio distribution
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

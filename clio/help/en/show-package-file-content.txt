@@ -1,0 +1,21 @@
+NAME
+    show-package-file-content - Show package file content
+
+DESCRIPTION
+    Displays the content of a file stored within a package.
+
+SYNOPSIS
+    clio show-package-file-content [OPTIONS]
+
+OPTIONS
+    Supports the canonical show-package-file-content command options.
+
+EXAMPLES
+    clio show-package-file-content --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    pull-pkg - Download package files locally
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

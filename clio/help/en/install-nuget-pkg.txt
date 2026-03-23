@@ -1,0 +1,22 @@
+NAME
+    install-nuget-pkg - Install NuGet package to a web application
+
+DESCRIPTION
+    Installs the specified NuGet package into the target Creatio environment.
+
+SYNOPSIS
+    clio install-nuget-pkg [OPTIONS]
+
+OPTIONS
+    Supports the canonical install-nuget-pkg command options.
+
+EXAMPLES
+    clio install-nuget-pkg --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    restore-nuget-pkg - Restore a NuGet package locally
+    push-nuget-pkg - Publish a NuGet package to a feed
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

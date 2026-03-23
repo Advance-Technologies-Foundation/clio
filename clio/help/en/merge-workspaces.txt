@@ -1,0 +1,22 @@
+NAME
+    merge-workspaces - Merge workspaces
+
+DESCRIPTION
+    Combines multiple workspaces into a single resulting workspace structure.
+
+SYNOPSIS
+    clio merge-workspaces [OPTIONS]
+
+OPTIONS
+    Supports the canonical merge-workspaces command options.
+
+EXAMPLES
+    clio merge-workspaces --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    create-workspace - Create a workspace
+    push-workspace - Push a workspace after merge
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

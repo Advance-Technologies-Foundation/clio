@@ -1,0 +1,23 @@
+NAME
+    get-app-list - List installed apps
+
+DESCRIPTION
+    Displays the list of applications installed in the selected environment.
+
+SYNOPSIS
+    clio get-app-list [OPTIONS]
+
+OPTIONS
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio get-app-list -e dev
+        Show applications installed in the dev environment
+
+SEE ALSO
+    install-application - Install an application package
+    uninstall-app-remote - Remove an application from an environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

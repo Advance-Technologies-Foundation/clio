@@ -1,0 +1,32 @@
+NAME
+    restore-configuration - Restore configuration from last backup
+
+DESCRIPTION
+    Restores Creatio configuration from the latest available backup package.
+
+SYNOPSIS
+    clio restore-configuration [OPTIONS]
+
+OPTIONS
+    -d
+        Restore configuration without rollback data
+
+    -f
+        Restore configuration without SQL backward-compatibility check
+
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio restore-configuration -e dev
+        Restore configuration from backup on the dev environment
+
+    clio restore-configuration -d -f -e dev
+        Restore configuration with relaxed safety checks
+
+SEE ALSO
+    restore-db - Restore the database from backup
+    push-pkg - Install packages that may create backup data
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

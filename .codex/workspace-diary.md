@@ -248,6 +248,12 @@ Impact: CreatioInstallerService no longer starts processes directly, and tests n
 Context: User requested implementing the plan to discourage direct System.Diagnostics.Process usage and steer code to IProcessExecutor.
 Decision: Added CLIO004 analyzer + tests, kept ProcessExecutor as the explicit low-level exception via scoped pragma with justification, and validated CreatioInstallerService no longer directly references Process APIs.
 Discovery: Repository has many existing CLIO001/002/003/004 warnings outside the targeted scope; sequential build avoids transient file-lock errors seen during parallel build/test runs.
+## 2026-03-19 00:00 – Fix l4r relative env package path on Unix
+Context: User reported that `link-from-repository` treated a relative `--envPkgPath` as an environment name on macOS and failed with a Windows-only error.
+Decision: Added `Link4RepoCommand.TryResolveDirectoryPath(...)` and switched `--envPkgPath` / environment path handling to recognize relative paths, rooted paths, file URIs, separator-containing values, and existing directories as direct filesystem paths.
+Discovery: The previous `Uri.TryCreate(..., UriKind.Absolute)` check was too narrow for CLI path semantics; targeted unit tests pass after covering relative path resolution and plain environment-name fallback.
+Files: clio/Command/Link4RepoCommand.cs, clio/Commands.md, clio.tests/Command/Link4RepoCommandTests.cs, .codex/workspace-diary.md
+Impact: `clio l4r` now accepts relative package-directory paths on macOS/Linux instead of incorrectly requiring Windows environment-name resolution.
 Files: Clio.Analyzers/DirectProcessUsageAnalyzer.cs, Clio.Analyzers.Tests/DirectProcessUsageAnalyzerTests.cs, clio/Common/ProcessExecutor.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/CreatioInstallerServiceTests.cs, .codex/workspace-diary.md
 Impact: CLIO004 policy is now enforced, targeted service migration is verified, and future cleanup can proceed incrementally from analyzer diagnostics.
 
@@ -278,6 +284,41 @@ Decision: Added nullable `skip-backup` options on `push-workspace` and `push-pkg
 Discovery: `push-workspace` already has MCP coverage, so the tool contract, prompt guidance, unit tests, and MCP E2E schema assertions also needed alignment; `push-pkg` currently has no MCP artifact, so no MCP addition was required there.
 Files: clio/Command/PushWorkspaceCommand.cs, clio/Command/PushPackageCommand.cs, clio/Workspace/IWorkspace.cs, clio/Workspace/Workspace.cs, clio/Workspace/WorkspaceInstaller.cs, clio/Package/BasePackageInstaller.cs, clio/Package/IPackageInstaller.cs, clio/Package/PackageInstaller.cs, clio/Package/IApplicationInstaller.cs, clio/Package/ApplicationInstaller.cs, clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs, clio/Commands.md, clio/help/en/push-pkg.txt, clio.tests/Command/PushPkgCommand.Tests.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Dev and CI callers can now opt out of backup explicitly without changing the default install safety behavior for existing commands and integrations.
+
+## 2026-03-19 00:00 – Create release 8.0.2.31
+Context: User invoked the release prompt workflow and asked to follow the repository release instructions.
+Decision: Verified `gh` installation/auth first, resolved latest tag `8.0.2.30`, updated `AssemblyVersion` in `clio/clio.csproj` to `8.0.2.31`, then created and pushed tag `8.0.2.31` and published the GitHub release via `gh release create`.
+Discovery: The repository release scripts follow the same tag-first flow without an intermediate version-bump commit, so the run was kept consistent with the existing project practice.
+Files: clio/clio.csproj, .github/prompts/release.prompt.md, create-release.sh, create-release.ps1, .codex/workspace-diary.md
+Impact: Release `8.0.2.31` is published and the CI/CD workflow can now build, test, and publish artifacts from the new release tag.
+
+## 2026-03-23 12:00 – Restore compile-package documentation surfaces
+Context: User reported that `compile-package` was missing from `clio help` documentation and asked to ensure command-specific docs were available too.
+Decision: Added the missing local help entry to `clio/help/en/help.txt`, created dedicated `clio/help/en/compile-package.txt` and `clio/docs/commands/compile-package.md`, and refreshed the `compile-package` section in `clio/Commands.md`.
+Discovery: The command implementation already existed and `Commands.md` already had a basic section, but both the command-specific help file and detailed markdown doc were missing entirely.
+Files: clio/help/en/help.txt, clio/help/en/compile-package.txt, clio/docs/commands/compile-package.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: `compile-package` now appears in general help, `clio compile-package -H` resolves locally, and existing links to `compile-package.md` now point to a real document.
+
+## 2026-03-23 12:30 – Backfill local help coverage for Commands.md entries
+Context: User asked to add local help for command entries documented in `clio/Commands.md` but missing in `clio/help/en`.
+Decision: Added concise local help files for all previously uncovered command headings from `Commands.md`, including legacy/alias headings such as `ver`, `extract-package`, `lic`, `callservice`, and `create-manifest`.
+Discovery: Most gaps were not missing source commands, but missing local help surfaces or legacy heading mismatches between `Commands.md` and canonical `[Verb]` names.
+Files: clio/help/en/*.txt, .codex/workspace-diary.md
+Impact: GitHub-documented command headings now resolve to local help files, improving `clio <command> -H` coverage without changing command behavior.
+
+## 2026-03-23 13:00 – Expand backfilled local help pages to full format
+Context: User chose the next step of turning the newly backfilled local help pages into more useful command help.
+Decision: Expanded the new `clio/help/en/*.txt` pages with structured `OPTIONS`, `EXAMPLES`, and `SEE ALSO` sections, using canonical command contracts where available and alias/legacy redirect wording where the Commands.md heading differs from the actual verb name.
+Discovery: Alias pages such as `ver`, `download-app`, `publish-workspace`, `lic`, and `run-scenario` benefit from local explanatory pages even when the runtime may also resolve through the canonical command help.
+Files: clio/help/en/*.txt, .codex/workspace-diary.md
+Impact: The backfilled local help set is now substantially more usable than bare placeholder pages while preserving existing command behavior.
+
+## 2026-03-23 13:20 – Backfill docs/commands for the new local-help command set
+Context: User selected the next step of adding GitHub markdown documentation for the same command set previously backfilled in local help.
+Decision: Added markdown pages under `clio/docs/commands` for the previously uncovered package, application, workspace, manifest, infrastructure, alias, and legacy-heading commands, using concise standalone docs or redirect-style pages to canonical commands where appropriate.
+Discovery: A large share of the missing GitHub docs surface was caused by filename mismatches and legacy headings in `Commands.md`, not by missing source commands.
+Files: clio/docs/commands/*.md, .codex/workspace-diary.md
+Impact: The specific command set previously missing local help now also has matching GitHub markdown documentation pages.
 
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
