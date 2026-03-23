@@ -847,3 +847,24 @@ Discovery: Both restore-db and installer service template-refresh flows already 
 Files: C:\Projects\clio\clio\Common\db\Postgres.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Existing PostgreSQL templates can now be replaced safely with `--drop-if-exists`, avoiding the previous `[ERROR] cannot drop a template database` failure during template refresh.
 
+## 2026-03-23 23:37 – Fix CommandLine duplicate assembly attributes
+Context: Build failed with `CS0579` reporting duplicate `AssemblyCompanyAttribute` in `CommandLine.AssemblyInfo.cs`.
+Decision: Excluded generated `artifacts/**/*.cs` files from compile items in `CommandLine.csproj` so only the active `obj/<tfm>/CommandLine.AssemblyInfo.cs` participates in compilation.
+Discovery: `src/CommandLine/artifacts/tmp-build/obj/Debug/CommandLine.AssemblyInfo.cs` contained a second generated assembly metadata file under the project tree, and SDK default compile item inclusion picked it up.
+Files: C:\Projects\commandline\src\CommandLine\CommandLine.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `dotnet build` for `CommandLine.csproj` now succeeds without CS0579; future generated scratch artifacts under `artifacts` will not break builds by introducing duplicate assembly attributes.
+
+## 2026-03-23 23:40 – Fix creatioclient duplicate assembly attributes
+Context: Build failed with `CS0579` in `creatioclient.AssemblyInfo.cs` while compiling `clio` against the local sibling `creatioclient` project reference.
+Decision: Added `<Compile Remove="artifacts\**\*.cs" />` to `creatioclient.csproj` so temporary generated C# files under `artifacts/tmp-build/obj` are excluded from default compile items.
+Discovery: Both `creatioclient/obj/Debug/netstandard2.0/creatioclient.AssemblyInfo.cs` and `creatioclient/artifacts/tmp-build/obj/Debug/creatioclient.AssemblyInfo.cs` were compiled, producing duplicate assembly metadata attributes.
+Files: C:\Projects\creatioclient\creatioclient\creatioclient.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `dotnet build` for `creatioclient.csproj` succeeds without duplicate-attribute errors, and future scratch artifact generation will not break local builds.
+
+## 2026-03-24 00:00 – Make Link4Repo relative-path test OS independent
+Context: The `TryResolveDirectoryPath_Should_Return_FullPath_For_Relative_Directory_Path` unit test failed on Windows because it asserted Unix-style rooted paths.
+Decision: Reworked the test setup to build the mock current directory, relative input path, and expected resolved path with `GetRootedPath` and `Path.Combine`, and aligned the neighboring plain-environment-name test to the same platform-aware root helper.
+Discovery: `Link4RepoCommand.TryResolveDirectoryPath` already normalized relative paths correctly; only the test fixture had hard-coded `/repo` and `/Projects/...` expectations.
+Files: C:\Projects\clio\clio.tests\Command\Link4RepoCommand.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The Link4Repo path-resolution tests now pass consistently on Windows, macOS, and Linux without changing production command behavior.
+
