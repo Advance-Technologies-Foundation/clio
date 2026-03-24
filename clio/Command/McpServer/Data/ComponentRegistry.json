@@ -3888,5 +3888,2665 @@
       "propertyName": "items",
       "index": 0
     }
+  },
+  {
+    "componentType": "crt.QuickFilter",
+    "category": "filtering",
+    "description": "Configurable quick filter component for list pages. Supports lookup, date range, checkbox, and custom filter types.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.QuickFilter."
+      },
+      "filterType": {
+        "type": "string",
+        "description": "QuickFilterType enum value defining the filter behavior."
+      },
+      "config": {
+        "type": "object",
+        "description": "BaseQuickFilterConfig with filter-specific settings including caption."
+      },
+      "config.caption": {
+        "type": "string",
+        "description": "Filter label. Supports #ResourceString(key)# macro."
+      },
+      "value": {
+        "type": "unknown",
+        "description": "Current filter value binding."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "QuickFilter_Status",
+      "values": {
+        "type": "crt.QuickFilter",
+        "config": {
+          "caption": "#ResourceString(QuickFilter_Status_caption)#"
+        }
+      },
+      "parentName": "FilterContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.SearchFilter",
+    "category": "filtering",
+    "description": "Full-text search filter with optional column-specific search, icon-only mode, and instant search support.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.SearchFilter."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text. Supports localization."
+      },
+      "value": {
+        "type": "string",
+        "description": "Current search text binding."
+      },
+      "iconOnly": {
+        "type": "boolean",
+        "description": "Render as icon button that expands on click."
+      },
+      "instant": {
+        "type": "boolean",
+        "description": "Apply filter on every keystroke instead of on Enter."
+      },
+      "tooltip": {
+        "type": "string",
+        "description": "Tooltip text."
+      },
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Disable the search input."
+      },
+      "minifySearch": {
+        "type": "boolean",
+        "description": "Animate between minified and expanded states."
+      },
+      "selectedColumnsGroups": {
+        "type": "array",
+        "description": "SearchFilteredColumnsGroup[] — column groups for targeted search."
+      },
+      "columnsGroupsConfig": {
+        "type": "object",
+        "description": "SearchFilterColumnsGroupsConfig for column group definitions."
+      },
+      "filteredColumn": {
+        "type": "string",
+        "description": "Specific column to filter by."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "SearchFilter",
+      "values": {
+        "type": "crt.SearchFilter",
+        "placeholder": "#ResourceString(SearchFilter_placeholder)#",
+        "iconOnly": false
+      },
+      "parentName": "FilterContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FolderTree",
+    "category": "filtering",
+    "description": "Hierarchical folder tree for filtering records by dynamic and static folders with favorites support.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FolderTree."
+      },
+      "sourceSchemaName": {
+        "type": "string",
+        "description": "Entity schema name for folder data source."
+      },
+      "rootSchemaName": {
+        "type": "string",
+        "description": "Root entity schema name."
+      },
+      "items": {
+        "type": "array",
+        "description": "DataItem[] | BaseViewModelCollection of folder nodes."
+      },
+      "favoriteItems": {
+        "type": "array",
+        "description": "DataItem[] | BaseViewModelCollection of favorite folder nodes."
+      },
+      "activeFolderId": {
+        "type": "string",
+        "description": "Guid binding for the currently selected folder."
+      },
+      "expandedItems": {
+        "type": "array",
+        "description": "Guid[] of expanded folder node IDs."
+      },
+      "minVisibleItemsCount": {
+        "type": "number",
+        "default": 5,
+        "description": "Minimum visible items before scrolling."
+      },
+      "useStaticFolders": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable static (manual) folder support."
+      },
+      "sortingOrder": {
+        "type": "string",
+        "default": "ASC",
+        "description": "FolderTreeNodeSortingOrder."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "showMask": {
+        "type": "boolean",
+        "description": "Show loading mask."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FolderTree",
+      "values": {
+        "type": "crt.FolderTree",
+        "sourceSchemaName": "ContactFolder",
+        "useStaticFolders": false,
+        "minVisibleItemsCount": 5
+      },
+      "parentName": "SideFilterContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FolderTreeActions",
+    "category": "filtering",
+    "description": "Companion action bar for FolderTree, showing active folder name and folder management controls.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FolderTreeActions."
+      },
+      "folderTree": {
+        "type": "string",
+        "description": "Reference to the associated FolderTree element name."
+      },
+      "activeFolderId": {
+        "type": "string",
+        "description": "Guid binding for the active folder."
+      },
+      "activeFolderName": {
+        "type": "string",
+        "description": "Display name of the active folder."
+      },
+      "favoriteItems": {
+        "type": "array",
+        "description": "Favorite folders collection."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FolderTreeActions",
+      "values": {
+        "type": "crt.FolderTreeActions",
+        "folderTree": "FolderTree"
+      },
+      "parentName": "FilterContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FiltersContainer",
+    "category": "filtering",
+    "description": "Container for advanced filter builder UI bound to an entity schema.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FiltersContainer."
+      },
+      "entitySchemaName": {
+        "type": "string",
+        "description": "Entity schema name for filter column resolution."
+      },
+      "filterData": {
+        "type": "string",
+        "description": "Serialized filter data binding (JSON string)."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FiltersContainer",
+      "values": {
+        "type": "crt.FiltersContainer",
+        "entitySchemaName": "Contact"
+      },
+      "parentName": "FilterArea",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.EntityHierarchyFilter",
+    "category": "filtering",
+    "description": "Hierarchical entity filter tree for catalog-style navigation with specification filters and multi-tab display.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.EntityHierarchyFilter."
+      },
+      "nodes": {
+        "type": "array",
+        "description": "HierarchyFilterNode[] tree data."
+      },
+      "selectedNodeId": {
+        "type": "string",
+        "description": "Currently selected node ID."
+      },
+      "expandedItems": {
+        "type": "array",
+        "description": "string[] of expanded node IDs."
+      },
+      "displayMode": {
+        "type": "string",
+        "description": "EntityHierarchyDisplayMode enum."
+      },
+      "specificationEntityName": {
+        "type": "string",
+        "description": "Entity name for specification filters."
+      },
+      "specificationReferenceColumnName": {
+        "type": "string",
+        "description": "Reference column for specifications."
+      },
+      "specificationFiltersConfiguration": {
+        "type": "array",
+        "description": "SpecificationFilter[] configuration."
+      },
+      "searchResultNodes": {
+        "type": "array",
+        "description": "HierarchyFilterNode[] search results."
+      },
+      "selectedTabIndex": {
+        "type": "number",
+        "description": "Active tab index."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "EntityHierarchyFilter",
+      "values": {
+        "type": "crt.EntityHierarchyFilter"
+      },
+      "parentName": "SideFilterContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FilterBuilderSource",
+    "category": "filtering",
+    "description": "Filter builder data source component providing filter elements for a given entity schema.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FilterBuilderSource."
+      },
+      "schemaName": {
+        "type": "string",
+        "description": "Entity schema name."
+      },
+      "data": {
+        "type": "array",
+        "description": "FilterBuilderElement[] filter definitions."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FilterBuilderSource",
+      "values": {
+        "type": "crt.FilterBuilderSource",
+        "schemaName": "Contact"
+      },
+      "parentName": "FilterArea",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FilterBuilderToggler",
+    "category": "filtering",
+    "description": "Toggle button to show/hide the filter builder panel for a given entity schema.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FilterBuilderToggler."
+      },
+      "schemaName": {
+        "type": "string",
+        "description": "Entity schema name."
+      },
+      "data": {
+        "type": "array",
+        "description": "FilterBuilderElement[] filter definitions."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FilterBuilderToggler",
+      "values": {
+        "type": "crt.FilterBuilderToggler",
+        "schemaName": "Contact"
+      },
+      "parentName": "FilterToolbar",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Timeline",
+    "category": "interactive",
+    "description": "Timeline component displaying chronological entity activity tiles with filtering and master entity binding.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Timeline."
+      },
+      "masterSchemaId": {
+        "type": "string",
+        "description": "Binding to master record ID, typically '$Id'."
+      },
+      "masterEntitySchemaName": {
+        "type": "string",
+        "description": "Master entity schema name."
+      },
+      "masterEntity": {
+        "type": "object",
+        "description": "LookupValue binding for the master entity."
+      },
+      "tools": {
+        "type": "array",
+        "description": "Content slot for toolbar elements."
+      },
+      "customFilters": {
+        "type": "array",
+        "description": "Content slot for custom filter elements."
+      },
+      "isTileReadOnly": {
+        "type": "boolean",
+        "description": "Make all tiles read-only."
+      },
+      "filterValues": {
+        "type": "array",
+        "description": "TileFilter[] preset filter values."
+      },
+      "quickFilterByOwnerConfig": {
+        "type": "object",
+        "description": "LookupQuickFilterConfig for owner quick filter."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [
+      "crt.TimelineTile"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "Timeline",
+      "values": {
+        "type": "crt.Timeline",
+        "masterSchemaId": "$Id",
+        "tools": [],
+        "customFilters": []
+      },
+      "parentName": "TimelineTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TimelineTile",
+    "category": "interactive",
+    "description": "Individual timeline entry tile displaying entity data with configurable columns and label components.",
+    "container": true,
+    "parentTypes": [
+      "crt.Timeline"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TimelineTile."
+      },
+      "entity": {
+        "type": "object",
+        "description": "TimelineEntity with id, schemaName, entityId, date, author, columns."
+      },
+      "tileColumnsConfig": {
+        "type": "array",
+        "description": "TimelineTileColumnConfig[] column display configuration."
+      },
+      "tileViewConfig": {
+        "type": "object",
+        "description": "ViewElementConfig for tile rendering."
+      },
+      "tileEntityConfig": {
+        "type": "object",
+        "description": "TimelineEntityConfig for entity-specific settings."
+      },
+      "isTileReadOnly": {
+        "type": "boolean",
+        "description": "Make this tile read-only."
+      }
+    },
+    "typicalChildren": [
+      "crt.TimelineLabel",
+      "crt.TimelineEmailLabel",
+      "crt.TimelinePhoneLabel",
+      "crt.TimelineWebLabel",
+      "crt.TimelineLookup"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "TimelineTile_Activity",
+      "values": {
+        "type": "crt.TimelineTile"
+      },
+      "parentName": "Timeline",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TimelineLabel",
+    "category": "display",
+    "description": "Generic text label for timeline tile columns. Base label type for non-specialized data value types.",
+    "container": false,
+    "parentTypes": [
+      "crt.TimelineTile"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TimelineLabel."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Column caption."
+      },
+      "value": {
+        "type": "string",
+        "description": "Column value."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "TimelineLabel_Subject",
+      "values": {
+        "type": "crt.TimelineLabel",
+        "caption": "Subject",
+        "value": "$Subject"
+      },
+      "parentName": "TimelineTile_Activity",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TimelineEmailLabel",
+    "category": "display",
+    "description": "Timeline label for email-type column values with mailto link rendering.",
+    "container": false,
+    "parentTypes": [
+      "crt.TimelineTile"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TimelineEmailLabel."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Column caption."
+      },
+      "value": {
+        "type": "string",
+        "description": "Email value."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "TimelineEmailLabel",
+      "values": {
+        "type": "crt.TimelineEmailLabel",
+        "caption": "Email",
+        "value": "$Email"
+      },
+      "parentName": "TimelineTile_Activity",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TimelinePhoneLabel",
+    "category": "display",
+    "description": "Timeline label for phone-type column values with tel link rendering.",
+    "container": false,
+    "parentTypes": [
+      "crt.TimelineTile"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TimelinePhoneLabel."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Column caption."
+      },
+      "value": {
+        "type": "string",
+        "description": "Phone value."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "TimelinePhoneLabel",
+      "values": {
+        "type": "crt.TimelinePhoneLabel",
+        "caption": "Phone",
+        "value": "$Phone"
+      },
+      "parentName": "TimelineTile_Activity",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TimelineWebLabel",
+    "category": "display",
+    "description": "Timeline label for web/URL-type column values with hyperlink rendering.",
+    "container": false,
+    "parentTypes": [
+      "crt.TimelineTile"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TimelineWebLabel."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Column caption."
+      },
+      "value": {
+        "type": "string",
+        "description": "URL value."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "TimelineWebLabel",
+      "values": {
+        "type": "crt.TimelineWebLabel",
+        "caption": "Website",
+        "value": "$Web"
+      },
+      "parentName": "TimelineTile_Activity",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TimelineLookup",
+    "category": "display",
+    "description": "Timeline label for lookup column values rendered as clickable navigation links.",
+    "container": false,
+    "parentTypes": [
+      "crt.TimelineTile"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TimelineLookup."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Column caption."
+      },
+      "value": {
+        "type": "object",
+        "description": "TimelineLookup: { displayValue, href, entityName, recordId, primaryColorValue }."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "TimelineLookup_Owner",
+      "values": {
+        "type": "crt.TimelineLookup",
+        "caption": "Owner",
+        "value": "$Owner"
+      },
+      "parentName": "TimelineTile_Activity",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FeedComposer",
+    "category": "interactive",
+    "description": "Message composer for creating feed posts with channel selection, external post support, and reply threading.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FeedComposer."
+      },
+      "primaryColumnValue": {
+        "type": "string",
+        "description": "Primary record ID binding."
+      },
+      "entitySchemaName": {
+        "type": "string",
+        "description": "Entity schema name."
+      },
+      "cardState": {
+        "type": "string",
+        "description": "ModelInPageAction — page action state."
+      },
+      "allowExternalPost": {
+        "type": "boolean",
+        "description": "Allow posting to external channels."
+      },
+      "parentMessageId": {
+        "type": "string",
+        "description": "Guid for reply threading."
+      },
+      "message": {
+        "type": "string",
+        "description": "Message text binding."
+      },
+      "schemaUId": {
+        "type": "string",
+        "description": "Schema UId for the feed context."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FeedComposer",
+      "values": {
+        "type": "crt.FeedComposer",
+        "primaryColumnValue": "$Id",
+        "entitySchemaName": "Contact"
+      },
+      "parentName": "FeedTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FeedItem",
+    "category": "interactive",
+    "description": "Individual feed message item with likes, comments, edit, delete, and reply capabilities.",
+    "container": false,
+    "parentTypes": [
+      "crt.Feed"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FeedItem."
+      },
+      "item": {
+        "type": "object",
+        "description": "FeedMessage with Id, Message, LikeCount, CommentCount, CreatedOn, CreatedBy."
+      },
+      "feedType": {
+        "type": "string",
+        "description": "FeedSourceType enum."
+      },
+      "schemaName": {
+        "type": "string",
+        "description": "Entity schema name."
+      },
+      "allowExternalPost": {
+        "type": "boolean",
+        "description": "Allow external posts."
+      },
+      "disableLikesComments": {
+        "type": "boolean",
+        "description": "Disable likes and comments."
+      },
+      "showMenuActionItems": {
+        "type": "boolean",
+        "description": "Show action menu."
+      },
+      "isEditMode": {
+        "type": "boolean",
+        "description": "Enable edit mode."
+      },
+      "isDraftItem": {
+        "type": "boolean",
+        "description": "Mark as draft."
+      },
+      "readingMode": {
+        "type": "string",
+        "description": "FeedReadingMode."
+      }
+    },
+    "typicalChildren": [
+      "crt.FeedComposer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "FeedItem",
+      "values": {
+        "type": "crt.FeedItem"
+      },
+      "parentName": "Feed",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Dashboards",
+    "category": "interactive",
+    "description": "Dashboard container that holds selectable dashboard tabs with widget rendering, favorites, and filter integration.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Dashboards."
+      },
+      "dashboards": {
+        "type": "array",
+        "description": "DashboardItem[] | BaseViewModelCollection of available dashboards."
+      },
+      "selectedDashboard": {
+        "type": "string",
+        "description": "ID of the currently selected dashboard."
+      },
+      "filter": {
+        "type": "object",
+        "description": "JsonObject filter binding."
+      },
+      "hierarchicalFilter": {
+        "type": "object",
+        "description": "JsonObject hierarchical filter binding."
+      },
+      "hierarchicalColumnValue": {
+        "type": "object",
+        "description": "LookupValue for hierarchical column."
+      },
+      "canManage": {
+        "type": "boolean",
+        "description": "Allow dashboard management (add/edit/delete)."
+      },
+      "headerToolbarItems": {
+        "type": "array",
+        "default": [],
+        "description": "CrtMenuItemViewElementConfig[] toolbar items."
+      },
+      "favorites": {
+        "type": "array",
+        "default": [],
+        "description": "string[] of favorite dashboard IDs."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Requires FreedomUIDashboardsEnabled feature flag. Uses PlatformAPIs.Filtration with aggregation support.",
+    "example": {
+      "operation": "insert",
+      "name": "Dashboards",
+      "values": {
+        "type": "crt.Dashboards",
+        "headerToolbarItems": [],
+        "favorites": []
+      },
+      "parentName": "DashboardTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.NextSteps",
+    "category": "interactive",
+    "description": "Next steps gallery component showing upcoming activities and tasks for a record, with configurable tile types and add capability.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.NextSteps."
+      },
+      "nextSteps": {
+        "type": "array",
+        "description": "NextStep[] items."
+      },
+      "dataLoading": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show loading state."
+      },
+      "masterSchemaId": {
+        "type": "string",
+        "description": "Guid binding for master record."
+      },
+      "masterSchemaName": {
+        "type": "string",
+        "description": "Master entity schema name."
+      },
+      "cardState": {
+        "type": "string",
+        "description": "ModelInPageAction page state."
+      },
+      "tilesMap": {
+        "type": "object",
+        "description": "Record<string, NextStepTileConfig> mapping activity types to tile configurations."
+      },
+      "canAdd": {
+        "type": "boolean",
+        "description": "Show add button."
+      },
+      "bindingColumns": {
+        "type": "array",
+        "description": "ActivityColumnBinding[] for master record binding."
+      },
+      "typeFilters": {
+        "type": "array",
+        "description": "LookupValue[] to filter activity types."
+      },
+      "galleryItemConfig": {
+        "type": "object",
+        "description": "GalleryItemConfig for tile layout."
+      },
+      "reloadNextSteps": {
+        "type": "string",
+        "description": "Trigger binding to reload."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [
+      "crt.NextStepTile",
+      "crt.ApprovalTile"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "NextSteps",
+      "values": {
+        "type": "crt.NextSteps",
+        "masterSchemaId": "$Id",
+        "dataLoading": true
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Playbook",
+    "category": "interactive",
+    "description": "Playbook component displaying guided sales process steps with stage-based content.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Playbook."
+      },
+      "items": {
+        "type": "array",
+        "description": "BaseViewModelCollection of playbook items."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "Playbook",
+      "values": {
+        "type": "crt.Playbook"
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.CommunicationOptions",
+    "category": "interactive",
+    "description": "Communication options panel displaying phone, email, and social media contact details with inline editing.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.CommunicationOptions."
+      },
+      "items": {
+        "type": "array",
+        "description": "BaseViewModelCollection of communication items."
+      },
+      "templates": {
+        "type": "array",
+        "description": "Content slot for option templates."
+      },
+      "masterRecordColumnValue": {
+        "type": "string",
+        "description": "Binding to master record column value."
+      },
+      "masterRecordColumnName": {
+        "type": "string",
+        "description": "Master record column name."
+      },
+      "columnsCount": {
+        "type": "number",
+        "default": 1,
+        "description": "Number of display columns."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "optionActions": {
+        "type": "array",
+        "description": "CrtMenuItemViewElementConfig[] per-option action menu."
+      },
+      "typeColumnName": {
+        "type": "string",
+        "description": "Column name for communication type."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "CommunicationOptions",
+      "values": {
+        "type": "crt.CommunicationOptions",
+        "masterRecordColumnValue": "$Id",
+        "columnsCount": 1,
+        "readonly": false
+      },
+      "parentName": "ContactInfoTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.AccountCompactProfile",
+    "category": "interactive",
+    "description": "Compact account profile card with photo, name, alternative name, country, city, and timezone. Requires CrtCustomer360App package.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.AccountCompactProfile."
+      },
+      "accountName": {
+        "type": "string",
+        "description": "Account name binding."
+      },
+      "alternativeName": {
+        "type": "string",
+        "description": "Alternative/trade name binding."
+      },
+      "country": {
+        "type": "object",
+        "description": "Country lookup binding."
+      },
+      "city": {
+        "type": "object",
+        "description": "City lookup binding."
+      },
+      "timeZone": {
+        "type": "object",
+        "description": "Time zone binding."
+      },
+      "photo": {
+        "type": "object",
+        "description": "Photo binding."
+      },
+      "photoTitle": {
+        "type": "string",
+        "description": "Photo alt text."
+      },
+      "referenceColumn": {
+        "type": "string",
+        "description": "Reference column for navigation."
+      },
+      "dialogTitle": {
+        "type": "string",
+        "description": "Edit dialog title."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Requires CrtCustomer360App package. Has contentSlot 'dialogItems' for custom edit dialog fields.",
+    "example": {
+      "operation": "insert",
+      "name": "AccountCompactProfile",
+      "values": {
+        "type": "crt.AccountCompactProfile",
+        "readonly": false
+      },
+      "parentName": "ProfileContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.ContactCompactProfile",
+    "category": "interactive",
+    "description": "Compact contact profile card with photo, full name fields, birth date, country, city, and timezone. Requires CrtCustomer360App package.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ContactCompactProfile."
+      },
+      "firstName": {
+        "type": "string",
+        "description": "First name binding."
+      },
+      "lastName": {
+        "type": "string",
+        "description": "Last name binding."
+      },
+      "middleName": {
+        "type": "string",
+        "description": "Middle name binding."
+      },
+      "displayName": {
+        "type": "string",
+        "description": "Display name binding."
+      },
+      "birthDate": {
+        "type": "object",
+        "description": "Birth date binding."
+      },
+      "country": {
+        "type": "object",
+        "description": "Country lookup binding."
+      },
+      "city": {
+        "type": "object",
+        "description": "City lookup binding."
+      },
+      "timeZone": {
+        "type": "object",
+        "description": "Time zone binding."
+      },
+      "photo": {
+        "type": "object",
+        "description": "Photo binding."
+      },
+      "photoTitle": {
+        "type": "string",
+        "description": "Photo alt text."
+      },
+      "referenceColumn": {
+        "type": "string",
+        "description": "Reference column for navigation."
+      },
+      "dialogTitle": {
+        "type": "string",
+        "description": "Edit dialog title."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Requires CrtCustomer360App package. Has contentSlot 'dialogItems'.",
+    "example": {
+      "operation": "insert",
+      "name": "ContactCompactProfile",
+      "values": {
+        "type": "crt.ContactCompactProfile",
+        "readonly": false
+      },
+      "parentName": "ProfileContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.UserCompactProfile",
+    "category": "interactive",
+    "description": "Compact user profile card for system user display with first/middle/last name and photo.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.UserCompactProfile."
+      },
+      "firstName": {
+        "type": "string",
+        "description": "First name binding."
+      },
+      "lastName": {
+        "type": "string",
+        "description": "Last name binding."
+      },
+      "middleName": {
+        "type": "string",
+        "description": "Middle name binding."
+      },
+      "photo": {
+        "type": "object",
+        "description": "Photo binding."
+      },
+      "photoTitle": {
+        "type": "string",
+        "description": "Photo alt text."
+      },
+      "referenceColumn": {
+        "type": "string",
+        "description": "Reference column for navigation."
+      },
+      "dialogTitle": {
+        "type": "string",
+        "description": "Edit dialog title."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Hidden behind ShowDesignerDemoItems feature flag. Has contentSlot 'dialogItems'.",
+    "example": {
+      "operation": "insert",
+      "name": "UserCompactProfile",
+      "values": {
+        "type": "crt.UserCompactProfile",
+        "readonly": false
+      },
+      "parentName": "ProfileContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FileDrop",
+    "category": "interactive",
+    "description": "File drop zone container for drag-and-drop file uploads with overlay indicator.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FileDrop."
+      },
+      "multiple": {
+        "type": "boolean",
+        "default": true,
+        "description": "Allow multiple file selection."
+      },
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Disable file drops."
+      },
+      "showOverlay": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show drop zone overlay."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Has contentSlot 'items' for wrapped content.",
+    "example": {
+      "operation": "insert",
+      "name": "FileDrop",
+      "values": {
+        "type": "crt.FileDrop",
+        "multiple": true
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FormRules",
+    "category": "interactive",
+    "description": "Form business rules engine that applies conditional visibility, required state, and validation rules to page fields.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FormRules."
+      },
+      "fields": {
+        "type": "array",
+        "description": "BaseViewModelCollection of form fields to apply rules to."
+      },
+      "rulesMetadata": {
+        "type": "string",
+        "description": "Serialized rules metadata JSON string."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FormRules",
+      "values": {
+        "type": "crt.FormRules"
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.MultiSelect",
+    "category": "fields",
+    "description": "Multi-value lookup selector with chip display, supporting label, placeholder, and required validation.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.MultiSelect."
+      },
+      "items": {
+        "type": "array",
+        "description": "DataItem[] | BaseViewModelCollection of selected items."
+      },
+      "listItems": {
+        "type": "array",
+        "description": "LookupValue[] available options."
+      },
+      "label": {
+        "type": "string",
+        "description": "Field label. Supports #ResourceString(key)# macro."
+      },
+      "labelPosition": {
+        "type": "string",
+        "description": "Label position relative to the field."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
+      },
+      "tooltip": {
+        "type": "string",
+        "description": "Tooltip text."
+      },
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Disable the field."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "required": {
+        "type": "boolean",
+        "default": false,
+        "description": "Mark as required."
+      },
+      "wrap": {
+        "type": "boolean",
+        "default": false,
+        "description": "Wrap chips to multiple lines."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "MultiSelect_Tags",
+      "values": {
+        "type": "crt.MultiSelect",
+        "label": "#ResourceString(MultiSelect_Tags_label)#",
+        "required": false,
+        "wrap": false
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TagSelect",
+    "category": "fields",
+    "description": "Tag selector component for adding/removing entity tags with chip display and color support.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.TagSelect."
+      },
+      "items": {
+        "type": "array",
+        "description": "DataItem[] | BaseViewModelCollection of selected tags."
+      },
+      "listItems": {
+        "type": "array",
+        "description": "LookupValue[] available tags."
+      },
+      "label": {
+        "type": "string",
+        "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "description": "Label position."
+      },
+      "wrap": {
+        "type": "boolean",
+        "default": false,
+        "description": "Wrap tags to multiple lines."
+      },
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Disable the field."
+      },
+      "tagInRecordSourceSchemaName": {
+        "type": "string",
+        "description": "Entity schema name for tag-in-record junction table."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "TagSelect",
+      "values": {
+        "type": "crt.TagSelect",
+        "label": ""
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.PasswordInput",
+    "category": "fields",
+    "description": "Password input field with masked text display and show/hide toggle. Extends crt.Input.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.PasswordInput."
+      },
+      "control": {
+        "type": "string",
+        "description": "Bound attribute, e.g. '$PDS_Password'."
+      },
+      "label": {
+        "type": "string",
+        "description": "Field label."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
+      },
+      "validations": {
+        "type": "array",
+        "description": "RuleValidationResultItem[] validation rules."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Inherits all properties from crt.Input (control, label, placeholder, readonly, disabled, etc.).",
+    "example": {
+      "operation": "insert",
+      "name": "PasswordInput_Secret",
+      "values": {
+        "type": "crt.PasswordInput",
+        "control": "$PDS_Password",
+        "label": "#ResourceString(PasswordInput_label)#"
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.ButtonToggleGroup",
+    "category": "interactive",
+    "description": "Group of mutually exclusive toggle buttons. Container for ButtonToggleGroupItem children.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ButtonToggleGroup."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [
+      "crt.ButtonToggleGroupItem"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ButtonToggleGroup_View",
+      "values": {
+        "type": "crt.ButtonToggleGroup"
+      },
+      "parentName": "ToolbarContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Menu",
+    "category": "interactive",
+    "description": "Dropdown menu container component with configurable position and glassmorphism support.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.Button"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Menu."
+      },
+      "items": {
+        "type": "array",
+        "description": "CrtMenuItemViewElementConfig[] menu item definitions."
+      },
+      "xPosition": {
+        "type": "string",
+        "default": "after",
+        "description": "Horizontal position: 'before' | 'after'."
+      },
+      "yPosition": {
+        "type": "string",
+        "default": "below",
+        "description": "Vertical position: 'above' | 'below'."
+      },
+      "useGlassmorphism": {
+        "type": "boolean",
+        "description": "Apply glassmorphism style."
+      },
+      "panelClass": {
+        "type": "string",
+        "description": "CSS class for the overlay panel."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuDivider",
+      "crt.MenuLabel"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "Menu_Actions",
+      "values": {
+        "type": "crt.Menu",
+        "items": []
+      },
+      "parentName": "ActionsButton",
+      "propertyName": "menuItems",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.IconRadioButton",
+    "category": "fields",
+    "description": "Radio button group rendered as icon buttons with row or column layout.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.IconRadioButton."
+      },
+      "items": {
+        "type": "array",
+        "default": [],
+        "description": "RadioOption[] with value, label, and icon."
+      },
+      "value": {
+        "type": "unknown",
+        "description": "Selected value binding."
+      },
+      "label": {
+        "type": "string",
+        "default": "",
+        "description": "Group label."
+      },
+      "direction": {
+        "type": "string",
+        "default": "row",
+        "description": "'row' | 'column' layout direction."
+      },
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Disable all radio buttons."
+      },
+      "disabledStateTooltip": {
+        "type": "string",
+        "description": "Tooltip when disabled."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "IconRadioButton_ViewMode",
+      "values": {
+        "type": "crt.IconRadioButton",
+        "items": [],
+        "direction": "row"
+      },
+      "parentName": "ToolbarContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Chip",
+    "category": "display",
+    "description": "Single chip / tag / badge element with configurable color.",
+    "container": false,
+    "parentTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer",
+      "crt.ChipList"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Chip."
+      },
+      "color": {
+        "type": "string",
+        "description": "Chip color."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "Chip_Status",
+      "values": {
+        "type": "crt.Chip",
+        "color": "green"
+      },
+      "parentName": "ChipContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.ChipList",
+    "category": "display",
+    "description": "List of chip elements with optional wrapping and readonly mode. Experimental component.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ChipList."
+      },
+      "items": {
+        "type": "array",
+        "description": "CrtChipListItemConfig[] chip definitions."
+      },
+      "ariaLabel": {
+        "type": "string",
+        "default": "",
+        "description": "Accessibility label."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode (no remove)."
+      },
+      "wrap": {
+        "type": "boolean",
+        "default": true,
+        "description": "Wrap chips to multiple lines."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "ChipList_Tags",
+      "values": {
+        "type": "crt.ChipList",
+        "readonly": false,
+        "wrap": true
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.SidebarContainer",
+    "category": "containers",
+    "description": "Side panel container for right-side content areas with optional resize support.",
+    "container": true,
+    "parentTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.SidebarContainer."
+      },
+      "uniqueName": {
+        "type": "string",
+        "description": "Unique name for sidebar state persistence."
+      },
+      "useResizableMode": {
+        "type": "boolean",
+        "default": false,
+        "description": "Allow user-resizable sidebar."
+      },
+      "useResizeAnimation": {
+        "type": "boolean",
+        "default": true,
+        "description": "Animate resize transitions."
+      },
+      "sidebarWidth": {
+        "type": "string",
+        "description": "CSS width value for the sidebar."
+      }
+    },
+    "typicalChildren": [
+      "crt.FlexContainer",
+      "crt.GridContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "RightSidebar",
+      "values": {
+        "type": "crt.SidebarContainer"
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.ToggleContainerItem",
+    "category": "containers",
+    "description": "Collapsible content section within a ToggleContainer, with header toggle and content slots.",
+    "container": true,
+    "parentTypes": [
+      "crt.ToggleContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ToggleContainerItem."
+      },
+      "items": {
+        "type": "array",
+        "description": "Content slot for child elements."
+      },
+      "tools": {
+        "type": "array",
+        "description": "Content slot for toolbar elements."
+      },
+      "allowToggleClose": {
+        "type": "boolean",
+        "default": true,
+        "description": "Allow collapsing the section."
+      },
+      "backgroundColor": {
+        "type": "string",
+        "default": "PrimaryContrast500",
+        "description": "ThemeColor background value."
+      },
+      "isToggleTabHeaderVisible": {
+        "type": "boolean",
+        "description": "Show toggle tab header."
+      }
+    },
+    "typicalChildren": [
+      "crt.FlexContainer",
+      "crt.GridContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ToggleContainerItem_Details",
+      "values": {
+        "type": "crt.ToggleContainerItem",
+        "items": [],
+        "tools": [],
+        "allowToggleClose": true
+      },
+      "parentName": "ToggleContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.SchemaOutlet",
+    "category": "containers",
+    "description": "Outlet component that renders another Freedom UI schema inline by name. Used for embedding reusable page fragments.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.SchemaOutlet."
+      },
+      "schemaName": {
+        "type": "string",
+        "required": true,
+        "description": "Name of the Freedom UI schema to render."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "SchemaOutlet_SharedFragment",
+      "values": {
+        "type": "crt.SchemaOutlet",
+        "schemaName": "UsrSharedFragment"
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.EntityStageProgressBar",
+    "category": "interactive",
+    "description": "Stage progress bar for DCM (Dynamic Case Management) entity stages. Shows clickable stage steps with transitions and process schema integration.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.EntityStageProgressBar."
+      },
+      "recordId": {
+        "type": "string",
+        "description": "Parent record unique identifier binding, typically '$Id'."
+      },
+      "entityName": {
+        "type": "string",
+        "description": "Source entity schema name."
+      },
+      "saveOnChange": {
+        "type": "boolean",
+        "default": false,
+        "description": "Save record automatically on stage change."
+      },
+      "askUserToChangeSchema": {
+        "type": "boolean",
+        "default": true,
+        "description": "Ask user before changing DCM process schema."
+      },
+      "stages": {
+        "type": "array",
+        "description": "Step[] collection of stages."
+      },
+      "stageConnections": {
+        "type": "array",
+        "description": "StageConnection[] allowed stage transitions."
+      },
+      "allowedStages": {
+        "type": "array",
+        "description": "DcmStageInfo[] stages the user can click."
+      },
+      "value": {
+        "type": "object",
+        "description": "LookupValue for the current stage."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "EntityStageProgressBar",
+      "values": {
+        "type": "crt.EntityStageProgressBar",
+        "recordId": "$Id",
+        "saveOnChange": false,
+        "askUserToChangeSchema": true
+      },
+      "parentName": "MainHeaderContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Link",
+    "category": "display",
+    "description": "Hyperlink component with configurable target, caption, underlining mode, and click event support.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Link."
+      },
+      "href": {
+        "type": "string",
+        "description": "URL for the link."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Link display text. Supports #ResourceString(key)# macro."
+      },
+      "title": {
+        "type": "string",
+        "description": "Link tooltip."
+      },
+      "target": {
+        "type": "string",
+        "default": "_self",
+        "description": "AnchorTarget: '_self', '_blank', '_parent', '_top'."
+      },
+      "linkType": {
+        "type": "string",
+        "description": "LinkType for styling."
+      },
+      "underlining": {
+        "type": "string",
+        "description": "UnderliningMode: 'always' or default."
+      },
+      "mode": {
+        "type": "string",
+        "description": "LinkMode: 'native' for standard anchor behavior."
+      },
+      "ariaLabel": {
+        "type": "string",
+        "description": "Accessibility label."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "Link_Documentation",
+      "values": {
+        "type": "crt.Link",
+        "href": "https://academy.creatio.com",
+        "caption": "#ResourceString(Link_Documentation_caption)#",
+        "target": "_blank"
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.IFrame",
+    "category": "interactive",
+    "description": "Embedded iframe component for loading external URLs or rendering inline HTML content with configurable sandbox and permissions.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.IFrame."
+      },
+      "urlContent": {
+        "type": "string",
+        "description": "URL to load in iframe. Takes priority over htmlContent."
+      },
+      "htmlContent": {
+        "type": "string",
+        "description": "HTML content to render using srcdoc attribute."
+      },
+      "sandbox": {
+        "type": "string",
+        "default": "",
+        "description": "Sandbox restrictions, e.g. 'allow-scripts allow-same-origin'."
+      },
+      "allow": {
+        "type": "string",
+        "description": "Permissions policy, e.g. 'camera; microphone; fullscreen'."
+      },
+      "referrerPolicy": {
+        "type": "string",
+        "description": "Referrer policy, e.g. 'no-referrer', 'strict-origin-when-cross-origin'."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement. Use rowSpan >= 6 for adequate height."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Has contentSlots 'items' and 'placeholder'. Use urlContent for external pages, htmlContent for inline content.",
+    "example": {
+      "operation": "insert",
+      "name": "IFrame_ExternalPage",
+      "values": {
+        "type": "crt.IFrame",
+        "urlContent": "https://academy.creatio.com",
+        "sandbox": "allow-scripts allow-same-origin"
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Badge",
+    "category": "display",
+    "description": "Badge/notification indicator overlay for child elements with configurable color and offset.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Badge."
+      },
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether the badge is shown."
+      },
+      "color": {
+        "type": "string",
+        "default": "primary",
+        "description": "Badge color: 'primary', 'accent', 'warn'."
+      },
+      "offset": {
+        "type": "string",
+        "description": "BadgeOffset — shifts the badge inside/outside the element."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Has contentSlot 'items' for the element the badge decorates.",
+    "example": {
+      "operation": "insert",
+      "name": "Badge_Notification",
+      "values": {
+        "type": "crt.Badge",
+        "enabled": true,
+        "color": "accent"
+      },
+      "parentName": "ToolbarContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FileList",
+    "category": "interactive",
+    "description": "File/attachment list component with drag-and-drop upload, gallery/list view modes, and file grouping. Extends DataGrid.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.FileList."
+      },
+      "masterRecordColumnValue": {
+        "type": "string",
+        "description": "Master record column value binding, typically '$Id'."
+      },
+      "recordColumnName": {
+        "type": "string",
+        "description": "Column name for record reference."
+      },
+      "viewType": {
+        "type": "string",
+        "description": "FileListViewType: 'List', 'Gallery'."
+      },
+      "tag": {
+        "type": "string",
+        "description": "File tag/category filter."
+      },
+      "droppable": {
+        "type": "boolean",
+        "description": "Enable drag-and-drop file upload."
+      },
+      "fileGroups": {
+        "type": "array",
+        "description": "FileGroup[] grouping configuration."
+      },
+      "items": {
+        "type": "array",
+        "description": "BaseViewModelCollection of file items."
+      },
+      "features": {
+        "type": "object",
+        "description": "DataGridFeatures configuration."
+      },
+      "galleryItemConfig": {
+        "type": "object",
+        "description": "GalleryItemConfig for gallery view layout."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "FileList_Attachments",
+      "values": {
+        "type": "crt.FileList",
+        "masterRecordColumnValue": "$Id",
+        "droppable": true
+      },
+      "parentName": "AttachmentsTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.HtmlEditor",
+    "category": "fields",
+    "description": "Rich HTML editor based on CKEditor with macro support, email template integration, and preview capability.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.HtmlEditor."
+      },
+      "control": {
+        "type": "string",
+        "description": "Form control binding for HTML content, e.g. '$Body'."
+      },
+      "plainText": {
+        "type": "string",
+        "description": "Plain text version binding."
+      },
+      "entitySchemaName": {
+        "type": "string",
+        "description": "Entity schema name for template/macro context."
+      },
+      "recordId": {
+        "type": "string",
+        "description": "Record ID for template/macro resolution."
+      },
+      "readonly": {
+        "type": "boolean",
+        "default": false,
+        "description": "Read-only mode."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Editor placeholder text."
+      },
+      "height": {
+        "type": "number",
+        "default": 300,
+        "description": "Editor height in pixels."
+      },
+      "showMacroHelper": {
+        "type": "boolean",
+        "description": "Show macro helper UI."
+      },
+      "useTemplates": {
+        "type": "boolean",
+        "description": "Enable email template support."
+      },
+      "enablePreview": {
+        "type": "boolean",
+        "description": "Enable content preview."
+      },
+      "autoResolveMacro": {
+        "type": "boolean",
+        "description": "Auto-resolve macros in content."
+      },
+      "showStatusPanel": {
+        "type": "boolean",
+        "description": "Show editor status panel."
+      },
+      "customToolbar": {
+        "type": "array",
+        "description": "string[][] custom CKEditor toolbar configuration."
+      },
+      "macroCategories": {
+        "type": "array",
+        "description": "HtmlEditorMacroCategory[] macro categories for insertion."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "HtmlEditor_Body",
+      "values": {
+        "type": "crt.HtmlEditor",
+        "control": "$Body",
+        "height": 400,
+        "readonly": false
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Placeholder",
+    "category": "display",
+    "description": "Empty state placeholder with title, subtitle, and image/animation. Shows when a section has no data.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.Placeholder."
+      },
+      "loading": {
+        "type": "boolean",
+        "description": "Show loading state."
+      },
+      "title": {
+        "type": "string",
+        "description": "Placeholder title text or localization key."
+      },
+      "subhead": {
+        "type": "string",
+        "description": "Placeholder subtitle text or localization key."
+      },
+      "image": {
+        "type": "object",
+        "description": "PlaceholderImage configuration (icon or animation)."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Has contentSlot 'items' for custom placeholder content.",
+    "example": {
+      "operation": "insert",
+      "name": "Placeholder_Empty",
+      "values": {
+        "type": "crt.Placeholder",
+        "title": "#ResourceString(Placeholder_Empty_title)#",
+        "subhead": "#ResourceString(Placeholder_Empty_subhead)#"
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.ApprovalList",
+    "category": "interactive",
+    "description": "Approval process list showing approval steps, statuses, and actions for a record. Extends DataGrid with WebSocket subscription.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ApprovalList."
+      },
+      "recordId": {
+        "type": "string",
+        "description": "Entity record ID binding for approval data and WebSocket subscription."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Extends CrtDataGridComponent. Supports Filtration platform API.",
+    "example": {
+      "operation": "insert",
+      "name": "ApprovalList",
+      "values": {
+        "type": "crt.ApprovalList",
+        "recordId": "$Id"
+      },
+      "parentName": "ApprovalsTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.LocalTime",
+    "category": "display",
+    "description": "Local time display component showing the current time in a specified timezone. Bound to a TimeZone lookup value.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.LocalTime."
+      },
+      "control": {
+        "type": "string",
+        "description": "Lookup value binding containing TimeZone information, e.g. '$TimeZone'."
+      },
+      "labelType": {
+        "type": "string",
+        "default": "body",
+        "description": "Text style type."
+      },
+      "labelThickness": {
+        "type": "string",
+        "default": "normal",
+        "description": "Text weight."
+      },
+      "labelEllipsis": {
+        "type": "boolean",
+        "default": false,
+        "description": "Truncate with ellipsis."
+      },
+      "labelColor": {
+        "type": "string",
+        "default": "#098401",
+        "description": "Text color (CSS color value)."
+      },
+      "labelBackgroundColor": {
+        "type": "string",
+        "default": "transparent",
+        "description": "Background color."
+      },
+      "labelTextAlign": {
+        "type": "string",
+        "default": "start",
+        "description": "Text alignment."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Requires a TimeZone lookup reference schema binding.",
+    "example": {
+      "operation": "insert",
+      "name": "LocalTime_ContactTZ",
+      "values": {
+        "type": "crt.LocalTime",
+        "control": "$TimeZone",
+        "labelColor": "#098401"
+      },
+      "parentName": "ProfileContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.MultiList",
+    "category": "interactive",
+    "description": "Multi-tab list component with search, paging, combined mode, and selectable items. Used for detail-like tabbed data views.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.MultiList."
+      },
+      "itemsList": {
+        "type": "array",
+        "description": "BaseViewModelCollection of items."
+      },
+      "selectedItemId": {
+        "type": "string",
+        "description": "ID of the currently selected item."
+      },
+      "isCombinedMode": {
+        "type": "boolean",
+        "description": "Enable combined layout mode."
+      },
+      "currentPage": {
+        "type": "number",
+        "description": "Current page index for paging."
+      },
+      "searchFilter": {
+        "type": "string",
+        "description": "Current search query."
+      },
+      "isSearchDisabled": {
+        "type": "boolean",
+        "description": "Disable search."
+      },
+      "showNoDataBlankState": {
+        "type": "boolean",
+        "description": "Show blank state when no data."
+      },
+      "noDataPlaceholder": {
+        "type": "object",
+        "description": "MultiListPlaceholderConfig for empty state display."
+      },
+      "layoutConfig": {
+        "type": "object",
+        "description": "Standard grid placement."
+      }
+    },
+    "typicalChildren": [],
+    "notes": "Has lazy contentSlot 'items'.",
+    "example": {
+      "operation": "insert",
+      "name": "MultiList_Details",
+      "values": {
+        "type": "crt.MultiList",
+        "isCombinedMode": false
+      },
+      "parentName": "DetailsTab",
+      "propertyName": "items",
+      "index": 0
+    }
   }
 ]
