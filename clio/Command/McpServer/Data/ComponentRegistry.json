@@ -307,10 +307,16 @@
       "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
       "readonly": { "type": "boolean|string", "default": false, "description": "Read-only state or binding." },
       "multiline": { "type": "boolean", "default": false, "description": "Enables textarea-style rendering when true." },
+      "tools": { "type": "array", "default": [], "description": "Optional trailing tool elements rendered in the tools slot." },
+      "inputType": { "type": "string", "default": "text", "description": "Native input mode such as text, password, or search." },
+      "displayTools": { "type": "boolean", "description": "Overrides the automatic tool visibility logic when set." },
+      "mask": { "type": "object", "description": "Optional input mask configuration." },
       "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." },
       "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
     },
-    "typicalChildren": [],
+    "typicalChildren": [
+      "crt.Button"
+    ],
     "example": {
       "operation": "insert",
       "name": "UsrCode",
@@ -322,6 +328,8 @@
         "tooltip": "",
         "readonly": false,
         "multiline": false,
+        "tools": [],
+        "inputType": "text",
         "labelPosition": "auto"
       },
       "parentName": "FieldContainer",
@@ -826,14 +834,20 @@
       "type": { "type": "string", "required": true, "description": "Must be crt.Button." },
       "caption": { "type": "string", "description": "Button text. Use #ResourceString(key)# for custom captions." },
       "color": { "type": "string", "default": "default", "values": ["default", "primary", "accent", "warn", "outline"], "description": "Button color preset." },
+      "disabled": { "type": "boolean|string", "default": false, "description": "Disabled state or binding expression." },
       "size": { "type": "string", "default": "large", "values": ["small", "medium", "large", "extra-large"], "description": "Button size preset." },
       "iconPosition": { "type": "string", "default": "only-text", "values": ["only-text", "left-icon", "right-icon", "only-icon"], "description": "Icon placement mode." },
       "icon": { "type": "string", "description": "Optional icon name." },
       "clicked": { "type": "object", "description": "Request descriptor triggered on click." },
       "clickMode": { "type": "string", "default": "default", "values": ["default", "menu"], "description": "Regular click or menu button behavior." },
+      "menuItems": { "type": "array", "default": [], "description": "Nested menu entries used when clickMode is menu or when the button exposes a dropdown." },
       "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
     },
-    "typicalChildren": [],
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
     "example": {
       "operation": "insert",
       "name": "Button_Back",
@@ -847,7 +861,8 @@
         "visible": true,
         "icon": "back-button-icon",
         "clicked": { "request": "crt.ClosePageRequest" },
-        "clickMode": "default"
+        "clickMode": "default",
+        "menuItems": []
       },
       "parentName": "TitleContainer",
       "propertyName": "items",
@@ -869,12 +884,24 @@
       "items": { "type": "string", "description": "Bound collection attribute, usually $DataTable_Items or a similar list." },
       "columns": { "type": "array", "description": "Visible grid column definitions." },
       "features": { "type": "object", "description": "Grid features such as row selection, toolbar, or edit mode." },
+      "headerToolbarItems": { "type": "array", "default": [], "description": "Header menu items rendered in the grid toolbar." },
+      "rowToolbarItems": { "type": "array", "default": [], "description": "Per-row menu actions." },
+      "bulkActions": { "type": "array", "default": [], "description": "Menu actions available for multi-selection scenarios." },
+      "placeholder": { "type": "array", "default": [], "description": "Placeholder content slot rendered when the grid has no records." },
+      "skeleton": { "type": "array", "default": [], "description": "Skeleton content slot rendered while the grid is loading." },
       "primaryColumnName": { "type": "string", "description": "Primary key column code used by the grid." },
       "activeRow": { "type": "string", "description": "Optional binding for the selected row." },
+      "title": { "type": "string", "description": "Optional grid caption rendered above the table." },
+      "stretch": { "type": "boolean", "default": false, "description": "Stretches the grid to fill available height." },
+      "maxHeight": { "type": "string", "description": "Maximum rendered height when the grid is scrollable." },
       "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the grid height to visible rows when true." },
       "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
     },
-    "typicalChildren": [],
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
     "example": {
       "operation": "insert",
       "name": "DataTable",
@@ -895,12 +922,370 @@
           "rows": { "selection": false, "toolbar": false },
           "editable": { "enable": false, "itemsCreation": false }
         },
+        "headerToolbarItems": [],
+        "rowToolbarItems": [],
+        "bulkActions": [],
+        "placeholder": [],
+        "skeleton": [],
         "fitContent": true,
         "visible": true
       },
       "parentName": "MainContainer",
       "propertyName": "items",
       "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Approval",
+    "category": "interactive",
+    "description": "Approval widget that renders current approval state, metrics, and next-step content.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Approval." },
+      "items": { "type": "array", "default": [], "description": "Nested content rendered in the approval items slot." },
+      "recordId": { "type": "string", "description": "Record identifier that drives approval loading." },
+      "dataLoaded": { "type": "boolean", "description": "Frontend flag that turns off the loading state when approval data is ready." },
+      "approval": { "type": "object", "description": "Current approval payload bound from the view model." },
+      "approvalsMetrics": { "type": "array", "description": "Aggregated approval counters used for visibility and badges." },
+      "approvalChangedHandler": { "type": "object", "description": "Binding that reacts to approval status changes." },
+      "hiddenWhenNoData": { "type": "boolean", "default": false, "description": "Hides the widget when there is no approval data." },
+      "entityName": { "type": "string", "description": "Primary entity schema name." },
+      "approvalEntityName": { "type": "string", "description": "Approval entity schema name." },
+      "linkedSchemaName": { "type": "string", "description": "Optional linked schema used by approval actions." },
+      "linkedSchemaColumnName": { "type": "string", "description": "Optional linked schema column used by approval actions." },
+      "activeColor": { "type": "string", "default": "white", "description": "Accent color for active approval items." },
+      "inactiveColor": { "type": "string", "default": "white", "description": "Color for inactive approval items." }
+    },
+    "typicalChildren": [
+      "crt.Button",
+      "crt.Label"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ApprovalWidget",
+      "values": {
+        "type": "crt.Approval",
+        "recordId": "$Id",
+        "entityName": "Contact",
+        "approvalEntityName": "Approval",
+        "activeColor": "white",
+        "inactiveColor": "white",
+        "items": []
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.Calendar",
+    "category": "interactive",
+    "description": "Calendar and scheduler component with tile templates, filtration support, and date-range navigation.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Calendar." },
+      "items": { "type": "string", "description": "Bound collection of calendar items." },
+      "filters": { "type": "array", "description": "Date-range filters that define the current calendar window." },
+      "tileContent": { "type": "array", "default": [], "description": "Lazy child template content rendered inside calendar tiles." },
+      "pageSize": { "type": "number", "default": 150, "description": "Number of items loaded per page." },
+      "dateRangeLimitInDays": { "type": "number", "default": 365, "description": "Maximum allowed date range size." },
+      "useAllDayMeeting": { "type": "boolean", "default": true, "description": "Enables all-day meeting handling." },
+      "useAutoScrollToCurrentTime": { "type": "boolean", "default": true, "description": "Auto-scrolls to the current time in time-grid views." },
+      "startBusinessTime": { "type": "string", "description": "Visible business-day start time." },
+      "endBusinessTime": { "type": "string", "description": "Visible business-day end time." },
+      "maxDuplicatesByOwner": { "type": "number", "default": 16, "description": "Maximum duplicate items allowed for the same owner bucket." },
+      "miniPageSchemaName": { "type": "string", "description": "Mini page schema opened from calendar interactions." },
+      "lightweightModeLimit": { "type": "number", "description": "Threshold for switching the calendar into lightweight mode." },
+      "showWeekends": { "type": "boolean", "default": true, "description": "Toggles weekend visibility." },
+      "timeScale": { "type": "string", "default": "00:30:00", "description": "Slot duration in time-grid views." },
+      "colorizationType": { "type": "string", "default": "Default", "description": "Calendar colorization strategy." }
+    },
+    "typicalChildren": [
+      "crt.Label",
+      "crt.Button"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ActivitiesCalendar",
+      "values": {
+        "type": "crt.Calendar",
+        "items": "$CalendarData",
+        "filters": "$CalendarFilters",
+        "tileContent": [],
+        "pageSize": 150,
+        "showWeekends": true,
+        "timeScale": "00:30:00"
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 2
+    }
+  },
+  {
+    "componentType": "crt.Chat",
+    "category": "interactive",
+    "description": "Chat container that hosts conversation content and switches between split and combined layouts.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Chat." },
+      "items": { "type": "array", "default": [], "description": "Nested chat content, usually a crt.Conversation tree." },
+      "combinedModeEnabled": { "type": "boolean", "description": "Enables switching between split and combined layouts." },
+      "isCombinedMode": { "type": "boolean", "description": "Current layout mode flag." },
+      "combinedModeButtonVisible": { "type": "boolean", "description": "Controls visibility of the combined-mode toggle button." }
+    },
+    "typicalChildren": [
+      "crt.Conversation"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "AgentChat",
+      "values": {
+        "type": "crt.Chat",
+        "items": [],
+        "combinedModeEnabled": true,
+        "isCombinedMode": false
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 3
+    }
+  },
+  {
+    "componentType": "crt.Conversation",
+    "category": "interactive",
+    "description": "Conversation surface with actions, tools, typing indicators, pagination, and placeholder content slots.",
+    "container": true,
+    "parentTypes": [
+      "crt.Chat",
+      "crt.OmnichannelInbox",
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Conversation." },
+      "actions": { "type": "array", "default": [], "description": "Child elements rendered in the actions slot." },
+      "information": { "type": "array", "default": [], "description": "Child elements rendered in the information slot." },
+      "typing": { "type": "array", "default": [], "description": "Child elements rendered in the typing slot." },
+      "tools": { "type": "array", "default": [], "description": "Child elements rendered in the tools slot, usually the message editor." },
+      "placeholder": { "type": "array", "default": [], "description": "Child elements rendered when there are no messages." },
+      "messages": { "type": "array", "default": [], "description": "Conversation message collection." },
+      "conversationId": { "type": "string", "description": "Current conversation identifier." },
+      "unreadMessages": { "type": "number", "default": 0, "description": "Unread message count." },
+      "previewMessageId": { "type": "string", "description": "Message identifier currently highlighted in preview mode." },
+      "hasPreviousMessages": { "type": "boolean", "default": false, "description": "Indicates whether older messages can be paged in." },
+      "isTyping": { "type": "boolean", "default": false, "description": "Shows typing indicators when true." },
+      "searchFilter": { "type": "string", "description": "Text filter applied to the message list." },
+      "isEmbeddedMode": { "type": "boolean", "default": false, "description": "Embeds the conversation in a more compact shell." },
+      "paginationPageSize": { "type": "number", "default": 30, "description": "Number of messages requested per pagination step." },
+      "disableAutoScroll": { "type": "boolean", "default": false, "description": "Disables automatic scrolling to new content." }
+    },
+    "typicalChildren": [
+      "crt.Button",
+      "crt.Label"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ConversationView",
+      "values": {
+        "type": "crt.Conversation",
+        "actions": [],
+        "information": [],
+        "typing": [],
+        "tools": [],
+        "placeholder": [],
+        "messages": [],
+        "paginationPageSize": 30
+      },
+      "parentName": "AgentChat",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Feed",
+    "category": "interactive",
+    "description": "Record or user feed with post composer support, selection actions, and incremental message loading.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Feed." },
+      "selectionActions": { "type": "array", "default": [], "description": "Menu items rendered for selected text or feed actions." },
+      "feedType": { "type": "string", "default": "Record", "description": "Feed source mode such as Record or User." },
+      "primaryColumnValue": { "type": "string", "description": "Primary record identifier, usually $Id." },
+      "primaryDisplayColumnValue": { "type": "string", "description": "Optional display value for the current record." },
+      "cardState": { "type": "string|object", "description": "Card action state that controls composer visibility." },
+      "allowExternalPost": { "type": "boolean", "default": false, "description": "Allows posting to external destinations when supported." },
+      "offsetDate": { "type": "string", "description": "Pagination cursor for older feed messages." },
+      "sortColumn": { "type": "string", "description": "Current sort column for feed ordering." },
+      "feedMessages": { "type": "array", "default": [], "description": "Current feed messages." },
+      "feedMessagesPage": { "type": "array", "default": [], "description": "Incremental page of feed messages." },
+      "entitySchemaName": { "type": "string", "description": "Schema name for record feeds." },
+      "dataSourceName": { "type": "string", "description": "Datasource backing the feed." },
+      "selection": { "type": "string", "description": "Current selection binding." },
+      "showBlankSlate": { "type": "boolean", "default": true, "description": "Shows blank-state content when there are no posts." },
+      "disableSelectionOptions": { "type": "boolean", "default": false, "description": "Turns off selection-related actions." },
+      "isReadOnly": { "type": "boolean", "default": false, "description": "Disables feed editing and composer interactions." }
+    },
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ActivityFeed",
+      "values": {
+        "type": "crt.Feed",
+        "selectionActions": [],
+        "feedType": "Record",
+        "primaryColumnValue": "$Id",
+        "cardState": "$CardState",
+        "allowExternalPost": false
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 4
+    }
+  },
+  {
+    "componentType": "crt.Gallery",
+    "category": "interactive",
+    "description": "Gallery list component with selectable cards, pagination events, and bulk menu actions.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Gallery." },
+      "ariaLabel": { "type": "string", "default": "gallery", "description": "Accessibility label for the gallery container." },
+      "bulkActions": { "type": "array", "default": [], "description": "Menu items available for bulk selection actions." },
+      "selectable": { "type": "boolean", "default": true, "description": "Enables item selection." },
+      "selectedItemId": { "type": "string", "description": "Currently selected gallery item identifier." },
+      "itemStyles": { "type": "object", "description": "Inline style overrides for gallery items." },
+      "mode": { "type": "string", "description": "Gallery item rendering mode." },
+      "multiselect": { "type": "boolean", "default": false, "description": "Allows multiple gallery items to be selected." },
+      "selectionState": { "type": "object", "description": "Selection model payload for specific or bulk selection." }
+    },
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ProductsGallery",
+      "values": {
+        "type": "crt.Gallery",
+        "ariaLabel": "gallery",
+        "bulkActions": [],
+        "selectable": true,
+        "multiselect": false
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 5
+    }
+  },
+  {
+    "componentType": "crt.MenuItem",
+    "category": "interactive",
+    "description": "Nested menu action item used by button menus, grid toolbars, bulk actions, and similar action collections.",
+    "container": true,
+    "parentTypes": [
+      "crt.Button",
+      "crt.MenuItem",
+      "crt.DataGrid",
+      "crt.Feed",
+      "crt.Gallery",
+      "crt.Summaries",
+      "crt.SummaryItem"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.MenuItem." },
+      "caption": { "type": "string", "description": "Menu item caption." },
+      "icon": { "type": "string", "description": "Optional icon name." },
+      "iconColor": { "type": "string", "description": "Icon palette name or custom color." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." },
+      "disabled": { "type": "boolean|string", "default": false, "description": "Disabled state or binding expression." },
+      "selected": { "type": "boolean", "default": false, "description": "Marks the menu item as selected when supported." },
+      "items": { "type": "array", "default": [], "description": "Nested submenu items." },
+      "clicked": { "type": "object", "description": "Request descriptor triggered when the menu item is invoked." }
+    },
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "ExportToExcel",
+      "values": {
+        "type": "crt.MenuItem",
+        "caption": "Export to Excel",
+        "icon": "export-button-icon",
+        "items": [],
+        "clicked": {
+          "request": "crt.ExportDataRequest"
+        }
+      },
+      "parentName": "ActionsButton",
+      "propertyName": "menuItems",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.OmnichannelInbox",
+    "category": "interactive",
+    "description": "Agent inbox alias of crt.Chat that hosts multi-channel items and planned tasks in the same shell.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.OmnichannelInbox." },
+      "items": { "type": "array", "default": [], "description": "Nested inbox content, usually a crt.Conversation tree." },
+      "combinedModeEnabled": { "type": "boolean", "description": "Enables switching between split and combined layouts." },
+      "isCombinedMode": { "type": "boolean", "description": "Current layout mode flag." },
+      "combinedModeButtonVisible": { "type": "boolean", "description": "Controls visibility of the combined-mode toggle button." }
+    },
+    "typicalChildren": [
+      "crt.Conversation"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "AgentInbox",
+      "values": {
+        "type": "crt.OmnichannelInbox",
+        "items": [],
+        "combinedModeEnabled": true,
+        "isCombinedMode": false
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 6
     }
   },
   {
@@ -934,6 +1319,173 @@
       },
       "parentName": "UsrStatus",
       "propertyName": "listActions",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FilePreview",
+    "category": "display",
+    "description": "Document preview surface that loads a file and syncs viewer options back to the page model.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.FilePreview." },
+      "loading": { "type": "boolean", "default": false, "description": "Shows the preview loading state." },
+      "file": { "type": "object", "description": "File descriptor passed to the viewer instance." },
+      "options": { "type": "object", "description": "Viewer options forwarded to the file viewer implementation." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "PreviewPane",
+      "values": {
+        "type": "crt.FilePreview",
+        "loading": false,
+        "file": "$PreviewFile",
+        "options": "$PreviewOptions"
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 7
+    }
+  },
+  {
+    "componentType": "crt.MenuDivider",
+    "category": "display",
+    "description": "Visual separator used inside menu collections.",
+    "container": false,
+    "parentTypes": [
+      "crt.Button",
+      "crt.MenuItem",
+      "crt.DataGrid",
+      "crt.Feed",
+      "crt.Gallery",
+      "crt.Summaries",
+      "crt.SummaryItem"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.MenuDivider." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "Divider_1",
+      "values": {
+        "type": "crt.MenuDivider"
+      },
+      "parentName": "ActionsButton",
+      "propertyName": "menuItems",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.MenuLabel",
+    "category": "display",
+    "description": "Read-only label used to group related menu actions.",
+    "container": false,
+    "parentTypes": [
+      "crt.Button",
+      "crt.MenuItem",
+      "crt.DataGrid",
+      "crt.Feed",
+      "crt.Gallery",
+      "crt.Summaries",
+      "crt.SummaryItem"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.MenuLabel." },
+      "caption": { "type": "string", "description": "Menu section caption." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "DesignSettingsLabel",
+      "values": {
+        "type": "crt.MenuLabel",
+        "caption": "Design settings"
+      },
+      "parentName": "DataTable",
+      "propertyName": "headerToolbarItems",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Summaries",
+    "category": "display",
+    "description": "Responsive summary strip that renders crt.SummaryItem entries and optional action menus.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.HeaderContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Summaries." },
+      "items": { "type": "array", "default": [], "description": "Summary items filtered to crt.SummaryItem entries." },
+      "actions": { "type": "array", "default": [], "description": "Menu items rendered in the summaries action menu." },
+      "expanded": { "type": "boolean", "default": true, "description": "Current expansion state." },
+      "title": { "type": "string", "description": "Optional summaries title." },
+      "disabled": { "type": "boolean", "default": false, "description": "Disables summaries interactions when true." },
+      "readonly": { "type": "boolean", "default": false, "description": "Propagates readonly behavior to summary items." }
+    },
+    "typicalChildren": [
+      "crt.SummaryItem",
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "PageSummaries",
+      "values": {
+        "type": "crt.Summaries",
+        "title": "Summary",
+        "items": [],
+        "actions": [],
+        "expanded": true
+      },
+      "parentName": "TitleContainer",
+      "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.SummaryItem",
+    "category": "display",
+    "description": "Single summary chip with label, value or error state, and optional menu actions.",
+    "container": false,
+    "parentTypes": [
+      "crt.Summaries"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.SummaryItem." },
+      "label": { "type": "string", "description": "Summary label." },
+      "value": { "type": "string", "description": "Summary value shown when there is no error." },
+      "error": { "type": "string", "description": "Error text shown instead of the value." },
+      "actions": { "type": "array", "default": [], "description": "Menu items available for the summary item." },
+      "readonly": { "type": "boolean", "default": false, "description": "Disables summary item actions when true." }
+    },
+    "typicalChildren": [
+      "crt.MenuItem",
+      "crt.MenuLabel",
+      "crt.MenuDivider"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "StatusSummaryItem",
+      "values": {
+        "type": "crt.SummaryItem",
+        "label": "Status",
+        "value": "Open",
+        "actions": [],
+        "readonly": false
+      },
+      "parentName": "PageSummaries",
+      "propertyName": "items",
       "index": 0
     }
   },

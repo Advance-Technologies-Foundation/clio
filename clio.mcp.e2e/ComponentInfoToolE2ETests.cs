@@ -41,46 +41,61 @@ public sealed class ComponentInfoToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns grouped summaries in list mode and full metadata in detail mode using the real MCP server process.")]
+	[Description("Returns legacy list results and new frontend-derived metadata using the real MCP server process.")]
 	[AllureTag(ToolName)]
-	[AllureName("component-info returns grouped summaries and detail metadata")]
-	[AllureDescription("Starts the real clio MCP server, lists components with a tab search, then requests full metadata for crt.TabContainer.")]
-	public async Task ComponentInfoTool_Should_Return_List_And_Detail_Metadata() {
+	[AllureName("component-info returns legacy and frontend-derived metadata")]
+	[AllureDescription("Starts the real clio MCP server, verifies a legacy tab search, verifies property-metadata search for bulkActions, then requests full metadata for crt.MenuItem.")]
+	public async Task ComponentInfoTool_Should_Return_List_Search_And_Detail_Metadata() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
-		ComponentInfoResponse listResponse = await CallComponentInfoAsync(
+		ComponentInfoResponse tabListResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			new Dictionary<string, object?> { ["search"] = "tab" });
+		ComponentInfoResponse propertySearchResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["search"] = "bulkActions" });
 		ComponentInfoResponse detailResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["component-type"] = "crt.TabContainer" });
+			new Dictionary<string, object?> { ["component-type"] = "crt.MenuItem" });
 
 		// Assert
-		listResponse.Success.Should().BeTrue(
+		tabListResponse.Success.Should().BeTrue(
 			because: "list mode should succeed with the shipped component registry");
-		listResponse.Mode.Should().Be("list",
+		tabListResponse.Mode.Should().Be("list",
 			because: "search-only queries should keep component-info in list mode");
-		listResponse.Count.Should().BeGreaterThan(0,
+		tabListResponse.Count.Should().BeGreaterThan(0,
 			because: "the shipped registry should contain tab-related component metadata");
-		listResponse.Groups.Should().NotBeNullOrEmpty(
+		tabListResponse.Groups.Should().NotBeNullOrEmpty(
 			because: "list mode should return grouped summaries");
-		listResponse.Groups!.SelectMany(group => group.Items).Select(item => item.ComponentType)
+		tabListResponse.Groups!.SelectMany(group => group.Items).Select(item => item.ComponentType)
 			.Should().Contain("crt.TabContainer",
 				because: "the tab search should surface crt.TabContainer from the shipped registry");
+		propertySearchResponse.Success.Should().BeTrue(
+			because: "searches by property metadata should work against the shipped registry");
+		propertySearchResponse.Mode.Should().Be("list",
+			because: "property searches should stay in list mode");
+		propertySearchResponse.Groups.Should().NotBeNullOrEmpty(
+			because: "property metadata matches should still be grouped");
+		propertySearchResponse.Groups!.SelectMany(group => group.Items).Select(item => item.ComponentType)
+			.Should().Contain("crt.Gallery",
+				because: "bulkActions should surface gallery metadata derived from the frontend");
 		detailResponse.Success.Should().BeTrue(
-			because: "detail mode should succeed for curated component types");
+			because: "detail mode should succeed for frontend-derived nested component contracts");
 		detailResponse.Mode.Should().Be("detail",
 			because: "component-type lookups should return the detail contract");
-		detailResponse.ComponentType.Should().Be("crt.TabContainer",
+		detailResponse.ComponentType.Should().Be("crt.MenuItem",
 			because: "the detail response should echo the requested component type");
-		detailResponse.Properties.Should().ContainKey("caption",
-			because: "detail mode should expose curated property metadata");
+		detailResponse.Container.Should().BeTrue(
+			because: "menu items can host submenu items");
+		detailResponse.Properties.Should().ContainKey("items",
+			because: "nested menu contracts should expose their submenu slot metadata");
 	}
 
 	[Test]
