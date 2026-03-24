@@ -24,7 +24,7 @@ public static class PagePrompt {
 		 When `bundle.viewConfig` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
 		 Read page metadata from `page`.
 		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it to `{PageUpdateTool.ToolName}`.
-		 Pass `resources` to `{PageUpdateTool.ToolName}` when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings.
+		 Pass `resources` to `{PageUpdateTool.ToolName}` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings.
 		 Use `page-sync` only when you need to save multiple pages in one workflow.
 		 """;
 }

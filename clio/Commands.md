@@ -1221,6 +1221,8 @@ Recommended workflow:
 4. add `--resources` when the edited body introduces or changes `#ResourceString(key)#` macros
 5. `page-update`
 
+`--resources` must be a valid JSON object string. Malformed JSON fails validation.
+
 
 # Environment settings
 - [Create/Update an environment](./docs/commands/RegAppCommand.md)

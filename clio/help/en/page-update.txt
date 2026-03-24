@@ -24,8 +24,10 @@ OPTIONS
 
     --dry-run                          Validate only and do not save
 
-    --resources                        JSON object of resource key-value pairs
-                                       for #ResourceString(key)# macros
+    --resources                        Valid JSON object of resource key-value
+                                       pairs for #ResourceString(key)# macros
+                                       Malformed JSON is rejected during
+                                       validation
 
     --uri                    -u       Application uri
 

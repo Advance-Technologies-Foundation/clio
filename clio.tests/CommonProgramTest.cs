@@ -192,6 +192,22 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Sets MCP mode when the invoked command is the MCP alias even if debug flags precede it.")]
+	public void IsMcpServerMode_WithDebugFlagAndMcpAlias_ShouldBeTrue() {
+		string[] args = ["--debug", "mcp", "--help"];
+		Program.Main(args);
+		Program.IsMcpServerMode.Should().BeTrue("because MCP mode should follow the invoked command name instead of scanning all argument values");
+	}
+
+	[Test]
+	[Description("Keeps MCP mode disabled when mcp appears only as a non-command argument value.")]
+	public void IsMcpServerMode_WithNonMcpCommandAndMcpArgumentValue_ShouldBeFalse() {
+		string[] args = ["other", "mcp"];
+		Program.Main(args);
+		Program.IsMcpServerMode.Should().BeFalse("because only the invoked command should enable MCP mode");
+	}
+
+	[Test]
 	public void ReadEnvironmentOptionsFromManifestFile() {
 		FileSystem.MockExamplesFolder("deployments-manifest");
 		string manifestFileName = "full-creatio-config.yaml";
@@ -221,5 +237,4 @@ internal class CommonProgramTest : BaseClioModuleTests{
 
 	#endregion
 }
-
 

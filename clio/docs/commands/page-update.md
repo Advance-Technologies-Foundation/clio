@@ -19,7 +19,7 @@ clio page-update --schema-name <SCHEMA_NAME> --body "<RAW_BODY>" [options]
 | `--schema-name` |  | Yes |  | Freedom UI page schema name |
 | `--body` |  | Yes |  | Full raw JavaScript schema body |
 | `--dry-run` |  | No | `false` | Validate only and do not save |
-| `--resources` |  | No |  | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
+| `--resources` |  | No |  | Valid JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
 | `--Environment` | `-e` | No |  | Registered clio environment name |
 | `--uri` | `-u` | No |  | Creatio application URL |
 | `--Login` | `-l` | No |  | Creatio user login |
@@ -47,6 +47,7 @@ When the body contains `#ResourceString(key)#` macros, `page-update` scans the b
 ensures the child schema contains the required `localizableStrings` entries before saving.
 
 - Pass `--resources` with a JSON object string such as `{"UsrDetailsTab_caption":"Details"}` when you need exact captions.
+- Malformed `--resources` payloads fail validation instead of being ignored.
 - Missing `Usr*` keys without an explicit value are auto-derived from the key name.
 - Parent/template resources that do not start with `Usr` are not added to the child schema.
 - Inherited non-`Usr` resources are stripped from the child schema before save to avoid duplicate-entry errors.
@@ -89,6 +90,6 @@ On success the command returns a JSON envelope with:
 
 1. Use `page-get` to fetch the current page.
 2. Modify `raw.body`.
-3. Pass `--resources` when the edited body adds or changes `#ResourceString(key)#` macros and you need explicit captions.
+3. Pass `--resources` when the edited body adds or changes `#ResourceString(key)#` macros and you need explicit captions. The payload must be a valid JSON object string.
 4. Run `page-update --dry-run true` to validate the edited body.
 5. Run `page-update` without `--dry-run` to save it.

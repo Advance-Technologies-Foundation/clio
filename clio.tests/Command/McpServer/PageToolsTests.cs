@@ -98,11 +98,13 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("`resources`",
 			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
+		prompt.Should().Contain("valid JSON object string",
+			because: "page-get prompt guidance should clarify that malformed resource payloads are rejected");
 		prompt.Should().NotContain("`schemaName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
-	}
+		}
 
 	[Test]
 	[Description("Serializes page-update resource registration metadata in the command response.")]
@@ -946,8 +948,36 @@ public class PageToolsTests {
 			DryRun = false
 		};
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
-		result.Should().BeFalse();
-		response.Error.Should().Contain("MissingPage").And.Contain("not found");
+		result.Should().BeFalse(
+			because: "a missing schema should fail before the command attempts to save it");
+		response.Error.Should().Contain("MissingPage").And.Contain("not found",
+			because: "the failure should identify the missing schema name");
+	}
+
+	[Test]
+	[Description("TryUpdatePage rejects malformed resources JSON before any remote calls are made.")]
+	public void TryUpdatePage_WhenResourcesJsonIsInvalid_ReturnsValidationError() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrInvalidResources_FormPage",
+			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
+			Resources = "{\"UsrTitle\":",
+			DryRun = true
+		};
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+		result.Should().BeFalse(
+			because: "malformed resource payloads should be rejected instead of being ignored");
+		response.Success.Should().BeFalse(
+			because: "the command should surface the validation failure");
+		response.Error.Should().Be("resources must be a valid JSON object string",
+			because: "the validation error should explain how the resources payload must be formatted");
+		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command builds any service URLs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command sends any remote requests");
 	}
 
 	private static PageGetCommand CreatePageGetCommand(

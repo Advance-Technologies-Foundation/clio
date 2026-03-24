@@ -150,6 +150,54 @@ public sealed class PageGetToolE2ETests {
 			because: "the failure should explain that the requested environment is missing");
 	}
 
+	[Test]
+	[Description("Rejects malformed resources JSON when page-update is invoked through the MCP server.")]
+	[AllureFeature(PageUpdateTool.ToolName)]
+	[AllureTag(PageUpdateTool.ToolName)]
+	[AllureName("page-update rejects malformed resources JSON in dry-run mode")]
+	[AllureDescription("Discovers a real sandbox page, reuses its raw body in page-update dry-run mode, and verifies that malformed resources JSON is rejected with a readable validation error.")]
+	public async Task PageUpdateTool_Should_Reject_Invalid_Resources_Json() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-update invalid resources E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"page-update invalid resources E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
+		PageListResponse pageListResponse = await CallPageListAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			environmentName!,
+			searchPattern: "FormPage",
+			limit: 20);
+		if (!pageListResponse.Success || pageListResponse.Pages is null || pageListResponse.Pages.Count == 0) {
+			Assert.Ignore($"page-update invalid resources E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
+		}
+		PageGetSuccessCandidate? candidate = await FindCandidateWithBundleAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			environmentName!,
+			pageListResponse.Pages);
+		if (candidate is null) {
+			Assert.Ignore($"page-update invalid resources E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
+		}
+		PageUpdateResponse response = await CallPageUpdateAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			environmentName!,
+			candidate.Response.Page.SchemaName,
+			candidate.Response.Raw.Body,
+			dryRun: true,
+			resources: "{\"UsrTitle\":");
+		response.Success.Should().BeFalse(
+			because: "malformed resources JSON should be rejected before page-update continues");
+		response.Error.Should().Contain("resources must be a valid JSON object string",
+			because: "the MCP tool should return a human-readable validation error for malformed resources");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -222,16 +270,21 @@ public sealed class PageGetToolE2ETests {
 		string environmentName,
 		string schemaName,
 		string body,
-		bool dryRun) {
+		bool dryRun,
+		string? resources = null) {
+		Dictionary<string, object?> args = new() {
+			["schema-name"] = schemaName,
+			["body"] = body,
+			["dry-run"] = dryRun,
+			["environment-name"] = environmentName
+		};
+		if (!string.IsNullOrWhiteSpace(resources)) {
+			args["resources"] = resources;
+		}
 		CallToolResult callResult = await session.CallToolAsync(
 			PageUpdateTool.ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = schemaName,
-					["body"] = body,
-					["dry-run"] = dryRun,
-					["environment-name"] = environmentName
-				}
+				["args"] = args
 			},
 			cancellationToken);
 		return EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);

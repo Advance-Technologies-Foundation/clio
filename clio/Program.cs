@@ -651,6 +651,12 @@ internal class Program {
 		return exitCode;
 	}
 
+	private static bool IsMcpCommand(string[] args) {
+		string commandName = args.FirstOrDefault(arg => !string.IsNullOrWhiteSpace(arg) && !arg.StartsWith("-", StringComparison.Ordinal));
+		return string.Equals(commandName, "mcp-server", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(commandName, "mcp", StringComparison.OrdinalIgnoreCase);
+	}
+
 	/// <summary>
 	/// Main entry point for the application.
 	/// </summary>
@@ -666,9 +672,9 @@ internal class Program {
 				args = args.Where(x => x != "--log" && x != logTarget).ToArray();
 			}
 
-			bool isMcp = args.Contains("mcp-server") || args.Contains("mcp");
-			IsMcpServerMode = isMcp;
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
+			bool isMcp = IsMcpCommand(clearArgs);
+			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			OriginalArgs = args;

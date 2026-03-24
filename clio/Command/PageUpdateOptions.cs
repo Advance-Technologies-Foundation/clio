@@ -7,27 +7,50 @@ namespace Clio.Command {
 	using Newtonsoft.Json;
 	using Newtonsoft.Json.Linq;
 
+	/// <summary>
+	/// Options for the <c>page-update</c> command.
+	/// </summary>
 	[Verb("page-update", HelpText = "Update Freedom UI page schema body")]
 	public class PageUpdateOptions : EnvironmentOptions {
+		/// <summary>
+		/// Gets or sets the page schema name to update.
+		/// </summary>
 		[Option("schema-name", Required = true, HelpText = "Page schema name")]
 		public string SchemaName { get; set; }
 
+		/// <summary>
+		/// Gets or sets the full raw JavaScript body to save.
+		/// </summary>
 		[Option("body", Required = true, HelpText = "New JSON body content")]
 		public string Body { get; set; }
 
+		/// <summary>
+		/// Gets or sets a value indicating whether the command should validate without saving.
+		/// </summary>
 		[Option("dry-run", Required = false, HelpText = "Validate only, don't save")]
 		public bool DryRun { get; set; }
 
+		/// <summary>
+		/// Gets or sets the explicit resource captions used for <c>#ResourceString(key)#</c> macros.
+		/// </summary>
 		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
 		public string Resources { get; set; }
 	}
 
+	/// <summary>
+	/// Validates and saves raw Freedom UI page bodies.
+	/// </summary>
 	public class PageUpdateCommand : Command<PageUpdateOptions> {
-
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
 
+		/// <summary>
+		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
+		/// </summary>
+		/// <param name="applicationClient">Remote Creatio client.</param>
+		/// <param name="serviceUrlBuilder">Service URL builder.</param>
+		/// <param name="logger">Logger used for CLI output.</param>
 		public PageUpdateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
@@ -37,9 +60,15 @@ namespace Clio.Command {
 			_logger = logger;
 		}
 
+		/// <summary>
+		/// Attempts to validate and save the requested raw page body.
+		/// </summary>
+		/// <param name="options">Command options.</param>
+		/// <param name="response">Structured command response.</param>
+		/// <returns><c>true</c> when the page was updated successfully; otherwise <c>false</c>.</returns>
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
-				PageUpdateResponse validationError = ValidateInput(options);
+				PageUpdateResponse validationError = ValidateInput(options, out Dictionary<string, string> explicitResources);
 				if (validationError != null) {
 					response = validationError;
 					return false;
@@ -54,7 +83,7 @@ namespace Clio.Command {
 				if (!TryLoadSchemaForSave(options.SchemaName, schemaUId, out JObject schemaToSave, out response)) {
 					return false;
 				}
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options);
+				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources);
 				if (!TrySaveSchema(schemaToSave, out response)) {
 					return false;
 				}
@@ -67,6 +96,11 @@ namespace Clio.Command {
 			}
 		}
 
+		/// <summary>
+		/// Executes the command and writes the structured response to the CLI output.
+		/// </summary>
+		/// <param name="options">Command options.</param>
+		/// <returns>Command exit code.</returns>
 		public override int Execute(PageUpdateOptions options) {
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
@@ -111,25 +145,26 @@ namespace Clio.Command {
 			return true;
 		}
 
-		private static List<string> UpdateSchemaBody(JObject schemaToSave, PageUpdateOptions options) {
-			schemaToSave["body"] = options.Body;
-			var bodyKeys = ResourceStringHelper.ExtractKeys(options.Body);
+		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources) {
+			schemaToSave["body"] = body;
+			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
 			var existingStrings = schemaToSave["localizableStrings"] as JArray;
-			Dictionary<string, string> explicitResources = ParseResources(options.Resources);
 			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
 			schemaToSave["localizableStrings"] = cleaned;
 			return registered.Count > 0 ? registered : null;
 		}
 
-		private static Dictionary<string, string> ParseResources(string resources) {
+		private static bool TryParseResources(string resources, out Dictionary<string, string> parsedResources) {
+			parsedResources = null;
 			if (string.IsNullOrWhiteSpace(resources)) {
-				return null;
+				return true;
 			}
 			try {
-				return JsonConvert.DeserializeObject<Dictionary<string, string>>(resources);
+				parsedResources = JsonConvert.DeserializeObject<Dictionary<string, string>>(resources);
+				return parsedResources != null;
 			}
 			catch (JsonException) {
-				return null;
+				return false;
 			}
 		}
 
@@ -182,7 +217,8 @@ namespace Clio.Command {
 			};
 		}
 
-		private static PageUpdateResponse ValidateInput(PageUpdateOptions options) {
+		private static PageUpdateResponse ValidateInput(PageUpdateOptions options, out Dictionary<string, string> explicitResources) {
+			explicitResources = null;
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				return new PageUpdateResponse { Success = false, Error = "schemaName is required" };
 			}
@@ -201,6 +237,12 @@ namespace Clio.Command {
 				return new PageUpdateResponse {
 					Success = false,
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
+				};
+			}
+			if (!TryParseResources(options.Resources, out explicitResources)) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "resources must be a valid JSON object string"
 				};
 			}
 			return null;
