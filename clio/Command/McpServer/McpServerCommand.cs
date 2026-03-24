@@ -3,7 +3,7 @@
 namespace Clio.Command.McpServer;
 
 
-[Verb("mcp-server", HelpText = "Starts mcp server in stdio mode")]
+[Verb("mcp-server", Aliases = ["mcp"], HelpText = "Starts mcp server in stdio mode")]
 public class McpServerCommandOptions : BaseCommandOptions
 { }
 
