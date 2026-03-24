@@ -158,24 +158,13 @@ Use this command when an MCP client needs structured access to clio tools. Envir
 tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`,
 and `password`, depending on the tool contract.
 
-### Output Format
-**Default output (all versions):**
-```
-clio:   8.0.1.97
-gate:   2.0.0.38
-dotnet: 8.0.0
-settings file path: C:\Users\username\.clio\appsettings.json
-```
+The MCP server exposes application, page, component-info, entity, schema-sync, page-sync,
+and data-binding tools. The local `component-info` helper does not require an environment.
 
-**Individual component output:**
-```
-clio:   8.0.1.97
-```
-
-### Notes
-- The cliogate version shown is the version included with current clio installation
-- This may differ from the version installed on a specific Creatio instance
-- Use `get-info` command to check the actual cliogate version on an environment
+Notes:
+- Transport is stdio with JSON-RPC 2.0
+- The process stays running until stdin is closed or the process is terminated
+- Environment-sensitive tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`, and `password`
 
 
 # Package Management

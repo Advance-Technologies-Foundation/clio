@@ -16,7 +16,8 @@ clio mcp
 
 - Uses stdio transport with JSON-RPC 2.0.
 - Runs until stdin is closed or the process is terminated.
-- Exposes structured clio MCP tools such as application, page, entity, schema-sync, and data-binding tools.
+- Exposes structured clio MCP tools such as application, page, component-info, entity, schema-sync, page-sync, and data-binding tools.
+- `component-info` is a local read-only helper and does not require a target environment.
 
 ## Connection Notes
 
@@ -42,6 +43,11 @@ clio mcp
 Call an MCP tool through the Python stdio client:
 ```bash
 CLIO_CMD="clio" python3 scripts/mcp_client.py application-get-list '{"environment-name":"local"}'
+```
+
+Inspect a Freedom UI component contract without connecting to Creatio:
+```bash
+CLIO_CMD="clio" python3 scripts/mcp_client.py component-info '{"component-type":"crt.TabContainer"}'
 ```
 
 ## Prerequisites
