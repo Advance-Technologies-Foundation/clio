@@ -14,6 +14,7 @@ DESCRIPTION
     Environment-name resolution works on Windows, macOS, and Linux when the registered
     environment has EnvironmentPath configured and the local package folder exists under it.
     On Windows, clio also falls back to IIS/URL discovery for older registrations.
+    The --envPkgPath value may be absolute or relative to the current working directory.
 
 EXAMPLE
     clio link-from-repository -e MyEnvironment --repoPath ./packages --packages "*"

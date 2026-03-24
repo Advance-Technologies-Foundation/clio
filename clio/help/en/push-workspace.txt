@@ -1,0 +1,29 @@
+NAME
+    push-workspace - Push workspace to selected environment
+
+DESCRIPTION
+    Packs the current workspace and installs it into the target environment.
+
+SYNOPSIS
+    clio push-workspace [OPTIONS]
+
+OPTIONS
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+    --skip-backup <true|false>
+        Skip backup creation only when explicitly set to true
+
+EXAMPLES
+    clio push-workspace -e dev
+        Push the current workspace to the dev environment
+
+    clio push-workspace -e dev --skip-backup true
+        Push the workspace without creating a backup package first
+
+SEE ALSO
+    create-workspace - Create a workspace
+    restore-workspace - Restore a workspace from an environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

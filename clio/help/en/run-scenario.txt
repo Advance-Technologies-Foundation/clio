@@ -1,0 +1,23 @@
+NAME
+    run-scenario - alias for run
+
+DESCRIPTION
+    The run-scenario command is implemented as an alias of run.
+    It executes a clio scenario definition.
+
+SYNOPSIS
+    clio run-scenario <SCENARIO_FILE> [OPTIONS]
+
+OPTIONS
+    <SCENARIO_FILE>
+        Path to a scenario definition file
+
+EXAMPLES
+    clio run-scenario ./scenario.yml
+        Execute a scenario file
+
+SEE ALSO
+    run - Canonical command name
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

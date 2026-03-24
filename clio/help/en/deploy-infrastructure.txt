@@ -1,0 +1,22 @@
+NAME
+    deploy-infrastructure - Deploy Kubernetes infrastructure for Creatio
+
+DESCRIPTION
+    Creates infrastructure resources required to run Creatio in Kubernetes.
+
+SYNOPSIS
+    clio deploy-infrastructure [OPTIONS]
+
+OPTIONS
+    Supports the canonical deploy-infrastructure command options.
+
+EXAMPLES
+    clio deploy-infrastructure --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    create-k8-files - Generate Kubernetes deployment files
+    delete-infrastructure - Remove deployed infrastructure resources
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

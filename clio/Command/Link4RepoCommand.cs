@@ -156,22 +156,41 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			];
 	}
 
+	internal static bool TryResolveDirectoryPath(string value, IFileSystem fileSystem, out string resolvedPath) {
+		resolvedPath = null;
+		if (string.IsNullOrWhiteSpace(value)) {
+			return false;
+		}
+
+		if (Uri.TryCreate(value, UriKind.Absolute, out Uri pathUri) && pathUri.IsFile) {
+			resolvedPath = pathUri.LocalPath;
+			return true;
+		}
+
+		bool looksLikePath = fileSystem.IsPathRooted(value)
+			|| value.StartsWith(".", StringComparison.Ordinal)
+			|| value.Contains('/')
+			|| value.Contains('\\')
+			|| fileSystem.ExistsDirectory(value);
+
+		if (!looksLikePath) {
+			return false;
+		}
+
+		resolvedPath = fileSystem.GetFullPath(value);
+		return true;
+	}
+
 	private int HandleEnvironmentOption(Link4RepoOptions options){
-		_ = Uri.TryCreate(options.Environment, UriKind.Absolute, out Uri pathUri);
-		return pathUri switch {
-					not null when pathUri.IsFile => HandleLinkWithDirPath(options.Environment, options.RepoPath,
-						options.Packages),
-					var _ => HandleLinkingByEnvName(options.Environment, options.RepoPath, options.Packages)
-				};
+		return TryResolveDirectoryPath(options.Environment, _fileSystem, out string resolvedPath)
+			? HandleLinkWithDirPath(resolvedPath, options.RepoPath, options.Packages)
+			: HandleLinkingByEnvName(options.Environment, options.RepoPath, options.Packages);
 	}
 
 	private int HandleEnvPkgPathOptions(Link4RepoOptions options){
-		_ = Uri.TryCreate(options.EnvPkgPath, UriKind.Absolute, out Uri pathUri);
-		return pathUri switch {
-					not null when pathUri.IsFile => HandleLinkWithDirPath(options.EnvPkgPath, options.RepoPath,
-						options.Packages),
-					var _ => HandleLinkingByEnvName(options.EnvPkgPath, options.RepoPath, options.Packages)
-				};
+		return TryResolveDirectoryPath(options.EnvPkgPath, _fileSystem, out string resolvedPath)
+			? HandleLinkWithDirPath(resolvedPath, options.RepoPath, options.Packages)
+			: HandleLinkingByEnvName(options.EnvPkgPath, options.RepoPath, options.Packages);
 	}
 
 	private int HandleLinkingByEnvNameOnWindows(string envName, string repoPath, string packages){

@@ -1,0 +1,21 @@
+NAME
+    check-nuget-update - Check for Creatio package updates in NuGet
+
+DESCRIPTION
+    Checks whether newer versions of Creatio-related NuGet packages are available.
+
+SYNOPSIS
+    clio check-nuget-update [OPTIONS]
+
+OPTIONS
+    Supports the canonical check-nuget-update command options.
+
+EXAMPLES
+    clio check-nuget-update
+        Check for package updates using configured defaults
+
+SEE ALSO
+    restore-nuget-pkg - Restore packages after selecting a version
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

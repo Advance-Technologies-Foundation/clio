@@ -1,0 +1,22 @@
+NAME
+    show-local-envs - Show local environments with filesystem and auth status
+
+DESCRIPTION
+    Displays local environments discovered by clio together with filesystem and authentication status.
+
+SYNOPSIS
+    clio show-local-envs [OPTIONS]
+
+OPTIONS
+    No command-specific options.
+
+EXAMPLES
+    clio show-local-envs
+        List local environments and their status
+
+SEE ALSO
+    show-web-app-list - List registered remote environments
+    clear-local-env - Remove deleted local environment registrations
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

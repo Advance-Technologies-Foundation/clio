@@ -1,0 +1,26 @@
+NAME
+    uninstall-app-remote - Uninstall application
+
+DESCRIPTION
+    Removes an installed application from the target Creatio environment.
+
+SYNOPSIS
+    clio uninstall-app-remote <APP_NAME> [OPTIONS]
+
+OPTIONS
+    <APP_NAME>
+        Application name to uninstall
+
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio uninstall-app-remote MyApp -e dev
+        Remove an application from the dev environment
+
+SEE ALSO
+    install-application - Install an application package
+    get-app-list - Show installed applications
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

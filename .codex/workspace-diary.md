@@ -248,6 +248,12 @@ Impact: CreatioInstallerService no longer starts processes directly, and tests n
 Context: User requested implementing the plan to discourage direct System.Diagnostics.Process usage and steer code to IProcessExecutor.
 Decision: Added CLIO004 analyzer + tests, kept ProcessExecutor as the explicit low-level exception via scoped pragma with justification, and validated CreatioInstallerService no longer directly references Process APIs.
 Discovery: Repository has many existing CLIO001/002/003/004 warnings outside the targeted scope; sequential build avoids transient file-lock errors seen during parallel build/test runs.
+## 2026-03-19 00:00 – Fix l4r relative env package path on Unix
+Context: User reported that `link-from-repository` treated a relative `--envPkgPath` as an environment name on macOS and failed with a Windows-only error.
+Decision: Added `Link4RepoCommand.TryResolveDirectoryPath(...)` and switched `--envPkgPath` / environment path handling to recognize relative paths, rooted paths, file URIs, separator-containing values, and existing directories as direct filesystem paths.
+Discovery: The previous `Uri.TryCreate(..., UriKind.Absolute)` check was too narrow for CLI path semantics; targeted unit tests pass after covering relative path resolution and plain environment-name fallback.
+Files: clio/Command/Link4RepoCommand.cs, clio/Commands.md, clio.tests/Command/Link4RepoCommandTests.cs, .codex/workspace-diary.md
+Impact: `clio l4r` now accepts relative package-directory paths on macOS/Linux instead of incorrectly requiring Windows environment-name resolution.
 Files: Clio.Analyzers/DirectProcessUsageAnalyzer.cs, Clio.Analyzers.Tests/DirectProcessUsageAnalyzerTests.cs, clio/Common/ProcessExecutor.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/CreatioInstallerServiceTests.cs, .codex/workspace-diary.md
 Impact: CLIO004 policy is now enforced, targeted service migration is verified, and future cleanup can proceed incrementally from analyzer diagnostics.
 
@@ -278,6 +284,41 @@ Decision: Added nullable `skip-backup` options on `push-workspace` and `push-pkg
 Discovery: `push-workspace` already has MCP coverage, so the tool contract, prompt guidance, unit tests, and MCP E2E schema assertions also needed alignment; `push-pkg` currently has no MCP artifact, so no MCP addition was required there.
 Files: clio/Command/PushWorkspaceCommand.cs, clio/Command/PushPackageCommand.cs, clio/Workspace/IWorkspace.cs, clio/Workspace/Workspace.cs, clio/Workspace/WorkspaceInstaller.cs, clio/Package/BasePackageInstaller.cs, clio/Package/IPackageInstaller.cs, clio/Package/PackageInstaller.cs, clio/Package/IApplicationInstaller.cs, clio/Package/ApplicationInstaller.cs, clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs, clio/Commands.md, clio/help/en/push-pkg.txt, clio.tests/Command/PushPkgCommand.Tests.cs, clio.tests/Command/McpServer/WorkspaceSyncToolTests.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Dev and CI callers can now opt out of backup explicitly without changing the default install safety behavior for existing commands and integrations.
+
+## 2026-03-19 00:00 – Create release 8.0.2.31
+Context: User invoked the release prompt workflow and asked to follow the repository release instructions.
+Decision: Verified `gh` installation/auth first, resolved latest tag `8.0.2.30`, updated `AssemblyVersion` in `clio/clio.csproj` to `8.0.2.31`, then created and pushed tag `8.0.2.31` and published the GitHub release via `gh release create`.
+Discovery: The repository release scripts follow the same tag-first flow without an intermediate version-bump commit, so the run was kept consistent with the existing project practice.
+Files: clio/clio.csproj, .github/prompts/release.prompt.md, create-release.sh, create-release.ps1, .codex/workspace-diary.md
+Impact: Release `8.0.2.31` is published and the CI/CD workflow can now build, test, and publish artifacts from the new release tag.
+
+## 2026-03-23 12:00 – Restore compile-package documentation surfaces
+Context: User reported that `compile-package` was missing from `clio help` documentation and asked to ensure command-specific docs were available too.
+Decision: Added the missing local help entry to `clio/help/en/help.txt`, created dedicated `clio/help/en/compile-package.txt` and `clio/docs/commands/compile-package.md`, and refreshed the `compile-package` section in `clio/Commands.md`.
+Discovery: The command implementation already existed and `Commands.md` already had a basic section, but both the command-specific help file and detailed markdown doc were missing entirely.
+Files: clio/help/en/help.txt, clio/help/en/compile-package.txt, clio/docs/commands/compile-package.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: `compile-package` now appears in general help, `clio compile-package -H` resolves locally, and existing links to `compile-package.md` now point to a real document.
+
+## 2026-03-23 12:30 – Backfill local help coverage for Commands.md entries
+Context: User asked to add local help for command entries documented in `clio/Commands.md` but missing in `clio/help/en`.
+Decision: Added concise local help files for all previously uncovered command headings from `Commands.md`, including legacy/alias headings such as `ver`, `extract-package`, `lic`, `callservice`, and `create-manifest`.
+Discovery: Most gaps were not missing source commands, but missing local help surfaces or legacy heading mismatches between `Commands.md` and canonical `[Verb]` names.
+Files: clio/help/en/*.txt, .codex/workspace-diary.md
+Impact: GitHub-documented command headings now resolve to local help files, improving `clio <command> -H` coverage without changing command behavior.
+
+## 2026-03-23 13:00 – Expand backfilled local help pages to full format
+Context: User chose the next step of turning the newly backfilled local help pages into more useful command help.
+Decision: Expanded the new `clio/help/en/*.txt` pages with structured `OPTIONS`, `EXAMPLES`, and `SEE ALSO` sections, using canonical command contracts where available and alias/legacy redirect wording where the Commands.md heading differs from the actual verb name.
+Discovery: Alias pages such as `ver`, `download-app`, `publish-workspace`, `lic`, and `run-scenario` benefit from local explanatory pages even when the runtime may also resolve through the canonical command help.
+Files: clio/help/en/*.txt, .codex/workspace-diary.md
+Impact: The backfilled local help set is now substantially more usable than bare placeholder pages while preserving existing command behavior.
+
+## 2026-03-23 13:20 – Backfill docs/commands for the new local-help command set
+Context: User selected the next step of adding GitHub markdown documentation for the same command set previously backfilled in local help.
+Decision: Added markdown pages under `clio/docs/commands` for the previously uncovered package, application, workspace, manifest, infrastructure, alias, and legacy-heading commands, using concise standalone docs or redirect-style pages to canonical commands where appropriate.
+Discovery: A large share of the missing GitHub docs surface was caused by filename mismatches and legacy headings in `Commands.md`, not by missing source commands.
+Files: clio/docs/commands/*.md, .codex/workspace-diary.md
+Impact: The specific command set previously missing local help now also has matching GitHub markdown documentation pages.
 
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
@@ -397,6 +438,13 @@ Decision: Tightened root AGENTS guidance, MCP-local AGENTS guidance, the E2E pro
 Discovery: The prior guidance strongly encouraged E2E for MCP work but still left room to stop at unit mapping tests; making the requirement explicit in both repo policy and skills is the lowest-friction way to change future agent behavior.
 Files: AGENTS.md, clio/Command/McpServer/AGENTS.md, clio.mcp.e2e/AGENTS.md, .codex/skills/create-mcp-tool/SKILL.md, .codex/skills/test-mcp-tool/SKILL.md, .codex/workspace-diary.md
 Impact: Future MCP tool tasks should now include real `clio mcp-server` end-to-end coverage automatically, and agents should extend the harness instead of treating E2E as optional.
+
+## 2026-03-23 19:10 – Create release 8.0.2.36
+Context: User confirmed the `/release` flow for the current repository state.
+Decision: Verified `gh` installation and authentication, took latest tag `8.0.2.35`, updated `AssemblyVersion` in `clio/clio.csproj` to `8.0.2.36`, then created and pushed tag `8.0.2.36` and published the GitHub release with `gh release create`.
+Discovery: The repository release scripts still use the tag-based release flow without an intermediate version-bump commit, so the run stayed aligned with existing project practice.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Release `8.0.2.36` is published and CI/CD can now build, test, and publish artifacts from the new release tag.
 
 ## 2026-03-09 21:29 – Add link-from-repository MCP E2E coverage
 Context: After exposing `link-from-repository` as an MCP tool, the user required real end-to-end coverage instead of unit mapping tests only.
@@ -805,6 +853,27 @@ Decision: Reworked `page-get` to query `GetParentSchemas`, parse marker sections
 Discovery: The designer hierarchy order is current-page-first, so the clio builder must reverse it before merging; `isOwnParameter` must be computed against the current page schema UId rather than each source part. v1 still omits source hierarchy and preprocessed designer output, and bundle-based save remains deferred. Local `clio.mcp.e2e` execution is still blocked on this machine because the project targets `net10.0` and the installed SDK is `8.0.124`.
 Files: clio/Command/PageGetOptions.cs, clio/Command/PageModels.cs, clio/Command/PageDesignerHierarchyClient.cs, clio/Command/PageDesignerHierarchyModels.cs, clio/Command/PageSchemaBodyParser.cs, clio/Command/PageSchemaSectionReader.cs, clio/Command/PageBundleBuilder.cs, clio/Command/PageBundleMergeHelpers.cs, clio/Command/PageJsonDiffApplier.cs, clio/Command/PageJsonPathDiffApplier.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/PageSchemaBodyParserTests.cs, clio.tests/Command/PageBundleBuilderTests.cs, clio.tests/Command/PageJsonDiffApplierTests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, clio/help/en/page-list.txt, clio/help/en/page-get.txt, clio/help/en/page-update.txt, clio/docs/commands/page-list.md, clio/docs/commands/page-get.md, clio/docs/commands/page-update.md, clio/docs/commands/page-sync.md, clio/Commands.md, Directory.Packages.props, clio/clio.csproj, .codex/workspace-diary.md
 Impact: Future page tooling can reason over merged Freedom UI layout/data contracts from `page-get`, reuse `raw.body` unchanged for `page-update`, and extend the same builder/test surface toward richer page inspection or bundle-aware save flows.
+
+## 2026-03-23 23:37 – Fix CommandLine duplicate assembly attributes
+Context: Build failed with `CS0579` reporting duplicate `AssemblyCompanyAttribute` in `CommandLine.AssemblyInfo.cs`.
+Decision: Excluded generated `artifacts/**/*.cs` files from compile items in `CommandLine.csproj` so only the active `obj/<tfm>/CommandLine.AssemblyInfo.cs` participates in compilation.
+Discovery: `src/CommandLine/artifacts/tmp-build/obj/Debug/CommandLine.AssemblyInfo.cs` contained a second generated assembly metadata file under the project tree, and SDK default compile item inclusion picked it up.
+Files: C:\Projects\commandline\src\CommandLine\CommandLine.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `dotnet build` for `CommandLine.csproj` now succeeds without CS0579; future generated scratch artifacts under `artifacts` will not break builds by introducing duplicate assembly attributes.
+
+## 2026-03-23 23:40 – Fix creatioclient duplicate assembly attributes
+Context: Build failed with `CS0579` in `creatioclient.AssemblyInfo.cs` while compiling `clio` against the local sibling `creatioclient` project reference.
+Decision: Added `<Compile Remove="artifacts\**\*.cs" />` to `creatioclient.csproj` so temporary generated C# files under `artifacts/tmp-build/obj` are excluded from default compile items.
+Discovery: Both `creatioclient/obj/Debug/netstandard2.0/creatioclient.AssemblyInfo.cs` and `creatioclient/artifacts/tmp-build/obj/Debug/creatioclient.AssemblyInfo.cs` were compiled, producing duplicate assembly metadata attributes.
+Files: C:\Projects\creatioclient\creatioclient\creatioclient.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `dotnet build` for `creatioclient.csproj` succeeds without duplicate-attribute errors, and future scratch artifact generation will not break local builds.
+
+## 2026-03-24 00:00 – Make Link4Repo relative-path test OS independent
+Context: The `TryResolveDirectoryPath_Should_Return_FullPath_For_Relative_Directory_Path` unit test failed on Windows because it asserted Unix-style rooted paths.
+Decision: Reworked the test setup to build the mock current directory, relative input path, and expected resolved path with `GetRootedPath` and `Path.Combine`, and aligned the neighboring plain-environment-name test to the same platform-aware root helper.
+Discovery: `Link4RepoCommand.TryResolveDirectoryPath` already normalized relative paths correctly; only the test fixture had hard-coded `/repo` and `/Projects/...` expectations.
+Files: C:\Projects\clio\clio.tests\Command\Link4RepoCommand.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The Link4Repo path-resolution tests now pass consistently on Windows, macOS, and Linux without changing production command behavior.
 
 ## 2026-03-24 00:58 – Unblock page MCP E2E on local SDK 10
 Context: User asked to update the current SDK and rerun the page-related tests after the earlier `net10.0` mismatch in `clio.mcp.e2e`.

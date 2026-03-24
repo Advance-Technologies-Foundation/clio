@@ -1,0 +1,22 @@
+NAME
+    add-schema - Add schema to package
+
+DESCRIPTION
+    Adds a schema file or schema definition to the specified package.
+
+SYNOPSIS
+    clio add-schema [OPTIONS]
+
+OPTIONS
+    Supports the canonical add-schema command options.
+
+EXAMPLES
+    clio add-schema --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    add-item - Create items from templates
+    create-entity-schema - Create entity schema in a remote package
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

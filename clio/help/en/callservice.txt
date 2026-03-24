@@ -1,0 +1,22 @@
+NAME
+    callservice - legacy heading for call-service
+
+DESCRIPTION
+    The Commands.md reference uses this legacy heading for the call-service command.
+    Use it to call a Creatio service endpoint.
+
+SYNOPSIS
+    clio call-service [OPTIONS]
+
+OPTIONS
+    Supports the same options as the canonical call-service command.
+
+EXAMPLES
+    clio call-service --help
+        Show the canonical command help and supported request options
+
+SEE ALSO
+    call-service - Canonical command name in source code
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

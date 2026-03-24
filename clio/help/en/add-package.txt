@@ -1,0 +1,33 @@
+NAME
+    add-package - Add package to workspace or local folder
+
+DESCRIPTION
+    Adds a package to the current workspace or local application structure.
+    Refer to Commands.md for detailed scenarios and examples.
+
+SYNOPSIS
+    clio add-package <PACKAGE_NAME> [OPTIONS]
+
+OPTIONS
+    <PACKAGE_NAME>
+        Package name to add
+
+    -a
+        Controls whether an app-descriptor should be created or updated
+
+    -e, --Environment <ENVIRONMENT_NAME>
+        Optional environment list used for download-configuration scenarios
+
+EXAMPLES
+    clio add-package MyPackage -a true
+        Add a package and update app descriptor metadata
+
+    clio add-package MyPackage -a true -e env_nf,env_n8
+        Add a package and download configuration from multiple environments
+
+SEE ALSO
+    new-pkg - Create a package skeleton
+    download-configuration - Download configuration binaries for workspace use
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

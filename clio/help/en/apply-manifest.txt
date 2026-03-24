@@ -1,0 +1,22 @@
+NAME
+    apply-manifest - Apply environment manifest
+
+DESCRIPTION
+    Applies a saved environment manifest to the selected Creatio instance.
+
+SYNOPSIS
+    clio apply-manifest [OPTIONS]
+
+OPTIONS
+    Supports the canonical apply-manifest command options.
+
+EXAMPLES
+    clio apply-manifest --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    save-state - Create a manifest before applying changes
+    show-diff - Compare manifests or environments
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -1,0 +1,23 @@
+NAME
+    open - alias for open-web-app
+
+DESCRIPTION
+    The open command is an alias for open-web-app.
+    It opens the selected Creatio application in the default web browser.
+
+SYNOPSIS
+    clio open <ENVIRONMENT_NAME> [OPTIONS]
+
+OPTIONS
+    <ENVIRONMENT_NAME>
+        Registered environment name to open
+
+EXAMPLES
+    clio open dev
+        Open the dev environment in the default browser
+
+SEE ALSO
+    open-web-app - Primary local help page
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

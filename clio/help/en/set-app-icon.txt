@@ -1,0 +1,21 @@
+NAME
+    set-app-icon - Set application icon
+
+DESCRIPTION
+    Updates the icon metadata used by an application package.
+
+SYNOPSIS
+    clio set-app-icon [OPTIONS]
+
+OPTIONS
+    Supports the canonical set-app-icon command options.
+
+EXAMPLES
+    clio set-app-icon --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    set-application-icon - Legacy heading in Commands.md
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

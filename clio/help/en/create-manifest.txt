@@ -1,0 +1,22 @@
+NAME
+    create-manifest - legacy heading for save-state
+
+DESCRIPTION
+    Creating an environment manifest is performed by the save-state command.
+    This local help page exists so the legacy heading from Commands.md resolves locally.
+
+SYNOPSIS
+    clio save-state [OPTIONS]
+
+OPTIONS
+    Supports the same options as the canonical save-state command.
+
+EXAMPLES
+    clio save-state -e dev
+        Save the current environment state to a manifest file
+
+SEE ALSO
+    save-state - Canonical command for manifest creation
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

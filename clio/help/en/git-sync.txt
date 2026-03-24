@@ -1,0 +1,22 @@
+NAME
+    git-sync - Sync environment with Git repository
+
+DESCRIPTION
+    Synchronizes environment content with the configured Git repository state.
+
+SYNOPSIS
+    clio git-sync [OPTIONS]
+
+OPTIONS
+    Supports the canonical git-sync command options.
+
+EXAMPLES
+    clio git-sync --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    link-to-repository - Link repository and environment packages
+    show-diff - Review differences before applying changes
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

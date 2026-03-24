@@ -267,15 +267,17 @@ clio push-app C:\Packages\package.gz --check-compilation-errors true -e <ENVIRON
 ```
 ## compile-package
 
-To compile package
+Compile one or more packages in a target Creatio environment.
 
+```bash
+clio compile-package <PACKAGE_NAME>[,<PACKAGE_NAME>...] -e <ENVIRONMENT_NAME>
 ```
-clio compile-package <PACKAGE NAME>
 
-//or
+Alias: `comp-pkg`
 
-clio compile-package <PACKAGE NAME> -e <ENVIRONMENT_NAME>
-```
+- Use a comma-separated package list to rebuild several packages sequentially.
+- You can pass direct connection options (`-u`, `-l`, `-p`) instead of `-e`.
+- For local console help use `clio compile-package -H`.
 
 ## pull-pkg
 
@@ -2704,6 +2706,7 @@ clio l4r --envPkgPath "C:\Creatio\Terrasoft.Configuration\Pkg" --repoPath .\pack
 **Notes:**
 - `-e/--Environment` works on all platforms when the registered environment has `EnvironmentPath` configured and the local package folder exists under it
 - On Windows, clio still falls back to IIS/URL discovery for older registrations that do not have a usable `EnvironmentPath`
+- `--envPkgPath` may be absolute or relative to the current working directory
 - Use `--packages "*"` to link all packages, or specify package names separated by comma (e.g., `--packages "Package1,Package2")
 
 ## link core src

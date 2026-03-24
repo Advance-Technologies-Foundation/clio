@@ -1,0 +1,21 @@
+NAME
+    build-workspace - Build or rebuild workspace for selected environment
+
+DESCRIPTION
+    Triggers workspace build or rebuild operations for the configured environment.
+
+SYNOPSIS
+    clio build-workspace [OPTIONS]
+
+OPTIONS
+    Supports the canonical build-workspace command options.
+
+EXAMPLES
+    clio build-workspace
+        Build the current workspace using configured defaults
+
+SEE ALSO
+    push-workspace - Push a built workspace to an environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

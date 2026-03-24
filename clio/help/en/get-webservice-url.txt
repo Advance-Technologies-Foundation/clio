@@ -1,0 +1,22 @@
+NAME
+    get-webservice-url - Get base url for web service
+
+DESCRIPTION
+    Displays the currently configured base URL for a web service entry.
+
+SYNOPSIS
+    clio get-webservice-url [OPTIONS]
+
+OPTIONS
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio get-webservice-url -e dev
+        Show configured service URLs for the dev environment
+
+SEE ALSO
+    set-webservice-url - Update a configured service URL
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

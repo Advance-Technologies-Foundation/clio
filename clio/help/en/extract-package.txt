@@ -1,0 +1,26 @@
+NAME
+    extract-package - alias heading for extract-pkg-zip
+
+DESCRIPTION
+    The extract-package heading in Commands.md refers to the extract-pkg-zip command.
+    Use it to unpack a Creatio package archive to a local folder.
+
+SYNOPSIS
+    clio extract-pkg-zip <PACKAGE_ARCHIVE> -d <DESTINATION>
+
+OPTIONS
+    <PACKAGE_ARCHIVE>
+        Path to the .gz package archive
+
+    -d, --DestinationPath <DESTINATION>
+        Directory where package content will be extracted
+
+EXAMPLES
+    clio extract-pkg-zip MyPackage.gz -d ./packages/MyPackage
+        Extract a package archive to a local folder
+
+SEE ALSO
+    extract-pkg-zip - Primary local help page
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

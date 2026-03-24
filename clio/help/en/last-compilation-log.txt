@@ -1,0 +1,23 @@
+NAME
+    last-compilation-log - Get last compilation log
+
+DESCRIPTION
+    Retrieves the latest configuration compilation log from the selected environment.
+
+SYNOPSIS
+    clio last-compilation-log [OPTIONS]
+
+OPTIONS
+    -e, --Environment <ENVIRONMENT_NAME>
+        Target environment name
+
+EXAMPLES
+    clio last-compilation-log -e dev
+        Print the last compilation log from the dev environment
+
+SEE ALSO
+    compile-configuration - Start configuration compilation
+    compile-package - Compile a package only
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

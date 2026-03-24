@@ -1,0 +1,29 @@
+NAME
+    deploy-application - Deploy app from current environment to destination environment
+
+DESCRIPTION
+    Transfers an application package from one Creatio environment to another.
+
+SYNOPSIS
+    clio deploy-application <APP_NAME> [OPTIONS]
+
+OPTIONS
+    <APP_NAME>
+        Application name to deploy
+
+    -e, --Environment <SOURCE_ENVIRONMENT>
+        Source environment name
+
+    -d, --Destination <TARGET_ENVIRONMENT>
+        Target environment name
+
+EXAMPLES
+    clio deploy-application MyApp -e source -d target
+        Deploy an application from one environment to another
+
+SEE ALSO
+    download-app - Download an application package
+    install-application - Install an application from file
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

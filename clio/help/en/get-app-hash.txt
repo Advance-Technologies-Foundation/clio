@@ -1,0 +1,21 @@
+NAME
+    get-app-hash - Calculate hash for the app
+
+DESCRIPTION
+    Calculates a hash value for the application artifacts in the selected context.
+
+SYNOPSIS
+    clio get-app-hash [OPTIONS]
+
+OPTIONS
+    Supports the canonical get-app-hash command options.
+
+EXAMPLES
+    clio get-app-hash --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    publish-workspace - Produce application artifacts for distribution
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

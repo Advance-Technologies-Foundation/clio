@@ -1,0 +1,22 @@
+NAME
+    show-diff - Show difference between environments or manifests
+
+DESCRIPTION
+    Compares saved settings or environment state and prints the differences.
+
+SYNOPSIS
+    clio show-diff [OPTIONS]
+
+OPTIONS
+    Supports the canonical show-diff command options.
+
+EXAMPLES
+    clio show-diff --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    save-state - Create a state snapshot
+    apply-manifest - Apply a manifest after comparison
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

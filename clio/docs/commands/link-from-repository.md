@@ -28,6 +28,7 @@ Provide either `-e/--Environment` or `--envPkgPath`.
 - On Windows, `-e/--Environment` first tries the registered local `EnvironmentPath` and then falls back to IIS/URL discovery for older registrations.
 - On macOS and Linux, `-e/--Environment` works when the registered environment has `EnvironmentPath` configured and the local package folder exists under it.
 - `--envPkgPath` works on all platforms and bypasses environment-name resolution.
+- `--envPkgPath` may be absolute or relative to the current working directory.
 
 Expected package-folder layouts under `EnvironmentPath`:
 

@@ -11,11 +11,7 @@
   <Project Path="clio.tests\clio.tests.csproj" />
   <Project Path="Clio.Analyzers\Clio.Analyzers.csproj" />
   <Project Path="Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj" />
-  <Project Path="cliogate.tests\cliogate.tests.csproj">
-    <Configuration Solution="Release|Any CPU" Project="Release|Any CPU|NoBuild" />
-  </Project>
-  <Project Path="cliogate\cliogate.csproj">
-    <Configuration Solution="Release|Any CPU" Project="Release|Any CPU|NoBuild" />
-  </Project>
+  <Project Path="cliogate.tests\cliogate.tests.csproj" />
+  <Project Path="cliogate\cliogate.csproj" />
   <Project Path="clio\clio.csproj" />
 </Solution>

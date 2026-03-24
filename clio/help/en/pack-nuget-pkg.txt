@@ -1,0 +1,22 @@
+NAME
+    pack-nuget-pkg - Pack NuGet package
+
+DESCRIPTION
+    Creates a NuGet package from the specified source and package metadata.
+
+SYNOPSIS
+    clio pack-nuget-pkg [OPTIONS]
+
+OPTIONS
+    Supports the canonical pack-nuget-pkg command options.
+
+EXAMPLES
+    clio pack-nuget-pkg --help
+        Display canonical options and usage examples
+
+SEE ALSO
+    push-nuget-pkg - Publish the package to a feed
+    restore-nuget-pkg - Restore a package locally
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
