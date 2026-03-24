@@ -18,11 +18,12 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body")]
-	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); dry-run, environment-name, uri, login, password (optional)")] [Required] PageUpdateArgs args) {
+	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run, environment-name, uri, login, password (optional)")] [Required] PageUpdateArgs args) {
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
 			DryRun = args.DryRun ?? false,
+			Resources = args.Resources,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -51,6 +52,10 @@ public sealed record PageUpdateArgs(
 	[property: Description("Full JavaScript page body with markers")]
 	[property: Required]
 	string Body,
+
+	[property: JsonPropertyName("resources")]
+	[property: Description("JSON object of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
+	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("If true, validate without saving. Default: false")]

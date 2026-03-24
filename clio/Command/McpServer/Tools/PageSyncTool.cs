@@ -88,7 +88,8 @@ public sealed class PageSyncTool(
 			PageUpdateOptions updateOptions = new() {
 				SchemaName = page.SchemaName,
 				Body = page.Body,
-				DryRun = false
+				DryRun = false,
+				Resources = page.Resources
 			};
 			updateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
@@ -116,7 +117,8 @@ public sealed class PageSyncTool(
 				SchemaName = page.SchemaName,
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
-				Validation = validationResult
+				Validation = validationResult,
+				ResourcesRegistered = updateResponse.ResourcesRegistered
 			};
 		} catch (Exception ex) {
 			return new PageSyncPageResult {
@@ -180,7 +182,11 @@ public sealed record PageSyncPageInput(
 	[property: JsonPropertyName("body")]
 	[property: Description("Full JavaScript page body")]
 	[property: Required]
-	string Body
+	string Body,
+
+	[property: JsonPropertyName("resources")]
+	[property: Description("JSON object of resource key-value pairs for #ResourceString(key)# macros")]
+	string? Resources = null
 );
 
 /// <summary>
@@ -217,6 +223,10 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
+
+	[JsonPropertyName("resources-registered")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ResourcesRegistered { get; init; }
 }
 
 /// <summary>
