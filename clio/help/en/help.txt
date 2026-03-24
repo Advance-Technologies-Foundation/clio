@@ -62,5 +62,8 @@ COMMANDS
     install-nuget-pkg       installng   Restore NuGet package to  
                                         a web application (website)
 
+    mcp-server                          Start MCP server in stdio mode
+                                        (Model Context Protocol for AI agents)
+
 AUTHOR
     https://github.com/Advance-Technologies-Foundation/clio
