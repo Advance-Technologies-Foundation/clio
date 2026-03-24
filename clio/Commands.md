@@ -8,6 +8,7 @@ Clio Command Reference
 - [Package Management](#package-management)
 - [NuGet Packages](#nuget-packages)
 - [Application Management](#application)
+- [Freedom UI Pages](#freedom-ui-pages)
 - [Environment Settings](#environment-settings)
 - [Workspaces](#workspaces)
   - [Package Filtering](#package-filtering-in-workspace)
@@ -1166,6 +1167,49 @@ clio get-webservice-url <WEB_SERVICE_NAME> -e <ENVIRONMENT_NAME>
 ```
 
 Aliases: `gwu`
+
+
+# Freedom UI Pages
+- [List Freedom UI pages](#page-list)
+- [Read a Freedom UI page bundle](#page-get)
+- [Update a Freedom UI page body](#page-update)
+
+## page-list
+
+Lists Freedom UI page schemas from `SysSchema` and returns a JSON envelope with page names,
+schema UIds, and package names.
+
+```bash
+clio page-list [--package-name <PACKAGE_NAME>] [--search-pattern <TEXT>] [--limit 50] -e <ENVIRONMENT_NAME>
+```
+
+Use `page-list` before `page-get` when you need to discover the schema name first.
+
+## page-get
+
+Reads a Freedom UI page as a merged bundle plus `raw.body`.
+
+```bash
+clio page-get --schema-name <ITEM_NAME> -e <ENVIRONMENT_NAME>
+```
+
+The response includes nested `page`, `bundle`, and `raw` blocks. Inspect `bundle.viewConfig`
+for the effective layout, then use `raw.body` as the editable payload for `page-update`.
+
+## page-update
+
+Validates and saves the raw JavaScript body of a Freedom UI page.
+
+```bash
+clio page-update --schema-name <ITEM_NAME> --body "<RAW_BODY>" [--dry-run true] -e <ENVIRONMENT_NAME>
+```
+
+Recommended workflow:
+
+1. `page-list`
+2. `page-get`
+3. edit `raw.body`
+4. `page-update`
 
 
 # Environment settings

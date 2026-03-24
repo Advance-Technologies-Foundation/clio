@@ -334,19 +334,31 @@ public sealed class PageSyncToolTests {
 					new JObject {
 						["Name"] = "UsrTodo_FormPage",
 						["UId"] = "test-uid",
+						["PackageUId"] = "test-package-uid",
 						["PackageName"] = "UsrPkg",
 						["ParentSchemaName"] = "BaseModulePage"
 					}
 				}
 			}.ToString());
-		applicationClient.ExecutePostRequest(
-				Arg.Is<string>(url => url.Contains("GetSchema")),
-				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(new JObject {
-				["success"] = true,
-				["schema"] = new JObject { ["body"] = "verified body" }
-			}.ToString());
-		return new PageGetCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("test-uid", "test-package-uid")
+			.Returns([
+				new PageDesignerHierarchySchema {
+					UId = "test-uid",
+					Name = "UsrTodo_FormPage",
+					PackageUId = "test-package-uid",
+					PackageName = "UsrPkg",
+					SchemaVersion = 1,
+					Body = ValidPageBody
+				}
+			]);
+		return new PageGetCommand(
+			applicationClient,
+			serviceUrlBuilder,
+			Substitute.For<ILogger>(),
+			hierarchyClient,
+			new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
 	}
 
 	private static PageGetCommand CreateFailingPageGetCommand() {
@@ -358,6 +370,12 @@ public sealed class PageSyncToolTests {
 				Arg.Any<string>(),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = false }.ToString());
-		return new PageGetCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		return new PageGetCommand(
+			applicationClient,
+			serviceUrlBuilder,
+			Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(),
+			new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
 	}
 }
