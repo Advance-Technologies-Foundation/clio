@@ -128,8 +128,8 @@ public sealed class PageGetToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["schemaName"] = "UsrMissing_FormPage",
-					["environmentName"] = invalidEnvironmentName
+					["schema-name"] = "UsrMissing_FormPage",
+					["environment-name"] = invalidEnvironmentName
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -173,8 +173,8 @@ public sealed class PageGetToolE2ETests {
 			PageListTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environmentName"] = environmentName,
-					["searchPattern"] = searchPattern,
+					["environment-name"] = environmentName,
+					["search-pattern"] = searchPattern,
 					["limit"] = limit
 				}
 			},
@@ -208,8 +208,8 @@ public sealed class PageGetToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["schemaName"] = schemaName,
-					["environmentName"] = environmentName
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
 				}
 			},
 			cancellationToken);
@@ -227,10 +227,10 @@ public sealed class PageGetToolE2ETests {
 			PageUpdateTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["schemaName"] = schemaName,
+					["schema-name"] = schemaName,
 					["body"] = body,
-					["dryRun"] = dryRun,
-					["environmentName"] = environmentName
+					["dry-run"] = dryRun,
+					["environment-name"] = environmentName
 				}
 			},
 			cancellationToken);

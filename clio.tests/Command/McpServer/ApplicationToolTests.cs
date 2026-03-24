@@ -3,13 +3,18 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
+using ATF.Repository.Providers;
 using Clio.Command;
+using Clio.Command.PackageCommand;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
+using Clio.Package;
+using Clio.UserEnvironment;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -530,6 +535,182 @@ public sealed class ApplicationToolTests {
 			because: "backend failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*Template dependency failed*",
 			because: "the create error envelope should preserve the backend diagnostics");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for application-delete so callers and tests share the same production identifier.")]
+	public void ApplicationDelete_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationDeleteTool)
+			.GetMethod(nameof(ApplicationDeleteTool.DeleteApplication))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationDeleteTool.ToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when application-delete omits app-name.")]
+	public void ApplicationDelete_Should_Return_Error_When_AppName_Is_Missing() {
+		// Arrange
+		UninstallAppCommand startupCommand = new(
+			Substitute.For<IApplicationClient>(),
+			new EnvironmentSettings(),
+			Substitute.For<IDataProvider>(),
+			new ApplicationManager(
+				Substitute.For<IWorkingDirectoriesProvider>(),
+				Substitute.For<IDataProvider>(),
+				Substitute.For<ISettingsRepository>(),
+				Substitute.For<IApplicationClientFactory>(),
+				Substitute.For<IApplicationInstaller>()));
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
+
+		// Act
+		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteArgs(
+			EnvironmentName: "sandbox",
+			AppName: " ",
+			Uri: null,
+			Login: null,
+			Password: null));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "application-delete should reject calls that do not identify the application to uninstall");
+		response.Error.Should().Contain("app-name is required",
+			because: "the tool should explain which required MCP argument is missing");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<UninstallAppCommand>(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves application-delete against the current MCP connection arguments instead of the startup-time command instance.")]
+	public void ApplicationDelete_Should_Resolve_Command_From_Current_Mcp_Connection() {
+		// Arrange
+		IApplicationClient startupApplicationClient = Substitute.For<IApplicationClient>();
+		UninstallAppCommand startupCommand = new(
+			startupApplicationClient,
+			new EnvironmentSettings(),
+			Substitute.For<IDataProvider>(),
+			new ApplicationManager(
+				Substitute.For<IWorkingDirectoriesProvider>(),
+				Substitute.For<IDataProvider>(),
+				Substitute.For<ISettingsRepository>(),
+				Substitute.For<IApplicationClientFactory>(),
+				Substitute.For<IApplicationInstaller>()));
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver
+			.When(resolver => resolver.Resolve<UninstallAppCommand>(Arg.Is<EnvironmentOptions>(options =>
+				options.Environment == null &&
+				options.Uri == "https://sandbox" &&
+				options.Login == "Supervisor" &&
+				options.Password == "Supervisor")))
+			.Do(_ => throw new InvalidOperationException("resolved from current MCP call"));
+		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
+
+		// Act
+		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteArgs(
+			EnvironmentName: null,
+			AppName: "11111111-1111-1111-1111-111111111111",
+			Uri: "https://sandbox",
+			Login: "Supervisor",
+			Password: "Supervisor"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the resolver exception should be surfaced as a structured MCP failure");
+		response.Error.Should().Be("resolved from current MCP call",
+			because: "the tool should resolve the uninstall command from the current MCP request target");
+		startupApplicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+		commandResolver.Received(1).Resolve<UninstallAppCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == null &&
+			options.Uri == "https://sandbox" &&
+			options.Login == "Supervisor" &&
+			options.Password == "Supervisor"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns readable diagnostics when application-delete cannot resolve a target environment or explicit URI.")]
+	public void ApplicationDelete_Should_Return_Readable_Error_When_Target_Resolution_Fails() {
+		// Arrange
+		UninstallAppCommand startupCommand = new(
+			Substitute.For<IApplicationClient>(),
+			new EnvironmentSettings(),
+			Substitute.For<IDataProvider>(),
+			new ApplicationManager(
+				Substitute.For<IWorkingDirectoriesProvider>(),
+				Substitute.For<IDataProvider>(),
+				Substitute.For<ISettingsRepository>(),
+				Substitute.For<IApplicationClientFactory>(),
+				Substitute.For<IApplicationInstaller>()));
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver
+			.When(resolver => resolver.Resolve<UninstallAppCommand>(Arg.Any<EnvironmentOptions>()))
+			.Do(_ => throw new InvalidOperationException(
+				"Either a configured environment name or an explicit URI is required for MCP command execution."));
+		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
+
+		// Act
+		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteArgs(
+			EnvironmentName: null,
+			AppName: "11111111-1111-1111-1111-111111111111",
+			Uri: null,
+			Login: null,
+			Password: null));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "application-delete should return a structured failure when no execution target can be resolved");
+		response.Error.Should().Be("Either a configured environment name or an explicit URI is required for MCP command execution.",
+			because: "the error payload should preserve the human-readable resolver diagnostics");
+		response.Error.Should().NotContain("ErrorMessage",
+			because: "the error payload should contain the log text instead of the log message type name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks app-name as the only required MCP field for application-delete while keeping environment and credentials optional.")]
+	public void ApplicationDeleteArgs_Should_Require_Only_AppName() {
+		// Arrange
+		Type argsType = typeof(ApplicationDeleteArgs);
+		string[] requiredProperties = [
+			nameof(ApplicationDeleteArgs.AppName)
+		];
+		string[] optionalProperties = [
+			nameof(ApplicationDeleteArgs.EnvironmentName),
+			nameof(ApplicationDeleteArgs.Uri),
+			nameof(ApplicationDeleteArgs.Login),
+			nameof(ApplicationDeleteArgs.Password)
+		];
+
+		// Act
+		string[] propertiesWithoutRequired = requiredProperties
+			.Where(propertyName => argsType.GetProperty(propertyName)!
+				.GetCustomAttributes(typeof(RequiredAttribute), false)
+				.Length == 0)
+			.ToArray();
+		string[] propertiesStillRequired = optionalProperties
+			.Where(propertyName => argsType.GetProperty(propertyName)!
+				.GetCustomAttributes(typeof(RequiredAttribute), false)
+				.Length > 0)
+			.ToArray();
+
+		// Assert
+		propertiesWithoutRequired.Should().BeEmpty(
+			because: "application-delete should keep app-name required in the MCP contract");
+		propertiesStillRequired.Should().BeEmpty(
+			because: "environment-name and direct connection arguments should remain optional in the MCP contract");
 	}
 
 	[Test]

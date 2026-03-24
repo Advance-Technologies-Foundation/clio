@@ -2,7 +2,7 @@ COMMAND TYPE
     AI integration commands
 
 NAME
-    mcp-server - start MCP server in stdio mode
+    mcp-server, mcp - start MCP server in stdio mode
 
 DESCRIPTION
     Starts a Model Context Protocol (MCP) server that communicates over
@@ -23,10 +23,14 @@ DESCRIPTION
 
 SYNOPSIS
     clio mcp-server
+    clio mcp
 
 EXAMPLES
     clio mcp-server
         Start MCP server and wait for JSON-RPC requests on stdin.
+
+    clio mcp
+        Start the same MCP server using the short alias.
 
     CLIO_CMD="clio" python3 scripts/mcp_client.py application-get-list '{"environment-name":"local"}'
         Call an MCP tool via the Python stdio client.
@@ -38,7 +42,7 @@ PREREQUISITES
 
 NOTES
     - The server uses stdio transport (stdin/stdout), not HTTP
-    - Each tool call requires an "environment-name" parameter
+    - Environment-sensitive tools require either an "environment-name" or explicit connection args such as "uri", "login", and "password"
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
 

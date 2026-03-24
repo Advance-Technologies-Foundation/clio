@@ -6,8 +6,13 @@ NAME
 
 DESCRIPTION
     The page-update command validates and saves the raw JavaScript body of a
-    Freedom UI page schema. The request format is unchanged: pass the full
-    body string directly, typically after reading raw.body from page-get.
+    Freedom UI page schema. Pass the full body string directly, typically
+    after reading raw.body from page-get.
+
+    When the body contains #ResourceString(key)# macros, page-update can
+    register missing child-schema localizableStrings before saving. Pass
+    --resources when you need explicit captions, or let clio derive captions
+    automatically for missing Usr* keys.
 
 SYNOPSIS
     clio page-update [options]
@@ -18,6 +23,9 @@ OPTIONS
     --body                             Full raw JavaScript schema body
 
     --dry-run                          Validate only and do not save
+
+    --resources                        JSON object of resource key-value pairs
+                                       for #ResourceString(key)# macros
 
     --uri                    -u       Application uri
 
@@ -35,6 +43,9 @@ EXAMPLE
 
     clio page-update --schema-name UsrTodo_FormPage --body "<edited raw body>" -e dev
         save the edited raw Freedom UI body to the registered dev environment
+
+    clio page-update --schema-name UsrTodo_FormPage --body "<edited raw body>" --resources "{\"UsrDetailsTab_caption\":\"Details\"}" -e dev
+        save the page and register the missing child-schema localizable string
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

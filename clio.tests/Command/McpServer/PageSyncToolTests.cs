@@ -197,6 +197,96 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Passes page resources through page-sync and returns the registered resource count from page-update.")]
+	public void SyncPages_Should_Surface_Registered_Resources() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "resource-page-uid" } }
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = "original",
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver);
+		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"Title\"}")],
+			Validate: false);
+
+		// Act
+		PageSyncResponse response = tool.SyncPages(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-sync should forward resources into page-update and keep the successful response");
+		response.Pages[0].ResourcesRegistered.Should().Be(1,
+			because: "the page-sync response should preserve the number of resources registered by page-update");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Serializes page-sync request and response resource fields using the documented MCP names.")]
+	public void PageSync_Should_Serialize_Resource_Fields() {
+		// Arrange
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody, "{\"UsrTitle\":\"Title\"}")],
+			Validate: true,
+			Verify: false);
+		PageSyncResponse response = new() {
+			Success = true,
+			Pages = [
+				new PageSyncPageResult {
+					SchemaName = "UsrTodo_FormPage",
+					Success = true,
+					ResourcesRegistered = 1
+				}
+			]
+		};
+
+		// Act
+		string serializedArgs = System.Text.Json.JsonSerializer.Serialize(args);
+		string serializedResponse = System.Text.Json.JsonSerializer.Serialize(response);
+
+		// Assert
+		serializedArgs.Should().Contain("\"resources\":\"{\\u0022UsrTitle\\u0022:\\u0022Title\\u0022}\"",
+			because: "page-sync should include the optional page resources payload when it is provided");
+		serializedResponse.Should().Contain("\"resources-registered\":1",
+			because: "page-sync should serialize the registered-resource count using the documented MCP field name");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Verifies page content after save when verify is true")]
 	public void SyncPages_Should_Verify_After_Save_When_Enabled() {
 		// Arrange

@@ -5,6 +5,7 @@ Clio Command Reference
 
 - [Arguments](#command-arguments)
 - [Help and Examples](#help-and-examples)
+- [AI Integration](#ai-integration)
 - [Package Management](#package-management)
 - [NuGet Packages](#nuget-packages)
 - [Application Management](#application)
@@ -138,6 +139,24 @@ clio info
 clio get-version
 clio i
 ```
+
+# AI Integration
+- [Start MCP server](#mcp-server)
+
+## mcp-server
+
+Starts the Model Context Protocol server over stdio for AI agents and editors.
+
+Aliases: `mcp`
+
+```bash
+clio mcp-server
+clio mcp
+```
+
+Use this command when an MCP client needs structured access to clio tools. Environment-sensitive
+tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`,
+and `password`, depending on the tool contract.
 
 ### Output Format
 **Default output (all versions):**
@@ -1171,6 +1190,7 @@ Aliases: `gwu`
 - [List Freedom UI pages](#page-list)
 - [Read a Freedom UI page bundle](#page-get)
 - [Update a Freedom UI page body](#page-update)
+- [Sync multiple Freedom UI pages](./docs/commands/page-sync.md)
 
 ## page-list
 
@@ -1199,7 +1219,7 @@ for the effective layout, then use `raw.body` as the editable payload for `page-
 Validates and saves the raw JavaScript body of a Freedom UI page.
 
 ```bash
-clio page-update --schema-name <ITEM_NAME> --body "<RAW_BODY>" [--dry-run true] -e <ENVIRONMENT_NAME>
+clio page-update --schema-name <ITEM_NAME> --body "<RAW_BODY>" [--dry-run true] [--resources '{"UsrTitle":"Title"}'] -e <ENVIRONMENT_NAME>
 ```
 
 Recommended workflow:
@@ -1207,7 +1227,8 @@ Recommended workflow:
 1. `page-list`
 2. `page-get`
 3. edit `raw.body`
-4. `page-update`
+4. add `--resources` when the edited body introduces or changes `#ResourceString(key)#` macros
+5. `page-update`
 
 
 # Environment settings
