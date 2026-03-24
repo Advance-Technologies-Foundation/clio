@@ -21,7 +21,7 @@ public sealed class PageGetTool(
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get a Freedom UI page bundle plus raw schema body")]
-	public PageGetResponse GetPage([Description("Parameters: schemaName (required); environmentName, uri, login, password (optional)")] [Required] PageGetArgs args) {
+	public PageGetResponse GetPage([Description("Parameters: schema-name (required); environment-name, uri, login, password (optional)")] [Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,
@@ -46,8 +46,15 @@ public sealed class PageGetTool(
 /// Arguments for the <c>page-get</c> MCP tool.
 /// </summary>
 public sealed record PageGetArgs(
-	[property: JsonPropertyName("schemaName")][property: Required] string SchemaName,
-	[property: JsonPropertyName("environmentName")] string? EnvironmentName,
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Freedom UI page schema name, e.g. 'UsrMyApp_FormPage'")]
+	[property: Required]
+	string SchemaName,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	string? EnvironmentName,
+
 	[property: JsonPropertyName("uri")] string? Uri,
 	[property: JsonPropertyName("login")] string? Login,
 	[property: JsonPropertyName("password")] string? Password
