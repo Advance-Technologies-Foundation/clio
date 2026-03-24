@@ -28,9 +28,16 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		PageUpdateCommand resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
-		resolvedCommand.TryUpdatePage(options, out PageUpdateResponse response);
-		return response;
+		lock (CommandExecutionSyncRoot) {
+			PageUpdateCommand resolvedCommand;
+			try {
+				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
+			} catch (Exception ex) {
+				return new PageUpdateResponse { Success = false, Error = ex.Message };
+			}
+			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse response);
+			return response;
+		}
 	}
 }
 

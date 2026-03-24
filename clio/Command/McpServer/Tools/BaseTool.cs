@@ -23,7 +23,12 @@ public abstract class BaseTool<T>(
 
 	private protected CommandExecutionResult InternalExecute<TCommand>(T options,
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
-		TCommand resolvedCommand = ResolveCommand<TCommand>(options);
+		TCommand resolvedCommand;
+		try {
+			resolvedCommand = ResolveCommand<TCommand>(options);
+		} catch (Exception e) {
+			return new CommandExecutionResult(-1, [new ErrorMessage(e.Message)], null);
+		}
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
 	}

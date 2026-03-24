@@ -16,8 +16,11 @@ public sealed class PageGetTool(
 
 	internal const string ToolName = "page-get";
 
+	/// <summary>
+	/// Reads a Freedom UI page as a merged bundle plus raw editable body.
+	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get Freedom UI page schema body")]
+	[Description("Get a Freedom UI page bundle plus raw schema body")]
 	public PageGetResponse GetPage([Description("Parameters: schemaName (required); environmentName, uri, login, password (optional)")] [Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
@@ -26,12 +29,22 @@ public sealed class PageGetTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		PageGetCommand resolvedCommand = ResolveCommand<PageGetCommand>(options);
-		resolvedCommand.TryGetPage(options, out PageGetResponse response);
-		return response;
+		lock (CommandExecutionSyncRoot) {
+			PageGetCommand resolvedCommand;
+			try {
+				resolvedCommand = ResolveCommand<PageGetCommand>(options);
+			} catch (Exception ex) {
+				return new PageGetResponse { Success = false, Error = ex.Message };
+			}
+			resolvedCommand.TryGetPage(options, out PageGetResponse response);
+			return response;
+		}
 	}
 }
 
+/// <summary>
+/// Arguments for the <c>page-get</c> MCP tool.
+/// </summary>
 public sealed record PageGetArgs(
 	[property: JsonPropertyName("schemaName")][property: Required] string SchemaName,
 	[property: JsonPropertyName("environmentName")] string? EnvironmentName,
