@@ -365,11 +365,19 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("dryRun")]
 	public bool DryRun { get; set; }
 
-	/// <summary>
-	/// Gets or sets the error message for failed requests.
-	/// </summary>
 	[DataMember(Name = "error")]
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
+
+	[DataMember(Name = "resourcesRegistered")]
+	[JsonProperty("resourcesRegistered")]
+	[JsonPropertyName("resourcesRegistered")]
+	public int ResourcesRegistered { get; set; }
+
+	[DataMember(Name = "registeredResourceKeys")]
+	[JsonProperty("registeredResourceKeys", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("registeredResourceKeys")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public List<string> RegisteredResourceKeys { get; set; }
 }

@@ -1,5 +1,6 @@
 namespace Clio.Command {
 	using System;
+	using System.Collections.Generic;
 	using System.Linq;
 	using Clio.Common;
 	using CommandLine;
@@ -16,6 +17,9 @@ namespace Clio.Command {
 
 		[Option("dry-run", Required = false, HelpText = "Validate only, don't save")]
 		public bool DryRun { get; set; }
+
+		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
+		public string Resources { get; set; }
 	}
 
 	public class PageUpdateCommand : Command<PageUpdateOptions> {
@@ -70,11 +74,34 @@ namespace Clio.Command {
 				}
 				var schemaToSave = getSchemaResponse["schema"] as JObject;
 				schemaToSave["body"] = options.Body;
+				List<string> registeredKeys = null;
+				var bodyKeys = ResourceStringHelper.ExtractKeys(options.Body);
+				var existingStrings = schemaToSave["localizableStrings"] as JArray;
+				Dictionary<string, string> explicitResources = null;
+				if (!string.IsNullOrWhiteSpace(options.Resources)) {
+					try {
+						explicitResources = JsonConvert.DeserializeObject<Dictionary<string, string>>(options.Resources);
+					} catch {
+					}
+				}
+				var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(
+					existingStrings, explicitResources, bodyKeys);
+				schemaToSave["localizableStrings"] = cleaned;
+				if (registered.Count > 0) {
+					registeredKeys = registered;
+				}
 				string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 				string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
 				var saveResponse = JObject.Parse(saveJson);
 				if (!(saveResponse["success"]?.Value<bool>() ?? false)) {
 					string errorMessage = "Failed to save page schema";
+					var errorInfo = saveResponse["errorInfo"] as JObject;
+					if (errorInfo != null) {
+						string infoMessage = errorInfo["message"]?.ToString();
+						if (!string.IsNullOrWhiteSpace(infoMessage)) {
+							errorMessage = infoMessage;
+						}
+					}
 					var validationErrors = saveResponse["validationErrors"] as JArray;
 					if (validationErrors != null && validationErrors.Count > 0) {
 						var messages = validationErrors
@@ -93,7 +120,9 @@ namespace Clio.Command {
 					Success = true,
 					SchemaName = options.SchemaName,
 					BodyLength = options.Body.Length,
-					DryRun = false
+					DryRun = false,
+					ResourcesRegistered = registeredKeys?.Count ?? 0,
+					RegisteredResourceKeys = registeredKeys
 				};
 				return true;
 			}
