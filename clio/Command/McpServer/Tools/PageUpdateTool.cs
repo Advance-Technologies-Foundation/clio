@@ -18,7 +18,7 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body")]
-	public PageUpdateResponse UpdatePage([Description("Parameters: schemaName, body (required); dryRun, environmentName, uri, login, password (optional)")] [Required] PageUpdateArgs args) {
+	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); dry-run, environment-name, uri, login, password (optional)")] [Required] PageUpdateArgs args) {
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
@@ -42,10 +42,24 @@ public sealed class PageUpdateTool(
 }
 
 public sealed record PageUpdateArgs(
-	[property: JsonPropertyName("schemaName")][property: Required] string SchemaName,
-	[property: JsonPropertyName("body")][property: Required] string Body,
-	[property: JsonPropertyName("dryRun")] bool? DryRun,
-	[property: JsonPropertyName("environmentName")] string? EnvironmentName,
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Freedom UI page schema name, e.g. 'UsrMyApp_FormPage'")]
+	[property: Required]
+	string SchemaName,
+
+	[property: JsonPropertyName("body")]
+	[property: Description("Full JavaScript page body with markers")]
+	[property: Required]
+	string Body,
+
+	[property: JsonPropertyName("dry-run")]
+	[property: Description("If true, validate without saving. Default: false")]
+	bool? DryRun,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	string? EnvironmentName,
+
 	[property: JsonPropertyName("uri")] string? Uri,
 	[property: JsonPropertyName("login")] string? Login,
 	[property: JsonPropertyName("password")] string? Password

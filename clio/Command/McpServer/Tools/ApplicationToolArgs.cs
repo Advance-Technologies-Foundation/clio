@@ -19,7 +19,7 @@ public sealed record ApplicationGetListArgs(
 /// </summary>
 public sealed record ApplicationGetInfoArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
 	[property: Required]
 	string EnvironmentName,
 
@@ -28,7 +28,7 @@ public sealed record ApplicationGetInfoArgs(
 	string? AppId = null,
 
 	[property: JsonPropertyName("app-code")]
-	[property: Description("Application code. Optional filter.")]
+	[property: Description("Application code, e.g. 'UsrMyApp'. Optional filter.")]
 	string? AppCode = null
 );
 
@@ -37,27 +37,27 @@ public sealed record ApplicationGetInfoArgs(
 /// </summary>
 public sealed record ApplicationCreateArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
 	[property: Required]
 	string EnvironmentName,
 
 	[property: JsonPropertyName("name")]
-	[property: Description("Application name")]
+	[property: Description("Application display name, e.g. 'My App'")]
 	[property: Required]
 	string Name,
 
 	[property: JsonPropertyName("code")]
-	[property: Description("Application code")]
+	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'")]
 	[property: Required]
 	string Code,
 
 	[property: JsonPropertyName("template-code")]
-	[property: Description("Application template code")]
+	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp")]
 	[property: Required]
 	string TemplateCode,
 
 	[property: JsonPropertyName("icon-background")]
-	[property: Description("Application icon background color in #RRGGBB format.")]
+	[property: Description("Application icon background color in #RRGGBB format, e.g. '#1F5F8B'")]
 	[property: Required]
 	string IconBackground,
 

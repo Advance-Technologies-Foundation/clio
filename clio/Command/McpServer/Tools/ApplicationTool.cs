@@ -122,6 +122,10 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 		}
 	}
 
+	private static readonly string[] KnownTemplates = [
+		"AppFreedomUI", "AppFreedomUIv2", "AppWithHomePage", "EmptyApp"
+	];
+
 	private static void ValidateCreateArgs(ApplicationCreateArgs args) {
 		if (string.IsNullOrWhiteSpace(args.Name)) {
 			throw new ArgumentException("name is required.");
@@ -133,6 +137,14 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 
 		if (string.IsNullOrWhiteSpace(args.TemplateCode)) {
 			throw new ArgumentException("template-code is required.");
+		}
+
+		if (!KnownTemplates.Contains(args.TemplateCode.Trim(), StringComparer.OrdinalIgnoreCase)) {
+			string available = string.Join(", ", KnownTemplates);
+			throw new ArgumentException(
+				$"Unknown template-code '{args.TemplateCode}'. " +
+				$"Use the technical template name, not the display name. " +
+				$"Known templates: {available}");
 		}
 
 		if (string.IsNullOrWhiteSpace(args.IconBackground)) {
