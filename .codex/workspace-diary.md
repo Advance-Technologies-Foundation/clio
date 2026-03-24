@@ -931,6 +931,131 @@ Discovery: The current debug build succeeds cleanly on macOS with 19 existing wa
 Files: clio/clio.csproj, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, .codex/workspace-diary.md
 Impact: Future test-start requests can use a direct `dotnet build ./clio/clio.csproj -c Debug --no-incremental` instead of the heavier full packaging script unless `cliogate` artifacts also need regeneration.
 
+## 2026-03-23 20:40 – Upgrade page-get to bundle-first Freedom UI reads
+Context: User asked to implement the page MCP bundle plan so AI tooling can inspect effective Freedom UI page structure instead of only the local raw schema body.
+Decision: Reworked `page-get` to query `GetParentSchemas`, parse marker sections with `HjsonSharp`, build a merged bundle in clio, and return nested `page`, `bundle`, and `raw` blocks while keeping `page-update` raw-body based. Added a new page MCP prompt, page-get/page-list/page-update docs/help, focused bundle/parser/diff tests, and a new `PageGetToolE2ETests` file.
+Discovery: The designer hierarchy order is current-page-first, so the clio builder must reverse it before merging; `isOwnParameter` must be computed against the current page schema UId rather than each source part. v1 still omits source hierarchy and preprocessed designer output, and bundle-based save remains deferred. Local `clio.mcp.e2e` execution is still blocked on this machine because the project targets `net10.0` and the installed SDK is `8.0.124`.
+Files: clio/Command/PageGetOptions.cs, clio/Command/PageModels.cs, clio/Command/PageDesignerHierarchyClient.cs, clio/Command/PageDesignerHierarchyModels.cs, clio/Command/PageSchemaBodyParser.cs, clio/Command/PageSchemaSectionReader.cs, clio/Command/PageBundleBuilder.cs, clio/Command/PageBundleMergeHelpers.cs, clio/Command/PageJsonDiffApplier.cs, clio/Command/PageJsonPathDiffApplier.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/PageSchemaBodyParserTests.cs, clio.tests/Command/PageBundleBuilderTests.cs, clio.tests/Command/PageJsonDiffApplierTests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, clio/help/en/page-list.txt, clio/help/en/page-get.txt, clio/help/en/page-update.txt, clio/docs/commands/page-list.md, clio/docs/commands/page-get.md, clio/docs/commands/page-update.md, clio/docs/commands/page-sync.md, clio/Commands.md, Directory.Packages.props, clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future page tooling can reason over merged Freedom UI layout/data contracts from `page-get`, reuse `raw.body` unchanged for `page-update`, and extend the same builder/test surface toward richer page inspection or bundle-aware save flows.
+
+## 2026-03-24 00:58 – Unblock page MCP E2E on local SDK 10
+Context: User asked to update the current SDK and rerun the page-related tests after the earlier `net10.0` mismatch in `clio.mcp.e2e`.
+Decision: Switched test runs to the user-local `.NET 10.0.201` host under `~/.dotnet`, fixed `PageGetToolE2ETests` for current FluentAssertions/MCP result shapes, and repaired E2E process resolution so the harness uses the repo `clio/bin/Debug/net8.0/clio.dll` instead of the copied `clio.mcp.e2e/bin/Debug/net10.0/clio.dll`.
+Discovery: The E2E resolver was not actually failing on SDK 10 after the host switch; it was falling back because repository-root detection only recognized `clio.sln`, while this repo now exposes `clio.slnx`. That made both `page-get` MCP startup and `page-sync` arrange steps execute the wrong assembly copy.
+Files: clio.mcp.e2e/PageGetToolE2ETests.cs, clio.mcp.e2e/Support/Mcp/ClioExecutableResolver.cs, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, .codex/workspace-diary.md
+Impact: Local page MCP E2E runs now work under the installed user-level SDK 10 without requiring a system-wide `dotnet` upgrade, and future harness work can rely on `.slnx`-aware repository detection.
+
+## 2026-03-24 07:13 – Close page review regressions
+Context: User brought review findings for page bundle ordering, missing page-sync MCP wiring, null-name diff caching, and thin parser/E2E coverage.
+Decision: Made `PageBundleBuilder` treat input as designer-service order (`current -> parent`) while merging on a separate reversed list, registered `PageSyncTool` in DI, guarded null-name cache inserts in `PageJsonDiffApplier`, and expanded tests with explicit current-first bundle assertions, dedicated JSON5 parsing coverage, and non-destructive `page-sync` MCP E2E failures.
+Discovery: The production behavior was already aligned with real Creatio hierarchy order; the confusing part was the builder contract wording and one command test that still constructed hierarchy data in parent-first order.
+Files: clio/Command/PageBundleBuilder.cs, clio/BindingsModule.cs, clio/Command/PageJsonDiffApplier.cs, clio.tests/Command/PageBundleBuilderTests.cs, clio.tests/Command/PageSchemaBodyParserTests.cs, clio.tests/Command/PageJsonDiffApplierTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future page work now has a stable documented hierarchy contract, `page-sync` is actually discoverable through MCP DI, null-name designer nodes no longer crash diff application, and the review findings are covered by targeted unit/E2E regressions.
+
+## 2026-03-24 07:33 – Review page bundle follow-up changes
+Context: Reviewed the current uncommitted `page-get`/MCP follow-up changes with a code-review focus on correctness, parity with the frontend builder, and cross-platform test behavior.
+Decision: Reported three review findings instead of patching code: missing `userLevelSchema` in `GetParentSchemas`, broken nested move handling in the C# diff applier, and a Windows-specific `.NET` host resolution bug in MCP E2E support.
+Discovery: The core `GetParentSchemas` contract requires a fourth `userLevelSchema` argument, and an isolated repro using the frontend `Move_v2` fixture showed the current C# applier duplicates `item2` after a parent move because `applyMoveIfIndirectParentMoved` is propagated but never used.
+Files: clio/Command/PageDesignerHierarchyClient.cs, clio/Command/PageJsonDiffApplier.cs, clio/Command/PageBundleBuilder.cs, clio.mcp.e2e/Support/Mcp/ClioExecutableResolver.cs, .codex/workspace-diary.md
+Impact: Future page bundle work should validate the WCF request shape and diff-applier parity against terrasoft fixtures before relying on new MCP coverage.
+
+## 2026-03-24 09:05 – Review page bundle follow-up risks
+Context: Reviewed the current uncommitted `page-get` and page MCP follow-up changes for correctness, performance, and robustness before merge.
+Decision: Kept the review focused on contract mismatches and blind spots rather than style, comparing the new C# page bundle reader against local core service contracts and terrasoft builder behavior.
+Discovery: `PageDesignerHierarchyClient` now calls `GetParentSchemas` without the service's `userLevelSchema` argument even though core tests show the endpoint behaves differently for ULS pages, and the new `page-sync` E2E additions still only exercise marker failures, not the advertised `JsSyntaxOk=false` validation path.
+Files: clio/Command/PageDesignerHierarchyClient.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future page/MCP changes should preserve ULS-aware designer requests and add explicit syntax-validation coverage so review regressions are caught before merge.
+
+## 2026-03-24 12:12 – Review latest MCP alias and tool commits
+Context: Reviewed the last two commits that added the `mcp` alias, renamed page MCP arguments to kebab-case, added template validation, and introduced `application-delete`.
+Decision: Reported defects instead of patching code: `application-delete` uses the startup-time `UninstallAppCommand` instead of per-call environment resolution, its error payload joins `LogMessage` objects directly, and the page MCP prompt/tests still use the removed camelCase request fields.
+Discovery: Targeted `clio.tests` MCP unit coverage still passes because it does not serialize the renamed page request arguments or exercise `application-delete`, while targeted `clio.mcp.e2e` surfaced the page contract mismatch and is still partially blocked by the existing Windows-style `clio.exe` path resolver in application E2E support.
+Files: clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, clio/Command/McpServer/McpServerCommand.cs, clio/help/en/mcp-server.txt, clio/help/en/help.txt, .codex/workspace-diary.md
+Impact: Future MCP reviews should treat prompt/test/docs parity as part of the contract change and should not trust passing unit tests alone for renamed tool arguments or new destructive tools.
+
+## 2026-03-24 13:18 – Align MCP delete/page contracts and docs
+Context: User asked to implement the follow-up plan for the last two commits so `application-delete`, page MCP prompts, tests, and docs match the current command behavior.
+Decision: Switched `application-delete` to per-call `InternalExecute<UninstallAppCommand>(...)`, made its MCP args accept either `environment-name` or explicit connection fields, projected readable error text from log messages, updated page prompt guidance to kebab-case plus `resources`, documented the `mcp` alias and page resource flow, and added targeted unit and non-destructive MCP E2E coverage.
+Discovery: `ApplicationToolE2ETests` needed `TestConfiguration.ResolveFreshClioProcessPath()` in arrange/startup to avoid resolving the wrong copied assembly, and the missing page/request serialization checks were why earlier unit coverage did not catch the contract drift.
+Files: clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, clio.mcp.e2e/Support/Results/ApplicationEnvelope.cs, clio/help/en/mcp-server.txt, clio/help/en/page-update.txt, clio/docs/commands/mcp-server.md, clio/docs/commands/page-update.md, clio/docs/commands/page-sync.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: MCP prompt/tool/docs parity for page and application flows is now covered by focused unit and E2E checks, reducing the chance of future contract renames or resource-handling changes shipping with stale guidance.
+
+## 2026-03-24 13:34 – Audit ADAC after clio MCP contract update
+Context: User asked whether `ai-driven-app-creation` needs follow-up changes after the latest `clio` MCP fixes for page tools and `application-delete`.
+Decision: Kept the audit read-only and checked ADAC runtime scripts, tests, skills, and agent docs against the updated `clio` contract instead of patching anything in place.
+Discovery: ADAC runtime scripts already use kebab-case for actual page writes and tests still pass under `unittest`, but agent-facing docs still instruct `environmentName`/`schemaName` for `page-get` and claim page tools use camelCase; ADAC's own `scripts/mcp_client.py` now rejects those payloads before reaching `clio`. The same client also still hard-requires `environment-name` for `application-delete`, which blocks the new explicit `uri`/`login`/`password` flow accepted by `clio`.
+Files: /Users/a.kravchuk/Projects/ai-driven-app-creation/scripts/mcp_client.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/04-implementation.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/skills/page-schema-editing/SKILL.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/mcp-application-tools-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/ui-reference.md, .codex/workspace-diary.md
+Impact: ADAC does need follow-up updates, mainly in guidance and local parameter validation, otherwise future agent runs can fail locally even though the underlying `clio` MCP tools now behave correctly.
+
+## 2026-03-24 13:48 – Refresh clio debug build for testing
+Context: User needed a fresh local build before starting test runs in this repository.
+Decision: Built `clio/clio.csproj` in `Debug` because local MCP end-to-end support resolves the executable from `clio/bin/Debug/net8.0`, which is the fastest path to unblock testing.
+Discovery: The current debug build succeeds cleanly on macOS with 19 existing warnings and produces `clio/bin/Debug/net8.0/clio.dll`; no source changes were required to refresh the testable artifact.
+Files: clio/clio.csproj, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs, .codex/workspace-diary.md
+Impact: Future test-start requests can use a direct `dotnet build ./clio/clio.csproj -c Debug --no-incremental` instead of the heavier full packaging script unless `cliogate` artifacts also need regeneration.
+
+## 2026-03-24 14:28 – Add component-info MCP catalog and ADAC integration
+Context: User asked to execute the new plan for a curated `component-info` MCP tool in `clio` and wire the corresponding ADAC guidance so page-editing agents can inspect unfamiliar Freedom UI component types on demand.
+Decision: Added a shipped JSON component registry plus a local `component-info` MCP tool with grouped list/detail modes, updated page prompt and `mcp-server` docs to mention the new helper, and synchronized ADAC docs plus `scripts/mcp_client.py` validation so the new tool is callable from agent workflows.
+Discovery: `component-info` does not need environment resolution, so a plain local MCP tool is enough; targeted `clio.tests` passed with `--no-restore`, ADAC `unittest` passed, and `clio.mcp.e2e` remains blocked on this machine because the project targets `net10.0` while the installed SDK is `8.0.124`.
+Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio/Command/McpServer/Tools/ComponentInfoCatalog.cs, clio/Command/McpServer/Tools/ComponentInfoTool.cs, clio/BindingsModule.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, clio/docs/commands/mcp-server.md, clio/help/en/mcp-server.txt, clio/Commands.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/scripts/mcp_client.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/mcp-application-tools-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/04-implementation.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/tests/test_page_body_tools.py, .codex/workspace-diary.md
+Impact: Future page-editing runs can resolve unfamiliar `crt.*` component contracts through MCP instead of guessing layout/container properties, and ADAC guidance now points agents to the same local catalog contract that `clio` exposes.
+
+## 2026-03-24 14:27 – Finish component-info delivery and broaden ADAC contract checks
+Context: User asked what was left, requested push, and explicitly asked to finish ADAC instructions for the new MCP tools before delivery.
+Decision: Installed a local .NET 10 SDK under `/Users/a.kravchuk/.dotnet-10` to unblock `clio.mcp.e2e`, reran the component-info E2E fixture in isolation after a `dotnet clean`, and extended ADAC contract guidance plus regression tests to cover more instruction sources that still used stale `page.list/page.get/page.update` wording.
+Discovery: The initial E2E rerun failed because parallel test builds triggered an `AspectInjector` PDB sharing violation, not because of the tool behavior; rerunning the E2E project alone with the local .NET 10 SDK passed. ADAC still had stale page-tool naming in plan, handler, devkit, UI, index, and page-creation guidance even after the first integration pass.
+Files: /Users/a.kravchuk/.dotnet-10, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/03-implementation-plan.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/04-implementation.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/INDEX.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/devkit-common-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/handlers-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/ui-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/skills/page-creation/SKILL.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/tests/test_default_contract_docs.py, .codex/workspace-diary.md
+Impact: The `component-info` change is now fully verified end-to-end on this machine, and ADAC is less likely to regress into stale MCP page-tool syntax because more instruction files are now aligned and covered by tests.
+
+## 2026-03-24 15:03 – Sync PR branch with master and refresh PR metadata
+Context: User asked to update the current PR branch to the latest `master` and fix PR `#480` description so it reflects the real scope of work.
+Decision: Merged `origin/master` into `ENG-87492-Alfa-version-of-ADAC-+Clio`, resolved the only merge conflict in `.codex/workspace-diary.md` by keeping both histories in chronological order, pushed the merge commit, and rewrote the PR title/body to summarize the page MCP, contract-alignment, application-delete, and component-info changes.
+Discovery: The PR metadata had drifted far behind the branch state: the title/body still described only the original debug-build fix even though the branch now contains the later MCP/page/application/component work as well.
+Files: .codex/workspace-diary.md
+Impact: Future reviewers now see an up-to-date branch on top of `master` and a PR description that matches the actual diff instead of an outdated single-commit summary.
+
+## 2026-03-24 15:12 – Clear Sonar findings on PR 480
+Context: User asked to fix the Sonar issues blocking PR `#480`.
+Decision: Refactored the flagged page/resource helpers into smaller private methods, added regex timeouts for `ResourceStringHelper`, simplified `application-delete` error formatting, and added focused unit coverage for the new resource and JSON path helper behavior.
+Discovery: The `application-delete` MCP E2E fixtures pass locally when both `net10.0` and `net8.0` runtimes are exposed through `DOTNET_ROOT=/Users/a.kravchuk/.dotnet`; pointing E2E at `~/.dotnet-10` alone breaks `clio` startup because the MCP server executable still targets `net8.0`.
+Files: clio/Command/PageUpdateOptions.cs, clio/Command/ResourceStringHelper.cs, clio/Command/PageBundleBuilder.cs, clio/Command/PageJsonDiffApplier.cs, clio/Command/PageJsonPathDiffApplier.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio.tests/Command/ResourceStringHelperTests.cs, clio.tests/Command/PageJsonPathDiffApplierTests.cs, .codex/workspace-diary.md
+Impact: Future Sonar cleanup on this branch can reuse the runtime note for MCP E2E and rely on targeted tests around resource registration and nested `_id` path resolution instead of rediscovering the same low-level helper behavior.
+
+## 2026-03-24 15:25 – Inventory current MCP surface
+Context: User asked what capabilities the current clio MCP server exposes.
+Decision: Audited the live MCP code surface from the server command, tool registrations, prompts, resources, and MCP tests instead of relying on docs or memory.
+Discovery: The server currently exposes 60 tool calls, 50 prompts, and 3 help resources, spanning workspace/package sync, Freedom UI/page operations, schema/user-task editing, application lifecycle, deployment/infrastructure, and local environment administration.
+Files: clio/Command/McpServer/McpServerCommand.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/GetHelpResources.cs, .codex/workspace-diary.md
+Impact: Future MCP questions can be answered from a confirmed inventory, and missing surface areas can be evaluated against the actual registered contract instead of assumptions.
+
+## 2026-03-24 15:43 – Fix PR 480 build job regressions
+Context: Investigated GitHub Actions job `68372240263` from PR `#480` after the `Test Solution` step failed on six tests.
+Decision: Restored MCP resolver failures to the normal command-style exit code `1` in `BaseTool` and rewrote `ComponentInfoToolTests` to build registry paths from an OS-specific rooted path instead of a hard-coded Unix root.
+Discovery: `BaseTool.InternalExecute<TCommand>` had started converting environment-resolution failures into exit code `-1`, which diverged from the existing MCP unit/E2E contract for `generate-process-model` and `install-application`, and `MockFileSystem` on Windows crashes when `ComponentInfoToolTests` seed files under `/clio/...` with a Unix current directory.
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, .codex/workspace-diary.md
+Impact: PR 480’s CI-specific MCP regressions are now fixed without changing tool names or prompts, and the component-info unit tests should stay stable on both Windows runners and Unix developer machines.
+
+## 2026-03-24 15:33 – Detail docs help resource behavior
+Context: User asked for a deeper explanation of the `docs://help/command/{commandName}` MCP resource.
+Decision: Read the resource implementation and its companion prompt to explain exact lookup rules, runtime file resolution, and fallback behavior.
+Discovery: The resource resolves commands by `[Verb]` name or alias from the executing assembly, reads runtime help text from `help/en/<canonical-verb>.txt` next to the executable, returns `text/plain`, and falls back to `<commandName> command does not provide documentation.` on lookup or file-read failure.
+Files: clio/Command/McpServer/Resources/GetHelpResources.cs, clio/Command/McpServer/Prompts/LookupHelpPrompt.cs, clio/help/en/reg-web-app.txt, clio/help/en/mcp-server.txt, .codex/workspace-diary.md
+Impact: Future MCP/help questions can reference the real resolution path and fallback semantics without re-reading the implementation.
+
+## 2026-03-24 15:40 – Detail component-info MCP tool behavior
+Context: User asked for a deeper explanation of the `component-info` MCP capability.
+Decision: Reviewed the tool, its catalog loader, sample shipped registry entries, related page prompt guidance, and unit tests to describe exact request/response modes and search semantics.
+Discovery: `component-info` is a local read-only curated registry lookup, not a live Creatio introspection call; it supports list and detail modes, keyword search across component metadata, and returns a fallback grouped catalog when a requested component type is unknown.
+Files: clio/Command/McpServer/Tools/ComponentInfoTool.cs, clio/Command/McpServer/Tools/ComponentInfoCatalog.cs, clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, .codex/workspace-diary.md
+Impact: Future Freedom UI editing guidance can point to a precise local contract for unfamiliar `crt.*` components instead of guessing available properties or parent/child rules.
+
+## 2026-03-24 16:05 – Expand component-info from frontend sources
+Context: User asked to analyze the frontend sources and extend the `component-info` catalog with richer Freedom UI component metadata.
+Decision: Used frontend `@CrtViewElement`, `contentSlots`, collection-property usage, and menu/view-config contracts as the source of truth, then expanded the shipped registry and aligned unit plus MCP E2E coverage around property-metadata search and nested menu components.
+Discovery: Several important Freedom UI contracts were missing from the shipped registry even though the frontend exposes them clearly, including `crt.Calendar`, `crt.Gallery`, `crt.Chat`, `crt.Conversation`, `crt.Feed`, `crt.Summaries`, `crt.FilePreview`, and nested menu contracts like `crt.MenuItem`, `crt.MenuLabel`, and `crt.MenuDivider`; local MCP E2E execution is currently blocked here because `clio.mcp.e2e` targets `net10.0` while the installed SDK is `8.0.124`.
+Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 ## 2026-03-24 14:28 – Add component-info MCP catalog and ADAC integration
 Context: User asked to execute the new plan for a curated `component-info` MCP tool in `clio` and wire the corresponding ADAC guidance so page-editing agents can inspect unfamiliar Freedom UI component types on demand.
 Decision: Added a shipped JSON component registry plus a local `component-info` MCP tool with grouped list/detail modes, updated page prompt and `mcp-server` docs to mention the new helper, and synchronized ADAC docs plus `scripts/mcp_client.py` validation so the new tool is callable from agent workflows.
