@@ -868,3 +868,10 @@ Discovery: `Link4RepoCommand.TryResolveDirectoryPath` already normalized relativ
 Files: C:\Projects\clio\clio.tests\Command\Link4RepoCommand.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The Link4Repo path-resolution tests now pass consistently on Windows, macOS, and Linux without changing production command behavior.
 
+## 2026-03-24 11:45 – Add docker vs nerdctl selection for build-docker-image
+Context: User needed `build-docker-image` to honor a default container image CLI from clio appsettings and allow per-run override flags for `docker` and `nerdctl`, with `nerdctl` always using namespace `k8s.io`.
+Decision: Added appsettings key `container-image-cli` with default `docker`, exposed it through `ISettingsRepository`, added `--use-docker` and `--use-nerdctl` command flags, and changed `BuildDockerImageService` to resolve the effective CLI from flags first and settings second. Also serialized all nerdctl invocations as `nerdctl --namespace k8s.io ...`.
+Discovery: The existing implementation had drifted to a hardcoded `nerdctl` executable even though tests and docs still described Docker. Full-suite testing also exposed a pre-existing race in `SettingsRepository.SaveSchema()`, so schema generation now short-circuits under a static lock when the shared testhost schema file already exists.
+Files: C:\Projects\clio\clio\Command\BuildDockerImageCommand.cs, C:\Projects\clio\clio\Command\BuildDockerImageService.cs, C:\Projects\clio\clio\Environment\ConfigurationOptions.cs, C:\Projects\clio\clio\Environment\ISettingsRepository.cs, C:\Projects\clio\clio\tpl\jsonschema\schema.json.tpl, C:\Projects\clio\clio.tests\Command\BuildDockerImageServiceTests.cs, C:\Projects\clio\clio\help\en\build-docker-image.txt, C:\Projects\clio\clio\docs\commands\build-docker-image.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future image-build work can switch between Docker and containerd-backed nerdctl without patching the service again, appsettings/schema/docs now describe the same contract, and the full test suite can initialize shared settings in parallel without schema.json file-lock failures.
+

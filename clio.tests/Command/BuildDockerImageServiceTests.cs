@@ -3,6 +3,7 @@ using System.IO.Abstractions;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -15,6 +16,7 @@ public class BuildDockerImageServiceTests {
 	private Clio.Common.IFileSystem _fileSystem = null!;
 	private ILogger _logger = null!;
 	private IProcessExecutor _processExecutor = null!;
+	private ISettingsRepository _settingsRepository = null!;
 	private IDockerTemplatePathProvider _templatePathProvider = null!;
 	private IZipFile _zipFile = null!;
 	private BuildDockerImageService _service = null!;
@@ -26,9 +28,11 @@ public class BuildDockerImageServiceTests {
 		_fileSystem = new Clio.Common.FileSystem(_msFileSystem);
 		_logger = Substitute.For<ILogger>();
 		_processExecutor = Substitute.For<IProcessExecutor>();
+		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_settingsRepository.GetContainerImageCli().Returns("docker");
 		_templatePathProvider = Substitute.For<IDockerTemplatePathProvider>();
 		_zipFile = Substitute.For<IZipFile>();
-		_service = new BuildDockerImageService(_processExecutor, _logger, _fileSystem, _msFileSystem, _zipFile,
+		_service = new BuildDockerImageService(_processExecutor, _logger, _settingsRepository, _fileSystem, _msFileSystem, _zipFile,
 			_templatePathProvider);
 		_tempRoot = _msFileSystem.Path.Combine(_msFileSystem.Path.GetTempPath(), "clio-build-docker-image-tests",
 			Guid.NewGuid().ToString("N"));
@@ -78,6 +82,69 @@ public class BuildDockerImageServiceTests {
 			o.Arguments.Contains("save --output")));
 		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
 			o.Arguments.Contains("push \"")));
+	}
+
+	[Test]
+	[Description("Execute should use nerdctl with the k8s.io namespace when appsettings selects nerdctl.")]
+	public void Execute_ShouldUseNerdctlWithK8sNamespace_WhenConfiguredInSettings() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Nerdctl Source");
+		string templateDirectory = CreateTemplateDirectory("dev-template");
+		_settingsRepository.GetContainerImageCli().Returns("nerdctl");
+		_templatePathProvider.ResolveTemplate("dev")
+			.Returns(new DockerTemplateResolution("dev", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "dev"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because nerdctl was selected from appsettings and all commands succeeded");
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Program == "nerdctl" && o.Arguments == "--namespace k8s.io --version"));
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Program == "nerdctl" && o.Arguments.Contains("--namespace k8s.io build")));
+	}
+
+	[Test]
+	[Description("Execute should let the CLI override a nerdctl appsettings default and force docker instead.")]
+	public void Execute_ShouldPreferUseDockerOverSettingsDefault() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Override Source");
+		string templateDirectory = CreateTemplateDirectory("prod-template");
+		_settingsRepository.GetContainerImageCli().Returns("nerdctl");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod",
+			UseDocker = true
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the explicit --use-docker flag should override appsettings");
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Program == "docker" && o.Arguments == "--version"));
+		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Program == "nerdctl"));
 	}
 
 	[Test]
@@ -212,7 +279,34 @@ public class BuildDockerImageServiceTests {
 
 		// Assert
 		result.Should().Be(1, "because docker is required to build container images");
-		_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("Docker is not installed", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("Container image CLI 'docker' is not installed", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Execute should reject mutually exclusive CLI engine overrides before starting the build.")]
+	public void Execute_ShouldRejectConflictingCliOverrides() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Conflicting Overrides");
+		string templateDirectory = CreateTemplateDirectory("dev-template");
+		_templatePathProvider.ResolveTemplate("dev")
+			.Returns(new DockerTemplateResolution("dev", templateDirectory, true));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "dev",
+			UseDocker = true,
+			UseNerdctl = true
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because both engine override flags cannot be used together");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("Use either --use-docker or --use-nerdctl", StringComparison.Ordinal)));
+		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>());
 	}
 
 	private string CreateDotNetSourceDirectory(string leafName) {

@@ -4,6 +4,8 @@
 
 `build-docker-image` builds a Docker image for a Creatio `.NET 8+` distribution from either a ZIP archive or an already extracted application directory. It supports bundled `dev` and `prod` templates, or a custom template directory, and can optionally save the image to a tar file and push it to a registry.
 
+The command can run through either `docker` or `nerdctl`. The default container image CLI comes from clio `appsettings.json`, and you can override it per invocation with `--use-docker` or `--use-nerdctl`.
+
 `.NET Framework` distributions are permanently unsupported for this command.
 
 ## Usage
@@ -20,6 +22,35 @@ clio build-docker-image --from <zip-or-folder> --template <name-or-path> [option
 | `--template` | Yes | Bundled template name (`dev`, `prod`) or custom template directory path |
 | `--output-path` | No | Optional tar file path used by `docker save` |
 | `--registry` | No | Optional registry or repository prefix used by `docker push` |
+| `--use-docker` | No | Force the command to use `docker` for this invocation |
+| `--use-nerdctl` | No | Force the command to use `nerdctl` for this invocation; clio adds `--namespace k8s.io` automatically |
+
+## Container Image CLI Selection
+
+Clio resolves the effective container image CLI in this order:
+
+1. `--use-docker`
+2. `--use-nerdctl`
+3. `appsettings.json` key `container-image-cli`
+4. default `docker`
+
+Supported `appsettings.json` values:
+
+```json
+{
+  "container-image-cli": "docker"
+}
+```
+
+Allowed values:
+- `docker`
+- `nerdctl`
+
+When `nerdctl` is used, clio runs every image command with:
+
+```text
+--namespace k8s.io
+```
 
 ## Supported Sources
 
@@ -94,11 +125,12 @@ The command performs these steps:
 1. Validate the source path
 2. Resolve the bundled or custom template
 3. Build a temporary Docker context
-4. Run `docker --version`
-5. Run `docker build`
-6. Optionally run `docker save`
-7. Optionally run `docker tag` and `docker push`
-8. Clean up temporary files
+4. Resolve the effective container image CLI
+5. Run the CLI version check
+6. Run image build
+7. Optionally run image save
+8. Optionally run image tag and image push
+9. Clean up temporary files
 
 ## Examples
 
@@ -112,6 +144,18 @@ clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
 
 ```bash
 clio build-docker-image --from "/opt/builds/creatio-net8" --template prod
+```
+
+### Force nerdctl for one build
+
+```bash
+clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
+```
+
+### Force docker for one build
+
+```bash
+clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-docker
 ```
 
 ### Build and export a tar file
@@ -159,9 +203,9 @@ org.creatio.database-source=8.3.4.1671_StudioNet8_Softkey_PostgreSQL_ENU
 
 ## Common Errors
 
-### Docker is not installed
+### Container image CLI is not installed
 
-If clio reports that Docker is not installed or not available in `PATH`, install Docker and verify that the `docker` executable can be started from the same shell.
+If clio reports that the selected container image CLI is not installed or not available in `PATH`, install that CLI and verify that the executable can be started from the same shell.
 
 ### Unknown bundled template
 

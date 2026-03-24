@@ -31,6 +31,18 @@ public class BuildDockerImageOptions {
 	/// </summary>
 	[Option("registry", Required = false, HelpText = "Optional registry or repository prefix used when pushing the image")]
 	public string Registry { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Gets or sets a value indicating whether to force use of the Docker CLI for this invocation.
+	/// </summary>
+	[Option("use-docker", Required = false, HelpText = "Use the docker CLI for this invocation, overriding appsettings.json")]
+	public bool UseDocker { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether to force use of the nerdctl CLI for this invocation.
+	/// </summary>
+	[Option("use-nerdctl", Required = false, HelpText = "Use the nerdctl CLI for this invocation, overriding appsettings.json")]
+	public bool UseNerdctl { get; set; }
 }
 
 /// <summary>
