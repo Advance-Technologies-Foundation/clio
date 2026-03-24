@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Text.RegularExpressions;
 using Clio.Common;
+using Clio.UserEnvironment;
 
 namespace Clio.Command;
 
@@ -26,13 +27,16 @@ public interface IBuildDockerImageService {
 public sealed class BuildDockerImageService(
 	IProcessExecutor processExecutor,
 	ILogger logger,
+	ISettingsRepository settingsRepository,
 	Clio.Common.IFileSystem fileSystem,
 	System.IO.Abstractions.IFileSystem msFileSystem,
 	IZipFile zipFile,
 	IDockerTemplatePathProvider dockerTemplatePathProvider)
 	: IBuildDockerImageService {
-	private const string DockerProgramName = "docker";
 	private const string DatabaseSourceLabelName = "org.creatio.database-source";
+	private const string DockerCli = "docker";
+	private const string NerdctlCli = "nerdctl";
+	private const string NerdctlNamespace = "k8s.io";
 	private const string SourceFolderName = "source";
 	private const string TerrasoftWebHostDll = "Terrasoft.WebHost.dll";
 	private const string TerrasoftWebHostConfig = "Terrasoft.WebHost.dll.config";
@@ -45,6 +49,8 @@ public sealed class BuildDockerImageService(
 	private readonly System.IO.Abstractions.IFileSystem _msFileSystem =
 		msFileSystem ?? throw new ArgumentNullException(nameof(msFileSystem));
 	private readonly IProcessExecutor _processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
+	private readonly ISettingsRepository _settingsRepository =
+		settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 	private readonly IZipFile _zipFile = zipFile ?? throw new ArgumentNullException(nameof(zipFile));
 
 	/// <inheritdoc />
@@ -64,6 +70,7 @@ public sealed class BuildDockerImageService(
 			string localImageReference = $"{imageRepository}:{imageTag}";
 			string registryImageReference = BuildRegistryImageReference(options.Registry, imageRepository, imageTag);
 			string outputTarPath = NormalizeOptionalOutputPath(options.OutputPath);
+			ContainerImageCliKind containerImageCli = ResolveContainerImageCli(options);
 
 			stagingRoot = CreateTemporaryDirectory("build-docker-image");
 			string preparedSourceRoot = PrepareSourceRoot(sourcePath, stagingRoot);
@@ -71,20 +78,24 @@ public sealed class BuildDockerImageService(
 
 			_logger.WriteInfo($"Resolved source: {preparedSourceRoot}");
 			_logger.WriteInfo($"Resolved template: {templateResolution.TemplatePath}");
+			_logger.WriteInfo($"Container image CLI: {containerImageCli.ToCliName()}");
 			_logger.WriteInfo($"Local image reference: {localImageReference}");
 
-			ProcessExecutionResult versionResult = ExecuteDocker("--version", null);
+			ProcessExecutionResult versionResult = ExecuteContainerCli(containerImageCli, "--version", null);
 			if (!WasSuccessful(versionResult)) {
-				return LogAndReturnFailure(versionResult, "Docker is not installed or not available in PATH.");
+				return LogAndReturnFailure(versionResult,
+					$"Container image CLI '{containerImageCli.ToCliName()}' is not installed or not available in PATH.");
 			}
 
 			string databaseSourceLabel = BuildDockerLabel(DatabaseSourceLabelName, sourceLeafName);
 			ProcessExecutionResult buildResult =
-				ExecuteDocker(
+				ExecuteContainerCli(
+					containerImageCli,
 					$"build --label \"{databaseSourceLabel}\" -t \"{localImageReference}\" \"{buildContextPath}\"",
 					buildContextPath);
 			if (!WasSuccessful(buildResult)) {
-				return LogAndReturnFailure(buildResult, $"Docker build failed for image '{localImageReference}'.");
+				return LogAndReturnFailure(buildResult,
+					$"Container image build failed for image '{localImageReference}' using '{containerImageCli.ToCliName()}'.");
 			}
 
 			_logger.WriteInfo($"Built Docker image: {localImageReference}");
@@ -92,10 +103,11 @@ public sealed class BuildDockerImageService(
 			if (!string.IsNullOrWhiteSpace(outputTarPath)) {
 				EnsureOutputDirectoryExists(outputTarPath);
 				ProcessExecutionResult saveResult =
-					ExecuteDocker($"save --output \"{outputTarPath}\" \"{localImageReference}\"", buildContextPath);
+					ExecuteContainerCli(containerImageCli,
+						$"save --output \"{outputTarPath}\" \"{localImageReference}\"", buildContextPath);
 				if (!WasSuccessful(saveResult)) {
 					return LogAndReturnFailure(saveResult,
-						$"Docker save failed for image '{localImageReference}' to '{outputTarPath}'.");
+						$"Container image save failed for image '{localImageReference}' to '{outputTarPath}'.");
 				}
 
 				_logger.WriteInfo($"Saved Docker image tar: {outputTarPath}");
@@ -103,17 +115,18 @@ public sealed class BuildDockerImageService(
 
 			if (!string.IsNullOrWhiteSpace(registryImageReference)) {
 				ProcessExecutionResult tagResult =
-					ExecuteDocker($"tag \"{localImageReference}\" \"{registryImageReference}\"", buildContextPath);
+					ExecuteContainerCli(containerImageCli,
+						$"tag \"{localImageReference}\" \"{registryImageReference}\"", buildContextPath);
 				if (!WasSuccessful(tagResult)) {
 					return LogAndReturnFailure(tagResult,
-						$"Docker tag failed for '{localImageReference}' to '{registryImageReference}'.");
+						$"Container image tag failed for '{localImageReference}' to '{registryImageReference}'.");
 				}
 
 				ProcessExecutionResult pushResult =
-					ExecuteDocker($"push \"{registryImageReference}\"", buildContextPath);
+					ExecuteContainerCli(containerImageCli, $"push \"{registryImageReference}\"", buildContextPath);
 				if (!WasSuccessful(pushResult)) {
 					return LogAndReturnFailure(pushResult,
-						$"Docker push failed for image '{registryImageReference}'.");
+						$"Container image push failed for image '{registryImageReference}'.");
 				}
 
 				_logger.WriteInfo($"Pushed Docker image: {registryImageReference}");
@@ -173,14 +186,46 @@ public sealed class BuildDockerImageService(
 		_fileSystem.CreateDirectoryIfNotExists(outputDirectory);
 	}
 
-	private ProcessExecutionResult ExecuteDocker(string arguments, string workingDirectory) {
-		ProcessExecutionOptions executionOptions = new(DockerProgramName, arguments) {
+	private ProcessExecutionResult ExecuteContainerCli(
+		ContainerImageCliKind containerImageCli,
+		string arguments,
+		string workingDirectory) {
+		string effectiveArguments = containerImageCli == ContainerImageCliKind.Nerdctl
+			? $"--namespace {NerdctlNamespace} {arguments}"
+			: arguments;
+		ProcessExecutionOptions executionOptions = new(containerImageCli.ToCliName(), effectiveArguments) {
 			WorkingDirectory = workingDirectory,
 			MirrorOutputToLogger = false,
 			OnOutput = (line, _) => _logger.WriteLine(line)
 		};
 
 		return _processExecutor.ExecuteWithRealtimeOutputAsync(executionOptions).GetAwaiter().GetResult();
+	}
+
+	private ContainerImageCliKind ResolveContainerImageCli(BuildDockerImageOptions options) {
+		if (options.UseDocker && options.UseNerdctl) {
+			throw new InvalidOperationException("Use either --use-docker or --use-nerdctl, but not both.");
+		}
+
+		if (options.UseDocker) {
+			return ContainerImageCliKind.Docker;
+		}
+
+		if (options.UseNerdctl) {
+			return ContainerImageCliKind.Nerdctl;
+		}
+
+		string configuredCli = _settingsRepository.GetContainerImageCli();
+		if (string.Equals(configuredCli, DockerCli, StringComparison.OrdinalIgnoreCase)) {
+			return ContainerImageCliKind.Docker;
+		}
+
+		if (string.Equals(configuredCli, NerdctlCli, StringComparison.OrdinalIgnoreCase)) {
+			return ContainerImageCliKind.Nerdctl;
+		}
+
+		throw new InvalidOperationException(
+			$"Unsupported container-image-cli setting '{configuredCli}'. Allowed values are '{DockerCli}' and '{NerdctlCli}'.");
 	}
 
 	private string GetSourceLeafName(string sourcePath) {
@@ -301,6 +346,27 @@ public sealed class BuildDockerImageService(
 
 	private bool WasSuccessful(ProcessExecutionResult result) {
 		return result.Started && result.ExitCode.GetValueOrDefault(-1) == 0;
+	}
+}
+
+/// <summary>
+/// Identifies the container image CLI used by build-docker-image.
+/// </summary>
+public enum ContainerImageCliKind {
+	/// <summary>
+	/// Use Docker.
+	/// </summary>
+	Docker,
+
+	/// <summary>
+	/// Use nerdctl with the Kubernetes namespace.
+	/// </summary>
+	Nerdctl
+}
+
+internal static class ContainerImageCliKindExtensions {
+	public static string ToCliName(this ContainerImageCliKind containerImageCli) {
+		return containerImageCli == ContainerImageCliKind.Nerdctl ? "nerdctl" : "docker";
 	}
 }
 

@@ -9,6 +9,12 @@
 			"type": "string",
 			"description": "Default absolute base directory for create-workspace --empty when --directory is omitted"
 		},
+		"container-image-cli": {
+			"type": "string",
+			"description": "Default container image CLI used by build-docker-image",
+			"enum": ["docker", "nerdctl"],
+			"default": "docker"
+		},
 		"RemoteArtefactServerPath": {
 			"type": "string",
 			"description": "Path to remote artefact server"

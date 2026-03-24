@@ -8,7 +8,14 @@ DESCRIPTION
     Builds a Docker image from either a Creatio ZIP archive or an already extracted
     application directory. The command resolves a bundled template (`dev`, `prod`)
     or a custom template directory, stages the application into a temporary Docker
-    build context, and invokes the local docker CLI.
+    build context, and invokes the configured container image CLI.
+
+    Container image CLI selection:
+    - Default is controlled by appsettings.json key `container-image-cli`
+    - Allowed values: `docker`, `nerdctl`
+    - Default value: `docker`
+    - `--use-docker` and `--use-nerdctl` override appsettings.json for a single run
+    - When `nerdctl` is used, clio adds `--namespace k8s.io` to each CLI invocation
 
     The command supports only Creatio .NET 8+ distributions. .NET Framework
     distributions are rejected before any docker command is executed.
@@ -37,10 +44,18 @@ OPTIONS
         Useful for air-gapped environments or offline transport.
 
     --registry PREFIX
-        Optional. Registry or repository prefix used for docker push.
+        Optional. Registry or repository prefix used for image push.
         The command tags the built image as:
             <PREFIX>/creatio-<template-name>:<tag>
         and then pushes that tagged image.
+
+    --use-docker
+        Optional. Force docker for this invocation even if appsettings.json selects
+        nerdctl.
+
+    --use-nerdctl
+        Optional. Force nerdctl for this invocation even if appsettings.json selects
+        docker. clio always adds `--namespace k8s.io` when nerdctl is used.
 
 SUPPORTED INPUTS
     ZIP archive:
@@ -71,11 +86,12 @@ BEHAVIOR
     1. Resolve and validate source path
     2. Resolve and validate template
     3. Prepare a temporary Docker build context
-    4. Run docker --version
-    5. Run docker build
-    6. Optionally run docker save
-    7. Optionally run docker tag + docker push
-    8. Clean up temporary files
+    4. Resolve the effective container image CLI from appsettings.json or CLI flags
+    5. Run the CLI version check
+    6. Run image build
+    7. Optionally run image save
+    8. Optionally run image tag + image push
+    9. Clean up temporary files
 
 EXAMPLES
     Build a local development image from a ZIP archive:
@@ -97,6 +113,12 @@ EXAMPLES
           --output-path "C:\Images\creatio-prod.tar" \
           --registry "ghcr.io/acme"
 
+    Force nerdctl for a single run:
+        clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
+
+    Force docker for a single run:
+        clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-docker
+
     Use a custom template directory:
         clio build-docker-image \
           --from "/opt/builds/creatio-net8" \
@@ -114,8 +136,8 @@ OUTPUT
     - OCI label `org.creatio.database-source` with the original source payload name
 
 TROUBLESHOOTING
-    "Docker is not installed or not available in PATH"
-        Install Docker and make sure the `docker` executable is available on PATH.
+    "Container image CLI 'X' is not installed or not available in PATH"
+        Install the selected CLI and make sure its executable is available on PATH.
 
     "Bundled Docker template 'X' was not found"
         Use one of the bundled templates (`dev`, `prod`) or pass a valid template directory.

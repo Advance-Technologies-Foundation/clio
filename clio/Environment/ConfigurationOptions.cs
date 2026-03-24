@@ -238,6 +238,14 @@ namespace Clio
 
 	public class Settings
 	{
+		/// <summary>
+		/// Supported container image CLIs for build-docker-image.
+		/// </summary>
+		/// <summary>
+		/// Default container image CLI used by build-docker-image.
+		/// </summary>
+		public const string DefaultContainerImageCli = "docker";
+
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
 		}
@@ -278,6 +286,17 @@ namespace Clio
 		public string WorkspacesRoot {
 			get;
 			set;
+		}
+
+		private string _containerImageCli;
+
+		/// <summary>
+		/// Gets or sets the default container image CLI used by build-docker-image.
+		/// </summary>
+		[JsonProperty("container-image-cli")]
+		public string ContainerImageCli {
+			get => string.IsNullOrWhiteSpace(_containerImageCli) ? DefaultContainerImageCli : _containerImageCli;
+			set => _containerImageCli = value;
 		}
 
 		[JsonProperty("$schema")]
@@ -328,6 +347,7 @@ namespace Clio
 	{
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
+		private static readonly object SchemaFileLock = new ();
 
 		private Settings _settings = new ();
 		public static string AppSettingsFolderPath {
@@ -414,10 +434,15 @@ namespace Clio
 		/// This file is used by intelisence in vs code and other json editors.
 		/// </summary>
 		private void SaveSchema() {
-			var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-			var tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
-			var tplContect = File.ReadAllText(tplPath);
-			File.WriteAllText(SchemaFilePath, tplContect);
+			lock (SchemaFileLock) {
+				if (FileSystem.File.Exists(SchemaFilePath)) {
+					return;
+				}
+				var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+				var tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
+				var tplContect = File.ReadAllText(tplPath);
+				File.WriteAllText(SchemaFilePath, tplContect);
+			}
 		}
 
 		private void Save() {
@@ -577,6 +602,14 @@ namespace Clio
 
 		public string GetWorkspacesRoot() {
 			return _settings.WorkspacesRoot;
+		}
+
+		/// <summary>
+		/// Gets the configured container image CLI used by build-docker-image.
+		/// </summary>
+		/// <returns>The configured container image CLI name.</returns>
+		public string GetContainerImageCli() {
+			return _settings.ContainerImageCli;
 		}
 
 		public LocalDbServerConfiguration GetLocalDbServer(string name) {

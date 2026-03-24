@@ -115,6 +115,12 @@ namespace Clio.UserEnvironment
 		string GetWorkspacesRoot();
 
 		/// <summary>
+		/// Gets the configured container image CLI used by build-docker-image.
+		/// </summary>
+		/// <returns>The configured container image CLI name.</returns>
+		string GetContainerImageCli();
+
+		/// <summary>
 		/// Gets a named local database server configuration.
 		/// </summary>
 		/// <param name="name">The configured local database server name.</param>
