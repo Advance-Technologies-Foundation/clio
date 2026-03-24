@@ -26,6 +26,7 @@ public sealed class ApplicationToolE2ETests {
 	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
+	private const string DeleteToolName = ApplicationDeleteTool.ToolName;
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes application-get-list for the configured sandbox environment, and verifies that a structured installed-application list envelope is returned.")]
@@ -384,7 +385,99 @@ public sealed class ApplicationToolE2ETests {
 			because: "the auto-icon create flow should still return structured application metadata");
 	}
 
+	[Test]
+	[Description("Advertises application-delete in the MCP tool list so callers can discover the uninstall tool.")]
+	[AllureFeature(DeleteToolName)]
+	[AllureTag(DeleteToolName)]
+	[AllureName("Application delete tool is advertised by the MCP server")]
+	[AllureDescription("Starts the real clio MCP server and verifies that application-delete appears in the advertised tool manifest.")]
+	public async Task ApplicationDelete_Should_Be_Listed_By_Mcp_Server() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+
+		// Assert
+		toolNames.Should().Contain(DeleteToolName,
+			because: "application-delete must be advertised so MCP callers can discover the uninstall tool");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes application-delete with an unknown environment, and verifies that the failure remains human-readable.")]
+	[AllureFeature(DeleteToolName)]
+	[AllureTag(DeleteToolName)]
+	[AllureName("Application delete reports invalid environment failures")]
+	[AllureDescription("Uses the real clio MCP server to call application-delete with an unknown environment and verifies that the tool returns a structured readable error envelope.")]
+	public async Task ApplicationDelete_Should_Report_Invalid_Environment_Failure() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		string invalidEnvironmentName = $"missing-application-delete-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			DeleteToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["app-name"] = "11111111-1111-1111-1111-111111111111"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationDeleteResponseEnvelope response = ApplicationResultParser.ExtractDelete(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"structured application-delete failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+		response.Success.Should().BeFalse(
+			because: "application-delete should fail when the requested environment does not exist");
+		response.Error.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
+			because: "the failure should explain that the requested environment is missing");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes application-delete without environment-name or explicit connection args, and verifies that the failure explains the missing target.")]
+	[AllureFeature(DeleteToolName)]
+	[AllureTag(DeleteToolName)]
+	[AllureName("Application delete rejects missing execution target")]
+	[AllureDescription("Uses the real clio MCP server to call application-delete without environment-name or URI credentials and verifies that the tool returns readable resolver diagnostics.")]
+	public async Task ApplicationDelete_Should_Reject_Missing_Execution_Target() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			DeleteToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["app-name"] = "11111111-1111-1111-1111-111111111111"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationDeleteResponseEnvelope response = ApplicationResultParser.ExtractDelete(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"structured application-delete failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+		response.Success.Should().BeFalse(
+			because: "application-delete should fail when the call does not identify any execution target");
+		response.Error.Should().Contain("Either a configured environment name or an explicit URI is required",
+			because: "the failure should explain that the MCP request needs an environment-name or explicit URI");
+	}
+
 	private static async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

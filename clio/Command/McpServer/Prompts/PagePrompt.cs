@@ -19,10 +19,11 @@ public static class PagePrompt {
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 Use `page-list` first when you need to discover candidate page schemas.
-		 Use `{PageGetTool.ToolName}` with `schemaName` `{schemaName}` and `environmentName` `{environmentName ?? "<default or explicit connection args>"}` to inspect the effective merged page structure.
+		 Use `{PageGetTool.ToolName}` with `schema-name` `{schemaName}` and `environment-name` `{environmentName ?? "<default or explicit connection args>"}` to inspect the effective merged page structure.
 		 Read layout and container hierarchy from `bundle.viewConfig`.
 		 Read page metadata from `page`.
 		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it to `{PageUpdateTool.ToolName}`.
+		 Pass `resources` to `{PageUpdateTool.ToolName}` when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings.
 		 Use `page-sync` only when you need to save multiple pages in one workflow.
 		 """;
 }

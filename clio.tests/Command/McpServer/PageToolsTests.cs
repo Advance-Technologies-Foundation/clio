@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -30,6 +31,98 @@ public class PageToolsTests {
 	[Description("Verifies that PageUpdateTool has the correct MCP tool name")]
 	public void PageUpdateTool_HasCorrectName() {
 		PageUpdateTool.ToolName.Should().Be("page-update", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("Serializes page MCP request arguments using kebab-case field names")]
+	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
+		// Arrange
+		PageGetArgs getArgs = new("UsrTodo_FormPage", "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageListArgs listArgs = new("UsrTodo", "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageUpdateArgs updateArgs = new("UsrTodo_FormPage", "define(...)", "{\"UsrTitle\":\"Title\"}", true, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+
+		// Act
+		string getJson = System.Text.Json.JsonSerializer.Serialize(getArgs);
+		string listJson = System.Text.Json.JsonSerializer.Serialize(listArgs);
+		string updateJson = System.Text.Json.JsonSerializer.Serialize(updateArgs);
+
+		// Assert
+		getJson.Should().Contain("\"schema-name\":\"UsrTodo_FormPage\"",
+			because: "page-get should expose the normalized schema-name request field");
+		getJson.Should().Contain("\"environment-name\":\"sandbox\"",
+			because: "page-get should expose the normalized environment-name request field");
+		getJson.Should().NotContain("\"schemaName\"",
+			because: "page-get should no longer serialize the removed camelCase request field");
+		getJson.Should().NotContain("\"environmentName\"",
+			because: "page-get should no longer serialize the removed camelCase request field");
+		listJson.Should().Contain("\"package-name\":\"UsrTodo\"",
+			because: "page-list should expose the normalized package-name request field");
+		listJson.Should().Contain("\"search-pattern\":\"FormPage\"",
+			because: "page-list should expose the normalized search-pattern request field");
+		listJson.Should().Contain("\"environment-name\":\"sandbox\"",
+			because: "page-list should expose the normalized environment-name request field");
+		listJson.Should().NotContain("\"packageName\"",
+			because: "page-list should no longer serialize the removed camelCase request field");
+		listJson.Should().NotContain("\"searchPattern\"",
+			because: "page-list should no longer serialize the removed camelCase request field");
+		updateJson.Should().Contain("\"schema-name\":\"UsrTodo_FormPage\"",
+			because: "page-update should expose the normalized schema-name request field");
+		updateJson.Should().Contain("\"dry-run\":true",
+			because: "page-update should expose the normalized dry-run request field");
+		updateJson.Should().Contain("\"resources\":\"{\\u0022UsrTitle\\u0022:\\u0022Title\\u0022}\"",
+			because: "page-update should include the optional resources payload when it is provided");
+		updateJson.Should().Contain("\"environment-name\":\"sandbox\"",
+			because: "page-update should expose the normalized environment-name request field");
+		updateJson.Should().NotContain("\"schemaName\"",
+			because: "page-update should no longer serialize the removed camelCase request field");
+		updateJson.Should().NotContain("\"dryRun\"",
+			because: "page-update should no longer serialize the removed camelCase request field");
+		updateJson.Should().NotContain("\"environmentName\"",
+			because: "page-update should no longer serialize the removed camelCase request field");
+	}
+
+	[Test]
+	[Description("Prompt guidance for page MCP tools references kebab-case request arguments and the optional resources payload.")]
+	public void PagePrompt_Should_Mention_Kebab_Case_Arguments_And_Resources() {
+		// Arrange
+
+		// Act
+		string prompt = PagePrompt.GetPage("UsrTodo_FormPage", "sandbox");
+
+		// Assert
+		prompt.Should().Contain("`schema-name`",
+			because: "page-get prompt guidance should match the current MCP argument contract");
+		prompt.Should().Contain("`environment-name`",
+			because: "page-get prompt guidance should match the current MCP argument contract");
+		prompt.Should().Contain("`resources`",
+			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
+		prompt.Should().NotContain("`schemaName`",
+			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
+		prompt.Should().NotContain("`environmentName`",
+			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
+	}
+
+	[Test]
+	[Description("Serializes page-update resource registration metadata in the command response.")]
+	public void PageUpdateResponse_Should_Serialize_Resource_Registration_Metadata() {
+		// Arrange
+		PageUpdateResponse response = new() {
+			Success = true,
+			SchemaName = "UsrTodo_FormPage",
+			BodyLength = 123,
+			DryRun = false,
+			ResourcesRegistered = 2,
+			RegisteredResourceKeys = ["UsrTitle", "UsrDetails"]
+		};
+
+		// Act
+		string serializedResponse = System.Text.Json.JsonSerializer.Serialize(response);
+
+		// Assert
+		serializedResponse.Should().Contain("\"resourcesRegistered\":2",
+			because: "page-update should surface the number of registered child-schema resources");
+		serializedResponse.Should().Contain("\"registeredResourceKeys\":[\"UsrTitle\",\"UsrDetails\"]",
+			because: "page-update should surface the concrete resource keys that were registered");
 	}
 
 	[Test]

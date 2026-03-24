@@ -22,6 +22,10 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
 	[property: JsonPropertyName("error")] string? Error);
 
+internal sealed record ApplicationDeleteResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("error")] string? Error);
+
 internal sealed record ApplicationEntityEnvelope(
 	[property: JsonPropertyName("u-id")] string UId,
 	[property: JsonPropertyName("name")] string Name,
@@ -49,6 +53,14 @@ internal static class ApplicationResultParser {
 		}
 
 		throw new InvalidOperationException("Could not parse application-get-info MCP result.");
+	}
+
+	public static ApplicationDeleteResponseEnvelope ExtractDelete(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidDeleteEnvelope, out ApplicationDeleteResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse application-delete MCP result.");
 	}
 
 	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result) {
@@ -124,6 +136,11 @@ internal static class ApplicationResultParser {
 	}
 
 	private static bool IsValidContextEnvelope(ApplicationContextResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidDeleteEnvelope(ApplicationDeleteResponseEnvelope? envelope) {
 		return envelope is not null &&
 			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
 	}

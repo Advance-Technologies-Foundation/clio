@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Command.PackageCommand;
 using Clio.Common;
@@ -8,6 +9,9 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>
+/// MCP tool surface for uninstalling Creatio applications.
+/// </summary>
 [McpServerToolType]
 public sealed class ApplicationDeleteTool(
 	UninstallAppCommand command,
@@ -17,10 +21,15 @@ public sealed class ApplicationDeleteTool(
 
 	internal const string ToolName = "application-delete";
 
+	/// <summary>
+	/// Uninstalls a Creatio application by name or code.
+	/// </summary>
+	/// <param name="args">MCP arguments describing the target application and connection.</param>
+	/// <returns>A structured response that reports whether the uninstall completed successfully.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Uninstall (delete) a Creatio application by name or code")]
 	public ApplicationDeleteResponse DeleteApplication(
-		[Description("Parameters: environment-name, app-name (required)")]
+		[Description("Parameters: app-name (required); environment-name, uri, login, password (optional, provide environment-name or explicit connection args)")]
 		[Required]
 		ApplicationDeleteArgs args) {
 		try {
@@ -38,11 +47,18 @@ public sealed class ApplicationDeleteTool(
 				Password = args.Password
 			};
 			lock (CommandExecutionSyncRoot) {
-				CommandExecutionResult result = InternalExecute(options);
+				CommandExecutionResult result = InternalExecute<UninstallAppCommand>(options);
+				string[] outputMessages = result.Output
+					.Select(message => message.Value?.ToString())
+					.Where(message => !string.IsNullOrWhiteSpace(message))
+					.Distinct()
+					.ToArray();
 				return new ApplicationDeleteResponse {
 					Success = result.ExitCode == 0,
 					Error = result.ExitCode != 0
-						? string.Join("; ", result.Output)
+						? outputMessages.Length > 0
+							? string.Join("; ", outputMessages)
+							: "Application uninstall failed."
 						: null
 				};
 			}
@@ -55,11 +71,13 @@ public sealed class ApplicationDeleteTool(
 	}
 }
 
+/// <summary>
+/// Arguments for the <c>application-delete</c> MCP tool.
+/// </summary>
 public sealed record ApplicationDeleteArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
-	[property: Required]
-	string EnvironmentName,
+	[property: Description("Registered clio environment name, e.g. 'local'. Optional when uri, login, and password are provided explicitly.")]
+	string? EnvironmentName,
 
 	[property: JsonPropertyName("app-name")]
 	[property: Description("Application name or code to uninstall, e.g. 'UsrMyApp'")]
@@ -71,6 +89,9 @@ public sealed record ApplicationDeleteArgs(
 	[property: JsonPropertyName("password")] string? Password = null
 );
 
+/// <summary>
+/// Structured response from the <c>application-delete</c> MCP tool.
+/// </summary>
 public sealed class ApplicationDeleteResponse {
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
